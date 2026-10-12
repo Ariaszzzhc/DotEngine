@@ -2,6 +2,7 @@ find_package(doctest CONFIG REQUIRED)
 add_executable(DotTests
     main.cpp
     CoreTests.cpp
+    TextTests.cpp
     EventTests.cpp
     FileTests.cpp
     InputTests.cpp

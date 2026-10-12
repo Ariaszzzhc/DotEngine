@@ -168,4 +168,18 @@ is returned as warnings. Root-relative asset saves use atomic file replacement.
   index validation, path conversion errors, and replacement semantics.
   Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
+### UTF-8 boundary validation
+
+Added allocation-free UTF-8 scalar validation and checked code-point counting for
+upcoming scene/entity text boundaries. NUL is a valid scalar; subsystems define
+their own NUL policy. The validator performs no normalization or grapheme counting.
+
+- macOS Debug and Release each pass all 151 CTest cases (140 doctest cases and
+  eleven executable checks). Text tests cover every single byte, legal scalar
+  boundaries, combining characters, Chinese/emoji text, malformed continuations,
+  truncation, overlong encodings, surrogate values, and out-of-range scalars.
+- The runtime core self-test checks multilingual text and invalid encodings.
+  Reviewed byte indexing, signed-byte conversion, range/overlong checks, and
+  error offsets. Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
 ECS scenes and all higher milestones remain to be implemented.

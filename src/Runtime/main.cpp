@@ -381,7 +381,10 @@ auto main(int argc, char** argv) -> int {
     auto connection = events.subscribe([&](int event) { received = event; });
     const auto dispatched = events.publish(42);
 
-    if (step.updates != 2 || memory.stats().liveBytes != 0 || dispatched != 1 || received != 42) {
+    const auto textLength = Dot::Core::utf8CodePoints("DotEngine 中文🙂");
+
+    if (step.updates != 2 || memory.stats().liveBytes != 0 || dispatched != 1 || received != 42
+        || !textLength || *textLength != 13 || Dot::Core::isValidUtf8("\xC0\x80")) {
       logger.write(Dot::Core::LogLevel::Error, "Foundation self-test failed");
       return 1;
     }

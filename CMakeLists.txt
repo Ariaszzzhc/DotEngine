@@ -35,6 +35,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Result.cpp
+    src/Engine/Core/Text.cpp
     src/Engine/Core/Application.cpp
     src/Engine/Platform/System.cpp
     src/Engine/Platform/Window.cpp
@@ -51,6 +52,7 @@ target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjload
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
+        src/Engine/Core/Text.cppm
         src/Engine/Core/Result.cppm
         src/Engine/Core/Logging.cppm
         src/Engine/Core/Clock.cppm
