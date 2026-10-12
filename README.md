@@ -47,4 +47,9 @@ carry separate world transforms and tint colors; resource counters report live
 ownership. Run `build/debug/bin/DotRuntime --mesh-test` for a perspective-camera
 cube acceptance case.
 
+Mesh assets support strict versioned `.dotmesh` JSON and bounded OBJ geometry
+import, with explicit warnings for unsupported retained attributes. Run
+`build/debug/bin/DotRuntime --asset-test <existing-directory>` for atomic save/load
+acceptance. See `docs/Assets.md` for the format and importer contract.
+
 See `docs/Development.md` for implementation milestones and actual validation.

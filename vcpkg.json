@@ -5,6 +5,8 @@
     "doctest",
     "sdl3",
     "glm",
+    "nlohmann-json",
+    "tinyobjloader",
     {
       "name": "dawn",
       "default-features": false,

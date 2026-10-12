@@ -5,14 +5,60 @@
 #include <filesystem>
 #include <print>
 #include <string_view>
+#include <vector>
 
 import Dot.Core;
 import Dot.Core.Application;
 import Dot.Platform.Window;
 import Dot.Math;
 import Dot.Graphics.Renderer;
+import Dot.Assets.Mesh;
 
 namespace {
+  auto testAssets(const std::filesystem::path& root) -> int {
+    auto files = Dot::Core::FileSystem::open(root);
+
+    if (!files) {
+      std::println(stderr, "{}", files.error().message);
+      return 1;
+    }
+
+    auto directory = files->createDirectories("assets");
+    auto geometry = Dot::Graphics::cube();
+
+    if (!directory) {
+      std::println(stderr, "{}", directory.error().message);
+      return 1;
+    }
+
+    if (!geometry) {
+      std::println(stderr, "{}", geometry.error().message);
+      return 1;
+    }
+
+    auto saved = Dot::Assets::saveMesh(*files, "assets/cube.dotmesh", *geometry);
+
+    if (!saved) {
+      std::println(stderr, "{}", saved.error().message);
+      return 1;
+    }
+
+    auto loaded = Dot::Assets::loadMesh(*files, "assets/cube.dotmesh");
+
+    if (!loaded) {
+      std::println(stderr, "{}", loaded.error().message);
+      return 1;
+    }
+
+    if (loaded->data.indices != geometry->indices || loaded->data.vertices.size() != 8) {
+      std::println(stderr, "Asset acceptance round trip failed");
+      return 1;
+    }
+
+    std::println("Asset acceptance passed: assets/cube.dotmesh");
+    return 0;
+  }
+
   auto testMesh() -> int {
     auto renderer = Dot::Graphics::Renderer::create();
     auto geometry = Dot::Graphics::cube();
@@ -277,6 +323,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3 && std::string_view(argv[1]) == "--asset-test") {
+      return testAssets(argv[2]);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--mesh-test") {
       return testMesh();
     }
@@ -314,7 +364,8 @@ auto main(int argc, char** argv) -> int {
       std::println(stderr,
                    "Usage: DotRuntime "
                    "[--version|--self-test|--math-test|--geometry-test|--mesh-test|"
-                   "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>]");
+                   "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
+                   "--asset-test <directory>]");
       return 2;
     }
 

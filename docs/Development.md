@@ -150,4 +150,22 @@ Readback, pass setup, and surface presentation are shared by both drawing APIs.
   device/mesh lifetimes, validation before submission, and quiescent counters.
   Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
-Asset file loading, ECS scenes, and all higher milestones remain to be implemented.
+### Mesh asset files
+
+Added bounded strict DotMesh JSON serialization and geometry-only OBJ import,
+using private nlohmann-json and TinyObj implementations. JSON rejects duplicate
+or unknown fields, invalid versions/types, deep nesting, and invalid geometry.
+OBJ preflight rejects numeric fallback, malformed references, unbounded faces,
+unsupported materials/primitives, and weighted positions; attribute/group loss
+is returned as warnings. Root-relative asset saves use atomic file replacement.
+
+- macOS Debug and Release each pass all 144 CTest cases (133 doctest cases and
+  eleven executable checks), including float-extreme round trips, strict schema
+  failures, duplicate/depth limits, OBJ polygons/negative references/colors,
+  unsupported commands, Unicode paths, missing files, and failed-save preservation.
+- `--asset-test` saves and reloads an actual cube asset in an existing directory.
+- Reviewed parser bounds, explicit attribute loss, third-party numeric defaults,
+  index validation, path conversion errors, and replacement semantics.
+  Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+ECS scenes and all higher milestones remain to be implemented.
