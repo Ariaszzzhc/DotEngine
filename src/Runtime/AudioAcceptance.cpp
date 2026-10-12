@@ -17,6 +17,75 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 
 namespace Dot::Runtime {
+  auto testAudioBatch() -> int {
+    auto mixer = Dot::Audio::Mixer::create({1, 48000, 2});
+    auto first = Dot::Audio::Clip::fromPcm(std::vector<float>(4096, 0.25F), 1, 48000);
+    auto second = Dot::Audio::Clip::fromPcm(std::vector<float>(4096, 0.5F), 1, 48000);
+
+    if (!mixer || !first || !second) {
+      std::println(stderr, "Audio batch acceptance setup failed");
+      return 1;
+    }
+
+    Dot::Audio::VoiceBatch initial;
+    initial.create = {{*first, {1, 0, 1, true}, {}, true}, {*second, {1, 0, 1, true}, {}, true}};
+    auto voices = mixer->applyChanges(initial);
+
+    if (!voices || voices->size() != 2) {
+      std::println(stderr, "Audio batch acceptance voice preparation failed");
+      return 1;
+    }
+
+    std::array<float, 32> output{};
+    const auto samplesEqual = [&](float expected) {
+      return std::ranges::all_of(output,
+                                 [=](float value) { return std::abs(value - expected) < 1e-5F; });
+    };
+
+    if (!mixer->render(output) || !samplesEqual(0.75F)) {
+      std::println(stderr, "Audio batch acceptance initial PCM failed");
+      return 1;
+    }
+
+    Dot::Audio::VoiceBatch change;
+    change.update.push_back({(*voices)[0], Dot::Audio::VoiceSettings{0.5F, 0, 1, true}});
+    change.remove.push_back((*voices)[1]);
+    change.create.push_back({*second, {-1}, {}, true});
+    change.listener = Dot::Audio::Listener{{1, 2, 3}};
+
+    if (mixer->applyChanges(change) || mixer->stats()->voices != 2
+        || mixer->voice((*voices)[0])->settings.volume != 1 || !mixer->voice((*voices)[1])
+        || mixer->listener()->position != Dot::Math::Vec3{} || !mixer->render(output)
+        || !samplesEqual(0.75F)) {
+      std::println(stderr, "Audio batch acceptance rejected-edit isolation failed");
+      return 1;
+    }
+
+    change.create.front().settings = {1, 0, 1, true};
+    auto replaced = mixer->applyChanges(change);
+
+    if (!replaced || replaced->size() != 1 || replaced->front().value <= voices->back().value
+        || mixer->voice(voices->back()) || mixer->stats()->voices != 2
+        || mixer->stats()->renderedFrames != 64 || !mixer->render(output)
+        || !samplesEqual(0.625F)) {
+      std::println(stderr, "Audio batch acceptance full-capacity replacement PCM failed");
+      return 1;
+    }
+
+    Dot::Audio::VoiceBatch removal;
+    removal.remove = {voices->front(), replaced->front()};
+
+    if (!mixer->applyChanges(removal) || mixer->stats()->voices != 0 || !mixer->render(output)
+        || !samplesEqual(0)) {
+      std::println(stderr, "Audio batch acceptance cleanup failed");
+      return 1;
+    }
+
+    std::println(
+        "Audio batch acceptance passed: PCM, preflight retention, full-capacity replacement");
+    return 0;
+  }
+
   auto testAudioSpatial() -> int {
     auto mixer = Dot::Audio::Mixer::create();
     auto clip = Dot::Audio::Clip::fromPcm(std::vector<float>(4096, 0.25F), 1, 48000);

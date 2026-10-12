@@ -94,5 +94,8 @@ actual stereo PCM direction. Scenes store validated audio source/listener compon
 without opening audio resources. `--scene-audio-test <existing-directory>` checks
 their file round trip, scoped identity, and failure isolation. Connecting these
 components to live playback remains to be implemented.
+Voice batches prepare every new resource before editing existing voices;
+`--audio-batch-test` checks failed-edit retention and full-capacity replacement
+using actual PCM. Playback runs each batch as one worker command.
 
 See `docs/Development.md` for implementation milestones and actual validation.

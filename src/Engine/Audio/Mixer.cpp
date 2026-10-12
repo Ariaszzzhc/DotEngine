@@ -13,10 +13,13 @@ module;
 #include <map>
 #include <memory>
 #include <numbers>
+#include <optional>
+#include <set>
 #include <span>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "Backend.h"
 #include "BackendMemory.hpp"
@@ -98,6 +101,54 @@ namespace Dot::Audio {
         settings = properties;
         return {};
       }
+
+      auto configureSpatial(const SpatialSettings& properties) -> Core::Result<void> {
+        auto matrix = Math::compose({}, properties.rotation);
+
+        if (!matrix) {
+          return std::unexpected(matrix.error());
+        }
+
+        auto forward = Math::transformVector(*matrix, {0, 0, -1});
+
+        if (!forward) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Spatial audio direction is unrepresentable");
+        }
+
+        ma_sound_set_pinned_listener_index(&sound, 0);
+        ma_sound_set_positioning(&sound, ma_positioning_absolute);
+        ma_sound_set_position(&sound, properties.position.x, properties.position.y,
+                              properties.position.z);
+        ma_sound_set_direction(&sound, forward->x, forward->y, forward->z);
+        ma_sound_set_velocity(&sound, properties.velocity.x, properties.velocity.y,
+                              properties.velocity.z);
+        const auto model = properties.attenuation == Attenuation::Linear
+                               ? ma_attenuation_model_linear
+                           : properties.attenuation == Attenuation::Exponential
+                               ? ma_attenuation_model_exponential
+                               : ma_attenuation_model_inverse;
+        ma_sound_set_attenuation_model(&sound, model);
+        ma_sound_set_min_distance(&sound, properties.minDistance);
+        ma_sound_set_max_distance(&sound, properties.maxDistance);
+        ma_sound_set_rolloff(&sound, properties.rolloff);
+        ma_sound_set_min_gain(&sound, 0);
+        ma_sound_set_max_gain(&sound, 1);
+        ma_sound_set_directional_attenuation_factor(&sound, 1);
+        constexpr auto radians = std::numbers::pi_v<float> / 180;
+        ma_sound_set_cone(&sound, properties.innerConeDegrees * radians,
+                          properties.outerConeDegrees * radians, properties.outerConeGain);
+        ma_sound_set_doppler_factor(&sound, properties.dopplerFactor);
+        ma_sound_set_spatialization_enabled(&sound, properties.enabled ? MA_TRUE : MA_FALSE);
+        const auto status = dotAudioSetPitch(&sound, settings.pitch);
+
+        if (status != MA_SUCCESS) {
+          return failure(status, "Configure spatial audio pitch");
+        }
+
+        spatial = properties;
+        return {};
+      }
     };
   }  // namespace
 
@@ -148,6 +199,44 @@ namespace Dot::Audio {
       }
 
       return found->second.get();
+    }
+
+    auto prepareVoice(const Clip& clip, const VoiceSettings& settings)
+        -> Core::Result<std::unique_ptr<Voice>> {
+      auto info = clip.info();
+      auto samples = clip.samples();
+
+      if (!info || !samples) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Audio clip has been moved");
+      }
+
+      auto entry = std::make_unique<Voice>(clip, *info, settings);
+      auto buffer = ma_audio_buffer_config_init(ma_format_f32, info->channels, info->frames,
+                                                samples->data(), nullptr);
+      buffer.sampleRate = info->sampleRate;
+      buffer.allocationCallbacks = m_heap.callbacks();
+      auto status = ma_audio_buffer_init(&buffer, &entry->buffer);
+
+      if (status != MA_SUCCESS) {
+        return failure(status, "Initialize audio voice buffer");
+      }
+
+      entry->bufferReady = true;
+      status = ma_sound_init_from_data_source(
+          &m_engine, &entry->buffer, MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, &entry->sound);
+
+      if (status != MA_SUCCESS) {
+        return failure(status, "Initialize audio voice");
+      }
+
+      entry->soundReady = true;
+      auto configured = entry->configure(settings);
+
+      if (!configured) {
+        return std::unexpected(configured.error());
+      }
+
+      return entry;
     }
   };
 
@@ -225,39 +314,215 @@ namespace Dot::Audio {
     }
 
     try {
-      auto entry = std::make_unique<Voice>(clip, *info, settings);
-      auto buffer = ma_audio_buffer_config_init(ma_format_f32, info->channels, info->frames,
-                                                samples->data(), nullptr);
-      buffer.sampleRate = info->sampleRate;
-      buffer.allocationCallbacks = m_impl->m_heap.callbacks();
-      auto status = ma_audio_buffer_init(&buffer, &entry->buffer);
+      auto entry = m_impl->prepareVoice(clip, settings);
 
-      if (status != MA_SUCCESS) {
-        return failure(status, "Initialize audio voice buffer");
+      if (!entry) {
+        return std::unexpected(entry.error());
       }
 
-      entry->bufferReady = true;
-      status
-          = ma_sound_init_from_data_source(&m_impl->m_engine, &entry->buffer,
-                                           MA_SOUND_FLAG_NO_SPATIALIZATION, nullptr, &entry->sound);
-
-      if (status != MA_SUCCESS) {
-        return failure(status, "Initialize audio voice");
-      }
-
-      entry->soundReady = true;
-      auto configured = entry->configure(settings);
-
-      if (!configured) {
-        return std::unexpected(configured.error());
-      }
       const VoiceId id{m_impl->m_identity, m_impl->m_nextVoice};
-      m_impl->m_voices.emplace(id.value, std::move(entry));
+      m_impl->m_voices.emplace(id.value, std::move(*entry));
       ++m_impl->m_nextVoice;
       return id;
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         std::format("Create audio voice: {}", error.what()));
+    }
+  }
+
+  auto Mixer::applyChanges(const VoiceBatch& batch) -> Core::Result<std::vector<VoiceId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio mixer has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto capacity = m_impl->m_config.maxVoices;
+
+    if (batch.create.size() > capacity || batch.update.size() > m_impl->m_voices.size()
+        || batch.remove.size() > m_impl->m_voices.size()
+        || batch.create.size() > std::numeric_limits<std::uint64_t>::max() - m_impl->m_nextVoice) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Audio batch exceeds operation limits");
+    }
+
+    bool committing = false;
+
+    try {
+      std::set<std::uint64_t> touched;
+      std::vector<VoiceUpdate> updates;
+      updates.reserve(batch.update.size());
+
+      for (const auto& input : batch.update) {
+        auto found = m_impl->find(input.voice);
+
+        if (!found) {
+          return std::unexpected(found.error());
+        }
+
+        if (!touched.insert(input.voice.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate audio batch handle");
+        }
+
+        auto update = input;
+        const auto settings = input.settings.value_or((*found)->settings);
+        auto spatial = validatedSpatial(input.spatial.value_or((*found)->spatial));
+
+        if (!validateVoiceSettings(settings) || !spatial
+            || (spatial->enabled && ((*found)->info.channels != 1 || settings.pan != 0))) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid audio batch combined voice/spatial update");
+        }
+
+        if (input.spatial) {
+          update.spatial = *spatial;
+        }
+
+        updates.push_back(update);
+      }
+
+      for (const auto id : batch.remove) {
+        auto found = m_impl->find(id);
+
+        if (!found) {
+          return std::unexpected(found.error());
+        }
+
+        if (!touched.insert(id.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate audio batch handle");
+        }
+      }
+
+      if (m_impl->m_voices.size() - batch.remove.size() + batch.create.size() > capacity) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Audio batch exceeds final capacity");
+      }
+
+      std::optional<Listener> listener;
+
+      if (batch.listener) {
+        auto normalized = validatedListener(*batch.listener);
+
+        if (!normalized) {
+          return std::unexpected(normalized.error());
+        }
+
+        listener = *normalized;
+      }
+
+      std::vector<SpatialSettings> spatial;
+      spatial.reserve(batch.create.size());
+
+      for (const auto& input : batch.create) {
+        auto info = input.clip.info();
+        auto normalized = validatedSpatial(input.spatial);
+
+        if (!info || !validateVoiceSettings(input.settings) || !normalized
+            || (normalized->enabled && (info->channels != 1 || input.settings.pan != 0))) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid audio batch clip/voice/spatial creation");
+        }
+
+        spatial.push_back(*normalized);
+      }
+
+      std::map<std::uint64_t, std::unique_ptr<Voice>> prepared;
+      std::vector<VoiceId> created;
+      created.reserve(batch.create.size());
+
+      for (std::size_t index = 0; index < batch.create.size(); ++index) {
+        const auto& input = batch.create[index];
+        auto voice = m_impl->prepareVoice(input.clip, input.settings);
+
+        if (!voice) {
+          return std::unexpected(voice.error());
+        }
+
+        auto configured = (*voice)->configureSpatial(spatial[index]);
+
+        if (!configured) {
+          return std::unexpected(configured.error());
+        }
+
+        if (input.playing) {
+          const auto status = ma_sound_start(&(*voice)->sound);
+
+          if (status != MA_SUCCESS) {
+            return failure(status, "Prepare audio batch playback");
+          }
+        }
+
+        const auto value = m_impl->m_nextVoice + index;
+        prepared.emplace(value, std::move(*voice));
+        created.push_back({m_impl->m_identity, value});
+      }
+
+      /** Commit has no container allocations and runs without graph advancement.
+       * 提交无容器分配，且执行期间不推进音频图。 */
+      committing = true;
+
+      for (const auto id : batch.remove) {
+        m_impl->m_voices.erase(id.value);
+      }
+
+      m_impl->m_voices.merge(prepared);
+      m_impl->m_nextVoice += created.size();
+      const auto committed = [&](Core::Result<void> result) -> Core::Result<void> {
+        if (!result) {
+          m_impl->m_faulted = true;
+        }
+
+        return result;
+      };
+
+      for (const auto& update : updates) {
+        auto& voice = *m_impl->m_voices.at(update.voice.value);
+
+        if (update.settings) {
+          auto changed = committed(voice.configure(*update.settings));
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        if (update.spatial) {
+          auto changed = committed(voice.configureSpatial(*update.spatial));
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        if (update.playing) {
+          const auto status
+              = *update.playing ? ma_sound_start(&voice.sound) : ma_sound_stop(&voice.sound);
+
+          if (status != MA_SUCCESS) {
+            m_impl->m_faulted = true;
+            return failure(status, "Commit audio batch playback control");
+          }
+        }
+      }
+
+      if (listener) {
+        auto changed = committed(setListener(*listener));
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+      }
+
+      return created;
+    } catch (const std::exception& error) {
+      if (committing) {
+        m_impl->m_faulted = true;
+      }
+
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Apply audio voice batch: {}", error.what()));
     }
   }
 
@@ -550,50 +815,13 @@ namespace Dot::Audio {
                         "Spatial audio requires a mono clip and zero manual pan");
     }
 
-    auto matrix = Math::compose({}, spatial->rotation);
+    auto configured = entry.configureSpatial(*spatial);
 
-    if (!matrix) {
-      return std::unexpected(matrix.error());
-    }
-
-    auto forward = Math::transformVector(*matrix, {0, 0, -1});
-
-    if (!forward) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Spatial audio direction is unrepresentable");
-    }
-
-    auto& sound = entry.sound;
-    ma_sound_set_pinned_listener_index(&sound, 0);
-    ma_sound_set_positioning(&sound, ma_positioning_absolute);
-    ma_sound_set_position(&sound, spatial->position.x, spatial->position.y, spatial->position.z);
-    ma_sound_set_direction(&sound, forward->x, forward->y, forward->z);
-    ma_sound_set_velocity(&sound, spatial->velocity.x, spatial->velocity.y, spatial->velocity.z);
-    const auto model = spatial->attenuation == Attenuation::Linear ? ma_attenuation_model_linear
-                       : spatial->attenuation == Attenuation::Exponential
-                           ? ma_attenuation_model_exponential
-                           : ma_attenuation_model_inverse;
-    ma_sound_set_attenuation_model(&sound, model);
-    ma_sound_set_min_distance(&sound, spatial->minDistance);
-    ma_sound_set_max_distance(&sound, spatial->maxDistance);
-    ma_sound_set_rolloff(&sound, spatial->rolloff);
-    ma_sound_set_min_gain(&sound, 0);
-    ma_sound_set_max_gain(&sound, 1);
-    ma_sound_set_directional_attenuation_factor(&sound, 1);
-    constexpr auto radians = std::numbers::pi_v<float> / 180;
-    ma_sound_set_cone(&sound, spatial->innerConeDegrees * radians,
-                      spatial->outerConeDegrees * radians, spatial->outerConeGain);
-    ma_sound_set_doppler_factor(&sound, spatial->dopplerFactor);
-    ma_sound_set_spatialization_enabled(&sound, spatial->enabled ? MA_TRUE : MA_FALSE);
-    const auto status = dotAudioSetPitch(&sound, entry.settings.pitch);
-
-    if (status != MA_SUCCESS) {
+    if (!configured) {
       m_impl->m_faulted = true;
-      return failure(status, "Configure spatial audio pitch");
     }
 
-    entry.spatial = *spatial;
-    return {};
+    return configured;
   }
 
   auto Mixer::render(std::span<float> output) -> Core::Result<void> {

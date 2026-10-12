@@ -15,6 +15,7 @@ module;
 #include <source_location>
 #include <thread>
 #include <utility>
+#include <vector>
 
 module Dot.Audio.Playback;
 
@@ -397,6 +398,20 @@ namespace Dot::Audio {
     }
 
     return m_impl->request<void>([id](Mixer& mixer, Output&) { return mixer.destroyVoice(id); });
+  }
+
+  auto Playback::applyChanges(const VoiceBatch& batch) -> Core::Result<std::vector<VoiceId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    try {
+      return m_impl->request<std::vector<VoiceId>>(
+          [owned = batch](Mixer& mixer, Output&) { return mixer.applyChanges(owned); });
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Prepare audio playback batch: {}", error.what()));
+    }
   }
 
   auto Playback::play(VoiceId id) -> Core::Result<void> {

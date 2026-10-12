@@ -253,3 +253,36 @@ scene. `DotRuntime --scene-audio-test <existing-directory>` verifies saved UTF-8
 asset descriptions, primary/hierarchy restoration, malformed-load isolation, and
 scoped subtree cleanup. These checks exercise authoring/persistence; automatic
 asset loading, live voice synchronization, and scene play controls remain pending.
+
+# Voice batches
+
+`Mixer::applyChanges` accepts an owned VoiceBatch containing creations, optional
+updates to existing voice properties/play state, removals, and an optional listener.
+Each existing handle may appear once across update/removal. Returned handles follow
+creation order. Omitted properties retain their current values; an update keeps
+the voice identity and source cursor. Explicit playing=true resumes/restarts using
+the same contract as play; false pauses. Creation starts at source frame zero.
+
+All handles, clips, combined pan/spatial properties, listener values, and final
+voice capacity are checked before native preparation. All new voices are prepared
+before removing/updating old ones, so replacement works at full voice capacity.
+Preparation needs transient backend budget in addition to the final live graph;
+allocation/validation failures leave old voices, cursors, listener, and handles
+intact. Temporary voices release their allocations and failed preparation consumes
+no public voice IDs. Host container allocations are excluded from backend counters.
+
+The commit transfers preallocated container nodes and performs no graph advancement.
+Unexpected backend commit failures explicitly fault the mixer; partial commit state
+is diagnostic and requires recreation. Those fault branches have been reviewed;
+automated tests induce preparation allocation failures, not backend commit faults.
+Playback copies batch arguments and executes one worker command without mixing
+between individual edits. Queued PCM retains its previous content. Large batches
+can occupy the control worker long enough to cause observable native underruns;
+the bounded command path is not a real-time scheduling guarantee.
+
+Run `DotRuntime --audio-batch-test` for actual mixed PCM, failed-edit isolation,
+full-capacity replacement, handle retirement, unchanged batch graph time, and
+cleanup. Unit/native tests additionally cover cursor continuity, optional play
+controls and finished restart, combined spatial transitions and stereo direction,
+duplicate/foreign/stale handles, malformed inputs, partial-preparation cleanup,
+move/thread/lifetime contracts, and real muted CoreAudio worker recovery.

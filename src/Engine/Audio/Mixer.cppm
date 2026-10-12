@@ -3,7 +3,9 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
+#include <vector>
 
 export module Dot.Audio.Mixer;
 
@@ -32,6 +34,27 @@ export namespace Dot::Audio {
     bool playing;
     bool atEnd;
     SpatialSettings spatial{};
+  };
+
+  struct VoiceCreation {
+    Clip clip;
+    VoiceSettings settings{};
+    SpatialSettings spatial{};
+    bool playing{};
+  };
+
+  struct VoiceUpdate {
+    VoiceId voice;
+    std::optional<VoiceSettings> settings{};
+    std::optional<SpatialSettings> spatial{};
+    std::optional<bool> playing{};
+  };
+
+  struct VoiceBatch {
+    std::vector<VoiceCreation> create;
+    std::vector<VoiceUpdate> update;
+    std::vector<VoiceId> remove;
+    std::optional<Listener> listener{};
   };
 
   struct AudioMemoryStats {
@@ -69,6 +92,19 @@ export namespace Dot::Audio {
     [[nodiscard]] auto createVoice(const Clip& clip, const VoiceSettings& settings = {})
         -> Core::Result<VoiceId>;
     [[nodiscard]] auto destroyVoice(VoiceId voice) -> Core::Result<void>;
+    /** Validate the complete desired state, then prepare all new voices before
+     * modifying existing ones. Recoverable validation/allocation failures retain
+     * voices, listener, cursors, and handles. Capacity counts the final graph;
+     * preparation also needs transient backend budget. Each existing handle may
+     * occur only once across update/remove. Results match creation order. Omitted
+     * updates retain properties/cursor/play state; playing=true follows play's
+     * ended-voice restart contract. No graph advancement occurs during the batch.
+     * Unexpected backend commit failures fault the mixer and are not rolled back.
+     * 完整校验目标状态并准备全部新声部后再修改已有声部；可恢复的校验/分配失败保留声部、
+     * 监听器、游标和句柄。容量按最终图计算，准备另需瞬时后端预算；已有句柄在修改/删除
+     * 中只能出现一次，返回值对应创建顺序。省略属性保持原值、游标及播放状态，playing=true
+     * 遵循已结束声部重新播放约定；批次不推进音频图，意外后端提交错误会故障而不回滚。 */
+    [[nodiscard]] auto applyChanges(const VoiceBatch& batch) -> Core::Result<std::vector<VoiceId>>;
     /** Resume a paused voice; an ended voice restarts at its beginning.
      * 恢复暂停声部，已结束的声部从起点重新播放。 */
     [[nodiscard]] auto play(VoiceId voice) -> Core::Result<void>;

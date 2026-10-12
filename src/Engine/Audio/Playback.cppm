@@ -3,6 +3,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 export module Dot.Audio.Playback;
 
@@ -49,6 +50,10 @@ export namespace Dot::Audio {
     [[nodiscard]] auto createVoice(const Clip& clip, const VoiceSettings& settings = {})
         -> Core::Result<VoiceId>;
     [[nodiscard]] auto destroyVoice(VoiceId voice) -> Core::Result<void>;
+    /** Own the batch arguments and execute it as one worker command, without
+     * interleaving mixing between individual edits. Queued PCM remains unchanged.
+     * 拥有批次参数并作为单条工作线程命令执行，编辑之间不插入混音，已有队列 PCM 不变。 */
+    [[nodiscard]] auto applyChanges(const VoiceBatch& batch) -> Core::Result<std::vector<VoiceId>>;
     [[nodiscard]] auto play(VoiceId voice) -> Core::Result<void>;
     [[nodiscard]] auto pause(VoiceId voice) -> Core::Result<void>;
     [[nodiscard]] auto seek(VoiceId voice, std::uint64_t sourceFrame) -> Core::Result<void>;

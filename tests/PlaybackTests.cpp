@@ -385,3 +385,104 @@ TEST_CASE("audio.playback_spatial_and_listener_controls_execute_on_worker") {
   CHECK_FALSE(moved.listener());
   CHECK_FALSE(moved.setSpatial(*id, spatial));
 }
+
+TEST_CASE("audio.playback_executes_owned_voice_batches_and_recovers_from_rejected_batch") {
+  auto properties = config();
+  properties.mixer.maxVoices = 2;
+  auto playback = Playback::create(properties);
+  REQUIRE(playback);
+  std::vector<VoiceId> ids;
+
+  {
+    auto source = clip();
+    REQUIRE(source);
+    VoiceBatch batch;
+    SpatialSettings spatial;
+    spatial.enabled = true;
+    spatial.position = {-10, 0, 0};
+    spatial.rolloff = 0;
+    batch.create.push_back({*source, {1, 0, 1, true}, spatial, true});
+    batch.create.push_back({*source, {0.5F, 0, 1, true}, {}, false});
+    batch.listener = Listener{{1, 2, 3}, {0, 0, 0, 2}};
+    auto created = playback->applyChanges(batch);
+    REQUIRE(created);
+    ids = *created;
+    batch.create.clear();
+  }
+
+  REQUIRE(ids.size() == 2);
+  CHECK(playback->voice(ids[0])->playing);
+  CHECK_FALSE(playback->voice(ids[1])->playing);
+  CHECK(playback->listener()->position == Dot::Math::Vec3{1, 2, 3});
+  CHECK(playback->listener()->rotation.w == 1);
+  VoiceBatch change;
+  change.update.push_back({ids[0], VoiceSettings{0.25F, 0, 1.5F, true}});
+  change.remove.push_back(ids[1]);
+  auto source = clip(0.75F);
+  REQUIRE(source);
+  change.create.push_back({*source, {1, 0, 1, true}, {}, true});
+  auto replaced = playback->applyChanges(change);
+  REQUIRE(replaced);
+  CHECK(replaced->front().value > ids[1].value);
+  CHECK_FALSE(playback->voice(ids[1]));
+  CHECK(playback->voice(ids[0])->settings.pitch == 1.5F);
+  CHECK(playback->voice(ids[0])->spatial.enabled);
+  auto rejected = change;
+  rejected.update.front().settings->volume = 0;
+  CHECK_FALSE(playback->applyChanges(rejected));
+  CHECK(playback->voice(ids[0])->settings.volume == 0.25F);
+  CHECK(playback->voice(replaced->front())->playing);
+  CHECK(playback->stats()->state == PlaybackState::Running);
+  const auto before = playback->stats()->output.consumedFrames;
+  REQUIRE(waitFor([&] { return playback->stats()->output.consumedFrames > before + 2048; }));
+  VoiceBatch removal;
+  removal.remove = {ids[0], replaced->front()};
+  REQUIRE(playback->applyChanges(removal));
+  CHECK(playback->stats()->mixer.voices == 0);
+  REQUIRE(playback->close());
+  CHECK_FALSE(playback->applyChanges({}));
+}
+
+TEST_CASE("audio.playback_batch_preparation_failure_preserves_running_worker_and_old_voice") {
+  std::uint64_t budget = 0;
+
+  {
+    auto reference = Mixer::create();
+    auto source = clip();
+    REQUIRE(reference);
+    REQUIRE(source);
+    REQUIRE(reference->createVoice(*source));
+    budget = reference->stats()->backend.bytes;
+  }
+
+  auto properties = config();
+  properties.mixer.backendBytes = budget;
+  properties.mixer.maxVoices = 1;
+  auto playback = Playback::create(properties);
+  auto source = clip();
+  REQUIRE(playback);
+  REQUIRE(source);
+  auto id = playback->createVoice(*source, {1, 0, 1, true});
+  REQUIRE(id);
+  REQUIRE(playback->play(*id));
+  const auto baseline = playback->stats()->mixer.backend;
+  VoiceBatch batch;
+  batch.remove.push_back(*id);
+  batch.create.push_back({*source, {}, {}, true});
+  batch.listener = Listener{{1, 0, 0}};
+  auto failed = playback->applyChanges(batch);
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().code == Dot::Core::ErrorCode::External);
+  CHECK(playback->voice(*id)->playing);
+  CHECK(playback->listener()->position == Dot::Math::Vec3{});
+  auto stats = playback->stats();
+  REQUIRE(stats);
+  CHECK(stats->state == PlaybackState::Running);
+  CHECK(stats->mixer.voices == 1);
+  CHECK(stats->mixer.backend.bytes == baseline.bytes);
+  CHECK(stats->mixer.backend.allocations == baseline.allocations);
+  const auto before = stats->output.consumedFrames;
+  REQUIRE(waitFor([&] { return playback->stats()->output.consumedFrames > before + 2048; }));
+  REQUIRE(playback->destroyVoice(*id));
+  REQUIRE(playback->close());
+}

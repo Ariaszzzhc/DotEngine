@@ -658,5 +658,44 @@ all these properties while accepting missing/null audio fields from older files.
   retain caller-selected LLVM libc++/libunwind and native frameworks, with no
   LC_RPATH. Windows/Linux implementations remain unverified.
 
+### Prepared audio voice batches
+
+Added a single batch path for voice creation, optional parameter/spatial/play
+updates, removal, and listener edits. This supplies the resource transaction
+needed by subsequent scene audio binding: validation and preparation complete
+before existing graph state is changed, including replacement at full capacity.
+Playback owns the batch arguments and executes it as one worker command.
+
+- macOS Debug and Release each pass all 409 CTest cases (385 doctest cases and
+  twenty-four executable checks). Twelve new unit cases cover ordered owned
+  creations and actual summed PCM, unchanged graph time, cursor/handle retention,
+  omitted properties and pause/resume, full-capacity replacement and retired IDs,
+  combined pan/spatial transitions, actual stereo direction and listener edits,
+  late invalid-input retention, duplicate/overlapping/foreign/stale handles,
+  malformed clips/listeners/parameters, final capacity and empty/removal batches,
+  partial-preparation allocation failure and exact PCM cursor continuation,
+  finished-voice restart, and move/thread/repeated lifetime checks.
+- The allocation failure case first proves that one temporary voice fits the
+  transient budget, then exhausts it on the second. Eight failed batches restore
+  live backend bytes/allocations, preserve the listener and old playing voice,
+  and continue its known ramp samples without skipping/resetting the cursor.
+  A later successful replacement confirms failed preparation consumed no IDs.
+- Two native cases verify executed owned batches, full-capacity replacement,
+  recoverable input/resource failures, retained voice/listener state, continued
+  real CoreAudio frame delivery, and closure. They keep endpoint software volume
+  zero and do not claim physical hearing. `--audio-batch-test` checks actual PCM,
+  rejected-edit isolation, replacement, graph time, stale handles, and cleanup.
+- Reviewed combined-state validation before allocation, unique/scoped handles,
+  identity/capacity arithmetic, partial initialization RAII, preallocated map-node
+  transfer, shared voice preparation/spatial code paths, graph quiescence, worker
+  ownership, and explicit commit faulting. Unexpected backend commit failures are
+  implemented/reviewed but not induced by the tests. Long batches may cause
+  observable native queue underruns; hard real-time scheduling is not claimed.
+- Formatting/whitespace checks pass. Release executes with assertions disabled;
+  existing native audio/window/Metal checks remain passing. Both runtimes retain
+  caller-selected LLVM libc++/libunwind and native frameworks with no LC_RPATH.
+  No sanitizers or environment changes were introduced. Windows/Linux remain
+  unverified.
+
 Scene audio asset/loading/playback synchronization, scripting, project/editor/
 export tooling, and the example game remain to be implemented.
