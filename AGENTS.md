@@ -6,6 +6,10 @@
 - Keep the engine a static C++26 library with C++ module interfaces under
   `src/Engine`. Runtime and editor executables consume modules, without an installed
   public header tree.
+- Separate module interfaces (`.cppm`) from implementation units (`.cpp`). Keep
+  non-template function bodies and platform/vendor implementation headers in the
+  implementation units; retain templates and required constant-evaluation bodies
+  in interfaces. Prefer importing specific modules in engine implementation units.
 - Match `.clang-format`: two spaces, attached braces, PascalCase types, camelCase
   functions, `m_` members, and trailing return types. Use explicit ownership and RAII.
 - Document contracts and non-obvious decisions with bilingual English/Chinese

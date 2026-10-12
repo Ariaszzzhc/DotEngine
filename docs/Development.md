@@ -28,4 +28,24 @@ clock, bounded fixed-step scheduling, and an upstream-backed memory tracker.
   overflow and interpolation boundaries.
 - Sanitizers are excluded by request. Windows/Linux code paths are unverified.
 
-Filesystem, events, and all higher milestones remain to be implemented.
+### Files, events, and implementation units
+
+Added root-relative file access, bounded binary/text reads, native atomic file
+replacement, and scoped synchronous event subscriptions. Windows file reads share
+delete access to allow destination replacement while readers hold an existing
+snapshot; macOS/Linux use same-directory temporary files and rename.
+
+Non-template definitions now live in `.cpp` module implementation units. Platform
+headers and filesystem implementation details are excluded from the interfaces.
+Template event dispatch and compile-time formatting remain in interfaces.
+
+- macOS Debug and Release each pass all 56 CTest cases (52 doctest cases and four
+  executable checks), including Unicode paths, read limits, failed-write cleanup,
+  permission preservation, complete concurrent snapshots, and event reentrancy.
+- Review covered temporary-file ownership, OS error propagation, Windows handle
+  sharing, invalid paths, subscription mutation, and moved connection lifetimes.
+- Incremental compilation of a touched filesystem implementation rebuilds that
+  implementation and links executables without recompiling interface consumers.
+- Formatting and whitespace checks pass. Windows/Linux remain unverified.
+
+Windowing, rendering, and all higher milestones remain to be implemented.

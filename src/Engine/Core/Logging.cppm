@@ -4,7 +4,6 @@ module;
 #include <chrono>
 #include <format>
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <source_location>
 #include <string>
@@ -37,25 +36,7 @@ export namespace Dot::Core {
     }
   };
 
-  [[nodiscard]] inline auto levelName(LogLevel level) noexcept -> std::string_view {
-    switch (level) {
-      case LogLevel::Trace:
-        return "TRACE";
-      case LogLevel::Debug:
-        return "DEBUG";
-      case LogLevel::Info:
-        return "INFO";
-      case LogLevel::Warn:
-        return "WARN";
-      case LogLevel::Error:
-        return "ERROR";
-      case LogLevel::Fatal:
-        return "FATAL";
-      case LogLevel::Off:
-        return "OFF";
-    }
-    return "UNKNOWN";
-  }
+  [[nodiscard]] auto levelName(LogLevel level) noexcept -> std::string_view;
 
   /**
    * Concurrent logger; sinks must support concurrent calls and copy retained messages.
@@ -64,49 +45,13 @@ export namespace Dot::Core {
   class Logger {
   public:
     using Sink = std::function<void(const LogRecord&)>;
-
-    Logger()
-        : Logger([](const LogRecord& record) {
-            static std::mutex consoleMutex;
-            const std::scoped_lock lock(consoleMutex);
-            std::clog << '[' << levelName(record.level) << "] " << record.message << '\n';
-            if (!std::clog) {
-              throw std::ios_base::failure("Console log output failed");
-            }
-          }) {
-    }
-
-    explicit Logger(Sink sink) : m_sink(std::move(sink)) {
-    }
-
-    auto setLevel(LogLevel level) noexcept -> void {
-      m_level.store(level, std::memory_order_relaxed);
-    }
-
-    auto setSink(Sink sink) -> void {
-      const std::scoped_lock lock(m_mutex);
-      m_sink = std::move(sink);
-    }
-
+    Logger();
+    explicit Logger(Sink sink);
+    auto setLevel(LogLevel level) noexcept -> void;
+    auto setSink(Sink sink) -> void;
     /** Failed sinks never escape; failures remain observable. 输出失败不外抛，可查询失败次数。 */
     auto write(LogLevel level, std::string_view message,
-               std::source_location source = std::source_location::current()) noexcept -> void {
-      if (level == LogLevel::Off || level < m_level.load(std::memory_order_relaxed)) {
-        return;
-      }
-      try {
-        Sink sink;
-        {
-          const std::scoped_lock lock(m_mutex);
-          sink = m_sink;
-        }
-        if (sink) {
-          sink(LogRecord{level, message, source, std::chrono::system_clock::now()});
-        }
-      } catch (...) {
-        m_failures.fetch_add(1, std::memory_order_relaxed);
-      }
-    }
+               std::source_location source = std::source_location::current()) noexcept -> void;
 
     template <typename... Args>
     auto log(LogLevel level, std::type_identity_t<LogFormat<Args...>> format,
@@ -121,9 +66,7 @@ export namespace Dot::Core {
       }
     }
 
-    [[nodiscard]] auto failures() const noexcept -> std::size_t {
-      return m_failures.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] auto failures() const noexcept -> std::size_t;
 
   private:
     std::mutex m_mutex;

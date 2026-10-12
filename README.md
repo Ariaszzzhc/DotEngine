@@ -24,6 +24,7 @@ Executables use the `.exe` suffix on Windows.
 
 The core is a static library using C++ modules, with diagnostics, error results,
 fixed-step timing, and memory statistics. The runtime currently exercises these
-foundations. The graphical runtime and editor are under development.
+foundations, scoped events, and atomic project file access. Interfaces and
+implementation units are separate. The graphical runtime and editor are under development.
 
 See `docs/Development.md` for implementation milestones and actual validation.

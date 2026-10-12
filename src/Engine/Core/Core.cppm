@@ -5,3 +5,5 @@ export import Dot.Core.Result;
 export import Dot.Core.Logging;
 export import Dot.Core.Clock;
 export import Dot.Core.Memory;
+export import Dot.Core.Events;
+export import Dot.Core.Files;

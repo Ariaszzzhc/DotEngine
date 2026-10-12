@@ -24,6 +24,13 @@ else()
 endif()
 find_package(Threads REQUIRED)
 add_library(DotEngine STATIC)
+target_sources(DotEngine PRIVATE
+    src/Engine/Core/Clock.cpp
+    src/Engine/Core/Files.cpp
+    src/Engine/Core/Logging.cpp
+    src/Engine/Core/Memory.cpp
+    src/Engine/Core/Result.cpp
+)
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
@@ -32,6 +39,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Logging.cppm
         src/Engine/Core/Clock.cppm
         src/Engine/Core/Memory.cppm
+        src/Engine/Core/Events.cppm
+        src/Engine/Core/Files.cppm
         src/Engine/Core/Core.cppm
 )
 

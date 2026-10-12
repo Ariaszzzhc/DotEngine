@@ -20,9 +20,7 @@ export namespace Dot::Core {
   template <typename T>
   using Result = std::expected<T, Error>;
 
-  [[nodiscard]] inline auto fail(ErrorCode code, std::string message,
-                                 std::source_location source = std::source_location::current())
-      -> std::unexpected<Error> {
-    return std::unexpected(Error{code, std::move(message), source});
-  }
+  [[nodiscard]] auto fail(ErrorCode code, std::string message,
+                          std::source_location source = std::source_location::current())
+      -> std::unexpected<Error>;
 }  // namespace Dot::Core

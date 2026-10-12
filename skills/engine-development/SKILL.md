@@ -9,7 +9,9 @@ next milestone; preserve usable command-line acceptance cases at each stage.
 
 Keep module dependencies directed from application code toward engine subsystems
 and core utilities. Vendor headers belong in a module's global fragment. Use the
-project's CMake targets instead of duplicating compiler or linker settings.
+project's CMake targets instead of duplicating compiler or linker settings. Separate
+non-template definitions into `.cpp` implementation units so internal changes do
+not invalidate interface consumers; templates remain visible in module interfaces.
 
 For stateful services, define initialization, shutdown, failure recovery, and
 ownership before adding clients. Test malformed inputs and partial initialization.
