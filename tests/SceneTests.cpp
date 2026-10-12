@@ -187,6 +187,10 @@ TEST_CASE("scene.foreign_and_stale_handles_are_rejected") {
   CHECK(stale.error().code == Dot::Core::ErrorCode::NotFound);
   CHECK_FALSE(scene->renameEntity(*entity, "Stale"));
   CHECK_FALSE(scene->worldTransform(*entity));
+  CHECK_FALSE(scene->primaryCamera());
+  CHECK_FALSE(scene->setCamera(*entity, Camera{}));
+  CHECK_FALSE(scene->viewProjection(*entity, 1));
+  CHECK_FALSE(scene->setMeshRenderer(*entity, MeshRenderer{}));
   CHECK_FALSE(scene->findEntity(entity->value));
   auto replacement = scene->createEntity();
   REQUIRE(replacement);
@@ -314,6 +318,9 @@ TEST_CASE("scene.worker_operations_fail_and_snapshots_outlive_owner") {
                && !scene->findEntity(entity->value) && !scene->setTransform(*entity, {})
                && !scene->setParent(*entity, std::nullopt) && !scene->worldTransform(*entity)
                && !scene->destroyEntity(*entity) && !scene->renameEntity(*entity, "Worker");
+    rejected = rejected && !scene->primaryCamera() && !scene->setCamera(*entity, Camera{})
+               && !scene->viewProjection(*entity, 1)
+               && !scene->setMeshRenderer(*entity, MeshRenderer{});
   });
   worker.join();
   CHECK(rejected);

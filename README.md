@@ -55,6 +55,7 @@ acceptance. See `docs/Assets.md` for the format and importer contract.
 EnTT scenes provide scoped entity handles, owned snapshots, validated transforms,
 parent hierarchies, and subtree lifetime management. Run
 `build/debug/bin/DotRuntime --scene-test` for hierarchy/world-transform acceptance.
-Camera/mesh scene components and scene persistence are the next stage.
+Camera and mesh description components are available, with checked projection
+matrices and primary-camera ownership. Scene rendering and persistence are next.
 
 See `docs/Development.md` for implementation milestones and actual validation.

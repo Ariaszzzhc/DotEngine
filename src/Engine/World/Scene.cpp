@@ -2,8 +2,11 @@ module;
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <entt/entity/registry.hpp>
 #include <expected>
+#include <filesystem>
+#include <format>
 #include <limits>
 #include <thread>
 #include <unordered_map>
@@ -49,6 +52,89 @@ namespace Dot::World {
     struct Hierarchy {
       std::optional<std::uint64_t> parent;
     };
+
+    auto cameraProjection(const Camera& camera, float aspect) -> Core::Result<Math::Mat4> {
+      if (!std::isfinite(camera.verticalFovDegrees) || camera.verticalFovDegrees <= 0
+          || camera.verticalFovDegrees >= 180 || !std::isfinite(camera.orthographicHeight)
+          || camera.orthographicHeight <= 0 || !std::isfinite(aspect) || aspect <= 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid camera field of view, height, or aspect");
+      }
+
+      switch (camera.projection) {
+        case Projection::Perspective:
+          return Math::perspective(camera.verticalFovDegrees, aspect, camera.nearPlane,
+                                   camera.farPlane);
+        case Projection::Orthographic: {
+          const float halfHeight = camera.orthographicHeight * 0.5F;
+          const float halfWidth = halfHeight * aspect;
+          return Math::orthographic(-halfWidth, halfWidth, -halfHeight, halfHeight,
+                                    camera.nearPlane, camera.farPlane);
+        }
+        default:
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown camera projection");
+      }
+    }
+
+    auto validateMeshRenderer(const MeshRenderer& mesh) -> Core::Result<void> {
+      const auto tint = mesh.tint;
+
+      if (!Math::isFinite(tint) || tint.x < 0 || tint.x > 1 || tint.y < 0 || tint.y > 1
+          || tint.z < 0 || tint.z > 1 || tint.w < 0 || tint.w > 1) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Mesh tint requires finite values in [0,1]");
+      }
+
+      if (mesh.kind == MeshKind::Cube || mesh.kind == MeshKind::Quad) {
+        if (!mesh.asset.empty()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Built-in mesh kinds require an empty asset path");
+        }
+
+        return {};
+      }
+
+      if (mesh.kind != MeshKind::Asset || mesh.asset.empty() || mesh.asset.size() > 4096
+          || mesh.asset.find('\\') != std::string::npos || mesh.asset.find(':') != std::string::npos
+          || mesh.asset.find('\0') != std::string::npos || !Core::isValidUtf8(mesh.asset)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid mesh kind or portable asset path");
+      }
+
+      try {
+        const std::filesystem::path path(std::u8string(mesh.asset.begin(), mesh.asset.end()));
+
+        if (path.has_root_path()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Mesh asset path must be project-relative");
+        }
+
+        for (const auto& component : path) {
+          if (component == "..") {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Mesh asset path cannot traverse a parent directory");
+          }
+        }
+
+        auto extension = path.extension().generic_u8string();
+
+        for (auto& character : extension) {
+          if (character >= u8'A' && character <= u8'Z') {
+            character = static_cast<char8_t>(character + (u8'a' - u8'A'));
+          }
+        }
+
+        if (extension != u8".dotmesh" && extension != u8".obj") {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Mesh asset extension must be .dotmesh or .obj");
+        }
+      } catch (const std::filesystem::filesystem_error& error) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          std::format("Decode mesh asset path: {}", error.what()));
+      }
+
+      return {};
+    }
   }  // namespace
 
   struct Scene::Impl {
@@ -96,10 +182,14 @@ namespace Dot::World {
     auto snapshot(entt::entity native) const -> EntityInfo {
       const auto& value = registry.get<Identity>(native);
       const auto parent = registry.get<Hierarchy>(native).parent;
+      const auto* camera = registry.try_get<Camera>(native);
+      const auto* mesh = registry.try_get<MeshRenderer>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
-              parent ? std::optional{EntityId{identity, *parent}} : std::nullopt};
+              parent ? std::optional{EntityId{identity, *parent}} : std::nullopt,
+              camera ? std::optional{*camera} : std::nullopt,
+              mesh ? std::optional{*mesh} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -164,6 +254,17 @@ namespace Dot::World {
             rollback();
             worldCache.clear();
             return std::unexpected(matrix.error());
+          }
+
+          if (registry.all_of<Camera>(entry.second)) {
+            auto view = Math::inverse(*matrix);
+
+            if (!view) {
+              rollback();
+              worldCache.clear();
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Camera world transform cannot be inverted");
+            }
           }
         }
       } catch (...) {
@@ -475,6 +576,142 @@ namespace Dot::World {
     }
 
     scene.worldCache.clear();
+    return {};
+  }
+
+  auto Scene::setCamera(EntityId entity, std::optional<Camera> camera) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!camera) {
+      m_impl->registry.remove<Camera>(*native);
+      return {};
+    }
+
+    auto projection = cameraProjection(*camera, 1);
+
+    if (!projection) {
+      return std::unexpected(projection.error());
+    }
+
+    auto world = m_impl->world(entity.value);
+
+    if (!world) {
+      return std::unexpected(world.error());
+    }
+
+    auto view = Math::inverse(*world);
+
+    if (!view) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Camera world transform cannot be inverted");
+    }
+
+    if (camera->primary) {
+      for (const auto& entry : m_impl->lookup) {
+        const auto* existing = m_impl->registry.try_get<Camera>(entry.second);
+
+        if (entry.second != *native && existing && existing->primary) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Scene already has a primary camera");
+        }
+      }
+    }
+
+    m_impl->registry.emplace_or_replace<Camera>(*native, *camera);
+    return {};
+  }
+
+  auto Scene::primaryCamera() const -> Core::Result<EntityId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    for (const auto& entry : m_impl->lookup) {
+      const auto* camera = m_impl->registry.try_get<Camera>(entry.second);
+
+      if (camera && camera->primary) {
+        return EntityId{m_impl->identity, entry.first};
+      }
+    }
+
+    return Core::fail(Core::ErrorCode::Unavailable, "Scene has no primary camera");
+  }
+
+  auto Scene::viewProjection(EntityId camera, float aspect) const -> Core::Result<Math::Mat4> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(camera);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    const auto* component = m_impl->registry.try_get<Camera>(*native);
+
+    if (!component) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Entity has no camera component");
+    }
+
+    auto projection = cameraProjection(*component, aspect);
+
+    if (!projection) {
+      return std::unexpected(projection.error());
+    }
+
+    auto world = m_impl->world(camera.value);
+
+    if (!world) {
+      return std::unexpected(world.error());
+    }
+
+    auto view = Math::inverse(*world);
+
+    if (!view) {
+      return std::unexpected(view.error());
+    }
+
+    return Math::multiply(*projection, *view);
+  }
+
+  auto Scene::setMeshRenderer(EntityId entity, std::optional<MeshRenderer> mesh)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!mesh) {
+      m_impl->registry.remove<MeshRenderer>(*native);
+      return {};
+    }
+
+    auto checked = validateMeshRenderer(*mesh);
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->registry.emplace_or_replace<MeshRenderer>(*native, std::move(*mesh));
     return {};
   }
 }  // namespace Dot::World

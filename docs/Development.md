@@ -203,5 +203,23 @@ rolling back on cycle, depth, numeric, or allocation failures.
   each individual scene remains confined to its creating thread for operations.
 - Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
-Camera/mesh scene components, scene persistence, and higher milestones remain to
-be implemented.
+### Camera and mesh components
+
+Added optional perspective/orthographic cameras and built-in/asset mesh
+descriptions to entity snapshots and EnTT storage. Primary cameras are unique;
+views use the full world inverse. Transform and hierarchy changes also validate
+camera invertibility and roll back invalid poses. Mesh descriptions validate tint,
+kind, and portable relative UTF-8 asset paths before storage; file existence is
+left to the upcoming render service.
+
+- macOS Debug and Release each pass all 174 CTest cases (162 doctest cases and
+  twelve executable checks), including projection/clipping, primary lifetime,
+  owned component snapshots, invalid camera parameters, camera/ancestor rollback,
+  mesh path/tint validation, component removal, and foreign/stale/worker rejection.
+- The runtime scene acceptance also sets camera/mesh components, resolves the
+  primary camera, and computes its view-projection matrix.
+- Reviewed optional component ownership, primary replacement failures, inverse
+  range checks, UTF-8/native path conversion, and unchanged-state failure paths.
+  Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+Scene rendering, scene persistence, and higher milestones remain to be implemented.

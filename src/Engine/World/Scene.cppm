@@ -30,6 +30,31 @@ export namespace Dot::World {
     Math::Vec3 scale{1, 1, 1};
   };
 
+  enum class Projection { Perspective, Orthographic };
+
+  struct Camera {
+    Projection projection{Projection::Perspective};
+    float verticalFovDegrees{60};
+    float orthographicHeight{10};
+    float nearPlane{0.1F};
+    float farPlane{1000};
+    bool primary{};
+  };
+
+  enum class MeshKind { Cube, Quad, Asset };
+
+  /** Asset paths are project-relative UTF-8 with forward slashes, no parent
+   * traversal, and .dotmesh/.obj suffixes. Built-in kinds require an empty path.
+   * 资产路径须为项目相对 UTF-8 路径，使用正斜杠、不能回溯父目录，且以 .dotmesh/.obj 结尾。
+   * 内置类型要求路径为空。
+   */
+  struct MeshRenderer {
+    MeshKind kind{MeshKind::Cube};
+    std::string asset;
+    Math::Vec4 tint{1, 1, 1, 1};
+    bool visible{true};
+  };
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -37,6 +62,8 @@ export namespace Dot::World {
     std::string name;
     Transform transform;
     std::optional<EntityId> parent;
+    std::optional<Camera> camera{};
+    std::optional<MeshRenderer> mesh{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -81,6 +108,17 @@ export namespace Dot::World {
     [[nodiscard]] auto setParent(EntityId entity, std::optional<EntityId> parent)
         -> Core::Result<void>;
     [[nodiscard]] auto worldTransform(EntityId entity) const -> Core::Result<Math::Mat4>;
+    /** At most one camera may be primary. Views use the full world inverse,
+     * which must remain representable. 最多一个主相机；视图使用可表示的完整世界逆矩阵。 */
+    [[nodiscard]] auto setCamera(EntityId entity, std::optional<Camera> camera)
+        -> Core::Result<void>;
+    [[nodiscard]] auto primaryCamera() const -> Core::Result<EntityId>;
+    [[nodiscard]] auto viewProjection(EntityId camera, float aspect) const
+        -> Core::Result<Math::Mat4>;
+    /** Store a description; the render service checks asset existence/loading.
+     * 保存描述，由渲染服务检查资产是否存在并负责加载。 */
+    [[nodiscard]] auto setMeshRenderer(EntityId entity, std::optional<MeshRenderer> mesh)
+        -> Core::Result<void>;
 
   private:
     struct Impl;

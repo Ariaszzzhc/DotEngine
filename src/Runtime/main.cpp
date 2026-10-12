@@ -55,6 +55,18 @@ namespace {
       return 1;
     }
 
+    Dot::World::Camera camera;
+    camera.primary = true;
+    auto cameraSet = scene->setCamera(*child, camera);
+    auto meshSet = scene->setMeshRenderer(*parent, Dot::World::MeshRenderer{});
+    auto primary = scene->primaryCamera();
+    auto viewProjection = scene->viewProjection(*child, 1);
+
+    if (!cameraSet || !meshSet || !primary || *primary != *child || !viewProjection) {
+      std::println(stderr, "Scene component acceptance failed");
+      return 1;
+    }
+
     auto destroyed = scene->destroyEntity(*parent);
     auto count = scene->entityCount();
 
@@ -63,7 +75,7 @@ namespace {
       return 1;
     }
 
-    std::println("Scene acceptance passed: hierarchy, transforms, subtree lifetime");
+    std::println("Scene acceptance passed: hierarchy, transforms, components, subtree lifetime");
     return 0;
   }
 
