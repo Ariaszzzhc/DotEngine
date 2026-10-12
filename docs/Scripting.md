@@ -653,3 +653,103 @@ mouse/pointer/wheel, focus release and source hot reload with private state migr
 CTest uses SDL's dummy video driver for this input case; it does not assert physical
 keyboard delivery. Compiler generations, process handles and VM allocations return
 to baseline. The existing Cocoa/Metal/CoreAudio acceptances remain separate checks.
+
+# Runtime physics services
+
+`Dot.Script.PhysicsSource::create(sharedScene, config)` owns a real Jolt-backed
+SceneSimulation, the original shared scene identity, and a published contact batch.
+Add its bindings to SceneScriptsConfig.services or LiveScriptsConfig.scripts.services.
+Moves preserve callbacks, which retain the scene/simulation after the publisher
+handle dies. Moving/replacing the captured Scene invalidates the source explicitly.
+Operations require the creating thread; destruction after quiescence may occur
+elsewhere. No script call creates, advances or resets a simulation implicitly.
+
+Native scheduling calls synchronize(), step(seconds), or reset(). step uses the
+existing scene simulation's synchronization, integration and atomic pose writeback;
+seconds must be finite in [0.000001,0.25]. Queries show last synchronized runtime
+state, separate from the authored Entity.rigidBody description. New/removed/edited
+components take effect on native synchronization/step. Runtime controls apply to
+synchronized bodies; an unsynchronized new body fails NotFound instead of creating
+one implicitly. Missing/foreign entity owners fail immediately. A ray hit on a
+removed owner fails InvalidState and requires synchronization instead of becoming
+a false miss. Pose changes can be authored through Entity.transform and applied by
+native synchronization; runtime velocity is retained when initial velocity is unchanged.
+
+| Native method | Arguments | Result |
+| --- | --- | --- |
+| `physics.body` | `[entityId]` | owned PhysicsBodyState |
+| `physics.stats` | `[]` | native counters, fault state and generation string |
+| `physics.rayCast` | `[origin, displacement]` | owned RayHit or null |
+| `physics.contacts` | `[]` | owned ContactBatch; reads do not consume |
+| `physics.setVelocity` | `[entityId, velocity]` | undefined |
+| `physics.setAngularVelocity` | `[entityId, angularVelocity]` | undefined |
+| `physics.addImpulse` | `[entityId, impulse]` | undefined |
+| `physics.moveKinematic` | `[entityId, position, quaternion, seconds]` | undefined |
+
+Vectors/quaternions use exact {x,y,z}/{x,y,z,w} fields with finite float-range
+numbers. IDs are canonical positive decimal uint64 strings. Arguments reject
+extra/missing fields, duplicates, invalid scalar types, raw NUL/invalid UTF-8,
+more than 64 KiB or nesting beyond 16. Native motion/range/shape rules are unchanged:
+velocity <=500 m/s, angular speed <=15*pi rad/s, impulses only for dynamic bodies,
+and kinematic targets only for kinematic bodies with bounded duration/speeds.
+Rays use displacement rather than an unbounded direction; length is at least
+0.001 and both endpoints must fit native position limits. Sensors are included;
+an inside hit may have fraction zero and null normal. Returned poses, velocities,
+ray geometry and contact geometry are world-space metres/seconds.
+
+```ts
+import {ScriptComponent, physics} from './dot/engine.js';
+
+export class Player extends ScriptComponent {
+  onStart(): void {
+    this.self.setVelocity({x: 1, y: 0, z: 0});
+    this.self.addImpulse({x: 0, y: 2, z: 0});
+  }
+
+  onUpdate(): void {
+    const body = this.self.physicsBody;
+    const hit = physics.rayCast(body.position, {x: 0, y: -2, z: 0});
+
+    if (hit !== null) {
+      this.self.name = 'Hit ' + hit.entity.value;
+    }
+  }
+}
+```
+
+Entity.physicsBody and the Entity setVelocity/setAngularVelocity/addImpulse/
+moveKinematic methods delegate to the same global physics service. All queries
+are ReadOnly and may run in constructors/state migration; controls are ReadWrite
+and denied during preparation/export/import. Hot reload keeps the same native
+simulation and motion through retained service captures. Reset is a native action:
+it prepares a replacement from authored state, increments generation, and publishes
+an empty batch without replacing callbacks; ordinary preparation failure retains
+old state. Body/stats queries remain diagnostic after a contact-publication fault.
+
+Each successful synchronize/step drains native events once into a batch for all
+script readers. Batch indices and native step/generation values are decimal strings.
+Begin/Stay events include last observed pre-solver geometry, including speculative
+negative depth; lifecycle events can omit it. End reason is null except on End
+(separated, poseChanged, destroyed, reconfigured). Removed entity IDs remain valid
+historical data and may be stale in the scene. Reads return independent JSON
+snapshots, so multiple components see the same events even if one edits its copy.
+The application owns publication/dispatch timing; later publications replace the
+previous batch. Games should process each chosen batch index once.
+
+Contact JSON budget defaults to 1 MiB (1 byte..16 MiB, but must hold an empty batch)
+and must fit the receiving Runtime's transport. A native mutation may succeed
+before event capture/serialization fails or exceeds this budget; this faults the
+source and requires reset, while contact reads reject the stale batch. Faults are
+reported explicitly and do not roll back completed physical advancement. Reset
+prepares its empty encoded batch before replacing the world. A Runtime rejecting
+an otherwise valid published batch does not consume native data; another reader
+with adequate transport capacity can still read it.
+
+`--script-physics-test <absolute-compiler> <sdk-root> <directory>` compiles actual
+TypeScript classes controlling real linear/angular velocity, impulse and kinematic
+motion. It checks rays and sensor batches, catches invalid control, advances thirty
+fixed frames, changes source and migrates a private counter halfway through while
+preserving native motion, then verifies explicit stop and compiler/process/VM cleanup.
+`--script-physics-render-test` additionally verifies actual Metal pixel changes
+from the script-controlled physical movement. Local validation covers macOS;
+Windows/Linux implementations remain unverified.

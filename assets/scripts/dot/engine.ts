@@ -252,6 +252,98 @@ export const components = Object.freeze({
   },
 });
 
+/** World-space runtime state, separate from the authored rigid-body description.
+ * 世界坐标运行状态，与编辑刚体描述分离。 */
+export interface PhysicsBodyState {
+  motion: 'static' | 'kinematic' | 'dynamic';
+  position: Vec3;
+  rotation: Quat;
+  velocity: Vec3;
+  angularVelocity: Vec3;
+  active: boolean;
+  sensor: boolean;
+}
+
+export interface PhysicsStats {
+  bodies: number;
+  active: number;
+  faulted: boolean;
+  contactPairs: number;
+  queuedContactEvents: number;
+  generation: string;
+}
+
+export interface RayHit {
+  entity: EntityId;
+  fraction: number;
+  point: Vec3;
+  normal: Vec3 | null;
+}
+
+export interface ContactGeometry {
+  normal: Vec3;
+  penetrationDepth: number;
+  points: {first: Vec3; second: Vec3}[];
+}
+
+/** Removed entity IDs remain meaningful historical data; check existence before
+ * resolving them. Geometry may be absent on lifecycle-only events.
+ * 已删除实体 ID 仍是有意义的历史数据，解析前须检查存活；生命周期事件可无几何数据。 */
+export interface ContactEvent {
+  phase: 'begin' | 'stay' | 'sleep' | 'end';
+  endReason: 'separated' | 'poseChanged' | 'destroyed' | 'reconfigured' | null;
+  first: EntityId;
+  second: EntityId;
+  sensor: boolean;
+  step: string;
+  geometry: ContactGeometry | null;
+}
+
+export interface ContactBatch {
+  generation: string;
+  index: string;
+  events: ContactEvent[];
+}
+
+/** Native scheduling publishes contacts without consuming them on script reads.
+ * Queries show last synchronized state; controls act on that real simulation.
+ * Native failures throw HostError, and scripts cannot advance/reset the world.
+ * 原生调度发布接触数据，脚本读取不消费；查询展示最近同步状态，控制作用于真实仿真。
+ * 原生失败抛出 HostError，脚本不能推进/重置世界。 */
+export const physics = Object.freeze({
+  body(entity: EntityId): PhysicsBodyState {
+    return invoke('physics.body', [entity]) as PhysicsBodyState;
+  },
+
+  stats(): PhysicsStats {
+    return invoke('physics.stats', []) as PhysicsStats;
+  },
+
+  rayCast(origin: Vec3, displacement: Vec3): RayHit | null {
+    return invoke('physics.rayCast', [origin, displacement]) as RayHit | null;
+  },
+
+  get contacts(): ContactBatch {
+    return invoke('physics.contacts', []) as ContactBatch;
+  },
+
+  setVelocity(entity: EntityId, value: Vec3): void {
+    invoke('physics.setVelocity', [entity, value]);
+  },
+
+  setAngularVelocity(entity: EntityId, value: Vec3): void {
+    invoke('physics.setAngularVelocity', [entity, value]);
+  },
+
+  addImpulse(entity: EntityId, value: Vec3): void {
+    invoke('physics.addImpulse', [entity, value]);
+  },
+
+  moveKinematic(entity: EntityId, position: Vec3, rotation: Quat, seconds: number): void {
+    invoke('physics.moveKinematic', [entity, position, rotation, seconds]);
+  },
+});
+
 export interface EntityInfo {
   readonly id: EntityId;
   name: string;
@@ -365,6 +457,26 @@ export class Entity {
 
   set script(value: ScriptDescription|null) {
     invoke('component.set', [this.id, 'script', value]);
+  }
+
+  get physicsBody(): PhysicsBodyState {
+    return physics.body(this.id);
+  }
+
+  setVelocity(value: Vec3): void {
+    physics.setVelocity(this.id, value);
+  }
+
+  setAngularVelocity(value: Vec3): void {
+    physics.setAngularVelocity(this.id, value);
+  }
+
+  addImpulse(value: Vec3): void {
+    physics.addImpulse(this.id, value);
+  }
+
+  moveKinematic(position: Vec3, rotation: Quat, seconds: number): void {
+    physics.moveKinematic(this.id, position, rotation, seconds);
   }
 
   get parent(): Entity|null {

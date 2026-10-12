@@ -1207,5 +1207,59 @@ for entity-attached and live-reloaded script services.
   sanitizers/environment changes. Windows/Linux common implementations remain
   uncompiled/unexecuted locally.
 
-Remaining physics/audio runtime script APIs, project/editor/export tooling,
-expanded rendering, and the example game remain to be implemented.
+### Runtime physics script APIs and contact publication
+
+Added an owned PhysicsSource around the real scene simulation, eight native
+methods and typed global/entity conveniences for runtime body state, velocity,
+angular velocity, impulses, kinematic targets, rays and non-consuming contact batches.
+
+- macOS Debug and Release each pass all 612 CTest cases (572 doctest cases and
+  forty executable checks). Thirteen focused behavioral cases cover real Jolt
+  motion/pose writeback, owned snapshots, kinematic targets and ray hit/inside/miss
+  geometry, malformed/numeric/shape/transport limits with retained motion, foreign/
+  missing/removed owners and stale ray bindings, owned repeated contact reads and
+  removed IDs, publication-budget fault/diagnostic/reset recovery, moves/thread/
+  scene/binding lifetime, failed synchronization/reset retaining motion/generation/
+  batch, actual TypeScript controls and type errors, catchable failures without
+  fake bodies, read access/write denial during constructors and state migration,
+  moved publishers/unchanged simulation through reload, and two components reading
+  the same contact batch independently.
+- `--script-physics-test <compiler> <sdk-root> <directory>` compiles real typed
+  classes controlling linear/angular velocity, impulses and kinematic movement.
+  Thirty fixed frames verify actual native poses, rays and sensor batches. Changed
+  source halfway through migrates a private counter without resetting native motion;
+  explicit stop releases VM handles and compiler generations/process resources
+  return to baseline. `--script-physics-render-test` also verifies actual Metal
+  pixels changed by script-controlled physical movement. Existing native Cocoa/
+  Metal/CoreAudio and earlier input/lifecycle/compiler cases remain passing.
+- PhysicsSource owns the original shared scene, native SceneSimulation and last
+  encoded contact batch. Moves preserve callbacks; retained bindings keep native
+  dependencies alive. Moving/replacing the captured Scene invalidates the source.
+  Queries show last synchronized state; unsynchronized/new/missing/foreign bodies
+  fail explicitly. Rays on removed owners require synchronization instead of
+  silently becoming misses. Authored poses/components apply on native sync/step;
+  controls apply to the real synchronized bodies without implicit advancement.
+- Native sync/step drains events once for a published batch shared by all scripts.
+  Reads do not consume and return owned data, including historical removed IDs,
+  nullable geometry/end reasons and decimal-string step/batch/generation values.
+  Default contact JSON capacity is 1 MiB (1 byte..16 MiB, must hold an empty batch)
+  and must fit Runtime transport. Capture/serialization/budget failures after
+  physical mutation explicitly fault the source, reject stale batches and require
+  reset; body/stat diagnostics remain available. Reset prepares its encoded empty
+  batch before world replacement and retains old state on preparation failure.
+- Four queries are ReadOnly; four controls are ReadWrite and denied during script
+  preparation/export/import. Script reload retains native dependencies and motion;
+  scripts cannot directly advance or reset the world. Native scalar/vector,
+  canonical ID, UTF-8, duplicate/depth/byte and existing motion/speed/pose constraints
+  remain checked at the bridge/subsystem boundaries.
+- Reviewed native state mapping and finite backend guarantees, thread/scene scope,
+  original dependency/destruction order, prepared resets, post-advance publication
+  fault semantics, diagnostic access, contact ownership/IDs/generation, serialization
+  and transport budgets, guard classification and actual CPU/GPU acceptance.
+  Formatting/whitespace checks pass; interfaces and implementations remain separate.
+  Release uses NDEBUG and caller LLVM libc++/libunwind, without LC_RPATH,
+  sanitizers or environment changes. Windows/Linux common implementations remain
+  uncompiled/unexecuted locally.
+
+Remaining audio runtime script APIs, project/editor/export tooling, expanded
+rendering, and the example game remain to be implemented.
