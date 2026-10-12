@@ -75,5 +75,7 @@ and scene persistence. The scene simulation service synchronizes component/pose
 edits, retains unaffected motion, and writes world poses back through parent
 hierarchies. `--scene-physics-test` exercises scene collision and cleanup;
 `--scene-physics-render-test` also checks actual GPU pixels after the fall.
+Owned contact events cover begin/stay/sleep/end, sensors, removal/reconfiguration,
+and explicit queue limits; scene events retain entity values after destruction.
 
 See `docs/Development.md` for implementation milestones and actual validation.

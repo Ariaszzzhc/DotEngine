@@ -17,6 +17,8 @@ add_executable(DotTests
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp
+    ContactTests.cpp
+    SceneContactTests.cpp
     ScenePhysicsTests.cpp
     BodyTests.cpp
     RigidBodyTests.cpp

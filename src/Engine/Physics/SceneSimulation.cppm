@@ -2,6 +2,7 @@ module;
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 export module Dot.Physics.SceneSimulation;
 
@@ -16,6 +17,16 @@ export namespace Dot::Physics {
     float fraction;
     Math::Vec3 point;
     std::optional<Math::Vec3> normal;
+  };
+
+  struct SceneContactEvent {
+    ContactPhase phase;
+    ContactEndReason endReason;
+    Dot::World::EntityId first;
+    Dot::World::EntityId second;
+    bool sensor;
+    std::uint64_t step;
+    std::optional<ContactGeometry> geometry;
   };
 
   /** Owns a physics world and bindings, without retaining a scene reference.
@@ -53,6 +64,12 @@ export namespace Dot::Physics {
     [[nodiscard]] auto reset(const Dot::World::Scene& scene) -> Core::Result<void>;
     [[nodiscard]] auto body(Dot::World::EntityId entity) const -> Core::Result<BodyState>;
     [[nodiscard]] auto stats() const -> Core::Result<WorldStats>;
+    /** Owned contact events preserve entity values even after component/entity
+     * removal. Successful drain consumes them; faulted services reject delivery.
+     * Reset discards the old world's stream. Removal IDs may be stale in the scene.
+     * 拥有数据的接触事件在组件/实体移除后仍保留实体值；成功读取消耗事件，故障服务拒绝交付。
+     * 重置丢弃旧世界事件流，移除事件中的 ID 可能已在场景中失效。 */
+    [[nodiscard]] auto drainContactEvents() -> Core::Result<std::vector<SceneContactEvent>>;
     [[nodiscard]] auto setVelocity(Dot::World::EntityId entity, Math::Vec3 velocity)
         -> Core::Result<void>;
     [[nodiscard]] auto setAngularVelocity(Dot::World::EntityId entity, Math::Vec3 velocity)

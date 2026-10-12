@@ -417,5 +417,34 @@ Explicit reset prepares a candidate before replacing bindings and recovers fault
 - An implementation-only touch rebuilds the simulation object and relinks
   consumers without rebuilding module interfaces or their BMI consumers.
 
-Contact events, audio, scripting, project/editor/export tooling, and the example
-game remain to be implemented.
+### Owned contact events
+
+Added worker-safe contact capture and owner-side logical pair reconciliation.
+Events carry owned pre-solver manifold geometry and opaque runtime associations.
+They distinguish Begin/Stay/Sleep/End and retain dormant contacts instead of
+reporting sleep as separation. Sleep entry checks actual geometry within backend
+contact tolerance; wake observations retain pair identity. Lifecycle edits end
+affected pairs with an explicit reason, and scene events preserve removed entity
+values without retaining scene references or historical body maps.
+
+- macOS Debug and Release each pass all 300 CTest cases (283 doctest cases and
+  seventeen executable checks), including real begin/stay geometry and tags,
+  sleep/wake/separation, sensors, destroyed/reconfigured/teleported bodies,
+  equivalent-pose no-ops, queue-full lifecycle rollback/retry, post-step overflow
+  faulting and rejected incomplete streams, owner-thread/move checks, native ID
+  churn, canonical normal/point orientation despite native/public order differences,
+  deterministic multi-pair worker capture, and scoped scene delivery after
+  entity/component removal, reconfiguration, reset, and failed-step recovery.
+- Both scene-physics runtime acceptance commands now verify begin and destruction
+  events alongside existing pose/ray/Metal pixel validation.
+- Contact queues are explicitly bounded, with no silent truncation. Capture/queue
+  failures after advancement fault the service; lifecycle capacity failures happen
+  before body changes and can be retried after draining.
+- Reviewed callback lock restrictions, copied geometry/tag lifetime, native slot
+  reuse, sleep-transition geometry queries, sorted pair/operation ordering,
+  pre-mutation queue reservation, failed-stream handling, listener detachment,
+  and transactional scene event mapping. Formatting/whitespace checks pass.
+  Windows/Linux remain unverified.
+
+Audio, scripting, project/editor/export tooling, and the example game remain to be
+implemented.

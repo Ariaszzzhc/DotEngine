@@ -25,6 +25,7 @@ export namespace Dot::Physics {
     std::uint32_t maxBodies{1024};
     Math::Vec3 gravity{0, -9.81F, 0};
     std::uint32_t workerThreads{};
+    std::uint32_t maxContactEvents{65536};
   };
 
   struct BodyState {
@@ -41,6 +42,8 @@ export namespace Dot::Physics {
     std::size_t bodies;
     std::size_t active;
     bool faulted{};
+    std::size_t contactPairs{};
+    std::size_t queuedContactEvents{};
   };
 
   struct RayHit {
@@ -50,6 +53,41 @@ export namespace Dot::Physics {
     /** Fraction zero may be inside the shape and has no surface normal.
      * 比例为零可能位于形状内部，此时没有表面法线。 */
     std::optional<Math::Vec3> normal;
+  };
+
+  enum class ContactPhase { Begin, Stay, Sleep, End };
+
+  enum class ContactEndReason { Separated, PoseChanged, Destroyed, Reconfigured };
+
+  struct ContactParty {
+    BodyId body;
+    std::uint64_t userTag;
+  };
+
+  struct ContactPoint {
+    Math::Vec3 first;
+    Math::Vec3 second;
+  };
+
+  /** Last observed pre-solver manifold for the step, with normal from the lower
+   * public body value toward the higher. Negative depth denotes speculative contact.
+   * 此步最近观测的求解前接触流形，法线从较小公开刚体值指向较大值，负深度表示预测接触。 */
+  struct ContactGeometry {
+    Math::Vec3 normal;
+    float penetrationDepth;
+    std::vector<ContactPoint> points;
+  };
+
+  struct ContactEvent {
+    ContactPhase phase;
+    ContactEndReason endReason;
+    ContactParty first;
+    ContactParty second;
+    bool sensor;
+    std::uint64_t step;
+    /** Geometry accompanies observed Begin/Stay; lifecycle-only events omit it.
+     * 已观测的开始/持续事件携带几何，仅生命周期事件不携带几何。 */
+    std::optional<ContactGeometry> geometry;
   };
 
   /** Configuration only creates; handle only destroys; both replace the body
@@ -75,8 +113,9 @@ export namespace Dot::Physics {
   class World {
   public:
     /** 1..4096 bodies, 0..8 workers; zero executes synchronously without workers.
-     * Gravity magnitude is at most 1000. 1..4096 个刚体、0..8 个工作线程；零表示
-     * 同步执行而不启动工作线程，重力大小不超过 1000。 */
+     * Gravity magnitude is at most 1000; 1..262144 queued contact events.
+     * 1..4096 个刚体、0..8 个工作线程；零表示同步执行而不启动工作线程，
+     * 重力大小不超过 1000，接触事件队列容量为 1..262144。 */
     [[nodiscard]] static auto create(const WorldConfig& config = {}) -> Core::Result<World>;
     World(const World&) = delete;
     auto operator=(const World&) -> World& = delete;
@@ -104,6 +143,16 @@ export namespace Dot::Physics {
      * 后端错误可能发生在推进后，世界进入故障状态，仅保留读取与销毁操作。 */
     [[nodiscard]] auto step(double seconds) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<WorldStats>;
+    /** Owned events follow operation order, with pairs sorted within each step or
+     * lifetime operation, read only on the owner
+     * thread after operations. Sleeping contacts remain tracked; waking observations
+     * produce Stay. Queue/capture failure faults the world and rejects incomplete
+     * streams. A healthy drain consumes events; input/lifecycle preflight failures
+     * retain them. End geometry is absent; endReason is meaningful only for End.
+     * 在所有者线程于操作结束后读取拥有数据的事件，按操作顺序交付，步进/生命周期操作内按配对值排序。
+     * 休眠接触仍跟踪，唤醒后的观测产生持续事件；队列/捕获失败使世界故障，拒绝不完整流。
+     * 正常读取消耗事件，输入/生命周期预检失败保留事件；结束事件无几何，结束原因仅用于结束。 */
+    [[nodiscard]] auto drainContactEvents() -> Core::Result<std::vector<ContactEvent>>;
     /** Teleport without resetting velocity; moving bodies wake up.
      * 传送位置而不清除速度，运动刚体会被唤醒。 */
     [[nodiscard]] auto setPose(BodyId body, Math::Vec3 position, Math::Quat rotation = {})

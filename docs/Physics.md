@@ -151,4 +151,46 @@ query, and synchronized cleanup. `--scene-physics-render-test` additionally chec
 the actual GPU pixels at its resting position. GPU tests also compare the initial
 and final pixels to prove that scene writeback changes rendering.
 
-Contact event delivery is a subsequent stage.
+## Contact events
+
+Both world and scene services deliver owned events through `drainContactEvents`.
+Callbacks from Jolt workers only copy body/manifold values into a synchronized
+collector. No game code runs inside Jolt's locked callback context. The owner
+reconciles contacts after the synchronous step, using current backend contact and
+activity state. Entering sleep also checks actual geometry within Jolt's
+speculative contact distance; inactive status alone does not establish overlap.
+
+Events describe one logical body pair. Multiple collision substeps coalesce to
+the last observed manifold for each pair. `Begin` starts a pair, `Stay` carries an
+observation of an existing pair, `Sleep` marks a dormant pair, and `End` closes it.
+Dormant pairs remain tracked; waking observations produce `Stay`, with separation
+closing the pair. A transient observed contact may produce Begin/Stay followed by
+End within the same engine step. Delivery follows operation order, with public
+pair values sorted within each step/lifetime operation. The step field denotes
+the most recent physics step; lifecycle edits retain that step number.
+
+Begin/observed Stay geometry owns its contact points and uses the pre-solver
+manifold. Normals point from the smaller public body value to the larger, and
+contact point sides follow that ordering. Negative depth is speculative contact;
+these events do not claim a resolved impulse. Sleep, End, and an unobserved wake
+have no geometry. End reasons distinguish separation, pose change, destruction,
+and reconfiguration. Direct pose edits invalidate affected contacts; identical
+position/equivalent quaternion edits retain them.
+
+Runtime `BodyConfig::userTag` is an opaque uint64 association copied into events.
+It is never dereferenced and survives body destruction in already captured data.
+Scene binding uses entity values for this association, so scene events remain
+identifiable after entity/component removal without retaining scene storage.
+Such removal IDs can be stale when queried against the scene. Reset discards the
+old world and its contact stream.
+
+World configuration permits 1..262144 queued events (default 65536), with tracked
+and per-step captured pairs limited to sixteen times body capacity. Drain events
+regularly, including after lifecycle edits. Queue-full lifecycle/pose operations
+fail before mutation and can be retried after draining. Capture, reconciliation,
+or queue failure after a step faults the world/service and rejects incomplete
+event delivery. Faulted bodies remain available for diagnostic reads/cleanup;
+recreate or reset to resume. There is no silent truncation of event streams.
+
+`--scene-physics-test` and its GPU variant verify contact begin and destruction
+alongside collision poses, entity ray queries, and synchronized cleanup.

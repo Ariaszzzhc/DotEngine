@@ -6,6 +6,7 @@
 import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.Physics.Body;
+import Dot.Physics.World;
 import Dot.Physics.SceneSimulation;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
@@ -76,9 +77,19 @@ namespace Dot::Runtime {
 
     auto state = simulation->body(*body);
     auto ray = simulation->rayCast({0, 2, 0}, {0, -4, 0});
+    auto contacts = simulation->drainContactEvents();
+    bool began = false;
+
+    if (contacts) {
+      for (const auto& event : *contacts) {
+        began = began
+                || (event.phase == Physics::ContactPhase::Begin && event.first == *floor
+                    && event.second == *body && event.geometry.has_value());
+      }
+    }
 
     if (!state || state->position.y < 0.20F || state->position.y > 0.28F || !ray
-        || !ray->has_value() || (*ray)->entity != *body) {
+        || !ray->has_value() || (*ray)->entity != *body || !began) {
       std::println(stderr, "Scene physics acceptance resting pose/ray verification failed");
       return 1;
     }
@@ -115,7 +126,16 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    std::println("Scene physics acceptance passed: resting y={:.3f}; entity ray; {}",
+    auto ended = simulation->drainContactEvents();
+
+    if (!ended || ended->size() != 1 || ended->front().phase != Physics::ContactPhase::End
+        || ended->front().endReason != Physics::ContactEndReason::Destroyed
+        || ended->front().second != *body) {
+      std::println(stderr, "Scene physics acceptance contact cleanup failed");
+      return 1;
+    }
+
+    std::println("Scene physics acceptance passed: resting y={:.3f}; contact lifecycle; {}",
                  state->position.y, render ? "GPU pixels verified" : "synchronized body cleanup");
     return 0;
   }

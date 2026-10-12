@@ -259,6 +259,8 @@ namespace Dot::Physics {
           return context(entity.id, config.error());
         }
 
+        config->userTag = entity.id.value;
+
         const auto existing = m_impl->m_entries.find(entity.id.value);
 
         if (existing != m_impl->m_entries.end() && existing->second.description == *entity.rigidBody
@@ -505,6 +507,60 @@ namespace Dot::Physics {
     }
 
     return result;
+  }
+
+  auto SceneSimulation::drainContactEvents() -> Core::Result<std::vector<SceneContactEvent>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto ready = m_impl->ready(true);
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    bool consumed = false;
+
+    try {
+      auto stats = m_impl->m_world.stats();
+
+      if (!stats) {
+        return std::unexpected(stats.error());
+      }
+
+      std::vector<SceneContactEvent> result;
+      result.reserve(stats->queuedContactEvents);
+      auto events = m_impl->m_world.drainContactEvents();
+
+      if (!events) {
+        return std::unexpected(events.error());
+      }
+
+      consumed = true;
+
+      for (auto& event : *events) {
+        if (event.first.userTag == 0 || event.second.userTag == 0) {
+          m_impl->m_faulted = true;
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Scene contact has no entity association");
+        }
+
+        result.push_back({event.phase,
+                          event.endReason,
+                          {m_impl->m_scene, event.first.userTag},
+                          {m_impl->m_scene, event.second.userTag},
+                          event.sensor,
+                          event.step,
+                          std::move(event.geometry)});
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = m_impl->m_faulted || consumed;
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Read scene contact events: {}", error.what()));
+    }
   }
 
   auto SceneSimulation::setVelocity(EntityId entity, Math::Vec3 velocity) -> Core::Result<void> {

@@ -1,5 +1,7 @@
 module;
 
+#include <cstdint>
+
 export module Dot.Physics.Body;
 
 import Dot.Core.Result;
@@ -45,6 +47,9 @@ export namespace Dot::Physics {
     /** Inactive moving bodies remain asleep until woken by another operation.
      * 非活动的运动刚体保持休眠，直到其他操作将其唤醒。 */
     bool startActive{true};
+    /** Opaque runtime association, copied into contact events and never dereferenced.
+     * 不透明的运行时关联值，复制到接触事件中而不作为指针解引用。 */
+    std::uint64_t userTag{};
   };
 
   /** CPU-only checks shared by authoring, persistence, and simulation boundaries.

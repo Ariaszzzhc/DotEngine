@@ -11,8 +11,12 @@ module;
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
@@ -28,7 +32,10 @@ module;
 #include <cstdio>
 #include <expected>
 #include <format>
+#include <functional>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -254,6 +261,281 @@ namespace Dot::Physics {
       throw std::logic_error("Unvalidated motion type");
     }
 
+    /** Worker callbacks only copy body/manifold data. Owner-side reconciliation
+     * reads contact/activity state after Jolt releases all body locks.
+     * 工作线程回调仅复制刚体/流形数据，所有者在 Jolt 释放刚体锁后读取接触与活动状态。 */
+    class ContactCollector final : public JPH::ContactListener {
+    public:
+      using Key = std::pair<std::uint64_t, std::uint64_t>;
+      using TagLookup = std::function<std::uint64_t(std::uint64_t)>;
+      using RemovalSet = std::unordered_map<std::uint64_t, ContactEndReason>;
+
+      ContactCollector(std::uint64_t world, std::size_t maxPairs, std::size_t maxEvents,
+                       TagLookup tags)
+          : m_world(world), m_maxPairs(maxPairs), m_maxEvents(maxEvents), m_tags(std::move(tags)) {
+      }
+
+      auto OnContactAdded(const JPH::Body& first, const JPH::Body& second,
+                          const JPH::ContactManifold& manifold,
+                          JPH::ContactSettings& settings) noexcept -> void override {
+        capture(first, second, manifold, settings);
+      }
+
+      auto OnContactPersisted(const JPH::Body& first, const JPH::Body& second,
+                              const JPH::ContactManifold& manifold,
+                              JPH::ContactSettings& settings) noexcept -> void override {
+        capture(first, second, manifold, settings);
+      }
+
+      auto begin() -> void {
+        m_pending.clear();
+        m_failure.store(Failure::None);
+      }
+
+      template <typename Probe>
+      auto finish(std::uint64_t step, Probe&& probe) -> Core::Result<void> {
+        if (m_failure.load() != Failure::None) {
+          return Core::fail(m_failure.load() == Failure::Capacity ? Core::ErrorCode::Unavailable
+                                                                  : Core::ErrorCode::External,
+                            "Contact callback capture failed; physics may have advanced");
+        }
+
+        for (const auto& [key, captured] : m_pending) {
+          if (!m_records.contains(key)) {
+            if (m_records.size() == m_maxPairs) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Tracked contact pair capacity exceeded");
+            }
+
+            m_records.emplace(key, Record{captured.first, captured.second, captured.sensor});
+          }
+        }
+
+        for (auto iterator = m_records.begin(); iterator != m_records.end();) {
+          auto& record = iterator->second;
+          auto observed = m_pending.find(iterator->first);
+
+          if (observed != m_pending.end()) {
+            auto emitted
+                = emit({record.announced ? ContactPhase::Stay : ContactPhase::Begin,
+                        ContactEndReason::Separated, record.first, record.second,
+                        observed->second.sensor, step, std::move(observed->second.geometry)});
+
+            if (!emitted) {
+              return emitted;
+            }
+
+            record.announced = true;
+            record.sensor = observed->second.sensor;
+          }
+
+          const auto [touching, sleeping] = probe(iterator->first, record.sleeping);
+
+          if (sleeping) {
+            if (!record.sleeping) {
+              auto emitted = emit({ContactPhase::Sleep, ContactEndReason::Separated, record.first,
+                                   record.second, record.sensor, step, std::nullopt});
+
+              if (!emitted) {
+                return emitted;
+              }
+            }
+
+            record.sleeping = true;
+          } else if (touching) {
+            if (record.sleeping && observed == m_pending.end()) {
+              auto emitted = emit({ContactPhase::Stay, ContactEndReason::Separated, record.first,
+                                   record.second, record.sensor, step, std::nullopt});
+
+              if (!emitted) {
+                return emitted;
+              }
+            }
+
+            record.sleeping = false;
+          } else {
+            auto emitted = emit({ContactPhase::End, ContactEndReason::Separated, record.first,
+                                 record.second, record.sensor, step, std::nullopt});
+
+            if (!emitted) {
+              return emitted;
+            }
+
+            iterator = m_records.erase(iterator);
+            continue;
+          }
+
+          ++iterator;
+        }
+
+        m_pending.clear();
+        return {};
+      }
+
+      auto prepareRemoval(const RemovalSet& bodies) -> Core::Result<void> {
+        std::size_t needed = 0;
+
+        for (const auto& [key, record] : m_records) {
+          (void)record;
+          needed += bodies.contains(key.first) || bodies.contains(key.second);
+        }
+
+        if (needed > m_maxEvents - m_events.size()) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Drain contact events before changing body lifetime/pose");
+        }
+
+        m_events.reserve(m_events.size() + needed);
+        return {};
+      }
+
+      auto remove(const RemovalSet& bodies, std::uint64_t step, bool publish) -> void {
+        for (auto iterator = m_records.begin(); iterator != m_records.end();) {
+          auto first = bodies.find(iterator->first.first);
+          auto second = bodies.find(iterator->first.second);
+
+          if (first == bodies.end() && second == bodies.end()) {
+            ++iterator;
+            continue;
+          }
+
+          const auto& record = iterator->second;
+          const auto reason
+              = (first != bodies.end() && first->second == ContactEndReason::Destroyed)
+                        || (second != bodies.end() && second->second == ContactEndReason::Destroyed)
+                    ? ContactEndReason::Destroyed
+                : first != bodies.end() ? first->second
+                                        : second->second;
+
+          if (publish) {
+            m_events.push_back({ContactPhase::End, reason, record.first, record.second,
+                                record.sensor, step, std::nullopt});
+          }
+
+          iterator = m_records.erase(iterator);
+        }
+      }
+
+      auto drain() -> std::vector<ContactEvent> {
+        return std::exchange(m_events, {});
+      }
+
+      auto pairs() const noexcept -> std::size_t {
+        return m_records.size();
+      }
+
+      auto queued() const noexcept -> std::size_t {
+        return m_events.size();
+      }
+
+    private:
+      enum class Failure { None, Capacity, External };
+
+      struct Captured {
+        ContactParty first;
+        ContactParty second;
+        bool sensor;
+        ContactGeometry geometry;
+      };
+
+      struct Record {
+        ContactParty first;
+        ContactParty second;
+        bool sensor;
+        bool sleeping{};
+        bool announced{};
+      };
+
+      auto emit(ContactEvent event) -> Core::Result<void> {
+        if (m_events.size() == m_maxEvents) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Contact event queue capacity exceeded; physics may have advanced");
+        }
+
+        m_events.push_back(std::move(event));
+        return {};
+      }
+
+      auto capture(const JPH::Body& firstBody, const JPH::Body& secondBody,
+                   const JPH::ContactManifold& manifold,
+                   const JPH::ContactSettings& settings) noexcept -> void {
+        try {
+          const auto firstValue = firstBody.GetUserData();
+          const auto secondValue = secondBody.GetUserData();
+          const bool swapped = firstValue > secondValue;
+          ContactParty first{{m_world, firstValue}, m_tags(firstValue)};
+          ContactParty second{{m_world, secondValue}, m_tags(secondValue)};
+
+          if (swapped) {
+            std::swap(first, second);
+          }
+
+          ContactGeometry geometry;
+          geometry.normal = vector(manifold.mWorldSpaceNormal) * (swapped ? -1.0F : 1.0F);
+          geometry.penetrationDepth = manifold.mPenetrationDepth;
+          if (!Math::isFinite(geometry.normal)
+              || std::abs(Math::length(geometry.normal) - 1) > 0.001
+              || !std::isfinite(geometry.penetrationDepth)
+              || manifold.mRelativeContactPointsOn1.size()
+                     != manifold.mRelativeContactPointsOn2.size()) {
+            m_failure.store(Failure::External);
+            return;
+          }
+
+          geometry.points.reserve(manifold.mRelativeContactPointsOn1.size());
+
+          for (JPH::uint index = 0; index < manifold.mRelativeContactPointsOn1.size(); ++index) {
+            auto firstPoint = vector(manifold.GetWorldSpaceContactPointOn1(index));
+            auto secondPoint = vector(manifold.GetWorldSpaceContactPointOn2(index));
+
+            if (!Math::isFinite(firstPoint) || !Math::isFinite(secondPoint)) {
+              m_failure.store(Failure::External);
+              return;
+            }
+
+            geometry.points.push_back(swapped ? ContactPoint{secondPoint, firstPoint}
+                                              : ContactPoint{firstPoint, secondPoint});
+          }
+
+          const std::scoped_lock lock(m_mutex);
+          const Key key{first.body.value, second.body.value};
+
+          if (!m_pending.contains(key) && m_pending.size() == m_maxPairs) {
+            m_failure.store(Failure::Capacity);
+            return;
+          }
+
+          m_pending.insert_or_assign(
+              key, Captured{first, second, settings.mIsSensor, std::move(geometry)});
+        } catch (...) {
+          m_failure.store(Failure::External);
+        }
+      }
+
+      std::uint64_t m_world;
+      std::size_t m_maxPairs;
+      std::size_t m_maxEvents;
+      TagLookup m_tags;
+      std::mutex m_mutex;
+      std::atomic<Failure> m_failure{Failure::None};
+      std::map<Key, Captured> m_pending;
+      std::map<Key, Record> m_records;
+      std::vector<ContactEvent> m_events;
+    };
+
+    class OnlyBody final : public JPH::BodyFilter {
+    public:
+      explicit OnlyBody(JPH::BodyID id) : m_id(id) {
+      }
+
+      auto ShouldCollide(const JPH::BodyID& id) const -> bool override {
+        return id == m_id;
+      }
+
+    private:
+      JPH::BodyID m_id;
+    };
+
     struct BodyDeleter {
       JPH::BodyInterface* interface;
 
@@ -303,6 +585,7 @@ namespace Dot::Physics {
       Motion motion;
       float mass;
       bool sensor;
+      std::uint64_t userTag;
     };
 
     std::shared_ptr<Runtime> m_runtime;
@@ -311,16 +594,23 @@ namespace Dot::Physics {
     std::uint64_t m_nextBody{1};
     WorldConfig m_config;
     bool m_faulted{};
+    std::uint64_t m_step{};
     Layers m_layers;
     BroadFilter m_broadFilter;
     PairFilter m_pairFilter;
     JPH::TempAllocatorImplWithMallocFallback m_temporary{16 * 1024 * 1024};
     std::unique_ptr<JPH::JobSystem> m_jobs;
+    ContactCollector m_contacts;
     JPH::PhysicsSystem m_system;
     std::unordered_map<std::uint64_t, Entry> m_bodies;
 
     Impl(std::shared_ptr<Runtime> owner, std::uint64_t identity, WorldConfig config)
-        : m_runtime(std::move(owner)), m_identity(identity), m_config(config) {
+        : m_runtime(std::move(owner)),
+          m_identity(identity),
+          m_config(config),
+          m_contacts(
+              identity, config.maxBodies * 16, config.maxContactEvents,
+              [this](std::uint64_t value) { return std::as_const(m_bodies).at(value).userTag; }) {
       if (config.workerThreads == 0) {
         m_jobs = std::make_unique<JPH::JobSystemSingleThreaded>(JPH::cMaxPhysicsJobs);
       } else {
@@ -332,9 +622,11 @@ namespace Dot::Physics {
                     m_broadFilter, m_pairFilter);
       m_system.SetGravity(native(config.gravity));
       m_bodies.reserve(config.maxBodies);
+      m_system.SetContactListener(&m_contacts);
     }
 
     ~Impl() {
+      m_system.SetContactListener(nullptr);
       auto& bodies = m_system.GetBodyInterface();
 
       for (const auto& [value, entry] : m_bodies) {
@@ -390,6 +682,7 @@ namespace Dot::Physics {
 
   auto World::create(const WorldConfig& config) -> Core::Result<World> {
     if (config.maxBodies == 0 || config.maxBodies > 4096 || config.workerThreads > 8
+        || config.maxContactEvents == 0 || config.maxContactEvents > 262144
         || !Math::isFinite(config.gravity) || Math::length(config.gravity) > 1000) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid physics world limits/gravity");
     }
@@ -445,6 +738,7 @@ namespace Dot::Physics {
     std::vector<std::optional<BodyConfig>> configs;
     std::vector<PendingBody> prepared;
     std::unordered_set<std::uint64_t> seen;
+    ContactCollector::RemovalSet removals;
     auto nextValue = m_impl->m_nextBody;
     std::size_t count = m_impl->m_bodies.size();
     bool mutating = false;
@@ -476,6 +770,8 @@ namespace Dot::Physics {
             return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate physics body change");
           }
 
+          removals.emplace(change.body->value, change.config ? ContactEndReason::Reconfigured
+                                                             : ContactEndReason::Destroyed);
           --count;
         }
 
@@ -540,8 +836,9 @@ namespace Dot::Physics {
           return std::unexpected(body.error());
         }
 
-        nodes.insert_or_assign(results[i]->value, Impl::Entry{JPH::BodyID{}, config.motion,
-                                                              config.mass, config.sensor});
+        nodes.insert_or_assign(
+            results[i]->value,
+            Impl::Entry{JPH::BodyID{}, config.motion, config.mass, config.sensor, config.userTag});
         prepared.push_back(std::move(*body));
       }
 
@@ -549,7 +846,14 @@ namespace Dot::Physics {
        * Node transfer after commit starts needs no new allocations.
        * 释放活动槽前分配映射桶/节点与刚体，提交开始后的节点迁移不再进行新分配。 */
       m_impl->m_bodies.reserve(m_impl->m_config.maxBodies);
+      auto eventsReady = m_impl->m_contacts.prepareRemoval(removals);
+
+      if (!eventsReady) {
+        return std::unexpected(eventsReady.error());
+      }
+
       mutating = true;
+      m_impl->m_contacts.remove(removals, m_impl->m_step, true);
       m_impl->m_nextBody = nextValue;
 
       for (const auto& change : changes) {
@@ -609,11 +913,27 @@ namespace Dot::Physics {
       return std::unexpected(entry.error());
     }
 
-    auto& bodies = m_impl->m_system.GetBodyInterface();
-    bodies.RemoveBody(entry->nativeId);
-    bodies.DestroyBody(entry->nativeId);
-    m_impl->m_bodies.erase(id.value);
-    return {};
+    try {
+      const ContactCollector::RemovalSet removed{{id.value, ContactEndReason::Destroyed}};
+
+      if (!m_impl->m_faulted) {
+        auto eventsReady = m_impl->m_contacts.prepareRemoval(removed);
+
+        if (!eventsReady) {
+          return eventsReady;
+        }
+      }
+
+      m_impl->m_contacts.remove(removed, m_impl->m_step, !m_impl->m_faulted);
+      auto& bodies = m_impl->m_system.GetBodyInterface();
+      bodies.RemoveBody(entry->nativeId);
+      bodies.DestroyBody(entry->nativeId);
+      m_impl->m_bodies.erase(id.value);
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Prepare body contact cleanup: {}", error.what()));
+    }
   }
 
   auto World::body(BodyId id) const -> Core::Result<BodyState> {
@@ -659,6 +979,12 @@ namespace Dot::Physics {
 #ifdef JPH_ENABLE_ASSERTS
     const UpdateScope scope;
 #endif
+    if (m_impl->m_step == std::numeric_limits<std::uint64_t>::max()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics contact step counter exhausted");
+    }
+
+    ++m_impl->m_step;
+    m_impl->m_contacts.begin();
     const auto result = m_impl->m_system.Update(static_cast<float>(seconds),
                                                 static_cast<int>(std::ceil(seconds * 60)),
                                                 &m_impl->m_temporary, m_impl->m_jobs.get());
@@ -669,6 +995,46 @@ namespace Dot::Physics {
                         std::format("Jolt step exceeded contact/pair capacity (flags={}); "
                                     "world may have advanced",
                                     static_cast<std::uint32_t>(result)));
+    }
+
+    try {
+      auto collected = m_impl->m_contacts.finish(
+          m_impl->m_step, [&](ContactCollector::Key key, bool wasSleeping) {
+            const auto first = m_impl->m_bodies.at(key.first).nativeId;
+            const auto second = m_impl->m_bodies.at(key.second).nativeId;
+            const auto& bodies = m_impl->m_system.GetBodyInterface();
+            bool touching = m_impl->m_system.WereBodiesInContact(first, second);
+            bool sleeping = !bodies.IsActive(first) && !bodies.IsActive(second);
+
+            if (sleeping && !wasSleeping) {
+              /** Confirm geometry when entering dormancy; two inactive bodies
+               * alone do not prove that the last contact still exists.
+               * 进入休眠时确认几何，两刚体均不活动并不证明最后一次接触仍存在。 */
+              const auto shape = bodies.GetShape(first);
+              const auto transform = bodies.GetCenterOfMassTransform(first);
+              JPH::CollideShapeSettings settings;
+              settings.mMaxSeparationDistance
+                  = m_impl->m_system.GetPhysicsSettings().mSpeculativeContactDistance;
+              JPH::AnyHitCollisionCollector<JPH::CollideShapeCollector> hit;
+              m_impl->m_system.GetNarrowPhaseQuery().CollideShape(
+                  shape.GetPtr(), JPH::Vec3::sReplicate(1), transform, settings,
+                  transform.GetTranslation(), hit, {}, {}, OnlyBody{second});
+              sleeping = hit.HadHit();
+              touching = touching && sleeping;
+            }
+
+            return std::pair{touching, sleeping};
+          });
+
+      if (!collected) {
+        m_impl->m_faulted = true;
+        return collected;
+      }
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(
+          Core::ErrorCode::External,
+          std::format("Contact reconciliation failed after advancement: {}", error.what()));
     }
 
     for (const auto& [value, entry] : m_impl->m_bodies) {
@@ -699,7 +1065,21 @@ namespace Dot::Physics {
 
     return WorldStats{m_impl->m_bodies.size(),
                       m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody),
-                      m_impl->m_faulted};
+                      m_impl->m_faulted, m_impl->m_contacts.pairs(), m_impl->m_contacts.queued()};
+  }
+
+  auto World::drainContactEvents() -> Core::Result<std::vector<ContactEvent>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto ready = m_impl->ready(true);
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    return m_impl->m_contacts.drain();
   }
 
   auto World::setPose(BodyId id, Math::Vec3 position, Math::Quat rotation) -> Core::Result<void> {
@@ -721,6 +1101,30 @@ namespace Dot::Physics {
 
     if (!normalized) {
       return std::unexpected(normalized.error());
+    }
+
+    JPH::RVec3 previousPosition;
+    JPH::Quat previousRotation;
+    m_impl->m_system.GetBodyInterface().GetPositionAndRotation(entry->nativeId, previousPosition,
+                                                               previousRotation);
+    const auto previous = quaternion(previousRotation);
+    const Math::Quat opposed{-previous.x, -previous.y, -previous.z, -previous.w};
+
+    if (vector(previousPosition) != position
+        || (previous != *normalized && opposed != *normalized)) {
+      try {
+        const ContactCollector::RemovalSet removed{{id.value, ContactEndReason::PoseChanged}};
+        auto eventsReady = m_impl->m_contacts.prepareRemoval(removed);
+
+        if (!eventsReady) {
+          return eventsReady;
+        }
+
+        m_impl->m_contacts.remove(removed, m_impl->m_step, true);
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Prepare pose contact cleanup: {}", error.what()));
+      }
     }
 
     m_impl->m_system.GetBodyInterface().SetPositionAndRotation(
