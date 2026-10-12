@@ -130,5 +130,50 @@ are failures. Tested locally on arm64 macOS with real CoreAudio in Debug/Release
 Windows/Linux implementations remain unverified. Hot-plug/interruption handling
 is reviewed but has not been physically triggered by automated tests.
 
-A continuous mixing worker, spatial voices/listeners, and scene audio components
-remain to be implemented; the caller currently supplies queue data explicitly.
+Spatial voices/listeners and scene audio components remain to be implemented.
+
+
+# Continuous playback
+
+`Dot.Audio.Playback` creates a dedicated worker that owns Mixer and Output,
+prefills PCM, starts a real endpoint, and keeps rendering while the client thread
+is idle. Its Mixer/Output channel counts and sample rates must match. The target
+buffer defaults to 2048 frames, with 256-frame mixing blocks and a maximum 2 ms
+poll interval. Targets must fit the output queue and retain at least two requested
+periods. Blocks are 1..65536 frames and cannot exceed the target; the maximum poll
+interval is 1..20 ms. Waits adapt to a quarter of the currently queued duration,
+with a 50 microsecond floor and the configured upper bound. OS scheduling can
+still cause underruns; they remain observable in output statistics.
+
+Creating client-thread calls synchronously dispatch validated voice operations
+and return the worker's actual results. There is at most one pending command;
+arguments retain owned Clip copies until execution. Startup waits for successful
+backend initialization/startup; failures join and release partial resources.
+Moves retain the original client thread and scoped voice identity. Other client
+threads receive `InvalidState`; quiescent destruction may join from another
+thread. The native callback remains a queue consumer and never runs these controls.
+
+Refill batches are bounded and yield between blocks to pending controls. At least
+one refill opportunity follows a command, so a burst of controls cannot repeatedly
+skip all mixing. Already-mixed/driver-buffered PCM preserves its old content;
+voice pause, seek, gain, and pitch affect subsequent blocks. Endpoint software
+volume applies at the native output instead. Recoverable invalid controls, stale
+handles, voice capacity, and voice-preparation allocation failures do not fault
+the worker. Device/mixing failures retain an owned diagnostic, reject subsequent
+controls, and require a new Playback for recovery.
+
+`stats` obtains a fresh worker snapshot while running. `close` wakes and joins the
+worker, stops/join device callbacks, destroys voices and backend owners, and
+preserves cumulative counters/metadata. Queue data discarded by teardown is
+accounted for; terminal snapshots clear live ownership after destruction. Healthy
+closure is idempotent. Faulted closure still returns its error; terminal statistics
+remain readable. SDK device operations and control calls may block on their
+worker/backend completion and are not intended for a real-time callback.
+
+Run `DotRuntime --audio-playback-test` for two actual looping voices, PCM delivery
+while the client waits 250 ms, endpoint clipping, and joined cleanup. Native tests
+also cover pause/seek/loop/pitch controls, retained/finished voices, moved/foreign
+handles, client thread checks, initialization failures, bounded allocation failure,
+repeated worker lifetimes, terminal metadata, and small 192 kHz client buffers.
+Automated playback stays muted through endpoint software gain. Only macOS has
+been verified; physical hot-plug/interruption remains outside automated coverage.

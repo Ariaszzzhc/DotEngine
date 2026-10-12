@@ -12,10 +12,66 @@
 import Dot.Audio.Clip;
 import Dot.Audio.Mixer;
 import Dot.Audio.Output;
+import Dot.Audio.Playback;
 import Dot.Core.Files;
 import Dot.Core.Result;
 
 namespace Dot::Runtime {
+  auto testAudioPlayback() -> int {
+    const auto mixerBefore = Dot::Audio::Mixer::backendMemory();
+    const auto outputBefore = Dot::Audio::Output::backendMemory();
+    Dot::Audio::PlaybackConfig config;
+    config.output.volume = 0;
+    auto playback = Dot::Audio::Playback::create(config);
+    auto clip = Dot::Audio::Clip::fromPcm(std::vector<float>(1024, 0.75F), 1, 48000);
+
+    if (!playback || !clip) {
+      std::println(stderr, "Continuous playback acceptance setup failed: {}",
+                   !playback ? playback.error().message : clip.error().message);
+      return 1;
+    }
+
+    auto first = playback->createVoice(*clip, {1, 0, 1, true});
+    auto second = playback->createVoice(*clip, {1, 0, 1, true});
+
+    if (!first || !second || !playback->play(*first) || !playback->play(*second)) {
+      std::println(stderr, "Continuous playback acceptance voice setup failed");
+      return 1;
+    }
+
+    auto before = playback->stats();
+    std::this_thread::sleep_for(std::chrono::milliseconds{250});
+    auto after = playback->stats();
+
+    if (!before || !after || after->state != Dot::Audio::PlaybackState::Running
+        || after->mixer.renderedFrames <= before->mixer.renderedFrames + 4096
+        || after->output.consumedFrames <= before->output.consumedFrames + 4096
+        || after->output.clippedSamples == 0) {
+      std::println(stderr,
+                   "Continuous playback did not mix/deliver actual PCM while client was idle");
+      return 1;
+    }
+
+    auto closed = playback->close();
+    auto final = playback->stats();
+
+    if (!closed || !final || final->state != Dot::Audio::PlaybackState::Closed
+        || final->mixer.voices != 0 || final->output.running
+        || final->output.submittedFrames
+               != final->output.consumedFrames + final->output.discardedFrames
+        || Dot::Audio::Mixer::backendMemory().bytes != mixerBefore.bytes
+        || Dot::Audio::Output::backendMemory().bytes != outputBefore.bytes) {
+      std::println(stderr, "Continuous playback acceptance joined-cleanup verification failed");
+      return 1;
+    }
+
+    std::println(
+        "Continuous playback acceptance passed: {} device frames during client idle; "
+        "executed controls and joined cleanup; endpoint muted",
+        after->output.consumedFrames - before->output.consumedFrames);
+    return 0;
+  }
+
   auto testAudioOutput() -> int {
     const auto before = Dot::Audio::Output::backendMemory();
 

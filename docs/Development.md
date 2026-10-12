@@ -552,6 +552,45 @@ and no null-device fallback. Source format and owned device metadata are checked
   edits rebuild the output object and relink without rebuilding BMI consumers.
   Windows/Linux code paths remain unverified.
 
-Continuous audio scheduling, spatial voices/listeners, scene audio components,
-scripting, project/editor/export tooling, and the example game remain to be
-implemented.
+### Continuous audio playback
+
+Added a dedicated worker that owns the tested Mixer/Output, prefills real PCM,
+and continuously refills it independently of the client/game thread. Client
+controls synchronously return executed worker results through a single owned
+command slot. SDK creation, mutation, mixing, and teardown stay on the worker;
+the native callback remains an allocation-free queue consumer.
+
+- macOS Debug and Release each pass all 365 CTest cases (344 doctest cases and
+  twenty-one executable checks). Twelve new playback cases cover actual PCM
+  delivery during 250 ms client idle, retained clips and executed controls,
+  invalid controls/capacity without worker faults, finished-voice restart,
+  idempotent joined closure, terminal metadata/counters, copied/moved/foreign
+  handles, client thread checks, foreign quiescent destruction, failed mixer/device
+  initialization cleanup, scheduler/format boundaries, repeated worker/voice
+  lifetimes, recoverable voice allocation failure, and small 192 kHz client buffers.
+- `--audio-playback-test` observes continuing mixed/device frames and endpoint
+  clipping while the client sleeps, then verifies joined cleanup and discarded
+  queue accounting. It uses real CoreAudio with endpoint software gain zero;
+  physical speaker audibility is not claimed.
+- Refill work is bounded by block/batch limits, wakes for pending controls, and
+  adapts waits to queued duration. A refill opportunity follows each command so
+  control bursts cannot skip all mixing. Native underruns remain observable;
+  scheduling is not a hard real-time guarantee.
+- Shutdown joins device/mixing work before destroying native owners, resolves
+  pending commands with owned errors, and retains fault/terminal snapshots.
+  Queue data discarded by teardown is counted; lifecycle ownership is cleared
+  only after actual destruction. Source controls affect future mixed blocks;
+  already-queued audio retains its previous content.
+- Reviewed startup publication, owned command arguments/promises, producer/client/
+  callback thread roles, condition-variable predicates, queue capacity, command
+  fairness, terminal snapshot races, fault propagation, move identity, and teardown
+  ordering. Formatting/whitespace checks pass. Implementation edits rebuilt only
+  the playback object and relinked consumers without recompiling module interfaces.
+- The installed libc++ lacks move_only_function, so private owned polymorphic
+  command objects carry packaged tasks instead; no toolchain/environment changes
+  were needed. Both runtimes retain LLVM libc++/libunwind and native frameworks,
+  with no LC_RPATH. Windows/Linux implementations remain unverified, and physical
+  hot-plug/interruption remains outside automated coverage.
+
+Spatial voices/listeners, scene audio components, scripting,
+project/editor/export tooling, and the example game remain to be implemented.

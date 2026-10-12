@@ -30,11 +30,13 @@ target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlo
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
-add_executable(DotAudioTests main.cpp OutputTests.cpp)
+add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp)
 target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
 doctest_discover_tests(DotAudioTests PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.audio_output COMMAND DotRuntime --audio-output-test)
 set_tests_properties(runtime.audio_output PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
+add_test(NAME runtime.audio_playback COMMAND DotRuntime --audio-playback-test)
+set_tests_properties(runtime.audio_playback PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 
 add_test(NAME runtime.self_test COMMAND DotRuntime --self-test)
 add_test(NAME runtime.version COMMAND DotRuntime --version)

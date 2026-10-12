@@ -75,6 +75,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/BackendMemory.cpp
     src/Engine/Audio/FrameQueue.cpp
     src/Engine/Audio/Output.cpp
+    src/Engine/Audio/Playback.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -115,6 +116,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Audio/Clip.cppm
         src/Engine/Audio/Mixer.cppm
         src/Engine/Audio/Output.cppm
+        src/Engine/Audio/Playback.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp src/Runtime/AudioAcceptance.cpp)

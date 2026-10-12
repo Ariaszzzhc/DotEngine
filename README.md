@@ -86,6 +86,8 @@ gain/pan/pitch, rate conversion, and allocation budgets. `--audio-mix-test` chec
 actual summed PCM and cleanup. Native playback consumes a bounded PCM queue,
 counts underruns/clipping, and retains explicit device failures. Run
 `--audio-output-test` for a real, muted backend/callback acceptance case.
-Spatial playback and scene audio components are under development.
+A dedicated playback worker executes voice controls and continuously fills the
+queue while the client is idle. `--audio-playback-test` verifies this through a
+real muted endpoint. Spatial playback and scene audio components are under development.
 
 See `docs/Development.md` for implementation milestones and actual validation.
