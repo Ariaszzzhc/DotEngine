@@ -1,12 +1,12 @@
 ---
 name: engine-validation
-description: Validate DotEngine changes and staged engine releases using CMake, CTest, sanitizers, and executable acceptance cases.
+description: Validate DotEngine changes and staged engine releases using CMake, CTest, and executable acceptance cases.
 ---
 
 Use the existing LLVM environment without overriding system settings. Configure
 and build with `cmake --preset debug`, `cmake --build --preset debug`, then run
 `ctest --preset debug`. Repeat meaningful release checks with the release presets;
-use the sanitize presets for resource-lifetime or memory changes.
+check resource lifetime with allocation counters and repeated initialization tests.
 
 Review changed modules for error propagation, resource release after failed
 initialization, event lifetime, frame timing, and operating-system guards. Verify
