@@ -90,6 +90,9 @@ A dedicated playback worker executes voice controls and continuously fills the
 queue while the client is idle. `--audio-playback-test` verifies this through a
 real muted endpoint. Spatial mono voices use listener/source poses, distance
 attenuation, directional cones, and optional Doppler; `--audio-spatial-test` checks
-actual stereo PCM direction. Scene audio components are under development.
+actual stereo PCM direction. Scenes store validated audio source/listener components
+without opening audio resources. `--scene-audio-test <existing-directory>` checks
+their file round trip, scoped identity, and failure isolation. Connecting these
+components to live playback remains to be implemented.
 
 See `docs/Development.md` for implementation milestones and actual validation.

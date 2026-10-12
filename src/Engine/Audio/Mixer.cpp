@@ -25,18 +25,13 @@ module Dot.Audio.Mixer;
 
 import Dot.Audio.Clip;
 import Dot.Audio.Spatial;
+import Dot.Audio.Voice;
 import Dot.Math;
 import Dot.Core.Result;
 
 namespace Dot::Audio {
   namespace {
     std::atomic<std::uint64_t> nextMixer{1};
-
-    auto settingsValid(const VoiceSettings& settings) -> bool {
-      return std::isfinite(settings.volume) && settings.volume >= 0 && settings.volume <= 1
-             && std::isfinite(settings.pan) && settings.pan >= -1 && settings.pan <= 1
-             && std::isfinite(settings.pitch) && settings.pitch >= 0.25F && settings.pitch <= 4;
-    }
 
     auto failure(ma_result status, std::string_view operation) -> std::unexpected<Core::Error> {
       return Core::fail(Core::ErrorCode::External,
@@ -223,7 +218,7 @@ namespace Dot::Audio {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Audio clip has been moved");
     }
 
-    if (!settingsValid(settings) || m_impl->m_voices.size() >= m_impl->m_config.maxVoices
+    if (!validateVoiceSettings(settings) || m_impl->m_voices.size() >= m_impl->m_config.maxVoices
         || m_impl->m_nextVoice == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Invalid voice settings or voice capacity");
@@ -371,7 +366,7 @@ namespace Dot::Audio {
       return std::unexpected(found.error());
     }
 
-    if (!settingsValid(settings) || ((*found)->spatial.enabled && settings.pan != 0)) {
+    if (!validateVoiceSettings(settings) || ((*found)->spatial.enabled && settings.pan != 0)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid audio voice settings");
     }
 

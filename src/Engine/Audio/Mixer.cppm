@@ -9,6 +9,7 @@ export module Dot.Audio.Mixer;
 
 export import Dot.Audio.Clip;
 export import Dot.Audio.Spatial;
+export import Dot.Audio.Voice;
 import Dot.Core.Result;
 
 export namespace Dot::Audio {
@@ -23,14 +24,6 @@ export namespace Dot::Audio {
     std::uint32_t sampleRate{48000};
     std::uint32_t maxVoices{64};
     std::uint64_t backendBytes{16 * 1024 * 1024};
-  };
-
-  struct VoiceSettings {
-    float volume{1};
-    float pan{};
-    float pitch{1};
-    bool looping{};
-    auto operator==(const VoiceSettings&) const -> bool = default;
   };
 
   struct VoiceState {

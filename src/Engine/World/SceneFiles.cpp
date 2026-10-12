@@ -16,6 +16,7 @@ import Dot.Core.Files;
 import Dot.World.Scene;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Audio.Source;
 
 namespace Dot::World {
   namespace {
@@ -124,6 +125,49 @@ namespace Dot::World {
       return result;
     }
 
+    auto audioSource(const Json& value) -> AudioSource {
+      Codec::requireFields(value, {"asset", "voice", "spatial", "playOnStart"});
+      AudioSource result;
+      result.asset = value["asset"].get<std::string>();
+      result.playOnStart = value["playOnStart"].get<bool>();
+      const auto& voice = value["voice"];
+      Codec::requireFields(voice, {"volume", "pan", "pitch", "looping"});
+      result.voice.volume = Codec::number(voice["volume"]);
+      result.voice.pan = Codec::number(voice["pan"]);
+      result.voice.pitch = Codec::number(voice["pitch"]);
+      result.voice.looping = voice["looping"].get<bool>();
+      const auto& spatial = value["spatial"];
+      Codec::requireFields(
+          spatial, {"enabled", "attenuation", "minDistance", "maxDistance", "rolloff",
+                    "dopplerFactor", "innerConeDegrees", "outerConeDegrees", "outerConeGain"});
+      result.spatial.enabled = spatial["enabled"].get<bool>();
+      const auto model = spatial["attenuation"].get<std::string>();
+
+      if (model == "inverse") {
+        result.spatial.attenuation = Audio::Attenuation::Inverse;
+      } else if (model == "linear") {
+        result.spatial.attenuation = Audio::Attenuation::Linear;
+      } else if (model == "exponential") {
+        result.spatial.attenuation = Audio::Attenuation::Exponential;
+      } else {
+        throw std::invalid_argument("Unknown audio attenuation model");
+      }
+
+      result.spatial.minDistance = Codec::number(spatial["minDistance"]);
+      result.spatial.maxDistance = Codec::number(spatial["maxDistance"]);
+      result.spatial.rolloff = Codec::number(spatial["rolloff"]);
+      result.spatial.dopplerFactor = Codec::number(spatial["dopplerFactor"]);
+      result.spatial.innerConeDegrees = Codec::number(spatial["innerConeDegrees"]);
+      result.spatial.outerConeDegrees = Codec::number(spatial["outerConeDegrees"]);
+      result.spatial.outerConeGain = Codec::number(spatial["outerConeGain"]);
+      return result;
+    }
+
+    auto audioListener(const Json& value) -> AudioListener {
+      Codec::requireFields(value, {"primary"});
+      return {value["primary"].get<bool>()};
+    }
+
     auto validateExtension(const std::filesystem::path& path) -> Core::Result<void> {
       try {
         auto extension = path.extension().generic_u8string();
@@ -153,6 +197,8 @@ namespace Dot::World {
       std::optional<Camera> camera;
       std::optional<MeshRenderer> mesh;
       std::optional<RigidBody> rigidBody;
+      std::optional<AudioSource> audioSource;
+      std::optional<AudioListener> audioListener;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -170,7 +216,7 @@ namespace Dot::World {
 
       for (const auto& value : root["entities"]) {
         Codec::requireFields(value, {"id", "name", "parent", "transform"},
-                             {"camera", "mesh", "rigidBody"});
+                             {"camera", "mesh", "rigidBody", "audioSource", "audioListener"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -194,6 +240,14 @@ namespace Dot::World {
 
         if (value.contains("rigidBody") && !value["rigidBody"].is_null()) {
           record.rigidBody = rigidBody(value["rigidBody"]);
+        }
+
+        if (value.contains("audioSource") && !value["audioSource"].is_null()) {
+          record.audioSource = audioSource(value["audioSource"]);
+        }
+
+        if (value.contains("audioListener") && !value["audioListener"].is_null()) {
+          record.audioListener = audioListener(value["audioListener"]);
         }
 
         records.push_back(std::move(record));
@@ -267,9 +321,46 @@ namespace Dot::World {
         if (!changed) {
           return std::unexpected(changed.error());
         }
+
+        changed = scene->setAudioSource(entity, record.audioSource);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        changed = scene->setAudioListener(entity, record.audioListener);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
       }
 
       return std::move(*scene);
+    }
+
+    auto sourceJson(const AudioSource& value) -> Json {
+      const auto& voice = value.voice;
+      const auto& spatial = value.spatial;
+      const auto model = spatial.attenuation == Audio::Attenuation::Linear        ? "linear"
+                         : spatial.attenuation == Audio::Attenuation::Exponential ? "exponential"
+                                                                                  : "inverse";
+      return {{"asset", value.asset},
+              {"playOnStart", value.playOnStart},
+              {"voice",
+               {{"volume", voice.volume},
+                {"pan", voice.pan},
+                {"pitch", voice.pitch},
+                {"looping", voice.looping}}},
+              {"spatial",
+               {{"enabled", spatial.enabled},
+                {"attenuation", model},
+                {"minDistance", spatial.minDistance},
+                {"maxDistance", spatial.maxDistance},
+                {"rolloff", spatial.rolloff},
+                {"dopplerFactor", spatial.dopplerFactor},
+                {"innerConeDegrees", spatial.innerConeDegrees},
+                {"outerConeDegrees", spatial.outerConeDegrees},
+                {"outerConeGain", spatial.outerConeGain}}}};
     }
 
     auto cameraJson(const Camera& value) -> Json {
@@ -341,7 +432,10 @@ namespace Dot::World {
              {"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}}},
            {"camera", entity.camera ? cameraJson(*entity.camera) : Json(nullptr)},
            {"mesh", entity.mesh ? meshJson(*entity.mesh) : Json(nullptr)},
-           {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)}});
+           {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)},
+           {"audioSource", entity.audioSource ? sourceJson(*entity.audioSource) : Json(nullptr)},
+           {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}
+                                                  : Json(nullptr)}});
     }
 
     auto encoded

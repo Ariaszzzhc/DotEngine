@@ -14,6 +14,7 @@ export module Dot.World.Scene;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Physics.Body;
+export import Dot.Audio.Source;
 
 export namespace Dot::World {
   /** Scene-scoped handle. Values are never reused within a scene; moving its
@@ -75,6 +76,16 @@ export namespace Dot::World {
    * 初始速度使用世界坐标，层级与缩放是否适用由独立的仿真绑定阶段负责。 */
   using RigidBody = Physics::BodyProperties;
 
+  /** Stored audio authoring only; world pose comes from the entity. No file or
+   * playback backend is initialized by editing. 仅保存音频编辑描述，世界位姿来自实体；
+   * 编辑不读取文件，也不初始化播放后端。 */
+  using AudioSource = Audio::SourceProperties;
+
+  struct AudioListener {
+    bool primary{};
+    auto operator==(const AudioListener&) const -> bool = default;
+  };
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -85,6 +96,8 @@ export namespace Dot::World {
     std::optional<Camera> camera{};
     std::optional<MeshRenderer> mesh{};
     std::optional<RigidBody> rigidBody{};
+    std::optional<AudioSource> audioSource{};
+    std::optional<AudioListener> audioListener{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -155,6 +168,17 @@ export namespace Dot::World {
      * 替换前校验所有刚体属性，移除具有幂等性。 */
     [[nodiscard]] auto setRigidBody(EntityId entity, std::optional<RigidBody> body)
         -> Core::Result<void>;
+    /** Validate the complete description before replacement; missing assets are
+     * resolved by the playback binding, and removal is idempotent.
+     * 替换前校验完整描述，缺失资产由播放绑定处理，移除具有幂等性。 */
+    [[nodiscard]] auto setAudioSource(EntityId entity, std::optional<AudioSource> source)
+        -> Core::Result<void>;
+    /** At most one primary listener, independent of the primary camera. A second
+     * primary is rejected before mutation; removal is idempotent.
+     * 最多一个主监听器，与主相机独立；第二个主监听器在修改前拒绝，移除具有幂等性。 */
+    [[nodiscard]] auto setAudioListener(EntityId entity, std::optional<AudioListener> listener)
+        -> Core::Result<void>;
+    [[nodiscard]] auto primaryAudioListener() const -> Core::Result<EntityId>;
 
   private:
     struct Impl;

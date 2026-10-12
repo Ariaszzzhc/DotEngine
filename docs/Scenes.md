@@ -8,7 +8,8 @@ fresh scene identity. Existing live scenes and their handles remain independent.
 
 The root requires exactly `version` (integer 1), `name`, and `entities`. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
-`rigidBody` are optional and may be null. Unknown or duplicate fields are rejected.
+`rigidBody`, `audioSource`, and `audioListener` are optional and may be null.
+Unknown or duplicate fields are rejected.
 Documents are limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
 acyclic with depth at most 256.
 
@@ -79,3 +80,20 @@ See `Physics.md` for the binding and failure contracts.
 Run `DotRuntime --scene-file-test <existing-directory>` for save/load acceptance
 at `scenes/main.dotscene`. Renderable scenes also need a camera; the file codec
 permits scenes without one so editing and persistence can occur independently.
+
+Audio sources require exactly `asset`, `voice`, `spatial`, and boolean `playOnStart`.
+Voice settings require `volume`, `pan`, `pitch`, and boolean `looping`. Spatial
+properties require boolean `enabled`, `attenuation` (`inverse`/`linear`/`exponential`),
+`minDistance`, `maxDistance`, `rolloff`, `dopplerFactor`, `innerConeDegrees`,
+`outerConeDegrees`, and `outerConeGain`. They use the same pure validation as voice
+and spatial controls; enabled spatial sources require zero manual pan. Pose is
+not duplicated in this description; it belongs to the entity transform.
+
+Audio listeners require only boolean `primary`. At most one listener can be
+primary, independently of the camera. Multiple primary listeners fail loading
+the whole candidate scene. Missing/null audio fields remain valid in older files.
+No audio asset is opened or native voice/device created by component editing or
+scene loading; live playback binding remains to be implemented. See `Audio.md`
+for parameter/path contracts. Run `DotRuntime --scene-audio-test <existing-directory>`
+for persistence, parent transforms, independent scene identity, and failed-load
+isolation at `scenes/audio.dotscene`.

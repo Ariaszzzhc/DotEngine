@@ -20,6 +20,7 @@ import Dot.Core.Result;
 import Dot.Core.Text;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Audio.Source;
 
 namespace Dot::World {
   namespace {
@@ -232,13 +233,17 @@ namespace Dot::World {
       const auto* camera = registry.try_get<Camera>(native);
       const auto* mesh = registry.try_get<MeshRenderer>(native);
       const auto* body = registry.try_get<RigidBody>(native);
+      const auto* source = registry.try_get<AudioSource>(native);
+      const auto* listener = registry.try_get<AudioListener>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
               parent ? std::optional{EntityId{identity, *parent}} : std::nullopt,
               camera ? std::optional{*camera} : std::nullopt,
               mesh ? std::optional{*mesh} : std::nullopt,
-              body ? std::optional{*body} : std::nullopt};
+              body ? std::optional{*body} : std::nullopt,
+              source ? std::optional{*source} : std::nullopt,
+              listener ? std::optional{*listener} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -854,5 +859,86 @@ namespace Dot::World {
 
     m_impl->registry.emplace_or_replace<RigidBody>(*native, *body);
     return {};
+  }
+
+  auto Scene::setAudioSource(EntityId entity, std::optional<AudioSource> source)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!source) {
+      m_impl->registry.remove<AudioSource>(*native);
+      return {};
+    }
+
+    auto checked = Audio::validateSourceProperties(*source);
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->registry.emplace_or_replace<AudioSource>(*native, std::move(*source));
+    return {};
+  }
+
+  auto Scene::setAudioListener(EntityId entity, std::optional<AudioListener> listener)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!listener) {
+      m_impl->registry.remove<AudioListener>(*native);
+      return {};
+    }
+
+    if (listener->primary) {
+      for (const auto& entry : m_impl->lookup) {
+        const auto* existing = m_impl->registry.try_get<AudioListener>(entry.second);
+
+        if (entry.second != *native && existing && existing->primary) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene already has a primary audio listener");
+        }
+      }
+    }
+
+    m_impl->registry.emplace_or_replace<AudioListener>(*native, *listener);
+    return {};
+  }
+
+  auto Scene::primaryAudioListener() const -> Core::Result<EntityId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    for (const auto& entry : m_impl->lookup) {
+      const auto* listener = m_impl->registry.try_get<AudioListener>(entry.second);
+
+      if (listener && listener->primary) {
+        return EntityId{m_impl->identity, entry.first};
+      }
+    }
+
+    return Core::fail(Core::ErrorCode::NotFound, "Scene has no primary audio listener");
   }
 }  // namespace Dot::World

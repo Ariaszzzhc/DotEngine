@@ -628,5 +628,35 @@ controls through its existing worker path, retaining owned query descriptions.
   remain unverified; physical device hot-plug/interruption remains outside automated
   coverage.
 
-Scene audio components, scripting, project/editor/export tooling, and the example
-game remain to be implemented.
+### Scene audio authoring and persistence
+
+Added backend-independent VoiceSettings/SpatialProperties validation and an owned
+AudioSource description with bounded UTF-8 relative asset paths. Scenes store
+audio sources and independently selected primary listeners without opening files,
+creating native voices, or initializing devices. Strict scene JSON now preserves
+all these properties while accepting missing/null audio fields from older files.
+
+- macOS Debug and Release each pass all 394 CTest cases (371 doctest cases and
+  twenty-three executable checks). Eleven new unit cases cover owned snapshots
+  with unchanged backend allocation counters, path/parameter boundaries, failed
+  replacement retention, unique primary listener independent of camera, idempotent
+  removal and subtree lifetime, foreign/stale/moved/thread handles, complete JSON
+  round trips, old/null fields, malformed nested fields/types, multiple-primary
+  rejection, and failed decode isolation.
+- `--scene-audio-test <directory>` saves/loads UTF-8 asset descriptions, checks
+  primary listener and parent/world-transform restoration with fresh scoped
+  handles, rejects a malformed file while keeping existing scenes, and destroys
+  an imported subtree without affecting the original. It tests descriptions and
+  persistence; it does not claim automatic clip loading or live scene playback.
+- Existing real muted CoreAudio, Cocoa window, and Metal pixel checks continue
+  passing in both configurations. Release runs with assertions disabled. No
+  sanitizers or environment/toolchain changes were introduced.
+- Reviewed pure-data module dependencies, shared validator compatibility with
+  Mixer, owned component snapshots, pre-mutation validation, primary uniqueness,
+  thread/scope checks, entity cleanup, exact nested JSON fields, and independent
+  candidate-scene construction. Formatting/whitespace checks pass. Both runtimes
+  retain caller-selected LLVM libc++/libunwind and native frameworks, with no
+  LC_RPATH. Windows/Linux implementations remain unverified.
+
+Scene audio asset/loading/playback synchronization, scripting, project/editor/
+export tooling, and the example game remain to be implemented.

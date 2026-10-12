@@ -41,11 +41,9 @@ namespace Dot::Audio {
     return result;
   }
 
-  auto validatedSpatial(const SpatialSettings& settings) -> Core::Result<SpatialSettings> {
-    if (!positionValid(settings.position) || !velocityValid(settings.velocity)
-        || (settings.attenuation != Attenuation::Inverse
-            && settings.attenuation != Attenuation::Linear
-            && settings.attenuation != Attenuation::Exponential)
+  auto validateSpatialProperties(const SpatialProperties& settings) -> Core::Result<void> {
+    if ((settings.attenuation != Attenuation::Inverse && settings.attenuation != Attenuation::Linear
+         && settings.attenuation != Attenuation::Exponential)
         || !range(settings.minDistance, 0.001F, 1000000)
         || !range(settings.maxDistance, 0.001F, 1000000)
         || settings.maxDistance <= settings.minDistance || !range(settings.rolloff, 0, 10)
@@ -54,7 +52,22 @@ namespace Dot::Audio {
         || settings.innerConeDegrees > settings.outerConeDegrees
         || !range(settings.outerConeGain, 0, 1)) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Invalid spatial audio pose/attenuation/cone settings");
+                        "Invalid spatial audio attenuation/cone properties");
+    }
+
+    return {};
+  }
+
+  auto validatedSpatial(const SpatialSettings& settings) -> Core::Result<SpatialSettings> {
+    if (!positionValid(settings.position) || !velocityValid(settings.velocity)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid spatial audio position/velocity");
+    }
+
+    auto properties = validateSpatialProperties(settings);
+
+    if (!properties) {
+      return std::unexpected(properties.error());
     }
 
     auto rotation = Math::normalized(settings.rotation);

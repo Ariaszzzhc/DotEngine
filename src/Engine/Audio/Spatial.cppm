@@ -15,11 +15,8 @@ export namespace Dot::Audio {
     auto operator==(const Listener&) const -> bool = default;
   };
 
-  struct SpatialSettings {
+  struct SpatialProperties {
     bool enabled{};
-    Math::Vec3 position{};
-    Math::Quat rotation{};
-    Math::Vec3 velocity{};
     Attenuation attenuation{Attenuation::Inverse};
     float minDistance{1};
     float maxDistance{1000};
@@ -28,6 +25,13 @@ export namespace Dot::Audio {
     float innerConeDegrees{360};
     float outerConeDegrees{360};
     float outerConeGain{};
+    auto operator==(const SpatialProperties&) const -> bool = default;
+  };
+
+  struct SpatialSettings : SpatialProperties {
+    Math::Vec3 position{};
+    Math::Quat rotation{};
+    Math::Vec3 velocity{};
     auto operator==(const SpatialSettings&) const -> bool = default;
   };
 
@@ -44,6 +48,8 @@ export namespace Dot::Audio {
    * 禁用描述也校验；距离在 [0.001,1e6] 且最小值小于最大值，衰减系数 [0,10]（零表示
    * 无距离衰减）、多普勒系数 [0,1]、锥角 [0,360] 且内角不大于外角，外锥增益 [0,1]；
    * 速度界限使后端标准声速下的多普勒分母保持非奇异。 */
+  [[nodiscard]] auto validateSpatialProperties(const SpatialProperties& properties)
+      -> Core::Result<void>;
   [[nodiscard]] auto validatedSpatial(const SpatialSettings& settings)
       -> Core::Result<SpatialSettings>;
 }  // namespace Dot::Audio

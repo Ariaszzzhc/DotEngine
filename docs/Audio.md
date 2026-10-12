@@ -130,7 +130,8 @@ are failures. Tested locally on arm64 macOS with real CoreAudio in Debug/Release
 Windows/Linux implementations remain unverified. Hot-plug/interruption handling
 is reviewed but has not been physically triggered by automated tests.
 
-Scene audio components remain to be implemented.
+Scene audio authoring components are described below; live playback binding
+remains to be implemented.
 
 
 # Continuous playback
@@ -221,3 +222,34 @@ owned snapshots, invalid-input rollback, scope/thread/move checks, extreme and
 coincident finite output, and executed Playback controls on real muted CoreAudio.
 Only macOS Debug/Release are validated. Physical direction/hearing tests and
 HRTF rendering are not claimed by these PCM/backend checks.
+
+# Scene audio descriptions
+
+`Dot.Audio.Voice` owns backend-independent VoiceSettings and their finite/range
+validation. `SpatialProperties` separates attenuation/cone settings from the
+position/rotation/velocity in SpatialSettings. `Dot.Audio.Source` combines those
+properties with an asset path and `playOnStart` (default true). Scene stores it
+as AudioSource; snapshots own their strings and changing a snapshot has no effect
+on the scene. Source edits validate the entire replacement first, retain the old
+component on failure, and remove idempotently with nullopt.
+
+Asset paths are nonempty UTF-8 strings of at most 4096 bytes, relative to a project
+root, using forward slashes and a case-insensitive .wav/.flac/.mp3 extension.
+Empty, dot, and parent components, absolute/drive paths, backslashes, ASCII control
+characters, `< > : " | ? *`, and components ending in dot/space are rejected.
+This description check performs no filesystem access: missing/unusable files must
+return a contextual failure when a playback service resolves them. Enabled spatial
+descriptions require zero manual pan; mono clip validation belongs to binding.
+
+AudioListener stores a primary flag, default false. There can be one primary
+listener per scene independently of its camera. A second primary is rejected
+before mutation. `primaryAudioListener` returns NotFound when none exists;
+scope/thread/moved-scene errors retain their usual scene contracts. Component
+destruction follows entity/subtree lifetime and retains no native audio resources.
+
+Scene files preserve every source/listener property with strict nested fields and
+types. Pose remains in the entity transform; decoding builds a fresh independent
+scene. `DotRuntime --scene-audio-test <existing-directory>` verifies saved UTF-8
+asset descriptions, primary/hierarchy restoration, malformed-load isolation, and
+scoped subtree cleanup. These checks exercise authoring/persistence; automatic
+asset loading, live voice synchronization, and scene play controls remain pending.
