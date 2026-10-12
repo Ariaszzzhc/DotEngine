@@ -39,6 +39,12 @@ export namespace Dot::Physics {
   struct BodyConfig : BodyProperties {
     Math::Vec3 position{};
     Math::Quat rotation{};
+    /** Initial angular speed is at most 15*pi rad/s; static requires zero.
+     * 初始角速度不超过 15*pi 弧度/秒，静态刚体须为零。 */
+    Math::Vec3 angularVelocity{};
+    /** Inactive moving bodies remain asleep until woken by another operation.
+     * 非活动的运动刚体保持休眠，直到其他操作将其唤醒。 */
+    bool startActive{true};
   };
 
   /** CPU-only checks shared by authoring, persistence, and simulation boundaries.

@@ -544,12 +544,15 @@ TEST_CASE("physics.backend_capacity_failure_faults_mutations") {
   REQUIRE_FALSE(result);
   CHECK(result.error().code == Dot::Core::ErrorCode::External);
   CHECK(world->stats()->bodies == 256);
+  CHECK(world->stats()->faulted);
   REQUIRE(world->body(first));
   CHECK_FALSE(world->step(1.0 / 60));
   CHECK_FALSE(world->createBody());
   CHECK_FALSE(world->setVelocity(first, {}));
   CHECK_FALSE(world->setPose(first, {}));
   CHECK_FALSE(world->addImpulse(first, {}));
+  CHECK_FALSE(world->setAngularVelocity(first, {}));
+  CHECK_FALSE(world->applyChanges({}));
   REQUIRE(world->destroyBody(first));
   CHECK(world->stats()->bodies == 255);
 }

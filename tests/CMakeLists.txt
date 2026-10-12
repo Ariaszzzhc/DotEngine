@@ -16,6 +16,7 @@ add_executable(DotTests
     SceneTransactionTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
+    PhysicsBatchTests.cpp
     BodyTests.cpp
     RigidBodyTests.cpp
 )

@@ -24,6 +24,16 @@ world preserves its handles. Destroyed, foreign, and moved-from handles fail;
 native Jolt body-slot/sequence reuse cannot make an old public handle valid.
 Capacity is reusable after destruction, but public ID values are never reused.
 
+`applyChanges` creates, destroys, and replaces configurations in one batch of at
+most 8192 unique changes. A configuration alone creates a body; a handle alone
+destroys it; both replace it while retaining the public handle. Results follow
+input order, with null entries for deletions. All configurations and final
+capacity are checked first, and new shapes/bodies are prepared outside the body
+slot pool before old bodies are released. Full-capacity replacement is supported.
+Invalid input or preparation failure preserves existing bodies. Unexpected slot
+assignment failure can partially apply a batch and faults the world. Existing
+bodies outside a batch retain their native objects, sleep state, and motion.
+
 World configuration allows 1..4096 bodies and 0..8 worker threads. Zero workers
 executes synchronously on the owner thread. Gravity must be finite with magnitude
 at most 1000 m/s². Pair and contact capacities are each sixteen times the body
@@ -37,6 +47,14 @@ shapes. Box dimensions are half-extents; a capsule's `halfHeight` describes half
 the cylinder height, excluding its two hemispheres. Units are metres, kilograms,
 and seconds. Positions and rotations describe the shape origin in world space.
 The backend uses single precision and its default contact/sleep tolerances.
+
+Simulation configuration additionally accepts initial angular velocity with
+magnitude at most 15*pi rad/s and `startActive` (default true). Static angular
+velocity must be zero. Inactive moving bodies remain asleep until another
+operation wakes them. Snapshots include angular velocity; explicit setters use
+the same limit and reject static, invalid, stale, foreign, or faulted bodies.
+These motion-state fields belong to simulation configuration rather than the
+pose-independent scene authoring description.
 
 Every body field is checked, including dimensions for inactive shape variants:
 

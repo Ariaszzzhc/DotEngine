@@ -4,6 +4,8 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <vector>
 
 export module Dot.Physics.World;
 
@@ -32,11 +34,13 @@ export namespace Dot::Physics {
     Math::Vec3 velocity;
     bool active;
     bool sensor;
+    Math::Vec3 angularVelocity{};
   };
 
   struct WorldStats {
     std::size_t bodies;
     std::size_t active;
+    bool faulted{};
   };
 
   struct RayHit {
@@ -46,6 +50,14 @@ export namespace Dot::Physics {
     /** Fraction zero may be inside the shape and has no surface normal.
      * 比例为零可能位于形状内部，此时没有表面法线。 */
     std::optional<Math::Vec3> normal;
+  };
+
+  /** Configuration only creates; handle only destroys; both replace the body
+   * configuration while retaining its public handle. Neither is invalid.
+   * 仅配置表示创建，仅句柄表示销毁，两者都有表示保留公开句柄替换刚体配置；皆空无效。 */
+  struct BodyChange {
+    std::optional<BodyId> body;
+    std::optional<BodyConfig> config;
   };
 
   /** Owns a Jolt simulation, shapes, bodies, temporary allocator, and job system.
@@ -68,6 +80,16 @@ export namespace Dot::Physics {
     ~World();
 
     [[nodiscard]] auto createBody(const BodyConfig& config = {}) -> Core::Result<BodyId>;
+    /** At most 8192 unique changes. Input/shape/allocation failures occur before
+     * mutation. Bodies are prepared outside the slot pool so full-capacity
+     * replacements succeed. Results correspond to input order; deletions return
+     * nullopt. Unexpected slot-assignment failures may partially apply changes
+     * and fault the world; diagnostic reads/destruction remain available.
+     * 最多 8192 项不重复变更，输入/形状/准备分配失败发生在修改前；在槽池外准备刚体，
+     * 因此满容量时也可替换。结果顺序与输入一致，删除返回 nullopt；意外槽分配失败
+     * 可能部分应用并使世界故障，保留诊断读取和销毁操作。 */
+    [[nodiscard]] auto applyChanges(std::span<const BodyChange> changes)
+        -> Core::Result<std::vector<std::optional<BodyId>>>;
     [[nodiscard]] auto destroyBody(BodyId body) -> Core::Result<void>;
     [[nodiscard]] auto body(BodyId body) const -> Core::Result<BodyState>;
     /** Step [0.000001,0.25] seconds, subdivided at 60 Hz. Invalid input does not
@@ -82,6 +104,7 @@ export namespace Dot::Physics {
     [[nodiscard]] auto setPose(BodyId body, Math::Vec3 position, Math::Quat rotation = {})
         -> Core::Result<void>;
     [[nodiscard]] auto setVelocity(BodyId body, Math::Vec3 velocity) -> Core::Result<void>;
+    [[nodiscard]] auto setAngularVelocity(BodyId body, Math::Vec3 velocity) -> Core::Result<void>;
     /** Dynamic bodies only; reject impulses whose resulting speed exceeds 500.
      * 仅支持动态刚体，拒绝使结果速度超过 500 的冲量。 */
     [[nodiscard]] auto addImpulse(BodyId body, Math::Vec3 impulse) -> Core::Result<void>;

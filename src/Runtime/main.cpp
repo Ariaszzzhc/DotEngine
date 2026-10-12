@@ -3,6 +3,7 @@
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <print>
 #include <string_view>
 #include <vector>
@@ -32,15 +33,18 @@ namespace {
     floor.shape = Dot::Physics::Shape::Box;
     floor.position = {0, -0.5F, 0};
     floor.halfExtents = {5, 0.5F, 5};
-    auto ground = world->createBody(floor);
     Dot::Physics::BodyConfig falling;
     falling.position = {0, 3, 0};
-    auto sphere = world->createBody(falling);
+    const std::array changes{Dot::Physics::BodyChange{std::nullopt, floor},
+                             Dot::Physics::BodyChange{std::nullopt, falling}};
+    auto created = world->applyChanges(changes);
 
-    if (!ground || !sphere) {
+    if (!created) {
       std::println(stderr, "Physics acceptance body creation failed");
       return 1;
     }
+
+    const auto sphere = (*created)[1];
 
     for (int frame = 0; frame < 240; ++frame) {
       auto step = world->step(1.0 / 60);

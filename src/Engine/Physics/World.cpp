@@ -29,11 +29,15 @@ module;
 #include <expected>
 #include <format>
 #include <limits>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 module Dot.Physics.World;
 
@@ -249,6 +253,48 @@ namespace Dot::Physics {
 
       throw std::logic_error("Unvalidated motion type");
     }
+
+    struct BodyDeleter {
+      JPH::BodyInterface* interface;
+
+      auto operator()(JPH::Body* body) const noexcept -> void {
+        interface->DestroyBodyWithoutID(body);
+      }
+    };
+
+    using PendingBody = std::unique_ptr<JPH::Body, BodyDeleter>;
+
+    auto prepareBody(JPH::BodyInterface& bodies, const BodyConfig& config, std::uint64_t value)
+        -> Core::Result<PendingBody> {
+      auto shape = createShape(config);
+
+      if (shape.HasError()) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Jolt shape creation failed: {}", shape.GetError()));
+      }
+
+      JPH::BodyCreationSettings settings{
+          shape.Get().GetPtr(), native(config.position), native(config.rotation),
+          nativeMotion(config.motion), config.motion == Motion::Static ? staticLayer : movingLayer};
+      settings.mLinearVelocity = native(config.velocity);
+      settings.mAngularVelocity = native(config.angularVelocity);
+      settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+      settings.mMassPropertiesOverride.mMass = config.mass;
+      settings.mFriction = config.friction;
+      settings.mRestitution = config.restitution;
+      settings.mGravityFactor = config.gravityFactor;
+      settings.mIsSensor = config.sensor;
+      settings.mUserData = value;
+      settings.mLinearDamping = 0;
+      settings.mAngularDamping = 0;
+      auto* allocated = bodies.CreateBodyWithoutID(settings);
+
+      if (!allocated) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Jolt body preparation failed");
+      }
+
+      return PendingBody{allocated, BodyDeleter{&bodies}};
+    }
   }  // namespace
 
   struct World::Impl {
@@ -363,6 +409,18 @@ namespace Dot::Physics {
   }
 
   auto World::createBody(const BodyConfig& config) -> Core::Result<BodyId> {
+    const BodyChange change{std::nullopt, config};
+    auto applied = applyChanges(std::span{&change, 1});
+
+    if (!applied) {
+      return std::unexpected(applied.error());
+    }
+
+    return *applied->front();
+  }
+
+  auto World::applyChanges(std::span<const BodyChange> changes)
+      -> Core::Result<std::vector<std::optional<BodyId>>> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
     }
@@ -373,67 +431,151 @@ namespace Dot::Physics {
       return std::unexpected(ready.error());
     }
 
-    auto validated = validatedBodyConfig(config);
-
-    if (!validated) {
-      return std::unexpected(validated.error());
+    if (changes.size() > 8192) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Physics body batch exceeds 8192 changes");
     }
 
-    if (m_impl->m_bodies.size() >= m_impl->m_config.maxBodies
-        || m_impl->m_nextBody == std::numeric_limits<std::uint64_t>::max()) {
-      return Core::fail(Core::ErrorCode::Unavailable, "Physics body capacity/identity exhausted");
+    if (changes.empty()) {
+      return std::vector<std::optional<BodyId>>{};
     }
 
     auto& bodies = m_impl->m_system.GetBodyInterface();
-    JPH::Body* allocated = nullptr;
+    std::vector<std::optional<BodyId>> results;
+    std::vector<std::optional<BodyConfig>> configs;
+    std::vector<PendingBody> prepared;
+    std::unordered_set<std::uint64_t> seen;
+    auto nextValue = m_impl->m_nextBody;
+    std::size_t count = m_impl->m_bodies.size();
+    bool mutating = false;
 
     try {
-      auto shape = createShape(config);
+      results.reserve(changes.size());
+      configs.reserve(changes.size());
+      prepared.reserve(changes.size());
 
-      if (shape.HasError()) {
-        return Core::fail(Core::ErrorCode::External,
-                          std::format("Jolt shape creation failed: {}", shape.GetError()));
-      }
-
-      JPH::BodyCreationSettings settings{
-          shape.Get().GetPtr(), native(config.position), native(validated->rotation),
-          nativeMotion(config.motion), config.motion == Motion::Static ? staticLayer : movingLayer};
-      settings.mLinearVelocity = native(config.velocity);
-      settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-      settings.mMassPropertiesOverride.mMass = config.mass;
-      settings.mFriction = config.friction;
-      settings.mRestitution = config.restitution;
-      settings.mGravityFactor = config.gravityFactor;
-      settings.mIsSensor = config.sensor;
-      settings.mUserData = m_impl->m_nextBody;
-      settings.mLinearDamping = 0;
-      settings.mAngularDamping = 0;
-      allocated = bodies.CreateBody(settings);
-
-      if (!allocated) {
-        return Core::fail(Core::ErrorCode::Unavailable, "Jolt body allocation failed");
-      }
-
-      const auto id = allocated->GetID();
-      m_impl->m_bodies.emplace(m_impl->m_nextBody,
-                               Impl::Entry{id, config.motion, config.mass, config.sensor});
-      bodies.AddBody(id, config.motion == Motion::Static ? JPH::EActivation::DontActivate
-                                                         : JPH::EActivation::Activate);
-      return BodyId{m_impl->m_identity, m_impl->m_nextBody++};
-    } catch (const std::exception& error) {
-      if (allocated) {
-        const auto id = allocated->GetID();
-
-        if (allocated->IsInBroadPhase()) {
-          bodies.RemoveBody(id);
+      for (const auto& change : changes) {
+        if (!change.body && !change.config) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Empty physics body change");
         }
 
-        bodies.DestroyBody(id);
-        m_impl->m_bodies.erase(m_impl->m_nextBody);
+        if (change.body) {
+          auto entry = m_impl->resolve(*change.body, true);
+
+          if (!entry) {
+            return std::unexpected(entry.error());
+          }
+
+          if (!seen.insert(change.body->value).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate physics body change");
+          }
+
+          --count;
+        }
+
+        if (!change.config) {
+          results.push_back(std::nullopt);
+          configs.push_back(std::nullopt);
+          continue;
+        }
+
+        auto config = validatedBodyConfig(*change.config);
+
+        if (!config) {
+          return std::unexpected(config.error());
+        }
+
+        BodyId id{};
+
+        if (change.body) {
+          id = *change.body;
+        } else {
+          if (nextValue == std::numeric_limits<std::uint64_t>::max()) {
+            return Core::fail(Core::ErrorCode::Unavailable, "Physics body identity exhausted");
+          }
+
+          id = {m_impl->m_identity, nextValue++};
+        }
+
+        ++count;
+        results.push_back(id);
+        configs.push_back(*config);
       }
 
-      return Core::fail(Core::ErrorCode::External,
-                        std::format("Cannot create physics body: {}", error.what()));
+      if (count > m_impl->m_config.maxBodies) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Physics body batch exceeds capacity");
+      }
+
+      std::unordered_map<std::uint64_t, Impl::Entry> nodes;
+      nodes.reserve(changes.size());
+
+      for (std::size_t i = 0; i < changes.size(); ++i) {
+        if (!configs[i]) {
+          continue;
+        }
+
+        auto body = prepareBody(bodies, *configs[i], results[i]->value);
+
+        if (!body) {
+          return std::unexpected(body.error());
+        }
+
+        const auto& config = *configs[i];
+        nodes.insert_or_assign(results[i]->value, Impl::Entry{JPH::BodyID{}, config.motion,
+                                                              config.mass, config.sensor});
+        prepared.push_back(std::move(*body));
+      }
+
+      /** Allocate map buckets/nodes and bodies before releasing any live slots.
+       * Node transfer after commit starts needs no new allocations.
+       * 释放活动槽前分配映射桶/节点与刚体，提交开始后的节点迁移不再进行新分配。 */
+      m_impl->m_bodies.reserve(m_impl->m_config.maxBodies);
+      mutating = true;
+      m_impl->m_nextBody = nextValue;
+
+      for (const auto& change : changes) {
+        if (change.body) {
+          const auto id = m_impl->m_bodies.at(change.body->value).nativeId;
+          bodies.RemoveBody(id);
+          bodies.DestroyBody(id);
+          m_impl->m_bodies.erase(change.body->value);
+        }
+      }
+
+      std::size_t pending = 0;
+
+      for (std::size_t i = 0; i < changes.size(); ++i) {
+        if (!configs[i]) {
+          continue;
+        }
+
+        auto& body = prepared[pending++];
+
+        if (!bodies.AssignBodyID(body.get())) {
+          m_impl->m_faulted = true;
+          return Core::fail(
+              Core::ErrorCode::External,
+              "Unexpected Jolt slot assignment failure; batch may be partially applied");
+        }
+
+        const auto nativeId = body->GetID();
+        body.release();
+        auto node = nodes.extract(results[i]->value);
+        node.mapped().nativeId = nativeId;
+        m_impl->m_bodies.insert(std::move(node));
+        const auto& config = *configs[i];
+        bodies.AddBody(nativeId, config.motion != Motion::Static && config.startActive
+                                     ? JPH::EActivation::Activate
+                                     : JPH::EActivation::DontActivate);
+      }
+
+      return results;
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = m_impl->m_faulted || mutating;
+      return Core::fail(
+          Core::ErrorCode::External,
+          std::format("Physics body batch failed{}: {}",
+                      mutating ? " after mutation began" : " during preparation", error.what()));
     }
   }
 
@@ -475,7 +617,8 @@ namespace Dot::Physics {
                      quaternion(rotation),
                      vector(bodies.GetLinearVelocity(entry->nativeId)),
                      bodies.IsActive(entry->nativeId),
-                     entry->sensor};
+                     entry->sensor,
+                     vector(bodies.GetAngularVelocity(entry->nativeId))};
   }
 
   auto World::step(double seconds) -> Core::Result<void> {
@@ -514,7 +657,7 @@ namespace Dot::Physics {
       auto state = body({m_impl->m_identity, value});
 
       if (!state || !Math::isFinite(state->position) || !Math::isFinite(state->rotation)
-          || !Math::isFinite(state->velocity)) {
+          || !Math::isFinite(state->velocity) || !Math::isFinite(state->angularVelocity)) {
         m_impl->m_faulted = true;
         return Core::fail(Core::ErrorCode::External,
                           "Jolt step produced non-finite body state; world may have advanced");
@@ -536,7 +679,8 @@ namespace Dot::Physics {
     }
 
     return WorldStats{m_impl->m_bodies.size(),
-                      m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody)};
+                      m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody),
+                      m_impl->m_faulted};
   }
 
   auto World::setPose(BodyId id, Math::Vec3 position, Math::Quat rotation) -> Core::Result<void> {
@@ -584,6 +728,26 @@ namespace Dot::Physics {
     }
 
     m_impl->m_system.GetBodyInterface().SetLinearVelocity(entry->nativeId, native(velocity));
+    return {};
+  }
+
+  auto World::setAngularVelocity(BodyId id, Math::Vec3 velocity) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id, true);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    if (entry->motion == Motion::Static || !Math::isFinite(velocity)
+        || Math::length(velocity) > maxAngularSpeed) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid physics angular velocity");
+    }
+
+    m_impl->m_system.GetBodyInterface().SetAngularVelocity(entry->nativeId, native(velocity));
     return {};
   }
 

@@ -358,5 +358,26 @@ return errors.
   zero/non-finite handling, and relative reconstruction checks. Formatting and
   whitespace checks pass. Windows/Linux remain unverified.
 
+### Batched body configuration and motion state
+
+Added batch create/destroy/reconfigure operations that validate all inputs and
+prepare bodies outside Jolt's slot pool before mutation. Replacements work at
+full capacity and retain public handles; unaffected native bodies keep their
+motion and sleep state. Simulation configuration and snapshots now carry angular
+velocity, initial activation is explicit, and statistics expose fault state.
+
+- macOS Debug and Release each pass all 257 CTest cases (242 doctest cases and
+  fifteen executable checks), including full-capacity replacement, mixed input
+  order, real mass/ray verification after replacement, later-input rollback,
+  unchanged ID allocation on rejected batches, duplicate/foreign/stale/empty/
+  oversized/capacity failures, sleeping bodies, angular movement and limits,
+  static angular rejection, 300 repeated motion/shape replacements, moves,
+  owner-thread enforcement, and faulted batch/angular rejection.
+- `--physics-test` now creates its actual floor and falling sphere in one batch.
+- Reviewed prepared-body RAII, shape ownership, map-node transfer without commit
+  allocations, slot counts, non-reused IDs, unchanged-body lifetime, and partial
+  backend failure cleanup. Formatting/whitespace checks pass. Windows/Linux
+  remain unverified.
+
 Physics scene synchronization/contact events, audio, scripting,
 project/editor/export tooling, and the example game remain to be implemented.

@@ -2,6 +2,7 @@ module;
 
 #include <cmath>
 #include <expected>
+#include <numbers>
 
 module Dot.Physics.Body;
 
@@ -57,6 +58,13 @@ namespace Dot::Physics {
         || !inRange(config.position.y, -1'000'000, 1'000'000)
         || !inRange(config.position.z, -1'000'000, 1'000'000)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid physics position");
+    }
+
+    if (!Math::isFinite(config.angularVelocity)
+        || Math::length(config.angularVelocity) > 15 * std::numbers::pi_v<float>
+        || (config.motion == Motion::Static && Math::length(config.angularVelocity) != 0)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid initial physics angular velocity");
     }
 
     auto rotation = Math::normalized(config.rotation);
