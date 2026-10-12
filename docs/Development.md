@@ -1314,5 +1314,56 @@ Script hot reload keeps existing voices, paused cursor and master gain.
   sanitizers or environment changes. Windows/Linux common implementations remain
   uncompiled/unexecuted locally.
 
-Remaining project/editor/export tooling, expanded rendering, complete acceptance
-scenes and the example game remain to be implemented.
+### Project templates, persistence and authoring commands
+
+Added a strict rooted Project descriptor, exclusively published complete project
+templates and a DotEditor executable with JSON create/inspect/configure/save-scene/
+check commands. The graphical editor/runtime/export remain subsequent work.
+
+- macOS Debug and Release each pass all 646 CTest cases (601 doctest cases and
+  forty-five executable checks). Sixteen focused cases cover staging cleanup/
+  moves, complete no-replace publication/retry, existing empty directories/files/
+  symlinks and concurrent publication preserving the winner, invalid names,
+  strict version/schema/type/byte/portable metadata, Unicode templates with actual
+  SDK/attached script/camera/mesh, owned descriptions and fresh scene scopes,
+  native config/scene persistence and failed edits retaining memory/files, missing/
+  bad/symlink resources, failed creation cleanup and preserved existing destinations,
+  relocation/copies/moves, manifest-link save refusing to overwrite another resource,
+  every public JSON command through literal-argument child processes, actual
+  TypeScript errors and relocated recompilation. Existing subsystem checks pass.
+- `DotEditor --project-test <compiler> <sdk-root> <parent>` creates a complete owned
+  template using the shared project operations, compiles the actual SDK/Mover class,
+  drives its attached cube through published input, saves native scene/config,
+  moves the project and reopens/recompiles with fresh scene scope. Compiler
+  generations/process/VM resources return to baseline. `--project-render-test`
+  also verifies actual Metal pixel changes from the template's typed movement.
+- Core StagedDirectory uses native atomic no-replace directory rename: macOS
+  renamex_np(RENAME_EXCL), Linux renameat2(RENAME_NOREPLACE), Windows MoveFileExW
+  without replacement. Private unpublished storage is removed by RAII; native
+  publication failure retains staging for retry. Existing destinations are never
+  replaced, and post-publication open failures explicitly retain/report the
+  published directory. This is not crash durability or hostile race isolation.
+- Project manifests are strict version-1 JSON <=64 KiB/depth 8. Names, portable
+  relative paths, window dimensions and fixed rate are validated; unknown/missing/
+  duplicate fields and non-integer/wrong-type values fail. Open validates startup
+  scene/SDK files and rejects symlink components. Save prepares state before atomic
+  file replacement and changes memory only afterward. Startup saves use SceneFiles.
+  Scene loads use fresh identity while preserving entity values. Relative project
+  paths survive relocation; descriptor copies do not own filesystem storage.
+- The template owns a native scene and attached TypeScript behavior, with local
+  SDK, Mover source, scenes/scripts/assets folders and guidance. Creation prepares
+  all files in staging, validates resources, then publishes. No compiler/window/
+  backend is started by project open. DotEditor commands return JSON success/error
+  with real statuses and compiler diagnostics using these same module APIs;
+  no graphical editor or full project runtime/export is claimed at this stage.
+- Reviewed path/schema/UTF-8/numeric boundaries, root/symlink/manifest protections,
+  exclusive platform primitives, staging ownership and nonthrowing transfers,
+  publication/post-publication failure distinctions, prepared save state, scene
+  identity/relocation, JSON command/error behavior and actual template compilation/
+  execution/GPU acceptance. Formatting/whitespace checks pass; module interfaces
+  and implementations remain separate. Release uses NDEBUG and caller LLVM libc++/
+  libunwind, without LC_RPATH, sanitizers or environment changes. Windows/Linux
+  implementations remain uncompiled/unexecuted locally.
+
+Remaining project runtime, graphical editor/export tooling, expanded rendering,
+complete acceptance scenes and the example game remain to be implemented.

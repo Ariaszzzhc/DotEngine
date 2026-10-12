@@ -59,6 +59,8 @@ target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
     src/Engine/Core/Files.cpp
+    src/Engine/Core/StagedDirectory.cpp
+    src/Engine/Project/Project.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -121,6 +123,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Process.cppm
         src/Engine/Core/Events.cppm
         src/Engine/Core/Files.cppm
+        src/Engine/Core/StagedDirectory.cppm
+        src/Engine/Project/Project.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
@@ -164,6 +168,9 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/ComponentsAcceptance.cpp src/Runtime/ReloadAcceptance.cpp
     src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
+
+add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp)
+target_link_libraries(DotEditor PRIVATE DotEngine nlohmann_json::nlohmann_json)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

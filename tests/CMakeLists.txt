@@ -7,6 +7,8 @@ add_executable(DotTests
     TextTests.cpp
     EventTests.cpp
     FileTests.cpp
+    StagedDirectoryTests.cpp
+    ProjectTests.cpp
     InputTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
@@ -41,6 +43,7 @@ add_executable(DotTests
     SceneHostTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
+target_compile_definitions(DotTests PRIVATE DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
@@ -154,3 +157,20 @@ add_test(NAME runtime.scene_physics_render COMMAND DotRuntime --scene-physics-re
 set_tests_properties(runtime.scene_physics_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.render COMMAND DotRuntime --render-smoke)
 set_tests_properties(runtime.render PROPERTIES TIMEOUT 60 LABELS "native" RUN_SERIAL TRUE)
+
+add_test(NAME editor.invalid_argument COMMAND DotEditor --invalid)
+set_tests_properties(editor.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.project COMMAND DotEditor --project-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(editor.project PROPERTIES TIMEOUT 30 LABELS "acceptance")
+add_test(NAME editor.project_render COMMAND DotEditor --project-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(editor.project_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_executable(DotEditorTests main.cpp EditorCommandTests.cpp)
+target_link_libraries(DotEditorTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotEditorTests PRIVATE
+    DOT_EDITOR_EXECUTABLE="$<TARGET_FILE:DotEditor>"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
+add_dependencies(DotEditorTests DotEditor)
+doctest_discover_tests(DotEditorTests PROPERTIES TIMEOUT 30 LABELS "unit")
