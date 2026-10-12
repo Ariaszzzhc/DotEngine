@@ -7,9 +7,9 @@ Decoding builds an independent scene, preserving entity values while assigning a
 fresh scene identity. Existing live scenes and their handles remain independent.
 
 The root requires exactly `version` (integer 1), `name`, and `entities`. Every
-entity requires `id`, `name`, `parent`, and `transform`; `camera` and `mesh` are
-optional and may be null. Unknown or duplicate fields are rejected. Documents are
-limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
+entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
+`rigidBody` are optional and may be null. Unknown or duplicate fields are rejected.
+Documents are limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
 acyclic with depth at most 256.
 
 Entity IDs and non-null parent references are canonical positive decimal strings
@@ -48,6 +48,32 @@ Meshes require `kind` (`cube`/`quad`/`asset`), `asset`, `tint`, and boolean `vis
 Built-ins require an empty asset path. Asset paths use relative UTF-8 forward-slash
 paths without drive prefixes or parent traversal, ending in `.dotmesh` or `.obj`.
 Asset existence is checked when rendering, rather than substituting missing data.
+
+Rigid bodies require `motion` (`static`/`kinematic`/`dynamic`), `shape`
+(`box`/`sphere`/`capsule`), `halfExtents`, `radius`, `halfHeight`, `velocity`, `mass`,
+`friction`, `restitution`, `gravityFactor`, and boolean `sensor`. They store
+pose-independent authoring properties, with world-space initial velocity. Pose
+comes from the entity transform. All properties use the same finite/range checks
+as actual body creation; see `Physics.md`. Physics descriptions coexist with
+hierarchy, camera, and mesh components. Importing them creates no simulation
+resources. The subsequent simulation-binding stage will check the transform's
+physical suitability; scene synchronization is not implemented yet.
+
+```json
+{
+  "motion": "dynamic",
+  "shape": "box",
+  "halfExtents": [0.5, 0.5, 0.5],
+  "radius": 0.5,
+  "halfHeight": 0.5,
+  "velocity": [0, 0, 0],
+  "mass": 1,
+  "friction": 0.5,
+  "restitution": 0,
+  "gravityFactor": 1,
+  "sensor": false
+}
+```
 
 Run `DotRuntime --scene-file-test <existing-directory>` for save/load acceptance
 at `scenes/main.dotscene`. Renderable scenes also need a camera; the file codec

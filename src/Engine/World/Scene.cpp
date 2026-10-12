@@ -19,6 +19,7 @@ module Dot.World.Scene;
 import Dot.Core.Result;
 import Dot.Core.Text;
 import Dot.Math;
+import Dot.Physics.Body;
 
 namespace Dot::World {
   namespace {
@@ -230,12 +231,14 @@ namespace Dot::World {
       const auto parent = registry.get<Hierarchy>(native).parent;
       const auto* camera = registry.try_get<Camera>(native);
       const auto* mesh = registry.try_get<MeshRenderer>(native);
+      const auto* body = registry.try_get<RigidBody>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
               parent ? std::optional{EntityId{identity, *parent}} : std::nullopt,
               camera ? std::optional{*camera} : std::nullopt,
-              mesh ? std::optional{*mesh} : std::nullopt};
+              mesh ? std::optional{*mesh} : std::nullopt,
+              body ? std::optional{*body} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -824,6 +827,32 @@ namespace Dot::World {
     }
 
     m_impl->registry.emplace_or_replace<MeshRenderer>(*native, std::move(*mesh));
+    return {};
+  }
+
+  auto Scene::setRigidBody(EntityId entity, std::optional<RigidBody> body) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!body) {
+      m_impl->registry.remove<RigidBody>(*native);
+      return {};
+    }
+
+    auto checked = Physics::validateBodyProperties(*body);
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->registry.emplace_or_replace<RigidBody>(*native, *body);
     return {};
   }
 }  // namespace Dot::World

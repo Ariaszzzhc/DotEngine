@@ -7,14 +7,12 @@ module;
 
 export module Dot.Physics.World;
 
+export import Dot.Physics.Body;
+
 import Dot.Core.Result;
 import Dot.Math;
 
 export namespace Dot::Physics {
-  enum class Motion { Static, Kinematic, Dynamic };
-
-  enum class Shape { Box, Sphere, Capsule };
-
   struct BodyId {
     std::uint64_t world{};
     std::uint64_t value{};
@@ -25,30 +23,6 @@ export namespace Dot::Physics {
     std::uint32_t maxBodies{1024};
     Math::Vec3 gravity{0, -9.81F, 0};
     std::uint32_t workerThreads{};
-  };
-
-  /** Metres, kilograms, seconds; all fields must be finite. Shape dimensions
-   * are [0.001,10000], mass [0.01,1000000], friction/restitution [0,1], gravity
-   * factor [0,10], position components [-1000000,1000000], speed at most 500.
-   * Rotation is normalized. Static bodies require zero velocity.
-   * 单位为米、千克、秒，所有字段须有限；形状尺寸范围 [0.001,10000]，质量
-   * [0.01,1000000]，摩擦/恢复系数 [0,1]，重力倍数 [0,10]，位置分量
-   * [-1000000,1000000]，速度不超过 500；旋转会归一化，静态刚体速度须为零。
-   */
-  struct BodyConfig {
-    Motion motion{Motion::Dynamic};
-    Shape shape{Shape::Sphere};
-    Math::Vec3 halfExtents{0.5F, 0.5F, 0.5F};
-    float radius{0.5F};
-    float halfHeight{0.5F};
-    Math::Vec3 position{};
-    Math::Quat rotation{};
-    Math::Vec3 velocity{};
-    float mass{1};
-    float friction{0.5F};
-    float restitution{};
-    float gravityFactor{1};
-    bool sensor{};
   };
 
   struct BodyState {

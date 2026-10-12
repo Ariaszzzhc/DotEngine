@@ -15,6 +15,7 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.World.Scene;
 import Dot.Math;
+import Dot.Physics.Body;
 
 namespace Dot::World {
   namespace {
@@ -83,6 +84,46 @@ namespace Dot::World {
       return result;
     }
 
+    auto rigidBody(const Json& value) -> RigidBody {
+      Codec::requireFields(
+          value, {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass",
+                  "friction", "restitution", "gravityFactor", "sensor"});
+      RigidBody result;
+      const auto motion = value["motion"].get<std::string>();
+      const auto shape = value["shape"].get<std::string>();
+
+      if (motion == "static") {
+        result.motion = Physics::Motion::Static;
+      } else if (motion == "kinematic") {
+        result.motion = Physics::Motion::Kinematic;
+      } else if (motion == "dynamic") {
+        result.motion = Physics::Motion::Dynamic;
+      } else {
+        throw std::invalid_argument("Unknown rigid-body motion");
+      }
+
+      if (shape == "box") {
+        result.shape = Physics::Shape::Box;
+      } else if (shape == "sphere") {
+        result.shape = Physics::Shape::Sphere;
+      } else if (shape == "capsule") {
+        result.shape = Physics::Shape::Capsule;
+      } else {
+        throw std::invalid_argument("Unknown rigid-body shape");
+      }
+
+      result.halfExtents = vector3(value["halfExtents"]);
+      result.radius = Codec::number(value["radius"]);
+      result.halfHeight = Codec::number(value["halfHeight"]);
+      result.velocity = vector3(value["velocity"]);
+      result.mass = Codec::number(value["mass"]);
+      result.friction = Codec::number(value["friction"]);
+      result.restitution = Codec::number(value["restitution"]);
+      result.gravityFactor = Codec::number(value["gravityFactor"]);
+      result.sensor = value["sensor"].get<bool>();
+      return result;
+    }
+
     auto validateExtension(const std::filesystem::path& path) -> Core::Result<void> {
       try {
         auto extension = path.extension().generic_u8string();
@@ -111,6 +152,7 @@ namespace Dot::World {
       Transform transform;
       std::optional<Camera> camera;
       std::optional<MeshRenderer> mesh;
+      std::optional<RigidBody> rigidBody;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -127,7 +169,8 @@ namespace Dot::World {
       std::unordered_set<std::uint64_t> ids;
 
       for (const auto& value : root["entities"]) {
-        Codec::requireFields(value, {"id", "name", "parent", "transform"}, {"camera", "mesh"});
+        Codec::requireFields(value, {"id", "name", "parent", "transform"},
+                             {"camera", "mesh", "rigidBody"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -147,6 +190,10 @@ namespace Dot::World {
 
         if (value.contains("mesh") && !value["mesh"].is_null()) {
           record.mesh = mesh(value["mesh"]);
+        }
+
+        if (value.contains("rigidBody") && !value["rigidBody"].is_null()) {
+          record.rigidBody = rigidBody(value["rigidBody"]);
         }
 
         records.push_back(std::move(record));
@@ -214,6 +261,12 @@ namespace Dot::World {
         if (!changed) {
           return std::unexpected(changed.error());
         }
+
+        changed = scene->setRigidBody(entity, record.rigidBody);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
       }
 
       return std::move(*scene);
@@ -237,6 +290,26 @@ namespace Dot::World {
               {"asset", value.asset},
               {"visible", value.visible},
               {"tint", {value.tint.x, value.tint.y, value.tint.z, value.tint.w}}};
+    }
+
+    auto bodyJson(const RigidBody& value) -> Json {
+      const auto motion = value.motion == Physics::Motion::Static      ? "static"
+                          : value.motion == Physics::Motion::Kinematic ? "kinematic"
+                                                                       : "dynamic";
+      const auto shape = value.shape == Physics::Shape::Box      ? "box"
+                         : value.shape == Physics::Shape::Sphere ? "sphere"
+                                                                 : "capsule";
+      return {{"motion", motion},
+              {"shape", shape},
+              {"halfExtents", {value.halfExtents.x, value.halfExtents.y, value.halfExtents.z}},
+              {"radius", value.radius},
+              {"halfHeight", value.halfHeight},
+              {"velocity", {value.velocity.x, value.velocity.y, value.velocity.z}},
+              {"mass", value.mass},
+              {"friction", value.friction},
+              {"restitution", value.restitution},
+              {"gravityFactor", value.gravityFactor},
+              {"sensor", value.sensor}};
     }
   }  // namespace
 
@@ -267,7 +340,8 @@ namespace Dot::World {
                transform.rotation.w}},
              {"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}}},
            {"camera", entity.camera ? cameraJson(*entity.camera) : Json(nullptr)},
-           {"mesh", entity.mesh ? meshJson(*entity.mesh) : Json(nullptr)}});
+           {"mesh", entity.mesh ? meshJson(*entity.mesh) : Json(nullptr)},
+           {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)}});
     }
 
     auto encoded

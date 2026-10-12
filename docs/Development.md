@@ -313,5 +313,29 @@ world while preserving diagnostic reads and cleanup operations.
 - An implementation-only touch rebuilds the physics object and relinks consumers
   without rebuilding module interfaces or their BMI consumers.
 
-Physics scene integration/contact events, audio, scripting, project/editor/export
-tooling, and the example game remain to be implemented.
+### Rigid-body descriptions and persistence
+
+Extracted pose-independent physics properties and CPU-only validation into a
+separate module. Actual body creation and scene authoring share the checks;
+world-space position/rotation remain part of simulation configuration. Scenes now
+store optional rigid-body descriptions without initializing Jolt, and strict
+scene JSON persists every property while accepting older documents without the
+component. Component replacement validates before mutation.
+
+- macOS Debug and Release each pass all 240 CTest cases (225 doctest cases and
+  fifteen executable checks), including all motion/shape combinations, returned
+  quaternion normalization, physical boundaries/non-finite fields, inactive shape
+  dimensions, static velocity, snapshot independence, component removal, failed
+  replacements, subtree lifetime, stale/foreign/moved handles, worker rejection,
+  complete JSON round trips, old/null components, exact fields/types/enums,
+  duplicate fields, and repeated failed imports preserving live scenes.
+- The scene-file runtime acceptance saves and reloads an actual rigid-body
+  description alongside its mesh component. Existing physical collision and
+  Metal rendering acceptance cases also pass after the module extraction.
+- Reviewed module dependencies, value ownership, shared validation equivalence,
+  initial velocity versus runtime pose, candidate-scene failure cleanup, and
+  strict schema compatibility. Formatting/whitespace checks pass. Windows/Linux
+  remain unverified.
+
+Physics scene synchronization/contact events, audio, scripting,
+project/editor/export tooling, and the example game remain to be implemented.

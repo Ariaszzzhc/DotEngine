@@ -4,6 +4,12 @@
 and rendering. It uses engine math types and expected error results; vendor types
 remain private to its implementation unit.
 
+`Dot.Physics.Body` supplies CPU-only `BodyProperties` and shared validation.
+`BodyConfig` extends those properties with an initial world-space pose. Scenes
+store the properties as their optional `RigidBody` component and persist them in
+`.dotscene` files. Authoring creates no Jolt bodies, and editing a snapshot cannot
+change the scene. Failed replacements preserve the previous component.
+
 ## Ownership and operations
 
 Create a move-only `Dot::Physics::World` on its owner thread. All operations must
@@ -81,5 +87,4 @@ handle. Focused tests also cover restitution, gravity scaling, all three shapes,
 kinematic motion, sensors, limits, transactional input failures, native sequence
 wrap, worker execution, moves, and actual contact-capacity failure.
 
-Scene components, contact events, scene synchronization, and persistence of
-physics descriptions are subsequent stages.
+Contact events and scene synchronization are subsequent stages.

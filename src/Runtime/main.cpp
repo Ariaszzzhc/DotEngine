@@ -96,6 +96,16 @@ namespace {
       return 1;
     }
 
+    Dot::World::RigidBody body;
+    body.shape = Dot::Physics::Shape::Box;
+    body.mass = 2;
+    auto physics = scene->setRigidBody(*entity, body);
+
+    if (!physics) {
+      std::println(stderr, "{}", physics.error().message);
+      return 1;
+    }
+
     auto saved = Dot::World::saveScene(*files, "scenes/main.dotscene", *scene);
 
     if (!saved) {
@@ -112,7 +122,8 @@ namespace {
 
     auto restored = loaded->findEntity(50);
 
-    if (!restored || !loaded->entity(*restored)->mesh || loaded->id() == scene->id()) {
+    if (!restored || !loaded->entity(*restored)->mesh
+        || loaded->entity(*restored)->rigidBody != body || loaded->id() == scene->id()) {
       std::println(stderr, "Scene file acceptance restoration failed");
       return 1;
     }

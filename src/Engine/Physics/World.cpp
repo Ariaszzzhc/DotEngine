@@ -37,6 +37,7 @@ module;
 
 module Dot.Physics.World;
 
+import Dot.Physics.Body;
 import Dot.Core.Result;
 import Dot.Math;
 
@@ -223,36 +224,6 @@ namespace Dot::Physics {
       return std::isfinite(seconds) && seconds >= 0.000001 && seconds <= 0.25;
     }
 
-    auto validateBody(const BodyConfig& config) -> Core::Result<Math::Quat> {
-      if (config.motion != Motion::Static && config.motion != Motion::Kinematic
-          && config.motion != Motion::Dynamic) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown physics motion type");
-      }
-
-      if (config.shape != Shape::Box && config.shape != Shape::Sphere
-          && config.shape != Shape::Capsule) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown physics shape type");
-      }
-
-      if (!inRange(config.halfExtents.x, 0.001F, 10000)
-          || !inRange(config.halfExtents.y, 0.001F, 10000)
-          || !inRange(config.halfExtents.z, 0.001F, 10000) || !inRange(config.radius, 0.001F, 10000)
-          || !inRange(config.halfHeight, 0.001F, 10000) || !inRange(config.mass, 0.01F, 1'000'000)
-          || !inRange(config.friction, 0, 1) || !inRange(config.restitution, 0, 1)
-          || !inRange(config.gravityFactor, 0, 10) || !positionValid(config.position)
-          || !speedValid(config.velocity)) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Physics body fields exceed finite physical input limits");
-      }
-
-      if (config.motion == Motion::Static && Math::length(config.velocity) != 0) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Static physics bodies require zero velocity");
-      }
-
-      return Math::normalized(config.rotation);
-    }
-
     auto createShape(const BodyConfig& config) -> JPH::Shape::ShapeResult {
       switch (config.shape) {
         case Shape::Box:
@@ -402,10 +373,10 @@ namespace Dot::Physics {
       return std::unexpected(ready.error());
     }
 
-    auto rotation = validateBody(config);
+    auto validated = validatedBodyConfig(config);
 
-    if (!rotation) {
-      return std::unexpected(rotation.error());
+    if (!validated) {
+      return std::unexpected(validated.error());
     }
 
     if (m_impl->m_bodies.size() >= m_impl->m_config.maxBodies
@@ -425,7 +396,7 @@ namespace Dot::Physics {
       }
 
       JPH::BodyCreationSettings settings{
-          shape.Get().GetPtr(), native(config.position), native(*rotation),
+          shape.Get().GetPtr(), native(config.position), native(validated->rotation),
           nativeMotion(config.motion), config.motion == Motion::Static ? staticLayer : movingLayer};
       settings.mLinearVelocity = native(config.velocity);
       settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;

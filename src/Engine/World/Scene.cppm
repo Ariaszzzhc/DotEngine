@@ -13,6 +13,7 @@ export module Dot.World.Scene;
 
 import Dot.Core.Result;
 import Dot.Math;
+import Dot.Physics.Body;
 
 export namespace Dot::World {
   /** Scene-scoped handle. Values are never reused within a scene; moving its
@@ -66,6 +67,14 @@ export namespace Dot::World {
     std::optional<EntityId> parent;
   };
 
+  /** Stored body properties, with pose taken from the entity transform. Setting
+   * this description does not initialize a physics backend or allocate a body.
+   * Initial velocity is world-space. Hierarchy/scale suitability is a separate
+   * simulation-binding responsibility.
+   * 保存的刚体属性，位姿来自实体变换；设置描述不初始化后端或分配仿真刚体。
+   * 初始速度使用世界坐标，层级与缩放是否适用由独立的仿真绑定阶段负责。 */
+  using RigidBody = Physics::BodyProperties;
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -75,6 +84,7 @@ export namespace Dot::World {
     std::optional<EntityId> parent;
     std::optional<Camera> camera{};
     std::optional<MeshRenderer> mesh{};
+    std::optional<RigidBody> rigidBody{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -140,6 +150,10 @@ export namespace Dot::World {
     /** Store a description; the render service checks asset existence/loading.
      * 保存描述，由渲染服务检查资产是否存在并负责加载。 */
     [[nodiscard]] auto setMeshRenderer(EntityId entity, std::optional<MeshRenderer> mesh)
+        -> Core::Result<void>;
+    /** Validate every body property before replacement; removal is idempotent.
+     * 替换前校验所有刚体属性，移除具有幂等性。 */
+    [[nodiscard]] auto setRigidBody(EntityId entity, std::optional<RigidBody> body)
         -> Core::Result<void>;
 
   private:
