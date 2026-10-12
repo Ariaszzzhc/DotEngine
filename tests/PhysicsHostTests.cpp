@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -294,4 +295,70 @@ TEST_CASE("physics_host_failed_authoring_sync_and_reset_retain_motion_generation
   REQUIRE(physics.synchronize());
   REQUIRE(physics.step(0.1));
   CHECK(native->entity(entity)->transform.position.x == doctest::Approx(0.4));
+}
+
+TEST_CASE("physics_host_advance_preserves_contacts_across_slices_in_one_batch") {
+  auto native = scene();
+  auto sensor = add(native, Dot::Physics::Motion::Static);
+  auto description = native->entity(sensor)->rigidBody.value();
+  description.sensor = true;
+  REQUIRE(native->setRigidBody(sensor, description));
+  auto moving = add(native);
+  REQUIRE(native->setTransform(moving, {{-2, 0, 0}}));
+  auto physics = source(native);
+  auto services = physics.bindings().value();
+  REQUIRE(invoke(services, "physics.setVelocity", Json::array({id(moving), xyz(8)})));
+  REQUIRE(physics.advance(1));
+  CHECK(native->entity(moving)->transform.position.x == doctest::Approx(6));
+  auto batch = read(services, "physics.contacts");
+  CHECK(batch["index"] == "2");
+  REQUIRE(batch["events"].size() >= 2);
+  CHECK(batch["events"][0]["phase"] == "begin");
+  CHECK(batch["events"].back()["phase"] == "end");
+  CHECK(batch["events"][0]["step"] != batch["events"].back()["step"]);
+  CHECK(read(services, "physics.contacts") == batch);
+  REQUIRE(physics.advance(0.000001));
+  CHECK(read(services, "physics.contacts")["index"] == "3");
+}
+
+TEST_CASE("physics_host_advance_invalid_duration_preserves_scene_motion_and_batch") {
+  auto native = scene();
+  auto moving = add(native);
+  auto physics = source(native);
+  auto services = physics.bindings().value();
+  REQUIRE(invoke(services, "physics.setVelocity", Json::array({id(moving), xyz(2)})));
+  const auto body = read(services, "physics.body", Json::array({id(moving)}));
+  const auto batch = read(services, "physics.contacts");
+
+  for (auto seconds : {-1., 0., 0.0000001, 1.000001, std::numeric_limits<double>::infinity(),
+                       std::numeric_limits<double>::quiet_NaN()}) {
+    CHECK_FALSE(physics.advance(seconds));
+    CHECK(read(services, "physics.body", Json::array({id(moving)})) == body);
+    CHECK(read(services, "physics.contacts") == batch);
+  }
+
+  REQUIRE(physics.advance(0.250001));
+  CHECK(native->entity(moving)->transform.position.x == doctest::Approx(0.500002));
+}
+
+TEST_CASE("physics_host_advance_budget_fault_rejects_stale_batch_until_reset") {
+  auto native = scene();
+  auto floor = add(native, Dot::Physics::Motion::Static);
+  add(native, Dot::Physics::Motion::Dynamic, 0.9F);
+  auto physics = source(native, 128);
+  auto services = physics.bindings().value();
+  CHECK_FALSE(physics.advance(1));
+  CHECK(read(services, "physics.stats")["faulted"] == true);
+  CHECK_FALSE(invoke(services, "physics.contacts"));
+  CHECK_FALSE(physics.advance(0.1));
+  REQUIRE(native->destroyEntity(floor));
+  REQUIRE(physics.reset());
+  REQUIRE(physics.advance(1));
+  auto moved = std::move(physics);
+  CHECK_FALSE(physics.advance(0.1));
+  bool rejected = false;
+  std::thread worker([&] { rejected = !moved.advance(0.1); });
+  worker.join();
+  CHECK(rejected);
+  CHECK(read(services, "physics.contacts")["generation"] == "2");
 }

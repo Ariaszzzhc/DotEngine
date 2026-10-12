@@ -134,6 +134,29 @@ TEST_CASE("reload_source_snapshots_compare_exact_contents_and_compile_captured_b
   CHECK_FALSE(project.compiler(limits).compileSnapshot(moved));
 }
 
+TEST_CASE("reload_live_explicit_start_uses_prepared_generation_without_polling") {
+  Project project;
+  project.write(actor());
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{0};
+  auto scripts = LiveScripts::create(native, project.files(), project.compiler(), config);
+  REQUIRE(scripts);
+  project.write("export const broken: number = 'invalid';");
+  good(scripts->start());
+  CHECK(native->entities()->front().name == "started");
+  CHECK(scripts->stats()->compileAttempts == 1);
+  good(scripts->start());
+  CHECK(native->entities()->front().name == "started");
+  auto frame = good(scripts->update(0));
+  CHECK(frame.source.error.has_value());
+  CHECK(native->entities()->front().name == "tick1");
+  good(scripts->start());
+  CHECK(native->entities()->front().name == "tick1");
+  good(scripts->stop());
+  CHECK_FALSE(scripts->start());
+}
+
 TEST_CASE("reload_new_realm_migrates_private_state_and_skips_duplicate_start_old_stop") {
   Project project;
   project.write(actor());

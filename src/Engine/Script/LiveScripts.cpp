@@ -235,6 +235,21 @@ namespace Dot::Script {
     }
   }
 
+  auto LiveScripts::start() -> Core::Result<ScriptReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Live scripts were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    ActiveScope active{m_impl->m_active};
+    return m_impl->m_scripts.start();
+  }
+
   auto LiveScripts::update(double seconds) -> Core::Result<LiveScriptReport> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Live scripts were moved");

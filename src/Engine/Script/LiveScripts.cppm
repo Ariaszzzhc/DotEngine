@@ -67,6 +67,10 @@ export namespace Dot::Script {
     ~LiveScripts();
 
     [[nodiscard]] auto poll(bool force = false) -> Core::Result<ReloadStatus>;
+    /** Start the prepared generation without polling. Calls are idempotent;
+     * lifecycle failures are reported by the underlying scene service.
+     * 不轮询而启动已准备代；调用幂等，生命周期错误由场景服务报告。 */
+    [[nodiscard]] auto start() -> Core::Result<ScriptReport>;
     /** Poll then dispatch the old or newly committed generation; report both
      * reload diagnostics and lifecycle failures explicitly. Invalid deltas fail
      * before polling or script effects. 轮询后分发旧/已提交新代，明确报告重载诊断与

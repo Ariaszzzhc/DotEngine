@@ -43,6 +43,12 @@ export namespace Dot::Script {
      * 1 字节..16 MiB，须适配消费 Runtime 的传输预算。 */
     [[nodiscard]] auto synchronize() -> Core::Result<void>;
     [[nodiscard]] auto step(double seconds) -> Core::Result<void>;
+    /** Advance 1 microsecond..1 second in equal slices <=250 ms, publishing one
+     * batch containing every slice's contacts in order. Invalid duration has no
+     * effects; failures after an earlier slice require reset, without rollback.
+     * 以不超过 250 毫秒的等分步推进 1 微秒..1 秒，按序发布所有分步接触的单个批次。
+     * 无效时长无副作用；已完成分步后的失败须重置，不回滚。 */
+    [[nodiscard]] auto advance(double seconds) -> Core::Result<void>;
     /** Reset from authoring without replacing callbacks; increments generation
      * and publishes an empty batch. Failed preparation retains the old world.
      * 从编辑数据重置且不替换回调，递增仿真代并发布空批次；准备失败保留旧世界。 */

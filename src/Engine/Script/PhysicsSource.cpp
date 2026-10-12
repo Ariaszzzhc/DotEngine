@@ -153,32 +153,45 @@ namespace Dot::Script {
           .dump();
     }
 
+    auto collect(Json& entries) -> Core::Result<void> {
+      auto events = m_simulation.drainContactEvents();
+
+      if (!events) {
+        m_faulted = true;
+        return std::unexpected(events.error());
+      }
+
+      for (const auto& event : *events) {
+        entries.push_back(contactJson(event));
+      }
+
+      return {};
+    }
+
+    auto publish(const Json& entries) -> Core::Result<void> {
+      auto encoded = batchJson(m_generation, entries);
+
+      if (encoded.size() > m_config.contactJsonBytes) {
+        m_faulted = true;
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Physics contacts exceeded JSON budget after mutation; reset required");
+      }
+
+      m_contacts = std::move(encoded);
+      ++m_batch;
+      return {};
+    }
+
     auto publish() -> Core::Result<void> {
       try {
-        auto events = m_simulation.drainContactEvents();
-
-        if (!events) {
-          m_faulted = true;
-          return std::unexpected(events.error());
-        }
-
         auto entries = Json::array();
+        auto captured = collect(entries);
 
-        for (const auto& event : *events) {
-          entries.push_back(contactJson(event));
+        if (!captured) {
+          return captured;
         }
 
-        auto encoded = batchJson(m_generation, entries);
-
-        if (encoded.size() > m_config.contactJsonBytes) {
-          m_faulted = true;
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Physics contacts exceeded JSON budget after mutation; reset required");
-        }
-
-        m_contacts = std::move(encoded);
-        ++m_batch;
-        return {};
+        return publish(entries);
       } catch (const std::exception& error) {
         m_faulted = true;
         return Core::fail(Core::ErrorCode::External,
@@ -416,6 +429,69 @@ namespace Dot::Script {
 
     auto result = m_impl->m_simulation.step(*m_impl->m_scene, seconds);
     return result ? m_impl->publish() : result;
+  }
+
+  auto PhysicsSource::advance(double seconds) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics source was moved");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0.000001 || seconds > 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Physics advance seconds must be finite in [0.000001,1]");
+    }
+
+    auto capacity = m_impl->capacity();
+
+    if (!capacity) {
+      return capacity;
+    }
+
+    bool advanced = false;
+
+    try {
+      auto entries = Json::array();
+      const auto slices = static_cast<unsigned>(std::ceil(seconds / 0.25));
+      const auto duration = seconds / slices;
+
+      for (unsigned index = 0; index < slices; ++index) {
+        auto result = m_impl->m_simulation.step(*m_impl->m_scene, duration);
+
+        if (!result) {
+          m_impl->m_faulted = advanced;
+          return result;
+        }
+
+        advanced = true;
+        auto captured = m_impl->collect(entries);
+
+        if (!captured) {
+          return captured;
+        }
+
+        /** Bound retained events before another slice can mutate the world.
+         * 在下一分步改变世界之前限制所保留事件的预算。 */
+        if (m_impl->batchJson(m_impl->m_generation, entries).size()
+            > m_impl->m_config.contactJsonBytes) {
+          m_impl->m_faulted = true;
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Physics contacts exceeded JSON budget after mutation; reset required");
+        }
+      }
+
+      return m_impl->publish(entries);
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = advanced;
+      return Core::fail(
+          Core::ErrorCode::External,
+          "Advance physics contacts; reset required after mutation: " + std::string(error.what()));
+    }
   }
 
   auto PhysicsSource::reset() -> Core::Result<void> {

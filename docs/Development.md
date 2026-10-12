@@ -1380,3 +1380,27 @@ timeout, a stopped descendant heartbeat and zero owned child resources.
   The final Debug full run passes 663/663 with the revised budget. This changes
   the test's scheduling tolerance, without changing process implementation or
   swallowing timeout/resource assertions. Reviewed the diff and formatting.
+
+### Script scheduling and aggregate physics advancement
+
+Added explicit LiveScripts startup and native PhysicsSource advancement for the
+project scheduler, without extending script authority over native scheduling.
+
+- Four focused behavioral cases pass in macOS Debug and Release. The complete
+  project-runtime working tree passes 663/663 CTest cases in both configurations.
+  Tests verify start without source polling, idempotent start/terminal stop,
+  preserved old scripts after actual compiler failure, real motion at duration
+  bounds and across slice boundaries, Begin/End contacts from different slices
+  retained in one non-consuming batch, invalid durations preserving motion/batch,
+  publication-budget faults rejecting stale data, reset retaining callbacks,
+  moved services and foreign-thread rejection.
+- Physics advancement accepts finite 1 microsecond..1 second, divides into equal
+  <=250 ms slices and publishes once. Ordered contacts from every slice are
+  accumulated under the JSON budget before further mutation. Capture/serialization
+  or later-slice failures after advancement require reset without rollback;
+  first-step preparation failures retain existing native state.
+- Reviewed owner/scene scope, prevalidation, contact ordering/capacity, single
+  publication index increments, native fault/stale-read behavior, reset recovery
+  and explicit script-start lifecycle guards. Formatting/whitespace checks pass;
+  module interfaces and implementations remain separate. No environment changes
+  or sanitizers; Windows/Linux common code remains unvalidated locally.
