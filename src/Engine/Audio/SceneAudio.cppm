@@ -78,6 +78,7 @@ export namespace Dot::Audio {
     [[nodiscard]] auto voice(Dot::World::EntityId entity) const -> Core::Result<VoiceState>;
     [[nodiscard]] auto play(Dot::World::EntityId entity) -> Core::Result<void>;
     [[nodiscard]] auto pause(Dot::World::EntityId entity) -> Core::Result<void>;
+    [[nodiscard]] auto stop(Dot::World::EntityId entity) -> Core::Result<void>;
     [[nodiscard]] auto seek(Dot::World::EntityId entity, std::uint64_t sourceFrame)
         -> Core::Result<void>;
     [[nodiscard]] auto setVolume(float volume) -> Core::Result<void>;

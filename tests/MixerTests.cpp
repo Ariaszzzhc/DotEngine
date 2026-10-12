@@ -606,3 +606,50 @@ TEST_CASE("audio.mixer_configuration_query_is_owned_and_retains_initial_settings
   queried->channels = 2;
   CHECK(mixer->config()->channels == 1);
 }
+
+TEST_CASE("audio_mixer_stop_rewinds_and_cursor_queries_preserve_pause_seek_and_restart_contracts") {
+  auto mixer = Mixer::create().value();
+  auto clip = constant(0.25F, 4096).value();
+  auto voice = mixer.createVoice(clip).value();
+  CHECK(mixer.voice(voice)->sourceFrame == 0);
+  REQUIRE(mixer.seek(voice, 100));
+  CHECK(mixer.voice(voice)->sourceFrame == 100);
+  REQUIRE(mixer.play(voice));
+  std::array<float, 128> samples;
+  REQUIRE(mixer.render(samples));
+  REQUIRE(mixer.pause(voice));
+  const auto paused = mixer.voice(voice)->sourceFrame;
+  CHECK(paused > 100);
+  REQUIRE(mixer.render(samples));
+  CHECK(mixer.voice(voice)->sourceFrame == paused);
+  REQUIRE(mixer.stop(voice));
+  auto stopped = mixer.voice(voice).value();
+  CHECK_FALSE(stopped.playing);
+  CHECK_FALSE(stopped.atEnd);
+  CHECK(stopped.sourceFrame == 0);
+  REQUIRE(mixer.stop(voice));
+  REQUIRE(mixer.play(voice));
+  REQUIRE(mixer.render(samples));
+  CHECK(allNear(samples, 0.25F));
+  CHECK_FALSE(mixer.stop({}));
+  CHECK(mixer.voice(voice)->playing);
+}
+
+TEST_CASE("audio_mixer_stop_of_ended_voice_clears_end_state_and_retains_other_voice") {
+  auto mixer = Mixer::create().value();
+  auto shortClip = constant(0.25F, 4).value();
+  auto longClip = constant(0.25F, 4096).value();
+  auto ended = mixer.createVoice(shortClip).value();
+  auto other = mixer.createVoice(longClip).value();
+  REQUIRE(mixer.play(ended));
+  REQUIRE(mixer.play(other));
+  std::array<float, 128> samples;
+  REQUIRE(mixer.render(samples));
+  CHECK(mixer.voice(ended)->atEnd);
+  auto before = mixer.voice(other).value();
+  REQUIRE(mixer.stop(ended));
+  CHECK_FALSE(mixer.voice(ended)->atEnd);
+  CHECK(mixer.voice(ended)->sourceFrame == 0);
+  CHECK(mixer.voice(other)->sourceFrame == before.sourceFrame);
+  CHECK(mixer.voice(other)->playing);
+}

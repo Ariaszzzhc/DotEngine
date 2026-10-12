@@ -34,6 +34,9 @@ export namespace Dot::Audio {
     bool playing;
     bool atEnd;
     SpatialSettings spatial{};
+    /** Backend source read cursor; may include prefetch, not device presentation.
+     * 后端源读取游标，可含预取数据，不表示设备播放位置。 */
+    std::uint64_t sourceFrame{};
   };
 
   struct VoiceCreation {
@@ -109,6 +112,10 @@ export namespace Dot::Audio {
      * 恢复暂停声部，已结束的声部从起点重新播放。 */
     [[nodiscard]] auto play(VoiceId voice) -> Core::Result<void>;
     [[nodiscard]] auto pause(VoiceId voice) -> Core::Result<void>;
+    /** Pause and rewind in one operation without graph advancement. Backend
+     * failure after pause faults the mixer; recreating it is required.
+     * 单次操作暂停并归零，不推进音频图；暂停后的后端失败使混音器故障，须重建。 */
+    [[nodiscard]] auto stop(VoiceId voice) -> Core::Result<void>;
     /** Source-frame target in [0,clip.frames), without stale prefetched samples.
      * Does not implicitly start playback. 源帧目标位于 [0,片段帧数)，清除旧的预取样本，
      * 不隐式启动播放。 */

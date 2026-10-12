@@ -56,6 +56,7 @@ export namespace Dot::Audio {
     [[nodiscard]] auto applyChanges(const VoiceBatch& batch) -> Core::Result<std::vector<VoiceId>>;
     [[nodiscard]] auto play(VoiceId voice) -> Core::Result<void>;
     [[nodiscard]] auto pause(VoiceId voice) -> Core::Result<void>;
+    [[nodiscard]] auto stop(VoiceId voice) -> Core::Result<void>;
     [[nodiscard]] auto seek(VoiceId voice, std::uint64_t sourceFrame) -> Core::Result<void>;
     [[nodiscard]] auto configureVoice(VoiceId voice, const VoiceSettings& settings)
         -> Core::Result<void>;

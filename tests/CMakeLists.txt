@@ -10,6 +10,7 @@ add_executable(DotTests
     InputTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
+    AudioHostTests.cpp
     PlatformTests.cpp
     ApplicationTests.cpp
     MathTests.cpp
@@ -51,7 +52,7 @@ doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
-add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp)
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
@@ -123,6 +124,10 @@ add_test(NAME runtime.script_physics COMMAND DotRuntime --script-physics-test "$
 set_tests_properties(runtime.script_physics PROPERTIES TIMEOUT 30 LABELS "acceptance")
 add_test(NAME runtime.script_physics_render COMMAND DotRuntime --script-physics-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_physics_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+add_test(NAME runtime.script_audio COMMAND DotRuntime --script-audio-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.script_audio PROPERTIES TIMEOUT 30 LABELS "acceptance")
+add_test(NAME runtime.script_audio_play COMMAND DotRuntime --script-audio-play-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.script_audio_play PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")

@@ -349,3 +349,17 @@ cleanup. Native tests use real CoreAudio at endpoint software gain zero and veri
 continuous frame delivery, failed-edit retention, failed initialization cleanup,
 and joined resource release. They do not claim physical audibility or seamless
 native reset. Windows/Linux implementations remain unverified.
+
+## Stop and source cursor
+
+Mixer, Playback and SceneAudio expose stop(voice/entity), pausing and rewinding to
+source frame zero without advancing the graph. Native Playback executes both edits
+in a single worker command; queued/driver PCM remains unchanged. Backend failure
+during stop faults the mixer explicitly. Successful stop clears ended state, retains
+the voice/clip, and allows a later play from the beginning.
+
+VoiceState.sourceFrame queries miniaudio's source read cursor as uint64. It can
+include backend prefetch/resampling and is not a device presentation timestamp.
+Paused voices retain that cursor; seek and stop update it without starting playback.
+The typed script bridge preserves frame values as decimal strings; see Scripting.md
+for AudioSession ownership, scheduling, state/control methods and executable cases.

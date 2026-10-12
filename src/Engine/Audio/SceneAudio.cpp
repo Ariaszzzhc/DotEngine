@@ -482,6 +482,16 @@ namespace Dot::Audio {
               : Core::Result<void>{std::unexpected(id.error())};
   }
 
+  auto SceneAudio::stop(EntityId entity) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto id = m_impl->find(entity);
+    return id ? std::visit([&](auto& backend) { return backend.stop(*id); }, m_impl->m_backend)
+              : Core::Result<void>{std::unexpected(id.error())};
+  }
+
   auto SceneAudio::seek(EntityId entity, std::uint64_t sourceFrame) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");

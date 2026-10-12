@@ -1261,5 +1261,58 @@ angular velocity, impulses, kinematic targets, rays and non-consuming contact ba
   sanitizers or environment changes. Windows/Linux common implementations remain
   uncompiled/unexecuted locally.
 
-Remaining audio runtime script APIs, project/editor/export tooling, expanded
-rendering, and the example game remain to be implemented.
+### Runtime audio script APIs and stop/cursor controls
+
+Added native stop/rewind and source-cursor queries, an owned AudioSession for real
+offline/native scene audio, eight host methods and typed global/entity controls.
+Script hot reload keeps existing voices, paused cursor and master gain.
+
+- macOS Debug and Release each pass all 627 CTest cases (585 doctest cases and
+  forty-two executable checks). Thirteen focused behavioral cases cover native
+  stop/pause/seek/restart/end state and independent voices, real PCM gain/silence,
+  owned voice/clip snapshots, strict canonical frame/argument/volume/transport
+  boundaries, asset/sync/reset failure preserving cursor/generation/gain, foreign/
+  missing/removed owners, spatial listener/source world pose/derived velocity,
+  moves/thread/scene/binding/backend lifetime and failed initialization cleanup,
+  actual TypeScript controls/type errors and catchable missing/invalid voices,
+  preparation/save/load reads and write denial, cursor preserved across reload/
+  moved publisher, synchronized settings retaining manual pause, and one-command
+  native worker stop with stable zero cursor afterward.
+- `--script-audio-test <compiler> <sdk-root> <directory>` compiles real typed classes,
+  checks invalid seek, verifies play/seek/master gain through PCM and pause through
+  silence, changes source and migrates private state while keeping the same paused
+  voice/cursor/gain, then stops and releases resources. `--script-audio-play-test`
+  exercises the same scripts on actual CoreAudio with endpoint software gain zero,
+  confirms delivered frames and native rejection of offline rendering. Compiler
+  generations, process/VM handles and mixer/output backend allocations return to
+  baseline. Earlier Metal/Cocoa, physics/input/lifecycle checks remain passing.
+- Mixer/Playback/SceneAudio stop pauses and rewinds in one graph operation; native
+  playback performs it as one worker command without interleaved mixing. Backend
+  failures fault the mixer explicitly. VoiceState now reports miniaudio's source
+  read cursor, including possible prefetch/resampling; it does not represent
+  audible device presentation. Frames/cursors/lifetime counters cross the script
+  boundary as unsigned decimal uint64 strings, including zero.
+- AudioSession owns original scene/clip/backend dependencies; moves retain
+  callbacks, and final release joins native playback. Captured scene moves/
+  replacement and foreign threads fail. Queries describe synchronized state;
+  unsynchronized/foreign/missing owners fail, without fake voices. Native scheduling
+  loads assets and derives poses, preserving manual state for unchanged sources.
+  Reset prepares from authoring, increments generation/restores gain only on success;
+  failed file/preparation edits retain old state. Native mode has no silent-device
+  fallback and keeps already queued/driver PCM unchanged after controls.
+- Three queries are ReadOnly; five controls are ReadWrite and denied during
+  preparation/export/import. Scripts cannot open/advance/reset/destroy the backend.
+  Per-voice settings use existing authoring/synchronization; master mixer gain is
+  independent of endpoint/system volume. Actual mode/playback errors and output
+  frame/callback counters are exposed, with null playback in offline mode.
+- Reviewed stop/cursor semantics and backend failure handling, source-frame
+  canonical/range checks, shared ownership/destruction order, scene/thread scope,
+  native worker sequencing, prepared sync/reset retention, owned state/spatial
+  mappings, gain/counter reporting, guard coverage and actual PCM/endpoint delivery.
+  Formatting/whitespace checks pass; interfaces and implementations remain separate.
+  Release uses NDEBUG and caller LLVM libc++/libunwind, without LC_RPATH,
+  sanitizers or environment changes. Windows/Linux common implementations remain
+  uncompiled/unexecuted locally.
+
+Remaining project/editor/export tooling, expanded rendering, complete acceptance
+scenes and the example game remain to be implemented.

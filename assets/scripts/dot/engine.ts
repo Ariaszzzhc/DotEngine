@@ -344,6 +344,105 @@ export const physics = Object.freeze({
   },
 });
 
+export interface AudioClipInfo {
+  channels: number;
+  sampleRate: number;
+  frames: string;
+  durationSeconds: number;
+}
+
+export interface AudioListenerState {
+  position: Vec3;
+  rotation: Quat;
+  velocity: Vec3;
+}
+
+export interface AudioSpatialState extends SpatialProperties, AudioListenerState {}
+
+/** Source read cursor may include backend prefetch; device/queued presentation
+ * time is independent. Decimal frame strings retain all uint64 bits.
+ * 源读取游标可含后端预取，设备/队列播放时间独立；十进制帧字符串保留 uint64 全部位。 */
+export interface AudioVoiceState {
+  clip: AudioClipInfo;
+  settings: VoiceSettings;
+  spatial: AudioSpatialState;
+  playing: boolean;
+  atEnd: boolean;
+  sourceFrame: string;
+}
+
+export interface AudioOutputStats {
+  running: boolean;
+  fault: 'none' | 'callback' | 'stopped' | 'rerouted' | 'interrupted' | 'start' | 'stop';
+  queuedFrames: number;
+  availableFrames: number;
+  submittedFrames: string;
+  consumedFrames: string;
+  discardedFrames: string;
+  callbackFrames: string;
+  underrunFrames: string;
+  callbacks: string;
+  clippedSamples: string;
+}
+
+export interface AudioPlaybackStats {
+  state: 'running' | 'closed' | 'faulted';
+  error: {code: HostErrorCode; message: string} | null;
+  output: AudioOutputStats;
+}
+
+export interface AudioStats {
+  mode: 'offline' | 'playback';
+  generation: string;
+  volume: number;
+  assets: number;
+  sampleBytes: string;
+  voices: number;
+  playing: number;
+  renderedFrames: string;
+  faulted: boolean;
+  playback: AudioPlaybackStats | null;
+}
+
+/** Real synchronized audio voices; native scheduling loads assets/updates poses.
+ * Pause retains cursor, stop pauses/rewinds, and play resumes or restarts an ended
+ * voice. Controls affect future mixed blocks; queued PCM remains unchanged.
+ * 真实同步声部，由原生调度加载资源/更新位姿；暂停保留游标，停止暂停并归零，播放恢复
+ * 或重启已结束声部。控制影响后续混音块，已排队 PCM 不变。 */
+export const audio = Object.freeze({
+  voice(entity: EntityId): AudioVoiceState {
+    return invoke('audio.voice', [entity]) as AudioVoiceState;
+  },
+
+  stats(): AudioStats {
+    return invoke('audio.stats', []) as AudioStats;
+  },
+
+  listener(): AudioListenerState {
+    return invoke('audio.listener', []) as AudioListenerState;
+  },
+
+  play(entity: EntityId): void {
+    invoke('audio.play', [entity]);
+  },
+
+  pause(entity: EntityId): void {
+    invoke('audio.pause', [entity]);
+  },
+
+  stop(entity: EntityId): void {
+    invoke('audio.stop', [entity]);
+  },
+
+  seek(entity: EntityId, sourceFrame: string): void {
+    invoke('audio.seek', [entity, sourceFrame]);
+  },
+
+  setVolume(volume: number): void {
+    invoke('audio.setVolume', [volume]);
+  },
+});
+
 export interface EntityInfo {
   readonly id: EntityId;
   name: string;
@@ -457,6 +556,26 @@ export class Entity {
 
   set script(value: ScriptDescription|null) {
     invoke('component.set', [this.id, 'script', value]);
+  }
+
+  get audioVoice(): AudioVoiceState {
+    return audio.voice(this.id);
+  }
+
+  playAudio(): void {
+    audio.play(this.id);
+  }
+
+  pauseAudio(): void {
+    audio.pause(this.id);
+  }
+
+  stopAudio(): void {
+    audio.stop(this.id);
+  }
+
+  seekAudio(sourceFrame: string): void {
+    audio.seek(this.id, sourceFrame);
   }
 
   get physicsBody(): PhysicsBodyState {

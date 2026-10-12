@@ -430,6 +430,14 @@ namespace Dot::Audio {
     return m_impl->request<void>([id](Mixer& mixer, Output&) { return mixer.pause(id); });
   }
 
+  auto Playback::stop(VoiceId id) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    return m_impl->request<void>([id](Mixer& mixer, Output&) { return mixer.stop(id); });
+  }
+
   auto Playback::seek(VoiceId id, std::uint64_t frame) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");

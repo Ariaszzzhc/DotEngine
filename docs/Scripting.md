@@ -753,3 +753,88 @@ preserving native motion, then verifies explicit stop and compiler/process/VM cl
 `--script-physics-render-test` additionally verifies actual Metal pixel changes
 from the script-controlled physical movement. Local validation covers macOS;
 Windows/Linux implementations remain unverified.
+
+# Runtime audio services
+
+`Dot.Script.AudioSession::create(sharedScene, files, mixerConfig, limits)` owns a
+real offline SceneAudio backend. createPlayback uses the same scene/clip binding
+with a real device/worker and returns explicit failure if no endpoint can open;
+there is no silent-device fallback. Add the session bindings to the existing
+SceneScriptsConfig/LiveScriptsConfig native services. Moves preserve callbacks,
+which retain scene/clips/backend ownership. Releasing the last owner joins native
+playback and releases its graph/cache; quiescent destruction may occur elsewhere.
+Moving/replacing the captured Scene invalidates the session. Calls require the
+creating client thread.
+
+Native scheduling synchronizes authored paths/settings/world poses through the
+existing prepared batch. Unchanged descriptions preserve cursor/manual play state;
+new or edited components take effect on synchronize. Spatial sources require mono
+clips and a primary listener, with existing pose/velocity constraints. Reset reloads
+assets and authored play state, increments generation and restores master gain to
+1 without replacing callbacks. Preparation failures preserve old voices, gain and
+generation. Native playback runs continuously; offline render is a separate native
+operation. Scripts cannot open, advance, reset or destroy backends.
+
+| Native method | Arguments | Owned result |
+| --- | --- | --- |
+| `audio.voice` | `[entityId]` | AudioVoiceState |
+| `audio.stats` | `[]` | counts/mode/gain/generation and optional native output statistics |
+| `audio.listener` | `[]` | world-space position/rotation/velocity |
+| `audio.play` | `[entityId]` | undefined |
+| `audio.pause` | `[entityId]` | undefined |
+| `audio.stop` | `[entityId]` | undefined |
+| `audio.seek` | `[entityId, sourceFrameString]` | undefined |
+| `audio.setVolume` | `[volume]` | undefined |
+
+Entity.audioVoice and playAudio/pauseAudio/stopAudio/seekAudio delegate to these
+same methods. Missing/foreign owners and unsynchronized voices fail explicitly.
+Queries reflect synchronized native data, and returned snapshots are owned.
+Frame counts/cursors and lifetime counters cross JSON as canonical unsigned
+uint64 decimal strings, including zero; leading zeros, signs, fractions and numeric
+JS frame arguments are rejected. Seek requires [0,clip.frames) and never starts
+playback implicitly. Native callback bytes are bounded to 64 KiB/depth 16 with
+strict UTF-8/JSON/duplicate/object-shape checks. Gain is finite [0,1].
+
+```ts
+import {ScriptComponent, audio} from './dot/engine.js';
+
+export class Music extends ScriptComponent {
+  onStart(): void {
+    this.self.seekAudio('0');
+    audio.setVolume(0.5);
+    this.self.playAudio();
+  }
+
+  onStop(): void {
+    this.self.stopAudio();
+  }
+}
+```
+
+Pause retains the source cursor. Stop pauses and rewinds to zero without graph
+advancement, using one worker command in native mode; a backend failure after
+partial stop explicitly faults the mixer. Play resumes a paused voice or restarts
+an ended voice. VoiceState.sourceFrame is the backend **source read cursor**, which
+may include prefetch/resampling; it is not an audible presentation timestamp.
+Driver/queue PCM retains already mixed content: all play/seek/gain/settings controls
+affect subsequent mixed blocks, and do not alter system/global volume. Per-source
+settings use the existing authored audioSource description and native synchronization;
+audio.setVolume controls the owned mixer gain independently of endpoint gain.
+
+Voice/listener/stats reads are ReadOnly and may run during constructors and state
+migration. The five controls are ReadWrite and denied during preparation/export/
+import. Hot reload keeps the same native voices/backend; paused cursor and gain
+remain unchanged while script private state can migrate. In native mode, mixing
+continues during compilation/preparation, so snapshots can advance independently.
+Stats expose actual playback state/errors and queue/frame/callback counters; offline
+mode explicitly reports null playback data.
+
+`--script-audio-test <absolute-compiler> <sdk-root> <directory>` compiles actual
+TypeScript components and verifies play/seek/gain through deterministic PCM, pause
+through silence, atomic stop, changed-source migration with the same paused voice/
+cursor/gain, and explicit stop/resource cleanup. `--script-audio-play-test` exercises
+the same controls against a real endpoint with endpoint software gain zero and
+checks actual frame delivery and native rejection of offline rendering. Both cases
+verify compiler generations, process/VM handles and mixer/output backend allocations
+return to baseline. Local hardware validation covers macOS CoreAudio; Windows/Linux
+implementations remain unverified.

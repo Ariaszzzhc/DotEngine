@@ -486,3 +486,22 @@ TEST_CASE("audio.playback_batch_preparation_failure_preserves_running_worker_and
   REQUIRE(playback->destroyVoice(*id));
   REQUIRE(playback->close());
 }
+
+TEST_CASE("audio_playback_stop_is_one_worker_command_and_rewinds_the_paused_source") {
+  auto playback = Playback::create(config());
+  REQUIRE_MESSAGE(playback, (playback ? "" : playback.error().message));
+  auto source = clip(0.25F, 48000);
+  REQUIRE(source);
+  auto voice = playback->createVoice(*source);
+  REQUIRE(voice);
+  REQUIRE(playback->seek(*voice, 1000));
+  CHECK(playback->voice(*voice)->sourceFrame == 1000);
+  REQUIRE(playback->play(*voice));
+  REQUIRE(waitFor([&] { return playback->voice(*voice)->sourceFrame > 1000; }));
+  REQUIRE(playback->stop(*voice));
+  CHECK_FALSE(playback->voice(*voice)->playing);
+  CHECK(playback->voice(*voice)->sourceFrame == 0);
+  std::this_thread::sleep_for(std::chrono::milliseconds{20});
+  CHECK(playback->voice(*voice)->sourceFrame == 0);
+  REQUIRE(playback->close());
+}

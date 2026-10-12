@@ -42,6 +42,9 @@ namespace Dot::Runtime {
   auto testScriptComponents(const std::filesystem::path& executable,
                             const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
                             bool render) -> int;
+  auto testScriptAudio(const std::filesystem::path& executable,
+                       const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+                       bool native) -> int;
   auto testScriptPhysics(const std::filesystem::path& executable,
                          const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
                          bool render) -> int;
@@ -755,6 +758,13 @@ auto main(int argc, char** argv) -> int {
           argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-physics-render-test");
     }
 
+    if (argc == 5
+        && (std::string_view(argv[1]) == "--script-audio-test"
+            || std::string_view(argv[1]) == "--script-audio-play-test")) {
+      return Dot::Runtime::testScriptAudio(argv[2], argv[3], argv[4],
+                                           std::string_view(argv[1]) == "--script-audio-play-test");
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -787,7 +797,9 @@ auto main(int argc, char** argv) -> int {
           "--script-authoring-render-test <compiler> <sdk> <directory>|"
           "--script-input-test <compiler> <sdk> <directory>|"
           "--script-physics-test <compiler> <sdk> <directory>|"
-          "--script-physics-render-test <compiler> <sdk> <directory>]");
+          "--script-physics-render-test <compiler> <sdk> <directory>|"
+          "--script-audio-test <compiler> <sdk> <directory>|"
+          "--script-audio-play-test <compiler> <sdk> <directory>]");
       return 2;
     }
 

@@ -589,6 +589,37 @@ namespace Dot::Audio {
     return status == MA_SUCCESS ? Core::Result<void>{} : failure(status, "Pause audio voice");
   }
 
+  auto Mixer::stop(VoiceId id) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio mixer has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    auto found = m_impl->find(id);
+
+    if (!found) {
+      return std::unexpected(found.error());
+    }
+
+    auto status = ma_sound_stop(&(*found)->sound);
+
+    if (status == MA_SUCCESS) {
+      status = dotAudioSeek(&(*found)->sound, 0);
+    }
+
+    if (status != MA_SUCCESS) {
+      m_impl->m_faulted = true;
+      return failure(status, "Stop and rewind audio voice");
+    }
+
+    return {};
+  }
+
   auto Mixer::seek(VoiceId id, std::uint64_t frame) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Audio mixer has been moved");
@@ -657,8 +688,15 @@ namespace Dot::Audio {
 
     const auto& entry = **found;
     const bool ended = ma_sound_at_end(&entry.sound) != 0;
+    ma_uint64 cursor = 0;
+    const auto status = ma_sound_get_cursor_in_pcm_frames(&entry.sound, &cursor);
+
+    if (status != MA_SUCCESS) {
+      return failure(status, "Read audio source cursor");
+    }
+
     return VoiceState{entry.info, entry.settings, ma_sound_is_playing(&entry.sound) != 0 && !ended,
-                      ended, entry.spatial};
+                      ended,      entry.spatial,  cursor};
   }
 
   auto Mixer::setVolume(float volume) -> Core::Result<void> {

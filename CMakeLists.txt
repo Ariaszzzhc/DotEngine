@@ -94,6 +94,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Script/SceneHost.cpp
     src/Engine/Script/InputSource.cpp
     src/Engine/Script/PhysicsSource.cpp
+    src/Engine/Script/AudioSession.cpp
     src/Engine/Script/Source.cpp
     src/Engine/Script/SceneScripts.cpp
     src/Engine/Script/LiveScripts.cpp
@@ -149,6 +150,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/SceneHost.cppm
         src/Engine/Script/InputSource.cppm
         src/Engine/Script/PhysicsSource.cppm
+        src/Engine/Script/AudioSession.cppm
         src/Engine/Script/Source.cppm
         src/Engine/Script/SceneScripts.cppm
         src/Engine/Script/LiveScripts.cppm
@@ -160,8 +162,8 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
     src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp src/Runtime/InstanceAcceptance.cpp
     src/Runtime/ComponentsAcceptance.cpp src/Runtime/ReloadAcceptance.cpp
-    src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp)
-target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3)
+    src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
+target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
