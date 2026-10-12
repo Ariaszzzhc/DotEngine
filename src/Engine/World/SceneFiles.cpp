@@ -17,6 +17,7 @@ import Dot.World.Scene;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Audio.Source;
+import Dot.Script.Source;
 
 namespace Dot::World {
   namespace {
@@ -168,6 +169,17 @@ namespace Dot::World {
       return {value["primary"].get<bool>()};
     }
 
+    auto script(const Json& value) -> ScriptComponent {
+      Codec::requireFields(value, {"source", "className", "properties", "enabled"});
+
+      if (!value["properties"].is_object()) {
+        throw std::invalid_argument("Script properties must be an object");
+      }
+
+      return {value["source"].get<std::string>(), value["className"].get<std::string>(),
+              value["properties"].dump(), value["enabled"].get<bool>()};
+    }
+
     auto validateExtension(const std::filesystem::path& path) -> Core::Result<void> {
       try {
         auto extension = path.extension().generic_u8string();
@@ -199,6 +211,7 @@ namespace Dot::World {
       std::optional<RigidBody> rigidBody;
       std::optional<AudioSource> audioSource;
       std::optional<AudioListener> audioListener;
+      std::optional<ScriptComponent> script;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -215,8 +228,9 @@ namespace Dot::World {
       std::unordered_set<std::uint64_t> ids;
 
       for (const auto& value : root["entities"]) {
-        Codec::requireFields(value, {"id", "name", "parent", "transform"},
-                             {"camera", "mesh", "rigidBody", "audioSource", "audioListener"});
+        Codec::requireFields(
+            value, {"id", "name", "parent", "transform"},
+            {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -248,6 +262,10 @@ namespace Dot::World {
 
         if (value.contains("audioListener") && !value["audioListener"].is_null()) {
           record.audioListener = audioListener(value["audioListener"]);
+        }
+
+        if (value.contains("script") && !value["script"].is_null()) {
+          record.script = script(value["script"]);
         }
 
         records.push_back(std::move(record));
@@ -329,6 +347,12 @@ namespace Dot::World {
         }
 
         changed = scene->setAudioListener(entity, record.audioListener);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        changed = scene->setScript(entity, record.script);
 
         if (!changed) {
           return std::unexpected(changed.error());
@@ -435,7 +459,13 @@ namespace Dot::World {
            {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)},
            {"audioSource", entity.audioSource ? sourceJson(*entity.audioSource) : Json(nullptr)},
            {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}
-                                                  : Json(nullptr)}});
+                                                  : Json(nullptr)},
+           {"script", entity.script
+                          ? Json{{"source", entity.script->source},
+                                 {"className", entity.script->className},
+                                 {"properties", Codec::parseJson(entity.script->properties, 32)},
+                                 {"enabled", entity.script->enabled}}
+                          : Json(nullptr)}});
     }
 
     auto encoded

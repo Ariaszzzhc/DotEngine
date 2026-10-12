@@ -15,6 +15,7 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.Physics.Body;
 export import Dot.Audio.Source;
+export import Dot.Script.Source;
 
 export namespace Dot::World {
   /** Scene-scoped handle. Values are never reused within a scene; moving its
@@ -86,6 +87,8 @@ export namespace Dot::World {
     auto operator==(const AudioListener&) const -> bool = default;
   };
 
+  using ScriptComponent = Script::ComponentProperties;
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -98,6 +101,7 @@ export namespace Dot::World {
     std::optional<RigidBody> rigidBody{};
     std::optional<AudioSource> audioSource{};
     std::optional<AudioListener> audioListener{};
+    std::optional<ScriptComponent> script{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -179,6 +183,11 @@ export namespace Dot::World {
     [[nodiscard]] auto setAudioListener(EntityId entity, std::optional<AudioListener> listener)
         -> Core::Result<void>;
     [[nodiscard]] auto primaryAudioListener() const -> Core::Result<EntityId>;
+    /** Validate and canonicalize authoring only; removal is idempotent. No code
+     * is loaded and invalid input leaves the previous description unchanged.
+     * 仅校验并规范编辑描述，移除幂等；不加载代码，无效输入保留此前描述。 */
+    [[nodiscard]] auto setScript(EntityId entity, std::optional<ScriptComponent> script)
+        -> Core::Result<void>;
 
   private:
     struct Impl;

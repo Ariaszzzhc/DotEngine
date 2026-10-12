@@ -8,7 +8,7 @@ fresh scene identity. Existing live scenes and their handles remain independent.
 
 The root requires exactly `version` (integer 1), `name`, and `entities`. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
-`rigidBody`, `audioSource`, and `audioListener` are optional and may be null.
+`rigidBody`, `audioSource`, `audioListener`, and `script` are optional and may be null.
 Unknown or duplicate fields are rejected.
 Documents are limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
 acyclic with depth at most 256.
@@ -97,3 +97,23 @@ scene loading; `Dot.Audio.SceneAudio` resolves them in an explicit binding step.
 for parameter/path contracts. Run `DotRuntime --scene-audio-test <existing-directory>`
 for persistence, parent transforms, independent scene identity, and failed-load
 isolation at `scenes/audio.dotscene`.
+
+Script components are authoring data and initialize no VM while editing/loading.
+A non-null `script` requires exactly `source`, `className`, `properties`, and
+boolean `enabled`. Source is a portable canonical UTF-8 .ts/.mts path relative to
+the compiler's source directory, excluding .d.ts/.d.mts declarations. The exported
+class is a 1..128-byte ASCII identifier (including default/_/$). Properties are a
+finite scalar-Unicode JSON object of at most 64 KiB/depth 32 with no duplicate
+fields; the native description retains a canonical compact JSON representation.
+Invalid edits preserve the old description. One script description attaches to
+an entity, independently of camera/mesh/body/audio. Missing/null fields preserve
+older version-1 documents. See `Scripting.md` for compiled lifecycle binding.
+
+```json
+{
+  "source": "actors/player.ts",
+  "className": "Player",
+  "properties": {"speed": 3},
+  "enabled": true
+}
+```

@@ -6,8 +6,8 @@ pinned vcpkg dependency; its libc/OS modules are not linked into the engine.
 The API follows the [official embedding API](https://quickjs-ng.github.io/quickjs/developer-guide/intro/).
 The [native TypeScript compiler](#native-typescript-compilation) produces ESM for
 this layer. The [registered host bridge and core scene SDK](#registered-host-services)
-are implemented; component lifecycles, hot reload and remaining subsystem APIs
-are still to be implemented.
+are implemented together with persistent instances and the entity lifecycle service.
+Hot reload and remaining subsystem APIs are still to be implemented.
 
 Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entry,
 and call an exported function through its scoped ModuleId. Entry paths are root
@@ -260,9 +260,9 @@ export function tick(seconds: number): void {
 ```
 
 This example uses exported functions as a runnable host/SDK acceptance layer;
-entity-attached component instances, lifecycle scheduling and hot reload are not
-implemented yet. Candidate load/initializer failures can have native side effects,
-so this direct bridge must not be mistaken for transactional hot reload.
+the entity-attached lifecycle service below provides scheduled instances. Candidate
+load/initializer failures through this direct bridge can have native side effects,
+so it must not be mistaken for transactional hot reload.
 
 Run `DotRuntime --script-host-test <absolute-compiler> <sdk-root> <directory>` for
 the actual TypeScript SDK, native entity creation/deletion and parenting, renaming,
@@ -311,6 +311,97 @@ Run `DotRuntime --script-instance-test <absolute-compiler> <sdk-root> <directory
 for actual TypeScript classes with private state and inherited hooks, two native
 entities driven independently through sixty async updates, contextual failure
 recovery, explicit stop calls, stale-handle rejection and complete compiler/process/
-VM cleanup. The acceptance caller invokes hooks explicitly; entity-attached
-component descriptions, lifecycle scheduling, persistence and hot reload still
-remain to be implemented.
+VM cleanup. This acceptance caller invokes hooks explicitly; the entity lifecycle
+service below provides attached descriptions, persistence and scheduling. Hot
+reload remains to be implemented.
+
+# Entity-attached lifecycle service
+
+`Dot.Script.Source::ComponentProperties` and `World::Scene::setScript` attach a
+single owned authoring description to an entity. Scene snapshots/save/load retain
+its source path, class export, canonical property JSON and enabled flag. They
+initialize no realm or compiler. Paths are relative to the TypeScriptCompiler
+source directory: actors/player.ts maps to actors/player.js in the compiled
+output, and .mts maps to .mjs. Property objects are bounded to 64 KiB/depth 32;
+source paths/identifiers/finite Unicode/duplicate fields are validated before an
+edit. `SceneFiles` persists this as an optional version-1 script object.
+
+`SceneScripts::create(sharedScene, compiledProgram, config)` owns a generation
+copy and an independent Runtime, and retains the original shared scene identity.
+The caller may release its generation/scene copies. Operations require the
+creating thread without reentry; moving the service preserves its private owner.
+Moving/replacing the scene invalidates operations. Quiescent destruction may run
+elsewhere and releases all storage without executing script; use stop explicitly
+for application cleanup callbacks.
+
+`sync()` captures authoring in creation-ID order and prepares every changed
+candidate before stopping/replacing existing objects. Unchanged descriptions keep
+instance state. Disabled descriptions load no module/create no instance; enabling
+or changing a description creates a fresh object. Source-file changes within a
+compiled generation are not reload: module definitions still cache per realm.
+Preparation loads the emitted module, constructs the exported class with one
+owned context argument, and discovers optional onStart/onUpdate/onFixedUpdate/
+onStop methods. Noncallable fields are failures. The constructor context is
+`{entity: {scene,value}, properties: {...}}`; the source SDK provides typed
+ScriptContext and ScriptComponent with an Entity view and optional no-action hooks.
+Top-level properties are frozen snapshots; nested values are owned data.
+
+During module initialization, construction and hook discovery, native scene reads
+are allowed and scene mutations fail with contextual InvalidState errors. Constructors
+should initialize script state and place native edits in lifecycle hooks. Ordinary
+candidate preparation failure keeps existing objects; dispatch reports the failure
+until authoring is repaired. Realm-global JS mutations are not rolled back. Loader/
+resource faults release all instance handles and require a new service. This is
+preparation of component edits, not transactional source hot reload.
+
+`start()` synchronizes and starts pending objects once. `update(seconds)` and
+`fixedUpdate(seconds)` also synchronize/start first, then dispatch their respective
+hooks. All pending starts finish in creation order before frame callbacks; both
+seconds values must be finite in [0,1]. Hooks return void/Promise<void>, with the
+Runtime's bounded jobs and strict results; other return values fail explicitly.
+Side effects are visible to later callbacks. Owners deleted during callbacks are
+skipped/pruned, including self-deletion during startup/update. Removing/disabling/
+replacing a started component invokes onStop once before releasing its handle.
+Stop side effects may delete prepared owners; such candidates are released and
+reported rather than activated with stale IDs. Lost owners can make onStop fail.
+
+A successful Result<ScriptReport> means the dispatch itself completed. Check
+failures and realmFaulted to establish script success: each failure carries the
+entity, phase and actual Core error. Ordinary callback failures attempt one stop,
+release that object and mark its description failed while other objects continue.
+Unchanged failed descriptions do not repeatedly rerun; change the description or
+create a fresh service to retry. Realm faults stop further dispatch and release
+all handles. Native/global script side effects are not rolled back. Unexpected
+native exceptions fault the service; stop/statistics remain available for cleanup.
+
+`stop()` is terminal/idempotent, attempts stops on started objects and releases
+all handles even when callbacks fail. Destruction never substitutes callbacks.
+Stats report descriptions, pending/running/disabled/failed counts, stopped/faulted
+state and actual Runtime stats. Default capacity is 512 descriptions, configurable
+to 1..5000, including disabled records. Runtime instance capacity must be at least
+twice that configured limit for staging at full capacity (default Runtime 1024,
+maximum 10000). Invalid combinations/capacity excess fail before lifecycle changes.
+VM/source/job/time/JSON limits remain the Runtime's; host containers are outside its
+allocator quota. Failed preparation may leave retained module-global JS state;
+stopping releases host objects but does not reset module globals.
+
+```ts
+import {ScriptComponent} from './dot/engine.js';
+
+export class Player extends ScriptComponent<{speed: number}> {
+  onUpdate(seconds: number): void {
+    const transform = this.self.transform;
+    transform.position.x += this.properties.speed * seconds;
+    this.self.transform = transform;
+  }
+}
+```
+
+Run `--script-components-test <compiler> <sdk-root> <directory>` to save/load an
+actual authored scene, compile the source SDK/classes, automatically dispatch
+start/sixty async updates/fixed updates/stop on two independent native entities,
+and verify original handles are foreign after load plus full compiler/process/VM
+cleanup. `--script-components-render-test` also validates real GPU pixels before/
+after lifecycle-driven native movement. Only macOS Debug/Release are validated.
+Hot reload, remaining subsystem APIs, editor/project/export and the example game
+remain future work.

@@ -8,6 +8,7 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
@@ -17,25 +18,25 @@ namespace Dot::Serialization::Detail {
 
   /** Private codec helper: reject duplicates and stop before deep recursion.
    * 私有编解码辅助函数：拒绝重复字段，在深层递归前停止解析。 */
-  inline auto parseJson(std::string_view source) -> Json {
+  inline auto parseJson(std::string_view source, int maxDepth = 64) -> Json {
     std::vector<std::unordered_set<std::string>> keys;
-    return Json::parse(source.begin(), source.end(),
-                       [&](int depth, Json::parse_event_t event, Json& value) {
-                         if (depth > 64) {
-                           throw std::invalid_argument("JSON nesting exceeds 64");
-                         }
+    return Json::parse(
+        source.begin(), source.end(), [&](int depth, Json::parse_event_t event, Json& value) {
+          if (depth > maxDepth) {
+            throw std::invalid_argument("JSON nesting exceeds " + std::to_string(maxDepth));
+          }
 
-                         if (event == Json::parse_event_t::object_start) {
-                           keys.emplace_back();
-                         } else if (event == Json::parse_event_t::object_end) {
-                           keys.pop_back();
-                         } else if (event == Json::parse_event_t::key
-                                    && !keys.back().insert(value.get<std::string>()).second) {
-                           throw std::invalid_argument("Duplicate JSON field");
-                         }
+          if (event == Json::parse_event_t::object_start) {
+            keys.emplace_back();
+          } else if (event == Json::parse_event_t::object_end) {
+            keys.pop_back();
+          } else if (event == Json::parse_event_t::key
+                     && !keys.back().insert(value.get<std::string>()).second) {
+            throw std::invalid_argument("Duplicate JSON field");
+          }
 
-                         return true;
-                       });
+          return true;
+        });
   }
 
   inline auto requireFields(const Json& object, std::initializer_list<std::string_view> required,

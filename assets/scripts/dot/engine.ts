@@ -116,3 +116,37 @@ export const scene = Object.freeze({
     return (invoke('entity.list', []) as EntityId[]).map(id => new Entity(id));
   },
 });
+
+/** Constructor context is an owned JSON snapshot. Preparation permits scene
+ * reads; mutations belong in lifecycle hooks. Nested properties are owned data.
+ * 构造上下文为拥有的 JSON 快照；准备阶段允许读场景，修改放在生命周期钩子，嵌套属性
+ * 是拥有的数据。 */
+export interface ScriptContext<Properties extends object = Record<string, unknown>> {
+  readonly entity: EntityId;
+  readonly properties: Properties;
+}
+
+/** Optional hooks default to no action. Stop callbacks require explicit service
+ * shutdown; garbage collection/destruction never invokes them.
+ * 可选钩子默认无动作，停止回调须显式关闭服务，垃圾回收/销毁不调用它们。 */
+export class ScriptComponent<Properties extends object = Record<string, unknown>> {
+  readonly self: Entity;
+  readonly properties: Readonly<Properties>;
+
+  constructor(context: ScriptContext<Properties>) {
+    this.self = new Entity(context.entity);
+    this.properties = Object.freeze({...context.properties});
+  }
+
+  onStart(): void | Promise<void> {
+  }
+
+  onUpdate(_seconds: number): void | Promise<void> {
+  }
+
+  onFixedUpdate(_seconds: number): void | Promise<void> {
+  }
+
+  onStop(): void | Promise<void> {
+  }
+}

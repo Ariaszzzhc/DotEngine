@@ -988,6 +988,66 @@ function and instance operations under the same established transport/job budget
   LC_RPATH remain unchanged. No sanitizers/environment changes were introduced;
   Windows/Linux common code remains uncompiled/unexecuted locally.
 
-Entity-attached script descriptions/persistence, component lifecycle scheduling/
-hot reload, remaining subsystem script APIs, project/editor/export tooling,
+### Authored script components and lifecycle dispatch
+
+Added owned script authoring to native entities and version-1 scene persistence,
+then connected the compiled generation and persistent object layer through a
+deterministic SceneScripts lifecycle service and typed source SDK base component.
+
+- Final macOS Debug and Release each pass all 553 CTest cases (520 doctest cases
+  and thirty-three executable checks). Eight authoring cases verify canonical
+  JSON/module mapping, portable paths/export names, finite scalar Unicode objects,
+  duplicate/depth/exact-byte boundaries, no VM initialization while editing,
+  owned snapshots and unchanged invalid edits, idempotent removal, scene roundtrip/
+  fresh scope/older absent-null fields, strict schema failures, stale/moved/foreign
+  and thread-bound edits. Sixteen real TypeScript lifecycle cases cover independent
+  state, start/update/fixed/stop, once-only starts/stops, disabled missing sources,
+  enable/disable/property replacement, native mutation rejection during initializers/
+  constructors/getter discovery, unchanged old bindings on ordinary preparation
+  failure, isolated callback/cleanup failures, all starts before updates, immediate
+  self-deletion pruning, full-capacity staged replacement and time boundaries,
+  realm-fault cleanup, nonvoid/noncallable hooks, moves/thread/destruction behavior,
+  caller-released generation/scene lifetime, stop-induced owner deletion and
+  preparation loader faults releasing previous active handles and replacement-stop
+  resource faults releasing newly prepared objects.
+- `--script-components-test <compiler> <sdk-root> <directory>` saves an authored
+  native scene, reloads it with fresh scope, compiles actual typed classes and
+  automatically starts/updates/fixed-updates/stops two attached components. Sixty
+  async updates preserve independent native transform state and cleanup counters.
+  `--script-components-render-test` also verifies actual Metal pixel changes from
+  that lifecycle-driven movement and the shared native mesh cache. Existing native
+  CoreAudio/Cocoa/Metal and earlier compiler/host/instance checks remain passing.
+- Component descriptions store a source-root-relative .ts/.mts path, exported
+  class identifier, canonical property object and enabled flag. Validation reads
+  no code/initializes no runtime. Property JSON is at most 64 KiB/depth 32, finite
+  scalar Unicode without duplicates. SceneFiles adds an optional/null script field
+  without dropping older version-1 documents; snapshots and loaded data are owned.
+- SceneScripts owns a CompiledProgram copy/realm and original shared scene identity.
+  Preparation loads and constructs changed candidates and discovers optional hooks
+  before old objects are retired. Native scene writes are denied while preparing;
+  ordinary preparation failure keeps existing objects, while loader/resource faults
+  release handles. JS module-global mutations are not rolled back. File edits do
+  not reload cached definitions; source hot reload remains separate work.
+- All pending starts run in creation-ID order before update/fixed-update callbacks.
+  Hooks return void/Promise<void>; other results and noncallable fields fail. Ordinary
+  callback failures are explicit report entries, attempt one cleanup and isolate
+  that description while other components continue. Missing owners are pruned;
+  stopping old scripts may remove candidate owners, which are rejected instead of
+  activated. Realm faults stop further dispatch and release handles. Explicit stop
+  is terminal/idempotent; quiescent destruction releases storage without callbacks.
+- Default authoring capacity is 512 (range 1..5000), with at least twice that many
+  Runtime slots for full-capacity replacement. Invalid budgets and finite seconds
+  outside [0,1] fail before lifecycle changes. Reports distinguish completed dispatch
+  from script success through contextual entity/phase failures and realm state.
+  Unexpected native exceptions fault the service and retain cleanup/statistics.
+- Reviewed schema/UTF-8/numeric/depth/duplicate limits and compatibility, module
+  dependency direction, source mapping, captured ownership and destruction order,
+  staged object cleanup/node transfer, constructor mutation guards, callback order,
+  stale-owner handling, bounded handle/report state, explicit stop/fault recovery,
+  typed SDK ABI and actual native/GPU acceptance. Formatting/whitespace checks pass;
+  interfaces and implementations remain separate. Release uses NDEBUG; caller LLVM
+  libc++/libunwind linkage and no LC_RPATH remain unchanged. No sanitizers/environment
+  edits were introduced; Windows/Linux common implementations remain unverified.
+
+Source hot reload, remaining subsystem script APIs, project/editor/export tooling,
 expanded rendering, and the example game remain to be implemented.

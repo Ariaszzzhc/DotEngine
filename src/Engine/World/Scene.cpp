@@ -21,6 +21,7 @@ import Dot.Core.Text;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Audio.Source;
+import Dot.Script.Source;
 
 namespace Dot::World {
   namespace {
@@ -235,6 +236,7 @@ namespace Dot::World {
       const auto* body = registry.try_get<RigidBody>(native);
       const auto* source = registry.try_get<AudioSource>(native);
       const auto* listener = registry.try_get<AudioListener>(native);
+      const auto* script = registry.try_get<ScriptComponent>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
@@ -243,7 +245,8 @@ namespace Dot::World {
               mesh ? std::optional{*mesh} : std::nullopt,
               body ? std::optional{*body} : std::nullopt,
               source ? std::optional{*source} : std::nullopt,
-              listener ? std::optional{*listener} : std::nullopt};
+              listener ? std::optional{*listener} : std::nullopt,
+              script ? std::optional{*script} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -917,6 +920,33 @@ namespace Dot::World {
     }
 
     m_impl->registry.emplace_or_replace<AudioListener>(*native, *listener);
+    return {};
+  }
+
+  auto Scene::setScript(EntityId entity, std::optional<ScriptComponent> script)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!script) {
+      m_impl->registry.remove<ScriptComponent>(*native);
+      return {};
+    }
+
+    auto checked = Script::normalizeComponentProperties(*script);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    m_impl->registry.emplace_or_replace<ScriptComponent>(*native, std::move(*checked));
     return {};
   }
 
