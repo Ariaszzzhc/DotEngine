@@ -30,6 +30,8 @@ namespace Dot::Runtime {
   auto testAudioBatch() -> int;
   auto testSceneAudioPlayback(const std::filesystem::path& root) -> int;
   auto testScript(const std::filesystem::path& root) -> int;
+  auto testProcess(const std::filesystem::path& executable, const std::filesystem::path& root)
+      -> int;
 }  // namespace Dot::Runtime
 
 namespace {
@@ -679,6 +681,10 @@ auto main(int argc, char** argv) -> int {
       return Dot::Runtime::testScript(argv[2]);
     }
 
+    if (argc == 4 && std::string_view(argv[1]) == "--process-test") {
+      return Dot::Runtime::testProcess(argv[2], argv[3]);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -698,7 +704,7 @@ auto main(int argc, char** argv) -> int {
           "--scene-physics-test|--scene-physics-render-test|--audio-clip-test <directory>|"
           "--audio-mix-test|--audio-output-test|--audio-playback-test|--audio-spatial-test|"
           "--scene-audio-test <directory>|--audio-batch-test|--scene-audio-play-test <directory>|"
-          "--script-test <directory>]");
+          "--script-test <directory>|--process-test <fixture> <directory>]");
       return 2;
     }
 

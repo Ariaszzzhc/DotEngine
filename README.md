@@ -108,3 +108,9 @@ QuickJS-NG realm, with scoped modules, JSON export calls, Promise jobs, contextu
 errors, and allocation/time limits. `--script-test <existing-directory>` exercises
 the real VM and cleanup. See `docs/Scripting.md` for contracts; TypeScript compilation,
 engine host APIs, script components, and hot reload remain under development.
+
+`Dot.Core.Process` runs explicit tools without shell interpolation, captures
+bounded stdout/stderr, preserves real exit status, and cleans up on timeout.
+`--process-test <fixture-executable> <existing-directory>` verifies real children;
+see `docs/Processes.md`. This supplies the execution boundary for the standalone
+TypeScript compiler, whose integration remains to be implemented.

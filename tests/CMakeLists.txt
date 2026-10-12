@@ -1,4 +1,6 @@
 find_package(doctest CONFIG REQUIRED)
+add_executable(DotProcessFixture ProcessFixture.cpp)
+target_link_libraries(DotProcessFixture PRIVATE DotBuildOptions nlohmann_json::nlohmann_json)
 add_executable(DotTests
     main.cpp
     CoreTests.cpp
@@ -35,6 +37,12 @@ target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlo
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
+add_executable(DotProcessTests main.cpp ProcessTests.cpp)
+target_link_libraries(DotProcessTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotProcessTests PRIVATE DOT_PROCESS_FIXTURE="$<TARGET_FILE:DotProcessFixture>")
+add_dependencies(DotProcessTests DotProcessFixture)
+doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
+
 add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp SceneAudioNativeTests.cpp)
 target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
 doctest_discover_tests(DotAudioTests PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
@@ -69,6 +77,8 @@ add_test(NAME runtime.scene_audio_playback COMMAND DotRuntime --scene-audio-play
 set_tests_properties(runtime.scene_audio_playback PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.script COMMAND DotRuntime --script-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.process COMMAND DotRuntime --process-test "$<TARGET_FILE:DotProcessFixture>" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.process PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")

@@ -54,6 +54,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Files.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
+    src/Engine/Core/Process.cpp
     src/Engine/Core/Result.cpp
     src/Engine/Core/Text.cpp
     src/Engine/Core/Application.cpp
@@ -102,6 +103,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Logging.cppm
         src/Engine/Core/Clock.cppm
         src/Engine/Core/Memory.cppm
+        src/Engine/Core/Process.cppm
         src/Engine/Core/Events.cppm
         src/Engine/Core/Files.cppm
         src/Engine/Core/Core.cppm
@@ -132,7 +134,8 @@ target_sources(DotEngine PUBLIC
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
-    src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp src/Runtime/ScriptAcceptance.cpp)
+    src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
+    src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)

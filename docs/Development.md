@@ -791,6 +791,43 @@ stay private and explicit RAII releases them before the context/runtime.
   patched C source. No functional SDK/engine changes result; Git whitespace checks
   now include the added patch file and pass.
 
+### Native tool process execution
+
+Added a synchronous explicit-executable process boundary for compiler/tool clients,
+with literal UTF-8 arguments, child-only cwd, inherited environment, EOF stdin,
+bounded separate raw output, actual normal exit status, and contextual failures.
+POSIX process groups and Windows jobs own cancellation/lifetime; no shell is used.
+
+- macOS Debug and Release each pass all 467 CTest cases (440 doctest cases and
+  twenty-seven executable checks). Fourteen new focused cases verify literal
+  empty/space/quote/backslash/newline/Unicode/shell arguments, equivalent child cwd
+  with unchanged parent cwd, nonzero status and distinct diagnostics, EOF stdin,
+  binary output, concurrent large streams beyond pipe capacity, combined/exact
+  output limits, timeout/reaping, descendants retaining pipes after root exit,
+  invalid/missing paths/encoding/count/budgets, repeated concurrent independent
+  calls, Unicode executable paths, signals, unrelated descriptor closure, closed
+  parent stdin, ignored SIGCHLD rejection, and inherited unchanged environment.
+- `--process-test <fixture> <directory>` runs actual child programs and checks
+  status, raw streams, EOF, large capture, timeout and restored ownership counters.
+  Tests use a dedicated target to isolate fixture-path definitions from other unit
+  consumers. Existing real CoreAudio/Cocoa/Metal and ESM checks remain passing.
+- POSIX waits preserve the unreaped leader through group teardown to prevent PID
+  reuse; pipe descriptors are normalized above stdio and streams drained fairly.
+  macOS spawn actions support the current standard chdir API plus a narrow older
+  API fallback. Current glibc Linux closes unrelated descriptors with closefrom.
+  Windows code supplies an explicit application, writable quoted UTF-16 arguments,
+  a stdio-only handle list, suspended job assignment, native capture and job cleanup.
+  Windows/Linux branches have been reviewed but not compiled/executed locally.
+- Reviewed validation/size arithmetic, literal argument separation, immutable
+  parent state, EOF/capture fairness, spawn/action/attribute/descriptor ownership,
+  partial startup cleanup, child/group identity, signal ownership, timeout/limit
+  teardown and concurrent lifetime. POSIX descendants must not detach, application
+  handlers must not reap owned children, and kernel startup/teardown is not a hard
+  real-time guarantee. No partial output is returned on runner failure.
+- Formatting/whitespace checks pass. Release runs with assertions disabled;
+  runtimes retain caller-selected LLVM libc++/libunwind with no LC_RPATH. No
+  environment overrides or sanitizers were introduced.
+
 TypeScript compilation, engine host bindings, script components/hot reload,
 project/editor/export tooling, expanded rendering, and the example game remain
 to be implemented.
