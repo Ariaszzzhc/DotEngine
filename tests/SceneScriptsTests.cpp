@@ -499,3 +499,134 @@ TEST_CASE("components_replacement_stop_resource_fault_releases_newly_prepared_ob
   CHECK(scripts.stats()->runtime.instances == 0);
   CHECK(scripts.stats()->failed == 1);
 }
+
+TEST_CASE("component_api_lifecycle_edits_descriptions_and_self_disable_stops_next_dispatch") {
+  Project project;
+  project.write(R"ts(
+import {components, ScriptComponent} from './dot/engine.js';
+
+export class Actor extends ScriptComponent {
+  onStart(): void {
+    this.self.camera = components.camera({primary: true});
+    this.self.mesh = components.mesh({tint: {x: 0, y: 1, z: 0, w: 1}});
+    this.self.rigidBody = components.rigidBody({motion: 'static', shape: 'box'});
+    this.self.audioSource = components.audioSource('missing.wav');
+    this.self.audioListener = components.audioListener(true);
+    this.self.name = 'started';
+  }
+
+  onUpdate(): void {
+    const source = this.self.audioSource!;
+    source.voice.volume = 0.5;
+    this.self.audioSource = source;
+    const description = this.self.script!;
+    description.enabled = false;
+    this.self.script = description;
+    this.self.name = 'disabled';
+  }
+
+  onStop(): void {
+    this.self.mesh = null;
+    this.self.name += ' stopped';
+  }
+}
+)ts");
+  auto program = project.compile();
+  auto native = scene();
+  auto id = entity(native, "{}");
+  auto scripts = service(native, program);
+  good(scripts.start());
+  auto state = native->entity(id).value();
+  REQUIRE(
+      (state.camera && state.mesh && state.rigidBody && state.audioSource && state.audioListener));
+  CHECK(state.mesh->tint.y == 1);
+  CHECK(native->primaryCamera().value() == id);
+  CHECK(native->primaryAudioListener().value() == id);
+  good(scripts.update(0.1));
+  CHECK_FALSE(native->entity(id)->script->enabled);
+  CHECK(native->entity(id)->audioSource->voice.volume == 0.5F);
+  CHECK(scripts.stats()->running == 1);
+  auto next = good(scripts.update(0.1));
+  CHECK(next.removed == 1);
+  CHECK(scripts.stats()->runtime.instances == 0);
+  CHECK(scripts.stats()->disabled == 1);
+  CHECK(native->entity(id)->name == "disabled stopped");
+  CHECK_FALSE(native->entity(id)->mesh);
+  good(scripts.stop());
+}
+
+TEST_CASE("component_api_constructor_and_migration_allow_reads_and_reject_all_component_writes") {
+  Project project;
+  project.write(R"ts(
+import {invoke} from 'dot:host';
+
+import {Entity, scene, ScriptComponent} from './dot/engine.js';
+import type {HostError, ScriptContext} from './dot/engine.js';
+
+function inspect(e: Entity): void {
+  if (!e.exists || !e.info().script || e.camera !== null || e.mesh !== null || e.rigidBody !== null
+      || e.audioSource !== null || e.audioListener !== null || scene.primaryCamera !== null
+      || scene.primaryListener !== null) {
+    throw Error('read guard denied or wrong data');
+  }
+
+  for (const name of ['camera', 'mesh', 'rigidBody', 'audioSource', 'audioListener', 'script']) {
+    let rejected = false;
+
+    try {
+      invoke('component.set', [e.id, name, null]);
+    } catch (error) {
+      rejected = (error as HostError).code === 'InvalidState';
+    }
+
+    if (!rejected) {
+      throw Error('unguarded ' + name);
+    }
+  }
+}
+
+export class Actor extends ScriptComponent {
+  constructor(context: ScriptContext) {
+    super(context);
+    inspect(this.self);
+  }
+
+  onStart(): void {
+    this.self.name = 'started';
+  }
+
+  onSaveState(): {marker: string} {
+    inspect(this.self);
+    return {marker: 'saved'};
+  }
+
+  onLoadState(state: {marker: string}): void {
+    inspect(this.self);
+
+    if (state.marker !== 'saved') {
+      throw Error('state mismatch');
+    }
+  }
+
+  onUpdate(): void {
+    this.self.name += ' updated';
+  }
+}
+)ts");
+  auto program = project.compile();
+  auto native = scene();
+  auto id = entity(native, "{}");
+  auto scripts = service(native, program);
+  good(scripts.start());
+  auto migrated = scripts.reload(program);
+  REQUIRE_MESSAGE(migrated, (migrated ? "" : migrated.error().message));
+  CHECK(migrated->migrated == 1);
+  CHECK(migrated->retired.failures.empty());
+  CHECK(native->entity(id)->name == "started");
+  CHECK(native->entity(id)->script->enabled);
+  good(scripts.update(0.1));
+  CHECK(native->entity(id)->name == "started updated");
+  CHECK(scripts.stats()->runtime.instances == 1);
+  good(scripts.stop());
+  CHECK(scripts.stats()->runtime.instances == 0);
+}

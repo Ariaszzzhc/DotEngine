@@ -42,6 +42,9 @@ namespace Dot::Runtime {
   auto testScriptComponents(const std::filesystem::path& executable,
                             const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
                             bool render) -> int;
+  auto testScriptAuthoring(const std::filesystem::path& executable,
+                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+                           bool render) -> int;
   auto testScriptReload(const std::filesystem::path& executable,
                         const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
                         bool render) -> int;
@@ -728,6 +731,13 @@ auto main(int argc, char** argv) -> int {
           argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-reload-render-test");
     }
 
+    if (argc == 5
+        && (std::string_view(argv[1]) == "--script-authoring-test"
+            || std::string_view(argv[1]) == "--script-authoring-render-test")) {
+      return Dot::Runtime::testScriptAuthoring(
+          argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-authoring-render-test");
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -755,7 +765,9 @@ auto main(int argc, char** argv) -> int {
           "--script-components-test <compiler> <sdk> <directory>|"
           "--script-components-render-test <compiler> <sdk> <directory>|"
           "--script-reload-test <compiler> <sdk> <directory>|"
-          "--script-reload-render-test <compiler> <sdk> <directory>]");
+          "--script-reload-render-test <compiler> <sdk> <directory>|"
+          "--script-authoring-test <compiler> <sdk> <directory>|"
+          "--script-authoring-render-test <compiler> <sdk> <directory>]");
       return 2;
     }
 

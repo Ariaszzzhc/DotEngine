@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -18,6 +19,9 @@ import Dot.Script.Runtime;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.World.Scene;
+import Dot.Physics.Body;
+import Dot.Audio.Mixer;
+import Dot.Audio.Output;
 
 namespace {
   using namespace Dot::Script;
@@ -254,4 +258,284 @@ TEST_CASE("scene_host_direct_callbacks_reject_malformed_transport_without_change
   }
 
   CHECK(native->entityCount().value() == 0);
+}
+
+namespace {
+  constexpr std::array componentNames{"camera",      "mesh",          "rigidBody",
+                                      "audioSource", "audioListener", "script"};
+
+  auto component(const HostBindings& services, Dot::World::EntityId entity, std::string_view name)
+      -> Json {
+    auto result = invoke(services, "component.get", Json::array({id(entity), name}));
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    REQUIRE(result->has_value());
+    return Json::parse(**result);
+  }
+
+  auto seedComponents(const std::shared_ptr<Dot::World::Scene>& scene, Dot::World::EntityId entity)
+      -> void {
+    REQUIRE(scene->setCamera(entity, Dot::World::Camera{}));
+    REQUIRE(scene->setMeshRenderer(entity, Dot::World::MeshRenderer{}));
+    REQUIRE(scene->setRigidBody(entity, Dot::World::RigidBody{}));
+    Dot::World::AudioSource audio;
+    audio.asset = "audio/音源.wav";
+    REQUIRE(scene->setAudioSource(entity, audio));
+    REQUIRE(scene->setAudioListener(entity, Dot::World::AudioListener{}));
+    REQUIRE(scene->setScript(entity, Dot::World::ScriptComponent{"actor.ts"}));
+  }
+}  // namespace
+
+TEST_CASE("component_host_all_descriptions_roundtrip_owned_snapshots_and_null_removal") {
+  auto native = scene();
+  auto a = native->createEntity("Source").value();
+  auto b = native->createEntity("Destination").value();
+  auto services = bindings(native);
+  auto empty = invoke(services, "entity.get", Json::array({id(b)}));
+  REQUIRE((empty && *empty));
+  auto snapshot = Json::parse(**empty);
+  seedComponents(native, a);
+
+  for (const auto* name : componentNames) {
+    CHECK(component(services, b, name).is_null());
+    CHECK(snapshot.at(name).is_null());
+    auto value = component(services, a, name);
+    REQUIRE(invoke(services, "component.set", Json::array({id(b), name, value})));
+    CHECK(component(services, b, name) == value);
+    value["extra"] = 1;
+    CHECK(component(services, b, name) != value);
+    auto info = invoke(services, "entity.get", Json::array({id(b)}));
+    REQUIRE((info && *info));
+    CHECK(Json::parse(**info).at(name) == component(services, b, name));
+    REQUIRE(invoke(services, "component.set", Json::array({id(b), name, nullptr})));
+    REQUIRE(invoke(services, "component.set", Json::array({id(b), name, nullptr})));
+    CHECK(component(services, b, name).is_null());
+    CHECK_FALSE(component(services, a, name).is_null());
+  }
+}
+
+TEST_CASE("component_host_strict_shapes_and_transport_fail_before_native_mutation") {
+  auto native = scene();
+  auto entity = native->createEntity().value();
+  seedComponents(native, entity);
+  auto services = bindings(native);
+
+  for (const auto* name : componentNames) {
+    auto original = component(services, entity, name);
+    std::vector<Json> values{0, true, "", Json::array(), Json::object()};
+    auto extra = original;
+    extra["unexpected"] = 0;
+    values.push_back(extra);
+
+    for (const auto& item : original.items()) {
+      auto missing = original;
+      missing.erase(item.key());
+      values.push_back(missing);
+    }
+
+    for (const auto& value : values) {
+      auto result = invoke(services, "component.set", Json::array({id(entity), name, value}));
+      REQUIRE_FALSE(result);
+      CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
+      CHECK(component(services, entity, name) == original);
+    }
+  }
+
+  CHECK_FALSE(invoke(services, "component.get", Json::array({id(entity), "unknown"})));
+  CHECK_FALSE(invoke(services, "component.set", Json::array({id(entity), "unknown", nullptr})));
+  CHECK_FALSE(invoke(services, "component.set", Json::array({id(entity), 0, nullptr})));
+  CHECK_FALSE(invoke(services, "component.set", Json::array({id(entity), "camera"})));
+  CHECK_FALSE(invoke(services, "component.get", Json::array({id(entity), "camera", 0})));
+  auto method = std::ranges::find(services, "component.set", &HostFunction::name);
+  REQUIRE(method != services.end());
+  auto duplicate
+      = "[" + id(entity).dump() + ",\"audioListener\",{\"primary\":false,\"primary\":true}]";
+  auto result = method->callback(duplicate);
+  REQUIRE_FALSE(result);
+  CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
+  auto deep = "[" + id(entity).dump() + ",\"script\",{\"source\":\"actor.ts\",\"className\":\"default\","
+      "\"enabled\":true,\"properties\":{\"deep\":" + std::string(70, '[') + "0"
+      + std::string(70, ']') + "}}]";
+  REQUIRE_FALSE(method->callback(deep));
+  CHECK(component(services, entity, "audioListener")["primary"] == false);
+}
+
+TEST_CASE("component_host_native_numeric_asset_and_property_constraints_preserve_old_state") {
+  auto native = scene();
+  auto entity = native->createEntity().value();
+  seedComponents(native, entity);
+  auto services = bindings(native);
+  auto invalid = [&](std::string_view name, std::string_view field, Json value) {
+    INFO(name, field);
+    const auto original = component(services, entity, name);
+    auto changed = original;
+    changed[Json::json_pointer(std::string(field))] = std::move(value);
+    auto result = invoke(services, "component.set", Json::array({id(entity), name, changed}));
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
+    CHECK(component(services, entity, name) == original);
+  };
+  invalid("camera", "/projection", "panorama");
+  invalid("camera", "/nearPlane", -1);
+  invalid("camera", "/farPlane", 0.1);
+  invalid("camera", "/verticalFovDegrees", 180);
+  invalid("camera", "/primary", 1);
+  invalid("camera", "/orthographicHeight", 1e100);
+  invalid("mesh", "/kind", "triangle");
+  invalid("mesh", "/asset", "cube.obj");
+  invalid("mesh", "/tint/x", -1);
+  invalid("mesh", "/tint/w", 1e100);
+  invalid("mesh", "/visible", "yes");
+  invalid("rigidBody", "/motion", "automatic");
+  invalid("rigidBody", "/shape", "mesh");
+  invalid("rigidBody", "/halfExtents/x", 0);
+  invalid("rigidBody", "/velocity/y", 501);
+  invalid("rigidBody", "/mass", 0);
+  invalid("rigidBody", "/radius", true);
+  invalid("rigidBody", "/restitution", 1.01);
+  invalid("audioSource", "/asset", "../unsafe.wav");
+  invalid("audioSource", "/voice/pitch", 4.1);
+  invalid("audioSource", "/voice/pan", -1.1);
+  invalid("audioSource", "/spatial/attenuation", "none");
+  invalid("audioSource", "/spatial/minDistance", 1000);
+  invalid("audioSource", "/spatial/outerConeDegrees", 359);
+  invalid("audioListener", "/primary", "yes");
+  invalid("script", "/source", "../actor.ts");
+  invalid("script", "/className", "bad-name");
+  invalid("script", "/properties", Json::array());
+  invalid("script", "/properties/deep", std::string(65536, 'x'));
+  invalid("script", "/enabled", 1);
+  Json deep = 0;
+
+  for (int level = 0; level < 34; ++level) {
+    deep = Json::array({deep});
+  }
+
+  invalid("script", "/properties/deep", deep);
+}
+
+TEST_CASE("component_host_variant_updates_map_all_fields_to_native_descriptions") {
+  auto native = scene();
+  auto entity = native->createEntity().value();
+  seedComponents(native, entity);
+  auto services = bindings(native);
+  auto write = [&](std::string_view name, const Json& value) {
+    REQUIRE(invoke(services, "component.set", Json::array({id(entity), name, value})));
+    CHECK(component(services, entity, name) == value);
+  };
+  auto camera = component(services, entity, "camera");
+  camera.update({{"projection", "orthographic"}, {"orthographicHeight", 24}, {"primary", true}});
+  write("camera", camera);
+  CHECK(native->entity(entity)->camera->projection == Dot::World::Projection::Orthographic);
+  CHECK(native->entity(entity)->camera->orthographicHeight == 24);
+  auto mesh = component(services, entity, "mesh");
+  mesh.update({{"kind", "asset"}, {"asset", "models/中文.obj"}, {"visible", false}});
+  write("mesh", mesh);
+  CHECK(native->entity(entity)->mesh->asset == "models/中文.obj");
+  mesh.update({{"kind", "quad"}, {"asset", ""}});
+  write("mesh", mesh);
+  auto body = component(services, entity, "rigidBody");
+  body.update({{"motion", "kinematic"},
+               {"shape", "capsule"},
+               {"mass", 10},
+               {"sensor", true},
+               {"radius", 2},
+               {"halfHeight", 3},
+               {"friction", 0},
+               {"restitution", 1},
+               {"gravityFactor", 0}});
+  body["velocity"] = {{"x", 1}, {"y", 2}, {"z", 3}};
+  write("rigidBody", body);
+  CHECK(native->entity(entity)->rigidBody->velocity.y == 2);
+  CHECK(native->entity(entity)->rigidBody->sensor);
+  body.update({{"motion", "static"}, {"shape", "box"}});
+  body["velocity"] = {{"x", 0}, {"y", 0}, {"z", 0}};
+  write("rigidBody", body);
+  auto audio = component(services, entity, "audioSource");
+  audio["playOnStart"] = false;
+  audio["voice"].update({{"volume", 0.5}, {"pitch", 2}, {"looping", true}});
+  audio["spatial"].update({{"enabled", true},
+                           {"attenuation", "linear"},
+                           {"rolloff", 2},
+                           {"dopplerFactor", 1},
+                           {"innerConeDegrees", 45},
+                           {"outerConeDegrees", 90},
+                           {"outerConeGain", 0.5}});
+  write("audioSource", audio);
+  CHECK(native->entity(entity)->audioSource->spatial.enabled);
+  CHECK(native->entity(entity)->audioSource->voice.looping);
+  audio["spatial"]["attenuation"] = "exponential";
+  write("audioSource", audio);
+  auto script = component(services, entity, "script");
+  script.update({{"source", "other.mts"}, {"className", "Actor"}, {"enabled", false}});
+  script["properties"] = {{"nested", Json::array({nullptr, true, 2, "中文"})}};
+  write("script", script);
+  CHECK(native->entity(entity)->script->className == "Actor");
+  CHECK_FALSE(native->entity(entity)->script->enabled);
+}
+
+TEST_CASE("component_host_primary_uniqueness_exists_foreign_and_stale_handles") {
+  auto native = scene();
+  auto a = native->createEntity().value();
+  auto b = native->createEntity().value();
+  auto services = bindings(native);
+  CHECK(invoke(services, "scene.primaryCamera").value().value() == "null");
+  CHECK(invoke(services, "scene.primaryListener").value().value() == "null");
+  seedComponents(native, a);
+
+  for (const auto& pair : {std::pair{"camera", "scene.primaryCamera"},
+                           std::pair{"audioListener", "scene.primaryListener"}}) {
+    auto value = component(services, a, pair.first);
+    value["primary"] = true;
+    REQUIRE(invoke(services, "component.set", Json::array({id(a), pair.first, value})));
+    CHECK(Json::parse(invoke(services, pair.second).value().value()) == id(a));
+    CHECK_FALSE(invoke(services, "component.set", Json::array({id(b), pair.first, value})));
+    CHECK(component(services, b, pair.first).is_null());
+    REQUIRE(invoke(services, "component.set", Json::array({id(a), pair.first, nullptr})));
+    CHECK(invoke(services, pair.second).value().value() == "null");
+    CHECK_FALSE(invoke(services, pair.second, Json::array({0})));
+  }
+
+  auto other = scene();
+  auto foreign = other->createEntity().value();
+  CHECK_FALSE(invoke(services, "entity.exists", Json::array({id(foreign)})));
+  CHECK(invoke(services, "entity.exists", Json::array({id(a)})).value().value() == "true");
+  REQUIRE(native->destroyEntity(a));
+  CHECK(invoke(services, "entity.exists", Json::array({id(a)})).value().value() == "false");
+
+  for (const auto handle : {a, foreign}) {
+    for (const auto* name : componentNames) {
+      CHECK_FALSE(invoke(services, "component.get", Json::array({id(handle), name})));
+      CHECK_FALSE(invoke(services, "component.set", Json::array({id(handle), name, nullptr})));
+    }
+  }
+}
+
+TEST_CASE("component_host_repeated_authoring_retains_scene_only_and_allocates_no_backend") {
+  const auto vm = Runtime::backendMemory();
+  const auto mixer = Dot::Audio::Mixer::backendMemory();
+  const auto output = Dot::Audio::Output::backendMemory();
+
+  for (int iteration = 0; iteration < 30; ++iteration) {
+    auto native = scene();
+    std::weak_ptr<Dot::World::Scene> weak = native;
+    auto entity = native->createEntity().value();
+    seedComponents(native, entity);
+    auto services = bindings(native);
+    native.reset();
+    CHECK_FALSE(weak.expired());
+
+    for (const auto* name : componentNames) {
+      auto value = component(services, entity, name);
+      REQUIRE(invoke(services, "component.set", Json::array({id(entity), name, value})));
+    }
+
+    services.clear();
+    CHECK(weak.expired());
+    CHECK(Runtime::backendMemory().bytes == vm.bytes);
+    CHECK(Runtime::backendMemory().allocations == vm.allocations);
+    CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixer.bytes);
+    CHECK(Dot::Audio::Mixer::backendMemory().allocations == mixer.allocations);
+    CHECK(Dot::Audio::Output::backendMemory().bytes == output.bytes);
+    CHECK(Dot::Audio::Output::backendMemory().allocations == output.allocations);
+  }
 }

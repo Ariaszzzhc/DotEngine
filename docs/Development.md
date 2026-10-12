@@ -1108,5 +1108,51 @@ successful switching changes behavior while retaining compatible running state.
   unchanged. No sanitizers/environment changes were introduced. Windows/Linux
   common C++ implementations remain uncompiled/unexecuted locally.
 
-Remaining subsystem script APIs, project/editor/export tooling, expanded rendering,
-and the example game remain to be implemented.
+### Component authoring script APIs
+
+Extended the native scene bridge and typed SDK with complete camera, mesh, rigid
+body, audio source, audio listener and script descriptions, primary lookups and
+entity existence. Lifecycle scripts can author and edit these native components;
+preparation/state migration remains read-only.
+
+- macOS Debug and Release each pass all 582 CTest cases (545 doctest cases and
+  thirty-seven executable checks). Twelve focused behavioral cases cover all six
+  descriptions, null removal, owned snapshots, native defaults and independent
+  nested factory values, variants/numeric/asset/property constraints, strict
+  argument and nested schemas, duplicate/deep JSON, primary uniqueness, foreign/
+  stale IDs, real TypeScript type errors and recovery, lifecycle edits/self-disable,
+  constructor/save/load read access and write denial, and thirty repeated shared
+  scene ownership/release cycles without VM/mixer/output backend allocation.
+  After embedded TypeScript formatting, all eight affected Debug compiler/lifecycle/
+  executable checks passed again; Release full checks used the final formatted sources.
+- `--script-authoring-test <compiler> <sdk-root> <directory>` creates six component
+  descriptions through actual compiled TypeScript, checks validation/primary IDs,
+  saves/loads the authored scene with fresh scope and executes lifecycle edits/
+  removal. `--script-authoring-render-test` also verifies actual Metal pixels for
+  the script-created camera/blue mesh, green tint assignment and hidden geometry,
+  including eviction of the last hidden mesh from the renderer cache. Compiler
+  generations, process handles/children and VM allocations return to baseline.
+- SceneHost now has sixteen methods. Component reads and entity snapshots are
+  owned nullable descriptions; complete assignments delegate to native validation
+  before changes. Unknown/missing fields, enum values, wrong scalar types and
+  float overflow fail. Script properties cross as an object and retain native
+  depth-32/64-KiB limits; transport parsing rejects duplicates/depth beyond 64.
+  Existence is false only for missing same-scene IDs; primary lookups map the two
+  native absence codes to null. Foreign IDs and moved/thread-invalid scenes fail.
+- SDK factories return native-default descriptions with independent default nested
+  objects. Camera/mesh/body overrides replace whole fields; caller override objects
+  remain ordinary values until assignment copies them. Authoring does not read
+  assets or initialize physics/audio/script backends. Simulation, ray/impulse and
+  audio playback controls remain separate script API work. Self-disable is consumed
+  when the next lifecycle dispatch synchronizes authoring.
+- Reviewed schema conversion/native mapping, finite/scalar/depth/size limits,
+  shared scene identity/lifetime, primary uniqueness, failure-before-mutation,
+  nullable snapshots, factory ownership/default parity, read-only guard coverage,
+  deferred description synchronization and real GPU visibility/cache behavior.
+  Formatting/whitespace checks pass; non-template module implementations remain
+  separate from interfaces. Release uses NDEBUG and the caller's LLVM libc++/
+  libunwind; no LC_RPATH, sanitizers or environment changes were introduced.
+  Windows/Linux common C++ implementations remain uncompiled/unexecuted locally.
+
+Remaining input/physics/audio runtime script APIs, project/editor/export tooling,
+expanded rendering, and the example game remain to be implemented.

@@ -1,7 +1,9 @@
 import {invoke} from 'dot:host';
 
-/** Scene-scoped decimal IDs retain all uint64 bits through JavaScript.
- * 场景范围十进制 ID，在 JavaScript 中保留 uint64 全部位。 */
+/**
+ * Scene-scoped decimal IDs retain all uint64 bits through JavaScript.
+ * 场景范围十进制 ID，在 JavaScript 中保留 uint64 全部位。
+ */
 export interface EntityId {
   readonly scene: string;
   readonly value: string;
@@ -13,23 +15,176 @@ export interface Vec3 {
   z: number;
 }
 
-export interface Quat extends Vec3 {
+export interface Vec4 extends Vec3 {
   w: number;
 }
 
-/** Owned local transform snapshot; writing it validates the complete native TRS.
- * 拥有的局部变换快照，写回会校验完整原生 TRS。 */
+export interface Quat extends Vec4 {}
+
+/**
+ * Owned local transform snapshot; writing it validates the complete native TRS.
+ * 拥有的局部变换快照，写回会校验完整原生 TRS。
+ */
 export interface Transform {
   position: Vec3;
   rotation: Quat;
   scale: Vec3;
 }
 
+/**
+ * Authoring descriptions are complete owned snapshots. Assignment validates
+ * native ranges and uniqueness; null removes a component. Assets are relative
+ * project paths; configuring them does not load files or start a backend.
+ * 编辑描述为完整拥有的快照；赋值校验原生范围与唯一性，null 移除组件。资源为项目
+ * 相对路径；配置不加载文件、不启动后端。
+ */
+export interface Camera {
+  projection: 'perspective'|'orthographic';
+  verticalFovDegrees: number;
+  orthographicHeight: number;
+  nearPlane: number;
+  farPlane: number;
+  primary: boolean;
+}
+
+export interface MeshRenderer {
+  kind: 'cube'|'quad'|'asset';
+  asset: string;
+  tint: Vec4;
+  visible: boolean;
+}
+
+export interface RigidBody {
+  motion: 'static'|'kinematic'|'dynamic';
+  shape: 'box'|'sphere'|'capsule';
+  halfExtents: Vec3;
+  radius: number;
+  halfHeight: number;
+  velocity: Vec3;
+  mass: number;
+  friction: number;
+  restitution: number;
+  gravityFactor: number;
+  sensor: boolean;
+}
+
+export interface VoiceSettings {
+  volume: number;
+  pan: number;
+  pitch: number;
+  looping: boolean;
+}
+
+export interface SpatialProperties {
+  enabled: boolean;
+  attenuation: 'inverse'|'linear'|'exponential';
+  minDistance: number;
+  maxDistance: number;
+  rolloff: number;
+  dopplerFactor: number;
+  innerConeDegrees: number;
+  outerConeDegrees: number;
+  outerConeGain: number;
+}
+
+export interface AudioSource {
+  asset: string;
+  playOnStart: boolean;
+  voice: VoiceSettings;
+  spatial: SpatialProperties;
+}
+
+export interface AudioListener {
+  primary: boolean;
+}
+
+export type JsonValue = null|boolean|number|string|JsonValue[]|{[key: string]: JsonValue};
+
+export interface ScriptDescription {
+  source: string;
+  className: string;
+  properties: {[key: string]: JsonValue};
+  enabled: boolean;
+}
+
+/**
+ * Fresh native-default descriptions; default nested objects are independent. Overrides
+ * replace whole fields (including vectors), and validation happens on assignment.
+ * 新建原生默认描述，默认嵌套对象相互独立；覆盖替换完整字段（含向量），赋值时校验。
+ */
+export const components = Object.freeze({
+  camera(overrides: Partial<Camera> = {}): Camera {
+    return {
+      projection: 'perspective',
+      verticalFovDegrees: 60,
+      orthographicHeight: 10,
+      nearPlane: 0.1,
+      farPlane: 1000,
+      primary: false,
+      ...overrides
+    };
+  },
+
+  mesh(overrides: Partial<MeshRenderer> = {}): MeshRenderer {
+    return {kind: 'cube', asset: '', tint: {x: 1, y: 1, z: 1, w: 1}, visible: true, ...overrides};
+  },
+
+  rigidBody(overrides: Partial<RigidBody> = {}): RigidBody {
+    return {
+      motion: 'dynamic',
+      shape: 'sphere',
+      halfExtents: {x: 0.5, y: 0.5, z: 0.5},
+      radius: 0.5,
+      halfHeight: 0.5,
+      velocity: {x: 0, y: 0, z: 0},
+      mass: 1,
+      friction: 0.5,
+      restitution: 0,
+      gravityFactor: 1,
+      sensor: false,
+      ...overrides
+    };
+  },
+
+  audioSource(asset: string): AudioSource {
+    return {
+      asset,
+      playOnStart: true,
+      voice: {volume: 1, pan: 0, pitch: 1, looping: false},
+      spatial: {
+        enabled: false,
+        attenuation: 'inverse',
+        minDistance: 1,
+        maxDistance: 1000,
+        rolloff: 1,
+        dopplerFactor: 0,
+        innerConeDegrees: 360,
+        outerConeDegrees: 360,
+        outerConeGain: 0
+      }
+    };
+  },
+
+  audioListener(primary = false): AudioListener {
+    return {primary};
+  },
+
+  script(source: string, className = 'default'): ScriptDescription {
+    return {source, className, properties: {}, enabled: true};
+  },
+});
+
 export interface EntityInfo {
   readonly id: EntityId;
   name: string;
-  parent: EntityId | null;
+  parent: EntityId|null;
   transform: Transform;
+  camera: Camera|null;
+  mesh: MeshRenderer|null;
+  rigidBody: RigidBody|null;
+  audioSource: AudioSource|null;
+  audioListener: AudioListener|null;
+  script: ScriptDescription|null;
 }
 
 export interface SceneInfo {
@@ -38,16 +193,19 @@ export interface SceneInfo {
   readonly entities: number;
 }
 
-export type HostErrorCode = 'InvalidArgument' | 'NotFound' | 'Io' | 'Unavailable' | 'InvalidState' | 'External';
+export type HostErrorCode
+    = 'InvalidArgument'|'NotFound'|'Io'|'Unavailable'|'InvalidState'|'External';
 
 export interface HostError extends Error {
   readonly name: 'DotHostError';
   readonly code: HostErrorCode;
 }
 
-/** Native view with owned identity. Destroyed/foreign handles fail explicitly;
+/**
+ * Native view with owned identity. Destroyed/foreign handles fail explicitly;
  * getters return snapshots, and assignment commits one validated native edit.
- * 持有身份的原生视图；删除/跨场景句柄明确失败，getter 返回快照，赋值提交一次校验修改。 */
+ * 持有身份的原生视图；删除/跨场景句柄明确失败，getter 返回快照，赋值提交一次校验修改。
+ */
 export class Entity {
   readonly id: EntityId;
 
@@ -75,23 +233,83 @@ export class Entity {
     invoke('transform.set', [this.id, value]);
   }
 
-  get parent(): Entity | null {
+  /**
+   * False for deleted IDs in this scene; foreign/invalid IDs still throw.
+   * 本场景已删除 ID 返回 false，跨场景/无效 ID 仍抛错。
+   */
+  get exists(): boolean {
+    return invoke('entity.exists', [this.id]) as boolean;
+  }
+
+  get camera(): Camera|null {
+    return invoke('component.get', [this.id, 'camera']) as Camera | null;
+  }
+
+  set camera(value: Camera|null) {
+    invoke('component.set', [this.id, 'camera', value]);
+  }
+
+  get mesh(): MeshRenderer|null {
+    return invoke('component.get', [this.id, 'mesh']) as MeshRenderer | null;
+  }
+
+  set mesh(value: MeshRenderer|null) {
+    invoke('component.set', [this.id, 'mesh', value]);
+  }
+
+  get rigidBody(): RigidBody|null {
+    return invoke('component.get', [this.id, 'rigidBody']) as RigidBody | null;
+  }
+
+  set rigidBody(value: RigidBody|null) {
+    invoke('component.set', [this.id, 'rigidBody', value]);
+  }
+
+  get audioSource(): AudioSource|null {
+    return invoke('component.get', [this.id, 'audioSource']) as AudioSource | null;
+  }
+
+  set audioSource(value: AudioSource|null) {
+    invoke('component.set', [this.id, 'audioSource', value]);
+  }
+
+  get audioListener(): AudioListener|null {
+    return invoke('component.get', [this.id, 'audioListener']) as AudioListener | null;
+  }
+
+  set audioListener(value: AudioListener|null) {
+    invoke('component.set', [this.id, 'audioListener', value]);
+  }
+
+  get script(): ScriptDescription|null {
+    return invoke('component.get', [this.id, 'script']) as ScriptDescription | null;
+  }
+
+  set script(value: ScriptDescription|null) {
+    invoke('component.set', [this.id, 'script', value]);
+  }
+
+  get parent(): Entity|null {
     const parent = this.info().parent;
     return parent === null ? null : new Entity(parent);
   }
 
-  set parent(value: Entity | null) {
+  set parent(value: Entity|null) {
     invoke('hierarchy.setParent', [this.id, value === null ? null : value.id]);
   }
 
-  /** Right-handed column-major world matrix with 16 float values.
-   * 右手、列主序世界矩阵，含 16 个浮点值。 */
+  /**
+   * Right-handed column-major world matrix with 16 float values.
+   * 右手、列主序世界矩阵，含 16 个浮点值。
+   */
   worldMatrix(): readonly number[] {
     return invoke('transform.world', [this.id]) as number[];
   }
 
-  /** Removes this entity and its whole native subtree.
-   * 删除本实体及完整原生子树。 */
+  /**
+   * Removes this entity and its whole native subtree.
+   * 删除本实体及完整原生子树。
+   */
   destroy(): void {
     invoke('entity.destroy', [this.id]);
   }
@@ -100,6 +318,18 @@ export class Entity {
 export const scene = Object.freeze({
   info(): SceneInfo {
     return invoke('scene.info', []) as SceneInfo;
+  },
+
+  /** Null when no primary component exists; wrappers retain scene-scoped IDs.
+   * 无主组件时返回 null，包装器保留场景范围 ID。 */
+  get primaryCamera(): Entity | null {
+    const id = invoke('scene.primaryCamera', []) as EntityId | null;
+    return id === null ? null : new Entity(id);
+  },
+
+  get primaryListener(): Entity | null {
+    const id = invoke('scene.primaryListener', []) as EntityId | null;
+    return id === null ? null : new Entity(id);
   },
 
   rename(name: string): void {
@@ -117,18 +347,22 @@ export const scene = Object.freeze({
   },
 });
 
-/** Constructor context is an owned JSON snapshot. Preparation permits scene
+/**
+ * Constructor context is an owned JSON snapshot. Preparation permits scene
  * reads; mutations belong in lifecycle hooks. Nested properties are owned data.
  * 构造上下文为拥有的 JSON 快照；准备阶段允许读场景，修改放在生命周期钩子，嵌套属性
- * 是拥有的数据。 */
+ * 是拥有的数据。
+ */
 export interface ScriptContext<Properties extends object = Record<string, unknown>> {
   readonly entity: EntityId;
   readonly properties: Properties;
 }
 
-/** Optional hooks default to no action. Stop callbacks require explicit service
+/**
+ * Optional hooks default to no action. Stop callbacks require explicit service
  * shutdown; garbage collection/destruction never invokes them.
- * 可选钩子默认无动作，停止回调须显式关闭服务，垃圾回收/销毁不调用它们。 */
+ * 可选钩子默认无动作，停止回调须显式关闭服务，垃圾回收/销毁不调用它们。
+ */
 export class ScriptComponent<Properties extends object = Record<string, unknown>> {
   readonly self: Entity;
   readonly properties: Readonly<Properties>;
@@ -138,15 +372,15 @@ export class ScriptComponent<Properties extends object = Record<string, unknown>
     this.properties = Object.freeze({...context.properties});
   }
 
-  onStart(): void | Promise<void> {
+  onStart(): void|Promise<void> {
   }
 
-  onUpdate(_seconds: number): void | Promise<void> {
+  onUpdate(_seconds: number): void|Promise<void> {
   }
 
-  onFixedUpdate(_seconds: number): void | Promise<void> {
+  onFixedUpdate(_seconds: number): void|Promise<void> {
   }
 
-  onStop(): void | Promise<void> {
+  onStop(): void|Promise<void> {
   }
 }

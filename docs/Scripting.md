@@ -206,7 +206,7 @@ and returned byte bounds do not limit how much a callback itself allocates.
 
 # Core scene SDK
 
-`Dot.Script.SceneHost::sceneBindings(sharedScene)` produces eleven methods and
+`Dot.Script.SceneHost::sceneBindings(sharedScene)` produces sixteen methods and
 retains shared ownership of the original scene identity. Creation and calls require
 the native scene's creating thread. Moving/replacing that Scene invalidates all old
 bindings explicitly. Destroying native entities invalidates wrappers. Entity IDs
@@ -221,27 +221,80 @@ fail instead of aliasing another entity.
 | `scene.rename` | `[name]` | undefined |
 | `entity.list` | `[]` | IDs in creation order |
 | `entity.create` | `[name]` | ID |
-| `entity.get` | `[id]` | owned `{id, name, parent, transform}` snapshot |
+| `entity.get` | `[id]` | owned identity, name, parent, transform and six component snapshots |
 | `entity.destroy` | `[id]` | undefined; deletes the entire subtree |
 | `entity.rename` | `[id, name]` | undefined |
 | `transform.get` | `[id]` | owned local TRS snapshot |
 | `transform.set` | `[id, transform]` | undefined |
 | `transform.world` | `[id]` | sixteen column-major float values |
 | `hierarchy.setParent` | `[id, parentId or null]` | undefined |
+| `entity.exists` | `[id]` | boolean; foreign/invalid IDs still fail |
+| `component.get` | `[id, name]` | owned description or null |
+| `component.set` | `[id, name, description or null]` | undefined |
+| `scene.primaryCamera` | `[]` | primary camera ID or null |
+| `scene.primaryListener` | `[]` | primary audio listener ID or null |
 
 The complete transform shape is `{position: {x,y,z}, rotation: {x,y,z,w}, scale:
 {x,y,z}}`, with finite float-range numbers and no extra/missing fields. The native
 scene normalizes quaternions and validates nonzero scales, hierarchy/world overflow
 and cycles before each mutation. Name, thread, scope and subtree rules are the same
 as direct native calls. Getters return owned snapshots; editing one has no native
-effect until assignment. No mesh/camera/audio/physics component fields are included
-in this core snapshot yet; these remain separate API work.
+effect until assignment. The snapshot includes nullable `camera`, `mesh`,
+`rigidBody`, `audioSource`, `audioListener`, and `script` descriptions. Those exact
+names are accepted by component.get/set. Null removal is idempotent for a live
+entity; a destroyed owner remains an explicit error. A missing primary component
+is null. `Entity.exists` is false for missing IDs in this scene, while foreign,
+invalid and moved-scene handles remain errors.
 
 Copy `assets/scripts/dot/engine.ts` and `host.d.ts` into a project's `scripts/dot`
 directory, then compile that source tree with TypeScriptCompiler. The declaration
 resolves the reserved module; the TypeScript implementation exposes `scene` and an
 `Entity` view, typed IDs/vectors/quaternions/transforms/snapshots and HostError codes.
 These wrappers own copied identity/snapshots and do not own native entities.
+
+Component fields use the native authoring contracts, with object vectors `{x,y,z}`
+and colors `{x,y,z,w}`. Complete assignments require every documented field and
+reject unknown fields, invalid enum strings, wrong scalar types, float overflow and native
+range violations before mutation. Source paths and primary uniqueness use native
+validation. Script properties are a bounded JSON object, not an encoded JSON
+string. Direct callback input rejects duplicate fields and nesting beyond 64;
+script properties retain their separate depth-32/64-KiB limits. Authoring reads no
+assets and initializes no physics/audio/script backend; file availability and
+backend-specific constraints are checked by the consuming services.
+
+`components` creates fresh descriptions matching native defaults. Camera, mesh,
+and rigidBody accept shallow `Partial` overrides that replace complete fields;
+these are convenience constructors, and assignment still validates all fields.
+Audio sources require an asset path, and script descriptions require a source
+path. Default nested objects are independent; caller-supplied override objects
+remain ordinary caller-owned values until an assignment copies them.
+
+```ts
+import {scene, components} from './dot/engine.js';
+
+const actor = scene.create('Actor');
+actor.mesh = components.mesh({tint: {x: 0, y: 1, z: 0, w: 1}});
+actor.rigidBody = components.rigidBody({motion: 'kinematic', shape: 'box'});
+actor.audioSource = components.audioSource('audio/theme.wav');
+actor.script = components.script('actors/mover.ts', 'Mover');
+
+const source = actor.audioSource!;
+source.voice.looping = true;
+actor.audioSource = source;
+actor.rigidBody = null;
+```
+
+`--script-authoring-test <absolute-compiler> <sdk-root> <directory>` creates all
+six components through actual compiled TypeScript, checks native rejection,
+saves/loads the authored scene in a fresh scope and dispatches typed lifecycle
+edits and removal. Audio paths intentionally need not exist for this authoring
+case; playback is verified by the separate native audio acceptances.
+`--script-authoring-render-test` additionally verifies actual Metal pixels for a
+script-created camera and blue mesh, a lifecycle-assigned green tint, and hidden
+geometry. Constructors and state migration may query these descriptions/primary
+entities/existence, while component assignment is denied during preparation and
+save/load just like earlier scene writes. Lifecycle callbacks may edit authoring;
+self-disable takes effect when the next lifecycle dispatch synchronizes the scene.
 
 ```ts
 import {Entity} from './dot/engine.js';

@@ -15,6 +15,7 @@ import Dot.Script.SceneHost;
 import Dot.Script.Runtime;
 import Dot.Core.Files;
 import Dot.World.Scene;
+import Dot.Physics.Body;
 
 namespace {
   using namespace Dot::Script;
@@ -179,4 +180,220 @@ TEST_CASE("script_sdk_native_callback_failure_keeps_context_and_prior_successful
   CHECK(vm.call(entry, "count").value().value() == "1");
   CHECK(scene->entities()->front().name == "Kept");
   CHECK(scene->entities()->front().transform.scale.y == 1);
+}
+
+TEST_CASE("component_sdk_real_typescript_defaults_match_native_and_nested_factories_are_owned") {
+  Project project;
+  project.write(R"ts(
+import {components, scene} from './dot/engine.js';
+
+export function run(): boolean {
+  const e = scene.create('Configured');
+  const a = components.mesh();
+  const b = components.mesh();
+  a.tint.x = 0;
+
+  if (b.tint.x !== 1) {
+    throw Error('shared default tint');
+  }
+
+  e.camera = components.camera();
+  e.mesh = b;
+  e.rigidBody = components.rigidBody();
+  e.audioSource = components.audioSource('audio/missing.wav');
+  e.audioListener = components.audioListener();
+  e.script = components.script('missing.ts');
+  const state = e.info();
+
+  if (state.camera === null || state.mesh === null || state.rigidBody === null
+      || state.audioSource === null || state.audioListener === null || state.script === null) {
+    throw Error('missing snapshot');
+  }
+
+  const mesh = e.mesh!;
+  mesh.tint.x = 0;
+  state.audioSource.voice.volume = 0;
+
+  if (e.mesh!.tint.x !== 1 || e.audioSource!.voice.volume !== 1) {
+    throw Error('live instead of owned snapshot');
+  }
+
+  return e.exists && scene.primaryCamera === null && scene.primaryListener === null;
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto vm = runtime(program, scene);
+  auto result = vm.call(module(vm), "run");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->value() == "true");
+  auto state = scene->entities()->front();
+  REQUIRE((state.camera && state.mesh && state.rigidBody && state.audioSource && state.audioListener
+           && state.script));
+  Dot::World::Camera camera;
+  CHECK(state.camera->projection == camera.projection);
+  CHECK(state.camera->verticalFovDegrees == camera.verticalFovDegrees);
+  CHECK(state.camera->orthographicHeight == camera.orthographicHeight);
+  CHECK(state.camera->nearPlane == camera.nearPlane);
+  CHECK(state.camera->farPlane == camera.farPlane);
+  CHECK(state.camera->primary == camera.primary);
+  Dot::World::MeshRenderer mesh;
+  CHECK(state.mesh->kind == mesh.kind);
+  CHECK(state.mesh->asset == mesh.asset);
+  CHECK(state.mesh->tint == mesh.tint);
+  CHECK(state.mesh->visible == mesh.visible);
+  CHECK(*state.rigidBody == Dot::World::RigidBody{});
+  Dot::World::AudioSource audio;
+  audio.asset = "audio/missing.wav";
+  CHECK(*state.audioSource == audio);
+  CHECK(*state.audioListener == Dot::World::AudioListener{});
+  CHECK(*state.script == Dot::World::ScriptComponent{"missing.ts"});
+  CHECK(vm.stats()->modules == 3);
+  CHECK(vm.stats()->instances == 0);
+}
+
+TEST_CASE("component_sdk_changes_and_primary_queries_use_native_state_and_removal") {
+  Project project;
+  project.write(R"ts(
+import {components, scene} from './dot/engine.js';
+
+export function run(): string[] {
+  const camera = scene.create('Camera');
+  const actor = scene.create('Actor');
+  camera.camera
+      = components.camera({primary: true, projection: 'orthographic', orthographicHeight: 4});
+  actor.mesh = components.mesh({kind: 'quad', tint: {x: 0, y: 1, z: 0, w: 1}});
+  actor.rigidBody = components.rigidBody({motion: 'kinematic', velocity: {x: 2, y: 0, z: 0}});
+  actor.audioSource = components.audioSource('audio/missing.flac');
+  const source = actor.audioSource!;
+  source.voice.looping = true;
+  source.voice.pitch = 2;
+  source.spatial.enabled = true;
+  source.spatial.attenuation = 'exponential';
+  actor.audioSource = source;
+  actor.audioListener = components.audioListener(true);
+  actor.script = components.script('actor.mts', 'Actor');
+  const script = actor.script!;
+  script.properties = {name: '中文', nested: [true, null, {speed: 2}]};
+  script.enabled = false;
+  actor.script = script;
+
+  if (scene.primaryCamera?.id.value !== camera.id.value
+      || scene.primaryListener?.id.value !== actor.id.value) {
+    throw Error('primary mismatch');
+  }
+
+  camera.camera = null;
+  actor.audioListener = null;
+
+  if (scene.primaryCamera !== null || scene.primaryListener !== null) {
+    throw Error('removed primary');
+  }
+
+  const child = scene.create('Child');
+  child.parent = actor;
+  actor.destroy();
+  return [String(actor.exists), String(child.exists), String(camera.exists)];
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto vm = runtime(program, scene);
+  auto result = vm.call(module(vm), "run");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->value() == "[\"false\",\"false\",\"true\"]");
+  REQUIRE(scene->entities()->size() == 1);
+  CHECK_FALSE(scene->entities()->front().camera);
+}
+
+TEST_CASE("component_sdk_invalid_assignment_recovers_without_changing_previous_description") {
+  Project project;
+  project.write(R"ts(
+import {components, Entity, scene} from './dot/engine.js';
+import type {HostError} from './dot/engine.js';
+
+export function run(): string[] {
+  const e = scene.create('Actor');
+  e.rigidBody = components.rigidBody();
+  const body = e.rigidBody!;
+  body.mass = 0;
+  const codes: string[] = [];
+
+  try {
+    e.rigidBody = body;
+  } catch (error) {
+    codes.push((error as HostError).code);
+  }
+
+  if (e.rigidBody!.mass !== 1) {
+    throw Error('invalid assignment changed state');
+  }
+
+  body.mass = 2;
+  e.rigidBody = body;
+
+  if (e.rigidBody!.mass !== 2) {
+    throw Error('recovery failed');
+  }
+
+  e.camera = components.camera({primary: true});
+  const other = scene.create();
+
+  try {
+    other.camera = components.camera({primary: true});
+  } catch (error) {
+    codes.push((error as HostError).code);
+  }
+
+  if (other.camera !== null) {
+    throw Error('duplicate primary changed state');
+  }
+
+  const foreign = new Entity({scene: '18446744073709551614', value: '1'});
+
+  try {
+    void foreign.exists;
+  } catch (error) {
+    codes.push((error as HostError).code);
+  }
+
+  e.destroy();
+
+  try {
+    void e.mesh;
+  } catch (error) {
+    codes.push((error as HostError).code);
+  }
+
+  return codes;
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto vm = runtime(program, scene);
+  auto result = vm.call(module(vm), "run");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->value()
+        == "[\"InvalidArgument\",\"InvalidArgument\",\"InvalidArgument\",\"NotFound\"]");
+  CHECK_FALSE(vm.stats()->faulted);
+}
+
+TEST_CASE("component_sdk_typecheck_rejects_incomplete_unknown_and_non_json_descriptions") {
+  Project project;
+  auto compiler = tool();
+
+  for (const auto* source :
+       {"import {scene} from './dot/engine.js';scene.create().camera={primary:true};",
+        "import {components} from './dot/engine.js';components.mesh({kind:'triangle'});",
+        "import {components} from './dot/engine.js';components.rigidBody({motion:'auto'});",
+        "import {components} from './dot/engine.js';components.audioSource();",
+        "import {components} from './dot/engine.js';components.audioListener(1);",
+        "import {components} from "
+        "'./dot/engine.js';components.script('actor.ts').properties={bad:()=>1};",
+        "import {scene} from './dot/engine.js';scene.primaryCamera=scene.create();"}) {
+    project.write(source);
+    auto result = compiler.compileProject(project.files());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().message.find("TS") != std::string::npos);
+  }
 }

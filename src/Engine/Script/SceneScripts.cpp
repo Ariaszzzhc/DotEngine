@@ -82,7 +82,10 @@ namespace Dot::Script {
       for (auto& binding : bindings) {
         const bool read = binding.name == "scene.info" || binding.name == "entity.list"
                           || binding.name == "entity.get" || binding.name == "transform.get"
-                          || binding.name == "transform.world";
+                          || binding.name == "transform.world" || binding.name == "component.get"
+                          || binding.name == "entity.exists"
+                          || binding.name == "scene.primaryCamera"
+                          || binding.name == "scene.primaryListener";
         binding.callback = [access, read, callback = std::move(binding.callback)](
                                std::string_view args) -> Core::Result<std::optional<std::string>> {
           if (access->preparing && !read) {
