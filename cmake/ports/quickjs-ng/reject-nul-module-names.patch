@@ -6,7 +6,7 @@
      const char *base_cname, *cname;
 +    size_t name_len;
      JSModuleDef *m;
- 
+
      base_cname = JS_AtomToCString(ctx, base_module_name);
      if (!base_cname)
          return NULL;
@@ -31,12 +31,12 @@
      const char *basename = NULL, *filename;
 +    size_t name_len;
      JSValue ret, err;
- 
+
      if (!JS_IsString(basename_val)) {
 @@ -31891,9 +31901,15 @@
      if (!basename)
          goto exception;
- 
+
 -    filename = JS_ToCString(ctx, specifier);
 +    filename = JS_ToCStringLen(ctx, &name_len, specifier);
      if (!filename)
@@ -47,6 +47,6 @@
 +        JS_ThrowReferenceError(ctx, "Module specifier contains NUL");
 +        goto exception;
 +    }
- 
+
      JS_LoadModuleInternal(ctx, basename, filename, resolving_funcs, attributes);
      JS_FreeCString(ctx, filename);

@@ -785,6 +785,12 @@ stay private and explicit RAII releases them before the context/runtime.
   LC_RPATH. No sanitizers or environment changes were introduced. Windows/Linux
   implementations remain unverified.
 
+- Normalized blank context prefixes in the dependency diff file after Git reported
+  them as trailing whitespace during staging. Both original/normalized patch files
+  pass `git apply --check` against the pinned source and produce byte-identical
+  patched C source. No functional SDK/engine changes result; Git whitespace checks
+  now include the added patch file and pass.
+
 TypeScript compilation, engine host bindings, script components/hot reload,
 project/editor/export tooling, expanded rendering, and the example game remain
 to be implemented.
