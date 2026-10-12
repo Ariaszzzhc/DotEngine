@@ -49,6 +49,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/World/Scene.cpp
+    src/Engine/World/SceneFiles.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -76,6 +77,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/World/Scene.cppm
+        src/Engine/World/SceneFiles.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)

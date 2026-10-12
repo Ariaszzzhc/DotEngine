@@ -16,6 +16,7 @@ import Dot.Graphics.Renderer;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.World.Scene;
+import Dot.World.SceneFiles;
 import Dot.Platform.Window;
 import Dot.Math;
 
@@ -300,4 +301,21 @@ TEST_CASE("scene_render.visible_draw_limit_and_clear_validation_precede_upload")
   CHECK_FALSE(service->render(minimal, 10, 10, {2, 0, 0, 1}));
   CHECK(service->stats()->meshes == 0);
   CHECK(renderer->resourceStats()->meshes == 0);
+}
+
+TEST_CASE("scene_render.deserialized_scene_preserves_actual_gpu_pixels") {
+  auto renderer = Renderer::create();
+  REQUIRE(renderer);
+  auto service = SceneRenderer::create(*renderer);
+  REQUIRE(service);
+  auto scene = makeScene();
+  const auto entity = addQuad(scene, 0, {0, 1, 0, 1});
+  static_cast<void>(entity);
+  auto source = encodeScene(scene);
+  REQUIRE(source);
+  auto decoded = decodeScene(*source);
+  REQUIRE(decoded);
+  auto image = service->render(*decoded, 32, 32);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(pixel(*image, 16, 16) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
 }

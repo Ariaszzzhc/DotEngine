@@ -15,8 +15,58 @@ import Dot.Graphics.Renderer;
 import Dot.Assets.Mesh;
 import Dot.World.Scene;
 import Dot.Graphics.SceneRenderer;
+import Dot.World.SceneFiles;
 
 namespace {
+  auto testSceneFiles(const std::filesystem::path& root) -> int {
+    auto files = Dot::Core::FileSystem::open(root);
+    auto scene = Dot::World::Scene::create("Saved Scene");
+
+    if (!files || !scene) {
+      std::println(stderr, "Scene file acceptance setup failed");
+      return 1;
+    }
+
+    auto directory = files->createDirectories("scenes");
+    auto entity = scene->createEntityWithId("Stored", 50);
+
+    if (!directory || !entity) {
+      std::println(stderr, "Scene file acceptance entity/directory failed");
+      return 1;
+    }
+
+    auto mesh = scene->setMeshRenderer(*entity, Dot::World::MeshRenderer{});
+
+    if (!mesh) {
+      std::println(stderr, "{}", mesh.error().message);
+      return 1;
+    }
+
+    auto saved = Dot::World::saveScene(*files, "scenes/main.dotscene", *scene);
+
+    if (!saved) {
+      std::println(stderr, "{}", saved.error().message);
+      return 1;
+    }
+
+    auto loaded = Dot::World::loadScene(*files, "scenes/main.dotscene");
+
+    if (!loaded) {
+      std::println(stderr, "{}", loaded.error().message);
+      return 1;
+    }
+
+    auto restored = loaded->findEntity(50);
+
+    if (!restored || !loaded->entity(*restored)->mesh || loaded->id() == scene->id()) {
+      std::println(stderr, "Scene file acceptance restoration failed");
+      return 1;
+    }
+
+    std::println("Scene file acceptance passed: scenes/main.dotscene");
+    return 0;
+  }
+
   auto testSceneRender() -> int {
     auto scene = Dot::World::Scene::create("Rendered Scene");
     auto renderer = Dot::Graphics::Renderer::create();
@@ -451,6 +501,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3 && std::string_view(argv[1]) == "--scene-file-test") {
+      return testSceneFiles(argv[2]);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--scene-render-test") {
       return testSceneRender();
     }
@@ -502,7 +556,7 @@ auto main(int argc, char** argv) -> int {
           "Usage: DotRuntime "
           "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
           "--scene-render-test|--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
-          "--asset-test <directory>]");
+          "--asset-test <directory>|--scene-file-test <directory>]");
       return 2;
     }
 

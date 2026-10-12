@@ -259,4 +259,25 @@ individual steps would temporarily contain a cycle.
   monotonic counter updates, and no-op/error paths. Formatting/whitespace checks
   pass. Windows/Linux remain unverified.
 
-Scene persistence and all higher milestones remain to be implemented.
+### Scene persistence
+
+Added strict versioned scene JSON with decimal-string IDs, deterministic encoding,
+optional camera/mesh components, unordered input records, and batch construction
+of an independent candidate scene. Failed decoding leaves live scenes untouched;
+file saves use root-relative atomic replacement. A private implementation helper
+shares duplicate/depth validation between mesh and scene codecs.
+
+- macOS Debug and Release each pass all 203 CTest cases (189 doctest cases and
+  fourteen executable checks), including complete component/hierarchy round trips,
+  full uint64 precision, fresh handle scope, unordered records, schema/type/version
+  failures, duplicate IDs/fields, missing parents/cycles/primary conflicts, source
+  limits, repeated failure cleanup, Unicode atomic replacement, and 1000-entity
+  batch import.
+- `--scene-file-test` saves and reloads an actual scene file. A deserialized scene
+  also produces the expected real Metal pixels through the scene render service.
+- Reviewed candidate ownership, strict typed conversion, ID precision/order,
+  validation sequencing, common parser bounds, and failed-save preservation.
+  Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+Physics, audio, scripting, project/editor/export tooling, and the example game
+remain to be implemented.

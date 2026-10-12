@@ -59,6 +59,9 @@ Camera and mesh description components are available, with checked projection
 matrices and primary-camera ownership. The scene render service loads shared
 meshes within a byte budget, prunes unused resources, and reports missing assets
 or importer warnings. `build/debug/bin/DotRuntime --scene-render-test` verifies
-an actual entity/camera scene through Metal pixel readback. Scene persistence is next.
+an actual entity/camera scene through Metal pixel readback. Versioned `.dotscene`
+files preserve entity values, hierarchy, transforms, and camera/mesh components.
+Run `build/debug/bin/DotRuntime --scene-file-test <existing-directory>` for
+save/load acceptance; see `docs/Scenes.md` for the strict format contract.
 
 See `docs/Development.md` for implementation milestones and actual validation.

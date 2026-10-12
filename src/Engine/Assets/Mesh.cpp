@@ -8,10 +8,10 @@ module;
 #include <expected>
 #include <format>
 #include <limits>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
-#include <unordered_set>
 #include <vector>
+
+#include "../Serialization/Json.hpp"
 
 module Dot.Assets.Mesh;
 
@@ -51,24 +51,7 @@ namespace Dot::Assets {
     }
 
     auto decodeJson(std::string_view source) -> Core::Result<MeshAsset> {
-      std::vector<std::unordered_set<std::string>> keys;
-      auto root = Json::parse(
-          source.begin(), source.end(), [&](int depth, Json::parse_event_t event, Json& value) {
-            if (depth > 64) {
-              throw std::invalid_argument("Mesh JSON nesting exceeds 64");
-            }
-
-            if (event == Json::parse_event_t::object_start) {
-              keys.emplace_back();
-            } else if (event == Json::parse_event_t::object_end) {
-              keys.pop_back();
-            } else if (event == Json::parse_event_t::key
-                       && !keys.back().insert(value.get<std::string>()).second) {
-              throw std::invalid_argument("Duplicate mesh JSON field");
-            }
-
-            return true;
-          });
+      auto root = Serialization::Detail::parseJson(source);
 
       if (!root.is_object() || root.size() != 3 || !root.contains("version")
           || !root.contains("vertices") || !root.contains("indices")

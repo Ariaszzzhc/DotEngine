@@ -14,6 +14,7 @@ add_executable(DotTests
     SceneTests.cpp
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
+    SceneFileTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 include(doctest)
@@ -37,6 +38,8 @@ add_test(NAME runtime.assets COMMAND DotRuntime --asset-test "${CMAKE_CURRENT_BI
 set_tests_properties(runtime.assets PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.scene COMMAND DotRuntime --scene-test)
 set_tests_properties(runtime.scene PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.scene_files COMMAND DotRuntime --scene-file-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.scene_files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
 add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp SceneRenderTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest)
