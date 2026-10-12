@@ -18,7 +18,7 @@
   Validate input at subsystem boundaries; never silently substitute fake success.
 - Keep dependencies in the pinned vcpkg manifest. Preserve the caller's compiler
   and linker environment; do not hardcode local LLVM paths.
-- Support Windows, macOS, and Linux in implementation. Validate locally on macOS;
+- Target arm64 macOS and x86_64 Windows/Linux only. Validate locally on macOS;
   do not claim Windows/Linux validation without evidence.
 - Add behavioral tests for normal paths, failures, resource lifetime, and boundary
   conditions. Use CTest; tests must also run with assertions disabled.

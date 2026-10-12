@@ -5,8 +5,35 @@
 #include <string_view>
 
 import Dot.Core;
+import Dot.Core.Application;
+import Dot.Platform.Window;
 
 namespace {
+  auto testWindow() -> int {
+    Dot::Core::ApplicationConfig config;
+    config.window.title = "DotEngine - Window Test";
+    config.frameDelay = std::chrono::milliseconds{10};
+    config.pauseOnFocusLoss = false;
+    auto application = Dot::Core::Application::create(config);
+    if (!application) {
+      std::println(stderr, "{}", application.error().message);
+      return 1;
+    }
+    std::size_t frames = 0;
+    Dot::Core::LoopCallbacks callbacks;
+    callbacks.render = [&](const Dot::Core::FrameState&) -> Dot::Core::Result<void> {
+      ++frames;
+      return {};
+    };
+    auto result = application->run(callbacks, 20);
+    if (!result || frames != 20) {
+      std::println(stderr, "Window acceptance failed");
+      return 1;
+    }
+    std::println("Window acceptance passed: {} frames", frames);
+    return 0;
+  }
+
   auto testFiles(const std::filesystem::path& root) -> int {
     auto files = Dot::Core::FileSystem::open(root);
     if (!files) {
@@ -35,6 +62,9 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--window-smoke") {
+      return testWindow();
+    }
     if (argc == 3 && std::string_view(argv[1]) == "--file-test") {
       return testFiles(argv[2]);
     }
@@ -43,7 +73,9 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
-      std::println(stderr, "Usage: DotRuntime [--version|--self-test|--file-test <directory>]");
+      std::println(
+          stderr,
+          "Usage: DotRuntime [--version|--self-test|--window-smoke|--file-test <directory>]");
       return 2;
     }
     Dot::Core::Logger logger;

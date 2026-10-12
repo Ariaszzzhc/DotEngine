@@ -11,6 +11,9 @@ dependency order is:
 6. Project tooling, a graphical editor with automation commands, and export.
 7. Example game and acceptance scenes for components and scripting APIs.
 
+Target platforms are arm64 macOS and x86_64 Windows/Linux. Other architectures
+are outside the development scope; platform validation is limited to macOS.
+
 ## Verification log
 
 ### Core foundation
@@ -48,4 +51,23 @@ Template event dispatch and compile-time formatting remain in interfaces.
   implementation and links executables without recompiling interface consumers.
 - Formatting and whitespace checks pass. Windows/Linux remain unverified.
 
-Windowing, rendering, and all higher milestones remain to be implemented.
+### Window, input, and application loop
+
+Added SDL3 window ownership, main-thread checks, typed event translation,
+frame-scoped input edges and text, and an application loop with fixed simulation,
+per-frame updates, rendering callbacks, focus pause, and stop/error propagation.
+The runtime's `--window-smoke` case opens a window and executes a bounded loop.
+
+- macOS Debug and Release each pass all 88 CTest cases (83 doctest cases and five
+  executable checks). Window tests use SDL's dummy driver, including 50 repeated
+  initialization cycles and cleanup after failed window creation.
+- Both Debug and Release pass the real Cocoa window acceptance case, executing
+  20 frames and releasing the window in an ordinary desktop process. A restricted
+  sandbox cannot access the display service, so native checks run outside it.
+- Reviewed video reference ownership, moves, foreign-window events, worker-thread
+  rejection, callback failures, focus pause, repeat keys, and input overflow.
+- vcpkg dependencies use the LLVM compiler on the caller's PATH and inherit the
+  caller's CPPFLAGS/CFLAGS/CXXFLAGS/LDFLAGS through the maintained target triplets.
+- Formatting and whitespace checks pass. Windows/Linux remain unverified.
+
+Rendering and all higher milestones remain to be implemented.

@@ -11,7 +11,7 @@ option(DOT_WARNINGS_AS_ERRORS "Treat engine warnings as errors" ON)
 
 add_library(DotBuildOptions INTERFACE)
 target_compile_features(DotBuildOptions INTERFACE cxx_std_26)
-if(MSVC)
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     target_compile_options(DotBuildOptions INTERFACE /W4 /permissive- /utf-8)
     if(DOT_WARNINGS_AS_ERRORS)
         target_compile_options(DotBuildOptions INTERFACE /WX)
@@ -23,6 +23,7 @@ else()
     endif()
 endif()
 find_package(Threads REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 add_library(DotEngine STATIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
@@ -30,8 +31,14 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Result.cpp
+    src/Engine/Core/Application.cpp
+    src/Engine/Platform/System.cpp
+    src/Engine/Platform/Window.cpp
+    src/Engine/Platform/Events.cpp
+    src/Engine/Platform/Input.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
+target_link_libraries(DotEngine PRIVATE SDL3::SDL3)
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
@@ -42,6 +49,11 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Events.cppm
         src/Engine/Core/Files.cppm
         src/Engine/Core/Core.cppm
+        src/Engine/Platform/System.cppm
+        src/Engine/Platform/Window.cppm
+        src/Engine/Platform/Events.cppm
+        src/Engine/Platform/Input.cppm
+        src/Engine/Core/Application.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)

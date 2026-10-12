@@ -1,0 +1,128 @@
+module;
+
+#include <cstdint>
+#include <string>
+#include <variant>
+#include <vector>
+
+export module Dot.Platform.Events;
+
+import Dot.Core.Result;
+
+export namespace Dot::Platform {
+  enum class Key {
+    Unknown,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Digit1,
+    Digit2,
+    Digit3,
+    Digit4,
+    Digit5,
+    Digit6,
+    Digit7,
+    Digit8,
+    Digit9,
+    Digit0,
+    Enter,
+    Escape,
+    Backspace,
+    Tab,
+    Space,
+    Left,
+    Right,
+    Up,
+    Down,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    LeftControl,
+    RightControl,
+    LeftShift,
+    RightShift,
+    LeftAlt,
+    RightAlt,
+    LeftSuper,
+    RightSuper,
+    Count
+  };
+  enum class MouseButton { Unknown, Left, Middle, Right, Back, Forward, Count };
+
+  struct Quit {};
+  struct Close {};
+  struct Resize {
+    int width;
+    int height;
+    bool pixels;
+  };
+  struct Focus {
+    bool focused;
+  };
+  struct KeyChanged {
+    Key key;
+    bool down;
+    bool repeat;
+  };
+  struct ButtonChanged {
+    MouseButton button;
+    bool down;
+  };
+  struct PointerMoved {
+    float x;
+    float y;
+    float deltaX;
+    float deltaY;
+  };
+  struct Wheel {
+    float x;
+    float y;
+  };
+  struct Text {
+    std::string value;
+  };
+
+  using EventData = std::variant<Quit, Close, Resize, Focus, KeyChanged, ButtonChanged,
+                                 PointerMoved, Wheel, Text>;
+  struct Event {
+    std::uint32_t windowId;
+    std::uint64_t timestamp;
+    EventData data;
+  };
+
+  /** Drain all windows' events on the main thread. 在主线程读取所有窗口的待处理事件。 */
+  [[nodiscard]] auto pollEvents() -> Core::Result<std::vector<Event>>;
+  [[nodiscard]] auto requestQuit() -> Core::Result<void>;
+}  // namespace Dot::Platform

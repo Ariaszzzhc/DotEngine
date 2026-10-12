@@ -1,6 +1,6 @@
 # DotEngine
 
-A C++26 game engine for Windows, macOS, and Linux, developed from tested core
+A C++26 game engine for arm64 macOS and x86_64 Windows/Linux, developed from tested core
 modules toward a 3D runtime and editor.
 
 ## Build and test
@@ -26,5 +26,9 @@ The core is a static library using C++ modules, with diagnostics, error results,
 fixed-step timing, and memory statistics. The runtime currently exercises these
 foundations, scoped events, and atomic project file access. Interfaces and
 implementation units are separate. The graphical runtime and editor are under development.
+
+SDL3 windowing, input, and the application loop are available. Run
+`build/debug/bin/DotRuntime --window-smoke` in a desktop session for a short native
+window acceptance case. Automated window tests use SDL's dummy video driver.
 
 See `docs/Development.md` for implementation milestones and actual validation.

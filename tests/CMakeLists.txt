@@ -1,8 +1,8 @@
 find_package(doctest CONFIG REQUIRED)
-add_executable(DotTests main.cpp CoreTests.cpp EventTests.cpp FileTests.cpp)
-target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest)
+add_executable(DotTests main.cpp CoreTests.cpp EventTests.cpp FileTests.cpp InputTests.cpp PlatformTests.cpp ApplicationTests.cpp)
+target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
 include(doctest)
-doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit")
+doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
 add_test(NAME runtime.self_test COMMAND DotRuntime --self-test)
 add_test(NAME runtime.version COMMAND DotRuntime --version)
@@ -12,3 +12,5 @@ set_tests_properties(runtime.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 add_test(NAME runtime.files COMMAND DotRuntime --file-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.files PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.window COMMAND DotRuntime --window-smoke)
+set_tests_properties(runtime.window PROPERTIES TIMEOUT 15 LABELS "acceptance" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
