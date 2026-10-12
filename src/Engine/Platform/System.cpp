@@ -35,13 +35,16 @@ namespace Dot::Platform {
       return Core::fail(Core::ErrorCode::InvalidState,
                         "Video initialization requires the main thread");
     }
+
     if (!videoInitialized()) {
       SDL_SetMainReady();
     }
+
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
       return Core::fail(Core::ErrorCode::Unavailable,
                         std::format("Video initialization failed: {}", SDL_GetError()));
     }
+
     return {};
   }
 

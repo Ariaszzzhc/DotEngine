@@ -18,12 +18,15 @@ namespace Dot::Platform {
       if (code >= SDL_SCANCODE_A && code <= SDL_SCANCODE_Z) {
         return static_cast<Key>(static_cast<int>(Key::A) + code - SDL_SCANCODE_A);
       }
+
       if (code >= SDL_SCANCODE_1 && code <= SDL_SCANCODE_0) {
         return static_cast<Key>(static_cast<int>(Key::Digit1) + code - SDL_SCANCODE_1);
       }
+
       if (code >= SDL_SCANCODE_F1 && code <= SDL_SCANCODE_F12) {
         return static_cast<Key>(static_cast<int>(Key::F1) + code - SDL_SCANCODE_F1);
       }
+
       switch (code) {
         case SDL_SCANCODE_RETURN:
           return Key::Enter;
@@ -87,10 +90,13 @@ namespace Dot::Platform {
       return Core::fail(Core::ErrorCode::InvalidState,
                         "Event polling requires initialized video on the main thread");
     }
+
     std::vector<Event> events;
     SDL_Event native{};
+
     while (SDL_PollEvent(&native)) {
       const auto timestamp = native.common.timestamp;
+
       switch (native.type) {
         case SDL_EVENT_QUIT:
           events.push_back({0, timestamp, Quit{}});
@@ -136,11 +142,13 @@ namespace Dot::Platform {
           if (native.text.text) {
             events.push_back({native.text.windowID, timestamp, Text{native.text.text}});
           }
+
           break;
         default:
           break;
       }
     }
+
     return events;
   }
 
@@ -148,12 +156,15 @@ namespace Dot::Platform {
     if (!videoInitialized()) {
       return Core::fail(Core::ErrorCode::InvalidState, "Quit events require initialized video");
     }
+
     SDL_Event event{};
     event.type = SDL_EVENT_QUIT;
+
     if (!SDL_PushEvent(&event)) {
       return Core::fail(Core::ErrorCode::External,
                         std::format("Cannot queue quit event: {}", SDL_GetError()));
     }
+
     return {};
   }
 }  // namespace Dot::Platform

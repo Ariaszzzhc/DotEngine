@@ -12,12 +12,14 @@ export namespace Dot::Math {
     float y{};
     auto operator==(const Vec2&) const -> bool = default;
   };
+
   struct Vec3 {
     float x{};
     float y{};
     float z{};
     auto operator==(const Vec3&) const -> bool = default;
   };
+
   struct Vec4 {
     float x{};
     float y{};
@@ -25,6 +27,7 @@ export namespace Dot::Math {
     float w{};
     auto operator==(const Vec4&) const -> bool = default;
   };
+
   struct Quat {
     float x{};
     float y{};

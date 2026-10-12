@@ -20,6 +20,7 @@ namespace Dot::Core {
           static std::mutex consoleMutex;
           const std::scoped_lock lock(consoleMutex);
           std::clog << '[' << levelName(record.level) << "] " << record.message << '\n';
+
           if (!std::clog) {
             throw std::ios_base::failure("Console log output failed");
           }
@@ -43,6 +44,7 @@ namespace Dot::Core {
       case LogLevel::Off:
         return "OFF";
     }
+
     return "UNKNOWN";
   }
 
@@ -63,12 +65,14 @@ namespace Dot::Core {
     if (level == LogLevel::Off || level < m_level.load(std::memory_order_relaxed)) {
       return;
     }
+
     try {
       Sink sink;
       {
         const std::scoped_lock lock(m_mutex);
         sink = m_sink;
       }
+
       if (sink) {
         sink(LogRecord{level, message, source, std::chrono::system_clock::now()});
       }

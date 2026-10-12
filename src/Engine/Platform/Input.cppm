@@ -16,6 +16,7 @@ export namespace Dot::Platform {
     bool pressed{false};
     bool released{false};
   };
+
   struct Point {
     float x{};
     float y{};

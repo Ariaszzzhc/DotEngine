@@ -12,6 +12,7 @@ export namespace Dot::Core {
     std::size_t allocations;
     std::size_t liveAllocations;
   };
+
   /**
    * Non-owning upstream, which must outlive this resource and all its allocations.
    * 上游资源为非拥有引用，须比本资源和所有分配存活更久。

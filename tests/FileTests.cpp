@@ -28,11 +28,13 @@ namespace {
 
     Directory() {
       static std::atomic<unsigned> sequence{0};
+
       for (int attempt = 0; attempt < 64; ++attempt) {
         base = Fs::current_path()
                / std::format("file-test-{}-{}",
                              std::chrono::steady_clock::now().time_since_epoch().count(),
                              sequence.fetch_add(1));
+
         if (Fs::create_directory(base)) {
           root = base / "project";
           outside = base / "outside";
@@ -41,6 +43,7 @@ namespace {
           return;
         }
       }
+
       throw std::runtime_error("Cannot create test directory");
     }
 
@@ -198,14 +201,18 @@ TEST_CASE("files.concurrent_replacement_has_complete_snapshots") {
         ++failures;
       }
     }
+
     done = true;
   });
+
   do {
     const auto snapshot = files.readText("save.dat");
+
     if (!snapshot || (*snapshot != oldContent && *snapshot != newContent)) {
       ++failures;
     }
   } while (!done.load());
+
   writer.join();
   CHECK(failures.load() == 0);
   CHECK(std::distance(Fs::directory_iterator(directory.root), Fs::directory_iterator{}) == 1);

@@ -11,5 +11,6 @@ IncludeBlocks: Regroup
 IndentPPDirectives: AfterHash
 IndentWidth: 2
 NamespaceIndentation: All
+SeparateDefinitionBlocks: Always
 BreakBeforeBinaryOperators: All
 BreakBeforeTernaryOperators: true

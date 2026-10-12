@@ -87,4 +87,12 @@ with Metal on macOS, D3D12 on Windows, and Vulkan/X11/Wayland on Linux.
 - GLM 1.0.3 and Dawn 20260911.162847#1 build with the configured LLVM environment.
   Dawn rendering is not implemented yet. Windows/Linux remain unverified.
 
+### Block spacing
+
+Function/type definitions and control-flow blocks now have blank lines between
+adjacent statements. Block interiors stay unpadded and `else`/`catch` remain
+attached. The formatting configuration and development instructions record this
+convention. Reviewed existing core/platform/math changes as whitespace-only;
+their Debug/Release test suites still pass.
+
 Rendering and all higher milestones remain to be implemented.

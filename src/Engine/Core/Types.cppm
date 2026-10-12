@@ -36,6 +36,7 @@ export namespace Dot::Core {
       case Platform::Linux:
         return "Linux";
     }
+
     return "Unknown";
   }
 }  // namespace Dot::Core

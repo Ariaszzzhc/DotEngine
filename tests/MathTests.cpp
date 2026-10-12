@@ -13,6 +13,7 @@ namespace {
     CHECK(actual.y == doctest::Approx(expected.y).epsilon(0.00001));
     CHECK(actual.z == doctest::Approx(expected.z).epsilon(0.00001));
   }
+
   constexpr auto infinity = std::numeric_limits<float>::infinity();
   constexpr auto maximum = std::numeric_limits<float>::max();
 }  // namespace
@@ -31,6 +32,7 @@ TEST_CASE("Math normalization handles extreme finite inputs") {
   auto normal = normalized(Vec3{3, 4, 0});
   REQUIRE(normal);
   checkVector(*normal, {0.6F, 0.8F, 0});
+
   for (auto value : {maximum, std::numeric_limits<float>::denorm_min()}) {
     auto vector = normalized(Vec3{value, 0, 0});
     REQUIRE(vector);
@@ -95,6 +97,7 @@ TEST_CASE("Math inverse round trips nonuniform transformed points") {
   checkVector(*original, {5, 6, 7});
   auto identity = multiply(*undo, *matrix);
   REQUIRE(identity);
+
   for (std::size_t index = 0; index < 16; ++index) {
     CHECK(identity->data[index] == doctest::Approx(Mat4{}.data[index]).epsilon(0.00001));
   }
@@ -169,6 +172,7 @@ TEST_CASE("Math perspective validates field of view and clipping boundaries") {
   for (float fov : {0.0F, -1.0F, 180.0F, infinity}) {
     CHECK_FALSE(perspective(fov, 1, 1, 10));
   }
+
   CHECK_FALSE(perspective(60, 0, 1, 10));
   CHECK_FALSE(perspective(60, infinity, 1, 10));
   CHECK_FALSE(perspective(60, 1, 0, 10));
@@ -200,6 +204,7 @@ TEST_CASE("Math finite predicates cover every matrix and quaternion component") 
   CHECK(isFinite(Mat4{}));
   CHECK_FALSE(isFinite(Vec4{0, 0, 0, infinity}));
   CHECK_FALSE(isFinite(Quat{0, infinity, 0, 1}));
+
   for (std::size_t index = 0; index < 16; ++index) {
     Mat4 invalid;
     invalid.data[index] = std::numeric_limits<float>::quiet_NaN();

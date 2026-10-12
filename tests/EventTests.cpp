@@ -27,6 +27,7 @@ TEST_CASE("events.scoped_disconnect") {
     CHECK(connection.connected());
     CHECK(signal.publish(1) == 1);
   }
+
   CHECK(signal.publish(1) == 0);
   CHECK(signal.listeners() == 0);
   CHECK(count == 1);
@@ -97,6 +98,7 @@ TEST_CASE("events.owner_lifetime_and_move") {
     auto fresh = signal.subscribe([](int) {});
     CHECK(signal.publish(0) == 1);
   }
+
   CHECK_FALSE(connection.connected());
 }
 
@@ -105,6 +107,7 @@ TEST_CASE("events.nested_dispatch") {
   std::vector<int> received;
   auto connection = signal.subscribe([&](int value) {
     received.push_back(value);
+
     if (value == 1) {
       signal.publish(2);
     }

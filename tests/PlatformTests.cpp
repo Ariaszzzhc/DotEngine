@@ -46,6 +46,7 @@ TEST_CASE("window.create_resize_title_and_release") {
     CHECK(window->setTextInput(true).has_value());
     CHECK(window->setTextInput(false).has_value());
   }
+
   CHECK_FALSE(videoInitialized());
 }
 
@@ -75,6 +76,7 @@ TEST_CASE("window.shared_video_lifetime") {
     CHECK(videoInitialized());
     CHECK(second->size().has_value());
   }
+
   CHECK_FALSE(videoInitialized());
 }
 
@@ -90,6 +92,7 @@ TEST_CASE("window.move_releases_old_resources") {
     CHECK_FALSE(second.size().has_value());
     CHECK_FALSE(second.show().has_value());
   }
+
   CHECK_FALSE(videoInitialized());
 }
 
@@ -100,6 +103,7 @@ TEST_CASE("window.repeated_initialization") {
       REQUIRE(window.has_value());
       CHECK(window->size().has_value());
     }
+
     CHECK_FALSE(videoInitialized());
   }
 }
@@ -154,15 +158,19 @@ TEST_CASE("platform.translate_native_events") {
   bool gotKey = false;
   bool gotMotion = false;
   bool gotQuit = false;
+
   for (const auto& event : *events) {
     if (const auto* data = std::get_if<KeyChanged>(&event.data)) {
       gotKey = data->key == Key::A && data->down && event.windowId == window->id();
     }
+
     if (const auto* data = std::get_if<PointerMoved>(&event.data)) {
       gotMotion = data->x == 12 && data->y == 23 && data->deltaX == 4;
     }
+
     gotQuit |= std::holds_alternative<Quit>(event.data);
   }
+
   CHECK(gotKey);
   CHECK(gotMotion);
   CHECK(gotQuit);

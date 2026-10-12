@@ -120,6 +120,7 @@ TEST_CASE("core.logger.concurrent") {
   Logger logger([&](const LogRecord&) { calls.fetch_add(1); });
   {
     std::vector<std::jthread> workers;
+
     for (int i = 0; i < 4; ++i) {
       workers.emplace_back([&] {
         for (int entry = 0; entry < 1000; ++entry) {
@@ -128,6 +129,7 @@ TEST_CASE("core.logger.concurrent") {
       });
     }
   }
+
   CHECK(calls.load() == 4000);
   CHECK(logger.failures() == 0);
 }
@@ -211,10 +213,12 @@ TEST_CASE("core.stepper.partition_invariance") {
   const auto expected = whole.advance(97ms);
   std::size_t updates = 0;
   FrameStep last{};
+
   for (int i = 0; i < 97; ++i) {
     last = split.advance(1ms);
     updates += last.updates;
   }
+
   CHECK(updates == expected.updates);
   CHECK(last.interpolation == expected.interpolation);
 }
@@ -260,11 +264,14 @@ TEST_CASE("core.memory.container_release") {
   TrackingResource memory;
   {
     std::pmr::vector<int> values(&memory);
+
     for (int i = 0; i < 1000; ++i) {
       values.push_back(i);
     }
+
     CHECK(memory.stats().liveBytes >= 1000 * sizeof(int));
   }
+
   CHECK(memory.stats().liveBytes == 0);
   CHECK(memory.stats().liveAllocations == 0);
 }
@@ -288,6 +295,7 @@ TEST_CASE("core.memory.concurrent") {
   TrackingResource memory;
   {
     std::vector<std::jthread> workers;
+
     for (int i = 0; i < 4; ++i) {
       workers.emplace_back([&] {
         for (int allocation = 0; allocation < 1000; ++allocation) {
@@ -297,6 +305,7 @@ TEST_CASE("core.memory.concurrent") {
       });
     }
   }
+
   CHECK(memory.stats().liveBytes == 0);
   CHECK(memory.stats().liveAllocations == 0);
   CHECK(memory.stats().allocations == 4000);

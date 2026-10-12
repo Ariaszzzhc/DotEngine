@@ -22,8 +22,10 @@ namespace Dot::Core {
     auto* allocation = m_upstream->allocate(bytes, alignment);
     const auto live = m_liveBytes.fetch_add(bytes) + bytes;
     auto peak = m_peakBytes.load();
+
     while (peak < live && !m_peakBytes.compare_exchange_weak(peak, live)) {
     }
+
     m_allocations.fetch_add(1);
     m_liveAllocations.fetch_add(1);
     return allocation;

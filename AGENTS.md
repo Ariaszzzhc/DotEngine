@@ -12,6 +12,9 @@
   in interfaces. Prefer importing specific modules in engine implementation units.
 - Match `.clang-format`: two spaces, attached braces, PascalCase types, camelCase
   functions, `m_` members, and trailing return types. Use explicit ownership and RAII.
+- Leave a blank line between function/type definitions and before/after control
+  flow blocks (`if`, loops, `switch`, `try`) when adjacent to other statements.
+  Keep `else`/`catch` attached and do not pad the inside edges of blocks.
 - Document contracts and non-obvious decisions with bilingual English/Chinese
   JavaDoc-style Doxygen comments. Do not add comments that repeat the code.
 - Treat recoverable external failures as `std::expected` results with context.

@@ -50,11 +50,13 @@ TEST_CASE("application.fixed_and_frame_callback_order") {
     calls.emplace_back("fixed");
     return {};
   };
+
   callbacks.update = [&](double delta) -> Result<void> {
     CHECK(delta == doctest::Approx(0.025));
     calls.emplace_back("update");
     return {};
   };
+
   callbacks.render = [&](const FrameState& frame) -> Result<void> {
     CHECK(frame.index == 0);
     CHECK(frame.updates == 2);
@@ -63,6 +65,7 @@ TEST_CASE("application.fixed_and_frame_callback_order") {
     calls.emplace_back("render");
     return {};
   };
+
   const auto frame = application.step(25ms, callbacks);
   REQUIRE(frame.has_value());
   CHECK(frame->running);
@@ -77,6 +80,7 @@ TEST_CASE("application.bounded_catch_up") {
     ++updates;
     return {};
   };
+
   const auto frame = application.step(105ms, callbacks);
   REQUIRE(frame.has_value());
   CHECK(updates == 3);
@@ -95,10 +99,12 @@ TEST_CASE("application.focus_pause_does_not_accumulate_time") {
     ++updates;
     return {};
   };
+
   callbacks.render = [&](const FrameState&) -> Result<void> {
     ++renders;
     return {};
   };
+
   windowEvent(application.window().id(), SDL_EVENT_WINDOW_FOCUS_LOST);
   auto frame = application.step(50ms, callbacks);
   REQUIRE(frame.has_value());
@@ -128,10 +134,12 @@ TEST_CASE("application.quit_stops_before_callbacks") {
     FAIL("Update after quit");
     return {};
   };
+
   callbacks.render = [](const FrameState&) -> Result<void> {
     FAIL("Render after quit");
     return {};
   };
+
   REQUIRE(Dot::Platform::requestQuit().has_value());
   const auto frame = application.step(10ms, callbacks);
   REQUIRE(frame.has_value());
@@ -159,12 +167,14 @@ TEST_CASE("application.callback_error_preserves_details") {
     callbacks.update = [](double) -> Result<void> {
       return fail(ErrorCode::InvalidArgument, "Game rejected input");
     };
+
     const auto frame = application.step(10ms, callbacks);
     REQUIRE_FALSE(frame.has_value());
     CHECK(frame.error().code == ErrorCode::InvalidArgument);
     CHECK(frame.error().message == "Game rejected input");
     CHECK_FALSE(application.running());
   }
+
   CHECK_FALSE(Dot::Platform::videoInitialized());
 }
 
@@ -231,6 +241,7 @@ TEST_CASE("application.frame_budget_and_move") {
     ++frames;
     return {};
   };
+
   REQUIRE(moved.run(callbacks, 3).has_value());
   CHECK(frames == 3);
 }
@@ -242,10 +253,12 @@ TEST_CASE("application.stop_from_fixed_callback") {
     application.stop();
     return {};
   };
+
   callbacks.render = [](const FrameState&) -> Result<void> {
     FAIL("Rendered after stop");
     return {};
   };
+
   const auto frame = application.step(35ms, callbacks);
   REQUIRE(frame.has_value());
   CHECK_FALSE(frame->running);
@@ -266,8 +279,10 @@ TEST_CASE("application.thread_safe_stop") {
       first = false;
       started.count_down();
     }
+
     return {};
   };
+
   const auto result = application.run(callbacks);
   worker.join();
   REQUIRE(result.has_value());

@@ -79,43 +79,53 @@ export namespace Dot::Platform {
     RightSuper,
     Count
   };
+
   enum class MouseButton { Unknown, Left, Middle, Right, Back, Forward, Count };
 
   struct Quit {};
+
   struct Close {};
+
   struct Resize {
     int width;
     int height;
     bool pixels;
   };
+
   struct Focus {
     bool focused;
   };
+
   struct KeyChanged {
     Key key;
     bool down;
     bool repeat;
   };
+
   struct ButtonChanged {
     MouseButton button;
     bool down;
   };
+
   struct PointerMoved {
     float x;
     float y;
     float deltaX;
     float deltaY;
   };
+
   struct Wheel {
     float x;
     float y;
   };
+
   struct Text {
     std::string value;
   };
 
   using EventData = std::variant<Quit, Close, Resize, Focus, KeyChanged, ButtonChanged,
                                  PointerMoved, Wheel, Text>;
+
   struct Event {
     std::uint32_t windowId;
     std::uint64_t timestamp;

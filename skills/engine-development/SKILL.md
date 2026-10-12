@@ -12,6 +12,8 @@ and core utilities. Vendor headers belong in a module's global fragment. Use the
 project's CMake targets instead of duplicating compiler or linker settings. Separate
 non-template definitions into `.cpp` implementation units so internal changes do
 not invalidate interface consumers; templates remain visible in module interfaces.
+Separate function/type definitions and control-flow blocks with blank lines;
+keep the inside edges of blocks unpadded and keep `else`/`catch` attached.
 
 For stateful services, define initialization, shutdown, failure recovery, and
 ownership before adding clients. Test malformed inputs and partial initialization.

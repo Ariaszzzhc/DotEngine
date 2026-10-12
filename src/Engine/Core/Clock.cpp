@@ -29,17 +29,20 @@ namespace Dot::Core {
     if (elapsed.count() < 0) {
       throw std::invalid_argument("Frame duration must not be negative");
     }
+
     // Divide first to avoid overflowing when a paused frame approaches the duration limit.
     // 先整除，避免长时间暂停后的时长相加溢出。
     auto whole = elapsed / m_fixedStep;
     auto remainder = elapsed % m_fixedStep;
     const auto room = m_fixedStep - m_accumulator;
+
     if (remainder >= room) {
       ++whole;
       m_accumulator = remainder - room;
     } else {
       m_accumulator += remainder;
     }
+
     const auto updates = static_cast<std::size_t>(
         std::min(static_cast<std::uint64_t>(whole), static_cast<std::uint64_t>(m_maxUpdates)));
     const auto dropped = m_fixedStep * (whole - static_cast<std::int64_t>(updates));

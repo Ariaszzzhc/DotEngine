@@ -42,6 +42,7 @@ export namespace Dot::Core {
           disconnect();
           m_slot = std::move(other.m_slot);
         }
+
         return *this;
       }
 
@@ -53,6 +54,7 @@ export namespace Dot::Core {
         if (auto slot = m_slot.lock()) {
           slot->active = false;
         }
+
         m_slot.reset();
       }
 
@@ -63,6 +65,7 @@ export namespace Dot::Core {
 
     private:
       friend class Signal;
+
       explicit Connection(const std::shared_ptr<Slot>& slot) : m_slot(slot) {
       }
 
@@ -79,9 +82,11 @@ export namespace Dot::Core {
       if (!callback) {
         throw std::invalid_argument("Event callback must not be empty");
       }
+
       if (!m_state) {
         m_state = std::make_shared<State>();
       }
+
       std::erase_if(m_state->slots, [](const auto& slot) { return !slot->active; });
       auto slot = std::make_shared<Slot>(std::move(callback));
       m_state->slots.push_back(slot);
@@ -90,18 +95,22 @@ export namespace Dot::Core {
 
     auto publish(const Event& event) -> std::size_t {
       const auto state = m_state;
+
       if (!state) {
         return 0;
       }
+
       std::erase_if(state->slots, [](const auto& slot) { return !slot->active; });
       const auto snapshot = state->slots;
       std::size_t delivered = 0;
+
       for (const auto& slot : snapshot) {
         if (slot->active) {
           slot->callback(event);
           ++delivered;
         }
       }
+
       return delivered;
     }
 
@@ -109,6 +118,7 @@ export namespace Dot::Core {
       if (!m_state) {
         return 0;
       }
+
       return static_cast<std::size_t>(std::count_if(m_state->slots.begin(), m_state->slots.end(),
                                                     [](const auto& slot) { return slot->active; }));
     }

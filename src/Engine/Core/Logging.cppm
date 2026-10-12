@@ -59,6 +59,7 @@ export namespace Dot::Core {
       if (level == LogLevel::Off || level < m_level.load(std::memory_order_relaxed)) {
         return;
       }
+
       try {
         write(level, std::format(format.text, std::forward<Args>(args)...), format.source);
       } catch (...) {
