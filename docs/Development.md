@@ -95,4 +95,26 @@ attached. The formatting configuration and development instructions record this
 convention. Reviewed existing core/platform/math changes as whitespace-only;
 their Debug/Release test suites still pass.
 
-Rendering and all higher milestones remain to be implemented.
+### Dawn rendering foundation
+
+Added a private Dawn implementation with Metal/D3D12/Vulkan adapter selection,
+checked device creation, asynchronous callback lifetime management, scoped GPU
+errors, colored triangle pipelines, camera uniforms, depth testing, and tightly
+packed RGBA8 readback. Native surfaces use SDL Metal views, Win32 handles, or
+X11/Wayland handles; window size changes reconfigure the surface. Acquisition
+timeouts and recoverable surface changes explicitly defer a frame.
+
+- macOS Apple M4 Pro with LLVM 23.1.3: Debug and Release each pass all 114 CTest
+  cases (106 doctest cases and eight executable checks), including real Metal
+  readback, clipping/occlusion, odd row widths, transforms, invalid inputs, moves,
+  worker-thread rejection, 12 device lifecycles, and four native surface lifecycles.
+- Both configurations pass the visible 30-frame triangle acceptance case with
+  a resize after frame ten. GPU/native checks ran outside the restricted sandbox.
+- Reviewed callback cancellation ownership, exception containment across the C
+  callback boundary, balanced error scopes, readback padding, window borrowing,
+  Metal view release before window destruction, and surface acquisition statuses.
+- Formatting/whitespace checks pass. macOS executable linkage preserves the
+  caller-selected LLVM libc++/libunwind and uses system Metal/QuartzCore frameworks.
+  Windows/Linux implementation paths remain unverified.
+
+Reusable GPU assets, ECS scenes, and all higher milestones remain to be implemented.

@@ -35,4 +35,11 @@ The math module provides checked transforms, quaternions, camera matrices, and
 WebGPU depth conventions. Run `build/debug/bin/DotRuntime --math-test` for its
 camera projection acceptance case. GLM stays private to the implementation.
 
+Dawn rendering supports colored triangle lists, camera transforms, depth testing,
+RGBA8 offscreen readback, and native window presentation with resize handling.
+Run `build/debug/bin/DotRuntime --gpu-test` for pixel readback or
+`build/debug/bin/DotRuntime --render-smoke` for a short visible triangle case.
+GPU/native CTest cases require an available device and desktop session; they
+report initialization failures instead of treating missing hardware as success.
+
 See `docs/Development.md` for implementation milestones and actual validation.

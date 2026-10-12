@@ -1,3 +1,4 @@
+#include <array>
 #include <chrono>
 #include <exception>
 #include <expected>
@@ -9,26 +10,134 @@ import Dot.Core;
 import Dot.Core.Application;
 import Dot.Platform.Window;
 import Dot.Math;
+import Dot.Graphics.Renderer;
 
 namespace {
+  auto testGraphics(bool native) -> int {
+    std::array<Dot::Graphics::Vertex, 3> vertices{{
+        {{-0.8F, -0.8F, 0.5F}, {1, 0, 0, 1}},
+        {{0.8F, -0.8F, 0.5F}, {0, 1, 0, 1}},
+        {{0, 0.8F, 0.5F}, {0, 0, 1, 1}},
+    }};
+
+    if (!native) {
+      auto renderer = Dot::Graphics::Renderer::create();
+
+      if (!renderer) {
+        std::println(stderr, "{}", renderer.error().message);
+        return 1;
+      }
+
+      auto image = renderer->render(vertices, {}, 64, 64);
+
+      if (!image) {
+        std::println(stderr, "{}", image.error().message);
+        return 1;
+      }
+
+      const auto center = (32 * 64 + 32) * 4;
+
+      if (image->pixels[center] == 0 || image->pixels[center + 1] == 0
+          || image->pixels[center + 2] == 0) {
+        std::println(stderr, "GPU triangle readback failed");
+        return 1;
+      }
+
+      auto info = renderer->adapterInfo();
+
+      if (!info) {
+        std::println(stderr, "{}", info.error().message);
+        return 1;
+      }
+
+      std::println("GPU acceptance passed: {}", info->name);
+      return 0;
+    }
+
+    Dot::Core::ApplicationConfig config;
+    config.window.title = "DotEngine - GPU Test";
+    config.window.gpuSurface = true;
+    config.frameDelay = std::chrono::milliseconds{10};
+    config.pauseOnFocusLoss = false;
+    auto application = Dot::Core::Application::create(config);
+
+    if (!application) {
+      std::println(stderr, "{}", application.error().message);
+      return 1;
+    }
+
+    auto renderer = Dot::Graphics::Renderer::create(&application->window());
+
+    if (!renderer) {
+      std::println(stderr, "{}", renderer.error().message);
+      return 1;
+    }
+
+    std::size_t frames = 0;
+    std::size_t presented = 0;
+    Dot::Core::LoopCallbacks callbacks;
+    callbacks.render = [&](const Dot::Core::FrameState&) -> Dot::Core::Result<void> {
+      ++frames;
+
+      if (frames == 10) {
+        auto resized = application->window().resize(800, 600);
+
+        if (!resized) {
+          return resized;
+        }
+      }
+
+      auto result = renderer->present(vertices, {}, {0.03F, 0.04F, 0.06F, 1});
+
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+
+      if (*result == Dot::Graphics::PresentResult::Presented) {
+        ++presented;
+      }
+
+      return {};
+    };
+
+    auto result = application->run(callbacks, 30);
+
+    if (!result) {
+      std::println(stderr, "{}", result.error().message);
+      return 1;
+    }
+
+    if (presented < 20) {
+      std::println(stderr, "Surface acceptance failed: {} frames presented", presented);
+      return 1;
+    }
+
+    std::println("Surface acceptance passed: {} frames presented, resize included", presented);
+    return 0;
+  }
+
   auto testMath() -> int {
     using namespace Dot::Math;
     auto model = compose({2, 3, 4});
     auto view = lookAt({2, 3, 10}, {2, 3, 4});
     auto projection = perspective(60, 1, 0.1F, 100);
+
     if (!model || !view || !projection) {
       std::println(stderr, "Math acceptance initialization failed");
       return 1;
     }
+
     auto viewModel = multiply(*view, *model);
     auto clip = viewModel ? multiply(*projection, *viewModel)
                           : Dot::Core::Result<Mat4>{std::unexpected(viewModel.error())};
     auto point
         = clip ? transformPoint(*clip, {}) : Dot::Core::Result<Vec3>{std::unexpected(clip.error())};
+
     if (!point || point->x != 0 || point->y != 0 || point->z <= 0 || point->z >= 1) {
       std::println(stderr, "Math acceptance projection failed");
       return 1;
     }
+
     std::println("Math acceptance passed: camera depth {}", point->z);
     return 0;
   }
@@ -39,46 +148,59 @@ namespace {
     config.frameDelay = std::chrono::milliseconds{10};
     config.pauseOnFocusLoss = false;
     auto application = Dot::Core::Application::create(config);
+
     if (!application) {
       std::println(stderr, "{}", application.error().message);
       return 1;
     }
+
     std::size_t frames = 0;
     Dot::Core::LoopCallbacks callbacks;
     callbacks.render = [&](const Dot::Core::FrameState&) -> Dot::Core::Result<void> {
       ++frames;
       return {};
     };
+
     auto result = application->run(callbacks, 20);
+
     if (!result || frames != 20) {
       std::println(stderr, "Window acceptance failed");
       return 1;
     }
+
     std::println("Window acceptance passed: {} frames", frames);
     return 0;
   }
 
   auto testFiles(const std::filesystem::path& root) -> int {
     auto files = Dot::Core::FileSystem::open(root);
+
     if (!files) {
       std::println(stderr, "{}", files.error().message);
       return 1;
     }
+
     auto directories = files->createDirectories("foundation");
+
     if (!directories) {
       std::println(stderr, "{}", directories.error().message);
       return 1;
     }
+
     auto saved = files->writeTextAtomic("foundation/state.txt", "DotEngine");
+
     if (!saved) {
       std::println(stderr, "{}", saved.error().message);
       return 1;
     }
+
     const auto loaded = files->readText("foundation/state.txt");
+
     if (!loaded || *loaded != "DotEngine") {
       std::println(stderr, "Filesystem acceptance failed");
       return 1;
     }
+
     std::println("Filesystem acceptance passed");
     return 0;
   }
@@ -86,25 +208,39 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--gpu-test") {
+      return testGraphics(false);
+    }
+
+    if (argc == 2 && std::string_view(argv[1]) == "--render-smoke") {
+      return testGraphics(true);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--math-test") {
       return testMath();
     }
+
     if (argc == 2 && std::string_view(argv[1]) == "--window-smoke") {
       return testWindow();
     }
+
     if (argc == 3 && std::string_view(argv[1]) == "--file-test") {
       return testFiles(argv[2]);
     }
+
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
       std::println("DotEngine 0.1.0 ({})", Dot::Core::platformName());
       return 0;
     }
+
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
       std::println(stderr,
                    "Usage: DotRuntime "
-                   "[--version|--self-test|--math-test|--window-smoke|--file-test <directory>]");
+                   "[--version|--self-test|--math-test|--window-smoke|--gpu-test|--render-smoke|"
+                   "--file-test <directory>]");
       return 2;
     }
+
     Dot::Core::Logger logger;
     Dot::Core::Clock clock;
     Dot::Core::TrackingResource memory;
@@ -116,10 +252,12 @@ auto main(int argc, char** argv) -> int {
     int received = 0;
     auto connection = events.subscribe([&](int event) { received = event; });
     const auto dispatched = events.publish(42);
+
     if (step.updates != 2 || memory.stats().liveBytes != 0 || dispatched != 1 || received != 42) {
       logger.write(Dot::Core::LogLevel::Error, "Foundation self-test failed");
       return 1;
     }
+
     logger.log(Dot::Core::LogLevel::Info, "DotEngine ready on {}; {} fixed updates; {} ns elapsed",
                Dot::Core::platformName(), step.updates, clock.elapsed().count());
     return logger.failures() == 0 ? 0 : 1;

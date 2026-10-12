@@ -1,0 +1,802 @@
+module;
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_metal.h>
+#include <webgpu/webgpu_cpp.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstring>
+#include <expected>
+#include <format>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <utility>
+
+module Dot.Graphics.Renderer;
+
+import Dot.Core.Result;
+import Dot.Math;
+import Dot.Platform.Window;
+import Dot.Platform.System;
+
+namespace Dot::Graphics {
+  namespace {
+    constexpr std::uint64_t waitTimeout = 10'000'000'000;
+    constexpr std::size_t maxVertices = 3'000'000;
+    constexpr std::uint32_t maxReadbackDimension = 4096;
+    constexpr auto shaderCode = R"(
+struct Camera { transform: mat4x4f }
+@group(0) @binding(0) var<uniform> camera: Camera;
+struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
+@vertex fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f) -> Output {
+  var output: Output;
+  output.position = camera.transform * vec4f(position, 1.0);
+  output.color = color;
+  return output;
+}
+@fragment fn fragmentMain(input: Output) -> @location(0) vec4f { return input.color; }
+)";
+
+    auto copied(wgpu::StringView value) -> std::string {
+      if (!value.data) {
+        return {};
+      }
+
+      return value.length == WGPU_STRLEN ? std::string(value.data)
+                                         : std::string(value.data, value.length);
+    }
+
+    auto colorValid(Math::Vec4 value) -> bool {
+      return Math::isFinite(value) && value.x >= 0 && value.x <= 1 && value.y >= 0 && value.y <= 1
+             && value.z >= 0 && value.z <= 1 && value.w >= 0 && value.w <= 1;
+    }
+
+    auto validate(std::span<const Vertex> vertices, const Math::Mat4& transform, Math::Vec4 clear)
+        -> Core::Result<void> {
+      if (vertices.size() > maxVertices || vertices.size() % 3 != 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Geometry must be a triangle list with at most 3000000 vertices");
+      }
+
+      if (!Math::isFinite(transform) || !colorValid(clear)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid transform or clear color");
+      }
+
+      for (const auto& vertex : vertices) {
+        if (!Math::isFinite(vertex.position) || !colorValid(vertex.color)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid vertex position or color");
+        }
+      }
+
+      return {};
+    }
+
+    auto wait(const wgpu::Instance& instance, wgpu::Future future, std::string_view context)
+        -> Core::Result<void> {
+      auto status = instance.WaitAny(future, waitTimeout);
+
+      if (status != wgpu::WaitStatus::Success) {
+        return Core::fail(
+            Core::ErrorCode::Unavailable,
+            std::format("{}: GPU wait failed ({})", context, static_cast<unsigned>(status)));
+      }
+
+      return {};
+    }
+
+    template <typename T>
+    struct Pending {
+      std::shared_ptr<void> keepAlive;
+      T value{};
+      std::string error;
+    };
+
+    struct Diagnostics {
+      std::atomic<bool> failed{};
+      std::mutex mutex;
+      std::string failure;
+
+      auto record(std::string_view context, unsigned status, wgpu::StringView message) noexcept
+          -> void {
+        failed.store(true);
+
+        try {
+          std::scoped_lock lock(mutex);
+          failure = std::format("{} ({}): {}", context, status, copied(message));
+        } catch (...) {
+        }
+      }
+    };
+
+    auto describeFailure(std::string& fallback, std::string_view context, unsigned status,
+                         wgpu::StringView message) noexcept -> void {
+      try {
+        fallback = std::format("{} ({}): {}", context, status, copied(message));
+      } catch (...) {
+      }
+    }
+
+    /** Error scopes always balance, including early exits. Callbacks own their
+     * state so timeout/cancellation cannot dereference a departed stack frame.
+     * 错误作用域在提前退出时也保持配对；回调拥有其状态，超时或取消不会访问失效栈帧。
+     */
+    class ErrorScope {
+    public:
+      ErrorScope(wgpu::Instance instance, wgpu::Device device)
+          : m_instance(std::move(instance)), m_device(std::move(device)) {
+        m_device.PushErrorScope(wgpu::ErrorFilter::Internal);
+        m_device.PushErrorScope(wgpu::ErrorFilter::OutOfMemory);
+        m_device.PushErrorScope(wgpu::ErrorFilter::Validation);
+      }
+
+      ErrorScope(const ErrorScope&) = delete;
+      auto operator=(const ErrorScope&) -> ErrorScope& = delete;
+
+      ~ErrorScope() {
+        if (!m_finished) {
+          for (int index = 0; index < 3; ++index) {
+            static_cast<void>(m_device.PopErrorScope(
+                wgpu::CallbackMode::AllowSpontaneous,
+                [](wgpu::PopErrorScopeStatus, wgpu::ErrorType, wgpu::StringView) noexcept {}));
+          }
+        }
+      }
+
+      auto finish() -> Core::Result<void> {
+        m_finished = true;
+        std::string error;
+
+        for (int index = 0; index < 3; ++index) {
+          auto pending = std::make_shared<Pending<bool>>();
+          pending->error = "GPU error scope failed";
+          auto future = m_device.PopErrorScope(
+              wgpu::CallbackMode::WaitAnyOnly,
+              [pending](wgpu::PopErrorScopeStatus status, wgpu::ErrorType type,
+                        wgpu::StringView message) noexcept {
+                if (status != wgpu::PopErrorScopeStatus::Success
+                    || type != wgpu::ErrorType::NoError) {
+                  pending->value = true;
+                  describeFailure(pending->error, "GPU error scope", static_cast<unsigned>(type),
+                                  message);
+                }
+              });
+          auto completed = wait(m_instance, future, "GPU error scope");
+
+          if (!completed && error.empty()) {
+            error = completed.error().message;
+          } else if (completed && pending->value && error.empty()) {
+            error = std::move(pending->error);
+          }
+        }
+
+        if (!error.empty()) {
+          return Core::fail(Core::ErrorCode::External, std::move(error));
+        }
+
+        return {};
+      }
+
+    private:
+      wgpu::Instance m_instance;
+      wgpu::Device m_device;
+      bool m_finished{};
+    };
+  }  // namespace
+
+  struct Renderer::Impl {
+    std::thread::id thread{std::this_thread::get_id()};
+    Platform::Window* window{};
+    std::shared_ptr<Diagnostics> diagnostics{std::make_shared<Diagnostics>()};
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
+    wgpu::Device device;
+    wgpu::Queue queue;
+    wgpu::Surface surface;
+#if defined(__APPLE__)
+    SDL_MetalView metalView{};
+#endif
+    AdapterInfo info{};
+    wgpu::TextureFormat surfaceFormat{wgpu::TextureFormat::Undefined};
+    wgpu::CompositeAlphaMode alphaMode{};
+    std::uint32_t surfaceWidth{};
+    std::uint32_t surfaceHeight{};
+    wgpu::RenderPipeline offscreenPipeline;
+    wgpu::RenderPipeline surfacePipeline;
+    wgpu::Buffer uniform;
+
+    ~Impl() {
+      if (surface) {
+        if (surfaceWidth != 0) {
+          surface.Unconfigure();
+        }
+
+        surface = nullptr;
+      }
+#if defined(__APPLE__)
+      if (metalView) {
+        SDL_Metal_DestroyView(metalView);
+      }
+#endif
+      if (device) {
+        device.Destroy();
+      }
+    }
+
+    auto check() const -> Core::Result<void> {
+      if (thread != std::this_thread::get_id()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Renderer operations require its creating thread");
+      }
+
+      std::scoped_lock lock(diagnostics->mutex);
+
+      if (diagnostics->failed.load()) {
+        return Core::fail(Core::ErrorCode::Unavailable, diagnostics->failure.empty()
+                                                            ? "GPU device failed"
+                                                            : diagnostics->failure);
+      }
+
+      return {};
+    }
+
+    auto createSurface() -> Core::Result<void> {
+      if (!Platform::isMainThread() || !window->nativeHandle()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Surface requires a valid window on the main thread");
+      }
+
+      auto* nativeWindow = static_cast<SDL_Window*>(window->nativeHandle());
+      wgpu::SurfaceDescriptor descriptor;
+#if defined(__APPLE__)
+      metalView = SDL_Metal_CreateView(nativeWindow);
+
+      if (!metalView) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Create Metal view: {}", SDL_GetError()));
+      }
+
+      wgpu::SurfaceSourceMetalLayer source;
+      source.layer = SDL_Metal_GetLayer(metalView);
+
+      if (!source.layer) {
+        return Core::fail(Core::ErrorCode::External, "Metal view has no layer");
+      }
+
+      descriptor.nextInChain = &source;
+      surface = instance.CreateSurface(&descriptor);
+#elif defined(_WIN32)
+      auto properties = SDL_GetWindowProperties(nativeWindow);
+      wgpu::SurfaceSourceWindowsHWND source;
+      source.hwnd = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+      source.hinstance
+          = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, nullptr);
+
+      if (!source.hwnd || !source.hinstance) {
+        return Core::fail(Core::ErrorCode::External, "SDL window has no Win32 handles");
+      }
+
+      descriptor.nextInChain = &source;
+      surface = instance.CreateSurface(&descriptor);
+#else
+      auto properties = SDL_GetWindowProperties(nativeWindow);
+      auto* waylandDisplay
+          = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+
+      if (waylandDisplay) {
+        wgpu::SurfaceSourceWaylandSurface source;
+        source.display = waylandDisplay;
+        source.surface
+            = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
+
+        if (!source.surface) {
+          return Core::fail(Core::ErrorCode::External, "SDL window has no Wayland surface");
+        }
+
+        descriptor.nextInChain = &source;
+        surface = instance.CreateSurface(&descriptor);
+      } else {
+        wgpu::SurfaceSourceXlibWindow source;
+        source.display
+            = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+        auto id = SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+
+        if (!source.display || id <= 0) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "SDL window has no supported X11 or Wayland surface");
+        }
+
+        source.window = static_cast<std::uint64_t>(id);
+        descriptor.nextInChain = &source;
+        surface = instance.CreateSurface(&descriptor);
+      }
+#endif
+      if (!surface) {
+        return Core::fail(Core::ErrorCode::External, "Dawn could not create the native surface");
+      }
+
+      return {};
+    }
+
+    auto pipeline(wgpu::TextureFormat format) -> wgpu::RenderPipeline {
+      wgpu::ShaderSourceWGSL source;
+      source.code = shaderCode;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&shaderDescriptor);
+      const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, position),
+                                                        .shaderLocation = 0},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
+                                                        .offset = offsetof(Vertex, color),
+                                                        .shaderLocation = 1}};
+      wgpu::VertexBufferLayout layout;
+      layout.arrayStride = sizeof(Vertex);
+      layout.stepMode = wgpu::VertexStepMode::Vertex;
+      layout.attributeCount = attributes.size();
+      layout.attributes = attributes.data();
+      wgpu::ColorTargetState target;
+      target.format = format;
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::DepthStencilState depth;
+      depth.format = wgpu::TextureFormat::Depth24Plus;
+      depth.depthWriteEnabled = true;
+      depth.depthCompare = wgpu::CompareFunction::Less;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.vertex.bufferCount = 1;
+      descriptor.vertex.buffers = &layout;
+      descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+      descriptor.primitive.cullMode = wgpu::CullMode::None;
+      descriptor.depthStencil = &depth;
+      descriptor.fragment = &fragment;
+      return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto encode(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
+                std::span<const Vertex> vertices, const Math::Mat4& transform, std::uint32_t width,
+                std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
+      wgpu::TextureDescriptor depthDescriptor;
+      depthDescriptor.size = {width, height, 1};
+      depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
+      depthDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
+      auto depth = device.CreateTexture(&depthDescriptor);
+      wgpu::RenderPassColorAttachment color;
+      color.view = target.CreateView();
+      color.loadOp = wgpu::LoadOp::Clear;
+      color.storeOp = wgpu::StoreOp::Store;
+      color.clearValue = {clear.x, clear.y, clear.z, clear.w};
+      wgpu::RenderPassDepthStencilAttachment depthAttachment;
+      depthAttachment.view = depth.CreateView();
+      depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+      depthAttachment.depthStoreOp = wgpu::StoreOp::Discard;
+      depthAttachment.depthClearValue = 1;
+      wgpu::RenderPassDescriptor descriptor;
+      descriptor.colorAttachmentCount = 1;
+      descriptor.colorAttachments = &color;
+      descriptor.depthStencilAttachment = &depthAttachment;
+      auto encoder = device.CreateCommandEncoder();
+      auto pass = encoder.BeginRenderPass(&descriptor);
+
+      if (!vertices.empty()) {
+        wgpu::BufferDescriptor bufferDescriptor;
+        bufferDescriptor.size = vertices.size_bytes();
+        bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+        auto buffer = device.CreateBuffer(&bufferDescriptor);
+        queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
+        queue.WriteBuffer(uniform, 0, transform.data.data(), sizeof(Math::Mat4));
+        wgpu::BindGroupEntry entry;
+        entry.binding = 0;
+        entry.buffer = uniform;
+        entry.size = sizeof(Math::Mat4);
+        wgpu::BindGroupDescriptor groupDescriptor;
+        groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
+        groupDescriptor.entryCount = 1;
+        groupDescriptor.entries = &entry;
+        auto group = device.CreateBindGroup(&groupDescriptor);
+        pass.SetPipeline(renderPipeline);
+        pass.SetBindGroup(0, group);
+        pass.SetVertexBuffer(0, buffer);
+        pass.Draw(static_cast<std::uint32_t>(vertices.size()));
+      }
+
+      pass.End();
+      return encoder;
+    }
+
+    auto configureSurface(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
+      ErrorScope scope(instance, device);
+      wgpu::SurfaceConfiguration configuration;
+      configuration.device = device;
+      configuration.format = surfaceFormat;
+      configuration.width = width;
+      configuration.height = height;
+      configuration.presentMode = wgpu::PresentMode::Fifo;
+      configuration.alphaMode = alphaMode;
+      surface.Configure(&configuration);
+      auto result = scope.finish();
+
+      if (!result) {
+        return result;
+      }
+
+      surfaceWidth = width;
+      surfaceHeight = height;
+      return {};
+    }
+  };
+
+  Renderer::Renderer(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  Renderer::Renderer(Renderer&&) noexcept = default;
+
+  auto Renderer::operator=(Renderer&&) noexcept -> Renderer& = default;
+
+  Renderer::~Renderer() = default;
+
+  auto Renderer::create(Platform::Window* window) -> Core::Result<Renderer> {
+    auto impl = std::make_unique<Impl>();
+    impl->window = window;
+    const auto feature = wgpu::InstanceFeatureName::TimedWaitAny;
+    wgpu::InstanceDescriptor instanceDescriptor;
+    instanceDescriptor.requiredFeatureCount = 1;
+    instanceDescriptor.requiredFeatures = &feature;
+    impl->instance = wgpu::CreateInstance(&instanceDescriptor);
+
+    if (!impl->instance) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Dawn instance creation failed");
+    }
+
+    if (window) {
+      auto created = impl->createSurface();
+
+      if (!created) {
+        return std::unexpected(created.error());
+      }
+    }
+
+    wgpu::RequestAdapterOptions options;
+#if defined(__APPLE__)
+    options.backendType = wgpu::BackendType::Metal;
+    impl->info.backend = Backend::Metal;
+#elif defined(_WIN32)
+    options.backendType = wgpu::BackendType::D3D12;
+    impl->info.backend = Backend::D3D12;
+#else
+    options.backendType = wgpu::BackendType::Vulkan;
+    impl->info.backend = Backend::Vulkan;
+#endif
+    options.compatibleSurface = impl->surface;
+    auto pendingAdapter = std::make_shared<Pending<wgpu::Adapter>>();
+    pendingAdapter->error = "GPU adapter request failed";
+    auto adapterFuture = impl->instance.RequestAdapter(
+        &options, wgpu::CallbackMode::WaitAnyOnly,
+        [pendingAdapter](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter,
+                         wgpu::StringView message) noexcept {
+          if (status == wgpu::RequestAdapterStatus::Success) {
+            pendingAdapter->value = std::move(adapter);
+          } else {
+            describeFailure(pendingAdapter->error, "Request GPU adapter",
+                            static_cast<unsigned>(status), message);
+          }
+        });
+    auto completed = wait(impl->instance, adapterFuture, "Request adapter");
+
+    if (!completed) {
+      return std::unexpected(completed.error());
+    }
+
+    if (!pendingAdapter->value) {
+      return Core::fail(Core::ErrorCode::Unavailable, pendingAdapter->error);
+    }
+
+    impl->adapter = std::move(pendingAdapter->value);
+    wgpu::AdapterInfo adapterInfo;
+
+    if (impl->adapter.GetInfo(&adapterInfo) != wgpu::Status::Success) {
+      return Core::fail(Core::ErrorCode::External, "Cannot query GPU adapter information");
+    }
+
+    impl->info.name = copied(adapterInfo.device);
+    impl->info.description = copied(adapterInfo.description);
+    wgpu::DeviceDescriptor deviceDescriptor;
+    auto diagnostics = impl->diagnostics;
+    deviceDescriptor.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [diagnostics](const wgpu::Device&, wgpu::DeviceLostReason reason,
+                      wgpu::StringView message) noexcept {
+          if (reason != wgpu::DeviceLostReason::Destroyed
+              && reason != wgpu::DeviceLostReason::CallbackCancelled) {
+            diagnostics->record("GPU device lost", static_cast<unsigned>(reason), message);
+          }
+        });
+    deviceDescriptor.SetUncapturedErrorCallback(
+        [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message,
+           Diagnostics* state) noexcept {
+          state->record("Uncaptured GPU error", static_cast<unsigned>(type), message);
+        },
+        diagnostics.get());
+    auto pendingDevice = std::make_shared<Pending<wgpu::Device>>();
+    pendingDevice->error = "GPU device request failed";
+    pendingDevice->keepAlive = diagnostics;
+    auto deviceFuture = impl->adapter.RequestDevice(
+        &deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
+        [pendingDevice](wgpu::RequestDeviceStatus status, wgpu::Device device,
+                        wgpu::StringView message) noexcept {
+          if (status == wgpu::RequestDeviceStatus::Success) {
+            pendingDevice->value = std::move(device);
+          } else {
+            describeFailure(pendingDevice->error, "Request GPU device",
+                            static_cast<unsigned>(status), message);
+          }
+        });
+    completed = wait(impl->instance, deviceFuture, "Request device");
+
+    if (!completed) {
+      return std::unexpected(completed.error());
+    }
+
+    if (!pendingDevice->value) {
+      return Core::fail(Core::ErrorCode::Unavailable, pendingDevice->error);
+    }
+
+    impl->device = std::move(pendingDevice->value);
+    impl->queue = impl->device.GetQueue();
+    wgpu::Limits limits;
+
+    if (impl->device.GetLimits(&limits) != wgpu::Status::Success) {
+      return Core::fail(Core::ErrorCode::External, "Cannot query GPU device limits");
+    }
+
+    impl->info.maxTextureDimension = limits.maxTextureDimension2D;
+    ErrorScope scope(impl->instance, impl->device);
+    impl->offscreenPipeline = impl->pipeline(wgpu::TextureFormat::RGBA8Unorm);
+    wgpu::BufferDescriptor uniformDescriptor;
+    uniformDescriptor.size = sizeof(Math::Mat4);
+    uniformDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    impl->uniform = impl->device.CreateBuffer(&uniformDescriptor);
+
+    if (impl->surface) {
+      wgpu::SurfaceCapabilities capabilities;
+
+      if (impl->surface.GetCapabilities(impl->adapter, &capabilities) != wgpu::Status::Success
+          || capabilities.formatCount == 0 || capabilities.alphaModeCount == 0) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Surface has no supported configuration");
+      }
+
+      impl->surfaceFormat = capabilities.formats[0];
+      impl->alphaMode = capabilities.alphaModes[0];
+      impl->surfacePipeline = impl->pipeline(impl->surfaceFormat);
+    }
+
+    completed = scope.finish();
+
+    if (!completed) {
+      return std::unexpected(completed.error());
+    }
+
+    return Renderer(std::move(impl));
+  }
+
+  auto Renderer::adapterInfo() const -> Core::Result<AdapterInfo> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->info;
+  }
+
+  auto Renderer::render(std::span<const Vertex> vertices, const Math::Mat4& transform,
+                        std::uint32_t width, std::uint32_t height, Math::Vec4 clear)
+      -> Core::Result<Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = validate(vertices, transform, clear);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto maximum = std::min(maxReadbackDimension, m_impl->info.maxTextureDimension);
+
+    if (width == 0 || height == 0 || width > maximum || height > maximum) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        std::format("Readback dimensions must be in [1, {}]", maximum));
+    }
+
+    auto& gpu = *m_impl;
+    ErrorScope scope(gpu.instance, gpu.device);
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {width, height, 1};
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+    auto texture = gpu.device.CreateTexture(&descriptor);
+    auto encoder
+        = gpu.encode(texture, gpu.offscreenPipeline, vertices, transform, width, height, clear);
+    const auto rowBytes = width * 4;
+    const auto paddedRowBytes = (rowBytes + 255U) & ~255U;
+    const auto bufferBytes = static_cast<std::size_t>(paddedRowBytes) * height;
+    wgpu::BufferDescriptor bufferDescriptor;
+    bufferDescriptor.size = bufferBytes;
+    bufferDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+    auto buffer = gpu.device.CreateBuffer(&bufferDescriptor);
+    wgpu::TexelCopyTextureInfo source;
+    source.texture = texture;
+    wgpu::TexelCopyBufferInfo destination;
+    destination.buffer = buffer;
+    destination.layout.bytesPerRow = paddedRowBytes;
+    destination.layout.rowsPerImage = height;
+    wgpu::Extent3D extent{width, height, 1};
+    encoder.CopyTextureToBuffer(&source, &destination, &extent);
+    auto commands = encoder.Finish();
+    gpu.queue.Submit(1, &commands);
+    checked = scope.finish();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto pending = std::make_shared<Pending<bool>>();
+    pending->error = "GPU buffer mapping failed";
+    auto future = buffer.MapAsync(
+        wgpu::MapMode::Read, 0, bufferBytes, wgpu::CallbackMode::WaitAnyOnly,
+        [pending](wgpu::MapAsyncStatus status, wgpu::StringView message) noexcept {
+          pending->value = status == wgpu::MapAsyncStatus::Success;
+
+          if (!pending->value) {
+            describeFailure(pending->error, "GPU readback", static_cast<unsigned>(status), message);
+          }
+        });
+    checked = wait(gpu.instance, future, "Readback");
+
+    if (!checked) {
+      buffer.Destroy();
+      return std::unexpected(checked.error());
+    }
+
+    if (!pending->value) {
+      return Core::fail(Core::ErrorCode::External, pending->error);
+    }
+
+    auto* bytes = static_cast<const std::uint8_t*>(buffer.GetConstMappedRange(0, bufferBytes));
+
+    if (!bytes) {
+      buffer.Unmap();
+      return Core::fail(Core::ErrorCode::External, "GPU readback returned no mapped bytes");
+    }
+
+    Image image{width, height,
+                std::vector<std::uint8_t>(static_cast<std::size_t>(rowBytes) * height)};
+
+    for (std::size_t row = 0; row < height; ++row) {
+      std::memcpy(image.pixels.data() + row * rowBytes, bytes + row * paddedRowBytes, rowBytes);
+    }
+
+    buffer.Unmap();
+    return image;
+  }
+
+  auto Renderer::present(std::span<const Vertex> vertices, const Math::Mat4& transform,
+                         Math::Vec4 clear) -> Core::Result<PresentResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto& gpu = *m_impl;
+    auto checked = gpu.check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!gpu.surface) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has no native surface");
+    }
+
+    checked = validate(vertices, transform, clear);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto size = gpu.window->pixelSize();
+
+    if (!size) {
+      return std::unexpected(size.error());
+    }
+
+    if (size->width <= 0 || size->height <= 0) {
+      return PresentResult::Deferred;
+    }
+
+    const auto width = static_cast<std::uint32_t>(size->width);
+    const auto height = static_cast<std::uint32_t>(size->height);
+
+    if (width > gpu.info.maxTextureDimension || height > gpu.info.maxTextureDimension) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Surface exceeds GPU texture limits");
+    }
+
+    if (gpu.surfaceWidth != width || gpu.surfaceHeight != height) {
+      checked = gpu.configureSurface(width, height);
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+    }
+
+    wgpu::SurfaceTexture frame;
+    gpu.surface.GetCurrentTexture(&frame);
+
+    switch (frame.status) {
+      case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
+      case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
+        break;
+      case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
+        return PresentResult::Deferred;
+      case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
+      case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+        checked = gpu.configureSurface(width, height);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        return PresentResult::Deferred;
+      default:
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Acquire surface texture failed ({})",
+                                      static_cast<unsigned>(frame.status)));
+    }
+
+    if (!frame.texture) {
+      return Core::fail(Core::ErrorCode::External, "Surface returned no texture");
+    }
+
+    ErrorScope scope(gpu.instance, gpu.device);
+    auto encoder
+        = gpu.encode(frame.texture, gpu.surfacePipeline, vertices, transform, width, height, clear);
+    auto commands = encoder.Finish();
+    gpu.queue.Submit(1, &commands);
+    checked = scope.finish();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (gpu.surface.Present() != wgpu::Status::Success) {
+      return Core::fail(Core::ErrorCode::External, "Present surface failed");
+    }
+
+    gpu.instance.ProcessEvents();
+    checked = gpu.check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return PresentResult::Presented;
+  }
+}  // namespace Dot::Graphics

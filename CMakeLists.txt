@@ -25,6 +25,7 @@ endif()
 find_package(Threads REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(Dawn CONFIG REQUIRED)
 add_library(DotEngine STATIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
@@ -38,9 +39,10 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/Events.cpp
     src/Engine/Platform/Input.cpp
     src/Engine/Math/Math.cpp
+    src/Engine/Graphics/Renderer.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
-target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm)
+target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
@@ -57,6 +59,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Platform/Input.cppm
         src/Engine/Core/Application.cppm
         src/Engine/Math/Math.cppm
+        src/Engine/Graphics/Renderer.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)
