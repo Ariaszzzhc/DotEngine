@@ -13,8 +13,19 @@ dependency order is:
 
 ## Verification log
 
-- Bootstrap: the existing macOS LLVM C++26 build configured and ran successfully.
-  The executable links libc++, libc++abi, and libunwind using rpath-based names.
-- Remaining milestones are planned; completion requires working implementations,
-  tests, and executable acceptance cases.
+### Core foundation
 
+Implemented a static C++26 module library and a runtime acceptance executable,
+structured results with error origin, configurable concurrent logging, a monotonic
+clock, bounded fixed-step scheduling, and an upstream-backed memory tracker.
+
+- macOS with LLVM Clang 23.1.3: Debug and Release each pass all 31 CTest cases
+  (28 doctest cases and three executable acceptance checks).
+- The standalone standard-stream probe succeeds with the configured environment.
+- The macOS runtime links the LLVM libc++ and libunwind selected by the caller.
+- Formatting and whitespace checks pass. Review covered source-location capture,
+  reentrant logging sinks, failed allocations, counter lifetimes, and duration
+  overflow and interpolation boundaries.
+- Sanitizers are excluded by request. Windows/Linux code paths are unverified.
+
+Filesystem, events, and all higher milestones remain to be implemented.

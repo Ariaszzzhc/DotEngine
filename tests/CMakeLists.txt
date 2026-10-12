@@ -1,0 +1,11 @@
+find_package(doctest CONFIG REQUIRED)
+add_executable(DotTests main.cpp CoreTests.cpp)
+target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest)
+include(doctest)
+doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit")
+
+add_test(NAME runtime.self_test COMMAND DotRuntime --self-test)
+add_test(NAME runtime.version COMMAND DotRuntime --version)
+set_tests_properties(runtime.self_test runtime.version PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.invalid_argument COMMAND DotRuntime --invalid)
+set_tests_properties(runtime.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
