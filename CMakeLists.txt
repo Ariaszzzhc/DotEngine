@@ -28,7 +28,9 @@ find_package(glm CONFIG REQUIRED)
 find_package(Dawn CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
 add_library(DotEngine STATIC)
+target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
     src/Engine/Core/Files.cpp
@@ -45,10 +47,12 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Renderer.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Mesh.cpp
+    src/Engine/World/Scene.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
+target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
@@ -69,6 +73,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Renderer.cppm
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Mesh.cppm
+        src/Engine/World/Scene.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)

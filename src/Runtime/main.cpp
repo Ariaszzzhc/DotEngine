@@ -13,8 +13,60 @@ import Dot.Platform.Window;
 import Dot.Math;
 import Dot.Graphics.Renderer;
 import Dot.Assets.Mesh;
+import Dot.World.Scene;
 
 namespace {
+  auto testScene() -> int {
+    auto scene = Dot::World::Scene::create("Acceptance");
+
+    if (!scene) {
+      std::println(stderr, "{}", scene.error().message);
+      return 1;
+    }
+
+    auto parent = scene->createEntity("Parent");
+    auto child = scene->createEntity("Child");
+
+    if (!parent || !child) {
+      std::println(stderr, "Scene entity creation failed");
+      return 1;
+    }
+
+    auto parentTransform = scene->setTransform(*parent, {{2, 3, 4}, {}, {2, 2, 2}});
+    auto childTransform = scene->setTransform(*child, {{1, 0, 0}});
+    auto attached = scene->setParent(*child, *parent);
+
+    if (!parentTransform || !childTransform || !attached) {
+      std::println(stderr, "Scene hierarchy setup failed");
+      return 1;
+    }
+
+    auto matrix = scene->worldTransform(*child);
+
+    if (!matrix) {
+      std::println(stderr, "{}", matrix.error().message);
+      return 1;
+    }
+
+    auto position = Dot::Math::transformPoint(*matrix, {});
+
+    if (!position || *position != Dot::Math::Vec3{4, 3, 4}) {
+      std::println(stderr, "Scene world transform failed");
+      return 1;
+    }
+
+    auto destroyed = scene->destroyEntity(*parent);
+    auto count = scene->entityCount();
+
+    if (!destroyed || !count || *count != 0 || scene->entity(*child)) {
+      std::println(stderr, "Scene subtree lifetime failed");
+      return 1;
+    }
+
+    std::println("Scene acceptance passed: hierarchy, transforms, subtree lifetime");
+    return 0;
+  }
+
   auto testAssets(const std::filesystem::path& root) -> int {
     auto files = Dot::Core::FileSystem::open(root);
 
@@ -323,6 +375,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--scene-test") {
+      return testScene();
+    }
+
     if (argc == 3 && std::string_view(argv[1]) == "--asset-test") {
       return testAssets(argv[2]);
     }
@@ -363,7 +419,7 @@ auto main(int argc, char** argv) -> int {
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
       std::println(stderr,
                    "Usage: DotRuntime "
-                   "[--version|--self-test|--math-test|--geometry-test|--mesh-test|"
+                   "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
                    "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
                    "--asset-test <directory>]");
       return 2;

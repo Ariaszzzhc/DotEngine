@@ -182,4 +182,26 @@ their own NUL policy. The validator performs no normalization or grapheme counti
   Reviewed byte indexing, signed-byte conversion, range/overlong checks, and
   error offsets. Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
-ECS scenes and all higher milestones remain to be implemented.
+### Scene and entity foundation
+
+Added a private EnTT scene implementation with separate identity, transform, and
+hierarchy components. Public handles have scene identity and monotonic entity
+values; moves preserve them, and destroyed values are never reused. Owned
+snapshots are deterministic by creation ID. Hierarchy/world matrices are cached,
+and transform/parent mutations validate the whole resulting scene before success,
+rolling back on cycle, depth, numeric, or allocation failures.
+
+- macOS Debug and Release each pass all 168 CTest cases (156 doctest cases and
+  twelve executable checks), including Unicode name limits, scoped/stale handles,
+  move semantics, subtree destruction, normalized rotations, parent composition,
+  cache invalidation, overflow rollback, 256-depth/10000-entity limits, worker
+  rejection, independent concurrent scenes, and 100 registry lifecycles.
+- `--scene-test` verifies an actual parent/child world transform and subtree removal.
+- Reviewed partial entity construction cleanup, rollback reference stability,
+  counter saturation, cached depth validation, component ownership, and move
+  invariants. EnTT global type counters use atomics for independent scene creation;
+  each individual scene remains confined to its creating thread for operations.
+- Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+Camera/mesh scene components, scene persistence, and higher milestones remain to
+be implemented.

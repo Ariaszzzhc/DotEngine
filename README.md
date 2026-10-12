@@ -52,4 +52,9 @@ import, with explicit warnings for unsupported retained attributes. Run
 `build/debug/bin/DotRuntime --asset-test <existing-directory>` for atomic save/load
 acceptance. See `docs/Assets.md` for the format and importer contract.
 
+EnTT scenes provide scoped entity handles, owned snapshots, validated transforms,
+parent hierarchies, and subtree lifetime management. Run
+`build/debug/bin/DotRuntime --scene-test` for hierarchy/world-transform acceptance.
+Camera/mesh scene components and scene persistence are the next stage.
+
 See `docs/Development.md` for implementation milestones and actual validation.
