@@ -50,6 +50,7 @@ namespace Dot::Script {
     struct Source {
       Fs::path relative;
       std::string text;
+      auto operator==(const Source&) const -> bool = default;
     };
 
     auto utf8(const Fs::path& path) -> std::string {
@@ -283,6 +284,28 @@ namespace Dot::Script {
     return generations.load(std::memory_order_relaxed);
   }
 
+  struct SourceSnapshot::Impl {
+    std::vector<Source> sources;
+  };
+
+  SourceSnapshot::SourceSnapshot(std::shared_ptr<const Impl> impl) noexcept
+      : m_impl(std::move(impl)) {
+  }
+
+  SourceSnapshot::SourceSnapshot(const SourceSnapshot&) noexcept = default;
+
+  auto SourceSnapshot::operator=(const SourceSnapshot&) noexcept -> SourceSnapshot& = default;
+
+  SourceSnapshot::SourceSnapshot(SourceSnapshot&&) noexcept = default;
+
+  auto SourceSnapshot::operator=(SourceSnapshot&&) noexcept -> SourceSnapshot& = default;
+
+  SourceSnapshot::~SourceSnapshot() = default;
+
+  auto SourceSnapshot::equals(const SourceSnapshot& other) const noexcept -> bool {
+    return m_impl && other.m_impl && m_impl->sources == other.m_impl->sources;
+  }
+
   struct CompiledProgram::Impl {
     std::shared_ptr<Generation> generation;
     Core::FileSystem files;
@@ -369,9 +392,9 @@ namespace Dot::Script {
     return TypeScriptCompiler(executable, limits);
   }
 
-  auto TypeScriptCompiler::compileProject(const Core::FileSystem& project,
+  auto TypeScriptCompiler::captureProject(const Core::FileSystem& project,
                                           std::string_view directory) const
-      -> Core::Result<CompiledProgram> {
+      -> Core::Result<SourceSnapshot> {
     if (!pathValid(directory)) {
       return Core::fail(ErrorCode::InvalidArgument,
                         "TypeScript source directory must be canonical root-relative UTF-8");
@@ -385,6 +408,49 @@ namespace Dot::Script {
         return std::unexpected(sources.error());
       }
 
+      return SourceSnapshot(std::make_shared<SourceSnapshot::Impl>(std::move(*sources)));
+    } catch (const std::exception& error) {
+      return Core::fail(ErrorCode::External, "TypeScript capture: " + std::string(error.what()));
+    }
+  }
+
+  auto TypeScriptCompiler::compileProject(const Core::FileSystem& project,
+                                          std::string_view directory) const
+      -> Core::Result<CompiledProgram> {
+    auto snapshot = captureProject(project, directory);
+
+    if (!snapshot) {
+      return std::unexpected(snapshot.error());
+    }
+
+    return compileSnapshot(*snapshot);
+  }
+
+  auto TypeScriptCompiler::compileSnapshot(const SourceSnapshot& snapshot) const
+      -> Core::Result<CompiledProgram> {
+    if (!snapshot.m_impl) {
+      return Core::fail(ErrorCode::InvalidState, "Source snapshot was moved from");
+    }
+
+    const auto* sources = &snapshot.m_impl->sources;
+    std::uint64_t sourceBytes = 0;
+
+    if (sources->size() > m_limits.sourceFiles) {
+      return Core::fail(ErrorCode::InvalidArgument,
+                        "TypeScript snapshot exceeds source file limit");
+    }
+
+    for (const auto& source : *sources) {
+      if (source.text.size() > m_limits.fileBytes
+          || source.text.size() > m_limits.sourceBytes - sourceBytes) {
+        return Core::fail(ErrorCode::InvalidArgument,
+                          "TypeScript snapshot exceeds source byte limits");
+      }
+
+      sourceBytes += source.text.size();
+    }
+
+    try {
       auto generation = reserveGeneration();
 
       if (!generation) {
@@ -397,10 +463,10 @@ namespace Dot::Script {
         return std::unexpected(access.error());
       }
 
-      auto snapshot = writeSnapshot(*access, *sources);
+      auto written = writeSnapshot(*access, *sources);
 
-      if (!snapshot) {
-        return std::unexpected(snapshot.error());
+      if (!written) {
+        return std::unexpected(written.error());
       }
 
       auto process = Core::runProcess({m_executable,

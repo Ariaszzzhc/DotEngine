@@ -7,7 +7,8 @@ The API follows the [official embedding API](https://quickjs-ng.github.io/quickj
 The [native TypeScript compiler](#native-typescript-compilation) produces ESM for
 this layer. The [registered host bridge and core scene SDK](#registered-host-services)
 are implemented together with persistent instances and the entity lifecycle service.
-Hot reload and remaining subsystem APIs are still to be implemented.
+Source hot reload is implemented through the service below; remaining subsystem
+APIs are still to be implemented.
 
 Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entry,
 and call an exported function through its scoped ModuleId. Entry paths are root
@@ -403,5 +404,88 @@ start/sixty async updates/fixed updates/stop on two independent native entities,
 and verify original handles are foreign after load plus full compiler/process/VM
 cleanup. `--script-components-render-test` also validates real GPU pixels before/
 after lifecycle-driven native movement. Only macOS Debug/Release are validated.
-Hot reload, remaining subsystem APIs, editor/project/export and the example game
-remain future work.
+The source hot-reload service below extends this lifecycle layer. Remaining
+subsystem APIs, editor/project/export and the example game remain future work.
+
+# Source hot reload
+
+`SceneScripts::reload(newProgram)` prepares a wholly independent realm/generation
+and all current component candidates before calling old state hooks. Constructor,
+initializer or candidate migration failure discards the candidate and retains the
+old service/native scene. Existing generations remain immutable; source edits are
+compiled into new owned output directories.
+
+Compatible running components match by entity ID, source path and class export.
+Optional onSaveState() on the old instance must return finite scalar-Unicode JSON;
+the candidate must then provide onLoadState(state), returning void/Promise<void>.
+Private fields can be explicitly exported/restored through those hooks. Aggregate
+serialized state defaults to 8 MiB, configurable to 1 byte..64 MiB, in addition to
+Runtime per-result/per-argument limits and codec depth 64. Undefined exports,
+missing loaders, nonvoid imports, malformed/deep Unicode JSON and excess bytes
+fail explicitly. Pending/disabled/failed instances and changed types do not migrate.
+
+Native scene writes are denied throughout preparation, export and import. Save
+hooks must be observational: their own arbitrary JS mutations cannot be rolled
+back, and a save-hook VM resource failure can fault the old realm. Candidate
+initialization is completed before any old save hooks run. A faulted old realm
+can be replaced without exporting state. Native side effects are unavailable
+while preparing; source compiler/candidate failures leave the old generation
+available for subsequent frames.
+
+Successful switching preserves running status and native scene state for compatible
+objects: old onStop/new onStart are skipped to avoid tearing down/recreating
+native game state. New/pending descriptions start through the normal scheduler.
+Removed, disabled or changed-type old components stop after commit. ReloadReport
+contains their explicit cleanup report; inspect retired.failures/realmFaulted as
+well as migration counts. Cleanup side effects may remove candidate owners, which
+are released/reported instead of retained as stale bindings. Cleanup failures do
+not silently roll back an already committed generation. Unexpected native cleanup
+exceptions after commit fault the new service and identify that commit in the error.
+The whole private owner is swapped, preserving each object guard's Runtime address;
+old realm/program storage releases after migration/cleanup scopes end.
+
+```ts
+export class Player extends ScriptComponent {
+  #ticks = 0;
+
+  onSaveState(): {ticks: number} {
+    return {ticks: this.#ticks};
+  }
+
+  onLoadState(state: {ticks: number}): void {
+    this.#ticks = state.ticks;
+  }
+}
+```
+
+`SourceSnapshot` is an immutable shared capture of canonical source paths and actual
+UTF-8 bytes. captureProject applies the existing file/entry/depth/byte boundaries;
+compileSnapshot rechecks source count/bytes and emits those exact captured bytes
+without rereading authoring. equals uses exact path/content comparison, avoiding
+hash collisions and timestamp-only recompilation. Moved-from snapshots are invalid;
+no open authoring files are retained. Captures use the same source filtering and
+configuration isolation as normal TypeScript compilation.
+
+`Dot.Script.LiveScripts` wraps a project/compiler and SceneScripts for automatic
+content polling. Default directory is scripts and interval is 100 ms, configurable
+to 0..60000 ms. update/fixedUpdate poll before normal lifecycle dispatch, retaining
+old code when capture/compilation/candidate preparation fails. Invalid deltas fail
+before polling. Failed source contents are remembered, so unchanged failures are
+not repeatedly compiled. poll(true) bypasses time/content checks and retries;
+source changes naturally retry. Capture failure diagnostics clear when identical
+valid sources are restored, without recompiling unchanged code. Status explicitly
+reports checks/changes/commit/error/reload cleanup; stats count actual compiler
+attempts and committed swaps. Operations require the original owner thread/scene,
+without reentry. stop is terminal; destruction releases storage without script.
+
+Polling/capture/compilation are synchronous and not a hard frame-time guarantee;
+compiler invocations retain Process time/output bounds. Captured text and native
+transport containers are outside the VM allocator quota. This version uses
+portable content capture rather than platform notification APIs.
+
+Run `--script-reload-test <compiler> <sdk-root> <directory>` for actual source edits,
+type-error retention while old code continues, new code compiled into another
+realm, private state migration without duplicate startup/cleanup, changed native
+movement and compiler/process/VM teardown. `--script-reload-render-test` also checks
+actual GPU pixels before/after the reloaded behavior. macOS Debug/Release are
+validated; Windows/Linux use common C++ implementations but remain unverified.

@@ -42,6 +42,9 @@ namespace Dot::Runtime {
   auto testScriptComponents(const std::filesystem::path& executable,
                             const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
                             bool render) -> int;
+  auto testScriptReload(const std::filesystem::path& executable,
+                        const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+                        bool render) -> int;
 }  // namespace Dot::Runtime
 
 namespace {
@@ -718,6 +721,13 @@ auto main(int argc, char** argv) -> int {
           std::string_view(argv[1]) == "--script-components-render-test");
     }
 
+    if (argc == 5
+        && (std::string_view(argv[1]) == "--script-reload-test"
+            || std::string_view(argv[1]) == "--script-reload-render-test")) {
+      return Dot::Runtime::testScriptReload(
+          argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-reload-render-test");
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -743,7 +753,9 @@ auto main(int argc, char** argv) -> int {
           "--script-host-render-test <compiler> <sdk> <directory>|"
           "--script-instance-test <compiler> <sdk> <directory>|"
           "--script-components-test <compiler> <sdk> <directory>|"
-          "--script-components-render-test <compiler> <sdk> <directory>]");
+          "--script-components-render-test <compiler> <sdk> <directory>|"
+          "--script-reload-test <compiler> <sdk> <directory>|"
+          "--script-reload-render-test <compiler> <sdk> <directory>]");
       return 2;
     }
 

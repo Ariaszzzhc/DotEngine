@@ -1049,5 +1049,64 @@ deterministic SceneScripts lifecycle service and typed source SDK base component
   libc++/libunwind linkage and no LC_RPATH remain unchanged. No sanitizers/environment
   edits were introduced; Windows/Linux common implementations remain unverified.
 
-Source hot reload, remaining subsystem script APIs, project/editor/export tooling,
-expanded rendering, and the example game remain to be implemented.
+### Source hot reload and state migration
+
+Added independent-generation/realm replacement with optional state migration,
+immutable compiler source snapshots and a portable content-polling LiveScripts
+service. Failed compilation or candidate preparation keeps old code available;
+successful switching changes behavior while retaining compatible running state.
+
+- macOS Debug and Release each pass all 568 CTest cases (533 doctest cases and
+  thirty-five executable checks). Thirteen focused cases cover exact source/path
+  comparison and timestamp-only changes, compiling captured bytes after authoring
+  changes, moved snapshots and rechecked limits, private state migration without
+  duplicate startup/old cleanup, constructor/initializer/import failure with
+  continuing old updates, native-write denial during save/load, missing/undefined/
+  nonvoid/oversized state contracts, faulted-realm recovery and new pending entities,
+  actual compiler-error retention and no unchanged failed-source recompilation,
+  poll intervals/force retries/delta validation, source removal/new imports and
+  repaired identical capture, moves/thread/lifetime/resource cleanup, component
+  disable/removal/type changes and committed cleanup failures pruning lost owners.
+- `--script-reload-test <compiler> <sdk-root> <directory>` exercises real source
+  editing and automatic capture/compilation: thirty old-code updates, a deliberate
+  TS2322 failure while old code continues, a new realm restoring a private counter,
+  thirty updates with changed native movement, explicit stop and compiler/process/
+  VM teardown. `--script-reload-render-test` additionally verifies actual Metal
+  pixels before/after reloaded behavior. Previous CoreAudio/Cocoa/Metal, lifecycle,
+  compiler/host/instance and persistence checks remain passing.
+- SourceSnapshot shares immutable bounded captures. Exact source path/content
+  comparisons avoid timestamp-only recompilation and hash collisions. Emission
+  uses the captured bytes, with source count/byte limits rechecked; enumeration/
+  depth limits apply during capture. Original compileProject uses the same path.
+- Reload completes candidate initialization before any old state export. Compatible
+  running objects can export finite scalar-Unicode JSON through onSaveState and
+  restore it through a required onLoadState, bounded by Runtime transport and an
+  aggregate budget (default 8 MiB, 1 byte..64 MiB, codec depth 64). Native writes are
+  denied during candidate preparation/export/import. Save hooks must be observational;
+  arbitrary JS mutations cannot be rolled back and resource failures may fault the
+  old realm. Faulted realms can be replaced without exporting state.
+- Complete private owners are swapped so borrowed Runtime addresses remain stable.
+  Compatible running components skip old stops/new starts; new descriptions start
+  normally. Removed/disabled/changed types stop after commit and report cleanup
+  errors explicitly. Cleanup may remove candidate owners, which are pruned. Native
+  exceptions after commit identify that commit and fault the new service. Old
+  realm/program destruction follows migration/access/active scopes; candidate
+  failure releases all temporary objects/output generations.
+- LiveScripts polls exact contents at 100 ms by default (0..60000 ms), compiles
+  new snapshots and dispatches the old or committed generation. It remembers failed
+  contents to avoid repeated compiler invocations; forced polling retries unchanged
+  contents. Capture errors clear on identical valid restoration without recompiling.
+  Status/stats retain actual diagnostics, checks/changes/commit, cleanup reports and
+  compiler/reload counts. Compilation is synchronous and not a hard frame-time
+  guarantee; native captures/transport allocations are outside the VM quota.
+- Reviewed snapshot immutability/limits, generation lifetime, complete-owner swap/
+  destruction order, observational export and isolated candidate imports, matching
+  scope/type/start status, native mutation guards, aggregate/transport validation,
+  failed attempts/source restoration, cleanup after commit, thread/reentry/moves,
+  reporting distinctions and actual GPU acceptance. Formatting/whitespace checks
+  pass. Release uses NDEBUG; caller LLVM libc++/libunwind and no LC_RPATH remain
+  unchanged. No sanitizers/environment changes were introduced. Windows/Linux
+  common C++ implementations remain uncompiled/unexecuted locally.
+
+Remaining subsystem script APIs, project/editor/export tooling, expanded rendering,
+and the example game remain to be implemented.

@@ -30,6 +30,27 @@ export namespace Dot::Script {
     std::uint64_t outputBytes;
   };
 
+  /** Immutable bounded source capture. Exact content/path comparisons avoid
+   * timestamp-only changes/hash collisions. Captures are tied to no open files;
+   * compileSnapshot emits exactly these bytes despite subsequent authoring edits.
+   * 不可变有界源码捕获，精确内容/路径比较避免仅时间戳变化和哈希碰撞；不持有打开的
+   * 文件，compileSnapshot 即使随后编辑改变，也严格编译这些字节。 */
+  class SourceSnapshot {
+  public:
+    SourceSnapshot(const SourceSnapshot&) noexcept;
+    auto operator=(const SourceSnapshot&) noexcept -> SourceSnapshot&;
+    SourceSnapshot(SourceSnapshot&&) noexcept;
+    auto operator=(SourceSnapshot&&) noexcept -> SourceSnapshot&;
+    ~SourceSnapshot();
+    [[nodiscard]] auto equals(const SourceSnapshot& other) const noexcept -> bool;
+
+  private:
+    struct Impl;
+    explicit SourceSnapshot(std::shared_ptr<const Impl> impl) noexcept;
+    std::shared_ptr<const Impl> m_impl;
+    friend class TypeScriptCompiler;
+  };
+
   /** Process-wide live generation owners, observable when calls are quiescent.
    * 无活动调用时可观察的进程内存活代所有权计数。 */
   [[nodiscard]] auto compilerGenerations() noexcept -> std::uint64_t;
@@ -89,6 +110,14 @@ export namespace Dot::Script {
      * 时间/诊断，不构成操作系统内存/磁盘配额或恶意隔离。 */
     [[nodiscard]] auto compileProject(const Core::FileSystem& project,
                                       std::string_view directory = "scripts") const
+        -> Core::Result<CompiledProgram>;
+    [[nodiscard]] auto captureProject(const Core::FileSystem& project,
+                                      std::string_view directory = "scripts") const
+        -> Core::Result<SourceSnapshot>;
+    /** Revalidate source count/bytes, then emit without reading current authoring
+     * files; enumeration/depth limits apply at capture time. 重新校验源码数量/字节，
+     * 不读当前编辑文件；枚举/深度限制在捕获时应用。 */
+    [[nodiscard]] auto compileSnapshot(const SourceSnapshot& snapshot) const
         -> Core::Result<CompiledProgram>;
 
   private:

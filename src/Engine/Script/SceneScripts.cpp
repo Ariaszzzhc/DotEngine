@@ -424,7 +424,8 @@ namespace Dot::Script {
   auto SceneScripts::create(std::shared_ptr<World::Scene> scene, const CompiledProgram& program,
                             const SceneScriptsConfig& config) -> Core::Result<SceneScripts> {
     if (config.maxComponents == 0 || config.maxComponents > 5000
-        || config.runtime.maxInstances < config.maxComponents * 2) {
+        || config.runtime.maxInstances < config.maxComponents * 2 || config.reloadStateBytes == 0
+        || config.reloadStateBytes > 64 * 1024 * 1024) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Invalid component/transient instance capacity");
     }
@@ -552,6 +553,170 @@ namespace Dot::Script {
       m_impl->m_faulted = true;
       return Core::fail(Core::ErrorCode::External,
                         "Fixed update scene scripts: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneScripts::reload(const CompiledProgram& program) -> Core::Result<ReloadReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene scripts were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto* old = m_impl.get();
+    std::unique_ptr<Impl> retired;
+    ActiveScope active{old->m_active};
+    bool committed = false;
+
+    try {
+      auto candidate = create(old->m_scene, program, old->m_config);
+
+      if (!candidate) {
+        return std::unexpected(candidate.error());
+      }
+
+      auto prepared = candidate->sync();
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      if (!prepared->failures.empty() || prepared->realmFaulted) {
+        const auto& failure = prepared->failures.front();
+        return Core::fail(failure.error.code, "Reload prepare entity "
+                                                  + std::to_string(failure.entity.value) + ": "
+                                                  + failure.error.message);
+      }
+
+      ReloadReport report{
+          static_cast<std::uint32_t>(candidate->m_impl->m_records.size()), 0, 0, {}};
+      const bool oldHealthy = !old->m_runtime.stats()->faulted;
+      {
+        PrepareScope protectOld{*old->m_access};
+        PrepareScope protectNew{*candidate->m_impl->m_access};
+
+        for (auto& [id, next] : candidate->m_impl->m_records) {
+          const auto found = old->m_records.find(id);
+
+          if (!oldHealthy || found == old->m_records.end() || !next.object) {
+            continue;
+          }
+
+          const auto& previous = found->second;
+
+          if (!previous.object || previous.failed || !previous.started
+              || previous.description.source != next.description.source
+              || previous.description.className != next.description.className) {
+            continue;
+          }
+
+          auto save = old->m_runtime.hasMethod(previous.object->id, "onSaveState");
+
+          if (!save) {
+            return Core::fail(save.error().code, "Reload state discovery entity "
+                                                     + std::to_string(id) + ": "
+                                                     + save.error().message);
+          }
+
+          if (*save) {
+            auto load = candidate->m_impl->m_runtime.hasMethod(next.object->id, "onLoadState");
+
+            if (!load) {
+              return std::unexpected(load.error());
+            }
+
+            if (!*load) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Reload entity " + std::to_string(id)
+                                    + " exports state but candidate has no onLoadState");
+            }
+
+            auto state = old->m_runtime.callMethod(previous.object->id, "onSaveState");
+
+            if (!state) {
+              return Core::fail(state.error().code, "Reload save entity " + std::to_string(id)
+                                                        + ": " + state.error().message);
+            }
+
+            if (!state->has_value()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Reload onSaveState must return finite JSON rather than undefined");
+            }
+
+            static_cast<void>(Serialization::Detail::parseJson(**state));
+
+            if ((**state).size() > old->m_config.reloadStateBytes - report.stateBytes) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Reload aggregate state byte limit exceeded");
+            }
+
+            report.stateBytes += (**state).size();
+            auto loaded = candidate->m_impl->m_runtime.callMethod(next.object->id, "onLoadState",
+                                                                  "[" + **state + "]");
+
+            if (!loaded) {
+              return Core::fail(loaded.error().code, "Reload load entity " + std::to_string(id)
+                                                         + ": " + loaded.error().message);
+            }
+
+            if (loaded->has_value()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Reload onLoadState must return undefined");
+            }
+
+            ++report.migrated;
+          }
+
+          next.started = previous.started;
+        }
+      }
+
+      /** Swap complete owners; object guards borrow their original Runtime address.
+       * 切换完整所有者，对象守卫借用原始 Runtime 地址，不能分别移动其成员。 */
+      retired = std::move(m_impl);
+      m_impl = std::move(candidate->m_impl);
+      committed = true;
+
+      for (auto& [id, previous] : retired->m_records) {
+        const auto found = m_impl->m_records.find(id);
+        const bool compatible
+            = found != m_impl->m_records.end() && found->second.object
+              && found->second.description.source == previous.description.source
+              && found->second.description.className == previous.description.className;
+
+        if (!compatible) {
+          retired->retire(previous, report.retired);
+          ++report.retired.removed;
+        }
+      }
+
+      for (auto iterator = m_impl->m_records.begin(); iterator != m_impl->m_records.end();) {
+        if (!m_impl->m_scene->entity(iterator->second.entity)) {
+          auto error
+              = Core::fail(Core::ErrorCode::NotFound, "Reload owner was removed during cleanup");
+          report.retired.failures.push_back(
+              {iterator->second.entity, ScriptPhase::Prepare, error.error()});
+          iterator = m_impl->m_records.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+
+      report.components = static_cast<std::uint32_t>(m_impl->m_records.size());
+      return report;
+    } catch (const std::exception& error) {
+      if (committed) {
+        m_impl->m_faulted = true;
+        return Core::fail(Core::ErrorCode::External, "Reload committed but native cleanup failed: "
+                                                         + std::string(error.what()));
+      }
+
+      return Core::fail(Core::ErrorCode::External,
+                        "Reload scene scripts: " + std::string(error.what()));
     }
   }
 

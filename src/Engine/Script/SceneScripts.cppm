@@ -31,6 +31,14 @@ export namespace Dot::Script {
   struct SceneScriptsConfig {
     RuntimeConfig runtime;
     std::uint32_t maxComponents{512};
+    std::uint64_t reloadStateBytes{8 * 1024 * 1024};
+  };
+
+  struct ReloadReport {
+    std::uint32_t components;
+    std::uint32_t migrated;
+    std::uint64_t stateBytes;
+    ScriptReport retired;
   };
 
   struct SceneScriptsStats {
@@ -87,6 +95,21 @@ export namespace Dot::Script {
     [[nodiscard]] auto start() -> Core::Result<ScriptReport>;
     [[nodiscard]] auto update(double seconds) -> Core::Result<ScriptReport>;
     [[nodiscard]] auto fixedUpdate(double seconds) -> Core::Result<ScriptReport>;
+    /** Prepare a new realm/generation before touching old state. Optional paired
+     * onSaveState()/onLoadState(state) migrate bounded finite JSON for compatible
+     * live descriptions. All preparation/migration denies native scene writes.
+     * Save hooks must be observational: their own JS mutations cannot be rolled
+     * back. Candidate failure keeps the old service; successful swap preserves
+     * running status/native scene for compatible components, without old stops
+     * or repeated starts. Removed/disabled/changed types stop after commit and
+     * report cleanup failures; new descriptions start normally later. A faulted realm can be
+     * replaced without exporting its state. 在触及旧状态前准备新 realm/编译代；兼容活动描述
+     * 可经成对 onSaveState()/onLoadState(state) 迁移有界有限 JSON。全部准备/迁移禁止
+     * 原生场景写入；保存钩子须只观察，自身 JS 修改不能回滚。候选失败保留旧服务，
+     * 成功切换兼容组件保留状态与场景，不停止旧对象或重复启动；移除/禁用/改类型在
+     * 提交后停止并报告清理错误，新描述后续正常启动；
+     * 故障 realm 可跳过状态导出后替换。 */
+    [[nodiscard]] auto reload(const CompiledProgram& program) -> Core::Result<ReloadReport>;
     /** Terminal/idempotent stop, invokes started components once then releases
      * handles even after failures. Native side effects are not rolled back; lost
      * entities may make cleanup callbacks fail. 终止且幂等，已启动组件停止一次后即使
