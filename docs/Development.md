@@ -241,4 +241,22 @@ budget failures return errors. Cache reload is explicit through `clearCache`.
   pruning/budget accounting, asset-root ownership, renderer borrowing, and failure
   paths. Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
+### Scene transactions and imported IDs
+
+Added monotonic explicit entity-ID import and batch transform/parent transactions.
+Inputs and duplicate handles are validated before mutation; the final scene is
+checked once, with complete rollback on failure. Single-item setters now use the
+same transaction path. This permits valid hierarchy changes whose intermediate
+individual steps would temporarily contain a cycle.
+
+- macOS Debug and Release each pass all 190 CTest cases (177 doctest cases and
+  thirteen executable checks), including imported-ID gaps/exhaustion, final-state
+  hierarchy validation, complete transform/parent rollback, invalid/duplicate/
+  stale/foreign handles, empty/oversized batches, worker rejection, camera inverse
+  failures, and a 1000-entity batch.
+- The runtime scene acceptance imports IDs and applies its setup in batches.
+- Reviewed mutation preparation, stable component references, rollback ownership,
+  monotonic counter updates, and no-op/error paths. Formatting/whitespace checks
+  pass. Windows/Linux remain unverified.
+
 Scene persistence and all higher milestones remain to be implemented.

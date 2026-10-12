@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,6 +56,16 @@ export namespace Dot::World {
     bool visible{true};
   };
 
+  struct TransformUpdate {
+    EntityId entity;
+    Transform transform;
+  };
+
+  struct ParentUpdate {
+    EntityId entity;
+    std::optional<EntityId> parent;
+  };
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -86,6 +97,11 @@ export namespace Dot::World {
     [[nodiscard]] auto rename(std::string_view name) -> Core::Result<void>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
     [[nodiscard]] auto createEntity(std::string_view name = "Entity") -> Core::Result<EntityId>;
+    /** Import a monotonic ID: it must be >= the next available value and below
+     * uint64 max. Skipped/consumed values cannot later be reused.
+     * 导入单调 ID：须不小于下个可用值且小于 uint64 最大值，跳过或消耗的值不再复用。 */
+    [[nodiscard]] auto createEntityWithId(std::string_view name, std::uint64_t value)
+        -> Core::Result<EntityId>;
     /** Destroy the entity and its entire subtree. 删除实体及其整个子树。 */
     [[nodiscard]] auto destroyEntity(EntityId entity) -> Core::Result<void>;
     [[nodiscard]] auto findEntity(std::uint64_t value) const -> Core::Result<EntityId>;
@@ -107,6 +123,12 @@ export namespace Dot::World {
      */
     [[nodiscard]] auto setParent(EntityId entity, std::optional<EntityId> parent)
         -> Core::Result<void>;
+    /** Batch updates reject duplicate handles and validate the final scene once.
+     * All changes roll back together on failure; intermediate states are private.
+     * 批量更新拒绝重复句柄，并一次校验最终场景；失败时全部回滚，中间状态不对外暴露。 */
+    [[nodiscard]] auto setTransforms(std::span<const TransformUpdate> updates)
+        -> Core::Result<void>;
+    [[nodiscard]] auto setParents(std::span<const ParentUpdate> updates) -> Core::Result<void>;
     [[nodiscard]] auto worldTransform(EntityId entity) const -> Core::Result<Math::Mat4>;
     /** At most one camera may be primary. Views use the full world inverse,
      * which must remain representable. 最多一个主相机；视图使用可表示的完整世界逆矩阵。 */

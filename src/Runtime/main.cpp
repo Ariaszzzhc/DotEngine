@@ -86,7 +86,7 @@ namespace {
       return 1;
     }
 
-    auto parent = scene->createEntity("Parent");
+    auto parent = scene->createEntityWithId("Parent", 10);
     auto child = scene->createEntity("Child");
 
     if (!parent || !child) {
@@ -94,11 +94,13 @@ namespace {
       return 1;
     }
 
-    auto parentTransform = scene->setTransform(*parent, {{2, 3, 4}, {}, {2, 2, 2}});
-    auto childTransform = scene->setTransform(*child, {{1, 0, 0}});
-    auto attached = scene->setParent(*child, *parent);
+    const std::array transforms{Dot::World::TransformUpdate{*parent, {{2, 3, 4}, {}, {2, 2, 2}}},
+                                Dot::World::TransformUpdate{*child, {{1, 0, 0}}}};
+    const std::array parents{Dot::World::ParentUpdate{*child, *parent}};
+    auto transformed = scene->setTransforms(transforms);
+    auto attached = scene->setParents(parents);
 
-    if (!parentTransform || !childTransform || !attached) {
+    if (!transformed || !attached || parent->value != 10 || child->value != 11) {
       std::println(stderr, "Scene hierarchy setup failed");
       return 1;
     }

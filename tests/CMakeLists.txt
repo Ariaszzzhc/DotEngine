@@ -13,6 +13,7 @@ add_executable(DotTests
     AssetTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
+    SceneTransactionTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 include(doctest)

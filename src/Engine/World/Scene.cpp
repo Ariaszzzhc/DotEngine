@@ -8,8 +8,10 @@ module;
 #include <filesystem>
 #include <format>
 #include <limits>
+#include <span>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 module Dot.World.Scene;
@@ -145,6 +147,50 @@ namespace Dot::World {
     entt::registry registry;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
     mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
+
+    auto add(std::string_view label, std::optional<std::uint64_t> requested)
+        -> Core::Result<EntityId> {
+      auto checked = check();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      checked = validateName(label);
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      auto& scene = *this;
+
+      if (scene.lookup.size() >= 10000
+          || scene.nextEntity == std::numeric_limits<std::uint64_t>::max()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Scene entity capacity exhausted");
+      }
+
+      const auto value = requested.value_or(scene.nextEntity);
+
+      if (value < scene.nextEntity || value == std::numeric_limits<std::uint64_t>::max()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Imported entity ID must be monotonic and below uint64 max");
+      }
+
+      const auto native = scene.registry.create();
+
+      try {
+        scene.registry.emplace<Identity>(native, value, std::string(label));
+        scene.registry.emplace<Transform>(native);
+        scene.registry.emplace<Hierarchy>(native);
+        scene.lookup.emplace(value, native);
+      } catch (...) {
+        scene.registry.destroy(native);
+        throw;
+      }
+
+      scene.nextEntity = value + 1;
+      return EntityId{scene.identity, value};
+    }
 
     auto check() const -> Core::Result<void> {
       if (thread != std::this_thread::get_id()) {
@@ -363,40 +409,16 @@ namespace Dot::World {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
 
-    auto checked = m_impl->check();
+    return m_impl->add(name, std::nullopt);
+  }
 
-    if (!checked) {
-      return std::unexpected(checked.error());
+  auto Scene::createEntityWithId(std::string_view name, std::uint64_t value)
+      -> Core::Result<EntityId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
 
-    checked = validateName(name);
-
-    if (!checked) {
-      return std::unexpected(checked.error());
-    }
-
-    auto& scene = *m_impl;
-
-    if (scene.lookup.size() >= 10000
-        || scene.nextEntity == std::numeric_limits<std::uint64_t>::max()) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Scene entity capacity exhausted");
-    }
-
-    const auto value = scene.nextEntity;
-    const auto native = scene.registry.create();
-
-    try {
-      scene.registry.emplace<Identity>(native, value, std::string(name));
-      scene.registry.emplace<Transform>(native);
-      scene.registry.emplace<Hierarchy>(native);
-      scene.lookup.emplace(value, native);
-    } catch (...) {
-      scene.registry.destroy(native);
-      throw;
-    }
-
-    ++scene.nextEntity;
-    return EntityId{scene.identity, value};
+    return m_impl->add(name, value);
   }
 
   auto Scene::findEntity(std::uint64_t value) const -> Core::Result<EntityId> {
@@ -472,56 +494,146 @@ namespace Dot::World {
   }
 
   auto Scene::setTransform(EntityId entity, const Transform& transform) -> Core::Result<void> {
-    if (!m_impl) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
-    }
-
-    auto native = m_impl->resolve(entity);
-
-    if (!native) {
-      return std::unexpected(native.error());
-    }
-
-    auto rotation = Math::normalized(transform.rotation);
-    auto local = Math::compose(transform.position, transform.rotation, transform.scale);
-
-    if (!rotation) {
-      return std::unexpected(rotation.error());
-    }
-
-    if (!local) {
-      return std::unexpected(local.error());
-    }
-
-    auto& current = m_impl->registry.get<Transform>(*native);
-    const auto previous = current;
-    current = {transform.position, *rotation, transform.scale};
-    return m_impl->verifyMutation([&] { current = previous; });
+    const TransformUpdate update{entity, transform};
+    return setTransforms(std::span{&update, 1});
   }
 
   auto Scene::setParent(EntityId entity, std::optional<EntityId> parent) -> Core::Result<void> {
+    const ParentUpdate update{entity, parent};
+    return setParents(std::span{&update, 1});
+  }
+
+  auto Scene::setTransforms(std::span<const TransformUpdate> updates) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
 
-    auto native = m_impl->resolve(entity);
+    auto checked = m_impl->check();
 
-    if (!native) {
-      return std::unexpected(native.error());
+    if (!checked) {
+      return checked;
     }
 
-    if (parent) {
-      auto parentNative = m_impl->resolve(*parent);
+    if (updates.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Transform batch exceeds scene capacity");
+    }
 
-      if (!parentNative) {
-        return std::unexpected(parentNative.error());
+    if (updates.empty()) {
+      return {};
+    }
+
+    struct Prepared {
+      entt::entity native;
+      Transform previous;
+      Transform next;
+    };
+
+    std::vector<Prepared> prepared;
+    prepared.reserve(updates.size());
+    std::unordered_set<std::uint64_t> seen;
+
+    for (const auto& update : updates) {
+      auto native = m_impl->resolve(update.entity);
+
+      if (!native) {
+        return std::unexpected(native.error());
       }
+
+      if (!seen.insert(update.entity.value).second) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Transform batch contains a duplicate entity");
+      }
+
+      auto rotation = Math::normalized(update.transform.rotation);
+      auto local = Math::compose(update.transform.position, update.transform.rotation,
+                                 update.transform.scale);
+
+      if (!rotation) {
+        return std::unexpected(rotation.error());
+      }
+
+      if (!local) {
+        return std::unexpected(local.error());
+      }
+
+      prepared.push_back({*native,
+                          m_impl->registry.get<Transform>(*native),
+                          {update.transform.position, *rotation, update.transform.scale}});
     }
 
-    auto& current = m_impl->registry.get<Hierarchy>(*native).parent;
-    const auto previous = current;
-    current = parent ? std::optional{parent->value} : std::nullopt;
-    return m_impl->verifyMutation([&] { current = previous; });
+    for (const auto& entry : prepared) {
+      m_impl->registry.get<Transform>(entry.native) = entry.next;
+    }
+
+    return m_impl->verifyMutation([&] {
+      for (const auto& entry : prepared) {
+        m_impl->registry.get<Transform>(entry.native) = entry.previous;
+      }
+    });
+  }
+
+  auto Scene::setParents(std::span<const ParentUpdate> updates) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (updates.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Parent batch exceeds scene capacity");
+    }
+
+    if (updates.empty()) {
+      return {};
+    }
+
+    struct Prepared {
+      entt::entity native;
+      std::optional<std::uint64_t> previous;
+      std::optional<std::uint64_t> next;
+    };
+
+    std::vector<Prepared> prepared;
+    prepared.reserve(updates.size());
+    std::unordered_set<std::uint64_t> seen;
+
+    for (const auto& update : updates) {
+      auto native = m_impl->resolve(update.entity);
+
+      if (!native) {
+        return std::unexpected(native.error());
+      }
+
+      if (!seen.insert(update.entity.value).second) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Parent batch contains a duplicate entity");
+      }
+
+      if (update.parent) {
+        auto parent = m_impl->resolve(*update.parent);
+
+        if (!parent) {
+          return std::unexpected(parent.error());
+        }
+      }
+
+      prepared.push_back({*native, m_impl->registry.get<Hierarchy>(*native).parent,
+                          update.parent ? std::optional{update.parent->value} : std::nullopt});
+    }
+
+    for (const auto& entry : prepared) {
+      m_impl->registry.get<Hierarchy>(entry.native).parent = entry.next;
+    }
+
+    return m_impl->verifyMutation([&] {
+      for (const auto& entry : prepared) {
+        m_impl->registry.get<Hierarchy>(entry.native).parent = entry.previous;
+      }
+    });
   }
 
   auto Scene::worldTransform(EntityId entity) const -> Core::Result<Math::Mat4> {
