@@ -697,5 +697,47 @@ Playback owns the batch arguments and executes it as one worker command.
   No sanitizers or environment changes were introduced. Windows/Linux remain
   unverified.
 
-Scene audio asset/loading/playback synchronization, scripting, project/editor/
-export tooling, and the example game remain to be implemented.
+### Scene audio runtime binding
+
+Added an owned SceneAudio service for offline PCM and continuous native playback.
+It loads real root-relative audio assets, shares immutable clips by authored path,
+checks cache budgets, and synchronizes entity voices/listener through one prepared
+backend batch. Component removal evicts unreferenced voices/assets after successful
+synchronization; queries retain owned binding data without a scene reference.
+
+- macOS Debug and Release each pass all 425 CTest cases (400 doctest cases and
+  twenty-five executable checks). Thirteen new unit cases cover UTF-8 file loading,
+  shared PCM cache accounting/output, component/subtree cleanup, cursor and manual
+  pause/end retention, missing/corrupt-file isolation with entity/path diagnostics,
+  stable cache and successful/failed reload, full-capacity asset replacement and
+  playOnStart, inherited world position/listener rotation with actual stereo PCM,
+  primary/mono/reflection/shear/pose rejection, velocity derivation from successful
+  positions, failed-motion retention and teleport reset, tiny/invalid timesteps,
+  asset/PCM/voice/source limits, listener switching, backend preparation rollback,
+  move/scope/thread/reset checks, repeated resource lifetimes, and independently
+  owned bindings after source scene/filesystem destruction.
+- Two real muted CoreAudio cases verify continuous scene playback, failed asset
+  edits, failed/successful native reset, rejected offline rendering with unchanged
+  output, synchronized removal, failed asset initialization after native startup,
+  joined worker teardown, and restored backend allocation counters.
+- `--scene-audio-play-test <directory>` creates a real WAV and saved scene, loads
+  that scene into the service, checks actual left/right PCM after pose edits,
+  retains old playback on a missing asset, and verifies voice/cache cleanup.
+  Existing native audio, Cocoa window, and Metal acceptance continue passing.
+- An EOF regression exposed a retained backend start flag after a finished voice;
+  voice queries and playing counts now exclude ended voices. PCM/end tests verify
+  synchronization does not restart the finished sound.
+- Reviewed bounded candidate decoding/cache ownership, shared path references,
+  UTF-8 filesystem construction, complete preflight before backend mutation,
+  preallocated binding publication, world TRS/velocity constraints, snapshot/thread/
+  scope rules, worker execution, factory failure cleanup, and reset replacement.
+  Native reset may briefly overlap old/new endpoints and is not a seamless
+  transport transition. Unexpected backend commit faults remain explicit and
+  reviewed; they are not induced by automated tests.
+- Formatting/whitespace checks pass. Release runs with assertions disabled;
+  caller-selected LLVM libc++/libunwind and native frameworks remain linked with
+  no LC_RPATH. No environment changes or sanitizers were introduced. Windows/Linux
+  implementations remain unverified.
+
+Scripting, project/editor/export tooling, expanded rendering, and the example game
+remain to be implemented.

@@ -28,12 +28,13 @@ add_executable(DotTests
     SpatialTests.cpp
     SceneAudioTests.cpp
     VoiceBatchTests.cpp
+    SceneAudioBindingTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
-add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp)
+add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp SceneAudioNativeTests.cpp)
 target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
 doctest_discover_tests(DotAudioTests PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.audio_output COMMAND DotRuntime --audio-output-test)
@@ -63,6 +64,8 @@ add_test(NAME runtime.scene_files COMMAND DotRuntime --scene-file-test "${CMAKE_
 set_tests_properties(runtime.scene_files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.scene_audio COMMAND DotRuntime --scene-audio-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.scene_audio PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.scene_audio_playback COMMAND DotRuntime --scene-audio-play-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.scene_audio_playback PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")

@@ -130,8 +130,7 @@ are failures. Tested locally on arm64 macOS with real CoreAudio in Debug/Release
 Windows/Linux implementations remain unverified. Hot-plug/interruption handling
 is reviewed but has not been physically triggered by automated tests.
 
-Scene audio authoring components are described below; live playback binding
-remains to be implemented.
+Scene audio authoring and explicit runtime binding are described below.
 
 
 # Continuous playback
@@ -251,8 +250,7 @@ Scene files preserve every source/listener property with strict nested fields an
 types. Pose remains in the entity transform; decoding builds a fresh independent
 scene. `DotRuntime --scene-audio-test <existing-directory>` verifies saved UTF-8
 asset descriptions, primary/hierarchy restoration, malformed-load isolation, and
-scoped subtree cleanup. These checks exercise authoring/persistence; automatic
-asset loading, live voice synchronization, and scene play controls remain pending.
+scoped subtree cleanup. Runtime binding is a separate explicit service below.
 
 # Voice batches
 
@@ -286,3 +284,68 @@ cleanup. Unit/native tests additionally cover cursor continuity, optional play
 controls and finished restart, combined spatial transitions and stereo direction,
 duplicate/foreign/stale handles, malformed inputs, partial-preparation cleanup,
 move/thread/lifetime contracts, and real muted CoreAudio worker recovery.
+
+# Scene audio binding
+
+`Dot.Audio.SceneAudio` owns a project-root FileSystem copy, a bounded immutable
+Clip cache, and entity-to-voice bindings. `create` owns an offline Mixer;
+`createPlayback` owns continuous real-device Playback. Both resolve and bind the
+scene's audio sources. The service retains no scene reference; operations use its
+creating thread, moves preserve ownership, and quiescent destruction can happen
+elsewhere. Native teardown joins the worker before releasing the backend.
+
+`synchronize(scene, seconds)` applies authored component edits and world poses.
+Only the originally bound scene is accepted until reset. Owned snapshots/queries
+reflect the last successful binding; removing an entity/component releases its
+voice and evicts clips no longer referenced on the next successful synchronization.
+An unchanged asset preserves its cursor and manual play state. Changing volume,
+pitch, looping, pan, or spatial properties updates the existing voice; playOnStart
+is used only for creation/asset replacement, and does not restart finished voices.
+Play/pause/seek are entity-scoped controls independent of editing; master volume
+affects the entire service.
+Ended voices report stopped even when the backend retains an internal start flag.
+
+Every authored path loads once while referenced. Shared references count once
+against maxAssets (default 128, range 1..1024) and sampleBytes (default 256 MiB,
+range 1 byte..1 GiB). Per-clip encoded/decoded limits also apply; decoding is capped
+by the candidate cache's remaining PCM budget. Cache keys are authored paths;
+separate path aliases are not physically deduplicated. Current caches/voice clips
+remain alive while preparing replacement assets, so transient memory can exceed
+the final cache budget. Same-path file changes apply on reset, not implicit polling.
+UTF-8 paths use filesystem UTF-8 construction on all supported implementations.
+
+Enabled spatial sources require mono PCM and a primary scene audio listener.
+Flat sources need neither a listener nor a suitable spatial world transform.
+Listener/source world TRS is decomposed and normalized; shear/reflection and
+unsupported pose bounds fail explicitly. Positive world scale affects inherited
+position but does not scale distance/cone settings. Source/listener directions
+follow world rotation. Zero seconds means teleport with zero velocity; positive
+finite seconds up to one derive velocity from consecutive successful positions.
+New sources/listeners have zero initial velocity, including listener switches.
+Derived speed over 100 m/s is rejected, and failed synchronization does not update
+previous positions. Tiny positive timesteps use double division before float
+conversion; stationary poses remain valid. Doppler still requires its opt-in factor.
+
+All desired files, budgets, poses, and binding containers are prepared before one
+voice batch commits. Missing/corrupt files include entity/path context and leave
+old playback/cache/bindings intact. Mono/listener/pose/capacity/allocation failures
+also retain the last successful state. Unexpected backend commit faults retain
+explicit fault diagnostics and require reset/recreation; they are not claimed to
+roll back a partial backend commit. Preparing files does not block the native
+mixing worker; batch graph preparation still has the scheduling limits above.
+
+`reset(scene)` independently recreates backend/cache, rereads every file, and may
+bind another scene. Failure keeps the existing service; success resets playback
+from playOnStart, sets master gain to one, and restores endpoint gain from configuration. Native reset can briefly have two
+initialized endpoints, with old buffered audio overlapping new playback; it is
+not a seamless transport transition. Offline render is rejected in native mode
+without writing the caller's buffer. Statistics expose cache ownership, mixer
+state and, in native mode, actual device/frame/fault totals. Queries and controls
+can remain useful after the source scene is destroyed because binding data is owned.
+
+Run `DotRuntime --scene-audio-play-test <existing-directory>` for saved-scene
+loading, real WAV-backed left/right PCM, missing-file retention, and synchronized
+cleanup. Native tests use real CoreAudio at endpoint software gain zero and verify
+continuous frame delivery, failed-edit retention, failed initialization cleanup,
+and joined resource release. They do not claim physical audibility or seamless
+native reset. Windows/Linux implementations remain unverified.

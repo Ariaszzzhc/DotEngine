@@ -93,7 +93,7 @@ Audio listeners require only boolean `primary`. At most one listener can be
 primary, independently of the camera. Multiple primary listeners fail loading
 the whole candidate scene. Missing/null audio fields remain valid in older files.
 No audio asset is opened or native voice/device created by component editing or
-scene loading; live playback binding remains to be implemented. See `Audio.md`
+scene loading; `Dot.Audio.SceneAudio` resolves them in an explicit binding step. See `Audio.md`
 for parameter/path contracts. Run `DotRuntime --scene-audio-test <existing-directory>`
 for persistence, parent transforms, independent scene identity, and failed-load
 isolation at `scenes/audio.dotscene`.

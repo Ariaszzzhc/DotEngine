@@ -93,7 +93,10 @@ attenuation, directional cones, and optional Doppler; `--audio-spatial-test` che
 actual stereo PCM direction. Scenes store validated audio source/listener components
 without opening audio resources. `--scene-audio-test <existing-directory>` checks
 their file round trip, scoped identity, and failure isolation. Connecting these
-components to live playback remains to be implemented.
+components to live playback is provided by `Dot.Audio.SceneAudio` through an
+owned bounded clip cache and one backend batch. `--scene-audio-play-test
+<existing-directory>` loads a saved scene, verifies actual spatial PCM and
+missing-asset retention, and releases destroyed entities' voices/assets.
 Voice batches prepare every new resource before editing existing voices;
 `--audio-batch-test` checks failed-edit retention and full-capacity replacement
 using actual PCM. Playback runs each batch as one worker command.

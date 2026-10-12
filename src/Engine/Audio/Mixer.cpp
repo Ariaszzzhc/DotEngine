@@ -656,8 +656,9 @@ namespace Dot::Audio {
     }
 
     const auto& entry = **found;
-    return VoiceState{entry.info, entry.settings, ma_sound_is_playing(&entry.sound) != 0,
-                      ma_sound_at_end(&entry.sound) != 0, entry.spatial};
+    const bool ended = ma_sound_at_end(&entry.sound) != 0;
+    return VoiceState{entry.info, entry.settings, ma_sound_is_playing(&entry.sound) != 0 && !ended,
+                      ended, entry.spatial};
   }
 
   auto Mixer::setVolume(float volume) -> Core::Result<void> {
@@ -694,7 +695,8 @@ namespace Dot::Audio {
 
     for (const auto& [id, entry] : m_impl->m_voices) {
       (void)id;
-      playing += ma_sound_is_playing(&entry->sound) != 0 ? 1 : 0;
+      playing
+          += ma_sound_is_playing(&entry->sound) != 0 && ma_sound_at_end(&entry->sound) == 0 ? 1 : 0;
     }
 
     return MixerStats{m_impl->m_voices.size(),
