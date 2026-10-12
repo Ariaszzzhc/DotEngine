@@ -45,6 +45,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/Input.cpp
     src/Engine/Math/Math.cpp
     src/Engine/Graphics/Renderer.cpp
+    src/Engine/Graphics/SceneRenderer.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/World/Scene.cpp
@@ -71,6 +72,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Application.cppm
         src/Engine/Math/Math.cppm
         src/Engine/Graphics/Renderer.cppm
+        src/Engine/Graphics/SceneRenderer.cppm
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/World/Scene.cppm

@@ -14,8 +14,70 @@ import Dot.Math;
 import Dot.Graphics.Renderer;
 import Dot.Assets.Mesh;
 import Dot.World.Scene;
+import Dot.Graphics.SceneRenderer;
 
 namespace {
+  auto testSceneRender() -> int {
+    auto scene = Dot::World::Scene::create("Rendered Scene");
+    auto renderer = Dot::Graphics::Renderer::create();
+
+    if (!scene) {
+      std::println(stderr, "{}", scene.error().message);
+      return 1;
+    }
+
+    if (!renderer) {
+      std::println(stderr, "{}", renderer.error().message);
+      return 1;
+    }
+
+    auto camera = scene->createEntity("Camera");
+    auto cube = scene->createEntity("Cube");
+
+    if (!camera || !cube) {
+      std::println(stderr, "Scene rendering entity creation failed");
+      return 1;
+    }
+
+    Dot::World::Camera cameraComponent;
+    cameraComponent.primary = true;
+    Dot::World::MeshRenderer mesh;
+    mesh.tint = {0.2F, 0.7F, 1, 1};
+    auto cameraPose = scene->setTransform(*camera, {{0, 0, 4}});
+    auto cameraSet = scene->setCamera(*camera, cameraComponent);
+    auto meshSet = scene->setMeshRenderer(*cube, mesh);
+
+    if (!cameraPose || !cameraSet || !meshSet) {
+      std::println(stderr, "Scene rendering component setup failed");
+      return 1;
+    }
+
+    auto service = Dot::Graphics::SceneRenderer::create(*renderer);
+
+    if (!service) {
+      std::println(stderr, "{}", service.error().message);
+      return 1;
+    }
+
+    auto image = service->render(*scene, 64, 64);
+
+    if (!image) {
+      std::println(stderr, "{}", image.error().message);
+      return 1;
+    }
+
+    const auto center = (32 * 64 + 32) * 4;
+
+    if (image->pixels[center + 1] <= 100 || image->pixels[center + 2] <= 200
+        || service->stats()->meshes != 1) {
+      std::println(stderr, "Scene rendering pixel/cache acceptance failed");
+      return 1;
+    }
+
+    std::println("Scene rendering acceptance passed: camera, entity mesh, GPU pixels");
+    return 0;
+  }
+
   auto testScene() -> int {
     auto scene = Dot::World::Scene::create("Acceptance");
 
@@ -387,6 +449,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--scene-render-test") {
+      return testSceneRender();
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--scene-test") {
       return testScene();
     }
@@ -429,11 +495,12 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
-      std::println(stderr,
-                   "Usage: DotRuntime "
-                   "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
-                   "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
-                   "--asset-test <directory>]");
+      std::println(
+          stderr,
+          "Usage: DotRuntime "
+          "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
+          "--scene-render-test|--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
+          "--asset-test <directory>]");
       return 2;
     }
 

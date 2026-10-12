@@ -222,4 +222,23 @@ left to the upcoming render service.
   range checks, UTF-8/native path conversion, and unchanged-state failure paths.
   Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
-Scene rendering, scene persistence, and higher milestones remain to be implemented.
+### Scene rendering and mesh cache
+
+Connected camera/mesh components to actual offscreen and native rendering through
+a separate scene render service. The service borrows the renderer, owns an
+optional asset-root descriptor, shares uploaded meshes, and bounds cache bytes.
+Unused visible-scene resources are pruned before new loads; importer warnings are
+available separately. Missing camera/assets, invalid input, excessive draws, and
+budget failures return errors. Cache reload is explicit through `clearCache`.
+
+- macOS Debug and Release each pass all 183 CTest cases (170 doctest cases and
+  thirteen executable checks), including instance pixels, shared-cache release,
+  hidden meshes, camera override, unresolved assets, imported warning propagation,
+  reload failure, byte/draw limits, moves, worker rejection, and native scene resize.
+- `--scene-render-test` renders an actual entity/camera cube scene and verifies
+  its Metal pixel readback and shared mesh count.
+- Reviewed frame-owned mesh pointer stability, move-only frame transport, cache
+  pruning/budget accounting, asset-root ownership, renderer borrowing, and failure
+  paths. Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+Scene persistence and all higher milestones remain to be implemented.

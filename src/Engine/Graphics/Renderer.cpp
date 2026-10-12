@@ -975,6 +975,24 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     return m_impl->info;
   }
 
+  auto Renderer::surfaceSize() const -> Core::Result<Platform::Extent> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->window) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has no native surface");
+    }
+
+    return m_impl->window->pixelSize();
+  }
+
   auto Renderer::render(std::span<const Vertex> vertices, const Math::Mat4& transform,
                         std::uint32_t width, std::uint32_t height, Math::Vec4 clear)
       -> Core::Result<Image> {

@@ -91,6 +91,7 @@ export namespace Dot::Graphics {
     ~Renderer();
 
     [[nodiscard]] auto adapterInfo() const -> Core::Result<AdapterInfo>;
+    [[nodiscard]] auto surfaceSize() const -> Core::Result<Platform::Extent>;
     [[nodiscard]] auto upload(const MeshData& data) -> Core::Result<Mesh>;
     /** Logical bytes owned by live mesh resources, including shared copies once.
      * A coherent snapshot requires resource destruction to be quiescent.

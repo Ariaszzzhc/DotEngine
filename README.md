@@ -56,6 +56,9 @@ EnTT scenes provide scoped entity handles, owned snapshots, validated transforms
 parent hierarchies, and subtree lifetime management. Run
 `build/debug/bin/DotRuntime --scene-test` for hierarchy/world-transform acceptance.
 Camera and mesh description components are available, with checked projection
-matrices and primary-camera ownership. Scene rendering and persistence are next.
+matrices and primary-camera ownership. The scene render service loads shared
+meshes within a byte budget, prunes unused resources, and reports missing assets
+or importer warnings. `build/debug/bin/DotRuntime --scene-render-test` verifies
+an actual entity/camera scene through Metal pixel readback. Scene persistence is next.
 
 See `docs/Development.md` for implementation milestones and actual validation.
