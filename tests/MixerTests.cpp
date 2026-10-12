@@ -363,6 +363,7 @@ TEST_CASE("audio.mixer_move_retains_handles_and_assignment_releases_old_graph") 
     REQUIRE(old);
     auto moved = std::move(*created);
     CHECK_FALSE(created->stats());
+    CHECK_FALSE(created->config());
     CHECK_FALSE(created->render({}));
     CHECK_FALSE(created->createVoice(*clip));
     CHECK_FALSE(created->destroyVoice(*voice));
@@ -395,10 +396,10 @@ TEST_CASE("audio.mixer_owner_thread_checks_and_quiescent_foreign_destruction") {
   REQUIRE(voice);
   auto checks = std::async(std::launch::async, [&] {
     std::array<float, 4> output{99, 99, 99, 99};
-    return !mixer->stats() && !mixer->createVoice(*clip) && !mixer->destroyVoice(*voice)
-           && !mixer->play(*voice) && !mixer->pause(*voice) && !mixer->seek(*voice, 0)
-           && !mixer->configureVoice(*voice, {}) && !mixer->voice(*voice) && !mixer->setVolume(1)
-           && !mixer->render(output) && allNear(output, 99);
+    return !mixer->stats() && !mixer->config() && !mixer->createVoice(*clip)
+           && !mixer->destroyVoice(*voice) && !mixer->play(*voice) && !mixer->pause(*voice)
+           && !mixer->seek(*voice, 0) && !mixer->configureVoice(*voice, {}) && !mixer->voice(*voice)
+           && !mixer->setVolume(1) && !mixer->render(output) && allNear(output, 99);
   });
   CHECK(checks.get());
   auto released = std::async(std::launch::async,
@@ -590,4 +591,18 @@ TEST_CASE("audio.mixer_independent_graphs_render_on_separate_owner_threads") {
 
   CHECK(Mixer::backendMemory().bytes == baseline.bytes);
   CHECK(Mixer::backendMemory().allocations == baseline.allocations);
+}
+
+TEST_CASE("audio.mixer_configuration_query_is_owned_and_retains_initial_settings") {
+  const MixerConfig config{1, 44100, 4, 16 * 1024 * 1024};
+  auto mixer = Mixer::create(config);
+  REQUIRE(mixer);
+  auto queried = mixer->config();
+  REQUIRE(queried);
+  CHECK(queried->channels == config.channels);
+  CHECK(queried->sampleRate == config.sampleRate);
+  CHECK(queried->maxVoices == config.maxVoices);
+  CHECK(queried->backendBytes == config.backendBytes);
+  queried->channels = 2;
+  CHECK(mixer->config()->channels == 1);
 }

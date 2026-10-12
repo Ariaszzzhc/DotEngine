@@ -1,17 +1,106 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <print>
+#include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Audio.Clip;
 import Dot.Audio.Mixer;
+import Dot.Audio.Output;
 import Dot.Core.Files;
 import Dot.Core.Result;
 
 namespace Dot::Runtime {
+  auto testAudioOutput() -> int {
+    const auto before = Dot::Audio::Output::backendMemory();
+
+    {
+      Dot::Audio::OutputConfig config;
+      config.volume = 0;
+      auto output = Dot::Audio::Output::create(config);
+      auto mixer = Dot::Audio::Mixer::create();
+      std::vector<float> samples(4800);
+
+      for (std::size_t index = 0; index < samples.size(); ++index) {
+        samples[index] = static_cast<float>(
+            0.01 * std::sin(2 * 3.141592653589793 * 440 * static_cast<double>(index) / 48000));
+      }
+
+      auto clip = Dot::Audio::Clip::fromPcm(samples, 1, 48000);
+
+      if (!output || !mixer || !clip) {
+        std::println(stderr, "Native audio acceptance setup failed: {}",
+                     !output  ? output.error().message
+                     : !mixer ? mixer.error().message
+                              : clip.error().message);
+        return 1;
+      }
+
+      auto voice = mixer->createVoice(*clip, {1, 0, 1, true});
+
+      if (!voice || !mixer->play(*voice) || !output->mix(*mixer, config.queueFrames)) {
+        std::println(stderr, "Native audio acceptance voice/queue setup failed");
+        return 1;
+      }
+
+      auto started = output->start();
+
+      if (!started) {
+        std::println(stderr, "{}", started.error().message);
+        return 1;
+      }
+
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+      while (std::chrono::steady_clock::now() < deadline) {
+        auto stats = output->stats();
+
+        if (!stats || stats->fault != Dot::Audio::OutputFault::None) {
+          std::println(stderr, "Native audio acceptance device fault");
+          return 1;
+        }
+
+        if (stats->consumedFrames >= config.queueFrames && stats->underrunFrames > 0) {
+          break;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+      }
+
+      auto stopped = output->stop();
+      auto stats = output->stats();
+      auto info = output->info();
+
+      if (!stopped || !stats || !info || stats->running
+          || stats->fault != Dot::Audio::OutputFault::None
+          || stats->consumedFrames != config.queueFrames || stats->underrunFrames == 0
+          || stats->callbackFrames != stats->consumedFrames + stats->underrunFrames
+          || info->backend == Dot::Audio::AudioBackend::Default) {
+        std::println(stderr, "Native audio acceptance callback/lifetime verification failed");
+        return 1;
+      }
+
+      std::println(
+          "Native audio acceptance passed: {}; {} PCM frames consumed, {} underrun frames; "
+          "endpoint muted",
+          info->deviceName, stats->consumedFrames, stats->underrunFrames);
+    }
+
+    const auto after = Dot::Audio::Output::backendMemory();
+
+    if (after.bytes != before.bytes || after.allocations != before.allocations) {
+      std::println(stderr, "Native audio acceptance backend allocation leak");
+      return 1;
+    }
+
+    return 0;
+  }
+
   auto testAudioMix() -> int {
     const auto before = Dot::Audio::Mixer::backendMemory();
 

@@ -13,7 +13,7 @@ The decoder retains the original channel count and sample rate. Its unsigned
 8-bit conversion maps 0..255 to -1..1, so 128 becomes approximately 1/255.
 Empty clips, incomplete declared frames, and output exceeding the PCM budget fail
 explicitly.
-This stage retains the whole decoded clip; streaming playback is not implemented.
+Clips retain whole decoded files; streaming file decoding is not implemented.
 
 `Clip::decode` accepts RIFF WAV, FLAC, and MP3 signatures through the pinned
 miniaudio backend. WAV validates RIFF length, chunk bounds/padding, unique format
@@ -37,9 +37,7 @@ no external media or encoder installation is required. The FLAC fixture follows
 
 The backend is a private C11 static library. macOS links CoreAudio/AudioToolbox
 and CoreFoundation directly; Linux uses its platform backend and dynamic loader,
-and Windows uses its native backend. Only macOS has been validated. Playback devices, spatial voices, and scene audio components remain to be
-implemented.
-
+and Windows uses its native backend. Only macOS has been validated.
 
 # Offline mixing
 
@@ -85,3 +83,52 @@ loading path, avoiding hidden file access and unused loading workers.
 Run `DotRuntime --audio-mix-test` for summed PCM, pause/seek/master gain, stale IDs,
 and complete backend allocation cleanup. This is an offline acceptance case;
 it does not establish playback-device operation or audible output.
+
+
+# Native output
+
+`Dot.Audio.Output` owns a native miniaudio context/device and a preallocated SPSC
+PCM queue. Default selection is CoreAudio on macOS, WASAPI on Windows, and
+PulseAudio/ALSA/JACK on Linux. Explicit selection can report an unavailable
+backend. Neither path includes a null backend fallback. Device names and native
+channel/rate metadata are captured as owned values during initialization.
+
+The client format is mono/stereo at 8000..192000 Hz. Queue capacity is a power of
+two in 64..262144 frames; requested periods are 64..8192 frames and cannot exceed
+the queue capacity. Native channel/rate conversion is handled by the backend.
+The payload budget is 1 byte..1 GiB, default 16 MiB; counters exclude queue/scratch
+vectors, allocation headers, and operating-system internals. Mixer/output totals
+are separate, using the same private reservation-aware allocator.
+
+Controls, submission, mixing, and queries require the creating thread. A move
+keeps that ownership. Submit copies 1..65536 finite, complete interleaved frames,
+failing before copying if capacity is insufficient. Producer progress and consumer
+progress publish complete frame batches with release/acquire ordering. `mix`
+requires a same-owner Mixer with identical channels/rate; it validates available
+capacity before advancing the graph. Native faults may still arrive after mixing.
+The device callback consumes the queue without allocation, locks, or application
+callbacks. It explicitly clips queued samples to [-1,1], records clipped samples,
+and fills unavailable frames with silence while counting underruns. Endpoint
+software volume is [0,1] and does not change system/global volume.
+
+Preload while stopped, then start. Stop waits for callbacks and retains unconsumed
+queue frames. Clear discards queued frames only while stopped; discarded/submitted/
+consumed counters retain lifetime totals. Already-consumed samples buffered by
+the driver are outside this queue. Statistics during playback are informational
+atomic samples; after stop, callback totals remain stable and can be compared
+consistently. Backend startup/stop failures and unexpected stop/reroute/interruption
+fault the endpoint. Queries and stop remain available; recreate the Output to
+recover. Uninitialization joins callbacks before freeing the queue/context, even
+when the application hands quiescent destruction to another thread.
+
+`DotRuntime --audio-output-test` opens the real default endpoint, consumes actual
+mixed PCM, observes underruns, stops, and checks native allocation cleanup. It
+uses endpoint software volume zero so automated runs stay quiet. This proves
+native backend/callback delivery, rather than physical speaker audibility. Native
+audio CTest cases use `audio-native` and run serially; hardware/context failures
+are failures. Tested locally on arm64 macOS with real CoreAudio in Debug/Release.
+Windows/Linux implementations remain unverified. Hot-plug/interruption handling
+is reviewed but has not been physically triggered by automated tests.
+
+A continuous mixing worker, spatial voices/listeners, and scene audio components
+remain to be implemented; the caller currently supplies queue data explicitly.

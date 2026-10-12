@@ -83,7 +83,9 @@ Run `build/debug/bin/DotRuntime --audio-clip-test <existing-directory>` for
 known sample values, ownership, and failures. See `docs/Audio.md` for limits
 and format contracts. Offline mixing provides scoped voices, pause/seek/loop,
 gain/pan/pitch, rate conversion, and allocation budgets. `--audio-mix-test` checks
-actual summed PCM and cleanup. Playback devices and scene audio components are
-under development.
+actual summed PCM and cleanup. Native playback consumes a bounded PCM queue,
+counts underruns/clipping, and retains explicit device failures. Run
+`--audio-output-test` for a real, muted backend/callback acceptance case.
+Spatial playback and scene audio components are under development.
 
 See `docs/Development.md` for implementation milestones and actual validation.

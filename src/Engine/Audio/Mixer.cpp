@@ -18,6 +18,7 @@ module;
 #include <utility>
 
 #include "Backend.h"
+#include "BackendMemory.hpp"
 
 module Dot.Audio.Mixer;
 
@@ -27,109 +28,6 @@ import Dot.Core.Result;
 namespace Dot::Audio {
   namespace {
     std::atomic<std::uint64_t> nextMixer{1};
-    std::atomic<std::uint64_t> liveAllocations{};
-    std::atomic<std::uint64_t> liveBytes{};
-
-    struct alignas(std::max_align_t) Allocation {
-      std::size_t bytes;
-    };
-
-    struct Heap {
-      std::uint64_t limit;
-      std::atomic<std::uint64_t> allocations{};
-      std::atomic<std::uint64_t> bytes{};
-
-      auto reserve(std::uint64_t size) noexcept -> bool {
-        auto current = bytes.load();
-
-        while (size <= limit && current <= limit - size) {
-          if (bytes.compare_exchange_weak(current, current + size)) {
-            return true;
-          }
-        }
-
-        return false;
-      }
-
-      static auto allocate(std::size_t size, void* data) noexcept -> void* {
-        auto& heap = *static_cast<Heap*>(data);
-
-        if (size > std::numeric_limits<std::size_t>::max() - sizeof(Allocation)
-            || !heap.reserve(size)) {
-          return nullptr;
-        }
-
-        auto* allocation = static_cast<Allocation*>(std::malloc(sizeof(Allocation) + size));
-
-        if (!allocation) {
-          heap.bytes.fetch_sub(size);
-          return nullptr;
-        }
-
-        allocation->bytes = size;
-        heap.allocations.fetch_add(1);
-        liveAllocations.fetch_add(1);
-        liveBytes.fetch_add(size);
-        return allocation + 1;
-      }
-
-      static auto release(void* pointer, void* data) noexcept -> void {
-        if (!pointer) {
-          return;
-        }
-
-        auto& heap = *static_cast<Heap*>(data);
-        auto* allocation = static_cast<Allocation*>(pointer) - 1;
-        heap.allocations.fetch_sub(1);
-        heap.bytes.fetch_sub(allocation->bytes);
-        liveAllocations.fetch_sub(1);
-        liveBytes.fetch_sub(allocation->bytes);
-        std::free(allocation);
-      }
-
-      static auto reallocate(void* pointer, std::size_t size, void* data) noexcept -> void* {
-        if (!pointer) {
-          return allocate(size, data);
-        }
-
-        if (size == 0) {
-          release(pointer, data);
-          return nullptr;
-        }
-
-        auto& heap = *static_cast<Heap*>(data);
-        auto* old = static_cast<Allocation*>(pointer) - 1;
-        const auto previous = old->bytes;
-        const auto increase = size > previous ? size - previous : 0;
-
-        if (size > std::numeric_limits<std::size_t>::max() - sizeof(Allocation)
-            || !heap.reserve(increase)) {
-          return nullptr;
-        }
-
-        auto* changed = static_cast<Allocation*>(std::realloc(old, sizeof(Allocation) + size));
-
-        if (!changed) {
-          heap.bytes.fetch_sub(increase);
-          return nullptr;
-        }
-
-        changed->bytes = size;
-
-        if (size >= previous) {
-          liveBytes.fetch_add(increase);
-        } else {
-          heap.bytes.fetch_sub(previous - size);
-          liveBytes.fetch_sub(previous - size);
-        }
-
-        return changed + 1;
-      }
-
-      auto callbacks() noexcept -> ma_allocation_callbacks {
-        return {this, allocate, reallocate, release};
-      }
-    };
 
     auto settingsValid(const VoiceSettings& settings) -> bool {
       return std::isfinite(settings.volume) && settings.volume >= 0 && settings.volume <= 1
@@ -206,7 +104,7 @@ namespace Dot::Audio {
 
   struct Mixer::Impl {
     MixerConfig m_config;
-    Heap m_heap;
+    Detail::BackendHeap m_heap;
     ma_engine m_engine{};
     bool m_ready{};
     bool m_faulted{};
@@ -217,7 +115,7 @@ namespace Dot::Audio {
     std::map<std::uint64_t, std::unique_ptr<Voice>> m_voices;
 
     Impl(MixerConfig settings, std::uint64_t id)
-        : m_config(settings), m_heap{settings.backendBytes}, m_identity(id) {
+        : m_config(settings), m_heap{settings.backendBytes, Detail::mixerMemory}, m_identity(id) {
     }
 
     ~Impl() {
@@ -263,7 +161,7 @@ namespace Dot::Audio {
   Mixer::~Mixer() = default;
 
   auto Mixer::backendMemory() noexcept -> AudioMemoryStats {
-    return {liveAllocations.load(), liveBytes.load()};
+    return {Detail::mixerMemory.allocations.load(), Detail::mixerMemory.bytes.load()};
   }
 
   auto Mixer::create(const MixerConfig& config) -> Core::Result<Mixer> {
@@ -539,6 +437,20 @@ namespace Dot::Audio {
                       m_impl->m_renderedFrames,
                       {m_impl->m_heap.allocations.load(), m_impl->m_heap.bytes.load()},
                       m_impl->m_faulted};
+  }
+
+  auto Mixer::config() const -> Core::Result<MixerConfig> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio mixer has been moved");
+    }
+
+    auto checked = m_impl->check(false);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->m_config;
   }
 
   auto Mixer::render(std::span<float> output) -> Core::Result<void> {

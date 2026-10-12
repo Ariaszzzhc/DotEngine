@@ -89,6 +89,7 @@ export namespace Dot::Audio {
     [[nodiscard]] auto voice(VoiceId voice) const -> Core::Result<VoiceState>;
     [[nodiscard]] auto setVolume(float volume) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<MixerStats>;
+    [[nodiscard]] auto config() const -> Core::Result<MixerConfig>;
     /** Write 1..65536 interleaved output frames, advancing the graph. Mixes are
      * finite float PCM and may exceed [-1,1]; no hidden limiter. Invalid buffers
      * leave playback/output unchanged. Backend failures after advancement fault

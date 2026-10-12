@@ -515,5 +515,43 @@ and source-rate resampling. No playback device is opened in this stage.
   copy/move prohibition rebuilt cleanly, then all 34 audio unit cases and both
   audio runtime acceptance commands passed again in each configuration.
 
-Playback devices/spatial voices, scene audio components, scripting,
-project/editor/export tooling, and the example game remain to be implemented.
+### Native queued audio output
+
+Connected real native playback endpoints to bounded PCM queues, keeping mixing on
+the owner thread and sample consumption on the device callback. Default backends
+are CoreAudio/WASAPI/PulseAudio-ALSA-JACK, with explicit unavailable-backend errors
+and no null-device fallback. Source format and owned device metadata are checked.
+
+- macOS Debug and Release each pass all 352 CTest cases (332 doctest cases and
+  twenty executable checks). New coverage includes five queue cases, nine native
+  output cases, and an owned mixer-configuration query. Queue tests verify copied
+  interleaved data, full/invalid writes without changes, silence on underrun,
+  wrap/reset ordering, capacity boundaries, and 100000 concurrent ordered frames.
+- Real CoreAudio tests cover start/stop/restart, actual PCM consumption, underrun
+  accounting, explicit endpoint clipping, queue-full mix preflight without graph
+  advancement, invalid PCM/settings/configuration, discarded-frame accounting,
+  context budget/unsupported-backend failures, copied/moved ownership, owner-thread
+  rejection, active-device destruction, foreign quiescent cleanup, and mono client
+  rates of 8000/44100/192000 Hz. Native tests are serial and use endpoint software
+  volume zero, independent of system/global volume.
+- `--audio-output-test` consumes actual Mixer PCM through a real default endpoint,
+  observes underruns, verifies stopped callback totals, and releases all tracked
+  backend allocations. It stays muted and establishes native backend/callback
+  delivery; it does not claim physical speaker audibility.
+- Shared backend allocation callbacks preserve separate mixer/output counters.
+  The output's preallocated SPSC queue uses release/acquire publication; callbacks
+  allocate no memory, take no locks, and run no application code. Stop/uninitialize
+  waits for backend callbacks before freeing their queue/context owner.
+- Reviewed owner/consumer roles, wrapped frame indices, complete-buffer checks,
+  pre-render queue/format validation, fault races, initializer rollback, callback
+  userdata lifetime, stopped-only clearing, native gain, and teardown ordering.
+  Unexpected stop/reroute/interruption faults are implemented and reviewed, but
+  physical hot-plug/interruption has not been triggered in automated tests.
+- Formatting/whitespace checks pass. Both runtimes retain the caller-selected LLVM
+  libc++/libunwind and native audio frameworks, with no LC_RPATH. Implementation-only
+  edits rebuild the output object and relink without rebuilding BMI consumers.
+  Windows/Linux code paths remain unverified.
+
+Continuous audio scheduling, spatial voices/listeners, scene audio components,
+scripting, project/editor/export tooling, and the example game remain to be
+implemented.
