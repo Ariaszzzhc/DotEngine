@@ -61,6 +61,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Files.cpp
     src/Engine/Core/StagedDirectory.cpp
     src/Engine/Project/Project.cpp
+    src/Engine/Project/GameSession.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -125,6 +126,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Files.cppm
         src/Engine/Core/StagedDirectory.cppm
         src/Engine/Project/Project.cppm
+        src/Engine/Project/GameSession.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
@@ -161,7 +163,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/Compiler.cppm
 )
 
-add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
+add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
     src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
     src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp src/Runtime/InstanceAcceptance.cpp

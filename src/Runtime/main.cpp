@@ -1,5 +1,7 @@
 #include <array>
+#include <charconv>
 #include <chrono>
+#include <cstddef>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -20,6 +22,11 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
+                   std::size_t frameBudget) -> int;
+  auto testProjectPlayer(const std::filesystem::path& executable,
+                         const std::filesystem::path& sdkRoot,
+                         const std::filesystem::path& parentRoot) -> int;
   auto testScenePhysics(bool render) -> int;
   auto testAudioClip(const std::filesystem::path& root) -> int;
   auto testAudioMix() -> int;
@@ -765,6 +772,27 @@ auto main(int argc, char** argv) -> int {
                                            std::string_view(argv[1]) == "--script-audio-play-test");
     }
 
+    if ((argc == 4 || argc == 5) && std::string_view(argv[1]) == "--project") {
+      std::size_t frameBudget = 0;
+
+      if (argc == 5) {
+        const std::string_view value{argv[4]};
+        const auto [end, error]
+            = std::from_chars(value.data(), value.data() + value.size(), frameBudget);
+
+        if (value.empty() || error != std::errc{} || end != value.data() + value.size()) {
+          std::println(stderr, "Project frame budget must be a non-negative integer");
+          return 2;
+        }
+      }
+
+      return Dot::Runtime::playProject(argv[2], argv[3], frameBudget);
+    }
+
+    if (argc == 5 && std::string_view(argv[1]) == "--project-player-test") {
+      return Dot::Runtime::testProjectPlayer(argv[2], argv[3], argv[4]);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -799,7 +827,8 @@ auto main(int argc, char** argv) -> int {
           "--script-physics-test <compiler> <sdk> <directory>|"
           "--script-physics-render-test <compiler> <sdk> <directory>|"
           "--script-audio-test <compiler> <sdk> <directory>|"
-          "--script-audio-play-test <compiler> <sdk> <directory>]");
+          "--script-audio-play-test <compiler> <sdk> <directory>|"
+          "--project <root> <compiler> [frames]|--project-player-test <compiler> <sdk> <parent>]");
       return 2;
     }
 

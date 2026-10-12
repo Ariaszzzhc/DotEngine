@@ -76,6 +76,31 @@ TEST_CASE(
   CHECK(Dot::Project::Project::open(root)->loadStartup()->entities()->size() == 2);
 }
 
+TEST_CASE("runtime_project_command_rejects_invalid_budgets_before_opening_resources") {
+  Directory directory;
+
+  for (const auto& budget :
+       std::vector<std::string>{"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {
+    auto result = Dot::Core::runProcess(
+        {DOT_RUNTIME_EXECUTABLE, {"--project", "missing", "missing", budget}, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 2);
+    CHECK(result->standardError.find("frame budget") != std::string::npos);
+  }
+
+  for (const auto& budget : {"0", "2"}) {
+    auto result = Dot::Core::runProcess(
+        {DOT_RUNTIME_EXECUTABLE, {"--project", "missing", "missing", budget}, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 1);
+    CHECK_FALSE(result->standardError.empty());
+    CHECK(result->standardError.find("frame budget") == std::string::npos);
+  }
+
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
+}
+
 TEST_CASE("editor_commands_configure_and_save_scene_persist_the_same_validated_operations") {
   Directory directory;
   create(directory);

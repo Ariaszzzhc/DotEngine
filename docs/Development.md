@@ -1404,3 +1404,54 @@ project scheduler, without extending script authority over native scheduling.
   and explicit script-start lifecycle guards. Formatting/whitespace checks pass;
   module interfaces and implementations remain separate. No environment changes
   or sanitizers; Windows/Linux common code remains unvalidated locally.
+
+### Project game sessions and native player
+
+Added a reusable window-independent GameSession and a DotRuntime project entry
+that runs configured native scenes/attached scripts with actual rendering/audio.
+Graphical editing, game export and the example game remain subsequent work.
+
+- macOS Debug and Release each pass all 663 CTest cases (616 doctest cases and
+  forty-seven executable checks), including the new native project-player
+  acceptance. Ten session cases cover published input and explicit startup,
+  real physics/audio ordering and PCM, fixed-rate limits, invalid deltas without
+  effects, disabled source reload, migrated script state with preserved native
+  motion/audio, actual compiler failures retaining old dispatch, ordinary script
+  failure isolation, realm timeout and native failure becoming terminal, moves/
+  foreign-thread/scene-identity checks, repeated close and retained scene access,
+  destructor avoiding hooks, failed creation and compiler/VM/audio cleanup.
+  Spatial audio velocity is verified after multiple fixed steps and one frame
+  synchronization, with zero-delta teleportation clearing velocity afterward.
+- GameSession loads its own fresh scene scope, publishes initial empty input,
+  creates physics/audio before preparing script services, and selects live/static
+  compilation from project metadata. Fixed dispatch reads prior contacts, runs
+  controls and advances real physics at 1/fixedHz. Frame dispatch synchronizes
+  audio once after all fixed steps, preserving full-frame Doppler motion. Input
+  publication, start, update, fixed update, offline PCM and terminal close are
+  explicit. Thread/reentry/scene scope are checked; stable heap ownership survives
+  moves. Close runs stop hooks and releases native/realm/compiler services even
+  after faults; destruction runs no script, and shared scenes remain inspectable.
+- `DotRuntime --project <root> <absolute-compiler> [frames]` opens the configured
+  native window, WebGPU surface and real playback endpoint without fallback.
+  It publishes consumed input before updates, renders the native startup scene,
+  reports isolated script/reload/retirement errors and stops on realm/backend
+  failure. Escape/window close exits. Budgets are strict non-negative integers;
+  child-process tests check malformed/overflow budgets, exact statuses/diagnostics,
+  missing resources and process ownership. Long variable frames are capped at
+  one second with a diagnostic; fixed catch-up drops are reported explicitly.
+- `--project-player-test <compiler> <sdk> <parent>` owns a complete temporary
+  template and uses the same player loop with deterministic input. It verifies
+  attached TypeScript movement, actual Cocoa/Metal surface presentation and
+  changed pixels, muted real CoreAudio endpoint opening and compiler/VM/audio
+  cleanup after shutdown. Endpoint delivery counters/PCM remain verified by the
+  existing native audio acceptance cases; this case does not claim audible output.
+- Reviewed service construction/destruction order, stable window/renderer borrows,
+  candidate failures, callback reports, fixed/contact/audio timing, terminal states,
+  resource release after partial initialization and loop failures, strict command
+  parsing and real native behavior. Formatting/whitespace checks pass. Release
+  uses NDEBUG and caller LLVM libc++/libunwind, without LC_RPATH, sanitizers or
+  environment changes. Windows/Linux common implementations remain uncompiled/
+  unexecuted locally. Live source polling/compilation remains synchronous.
+
+Remaining graphical editor/export tooling, expanded rendering, complete acceptance
+scenes and the example game remain to be implemented.

@@ -58,7 +58,7 @@ old file descriptors still describe the old location.
 ## DotEditor command line
 
 DotEditor currently provides JSON authoring commands. The graphical editor and
-project runtime/export are subsequent work; these commands use the shared engine
+project export are subsequent work; these commands use the shared engine
 project operations that those clients can consume.
 
 ```text
@@ -89,3 +89,47 @@ from the template's script-driven movement. Tests own their temporary parent sco
 Separate child-process tests exercise every public command and actual TypeScript
 failure diagnostics. Local verification covers macOS; Windows/Linux implementations
 remain uncompiled/unexecuted locally.
+
+## Running a project
+
+```text
+DotRuntime --project <project-root> <absolute-typescript-compiler> [frame-budget]
+```
+
+This opens the configured native window, real audio endpoint and WebGPU surface,
+loads a fresh startup scene, compiles attached scripts and runs the project.
+A/D move the template cube; Escape or closing the window exits. A zero/omitted
+budget runs until exit. The optional budget is a non-negative integer frame count.
+Hot reload follows the project's flag; compile/candidate failures report diagnostics
+while retaining old scripts. Individual script errors are reported and isolated;
+realm/backend failures stop execution. Shutdown explicitly invokes stop hooks
+and releases services, including after loop/render failure. Missing resources,
+compiler/backend/device failures return errors without substitute content/devices.
+
+`Dot.Project.GameSession` composes a scene and input/script/physics/audio services
+without a window or renderer, for reusable runtime/editor scheduling. Creation
+publishes empty input and prepares scripts without starting hooks. Publish input
+before dispatch, call start, perform fixedUpdate at the configured 1..240 Hz, then
+update once per frame. Fixed callbacks read the previous contact batch and control
+physics before its actual step. Lower rates split into <=250 ms physics slices
+and publish all contacts once in order. Update runs frame scripts and synchronizes
+audio poses once after all fixed steps, so Doppler motion reflects the frame's
+complete movement rather than duplicate synchronization. Deltas are finite [0,1];
+zero audio delta represents teleportation. Live polling is synchronous and may
+block a frame during compilation. The player reports and caps variable deltas
+above one second, and reports fixed time dropped by Application's catch-up budget.
+
+The session owns a fresh scene scope and stable services, checks owner thread/
+reentry, preserves ownership on moves and rejects transferred/replaced scenes.
+Close is terminal/idempotent and frees scripts/compiler generations/native services;
+the scene stays available for inspection. Destruction releases storage without
+calling script hooks. Offline mode renders real PCM; playback opens a real endpoint
+and rejects offline rendering. Native failure after side effects faults the session,
+with no rollback; closing releases it even when scene identity has been invalidated.
+
+`--project-player-test <absolute-compiler> <sdk-root> <existing-parent>` creates a
+complete temporary template, uses the same player/session loop with deterministic
+published input, verifies real native presentation and changed rendered pixels,
+opens a muted real endpoint, and checks compiler/VM/audio ownership returns to
+baseline after explicit shutdown. This checks the endpoint opening and cleanup;
+the audio playback acceptance cases separately verify delivered PCM/frame counters.

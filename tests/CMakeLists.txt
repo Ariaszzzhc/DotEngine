@@ -55,7 +55,7 @@ doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
-add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp)
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
@@ -161,6 +161,10 @@ set_tests_properties(runtime.render PROPERTIES TIMEOUT 60 LABELS "native" RUN_SE
 add_test(NAME editor.invalid_argument COMMAND DotEditor --invalid)
 set_tests_properties(editor.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME runtime.project_player COMMAND DotRuntime --project-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(runtime.project_player PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)
+add_test(NAME runtime.project_bad_budget COMMAND DotRuntime --project missing missing -1)
+set_tests_properties(runtime.project_bad_budget PROPERTIES WILL_FAIL TRUE TIMEOUT 15 LABELS "acceptance")
 add_test(NAME editor.project COMMAND DotEditor --project-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.project PROPERTIES TIMEOUT 30 LABELS "acceptance")
 add_test(NAME editor.project_render COMMAND DotEditor --project-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
@@ -170,7 +174,8 @@ add_executable(DotEditorTests main.cpp EditorCommandTests.cpp)
 target_link_libraries(DotEditorTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotEditorTests PRIVATE
     DOT_EDITOR_EXECUTABLE="$<TARGET_FILE:DotEditor>"
+    DOT_RUNTIME_EXECUTABLE="$<TARGET_FILE:DotRuntime>"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
-add_dependencies(DotEditorTests DotEditor)
+add_dependencies(DotEditorTests DotEditor DotRuntime)
 doctest_discover_tests(DotEditorTests PROPERTIES TIMEOUT 30 LABELS "unit")
