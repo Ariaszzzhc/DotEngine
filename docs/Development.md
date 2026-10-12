@@ -828,6 +828,57 @@ POSIX process groups and Windows jobs own cancellation/lifetime; no shell is use
   runtimes retain caller-selected LLVM libc++/libunwind with no LC_RPATH. No
   environment overrides or sanitizers were introduced.
 
-TypeScript compilation, engine host bindings, script components/hot reload,
-project/editor/export tooling, expanded rendering, and the example game remain
-to be implemented.
+### Native TypeScript compilation
+
+Added `Dot.Script.Compiler` with the official standalone TypeScript 7.0.2 Go
+compiler, bounded source capture and independent owned ESM/source-map generations.
+The module interface and implementation are separate; applications provide an
+explicit tool path and retain a CompiledProgram owner while a Runtime uses it.
+
+- macOS Debug and Release each pass all 484 CTest cases (456 doctest cases and
+  twenty-eight executable checks). Sixteen new focused cases cover actual strict
+  typed ESM imports/promises, Unicode paths/mts/declarations, source-map mappings
+  and embedded original sources, type diagnostics with unchanged old bundle and
+  continuing runtime state, copy/move/last-owner/foreign destruction cleanup, lazy
+  imports after authoring removal, ignored project configuration and unavailable
+  Node globals, missing/external/bare/side-effect imports, declaration-only/empty
+  projects, malformed UTF-8/NUL/paths/extensions/symlinks, exact source/output
+  bytes and file/entry/depth limits, tool version/launch failures, timeout, bounded
+  diagnostics, zero/partial/unexpected output, and concurrent real compilations.
+- `--typescript-test <absolute-compiler> <directory>` performs real type checking,
+  ESM/source-map emission, QuickJS execution, deliberate TS2322 diagnostics,
+  continued previous-runtime execution, generation deletion and restored native
+  process/VM ownership counters. Test-only tool fixtures exercise abnormal tool
+  behavior; the normal path and CLI acceptance use the actual official compiler.
+- The host vcpkg dependency pins platform-specific arm64 macOS and x86_64
+  Windows/Linux archives with independent SHA512 values and retains adjacent
+  standard declarations, Apache license and NOTICE. No Node/npm runtime is used.
+  Package copying preserves executable permissions. Automatic vcpkg rpath
+  rewriting is disabled for this standalone tool because it modified the signed
+  macOS binary and caused exit 137. Final Debug/Release binaries are byte-identical
+  to the verified official archive; signature verification passes outside the
+  restricted sandbox (the sandbox reports failure for the original binary too).
+- Compilation creates its own strict ES2022/ESNext configuration and explicit
+  source list, with noResolve/no ambient package types, forced modules, isolated
+  modules, verbatim module syntax, noEmitOnError and checked side-effect imports.
+  No authoring tsconfig is executed. Expected actual output names, regular types,
+  UTF-8 and bytes are inspected before returning success. Failed candidates do not
+  mutate successful generations or authoring sources; all invocations own their
+  temporary source/config/output tree and child process independently.
+- Reviewed path/encoding and symlink boundaries, source/output arithmetic,
+  deterministic relative names, diagnostics and version-probe handling, generation
+  creation/partial failure/destruction, ownership while lazy imports remain,
+  concurrency, compiler configuration and cross-platform tool selection. Capture
+  prohibits concurrent source edits; limits do not provide OS memory/disk quotas
+  or hostile filesystem isolation. Output size is checked after compilation;
+  last-owner directory cleanup is best effort. Tests allow normal macOS initial
+  tool startup before exercising a deterministic sleeping-child timeout.
+- Formatting/whitespace checks pass. After the final license/format-only updates,
+  the seventeen compiler/CLI checks pass again in Debug/Release. Full native
+  CoreAudio/Cocoa/Metal checks remain passing. Release uses `NDEBUG`; caller LLVM
+  libc++/libunwind linkage and no LC_RPATH are retained. No sanitizers or compiler/
+  linker environment edits were introduced. Windows/Linux code and packages have
+  been reviewed but not compiled/executed locally.
+
+Engine host bindings, script components/hot reload, project/editor/export tooling,
+expanded rendering, and the example game remain to be implemented.

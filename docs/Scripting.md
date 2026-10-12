@@ -4,8 +4,9 @@
 copy. Vendor types stay in the implementation unit. The library is a private
 pinned vcpkg dependency; its libc/OS modules are not linked into the engine.
 The API follows the [official embedding API](https://quickjs-ng.github.io/quickjs/developer-guide/intro/).
-TypeScript compilation, engine host bindings, component lifecycles, and hot reload
-remain to be implemented; this layer loads and executes real JavaScript ESM.
+The [native TypeScript compiler](#native-typescript-compilation) produces ESM for
+this layer. Engine host bindings, component lifecycles, and hot reload remain to
+be implemented.
 
 Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entry,
 and call an exported function through its scoped ModuleId. Entry paths are root
@@ -82,3 +83,74 @@ and complete allocator cleanup. Unit tests also cover malformed inputs, import
 paths/attributes/NUL, strict results, memory/job/stack limits, diagnostic getters,
 failed initialization, cycles, cache identity, thread/move/foreign destruction,
 and lifetime. Only macOS Debug/Release are validated; no sanitizers are used.
+
+# Native TypeScript compilation
+
+`Dot.Script.Compiler` uses the official standalone Go compiler from the pinned
+TypeScript 7.0.2 native packages. The vcpkg host dependency selects darwin-arm64,
+win32-x64 or linux-x64, verifies SHA512 and installs the executable and standard
+declarations together in `tools/typescript-native`. No Node/npm runtime is used.
+Vendor executable permissions and signatures are preserved; automatic rpath
+rewriting is disabled for this standalone tool. See the
+[official TypeScript package](https://www.npmjs.com/package/typescript) and
+[compiler options](https://www.typescriptlang.org/tsconfig/).
+
+Create a `TypeScriptCompiler` with an absolute executable path. Initialization
+runs a bounded version probe and requires 7.0.2; missing/incompatible binaries or
+missing adjacent declarations produce contextual errors. CMake locates only the
+manifest-installed tool (explicit host triplet when supplied, otherwise the native
+target triplet). Application callers pass its location rather than embedding a
+machine-specific toolchain path into the library.
+
+`compileProject(project, "scripts")` captures a directory tree into a fresh owned
+temporary generation. Canonical relative UTF-8 paths share the runtime's portable
+character/component rules. Symlinks, special files and directory depth above 32
+are rejected. Lowercase `.ts`/`.mts` sources and `.d.ts`/`.d.mts` declarations are
+copied; `.tsx`/`.cts`/`.js`/`.mjs`/`.jsx`/`.cjs` files fail explicitly, other regular
+files are ignored. Source files must be UTF-8 without NUL. No source edits may race
+capture; these checks do not isolate hostile concurrent filesystem mutation.
+
+The generated configuration uses strict ES2022, ESNext modules, Bundler module
+resolution, forced module detection, isolated modules, verbatim module syntax,
+noEmitOnError, noUncheckedSideEffectImports, consistent casing, noResolve, no ambient
+package types and the ES2022 standard library. An explicit file list supplies all
+snapshot sources, including referenced relative modules. Project tsconfig files
+are ignored. Imports name the emitted `.js`/`.mjs` files; noResolve prevents the
+compiler from implicitly adding project-external sources. ESM paths/imports must
+also satisfy the Runtime loader contract when activated. No engine API declarations
+are provided yet. Source maps contain the original TypeScript text and relative
+paths into the retained snapshot.
+
+Successful compilation checks actual regular output files against every expected
+module and source map, with UTF-8 and aggregate byte checks. Zero exit status with
+no/missing/unexpected output is an error. Nonzero exits return the actual status
+and captured diagnostics; process startup/I/O/timeout/output-limit failures retain
+their context. Every failure discards the candidate. A new successful generation
+does not overwrite previous generations or authoring files.
+
+`CompiledProgram` is a copyable shared RAII owner. Query its output FileSystem,
+sorted module names, owned diagnostics and source/output statistics. Keep a copy
+alive while any Runtime accesses this output root, including lazy dynamic imports;
+FileSystem itself does not own files. Do not edit generated files. Last-owner
+destruction removes the full generation directory best effort. Moves leave the
+source query-invalid; quiescent destruction may run on another thread. Independent
+compiler calls may run concurrently. `compilerGenerations()` counts process-wide
+live generation owners for quiescent lifetime checks.
+
+Default limits are 1024 source files, 8192 enumerated source entries, 1 MiB per
+source, 16 MiB total source, 32 MiB actual output, 1 MiB combined diagnostics, and
+10 seconds per tool invocation. Configurable ceilings are 1024 files, 65536 entries,
+16 MiB per source, 64 MiB total source/output/diagnostics, and 10 minutes; each limit
+must be positive. Capture and output inspection are bounded, and the Process layer
+owns termination/reaping. These are not OS memory/disk quotas or hard real-time
+guarantees: output size is checked after the compiler finishes, and generation
+destruction cannot report filesystem deletion failures.
+
+Run `DotRuntime --typescript-test <absolute-compiler> <existing-directory>` for real
+type checking, ESM emission/execution, source maps, deliberate type diagnostics,
+continued old-runtime execution and complete generation/process/VM cleanup.
+Focused tests include actual Unicode/mts/declaration compilation, source maps,
+lazy imports after authoring removal, configuration isolation, missing imports,
+exact resource boundaries, failed candidates, copy/move/lifetime/concurrency and
+test-only tool fixtures for zero/partial/unexpected output, timeout and oversized
+diagnostics. These fixtures never substitute for the real compiler acceptance.

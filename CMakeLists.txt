@@ -31,6 +31,13 @@ find_package(tinyobjloader CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(qjs CONFIG REQUIRED)
+set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_TARGET_TRIPLET}")
+if(VCPKG_HOST_TRIPLET)
+    set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_HOST_TRIPLET}")
+endif()
+find_program(DOT_TYPESCRIPT_COMPILER NAMES tsc
+    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/tools/typescript-native"
+    NO_DEFAULT_PATH REQUIRED)
 find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
 add_library(DotAudioBackend STATIC src/Engine/Audio/Backend.c)
 target_compile_features(DotAudioBackend PRIVATE c_std_11)
@@ -83,6 +90,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/Source.cpp
     src/Engine/Audio/SceneAudio.cpp
     src/Engine/Script/Runtime.cpp
+    src/Engine/Script/Compiler.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -131,11 +139,13 @@ target_sources(DotEngine PUBLIC
         src/Engine/Audio/Source.cppm
         src/Engine/Audio/SceneAudio.cppm
         src/Engine/Script/Runtime.cppm
+        src/Engine/Script/Compiler.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
-    src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp)
+    src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
+    src/Runtime/CompilerAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)

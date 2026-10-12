@@ -1,0 +1,8 @@
+{
+  "name": "vcpkg-tool-typescript",
+  "version": "7.0.2",
+  "description": "Official standalone TypeScript Go compiler and standard declarations",
+  "homepage": "https://github.com/microsoft/TypeScript",
+  "license": "Apache-2.0",
+  "supports": "native"
+}

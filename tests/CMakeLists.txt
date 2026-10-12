@@ -43,6 +43,17 @@ target_compile_definitions(DotProcessTests PRIVATE DOT_PROCESS_FIXTURE="$<TARGET
 add_dependencies(DotProcessTests DotProcessFixture)
 doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
 
+add_executable(DotCompilerFixture CompilerFixture.cpp)
+target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp)
+target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotCompilerTests PRIVATE
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
+    DOT_COMPILER_FIXTURE="$<TARGET_FILE:DotCompilerFixture>"
+    DOT_PROCESS_FIXTURE="$<TARGET_FILE:DotProcessFixture>")
+add_dependencies(DotCompilerTests DotCompilerFixture DotProcessFixture)
+doctest_discover_tests(DotCompilerTests PROPERTIES TIMEOUT 30 LABELS "unit")
+
 add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp SceneAudioNativeTests.cpp)
 target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
 doctest_discover_tests(DotAudioTests PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
@@ -79,6 +90,8 @@ add_test(NAME runtime.script COMMAND DotRuntime --script-test "${CMAKE_CURRENT_B
 set_tests_properties(runtime.script PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.process COMMAND DotRuntime --process-test "$<TARGET_FILE:DotProcessFixture>" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.process PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.typescript COMMAND DotRuntime --typescript-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.typescript PROPERTIES TIMEOUT 30 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
