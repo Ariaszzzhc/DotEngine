@@ -37,6 +37,11 @@ export namespace Dot::Core {
     std::function<Result<void>(double)> fixedUpdate;
     std::function<Result<void>(double)> update;
     std::function<Result<void>(const FrameState&)> render;
+    /** Once after event consumption, before fixed/update callbacks, including
+     * paused frames. Publish input here; the view is borrowed for this call only.
+     * Failure/stop prevents all later frame callbacks. 事件处理后、固定/逐帧更新前每帧
+     * 调用一次，含暂停帧；在此发布输入，视图仅在本次调用有效，失败/停止阻止后续帧回调。 */
+    std::function<Result<void>(const Platform::InputState&)> prepareFrame;
   };
 
   /**

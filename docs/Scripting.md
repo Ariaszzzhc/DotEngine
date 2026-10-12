@@ -542,3 +542,114 @@ realm, private state migration without duplicate startup/cleanup, changed native
 movement and compiler/process/VM teardown. `--script-reload-render-test` also checks
 actual GPU pixels before/after the reloaded behavior. macOS Debug/Release are
 validated; Windows/Linux use common C++ implementations but remain unverified.
+
+# Input frames and native services
+
+`Dot.Script.InputSource` owns an explicitly published native input snapshot. Create
+it on the application's owner thread, copy its eight bindings into
+`SceneScriptsConfig.services` (or `LiveScriptsConfig.scripts.services`), and publish
+an initial frame before preparing classes that read input. Moves preserve existing
+bindings; those bindings retain the last data after the publisher is destroyed.
+A publisher creates no window or event pump, and all calls/publication require its
+creating thread. Destruction after quiescence may occur elsewhere.
+
+`LoopCallbacks.prepareFrame` runs once after event consumption, before any fixed
+or frame updates, including paused frames. Its input view is borrowed only during
+the callback. Publish there so all script calls in a frame see the same data. An
+error, exception or stop prevents later frame callbacks; quit skips preparation.
+Enable Unicode text delivery through the existing Window.setTextInput(true) API.
+
+```cpp
+import Dot.Script.InputSource;
+import Dot.Script.LiveScripts;
+import Dot.Core.Application;
+
+// In a Result-returning application owner scope:
+auto input = Dot::Script::InputSource::create();
+
+if (!input) {
+  return std::unexpected(input.error());
+}
+
+auto services = input->bindings();
+
+if (!services) {
+  return std::unexpected(services.error());
+}
+
+Dot::Script::LiveScriptsConfig config;
+config.scripts.services = std::move(*services);
+auto initial = input->publish(application.input());
+
+if (!initial) {
+  return std::unexpected(initial.error());
+}
+
+Dot::Core::LoopCallbacks callbacks;
+callbacks.prepareFrame = [&](const auto& state) -> Dot::Core::Result<void> {
+  return input->publish(state).transform([](const auto&) {});
+};
+```
+
+The application should check all expected results before continuing. Successful
+publication increments a nonzero uint64 index, sent as a decimal string. Coordinates
+must be finite; text must be scalar UTF-8 within a configured byte limit (default
+64 KiB, range 1 byte..1 MiB). Failed publication retains the previous frame/index.
+Native host transport budgets still apply: large custom text limits may require a
+larger Runtime JSON budget, especially when control characters need escaping.
+Valid reads before publication fail Unavailable. A missing input service fails
+NotFound through invoke; an entirely empty host registry exposes no dot:host module.
+
+| Native method | Arguments | Owned result |
+| --- | --- | --- |
+| `input.snapshot` | `[]` | complete InputFrame |
+| `input.key` | `[Key name]` | `{down, pressed, released}` |
+| `input.button` | `[MouseButton name]` | `{down, pressed, released}` |
+| `input.pointer` | `[]` | `{x,y}` position in window coordinates |
+| `input.pointerDelta` | `[]` | `{x,y}` accumulated frame movement |
+| `input.wheel` | `[]` | `{x,y}` accumulated frame scroll |
+| `input.text` | `[]` | frame text |
+| `input.index` | `[]` | publication index string |
+
+The SDK exports frozen `keys` and `mouseButtons` name arrays, matching every
+supported native enum except Unknown/Count. Key names include A..Z, Digit0..9,
+Space/Enter/navigation keys, F1..F12 and left/right modifiers; mouse names are
+Left/Middle/Right/Back/Forward. Unsupported names, numbers, case changes and invalid
+argument shapes fail explicitly. Native callback arguments are bounded to 4096
+bytes/depth 8. Reads do not consume edges, motion, scroll or text. Fixed updates
+sharing one publication therefore observe the same pressed/released values; games
+must place one-time edge actions in their chosen frame/update policy. Repeat events
+hold a key without adding a press. Focus loss releases held keys/buttons. Editing
+returned snapshots never changes input or the native InputState.
+
+```ts
+import {ScriptComponent, input} from './dot/engine.js';
+
+export class Mover extends ScriptComponent {
+  onUpdate(seconds: number): void {
+    const transform = this.self.transform;
+    transform.position.x += (input.key('D').down ? seconds : 0);
+    this.self.transform = transform;
+  }
+}
+```
+
+`HostFunction.access` is trusted native metadata: ReadOnly methods promise
+observational behavior, while the default ReadWrite methods are denied during
+component preparation and state export/import. The VM does not verify native
+implementations or apply this scheduling policy to a direct Runtime. SceneHost
+marks its reads explicitly; InputSource marks all eight methods ReadOnly. Additional
+services cannot override scene methods, must have canonical unique names, a valid
+classification and nonempty callbacks, and share the total 256-method limit.
+SceneScripts retains original callbacks/dependencies in its configuration and
+rebuilds guards for each candidate realm; LiveScripts carries the same services
+through compilation failures and successful reloads. Capture owned dependencies,
+or keep borrowed dependencies alive for the service lifetime.
+
+Run `--script-input-test <absolute-compiler> <sdk-root> <directory>` for deterministic
+SDL event injection through the application event pump and publication callback,
+real TypeScript components, fixed-step edge sharing, repeat keys, Unicode text,
+mouse/pointer/wheel, focus release and source hot reload with private state migration.
+CTest uses SDL's dummy video driver for this input case; it does not assert physical
+keyboard delivery. Compiler generations, process handles and VM allocations return
+to baseline. The existing Cocoa/Metal/CoreAudio acceptances remain separate checks.

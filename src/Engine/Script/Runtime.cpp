@@ -1148,10 +1148,12 @@ namespace Dot::Script {
       std::set<std::string_view> names;
 
       for (const auto& binding : bindings) {
-        if (!hostNameValid(binding.name) || !binding.callback
+        if ((binding.access != HostAccess::ReadOnly && binding.access != HostAccess::ReadWrite)
+            || !hostNameValid(binding.name) || !binding.callback
             || !names.insert(binding.name).second) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Host bindings need unique canonical names and nonempty callbacks");
+          return Core::fail(
+              Core::ErrorCode::InvalidArgument,
+              "Host bindings need unique canonical names, callbacks and valid access");
         }
       }
 

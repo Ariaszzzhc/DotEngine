@@ -9,6 +9,84 @@ export interface EntityId {
   readonly value: string;
 }
 
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
+/** Physical native key names; unsupported names fail instead of reading false.
+ * 原生物理按键名称，不支持的名称明确失败而非返回 false。 */
+export const keys = Object.freeze([
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+  'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+  'Y', 'Z', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
+  'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Enter', 'Escape', 'Backspace', 'Tab',
+  'Space', 'Left', 'Right', 'Up', 'Down', 'F1', 'F2', 'F3',
+  'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11',
+  'F12', 'LeftControl', 'RightControl', 'LeftShift', 'RightShift', 'LeftAlt', 'RightAlt', 'LeftSuper',
+  'RightSuper'
+] as const);
+
+export type Key = typeof keys[number];
+export const mouseButtons = Object.freeze(['Left', 'Middle', 'Right', 'Back', 'Forward'] as const);
+export type MouseButton = typeof mouseButtons[number];
+
+export interface ButtonState {
+  down: boolean;
+  pressed: boolean;
+  released: boolean;
+}
+
+export interface InputFrame {
+  index: string;
+  keys: Record<Key, ButtonState>;
+  buttons: Record<MouseButton, ButtonState>;
+  pointer: Vec2;
+  pointerDelta: Vec2;
+  wheel: Vec2;
+  text: string;
+}
+
+/** Observational reads of the last published frame. Returned data is owned;
+ * reads do not consume edges. Fixed steps may share a frame; missing/unpublished
+ * native services fail explicitly. The application owns frame publication.
+ * 只读最近发布帧，返回拥有数据且不消费边沿；固定步可共用帧，未绑定/未发布服务明确
+ * 失败，应用负责帧发布。 */
+export const input = Object.freeze({
+  snapshot(): InputFrame {
+    return invoke('input.snapshot', []) as InputFrame;
+  },
+
+  key(name: Key): ButtonState {
+    return invoke('input.key', [name]) as ButtonState;
+  },
+
+  button(name: MouseButton): ButtonState {
+    return invoke('input.button', [name]) as ButtonState;
+  },
+
+  get pointer(): Vec2 {
+    return invoke('input.pointer', []) as Vec2;
+  },
+
+  get pointerDelta(): Vec2 {
+    return invoke('input.pointerDelta', []) as Vec2;
+  },
+
+  get wheel(): Vec2 {
+    return invoke('input.wheel', []) as Vec2;
+  },
+
+  get text(): string {
+    return invoke('input.text', []) as string;
+  },
+
+  get index(): string {
+    return invoke('input.index', []) as string;
+  },
+});
+
 export interface Vec3 {
   x: number;
   y: number;

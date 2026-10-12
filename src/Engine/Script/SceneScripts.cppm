@@ -10,6 +10,7 @@ import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.Script.Compiler;
 import Dot.Script.Runtime;
+export import Dot.Script.Host;
 
 export namespace Dot::Script {
   enum class ScriptPhase { Prepare, Start, Update, FixedUpdate, Stop };
@@ -32,6 +33,10 @@ export namespace Dot::Script {
     RuntimeConfig runtime;
     std::uint32_t maxComponents{512};
     std::uint64_t reloadStateBytes{8 * 1024 * 1024};
+    /** Owned native services, retained across realm replacement. Unique names
+     * must not override scene methods; access classification governs preparation.
+     * 拥有的原生服务，跨 realm 替换保留；名称须唯一且不能覆盖场景方法，访问分类控制准备期。 */
+    HostBindings services;
   };
 
   struct ReloadReport {

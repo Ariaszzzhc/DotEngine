@@ -1154,5 +1154,58 @@ preparation/state migration remains read-only.
   libunwind; no LC_RPATH, sanitizers or environment changes were introduced.
   Windows/Linux common C++ implementations remain uncompiled/unexecuted locally.
 
-Remaining input/physics/audio runtime script APIs, project/editor/export tooling,
+### Published input and native service composition
+
+Added an owned InputSource and typed input SDK, a frame preparation callback in
+the application loop, and explicit native host access classification/composition
+for entity-attached and live-reloaded script services.
+
+- macOS Debug and Release each pass all 597 CTest cases (559 doctest cases and
+  thirty-eight executable checks). Fourteen focused cases cover all 65 native
+  key names and five mouse buttons, owned point/text/button snapshots, non-consuming
+  edges, same-frame press/release, repeats and focus loss, unavailable initial reads,
+  malformed/unsupported arguments and UTF-8/text limits with old-frame retention,
+  moves/thread/publisher/binding lifetime, actual typed SDK names/type failures,
+  multiple fixed steps sharing input, continued old input after failed compilation,
+  migrated private state with a moved live publisher, read/write guards in
+  constructors/save/load, invalid/duplicate/over-capacity service registries before
+  VM allocation, and prepareFrame ordering/focus pause/failure/exception/stop/quit.
+- `--script-input-test <compiler> <sdk-root> <directory>` injects deterministic SDL
+  key/button/motion/wheel/Unicode text/focus events into the application event pump.
+  The preparation callback publishes before fixed/update dispatch; actual compiled
+  classes edit native transforms and preserve private counters through changed source
+  and realm replacement. Repeat does not re-press, focus loss releases held input,
+  and compiler generations/process/VM resources return to baseline after explicit
+  stop. CTest uses the dummy video driver for this input acceptance; physical
+  keyboard delivery is not asserted. Existing Cocoa/Metal/CoreAudio cases pass.
+- InputSource retains an owned snapshot independently of window/scene/realm lifetime.
+  Successful publication increments a decimal-string uint64 index; validation and
+  allocation happen before nonthrowing JSON replacement. Default text capacity is
+  64 KiB (1 byte..1 MiB); custom limits still need compatible Runtime transport
+  budgets. Reads never consume frame edges; the application owns event/reset/
+  publication timing, and shared fixed steps see the same edges. Moves preserve
+  bindings; after publisher destruction, callbacks retain the last published frame.
+- prepareFrame runs after events, including paused frames, and before any fixed/
+  per-frame update. Quit skips it; failure/exception/stop blocks later callbacks.
+  The input reference is borrowed for the call only. Unicode delivery uses the
+  existing explicit window text-input switch; no window/event pumping is created
+  by a script input publisher.
+- HostAccess is trusted native metadata. Scene/input reads are marked ReadOnly;
+  default ReadWrite methods are denied during preparation and state save/load.
+  Direct Runtime calls do not impose this lifecycle policy or verify a native
+  callback's observational promise. SceneScriptsConfig owns additional callbacks
+  across reloads; names/callbacks/access/total capacity are validated without
+  overriding existing scene methods. Empty callbacks remain invalid before guards
+  are created. LiveScripts retains the same dependencies across source failures
+  and successful replacements.
+- Reviewed native name completeness/uniqueness, owned snapshots/publication commit,
+  text/JSON/finite-value boundaries, index exhaustion, moved/thread/dependency
+  lifetime, callback scheduling/early stops, default-deny classifications, registry
+  preflight and original callbacks retained across fresh guards/realms. Formatting
+  and whitespace checks pass; module interfaces and implementations remain separate.
+  Release uses NDEBUG and caller LLVM libc++/libunwind, without LC_RPATH or
+  sanitizers/environment changes. Windows/Linux common implementations remain
+  uncompiled/unexecuted locally.
+
+Remaining physics/audio runtime script APIs, project/editor/export tooling,
 expanded rendering, and the example game remain to be implemented.

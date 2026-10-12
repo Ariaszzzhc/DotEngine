@@ -288,3 +288,101 @@ TEST_CASE("application.thread_safe_stop") {
   REQUIRE(result.has_value());
   CHECK_FALSE(application.running());
 }
+
+TEST_CASE("application.prepare_frame_observes_events_before_fixed_and_paused_callbacks") {
+  auto application = Application::create(testConfig(true)).value();
+  REQUIRE(Dot::Platform::pollEvents());
+  SDL_Event event{};
+  event.type = SDL_EVENT_KEY_DOWN;
+  event.key.windowID = application.window().id();
+  event.key.scancode = SDL_SCANCODE_A;
+  event.key.down = true;
+  REQUIRE(SDL_PushEvent(&event));
+  std::vector<std::string> order;
+  LoopCallbacks callbacks;
+  callbacks.prepareFrame = [&](const Dot::Platform::InputState& state) -> Result<void> {
+    CHECK(state.key(Dot::Platform::Key::A).pressed);
+    order.emplace_back("input");
+    return {};
+  };
+
+  callbacks.fixedUpdate = [&](double) -> Result<void> {
+    order.emplace_back("fixed");
+    return {};
+  };
+
+  callbacks.update = [&](double) -> Result<void> {
+    order.emplace_back("update");
+    return {};
+  };
+
+  callbacks.render = [&](const FrameState&) -> Result<void> {
+    order.emplace_back("render");
+    return {};
+  };
+
+  REQUIRE(application.step(20ms, callbacks));
+  CHECK(order == std::vector<std::string>{"input", "fixed", "fixed", "update", "render"});
+  order.clear();
+  callbacks.prepareFrame = [&](const Dot::Platform::InputState& state) -> Result<void> {
+    CHECK(state.key(Dot::Platform::Key::A).released);
+    CHECK_FALSE(state.key(Dot::Platform::Key::A).down);
+    order.emplace_back("input");
+    return {};
+  };
+
+  windowEvent(application.window().id(), SDL_EVENT_WINDOW_FOCUS_LOST);
+  auto paused = application.step(20ms, callbacks);
+  REQUIRE(paused);
+  CHECK(paused->paused);
+  CHECK(order == std::vector<std::string>{"input", "render"});
+}
+
+TEST_CASE("application_prepare_frame_failures_exceptions_stop_and_quit_skip_later_callbacks") {
+  for (int mode = 0; mode < 4; ++mode) {
+    auto application = Application::create(testConfig()).value();
+    LoopCallbacks callbacks;
+    int prepared = 0;
+    callbacks.prepareFrame = [&](const Dot::Platform::InputState&) -> Result<void> {
+      ++prepared;
+
+      if (mode == 0) {
+        return fail(ErrorCode::Io, "Input preparation failed");
+      }
+
+      if (mode == 1) {
+        throw std::runtime_error("Input preparation threw");
+      }
+
+      application.stop();
+      return {};
+    };
+
+    callbacks.fixedUpdate = [](double) -> Result<void> {
+      FAIL("Fixed callback after preparation failure/stop");
+      return {};
+    };
+
+    callbacks.update = callbacks.fixedUpdate;
+    callbacks.render = [](const FrameState&) -> Result<void> {
+      FAIL("Render after preparation failure/stop");
+      return {};
+    };
+
+    if (mode == 3) {
+      REQUIRE(Dot::Platform::requestQuit());
+    }
+
+    auto result = application.step(20ms, callbacks);
+    CHECK_FALSE(application.running());
+    CHECK(prepared == (mode == 3 ? 0 : 1));
+
+    if (mode < 2) {
+      REQUIRE_FALSE(result);
+      CHECK(result.error().code == (mode == 0 ? ErrorCode::Io : ErrorCode::External));
+    } else {
+      REQUIRE(result);
+      CHECK_FALSE(result->running);
+    }
+  }
+}

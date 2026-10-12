@@ -80,12 +80,11 @@ namespace Dot::Script {
     auto guardBindings(HostBindings bindings, const std::shared_ptr<Access>& access)
         -> HostBindings {
       for (auto& binding : bindings) {
-        const bool read = binding.name == "scene.info" || binding.name == "entity.list"
-                          || binding.name == "entity.get" || binding.name == "transform.get"
-                          || binding.name == "transform.world" || binding.name == "component.get"
-                          || binding.name == "entity.exists"
-                          || binding.name == "scene.primaryCamera"
-                          || binding.name == "scene.primaryListener";
+        if (!binding.callback) {
+          continue;
+        }
+
+        const bool read = binding.access == HostAccess::ReadOnly;
         binding.callback = [access, read, callback = std::move(binding.callback)](
                                std::string_view args) -> Core::Result<std::optional<std::string>> {
           if (access->preparing && !read) {
@@ -444,7 +443,13 @@ namespace Dot::Script {
       return std::unexpected(files.error());
     }
 
+    if (config.services.size() > 256 - bindings->size()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Scene services exceed host method limit");
+    }
+
     try {
+      bindings->insert(bindings->end(), config.services.begin(), config.services.end());
       auto access = std::make_shared<Access>();
       auto runtime
           = Runtime::create(*files, config.runtime, guardBindings(std::move(*bindings), access));

@@ -24,9 +24,16 @@ export namespace Dot::Script {
    * 原生工作，返回后观察超时会使 realm 故障。不得销毁/移动活动 Runtime 或保留参数视图。 */
   using HostCallback = std::function<Core::Result<std::optional<std::string>>(std::string_view)>;
 
+  /** Trusted native classification for lifecycle preparation/migration. ReadOnly
+   * callbacks must be observational; this promise is not verified by the VM.
+   * Default writes are denied while preparing components. 供生命周期准备/迁移使用
+   * 的原生可信分类；ReadOnly 回调须只观察，VM 不验证该承诺，默认写操作在准备期禁用。 */
+  enum class HostAccess { ReadOnly, ReadWrite };
+
   struct HostFunction {
     std::string name;
     HostCallback callback;
+    HostAccess access{HostAccess::ReadWrite};
   };
 
   /** Runtime copies up to 256 unique methods at creation; no subsequent mutation.

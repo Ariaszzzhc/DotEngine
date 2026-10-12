@@ -652,7 +652,8 @@ namespace Dot::Script {
 
     for (const auto& [method, operation] : methods) {
       bindings.push_back(
-          {method, [scene, identity, operation](std::string_view arguments) -> Reply {
+          {method,
+           [scene, identity, operation](std::string_view arguments) -> Reply {
              if (scene->id() != identity) {
                return Core::fail(ErrorCode::InvalidState, "Bound scene was moved or replaced");
              }
@@ -688,7 +689,14 @@ namespace Dot::Script {
                return Core::fail(ErrorCode::External,
                                  "Scene host operation: " + std::string(error.what()));
              }
-           }});
+           },
+           operation == Operation::Info || operation == Operation::List
+                   || operation == Operation::Get || operation == Operation::GetTransform
+                   || operation == Operation::WorldTransform || operation == Operation::GetComponent
+                   || operation == Operation::Exists || operation == Operation::PrimaryCamera
+                   || operation == Operation::PrimaryListener
+               ? HostAccess::ReadOnly
+               : HostAccess::ReadWrite});
     }
 
     return bindings;

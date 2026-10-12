@@ -113,6 +113,20 @@ namespace Dot::Core {
         return frame;
       }
 
+      if (callbacks.prepareFrame) {
+        auto prepared = callbacks.prepareFrame(m_impl->input);
+
+        if (!prepared) {
+          stop();
+          return std::unexpected(prepared.error());
+        }
+      }
+
+      if (!running()) {
+        frame.running = false;
+        return frame;
+      }
+
       frame.paused = m_impl->pauseOnFocusLoss && !m_impl->focused;
       const auto timing
           = frame.paused ? FrameStep{0, 0, elapsed} : m_impl->stepper.advance(elapsed);
