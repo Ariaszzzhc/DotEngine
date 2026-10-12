@@ -22,6 +22,7 @@ add_executable(DotTests
     ScenePhysicsTests.cpp
     BodyTests.cpp
     RigidBodyTests.cpp
+    AudioTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 include(doctest)
@@ -49,6 +50,8 @@ add_test(NAME runtime.scene_files COMMAND DotRuntime --scene-file-test "${CMAKE_
 set_tests_properties(runtime.scene_files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.audio_clips PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.scene_physics COMMAND DotRuntime --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 

@@ -78,4 +78,9 @@ hierarchies. `--scene-physics-test` exercises scene collision and cleanup;
 Owned contact events cover begin/stay/sleep/end, sensors, removal/reconfiguration,
 and explicit queue limits; scene events retain entity values after destruction.
 
+Audio resources decode bounded WAV/FLAC/MP3 into shared immutable float PCM.
+Run `build/debug/bin/DotRuntime --audio-clip-test <existing-directory>` for
+known sample values, ownership, and failures. See `docs/Audio.md` for limits
+and format contracts. Playback and scene audio components are under development.
+
 See `docs/Development.md` for implementation milestones and actual validation.

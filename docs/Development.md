@@ -446,5 +446,34 @@ values without retaining scene references or historical body maps.
   and transactional scene event mapping. Formatting/whitespace checks pass.
   Windows/Linux remain unverified.
 
-Audio, scripting, project/editor/export tooling, and the example game remain to be
-implemented.
+### Owned audio clips
+
+Added a pinned miniaudio backend and separate module interface/implementation for
+shared immutable PCM resources. Bounded WAV/FLAC/MP3 decoding retains source
+channels/rate, validates WAV containers before backend startup, checks complete
+frame reads, and reports malformed inputs rather than substituting silence.
+Root-relative asset loading validates extension/container agreement.
+
+- macOS Debug and Release each pass all 315 CTest cases (297 doctest cases and
+  eighteen executable checks), including PCM copying/sharing/move invalidation,
+  minimum/maximum format and exact byte limits, signed/float/extensible/unsigned
+  padded WAV, generated FLAC/MP3, malformed chunks and frame alignment, duplicate
+  or missing chunks, truncated/corrupt compressed input, non-finite/out-of-range
+  samples, repeated decoder cleanup after post-initialization failures, concurrent
+  independent decoding, Unicode/uppercase paths, missing/escaped assets, mismatched
+  extensions, and retained samples after source replacement.
+- `--audio-clip-test <directory>` writes and loads known WAV samples, then checks
+  sharing, moved-source rejection, PCM limits, and missing-asset failures. Both
+  configurations pass this executable acceptance alongside existing native
+  window/Metal acceptance cases.
+- Reviewed decoder initialization/uninitialization, immutable shared lifetime,
+  integer bounds before allocation, pre-backend WAV format validation, strict
+  file/container checks, and private C11 backend linkage. Formatting/whitespace
+  checks pass. `otool` confirms both runtime executables retain the caller's LLVM
+  libc++/libunwind and link native audio frameworks; neither has an LC_RPATH.
+- Generated test media requires no installed encoder or external media rights.
+  Tests/documentation preserve the backend's unsigned 8-bit normalization convention.
+  Windows/Linux backend/link branches are implemented but remain unverified.
+
+Playback devices/mixing/spatial voices, scene audio components, scripting,
+project/editor/export tooling, and the example game remain to be implemented.
