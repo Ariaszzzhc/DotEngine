@@ -141,7 +141,11 @@ TEST_CASE("process_descendant_retaining_pipes_is_cancelled_after_parent_exit") {
   const auto marker = directory.root / "heartbeat.txt";
   const auto utf8 = marker.generic_u8string();
   auto value = config(directory.root, {"descendant", std::string(utf8.begin(), utf8.end())});
-  value.timeout = 150ms;
+  /** Allow cold executable loading before the descendant starts its heartbeat;
+   * this case verifies cancellation/pipe ownership, not subsecond startup latency.
+   * 为冷启动可执行文件加载后开启子进程心跳留出时间；本例验证取消/管道所有权，
+   * 不验证亚秒级启动延迟。 */
+  value.timeout = 2s;
   auto failed = runProcess(value);
   REQUIRE_FALSE(failed);
   CHECK(failed.error().message.find("timeout") != std::string::npos);

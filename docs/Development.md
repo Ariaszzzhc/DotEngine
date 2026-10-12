@@ -1367,3 +1367,16 @@ check commands. The graphical editor/runtime/export remain subsequent work.
 
 Remaining project runtime, graphical editor/export tooling, expanded rendering,
 complete acceptance scenes and the example game remain to be implemented.
+
+### Process cancellation test startup budget
+
+The descendant/pipe cancellation test now allows two seconds for executable
+startup and heartbeat publication before cancellation. It still requires a real
+timeout, a stopped descendant heartbeat and zero owned child resources.
+
+- During the project-runtime stage, initial Debug and Release full runs each
+  passed 662/663 cases; this existing test timed out at 150 ms before its marker
+  existed. Debug isolated repetition passed three times at the original budget.
+  The final Debug full run passes 663/663 with the revised budget. This changes
+  the test's scheduling tolerance, without changing process implementation or
+  swallowing timeout/resource assertions. Reviewed the diff and formatting.
