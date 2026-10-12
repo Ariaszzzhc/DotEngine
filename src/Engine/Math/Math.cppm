@@ -43,6 +43,12 @@ export namespace Dot::Math {
     auto operator==(const Mat4&) const -> bool = default;
   };
 
+  struct TransformParts {
+    Vec3 position{};
+    Quat rotation{};
+    Vec3 scale{1, 1, 1};
+  };
+
   [[nodiscard]] auto isFinite(Vec3 value) noexcept -> bool;
   [[nodiscard]] auto isFinite(Vec4 value) noexcept -> bool;
   [[nodiscard]] auto isFinite(Quat value) noexcept -> bool;
@@ -64,6 +70,14 @@ export namespace Dot::Math {
    * 按 T * R * S 组合变换，缩放必须非零，输入旋转会归一化。 */
   [[nodiscard]] auto compose(Vec3 translation, Quat rotation = {}, Vec3 scale = {1, 1, 1})
       -> Core::Result<Mat4>;
+  /** Decompose finite affine T*R*S matrices; reject perspective, singularity,
+   * shear, or float-unrepresentable scales. Orthogonality/reconstruction use
+   * 1e-5 relative column tolerance. Reflection is placed on X scale; Y/Z remain
+   * positive and the normalized quaternion has nonnegative W.
+   * 分解有限仿射 T*R*S 矩阵，拒绝透视、奇异、错切及浮点不可表示的缩放；
+   * 正交与重建检查采用列长度的 1e-5 相对容差，反射归入 X 缩放，Y/Z 保持正值，
+   * 归一化四元数 W 非负。 */
+  [[nodiscard]] auto decomposeTrs(const Mat4& matrix) -> Core::Result<TransformParts>;
   [[nodiscard]] auto multiply(const Mat4& left, const Mat4& right) -> Core::Result<Mat4>;
   [[nodiscard]] auto inverse(const Mat4& matrix) -> Core::Result<Mat4>;
   /** Transform a position and divide by homogeneous weight; reject zero weight.

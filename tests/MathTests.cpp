@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <random>
 
 import Dot.Math;
 
@@ -209,5 +210,212 @@ TEST_CASE("Math finite predicates cover every matrix and quaternion component") 
     Mat4 invalid;
     invalid.data[index] = std::numeric_limits<float>::quiet_NaN();
     CHECK_FALSE(isFinite(invalid));
+  }
+}
+
+TEST_CASE("Math TRS decomposition preserves translation rotation and scale") {
+  auto identity = decomposeTrs({});
+  REQUIRE(identity);
+  CHECK(identity->position == Vec3{});
+  CHECK(identity->rotation == Quat{});
+  CHECK(identity->scale == Vec3{1, 1, 1});
+  auto rotation = rotationEulerDegrees({20, 40, 60});
+  REQUIRE(rotation);
+  auto matrix = compose({7, 8, 9}, *rotation, {2, 3, 4});
+  REQUIRE(matrix);
+  auto decomposed = decomposeTrs(*matrix);
+  REQUIRE(decomposed);
+  checkVector(decomposed->position, {7, 8, 9});
+  checkVector(decomposed->scale, {2, 3, 4});
+  CHECK(decomposed->rotation.w >= 0);
+  auto rebuilt = compose(decomposed->position, decomposed->rotation, decomposed->scale);
+  REQUIRE(rebuilt);
+
+  for (std::size_t i = 0; i < 16; ++i) {
+    CHECK(rebuilt->data[i] == doctest::Approx(matrix->data[i]).epsilon(0.00001).scale(1));
+  }
+}
+
+TEST_CASE("Math TRS decomposition canonicalizes all reflection signs") {
+  auto rotation = rotationEulerDegrees({-137, 74, 165});
+  REQUIRE(rotation);
+
+  for (const float x : {-2.0F, 2.0F}) {
+    for (const float y : {-3.0F, 3.0F}) {
+      for (const float z : {-4.0F, 4.0F}) {
+        auto matrix = compose({-1, 5, 2}, *rotation, {x, y, z});
+        REQUIRE(matrix);
+        auto parts = decomposeTrs(*matrix);
+        REQUIRE(parts);
+        CHECK(parts->scale.x == doctest::Approx(x * y * z < 0 ? -2.0F : 2.0F));
+        CHECK(parts->scale.y == doctest::Approx(3));
+        CHECK(parts->scale.z == doctest::Approx(4));
+        CHECK(parts->rotation.w >= 0);
+        auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+        REQUIRE(rebuilt);
+        auto before = transformPoint(*matrix, {1, 2, 3});
+        auto after = transformPoint(*rebuilt, {1, 2, 3});
+        REQUIRE(before);
+        REQUIRE(after);
+        checkVector(*after, *before);
+      }
+    }
+  }
+}
+
+TEST_CASE("Math TRS decomposition handles half turn rotations") {
+  for (const auto euler : {Vec3{180, 0, 0}, Vec3{0, 180, 0}, Vec3{0, 0, 180}, Vec3{180, 180, 180},
+                           Vec3{0, -179.999F, 0}}) {
+    auto rotation = rotationEulerDegrees(euler);
+    REQUIRE(rotation);
+    auto matrix = compose({}, *rotation);
+    REQUIRE(matrix);
+    auto parts = decomposeTrs(*matrix);
+    REQUIRE(parts);
+    CHECK(parts->rotation.w >= 0);
+    auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+    REQUIRE(rebuilt);
+
+    for (std::size_t i = 0; i < 16; ++i) {
+      CHECK(rebuilt->data[i] == doctest::Approx(matrix->data[i]).epsilon(0.00001).scale(1));
+    }
+  }
+}
+
+TEST_CASE("Math TRS decomposition uniform parent hierarchy") {
+  auto parentRotation = rotationEulerDegrees({17, 31, 53});
+  auto childRotation = rotationEulerDegrees({29, 73, 11});
+  REQUIRE(parentRotation);
+  REQUIRE(childRotation);
+  auto parent = compose({1, 2, 3}, *parentRotation, {2, 2, 2});
+  auto child = compose({4, 5, 6}, *childRotation, {2, 3, 4});
+  REQUIRE(parent);
+  REQUIRE(child);
+  auto world = multiply(*parent, *child);
+  REQUIRE(world);
+  auto parts = decomposeTrs(*world);
+  REQUIRE(parts);
+  checkVector(parts->scale, {4, 6, 8});
+  auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+  REQUIRE(rebuilt);
+  auto inverseParent = inverse(*parent);
+  REQUIRE(inverseParent);
+  auto local = multiply(*inverseParent, *rebuilt);
+  REQUIRE(local);
+  auto localParts = decomposeTrs(*local);
+  REQUIRE(localParts);
+  checkVector(localParts->position, {4, 5, 6});
+  checkVector(localParts->scale, {2, 3, 4});
+}
+
+TEST_CASE("Math TRS decomposition rejects shear perspective and singularity") {
+  Mat4 shear;
+  shear.data[4] = 0.1F;
+  CHECK_FALSE(decomposeTrs(shear));
+  auto parent = compose({}, {}, {2, 1, 1});
+  auto rotation = rotationEulerDegrees({0, 0, 45});
+  REQUIRE(parent);
+  REQUIRE(rotation);
+  auto child = compose({}, *rotation);
+  REQUIRE(child);
+  auto world = multiply(*parent, *child);
+  REQUIRE(world);
+  CHECK_FALSE(decomposeTrs(*world));
+  auto projection = perspective(60, 1, 0.1F, 100);
+  REQUIRE(projection);
+  CHECK_FALSE(decomposeTrs(*projection));
+  Mat4 zero;
+  zero.data.fill(0);
+  zero.data[15] = 1;
+  CHECK_FALSE(decomposeTrs(zero));
+
+  for (const auto column : {0, 1, 2}) {
+    Mat4 singular;
+    singular.data[static_cast<std::size_t>(column * 4 + column)] = 0;
+    CHECK_FALSE(decomposeTrs(singular));
+  }
+
+  Mat4 dependent;
+  dependent.data[4] = 1;
+  dependent.data[5] = 0;
+  CHECK_FALSE(decomposeTrs(dependent));
+}
+
+TEST_CASE("Math TRS decomposition rejects nonfinite and nonaffine elements") {
+  for (std::size_t i = 0; i < 16; ++i) {
+    for (const auto value : {infinity, std::numeric_limits<float>::quiet_NaN()}) {
+      Mat4 invalid;
+      invalid.data[i] = value;
+      CHECK_FALSE(decomposeTrs(invalid));
+    }
+  }
+
+  for (const std::size_t i : {3U, 7U, 11U}) {
+    Mat4 perspective;
+    perspective.data[i] = 1e-30F;
+    CHECK_FALSE(decomposeTrs(perspective));
+  }
+
+  Mat4 homogeneous;
+  homogeneous.data[15] = 0.99999F;
+  CHECK_FALSE(decomposeTrs(homogeneous));
+}
+
+TEST_CASE("Math TRS decomposition extreme scales and unrepresentable lengths") {
+  for (const auto value :
+       {maximum, std::numeric_limits<float>::min(), std::numeric_limits<float>::denorm_min()}) {
+    auto matrix = compose({1, 2, 3}, {}, {value, value, value});
+    REQUIRE(matrix);
+    auto parts = decomposeTrs(*matrix);
+    REQUIRE_MESSAGE(parts, (parts ? "" : parts.error().message));
+    CHECK(parts->scale == Vec3{value, value, value});
+    auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+    REQUIRE(rebuilt);
+    CHECK(*rebuilt == *matrix);
+  }
+
+  Mat4 tooLarge;
+  tooLarge.data[0] = maximum;
+  tooLarge.data[1] = maximum;
+  tooLarge.data[4] = maximum;
+  tooLarge.data[5] = -maximum;
+  CHECK_FALSE(decomposeTrs(tooLarge));
+}
+
+TEST_CASE("Math TRS decomposition orthogonality tolerance is bounded") {
+  Mat4 close;
+  close.data[4] = 0.000009F;
+  auto parts = decomposeTrs(close);
+  REQUIRE(parts);
+  auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+  REQUIRE(rebuilt);
+  CHECK(std::abs(rebuilt->data[4] - close.data[4]) < 0.00001F);
+  close.data[4] = 0.00002F;
+  CHECK_FALSE(decomposeTrs(close));
+}
+
+TEST_CASE("Math TRS decomposition seeded transformed point round trips") {
+  std::mt19937 random{8421};
+  std::uniform_real_distribution<float> angle{-180, 180};
+  std::uniform_real_distribution<float> translation{-100, 100};
+  std::uniform_real_distribution<float> scale{0.01F, 1000};
+
+  for (int n = 0; n < 128; ++n) {
+    auto rotation = rotationEulerDegrees({angle(random), angle(random), angle(random)});
+    REQUIRE(rotation);
+    auto matrix = compose({translation(random), translation(random), translation(random)},
+                          *rotation, {scale(random), scale(random), scale(random)});
+    REQUIRE(matrix);
+    auto parts = decomposeTrs(*matrix);
+    REQUIRE(parts);
+    auto rebuilt = compose(parts->position, parts->rotation, parts->scale);
+    REQUIRE(rebuilt);
+    auto before = transformPoint(*matrix, {0.5F, -0.25F, 1});
+    auto after = transformPoint(*rebuilt, {0.5F, -0.25F, 1});
+    REQUIRE(before);
+    REQUIRE(after);
+    CHECK(after->x == doctest::Approx(before->x).epsilon(0.0001).scale(1));
+    CHECK(after->y == doctest::Approx(before->y).epsilon(0.0001).scale(1));
+    CHECK(after->z == doctest::Approx(before->z).epsilon(0.0001).scale(1));
   }
 }

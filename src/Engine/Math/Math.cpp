@@ -166,6 +166,82 @@ namespace Dot::Math {
                      * glm::mat4_cast(native(*unit)) * glm::scale(glm::dmat4(1), native(scale)));
   }
 
+  auto decomposeTrs(const Mat4& matrix) -> Core::Result<TransformParts> {
+    if (!isFinite(matrix) || matrix.data[3] != 0 || matrix.data[7] != 0 || matrix.data[11] != 0
+        || matrix.data[15] != 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "TRS decomposition requires a finite affine matrix");
+    }
+
+    const auto source = native(matrix);
+    glm::dvec3 scale{glm::length(glm::dvec3{source[0]}), glm::length(glm::dvec3{source[1]}),
+                     glm::length(glm::dvec3{source[2]})};
+
+    if (scale.x == 0 || scale.y == 0 || scale.z == 0) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "TRS decomposition rejects zero-length basis columns");
+    }
+
+    glm::dmat3 basis{glm::dvec3{source[0]} / scale.x, glm::dvec3{source[1]} / scale.y,
+                     glm::dvec3{source[2]} / scale.z};
+    constexpr double tolerance = 1e-5;
+
+    if (std::abs(glm::dot(basis[0], basis[1])) > tolerance
+        || std::abs(glm::dot(basis[0], basis[2])) > tolerance
+        || std::abs(glm::dot(basis[1], basis[2])) > tolerance) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "TRS decomposition cannot represent matrix shear");
+    }
+
+    if (glm::determinant(basis) < 0) {
+      basis[0] = -basis[0];
+      scale.x = -scale.x;
+    }
+
+    auto supportedScale = converted(scale);
+
+    if (!supportedScale) {
+      return std::unexpected(supportedScale.error());
+    }
+
+    const auto orientation = glm::normalize(glm::quat_cast(basis));
+    auto rotation
+        = normalized(Quat{static_cast<float>(orientation.x), static_cast<float>(orientation.y),
+                          static_cast<float>(orientation.z), static_cast<float>(orientation.w)});
+
+    if (!rotation) {
+      return std::unexpected(rotation.error());
+    }
+
+    if (rotation->w < 0) {
+      *rotation = {-rotation->x, -rotation->y, -rotation->z, -rotation->w};
+    }
+
+    TransformParts result{
+        {matrix.data[12], matrix.data[13], matrix.data[14]}, *rotation, *supportedScale};
+    auto rebuilt = compose(result.position, result.rotation, result.scale);
+
+    if (!rebuilt) {
+      return std::unexpected(rebuilt.error());
+    }
+
+    for (int column = 0; column < 3; ++column) {
+      const double columnScale = std::abs(scale[column]);
+
+      for (int row = 0; row < 3; ++row) {
+        const auto index = static_cast<std::size_t>(column * 4 + row);
+        const double difference = static_cast<double>(rebuilt->data[index]) - matrix.data[index];
+
+        if (std::abs(difference) > tolerance * columnScale) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "TRS decomposition reconstruction exceeds relative tolerance");
+        }
+      }
+    }
+
+    return result;
+  }
+
   auto multiply(const Mat4& left, const Mat4& right) -> Core::Result<Mat4> {
     if (!isFinite(left) || !isFinite(right)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Matrix inputs must be finite");

@@ -337,5 +337,26 @@ component. Component replacement validates before mutation.
   strict schema compatibility. Formatting/whitespace checks pass. Windows/Linux
   remain unverified.
 
+### Checked TRS decomposition
+
+Added affine matrix decomposition needed for hierarchy-aware simulation pose
+transfer and editor transform operations. It uses double intermediate column
+lengths and orientation calculations, assigns reflection to X scale, normalizes
+the quaternion, and verifies reconstructed matrix columns. Perspective,
+singularity, shear beyond the documented tolerance, and unrepresentable scales
+return errors.
+
+- macOS Debug and Release each pass all 249 CTest cases (234 doctest cases and
+  fifteen executable checks), including identity and nonuniform transforms, all
+  eight scale-sign combinations, half-turn rotations, uniform parent hierarchies,
+  sheared hierarchy rejection, perspective/singular/non-finite matrices, tiny
+  non-affine elements, extreme/subnormal scales, unrepresentable column lengths,
+  tolerance boundaries, and 128 seeded transformed-point round trips.
+- `--math-test` verifies affine TRS decomposition alongside its camera projection
+  and rejects decomposition of a perspective projection.
+- Reviewed column-major indexing, reflection equivalence, quaternion sign/range,
+  zero/non-finite handling, and relative reconstruction checks. Formatting and
+  whitespace checks pass. Windows/Linux remain unverified.
+
 Physics scene synchronization/contact events, audio, scripting,
 project/editor/export tooling, and the example game remain to be implemented.

@@ -496,7 +496,15 @@ namespace {
       return 1;
     }
 
-    std::println("Math acceptance passed: camera depth {}", point->z);
+    auto parts = decomposeTrs(*model);
+
+    if (!parts || parts->position != Vec3{2, 3, 4} || parts->scale != Vec3{1, 1, 1}
+        || decomposeTrs(*projection)) {
+      std::println(stderr, "Math acceptance TRS decomposition failed");
+      return 1;
+    }
+
+    std::println("Math acceptance passed: camera depth {}; affine TRS verified", point->z);
     return 0;
   }
 

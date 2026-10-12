@@ -33,7 +33,9 @@ window acceptance case. Automated window tests use SDL's dummy video driver.
 
 The math module provides checked transforms, quaternions, camera matrices, and
 WebGPU depth conventions. Run `build/debug/bin/DotRuntime --math-test` for its
-camera projection acceptance case. GLM stays private to the implementation.
+camera projection and TRS decomposition acceptance case. Matrix decomposition
+validates affine structure, shear, reflection, and reconstruction precision.
+GLM stays private to the implementation.
 
 Dawn rendering supports colored triangle lists, camera transforms, depth testing,
 RGBA8 offscreen readback, and native window presentation with resize handling.
