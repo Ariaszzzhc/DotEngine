@@ -19,6 +19,8 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Platform.Window;
 import Dot.Math;
+import Dot.Physics.SceneSimulation;
+import Dot.Physics.Body;
 
 namespace {
   using namespace Dot::Graphics;
@@ -104,6 +106,56 @@ TEST_CASE("scene_render.instance_transforms_tints_and_shared_cache") {
   REQUIRE(service->render(scene, 10, 10));
   CHECK(service->stats()->meshes == 0);
   CHECK(service->stats()->bytes == 0);
+  CHECK(renderer->resourceStats()->meshes == 0);
+}
+
+TEST_CASE("scene_render.physics_writeback_changes_actual_metal_pixels") {
+  auto scene = makeScene();
+  auto camera = scene.primaryCamera();
+  REQUIRE(camera);
+  auto cameraDescription = scene.entity(*camera)->camera;
+  cameraDescription->orthographicHeight = 3;
+  REQUIRE(scene.setCamera(*camera, cameraDescription));
+  REQUIRE(scene.setTransform(*camera, {{0, 0.75F, 5}}));
+  auto floor = scene.createEntity("Floor");
+  auto body = scene.createEntity("Falling Cube");
+  REQUIRE(floor);
+  REQUIRE(body);
+  REQUIRE(scene.setTransform(*floor, {{0, -0.25F, 0}, {}, {6, 0.5F, 6}}));
+  RigidBody floorDescription;
+  floorDescription.motion = Dot::Physics::Motion::Static;
+  floorDescription.shape = Dot::Physics::Shape::Box;
+  REQUIRE(scene.setRigidBody(*floor, floorDescription));
+  auto description = floorDescription;
+  description.motion = Dot::Physics::Motion::Dynamic;
+  REQUIRE(scene.setRigidBody(*body, description));
+  REQUIRE(scene.setTransform(*body, {{0, 1.5F, 0}, {}, {0.5F, 0.5F, 0.5F}}));
+  MeshRenderer mesh;
+  mesh.tint = {0, 1, 0, 1};
+  REQUIRE(scene.setMeshRenderer(*body, mesh));
+  auto simulation = Dot::Physics::SceneSimulation::create(scene);
+  auto renderer = Renderer::create();
+  REQUIRE(simulation);
+  REQUIRE(renderer);
+  auto service = SceneRenderer::create(*renderer);
+  REQUIRE(service);
+  auto before = service->render(scene, 100, 100);
+  REQUIRE(before);
+  CHECK(pixel(*before, 50, 25) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  CHECK(pixel(*before, 50, 67) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
+
+  for (int frame = 0; frame < 180; ++frame) {
+    REQUIRE(simulation->step(scene, 1.0 / 60));
+  }
+
+  auto after = service->render(scene, 100, 100);
+  REQUIRE(after);
+  CHECK(pixel(*after, 50, 25) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
+  CHECK(pixel(*after, 50, 67) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  REQUIRE(scene.destroyEntity(*body));
+  REQUIRE(simulation->synchronize(scene));
+  REQUIRE(service->render(scene, 10, 10));
+  CHECK(simulation->stats()->bodies == 1);
   CHECK(renderer->resourceStats()->meshes == 0);
 }
 

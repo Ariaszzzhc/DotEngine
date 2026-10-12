@@ -33,6 +33,9 @@ slot pool before old bodies are released. Full-capacity replacement is supported
 Invalid input or preparation failure preserves existing bodies. Unexpected slot
 assignment failure can partially apply a batch and faults the world. Existing
 bodies outside a batch retain their native objects, sleep state, and motion.
+Moving-body replacements may preserve native linear/angular velocity through
+explicit flags. Authored configurations remain validated before preparation;
+trusted solver snapshots avoid being rejected because of limit-rounding drift.
 
 World configuration allows 1..4096 bodies and 0..8 worker threads. Zero workers
 executes synchronously on the owner thread. Gravity must be finite with magnitude
@@ -105,4 +108,47 @@ handle. Focused tests also cover restitution, gravity scaling, all three shapes,
 kinematic motion, sensors, limits, transactional input failures, native sequence
 wrap, worker execution, moves, and actual contact-capacity failure.
 
-Contact events and scene synchronization are subsequent stages.
+## Scene simulation
+
+`Dot.Physics.SceneSimulation` owns a world and entity bindings without retaining
+a scene reference. All operations require the creating thread. Scene moves keep
+their identity and bindings; a service can outlive its source scene for diagnostic
+queries. Queries describe the last successful synchronization, so authoring
+deletions become visible on `synchronize` or `step`.
+
+`synchronize` checks every desired body before the batch is applied. Removed
+components/entities release bodies; new components create them. Shape/material/
+motion edits replace only the affected bodies, including at full capacity.
+Unchanged bodies keep native contact state, velocity, angular velocity, and sleep.
+Changing an initial velocity applies that new value; other edits preserve current
+motion. Editing a transform teleports the corresponding body and wakes it.
+
+Body positions/orientations use world space. Box half-extents multiply absolute
+world scale. Sphere/capsule shapes require uniform magnitude within the documented
+1e-5 relative tolerance; shear and out-of-range scaled geometry fail. Reflection
+is supported because these centred primitive shapes are symmetric. Collider
+dimensions are authoring values, with mass remaining independent of scale.
+
+`step` validates duration, synchronizes, advances physics, and writes poses back
+in one scene transform transaction. It processes parents before children even
+when entity IDs were imported in another order. Body world poses remain
+independent when a physical parent moves; non-physical children follow the updated
+hierarchy. Reflected local-scale signs are preserved. Kinematic target operations
+use world coordinates. Scene changes and physics are not a rollbackable single
+transaction: a post-advance failure faults the service, while failed scene batch
+writeback leaves its previous transforms intact.
+
+A rotating body under a nonuniformly scaled parent can require a sheared local
+matrix that a TRS scene cannot represent. Such writeback fails explicitly rather
+than approximating the physical pose. The fault also appears in statistics; body
+snapshots/rays remain diagnostic operations. `reset` prepares an independent
+candidate world and replaces bindings only on success. It restarts motion from
+authoring descriptions and can bind a different scene. It is required to recover
+from writeback or backend faults.
+
+Run `DotRuntime --scene-physics-test` for a falling scene cube, entity-scoped ray
+query, and synchronized cleanup. `--scene-physics-render-test` additionally checks
+the actual GPU pixels at its resting position. GPU tests also compare the initial
+and final pixels to prove that scene writeback changes rendering.
+
+Contact event delivery is a subsequent stage.

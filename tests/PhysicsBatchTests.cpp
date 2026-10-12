@@ -199,3 +199,33 @@ TEST_CASE("physics_batch.owner_thread_move_and_stale_angular_operations") {
   REQUIRE(moved.destroyBody(*body));
   CHECK_FALSE(moved.setAngularVelocity(*body, {}));
 }
+
+TEST_CASE("physics_batch.trusted_motion_preservation_and_invalid_flags") {
+  auto world = World::create({1, {0, -1000, 0}, 0});
+  REQUIRE(world);
+  BodyConfig initial;
+  initial.velocity = {500, 0, 0};
+  initial.angularVelocity = {0, 1, 0};
+  auto body = world->createBody(initial);
+  REQUIRE(body);
+  REQUIRE(world->step(0.1));
+  const auto state = world->body(*body).value();
+  BodyConfig config;
+  config.position = state.position;
+  config.rotation = state.rotation;
+  config.mass = 2;
+  const BodyChange replacement{*body, config, true, true};
+  REQUIRE(world->applyChanges(std::span{&replacement, 1}));
+  const auto after = world->body(*body).value();
+  CHECK(after.velocity.x == doctest::Approx(state.velocity.x));
+  CHECK(after.velocity.y == doctest::Approx(state.velocity.y));
+  CHECK(after.angularVelocity == state.angularVelocity);
+  const BodyChange creation{std::nullopt, config, true, true};
+  CHECK_FALSE(world->applyChanges(std::span{&creation, 1}));
+  const BodyChange deletion{*body, std::nullopt, true, true};
+  CHECK_FALSE(world->applyChanges(std::span{&deletion, 1}));
+  config.motion = Motion::Static;
+  const BodyChange fixed{*body, config, true, true};
+  CHECK_FALSE(world->applyChanges(std::span{&fixed, 1}));
+  CHECK(world->stats()->bodies == 1);
+}

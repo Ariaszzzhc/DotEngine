@@ -70,7 +70,10 @@ Jolt physics provides independently owned worlds, scoped body handles, three
 primitive shapes, static/kinematic/dynamic motion, sensors, impulses, and ray
 queries. Run `build/debug/bin/DotRuntime --physics-test` for falling-body collision
 and lifetime acceptance. See `docs/Physics.md` for limits and failure semantics;
-scene synchronization remains under development. Optional rigid-body descriptions
-already support validated editing, owned scene snapshots, and scene persistence.
+optional rigid-body descriptions support validated editing, owned scene snapshots,
+and scene persistence. The scene simulation service synchronizes component/pose
+edits, retains unaffected motion, and writes world poses back through parent
+hierarchies. `--scene-physics-test` exercises scene collision and cleanup;
+`--scene-physics-render-test` also checks actual GPU pixels after the fall.
 
 See `docs/Development.md` for implementation milestones and actual validation.

@@ -455,6 +455,12 @@ namespace Dot::Physics {
       prepared.reserve(changes.size());
 
       for (const auto& change : changes) {
+        if ((change.preserveVelocity || change.preserveAngularVelocity)
+            && (!change.body || !change.config || change.config->motion == Motion::Static)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Preserving motion requires a moving-body replacement");
+        }
+
         if (!change.body && !change.config) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Empty physics body change");
         }
@@ -514,13 +520,26 @@ namespace Dot::Physics {
           continue;
         }
 
-        auto body = prepareBody(bodies, *configs[i], results[i]->value);
+        auto& config = *configs[i];
+
+        if (changes[i].preserveVelocity || changes[i].preserveAngularVelocity) {
+          const auto nativeId = m_impl->m_bodies.at(changes[i].body->value).nativeId;
+
+          if (changes[i].preserveVelocity) {
+            config.velocity = vector(bodies.GetLinearVelocity(nativeId));
+          }
+
+          if (changes[i].preserveAngularVelocity) {
+            config.angularVelocity = vector(bodies.GetAngularVelocity(nativeId));
+          }
+        }
+
+        auto body = prepareBody(bodies, config, results[i]->value);
 
         if (!body) {
           return std::unexpected(body.error());
         }
 
-        const auto& config = *configs[i];
         nodes.insert_or_assign(results[i]->value, Impl::Entry{JPH::BodyID{}, config.motion,
                                                               config.mass, config.sensor});
         prepared.push_back(std::move(*body));

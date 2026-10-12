@@ -58,6 +58,11 @@ export namespace Dot::Physics {
   struct BodyChange {
     std::optional<BodyId> body;
     std::optional<BodyConfig> config;
+    /** Replacement of a moving body can retain trusted backend motion, avoiding
+     * authoring-range revalidation of solver rounding. Other inputs remain checked.
+     * 运动刚体替换可保留可信的后端运动，避免按编辑范围重新校验求解器舍入；其他输入仍校验。 */
+    bool preserveVelocity{};
+    bool preserveAngularVelocity{};
   };
 
   /** Owns a Jolt simulation, shapes, bodies, temporary allocator, and job system.

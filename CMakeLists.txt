@@ -53,6 +53,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/World/SceneFiles.cpp
     src/Engine/Physics/World.cpp
     src/Engine/Physics/Body.cpp
+    src/Engine/Physics/SceneSimulation.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -87,9 +88,10 @@ target_sources(DotEngine PUBLIC
         src/Engine/World/SceneFiles.cppm
         src/Engine/Physics/World.cppm
         src/Engine/Physics/Body.cppm
+        src/Engine/Physics/SceneSimulation.cppm
 )
 
-add_executable(DotRuntime src/Runtime/main.cpp)
+add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)

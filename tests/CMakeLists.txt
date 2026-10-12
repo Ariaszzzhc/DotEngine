@@ -17,6 +17,7 @@ add_executable(DotTests
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp
+    ScenePhysicsTests.cpp
     BodyTests.cpp
     RigidBodyTests.cpp
 )
@@ -46,6 +47,8 @@ add_test(NAME runtime.scene_files COMMAND DotRuntime --scene-file-test "${CMAKE_
 set_tests_properties(runtime.scene_files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.scene_physics COMMAND DotRuntime --scene-physics-test)
+set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
 add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp SceneRenderTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest)
@@ -56,5 +59,7 @@ add_test(NAME runtime.mesh COMMAND DotRuntime --mesh-test)
 set_tests_properties(runtime.mesh PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.scene_render COMMAND DotRuntime --scene-render-test)
 set_tests_properties(runtime.scene_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+add_test(NAME runtime.scene_physics_render COMMAND DotRuntime --scene-physics-render-test)
+set_tests_properties(runtime.scene_physics_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.render COMMAND DotRuntime --render-smoke)
 set_tests_properties(runtime.render PROPERTIES TIMEOUT 60 LABELS "native" RUN_SERIAL TRUE)

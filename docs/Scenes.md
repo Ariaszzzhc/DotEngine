@@ -56,8 +56,9 @@ pose-independent authoring properties, with world-space initial velocity. Pose
 comes from the entity transform. All properties use the same finite/range checks
 as actual body creation; see `Physics.md`. Physics descriptions coexist with
 hierarchy, camera, and mesh components. Importing them creates no simulation
-resources. The subsequent simulation-binding stage will check the transform's
-physical suitability; scene synchronization is not implemented yet.
+resources. The scene simulation service checks transform/scale suitability when
+binding, advances bodies, and atomically writes world poses back as local TRS.
+See `Physics.md` for the binding and failure contracts.
 
 ```json
 {

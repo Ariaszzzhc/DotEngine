@@ -19,6 +19,10 @@ import Dot.Graphics.SceneRenderer;
 import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
+namespace Dot::Runtime {
+  auto testScenePhysics(bool render) -> int;
+}
+
 namespace {
   auto testPhysics() -> int {
     auto world = Dot::Physics::World::create();
@@ -622,6 +626,14 @@ auto main(int argc, char** argv) -> int {
       return testFiles(argv[2]);
     }
 
+    if (argc == 2 && std::string_view(argv[1]) == "--scene-physics-test") {
+      return Dot::Runtime::testScenePhysics(false);
+    }
+
+    if (argc == 2 && std::string_view(argv[1]) == "--scene-physics-render-test") {
+      return Dot::Runtime::testScenePhysics(true);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -637,7 +649,8 @@ auto main(int argc, char** argv) -> int {
           "Usage: DotRuntime "
           "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
           "--scene-render-test|--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
-          "--asset-test <directory>|--scene-file-test <directory>|--physics-test]");
+          "--asset-test <directory>|--scene-file-test <directory>|--physics-test|"
+          "--scene-physics-test|--scene-physics-render-test]");
       return 2;
     }
 

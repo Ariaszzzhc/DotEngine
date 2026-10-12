@@ -379,5 +379,43 @@ velocity, initial activation is explicit, and statistics expose fault state.
   backend failure cleanup. Formatting/whitespace checks pass. Windows/Linux
   remain unverified.
 
-Physics scene synchronization/contact events, audio, scripting,
-project/editor/export tooling, and the example game remain to be implemented.
+### Scene physics synchronization
+
+Connected rigid-body descriptions to an independently owned scene simulation
+service. It validates all bindings before applying batched changes, scales
+supported primitive geometry, retains unaffected native state, and transfers
+physical world poses back through the hierarchy in one scene transaction.
+Creation-order-independent parent processing preserves reflected local signs.
+Explicit reset prepares a candidate before replacing bindings and recovers faults.
+
+- macOS Debug and Release each pass all 281 CTest cases (264 doctest cases and
+  seventeen executable checks), including falling scene boxes/rays, uniform and
+  reflected parent transforms, independently moving physical parents/children,
+  component addition/removal, full-capacity reconfiguration, retained angular/
+  linear/sleep state, explicit initial velocity changes, authoring teleport,
+  scaled/sheared/oversized geometry failures, capacity and duration boundaries,
+  kinematic targets, post-advance writeback failure/reset, failed-reset retention,
+  scene rebind/move/persistence, imported child-before-parent IDs, service lifetime
+  beyond scene lifetime, empty scenes, scope/thread checks, and actual backend
+  contact-capacity failure preserving authoring data.
+- Additional normal-path cases verify a non-physical camera child following its
+  simulated parent and actual reflected/scaled sphere/capsule ray geometry.
+- `--scene-physics-test` drops an actual scene cube, checks its resting pose and
+  entity-scoped ray hit, then verifies synchronized cleanup.
+  `--scene-physics-render-test` also checks GPU pixels at the resting position.
+  A Metal test compares initial/final green pixels and prunes GPU mesh ownership
+  after entity destruction.
+- Moving-body replacements can preserve trusted native motion instead of
+  rejecting solver rounding at speed limits. Dedicated backend and scene tests
+  verify this path and reject invalid preservation flags; authoring inputs still
+  receive normal validation.
+- Reviewed value/scene ownership, two-phase binding changes, world/local matrix
+  conversion, reflected signs, normalization when predicting scene writes,
+  pose-batch rollback, last-synchronized query semantics, fault diagnostics,
+  candidate reset cleanup, and private backend handle lifetime. Formatting and
+  whitespace checks pass. Windows/Linux remain unverified.
+- An implementation-only touch rebuilds the simulation object and relinks
+  consumers without rebuilding module interfaces or their BMI consumers.
+
+Contact events, audio, scripting, project/editor/export tooling, and the example
+game remain to be implemented.
