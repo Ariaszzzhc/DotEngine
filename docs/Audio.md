@@ -130,7 +130,7 @@ are failures. Tested locally on arm64 macOS with real CoreAudio in Debug/Release
 Windows/Linux implementations remain unverified. Hot-plug/interruption handling
 is reviewed but has not been physically triggered by automated tests.
 
-Spatial voices/listeners and scene audio components remain to be implemented.
+Scene audio components remain to be implemented.
 
 
 # Continuous playback
@@ -177,3 +177,47 @@ handles, client thread checks, initialization failures, bounded allocation failu
 repeated worker lifetimes, terminal metadata, and small 192 kHz client buffers.
 Automated playback stays muted through endpoint software gain. Only macOS has
 been verified; physical hot-plug/interruption remains outside automated coverage.
+
+
+# Spatial voices and listener
+
+`Dot.Audio.Spatial` describes a single Listener and per-voice SpatialSettings.
+Coordinates are right-handed metres, with forward -Z/up +Y matching the engine.
+Finite nonzero quaternions are normalized before deriving forward/up vectors.
+Position components are bounded to +/-1000000 metres and velocities to 100 m/s.
+Velocity describes Doppler motion; it does not integrate positions automatically.
+
+`Mixer::setListener` validates the entire pose before applying it. `setSpatial`
+validates the full descriptor even when disabled. Enabled spatial voices require
+mono clips and zero manual pan; stereo music/nonzero pan conflicts are explicit
+errors. VoiceState retains an owned normalized spatial descriptor. Invalid inputs
+leave existing state intact; unexpected backend update failures fault the mixer.
+Queries after a fault retain the last successfully stored descriptions.
+
+Distance attenuation supports inverse, linear, and exponential models. Minimum
+and maximum distances are within 0.001..1000000 metres, with minimum strictly
+less than maximum. Rolloff is 0..10; zero disables distance attenuation while
+retaining directional channel gains. Gains are clamped to [0,1] by the backend.
+Source cones use full inner/outer angles in 0..360 degrees, inner <= outer, and
+outer gain [0,1]. Direction follows source rotation. Stereo spatialization applies
+the pinned backend's directional channel gains and normal gain smoothing; it is
+not an HRTF/headphone binaural renderer. Mono output retains distance/cone gain.
+
+Doppler is opt-in through a factor in [0,1], default zero. The velocity limits keep
+the speed-of-sound calculation nonsingular. The private quiescent pitch bridge
+refreshes Doppler from listener/source motion and keeps resampling enabled when
+needed; enabling/disabling Doppler must not lose the rate-1/pitch-1 optimization
+or retain stale Doppler pitch. Coincident source/listener positions are supported.
+
+Playback forwards spatial/listener setters and queries through the same owned
+worker command path. Already-queued PCM keeps its previous content; controls
+apply to future blocks. Listener/source changes allocate no native resources.
+
+Run `DotRuntime --audio-spatial-test` for actual stereo PCM side changes, listener
+yaw, and stale-voice cleanup. Tests verify distance-model ratios/range clamping,
+listener translation/yaw/roll, source cones, real Doppler frequency changes,
+disable/seek/pitch transitions, independent mono-output listeners, normalized
+owned snapshots, invalid-input rollback, scope/thread/move checks, extreme and
+coincident finite output, and executed Playback controls on real muted CoreAudio.
+Only macOS Debug/Release are validated. Physical direction/hearing tests and
+HRTF rendering are not claimed by these PCM/backend checks.

@@ -8,6 +8,7 @@ module;
 export module Dot.Audio.Mixer;
 
 export import Dot.Audio.Clip;
+export import Dot.Audio.Spatial;
 import Dot.Core.Result;
 
 export namespace Dot::Audio {
@@ -37,6 +38,7 @@ export namespace Dot::Audio {
     VoiceSettings settings;
     bool playing;
     bool atEnd;
+    SpatialSettings spatial{};
   };
 
   struct AudioMemoryStats {
@@ -90,6 +92,15 @@ export namespace Dot::Audio {
     [[nodiscard]] auto setVolume(float volume) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<MixerStats>;
     [[nodiscard]] auto config() const -> Core::Result<MixerConfig>;
+    /** Single listener; validate before applying. Unexpected backend update
+     * failures fault the mixer. 单一监听器，先完整校验再应用，后端意外更新失败会使混音器故障。 */
+    [[nodiscard]] auto setListener(const Listener& listener) -> Core::Result<void>;
+    [[nodiscard]] auto listener() const -> Core::Result<Listener>;
+    /** Enabled spatial voices require mono clips and zero manual pan. Pose and
+     * attenuation changes apply at the next render; Doppler is explicitly opt-in.
+     * 启用空间声部须为单声道且手动声像为零；位姿/衰减于下次渲染应用，多普勒需显式启用。 */
+    [[nodiscard]] auto setSpatial(VoiceId voice, const SpatialSettings& settings)
+        -> Core::Result<void>;
     /** Write 1..65536 interleaved output frames, advancing the graph. Mixes are
      * finite float PCM and may exceed [-1,1]; no hidden limiter. Invalid buffers
      * leave playback/output unchanged. Backend failures after advancement fault

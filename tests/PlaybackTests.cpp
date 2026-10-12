@@ -345,3 +345,43 @@ TEST_CASE("audio.playback_adaptive_refill_supports_small_high_rate_buffers") {
   CHECK(after->output.consumedFrames > before + 512);
   REQUIRE(playback->close());
 }
+
+TEST_CASE("audio.playback_spatial_and_listener_controls_execute_on_worker") {
+  auto playback = Playback::create(config());
+  auto source = clip();
+  REQUIRE(playback);
+  REQUIRE(source);
+  auto id = playback->createVoice(*source, {1, 0, 1, true});
+  REQUIRE(id);
+  SpatialSettings spatial;
+  spatial.enabled = true;
+  spatial.position = {-10, 0, 0};
+  spatial.rolloff = 0;
+  REQUIRE(playback->setSpatial(*id, spatial));
+  Listener listener;
+  listener.position = {1, 2, 3};
+  listener.rotation.w = 2;
+  REQUIRE(playback->setListener(listener));
+  CHECK(playback->listener()->position == listener.position);
+  CHECK(playback->listener()->rotation.w == 1);
+  CHECK(playback->voice(*id)->spatial == spatial);
+  REQUIRE(playback->play(*id));
+  auto invalid = spatial;
+  invalid.velocity.x = 101;
+  CHECK_FALSE(playback->setSpatial(*id, invalid));
+  CHECK(playback->voice(*id)->spatial == spatial);
+  CHECK_FALSE(playback->setListener({{}, {0, 0, 0, 0}}));
+  CHECK(playback->listener()->position == listener.position);
+  auto rejected = std::async(std::launch::async, [&] {
+    return !playback->setSpatial(*id, spatial) && !playback->setListener({})
+           && !playback->listener();
+  });
+  CHECK(rejected.get());
+  auto moved = std::move(*playback);
+  CHECK_FALSE(playback->setSpatial(*id, spatial));
+  CHECK_FALSE(playback->setListener({}));
+  CHECK_FALSE(playback->listener());
+  REQUIRE(moved.close());
+  CHECK_FALSE(moved.listener());
+  CHECK_FALSE(moved.setSpatial(*id, spatial));
+}

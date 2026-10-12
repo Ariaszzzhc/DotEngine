@@ -17,6 +17,58 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 
 namespace Dot::Runtime {
+  auto testAudioSpatial() -> int {
+    auto mixer = Dot::Audio::Mixer::create();
+    auto clip = Dot::Audio::Clip::fromPcm(std::vector<float>(4096, 0.25F), 1, 48000);
+
+    if (!mixer || !clip) {
+      std::println(stderr, "Spatial audio acceptance setup failed");
+      return 1;
+    }
+
+    auto voice = mixer->createVoice(*clip, {1, 0, 1, true});
+    Dot::Audio::SpatialSettings settings;
+    settings.enabled = true;
+    settings.position = {-10, 0, 0};
+    settings.rolloff = 0;
+
+    if (!voice || !mixer->setSpatial(*voice, settings) || !mixer->play(*voice)) {
+      std::println(stderr, "Spatial audio acceptance voice setup failed");
+      return 1;
+    }
+
+    std::array<float, 8192> samples{};
+    const auto energy = [&](std::size_t channel) {
+      double sum = 0;
+
+      for (std::size_t index = samples.size() / 2 + channel; index < samples.size(); index += 2) {
+        sum += static_cast<double>(samples[index]) * samples[index];
+      }
+
+      return sum;
+    };
+
+    if (!mixer->render(samples) || energy(0) <= energy(1) * 4) {
+      std::println(stderr, "Spatial audio acceptance left-channel geometry failed");
+      return 1;
+    }
+
+    settings.position.x = 10;
+    auto rotation = Dot::Math::rotationEulerDegrees({0, 180, 0});
+
+    if (!rotation || !mixer->setSpatial(*voice, settings) || !mixer->render(samples)
+        || energy(1) <= energy(0) * 4 || !mixer->setListener({{}, *rotation})
+        || !mixer->render(samples) || energy(0) <= energy(1) * 4 || !mixer->destroyVoice(*voice)
+        || mixer->setSpatial(*voice, settings)) {
+      std::println(stderr, "Spatial audio acceptance listener/move/lifetime failed");
+      return 1;
+    }
+
+    std::println(
+        "Spatial audio acceptance passed: actual left/right PCM, rotated listener, stale voice");
+    return 0;
+  }
+
   auto testAudioPlayback() -> int {
     const auto mixerBefore = Dot::Audio::Mixer::backendMemory();
     const auto outputBefore = Dot::Audio::Output::backendMemory();

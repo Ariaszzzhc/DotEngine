@@ -459,6 +459,32 @@ namespace Dot::Audio {
         [volume](Mixer&, Output& output) { return output.setVolume(volume); });
   }
 
+  auto Playback::setListener(const Listener& listener) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    return m_impl->request<void>(
+        [listener](Mixer& mixer, Output&) { return mixer.setListener(listener); });
+  }
+
+  auto Playback::listener() -> Core::Result<Listener> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    return m_impl->request<Listener>([](Mixer& mixer, Output&) { return mixer.listener(); });
+  }
+
+  auto Playback::setSpatial(VoiceId id, const SpatialSettings& settings) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    return m_impl->request<void>(
+        [id, settings](Mixer& mixer, Output&) { return mixer.setSpatial(id, settings); });
+  }
+
   auto Playback::info() const -> Core::Result<OutputInfo> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");

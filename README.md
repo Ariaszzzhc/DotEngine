@@ -88,6 +88,8 @@ counts underruns/clipping, and retains explicit device failures. Run
 `--audio-output-test` for a real, muted backend/callback acceptance case.
 A dedicated playback worker executes voice controls and continuously fills the
 queue while the client is idle. `--audio-playback-test` verifies this through a
-real muted endpoint. Spatial playback and scene audio components are under development.
+real muted endpoint. Spatial mono voices use listener/source poses, distance
+attenuation, directional cones, and optional Doppler; `--audio-spatial-test` checks
+actual stereo PCM direction. Scene audio components are under development.
 
 See `docs/Development.md` for implementation milestones and actual validation.

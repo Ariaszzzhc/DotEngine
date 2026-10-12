@@ -592,5 +592,41 @@ the native callback remains an allocation-free queue consumer.
   with no LC_RPATH. Windows/Linux implementations remain unverified, and physical
   hot-plug/interruption remains outside automated coverage.
 
-Spatial voices/listeners, scene audio components, scripting,
-project/editor/export tooling, and the example game remain to be implemented.
+### Spatial audio voices and listener
+
+Added bounded spatial descriptions and a single listener using the same right-
+handed metre coordinates as the engine. Normalized source/listener rotations derive
+direction and up; mono spatial voices support inverse/linear/exponential distance
+attenuation, directional cones, and optional Doppler. Playback executes these
+controls through its existing worker path, retaining owned query descriptions.
+
+- macOS Debug and Release each pass all 382 CTest cases (360 doctest cases and
+  twenty-two executable checks). Fifteen new spatial unit cases verify pose/
+  velocity/rotation/attenuation/cone boundaries, actual stereo source-side changes,
+  listener translation/yaw/roll, distance-model gain ratios and range clamps,
+  directional cone orientation/outer gain, spatial disable restoring ordinary PCM,
+  mono/pan conflicts and invalid-edit retention, normalized owned snapshots, actual
+  Doppler frequency changes and disable, scope/thread/move checks, finite extreme/
+  coincident output, seek/pitch/lifetime interaction, and independent mono-output
+  listeners. A native case verifies executed Playback spatial/listener controls.
+- `--audio-spatial-test` checks actual left/right PCM, listener yaw, and stale-voice
+  rejection. Existing real CoreAudio and native window/Metal acceptance remains
+  passing; tests do not claim physical hearing/direction or HRTF rendering.
+- A regression caught an incorrect backend directional-attenuation parameter
+  disabling channel direction gains. Correct spatial directional gains are now
+  covered by source-side, listener-rotation, and mono-output PCM tests.
+- Doppler refresh uses the pinned backend's calculation on a quiescent graph;
+  pitch bypass stays enabled only when source/output rates match, pitch is one,
+  and Doppler is unnecessary. Disabling Doppler resets its stale ratio. Input
+  velocity bounds keep its denominator nonsingular; positions are not integrated
+  implicitly by audio. Native gain smoothing remains in effect.
+- Reviewed complete validation before mutation, checked matrix/basis derivation,
+  listener/source coordinate agreement, mono/pan boundary contracts, copied
+  descriptors, backend update faulting, Doppler/bypass transitions, and worker
+  ownership. Formatting/whitespace checks pass. Both runtimes retain caller-selected
+  LLVM libc++/libunwind and native frameworks, with no LC_RPATH. Windows/Linux
+  remain unverified; physical device hot-plug/interruption remains outside automated
+  coverage.
+
+Scene audio components, scripting, project/editor/export tooling, and the example
+game remain to be implemented.

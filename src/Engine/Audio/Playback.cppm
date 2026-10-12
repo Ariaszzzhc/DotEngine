@@ -57,6 +57,10 @@ export namespace Dot::Audio {
     [[nodiscard]] auto voice(VoiceId voice) -> Core::Result<VoiceState>;
     [[nodiscard]] auto setVolume(float volume) -> Core::Result<void>;
     [[nodiscard]] auto setOutputVolume(float volume) -> Core::Result<void>;
+    [[nodiscard]] auto setListener(const Listener& listener) -> Core::Result<void>;
+    [[nodiscard]] auto listener() -> Core::Result<Listener>;
+    [[nodiscard]] auto setSpatial(VoiceId voice, const SpatialSettings& settings)
+        -> Core::Result<void>;
     /** Owned metadata for the initialized endpoint, retained after closing.
      * 初始化端点的拥有数据元信息，关闭后仍保留。 */
     [[nodiscard]] auto info() const -> Core::Result<OutputInfo>;
