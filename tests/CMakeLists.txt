@@ -1,5 +1,5 @@
 find_package(doctest CONFIG REQUIRED)
-add_executable(DotTests main.cpp CoreTests.cpp EventTests.cpp FileTests.cpp InputTests.cpp PlatformTests.cpp ApplicationTests.cpp)
+add_executable(DotTests main.cpp CoreTests.cpp EventTests.cpp FileTests.cpp InputTests.cpp PlatformTests.cpp ApplicationTests.cpp MathTests.cpp)
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
@@ -14,3 +14,5 @@ add_test(NAME runtime.files COMMAND DotRuntime --file-test "${CMAKE_CURRENT_BINA
 set_tests_properties(runtime.files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.window COMMAND DotRuntime --window-smoke)
 set_tests_properties(runtime.window PROPERTIES TIMEOUT 15 LABELS "acceptance" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+add_test(NAME runtime.math COMMAND DotRuntime --math-test)
+set_tests_properties(runtime.math PROPERTIES TIMEOUT 15 LABELS "acceptance")

@@ -31,4 +31,8 @@ SDL3 windowing, input, and the application loop are available. Run
 `build/debug/bin/DotRuntime --window-smoke` in a desktop session for a short native
 window acceptance case. Automated window tests use SDL's dummy video driver.
 
+The math module provides checked transforms, quaternions, camera matrices, and
+WebGPU depth conventions. Run `build/debug/bin/DotRuntime --math-test` for its
+camera projection acceptance case. GLM stays private to the implementation.
+
 See `docs/Development.md` for implementation milestones and actual validation.

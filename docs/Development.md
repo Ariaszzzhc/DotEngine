@@ -70,4 +70,21 @@ The runtime's `--window-smoke` case opens a window and executes a bounded loop.
   caller's CPPFLAGS/CFLAGS/CXXFLAGS/LDFLAGS through the maintained target triplets.
 - Formatting and whitespace checks pass. Windows/Linux remain unverified.
 
+### Mathematics and GPU dependency preparation
+
+Added a separate mathematics interface and implementation using private GLM
+operations, engine-owned vector/quaternion/matrix data, checked normalization,
+transform composition/inversion, and right-handed camera projections with [0, 1]
+depth. Double intermediates preserve finite float extremes; unrepresentable
+results and degenerate inputs return errors. The pinned manifest prepares Dawn
+with Metal on macOS, D3D12 on Windows, and Vulkan/X11/Wayland on Linux.
+
+- macOS Debug and Release each pass all 102 CTest cases (96 doctest cases and six
+  executable checks), including camera projection acceptance, extreme values,
+  parent/child transform order, inverse round trips, and invalid camera inputs.
+- Reviewed matrix storage/order, quaternion normalization, homogeneous division,
+  overflow reporting, and projection depth. Formatting/whitespace checks pass.
+- GLM 1.0.3 and Dawn 20260911.162847#1 build with the configured LLVM environment.
+  Dawn rendering is not implemented yet. Windows/Linux remain unverified.
+
 Rendering and all higher milestones remain to be implemented.

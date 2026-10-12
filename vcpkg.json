@@ -3,7 +3,34 @@
   "version-string": "0.1.0",
   "dependencies": [
     "doctest",
-    "sdl3"
+    "sdl3",
+    "glm",
+    {
+      "name": "dawn",
+      "default-features": false,
+      "features": [
+        {
+          "name": "metal",
+          "platform": "osx"
+        },
+        {
+          "name": "d3d12",
+          "platform": "windows"
+        },
+        {
+          "name": "vulkan",
+          "platform": "linux"
+        },
+        {
+          "name": "x11",
+          "platform": "linux"
+        },
+        {
+          "name": "wayland",
+          "platform": "linux"
+        }
+      ]
+    }
   ],
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc"
 }

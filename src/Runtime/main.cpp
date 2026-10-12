@@ -1,5 +1,6 @@
 #include <chrono>
 #include <exception>
+#include <expected>
 #include <filesystem>
 #include <print>
 #include <string_view>
@@ -7,8 +8,31 @@
 import Dot.Core;
 import Dot.Core.Application;
 import Dot.Platform.Window;
+import Dot.Math;
 
 namespace {
+  auto testMath() -> int {
+    using namespace Dot::Math;
+    auto model = compose({2, 3, 4});
+    auto view = lookAt({2, 3, 10}, {2, 3, 4});
+    auto projection = perspective(60, 1, 0.1F, 100);
+    if (!model || !view || !projection) {
+      std::println(stderr, "Math acceptance initialization failed");
+      return 1;
+    }
+    auto viewModel = multiply(*view, *model);
+    auto clip = viewModel ? multiply(*projection, *viewModel)
+                          : Dot::Core::Result<Mat4>{std::unexpected(viewModel.error())};
+    auto point
+        = clip ? transformPoint(*clip, {}) : Dot::Core::Result<Vec3>{std::unexpected(clip.error())};
+    if (!point || point->x != 0 || point->y != 0 || point->z <= 0 || point->z >= 1) {
+      std::println(stderr, "Math acceptance projection failed");
+      return 1;
+    }
+    std::println("Math acceptance passed: camera depth {}", point->z);
+    return 0;
+  }
+
   auto testWindow() -> int {
     Dot::Core::ApplicationConfig config;
     config.window.title = "DotEngine - Window Test";
@@ -62,6 +86,9 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--math-test") {
+      return testMath();
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--window-smoke") {
       return testWindow();
     }
@@ -73,9 +100,9 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
-      std::println(
-          stderr,
-          "Usage: DotRuntime [--version|--self-test|--window-smoke|--file-test <directory>]");
+      std::println(stderr,
+                   "Usage: DotRuntime "
+                   "[--version|--self-test|--math-test|--window-smoke|--file-test <directory>]");
       return 2;
     }
     Dot::Core::Logger logger;
