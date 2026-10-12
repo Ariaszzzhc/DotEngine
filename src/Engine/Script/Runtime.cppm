@@ -19,6 +19,12 @@ export namespace Dot::Script {
     auto operator==(const ModuleId&) const -> bool = default;
   };
 
+  struct InstanceId {
+    std::uint64_t runtime{};
+    std::uint64_t value{};
+    auto operator==(const InstanceId&) const -> bool = default;
+  };
+
   struct RuntimeConfig {
     std::uint64_t memoryBytes{16 * 1024 * 1024};
     std::uint32_t stackBytes{128 * 1024};
@@ -28,6 +34,7 @@ export namespace Dot::Script {
     std::uint32_t maxJobs{1024};
     std::uint32_t milliseconds{100};
     std::uint32_t maxHostCalls{256};
+    std::uint32_t maxInstances{1024};
   };
 
   struct RuntimeMemory {
@@ -40,6 +47,7 @@ export namespace Dot::Script {
     std::size_t modules;
     std::size_t entries;
     bool faulted;
+    std::size_t instances;
   };
 
   /** Owned QuickJS-NG realm with a project-root ESM loader. Operations require
@@ -90,6 +98,37 @@ export namespace Dot::Script {
     [[nodiscard]] auto call(ModuleId module, std::string_view function,
                             std::string_view arguments = "[]")
         -> Core::Result<std::optional<std::string>>;
+    /** Construct an exported synchronous class/function with up to 64 JSON
+     * arguments, retaining its actual object and prototype/private state. Promise
+     * results are rejected after bounded job draining. Capacity is checked before
+     * constructor side effects; ordinary constructor errors preserve the realm
+     * but do not roll back earlier script/native mutations. Handles are scoped
+     * and never reused. A script may deliberately return an aliased object.
+     * 以最多 64 项 JSON 参数构造导出的同步类/函数，保留实际对象、原型与私有状态；
+     * 有界清理任务后拒绝 Promise 结果，在构造副作用前检查容量。普通构造错误保留
+     * realm，但不回滚此前脚本/原生修改；句柄有范围且不复用，脚本可刻意返回别名对象。 */
+    [[nodiscard]] auto createInstance(ModuleId module, std::string_view constructor,
+                                      std::string_view arguments = "[]")
+        -> Core::Result<InstanceId>;
+    /** Invoke with the owned object as this, including inherited methods and
+     * bounded asynchronous results. Argument validation precedes property lookup;
+     * getters may execute script under the same operation budget. Missing or
+     * noncallable methods fail explicitly. 使用拥有的对象作为 this，支持继承方法与
+     * 有界异步结果；属性查询前校验参数，getter 在同一预算内执行，缺失/不可调用方法失败。 */
+    [[nodiscard]] auto callMethod(InstanceId instance, std::string_view method,
+                                  std::string_view arguments = "[]")
+        -> Core::Result<std::optional<std::string>>;
+    /** Optional hook discovery; undefined is absent, present nonfunctions are
+     * errors. Getters/jobs use normal budgets; discovery is not a pure inspection.
+     * 可选钩子查询，undefined 表示缺失，存在但非函数则失败；getter/任务使用通常预算，
+     * 查询并非纯检查。 */
+    [[nodiscard]] auto hasMethod(InstanceId instance, std::string_view method)
+        -> Core::Result<bool>;
+    /** Release only the runtime's strong object reference without invoking script.
+     * Other script references/cycles may retain it. Allowed on a faulted realm for
+     * cleanup; requires the owner thread without reentry. 仅释放运行时的对象强引用，
+     * 不调用脚本，其它脚本引用/环可继续保留对象；故障后可清理，须所有者线程且不可重入。 */
+    [[nodiscard]] auto releaseInstance(InstanceId instance) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<RuntimeStats>;
 
   private:

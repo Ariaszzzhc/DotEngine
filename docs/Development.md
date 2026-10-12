@@ -942,6 +942,52 @@ not yet attach script instances as components or implement lifecycle/hot reload.
   edits were introduced. Windows/Linux use the common implementations but remain
   uncompiled/unexecuted locally.
 
-Script component instances/lifecycles/hot reload, remaining subsystem script APIs,
-project/editor/export tooling, expanded rendering, and the example game remain
-to be implemented.
+### Persistent script instances
+
+Added runtime-owned JavaScript objects with scoped monotonic InstanceIds, native
+class construction, inherited/private-state method calls, optional hook discovery
+and explicit reference release. Shared argument/result helpers keep exported
+function and instance operations under the same established transport/job budgets.
+
+- macOS Debug and Release each pass all 527 CTest cases (496 doctest cases and
+  thirty-one executable checks). Thirteen focused cases verify independent private
+  fields/inheritance/this, deliberate factory aliasing, async methods, capacity
+  rejection before constructor side effects, nonreused released handles, partial
+  constructor failures and prior mutations, nonconstructable exports and handled
+  rejected Promise constructor results, bounded/terminated argument views, invalid
+  arguments before getter side effects, optional/missing/noncallable hooks and
+  drained getter jobs, contextual ordinary/async failures and undefined/null,
+  foreign/moved/thread-scoped handles, foreign quiescent destruction, constructor/
+  getter deadlines, cleanup after realm fault, shared jobs/strict serialization,
+  failed allocation/cycles/repeated initialization and active-object reentry guards.
+- `--script-instance-test <compiler> <sdk-root> <directory>` compiles real typed
+  classes using the scene SDK, creates two instances with independent private
+  counters and inherited start/stop hooks, applies sixty async updates to each
+  native entity with different speeds, checks clean error recovery/context,
+  explicitly stops/releases objects and verifies stale handles and compiler/
+  process/VM cleanup. The caller invokes hooks explicitly; this acceptance does
+  not imply a component authoring model or automatic lifecycle scheduler.
+- Default live capacity is 1024, configurable to 1..10000. Handle values are never
+  reused within a realm and moves preserve identity. Constructors are synchronous;
+  returned promises are marked handled and bounded jobs drained before rejection.
+  Standard JS constructor semantics, including deliberately shared return objects,
+  remain intact. Ordinary failures do not undo earlier script/native mutations.
+- Method argument validation precedes property lookup. Optional hook discovery is
+  observable script execution: getters may enqueue jobs, present nonfunctions fail,
+  and invocation performs a fresh lookup. Release removes only host ownership and
+  never runs script callbacks; other JS references/cycles may retain the object.
+  Release remains available after realm failure, on the owner thread without
+  reentry. Instance roots release before namespaces/context/runtime destruction.
+- Reviewed SDK constructor/method result ownership, argument roots and native argv
+  lifetime, receiver/private-field preservation, monotonic scope/capacity checks,
+  partial-construction cleanup, Promise/rejection ownership, getter/job behavior,
+  deadlines/resource faults, active map lifetime/reentry rejection, moves/thread
+  restrictions, shared helper parity and cleanup of cyclic graphs. Full native
+  CoreAudio/Cocoa/Metal and previous SDK/host checks remain passing. Formatting and
+  whitespace checks pass; Release uses NDEBUG. Caller LLVM libc++/libunwind and no
+  LC_RPATH remain unchanged. No sanitizers/environment changes were introduced;
+  Windows/Linux common code remains uncompiled/unexecuted locally.
+
+Entity-attached script descriptions/persistence, component lifecycle scheduling/
+hot reload, remaining subsystem script APIs, project/editor/export tooling,
+expanded rendering, and the example game remain to be implemented.

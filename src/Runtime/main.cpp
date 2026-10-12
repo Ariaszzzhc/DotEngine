@@ -36,6 +36,9 @@ namespace Dot::Runtime {
       -> int;
   auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
                       const std::filesystem::path& root, bool render) -> int;
+  auto testScriptInstances(const std::filesystem::path& executable,
+                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root)
+      -> int;
 }  // namespace Dot::Runtime
 
 namespace {
@@ -700,6 +703,10 @@ auto main(int argc, char** argv) -> int {
                                           std::string_view(argv[1]) == "--script-host-render-test");
     }
 
+    if (argc == 5 && std::string_view(argv[1]) == "--script-instance-test") {
+      return Dot::Runtime::testScriptInstances(argv[2], argv[3], argv[4]);
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -722,7 +729,8 @@ auto main(int argc, char** argv) -> int {
           "--script-test <directory>|--process-test <fixture> <directory>|"
           "--typescript-test <compiler> <directory>|--script-host-test <compiler> <sdk> "
           "<directory>|"
-          "--script-host-render-test <compiler> <sdk> <directory>]");
+          "--script-host-render-test <compiler> <sdk> <directory>|"
+          "--script-instance-test <compiler> <sdk> <directory>]");
       return 2;
     }
 

@@ -33,6 +33,7 @@ add_executable(DotTests
     SceneAudioBindingTests.cpp
     ScriptRuntimeTests.cpp
     HostTests.cpp
+    InstanceTests.cpp
     SceneHostTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
@@ -99,6 +100,8 @@ add_test(NAME runtime.script_host COMMAND DotRuntime --script-host-test "${DOT_T
 set_tests_properties(runtime.script_host PROPERTIES TIMEOUT 30 LABELS "acceptance")
 add_test(NAME runtime.script_host_render COMMAND DotRuntime --script-host-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_host_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+add_test(NAME runtime.script_instance COMMAND DotRuntime --script-instance-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.script_instance PROPERTIES TIMEOUT 30 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")

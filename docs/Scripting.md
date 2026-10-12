@@ -271,3 +271,46 @@ VM cleanup. `<sdk-root>` contains `dot/engine.ts` and `dot/host.d.ts`.
 `--script-host-render-test` takes the same arguments and also checks actual GPU
 pixels before/after script-driven movement of a native cube. macOS uses Metal;
 Windows/Linux implementations are not validated locally. No sanitizers are used.
+
+# Persistent script objects
+
+`Runtime::createInstance(module, constructor, arguments)` invokes an exported
+constructable class/function with the same bounded JSON array transport as calls.
+It retains the actual object, including its prototype, private fields and closure
+state, and returns an InstanceId scoped to that realm. Default capacity is 1024
+live instances, configurable to 1..10000. Capacity/identity checks precede
+constructor side effects. IDs are monotonic and never reused after release.
+
+Constructors are synchronous. Returned promises are marked handled and bounded
+jobs are drained before rejecting the result; an async/arrow/nonconstructable
+export fails. Ordinary constructor exceptions release partial host ownership and
+preserve a clean realm, with module/class context. Earlier script/native mutations
+are not rolled back. JavaScript constructor semantics still apply: a function may
+return another object shared with other instances instead of its newly created
+receiver. Normal class construction produces separate state per invocation.
+
+`callMethod(instance, method, arguments)` supplies the owned object as `this` and
+supports inherited methods, private state and bounded async results. Argument
+validation precedes property lookup, so malformed requests cannot trigger method
+getters. Missing/noncallable methods are errors. Getter evaluation and call/jobs/
+serialization share the operation's resource budgets. Noncallable getter results
+still drain their pending jobs before failure. Errors include class/instance/method
+context, while clean exceptions retain earlier instance/native mutations.
+
+`hasMethod` supports optional hook discovery: undefined means absent, while present
+nonfunctions (including null) fail. Getters may run and enqueue bounded jobs; this
+is not pure reflection and a later call performs a fresh lookup. `releaseInstance`
+removes the runtime's strong reference without invoking a lifecycle callback. Other
+script references/cycles may keep the object alive; their VM storage is reclaimed
+by normal collection or realm destruction. Released/foreign handles fail. Release
+is allowed on a faulted realm but still requires its owner thread without reentry.
+Moves preserve instances; quiescent realm destruction may occur on another thread.
+`RuntimeStats.instances` reports live host-held handles, not every object in JS.
+
+Run `DotRuntime --script-instance-test <absolute-compiler> <sdk-root> <directory>`
+for actual TypeScript classes with private state and inherited hooks, two native
+entities driven independently through sixty async updates, contextual failure
+recovery, explicit stop calls, stale-handle rejection and complete compiler/process/
+VM cleanup. The acceptance caller invokes hooks explicitly; entity-attached
+component descriptions, lifecycle scheduling, persistence and hot reload still
+remain to be implemented.

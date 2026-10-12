@@ -87,6 +87,11 @@ namespace Dot::Script {
       return "External";
     }
 
+    auto symbolValid(std::string_view name) -> bool {
+      return !name.empty() && name.size() <= 256 && name.find('\0') == std::string_view::npos
+             && Core::isValidUtf8(name);
+    }
+
     struct alignas(std::max_align_t) Allocation {
       std::size_t size;
     };
@@ -340,6 +345,17 @@ namespace Dot::Script {
       Value reason;
     };
 
+    struct Instance {
+      std::string path;
+      Value object;
+    };
+
+    struct Arguments {
+      std::vector<Value> owners;
+      std::array<JSValue, 64> values{};
+      int count{};
+    };
+
     Core::FileSystem m_files;
     RuntimeConfig m_config;
     std::map<std::string, HostCallback, std::less<>> m_bindings;
@@ -349,6 +365,8 @@ namespace Dot::Script {
     std::uint64_t m_identity;
     std::thread::id m_thread{std::this_thread::get_id()};
     std::map<std::uint64_t, Entry> m_entries;
+    std::map<std::uint64_t, Instance> m_instances;
+    std::uint64_t m_nextInstance{1};
     std::map<std::string, std::uint64_t> m_entryNames;
     std::map<std::string, JSModuleDef*> m_definitions;
     std::set<std::string> m_sources;
@@ -383,6 +401,7 @@ namespace Dot::Script {
       }
 
       m_rejections.clear();
+      m_instances.clear();
       m_entries.clear();
 
       if (m_context) {
@@ -706,6 +725,127 @@ namespace Dot::Script {
       return {};
     }
 
+    auto argumentsValid(std::string_view arguments) const -> bool {
+      return !arguments.empty() && arguments.size() <= m_config.jsonBytes
+             && arguments.find('\0') == std::string_view::npos && Core::isValidUtf8(arguments);
+    }
+
+    auto instance(InstanceId id) -> Core::Result<Instance*> {
+      const auto found = m_instances.find(id.value);
+
+      if (id.runtime != m_identity || found == m_instances.end()) {
+        return Core::fail(Core::ErrorCode::NotFound, "Script instance handle is stale or foreign");
+      }
+
+      return &found->second;
+    }
+
+    auto parseArguments(std::string_view arguments, std::string_view operation)
+        -> Core::Result<Arguments> {
+      /** The SDK requires termination beyond the view's final byte.
+       * SDK 要求视图最后字节之后存在终止符，必须先拥有缓冲。 */
+      const std::string json{arguments};
+      Value array{m_context, JS_ParseJSON(m_context, json.c_str(), json.size(), "<arguments>")};
+
+      if (JS_IsException(array.value)) {
+        return std::unexpected(exception(operation));
+      }
+
+      if (!JS_IsArray(array.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Script arguments must be a JSON array");
+      }
+
+      Value length{m_context, JS_GetPropertyStr(m_context, array.value, "length")};
+
+      if (JS_IsException(length.value)) {
+        return std::unexpected(exception(operation));
+      }
+
+      std::uint32_t count = 0;
+
+      if (JS_ToUint32(m_context, &count, length.value) < 0 || count > 64) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Script argument count exceeds 64");
+      }
+
+      Arguments result;
+      result.owners.reserve(count);
+      result.count = static_cast<int>(count);
+
+      for (std::uint32_t index = 0; index < count; ++index) {
+        result.owners.emplace_back(m_context, JS_GetPropertyUint32(m_context, array.value, index));
+
+        if (JS_IsException(result.owners.back().value)) {
+          return std::unexpected(exception(operation));
+        }
+
+        result.values[index] = result.owners.back().value;
+      }
+
+      return result;
+    }
+
+    auto finish(Value result, std::string_view operation)
+        -> Core::Result<std::optional<std::string>> {
+      auto settled = settle(result);
+
+      if (!settled) {
+        return std::unexpected(settled.error());
+      }
+
+      if (JS_IsUndefined(result.value)) {
+        return std::optional<std::string>{};
+      }
+
+      Value replacer{m_context, JS_NewCFunction(m_context, jsonValue, "validateJson", 2)};
+
+      if (JS_IsException(replacer.value)) {
+        return std::unexpected(exception(operation));
+      }
+
+      Value encoded{m_context,
+                    JS_JSONStringify(m_context, result.value, replacer.value, JS_UNDEFINED)};
+
+      if (JS_IsException(encoded.value)) {
+        return std::unexpected(exception(operation));
+      }
+
+      if (!JS_IsString(encoded.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Script result is not JSON-serializable");
+      }
+
+      auto drained = drain();
+
+      if (!drained) {
+        return std::unexpected(drained.error());
+      }
+
+      CString text{m_context, encoded.value};
+
+      if (!text.value) {
+        return std::unexpected(exception(operation));
+      }
+
+      if (text.size > m_config.jsonBytes) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Script JSON result exceeds limit");
+      }
+
+      return std::optional<std::string>{std::string{text.value, text.size}};
+    }
+
+    auto invoke(JSValueConst target, JSValueConst receiver, Arguments& arguments,
+                std::string_view operation) -> Core::Result<std::optional<std::string>> {
+      Value result{m_context,
+                   JS_Call(m_context, target, receiver, arguments.count, arguments.values.data())};
+
+      if (JS_IsException(result.value)) {
+        return std::unexpected(exception(operation));
+      }
+
+      return finish(std::move(result), operation);
+    }
+
     auto transportFailure(std::string_view operation) -> std::unexpected<Core::Error> {
       Value reason{m_context, JS_GetException(m_context)};
       auto message = diagnostic(reason.value);
@@ -990,7 +1130,7 @@ namespace Dot::Script {
         || config.jsonBytes > 16 * 1024 * 1024 || config.maxModules == 0 || config.maxModules > 1024
         || config.maxJobs == 0 || config.maxJobs > 65536 || config.milliseconds == 0
         || config.milliseconds > 1000 || config.maxHostCalls == 0 || config.maxHostCalls > 65536
-        || bindings.size() > 256) {
+        || bindings.size() > 256 || config.maxInstances == 0 || config.maxInstances > 10000) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid script runtime limits");
     }
 
@@ -1165,79 +1305,83 @@ namespace Dot::Script {
                           std::format("{} is not an exported function", operation));
       }
 
-      /** The SDK requires termination beyond the view's final byte.
-       * SDK 要求视图最后字节之后存在终止符，必须先拥有缓冲。 */
-      const std::string json{arguments};
-      Value array{m_impl->m_context,
-                  JS_ParseJSON(m_impl->m_context, json.c_str(), json.size(), "<arguments>")};
+      auto parsed = m_impl->parseArguments(arguments, operation);
 
-      if (JS_IsException(array.value)) {
+      if (!parsed) {
+        return std::unexpected(parsed.error());
+      }
+
+      return m_impl->invoke(target.value, JS_UNDEFINED, *parsed, operation);
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Call script export: {}", error.what()));
+    }
+  }
+
+  auto Runtime::createInstance(ModuleId module, std::string_view constructor,
+                               std::string_view arguments) -> Core::Result<InstanceId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Script runtime has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto found = m_impl->m_entries.find(module.value);
+
+    if (module.runtime != m_impl->m_identity || found == m_impl->m_entries.end()) {
+      return Core::fail(Core::ErrorCode::NotFound, "Script module handle is stale or foreign");
+    }
+
+    if (!symbolValid(constructor) || !m_impl->argumentsValid(arguments)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid constructor name/JSON arguments");
+    }
+
+    if (m_impl->m_instances.size() >= m_impl->m_config.maxInstances
+        || m_impl->m_nextInstance == std::numeric_limits<std::uint64_t>::max()) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Script instance capacity/identity limit exceeded");
+    }
+
+    Impl::Execution execution{*m_impl};
+
+    try {
+      const auto path = std::format("{}::{}", found->second.path, constructor);
+      const auto operation = "Construct " + path;
+      auto parsed = m_impl->parseArguments(arguments, operation);
+
+      if (!parsed) {
+        return std::unexpected(parsed.error());
+      }
+
+      const std::string name{constructor};
+      Value target{m_impl->m_context,
+                   JS_GetPropertyStr(m_impl->m_context, found->second.space.value, name.c_str())};
+
+      if (JS_IsException(target.value)) {
         return std::unexpected(m_impl->exception(operation));
       }
 
-      if (!JS_IsArray(array.value)) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Script arguments must be a JSON array");
+      if (!JS_IsConstructor(m_impl->m_context, target.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, operation + " is not constructable");
       }
 
-      Value length{m_impl->m_context, JS_GetPropertyStr(m_impl->m_context, array.value, "length")};
-      if (JS_IsException(length.value)) {
+      Value object{m_impl->m_context, JS_CallConstructor(m_impl->m_context, target.value,
+                                                         parsed->count, parsed->values.data())};
+
+      if (JS_IsException(object.value)) {
         return std::unexpected(m_impl->exception(operation));
       }
 
-      std::uint32_t count = 0;
+      const bool promise = JS_IsPromise(object.value);
 
-      if (JS_ToUint32(m_impl->m_context, &count, length.value) < 0 || count > 64) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Script argument count exceeds 64");
-      }
-
-      std::vector<Value> values;
-      values.reserve(count);
-      std::array<JSValue, 64> argv{};
-
-      for (std::uint32_t index = 0; index < count; ++index) {
-        values.emplace_back(m_impl->m_context,
-                            JS_GetPropertyUint32(m_impl->m_context, array.value, index));
-        if (JS_IsException(values.back().value)) {
-          return std::unexpected(m_impl->exception(operation));
-        }
-
-        argv[index] = values.back().value;
-      }
-
-      Value result{m_impl->m_context, JS_Call(m_impl->m_context, target.value, JS_UNDEFINED,
-                                              static_cast<int>(count), argv.data())};
-
-      if (JS_IsException(result.value)) {
-        return std::unexpected(m_impl->exception(operation));
-      }
-
-      auto settled = m_impl->settle(result);
-
-      if (!settled) {
-        return std::unexpected(settled.error());
-      }
-
-      if (JS_IsUndefined(result.value)) {
-        return std::optional<std::string>{};
-      }
-
-      Value replacer{m_impl->m_context,
-                     JS_NewCFunction(m_impl->m_context, Impl::jsonValue, "validateJson", 2)};
-      if (JS_IsException(replacer.value)) {
-        return std::unexpected(m_impl->exception(operation));
-      }
-
-      Value encoded{m_impl->m_context, JS_JSONStringify(m_impl->m_context, result.value,
-                                                        replacer.value, JS_UNDEFINED)};
-
-      if (JS_IsException(encoded.value)) {
-        return std::unexpected(m_impl->exception(operation));
-      }
-
-      if (!JS_IsString(encoded.value)) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Script result is not JSON-serializable");
+      if (promise) {
+        JS_PromiseMarkAsHandled(m_impl->m_context, object.value);
       }
 
       auto drained = m_impl->drain();
@@ -1246,22 +1390,156 @@ namespace Dot::Script {
         return std::unexpected(drained.error());
       }
 
-      CString text{m_impl->m_context, encoded.value};
-
-      if (!text.value) {
-        return std::unexpected(m_impl->exception(operation));
+      if (!JS_IsObject(object.value) || promise) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          operation + " must return a synchronous object");
       }
 
-      if (text.size > m_impl->m_config.jsonBytes) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Script JSON result exceeds limit");
-      }
-
-      return std::optional<std::string>{std::string{text.value, text.size}};
+      const auto value = m_impl->m_nextInstance;
+      m_impl->m_instances.emplace(value, Impl::Instance{path, std::move(object)});
+      ++m_impl->m_nextInstance;
+      return InstanceId{m_impl->m_identity, value};
     } catch (const std::exception& error) {
       m_impl->m_faulted = true;
       return Core::fail(Core::ErrorCode::External,
-                        std::format("Call script export: {}", error.what()));
+                        "Construct script instance: " + std::string(error.what()));
     }
+  }
+
+  auto Runtime::callMethod(InstanceId instance, std::string_view method, std::string_view arguments)
+      -> Core::Result<std::optional<std::string>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Script runtime has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto found = m_impl->instance(instance);
+
+    if (!found) {
+      return std::unexpected(found.error());
+    }
+
+    if (!symbolValid(method) || !m_impl->argumentsValid(arguments)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid method name/JSON arguments");
+    }
+
+    Impl::Execution execution{*m_impl};
+
+    try {
+      const auto operation
+          = std::format("Method {}[{}].{}", (*found)->path, instance.value, method);
+      auto parsed = m_impl->parseArguments(arguments, operation);
+
+      if (!parsed) {
+        return std::unexpected(parsed.error());
+      }
+
+      const std::string name{method};
+      Value target{m_impl->m_context,
+                   JS_GetPropertyStr(m_impl->m_context, (*found)->object.value, name.c_str())};
+
+      if (JS_IsException(target.value)) {
+        return std::unexpected(m_impl->exception(operation));
+      }
+
+      if (!JS_IsFunction(m_impl->m_context, target.value)) {
+        auto drained = m_impl->drain();
+
+        if (!drained) {
+          return std::unexpected(drained.error());
+        }
+
+        return Core::fail(Core::ErrorCode::InvalidArgument, operation + " is not callable");
+      }
+
+      return m_impl->invoke(target.value, (*found)->object.value, *parsed, operation);
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(Core::ErrorCode::External,
+                        "Call script method: " + std::string(error.what()));
+    }
+  }
+
+  auto Runtime::hasMethod(InstanceId instance, std::string_view method) -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Script runtime has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto found = m_impl->instance(instance);
+
+    if (!found) {
+      return std::unexpected(found.error());
+    }
+
+    if (!symbolValid(method)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid method name");
+    }
+
+    Impl::Execution execution{*m_impl};
+
+    try {
+      const auto operation
+          = std::format("Discover {}[{}].{}", (*found)->path, instance.value, method);
+      const std::string name{method};
+      Value target{m_impl->m_context,
+                   JS_GetPropertyStr(m_impl->m_context, (*found)->object.value, name.c_str())};
+
+      if (JS_IsException(target.value)) {
+        return std::unexpected(m_impl->exception(operation));
+      }
+
+      auto drained = m_impl->drain();
+
+      if (!drained) {
+        return std::unexpected(drained.error());
+      }
+
+      if (JS_IsUndefined(target.value)) {
+        return false;
+      }
+
+      if (!JS_IsFunction(m_impl->m_context, target.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, operation + " is not callable");
+      }
+
+      return true;
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(Core::ErrorCode::External,
+                        "Discover script method: " + std::string(error.what()));
+    }
+  }
+
+  auto Runtime::releaseInstance(InstanceId instance) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Script runtime has been moved");
+    }
+
+    auto checked = m_impl->check(false);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto found = m_impl->instance(instance);
+
+    if (!found) {
+      return std::unexpected(found.error());
+    }
+
+    m_impl->m_instances.erase(instance.value);
+    return {};
   }
 
   auto Runtime::stats() const -> Core::Result<RuntimeStats> {
@@ -1278,6 +1556,7 @@ namespace Dot::Script {
     return RuntimeStats{{m_impl->m_heap.bytes, m_impl->m_heap.allocations},
                         m_impl->m_definitions.size(),
                         m_impl->m_entries.size(),
-                        m_impl->m_faulted};
+                        m_impl->m_faulted,
+                        m_impl->m_instances.size()};
   }
 }  // namespace Dot::Script

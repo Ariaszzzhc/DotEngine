@@ -148,7 +148,7 @@ target_sources(DotEngine PUBLIC
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
     src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
-    src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp)
+    src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp src/Runtime/InstanceAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)
