@@ -117,4 +117,19 @@ timeouts and recoverable surface changes explicitly defer a frame.
   caller-selected LLVM libc++/libunwind and uses system Metal/QuartzCore frameworks.
   Windows/Linux implementation paths remain unverified.
 
+### CPU geometry
+
+Added a separate geometry module with indexed/non-indexed triangle validation,
+finite positions and color ranges, bounded vertex/index counts, axis-aligned
+bounds, and centered cube/quad generators. Vertex data now belongs to this module
+and remains re-exported by the renderer for existing consumers.
+
+- macOS Debug and Release each pass all 122 CTest cases (113 doctest cases and
+  nine executable checks). Geometry tests cover outward cube winding, quad
+  winding, bounds, invalid topology/indices/colors, resource limits, and primitive
+  underflow/overflow boundaries; `--geometry-test` exercises the public API.
+- Reviewed primitive indices, scale boundaries, allocation limits, and existing
+  renderer compatibility. Formatting/whitespace checks pass.
+- Windows/Linux remain unverified.
+
 Reusable GPU assets, ECS scenes, and all higher milestones remain to be implemented.

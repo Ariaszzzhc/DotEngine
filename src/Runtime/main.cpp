@@ -13,6 +13,27 @@ import Dot.Math;
 import Dot.Graphics.Renderer;
 
 namespace {
+  auto testGeometry() -> int {
+    auto mesh = Dot::Graphics::cube({2, 4, 6});
+
+    if (!mesh) {
+      std::println(stderr, "{}", mesh.error().message);
+      return 1;
+    }
+
+    auto bounds = Dot::Graphics::meshBounds(*mesh);
+
+    if (!bounds || bounds->minimum != Dot::Math::Vec3{-1, -2, -3}
+        || bounds->maximum != Dot::Math::Vec3{1, 2, 3}) {
+      std::println(stderr, "Geometry acceptance failed");
+      return 1;
+    }
+
+    std::println("Geometry acceptance passed: {} vertices, {} indices", mesh->vertices.size(),
+                 mesh->indices.size());
+    return 0;
+  }
+
   auto testGraphics(bool native) -> int {
     std::array<Dot::Graphics::Vertex, 3> vertices{{
         {{-0.8F, -0.8F, 0.5F}, {1, 0, 0, 1}},
@@ -208,6 +229,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--geometry-test") {
+      return testGeometry();
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--gpu-test") {
       return testGraphics(false);
     }
@@ -236,8 +261,8 @@ auto main(int argc, char** argv) -> int {
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
       std::println(stderr,
                    "Usage: DotRuntime "
-                   "[--version|--self-test|--math-test|--window-smoke|--gpu-test|--render-smoke|"
-                   "--file-test <directory>]");
+                   "[--version|--self-test|--math-test|--geometry-test|"
+                   "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>]");
       return 2;
     }
 

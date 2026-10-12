@@ -40,6 +40,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/Input.cpp
     src/Engine/Math/Math.cpp
     src/Engine/Graphics/Renderer.cpp
+    src/Engine/Graphics/Geometry.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -60,6 +61,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Application.cppm
         src/Engine/Math/Math.cppm
         src/Engine/Graphics/Renderer.cppm
+        src/Engine/Graphics/Geometry.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)

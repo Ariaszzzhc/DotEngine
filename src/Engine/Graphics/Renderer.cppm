@@ -11,6 +11,7 @@ export module Dot.Graphics.Renderer;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Platform.Window;
+export import Dot.Graphics.Geometry;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -20,11 +21,6 @@ export namespace Dot::Graphics {
     std::string name;
     std::string description;
     std::uint32_t maxTextureDimension;
-  };
-
-  struct Vertex {
-    Math::Vec3 position;
-    Math::Vec4 color{1, 1, 1, 1};
   };
 
   /** RGBA8 pixels in top-to-bottom row order; no row padding.

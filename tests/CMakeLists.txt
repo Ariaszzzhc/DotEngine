@@ -1,5 +1,15 @@
 find_package(doctest CONFIG REQUIRED)
-add_executable(DotTests main.cpp CoreTests.cpp EventTests.cpp FileTests.cpp InputTests.cpp PlatformTests.cpp ApplicationTests.cpp MathTests.cpp)
+add_executable(DotTests
+    main.cpp
+    CoreTests.cpp
+    EventTests.cpp
+    FileTests.cpp
+    InputTests.cpp
+    PlatformTests.cpp
+    ApplicationTests.cpp
+    MathTests.cpp
+    GeometryTests.cpp
+)
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
@@ -16,6 +26,8 @@ add_test(NAME runtime.window COMMAND DotRuntime --window-smoke)
 set_tests_properties(runtime.window PROPERTIES TIMEOUT 15 LABELS "acceptance" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 add_test(NAME runtime.math COMMAND DotRuntime --math-test)
 set_tests_properties(runtime.math PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.geometry COMMAND DotRuntime --geometry-test)
+set_tests_properties(runtime.geometry PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
 add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest)
