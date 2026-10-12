@@ -10,6 +10,7 @@ export module Dot.Script.Runtime;
 
 import Dot.Core.Result;
 import Dot.Core.Files;
+export import Dot.Script.Host;
 
 export namespace Dot::Script {
   struct ModuleId {
@@ -26,6 +27,7 @@ export namespace Dot::Script {
     std::uint32_t maxModules{256};
     std::uint32_t maxJobs{1024};
     std::uint32_t milliseconds{100};
+    std::uint32_t maxHostCalls{256};
   };
 
   struct RuntimeMemory {
@@ -52,7 +54,8 @@ export namespace Dot::Script {
   class Runtime {
   public:
     [[nodiscard]] static auto create(const Core::FileSystem& files,
-                                     const RuntimeConfig& config = {}) -> Core::Result<Runtime>;
+                                     const RuntimeConfig& config = {},
+                                     const HostBindings& bindings = {}) -> Core::Result<Runtime>;
     Runtime(const Runtime&) = delete;
     auto operator=(const Runtime&) -> Runtime& = delete;
     Runtime(Runtime&&) noexcept;
@@ -62,11 +65,16 @@ export namespace Dot::Script {
     [[nodiscard]] static auto backendMemory() noexcept -> RuntimeMemory;
     /** Root-relative canonical UTF-8 .js/.mjs entry. Imports must be ./ or ../
      * relative paths staying inside the root; no bare names, attributes, extension
-     * guessing, or bytecode. Modules cache per realm; loading an imported module
+     * guessing, or bytecode. Registered services are available only through the
+     * reserved dot:host ESM invoke(name, arguments) function. Host calls share a
+     * per-operation limit across initializers/jobs/serialization; excess faults
+     * the realm even if caught. Modules cache per realm; loading an imported module
      * as an entry reuses its state. Top-level await must settle through bounded
      * jobs. Load/resolution failures fault the realm; create another to recover.
      * 根目录相对规范 UTF-8 .js/.mjs 入口；导入须为 ./ 或 ../ 相对路径且不逃逸根目录，
-     * 不支持裸名称、属性、扩展名猜测或字节码。模块在 realm 内缓存，把已导入模块作为
+     * 不支持裸名称、属性、扩展名猜测或字节码；注册服务仅经保留的 dot:host ESM
+     * invoke(name, arguments) 访问。初始化/任务/序列化共享每操作宿主调用限制，捕获
+     * 超限异常也会使 realm 故障。模块在 realm 内缓存，把已导入模块作为
      * 入口时复用状态；顶层 await 须通过有界任务完成，加载/解析失败须新建 realm 恢复。 */
     [[nodiscard]] auto loadModule(std::string_view relative) -> Core::Result<ModuleId>;
     /** Invoke an exported function with a JSON array of at most 64 arguments.

@@ -34,6 +34,8 @@ namespace Dot::Runtime {
       -> int;
   auto testCompiler(const std::filesystem::path& executable, const std::filesystem::path& root)
       -> int;
+  auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
+                      const std::filesystem::path& root, bool render) -> int;
 }  // namespace Dot::Runtime
 
 namespace {
@@ -691,6 +693,13 @@ auto main(int argc, char** argv) -> int {
       return Dot::Runtime::testCompiler(argv[2], argv[3]);
     }
 
+    if (argc == 5
+        && (std::string_view(argv[1]) == "--script-host-test"
+            || std::string_view(argv[1]) == "--script-host-render-test")) {
+      return Dot::Runtime::testScriptHost(argv[2], argv[3], argv[4],
+                                          std::string_view(argv[1]) == "--script-host-render-test");
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -711,7 +720,9 @@ auto main(int argc, char** argv) -> int {
           "--audio-mix-test|--audio-output-test|--audio-playback-test|--audio-spatial-test|"
           "--scene-audio-test <directory>|--audio-batch-test|--scene-audio-play-test <directory>|"
           "--script-test <directory>|--process-test <fixture> <directory>|"
-          "--typescript-test <compiler> <directory>]");
+          "--typescript-test <compiler> <directory>|--script-host-test <compiler> <sdk> "
+          "<directory>|"
+          "--script-host-render-test <compiler> <sdk> <directory>]");
       return 2;
     }
 

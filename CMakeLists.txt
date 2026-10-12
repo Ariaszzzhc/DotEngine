@@ -91,6 +91,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/SceneAudio.cpp
     src/Engine/Script/Runtime.cpp
     src/Engine/Script/Compiler.cpp
+    src/Engine/Script/SceneHost.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -139,13 +140,15 @@ target_sources(DotEngine PUBLIC
         src/Engine/Audio/Source.cppm
         src/Engine/Audio/SceneAudio.cppm
         src/Engine/Script/Runtime.cppm
+        src/Engine/Script/Host.cppm
+        src/Engine/Script/SceneHost.cppm
         src/Engine/Script/Compiler.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
     src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
     src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
-    src/Runtime/CompilerAcceptance.cpp)
+    src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)

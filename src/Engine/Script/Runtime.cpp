@@ -18,6 +18,7 @@ module;
 #include <limits>
 #include <map>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
 #include <source_location>
@@ -32,12 +33,59 @@ module Dot.Script.Runtime;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.Text;
+import Dot.Script.Host;
 
 namespace Dot::Script {
   namespace {
     std::atomic<std::uint64_t> liveBytes{};
     std::atomic<std::uint64_t> liveAllocations{};
     std::atomic<std::uint64_t> nextRuntime{1};
+
+    auto hostNameValid(std::string_view name) -> bool {
+      if (name.empty() || name.size() > 128) {
+        return false;
+      }
+
+      bool first = true;
+
+      for (const char character : name) {
+        const bool letter = (character >= 'a' && character <= 'z')
+                            || (character >= 'A' && character <= 'Z') || character == '_';
+
+        if (character == '.') {
+          if (first) {
+            return false;
+          }
+
+          first = true;
+        } else if (letter || (!first && character >= '0' && character <= '9')) {
+          first = false;
+        } else {
+          return false;
+        }
+      }
+
+      return !first;
+    }
+
+    auto errorName(Core::ErrorCode code) -> const char* {
+      switch (code) {
+        case Core::ErrorCode::InvalidArgument:
+          return "InvalidArgument";
+        case Core::ErrorCode::NotFound:
+          return "NotFound";
+        case Core::ErrorCode::Io:
+          return "Io";
+        case Core::ErrorCode::Unavailable:
+          return "Unavailable";
+        case Core::ErrorCode::InvalidState:
+          return "InvalidState";
+        case Core::ErrorCode::External:
+          return "External";
+      }
+
+      return "External";
+    }
 
     struct alignas(std::max_align_t) Allocation {
       std::size_t size;
@@ -294,6 +342,7 @@ namespace Dot::Script {
 
     Core::FileSystem m_files;
     RuntimeConfig m_config;
+    std::map<std::string, HostCallback, std::less<>> m_bindings;
     Heap m_heap;
     JSRuntime* m_runtime{};
     JSContext* m_context{};
@@ -309,16 +358,23 @@ namespace Dot::Script {
     bool m_interrupted{};
     bool m_loaderFailed{};
     bool m_trackerFailed{};
+    bool m_hostLimitExceeded{};
+    std::uint32_t m_hostCalls{};
     std::uint32_t m_jobs{};
     std::string m_loaderError;
     Clock::time_point m_deadline{};
 
-    Impl(Core::FileSystem files, RuntimeConfig config, std::uint64_t identity)
+    Impl(Core::FileSystem files, RuntimeConfig config, std::uint64_t identity,
+         const HostBindings& bindings)
         : m_files(std::move(files)),
           m_config(config),
           m_heap{config.memoryBytes},
           m_identity(identity) {
       m_rejections.reserve(config.maxJobs);
+
+      for (const auto& binding : bindings) {
+        m_bindings.emplace(binding.name, binding.callback);
+      }
     }
 
     ~Impl() {
@@ -359,6 +415,8 @@ namespace Dot::Script {
         owner.m_interrupted = false;
         owner.m_heap.failed = false;
         owner.m_jobs = 0;
+        owner.m_hostCalls = 0;
+        owner.m_hostLimitExceeded = false;
         owner.m_deadline = Clock::now() + std::chrono::milliseconds{owner.m_config.milliseconds};
         JS_UpdateStackTop(owner.m_runtime);
       }
@@ -384,7 +442,9 @@ namespace Dot::Script {
       auto& owner = *static_cast<Impl*>(opaque);
 
       try {
-        auto path = canonical(name, base);
+        auto path = std::string_view{name} == "dot:host" && !owner.m_bindings.empty()
+                        ? Core::Result<std::string>{"dot:host"}
+                        : canonical(name, base);
 
         if (!path) {
           owner.m_loaderFailed = true;
@@ -435,6 +495,25 @@ namespace Dot::Script {
       auto& owner = *static_cast<Impl*>(opaque);
 
       try {
+        if (std::string_view{name} == "dot:host") {
+          if (owner.m_bindings.empty() || owner.m_sources.size() >= owner.m_config.maxModules) {
+            owner.m_loaderFailed = true;
+            JS_ThrowReferenceError(context, "Host module is unavailable or module limit exceeded");
+            return nullptr;
+          }
+
+          auto* module = JS_NewCModule(context, "dot:host", hostInit);
+
+          if (!module || JS_AddModuleExport(context, module, "invoke") < 0) {
+            owner.m_loaderFailed = true;
+            return nullptr;
+          }
+
+          owner.m_sources.insert(name);
+          owner.m_definitions.emplace(name, module);
+          return module;
+        }
+
         auto result = owner.compile(name);
 
         if (!result) {
@@ -540,7 +619,7 @@ namespace Dot::Script {
         m_heap.failed = true;
       }
 
-      if (m_interrupted || m_heap.failed || m_loaderFailed || m_trackerFailed
+      if (m_interrupted || m_heap.failed || m_loaderFailed || m_trackerFailed || m_hostLimitExceeded
           || JS_IsJobPending(m_runtime) || !m_rejections.empty()) {
         m_faulted = true;
       }
@@ -551,6 +630,8 @@ namespace Dot::Script {
         message = "Script VM memory limit/allocation failure";
       } else if (m_loaderFailed && !m_loaderError.empty()) {
         message = m_loaderError;
+      } else if (m_hostLimitExceeded) {
+        message = "Script host-call limit exceeded";
       }
 
       return Core::Error{Core::ErrorCode::External, std::format("{}: {}", operation, message),
@@ -584,7 +665,8 @@ namespace Dot::Script {
                                            : diagnostic(m_rejections.front().reason.value)));
       }
 
-      if (m_loaderFailed || m_heap.failed || m_interrupted || Clock::now() >= m_deadline) {
+      if (m_loaderFailed || m_heap.failed || m_interrupted || m_hostLimitExceeded
+          || Clock::now() >= m_deadline) {
         m_faulted = true;
         m_interrupted = m_interrupted || Clock::now() >= m_deadline;
         return std::unexpected(failure("Script execution", "Runtime resource failure"));
@@ -622,6 +704,232 @@ namespace Dot::Script {
       }
 
       return {};
+    }
+
+    auto transportFailure(std::string_view operation) -> std::unexpected<Core::Error> {
+      Value reason{m_context, JS_GetException(m_context)};
+      auto message = diagnostic(reason.value);
+
+      if (message == "InternalError: out of memory"
+          || message.starts_with("InternalError: out of memory\n")) {
+        m_heap.failed = true;
+      }
+
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        std::format("{}: {}", operation, message));
+    }
+
+    auto hostArguments(JSValueConst arguments) -> Core::Result<std::string> {
+      if (!JS_IsArray(arguments)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Host arguments must be an array");
+      }
+
+      Value replacer{m_context, JS_NewCFunction(m_context, jsonValue, "validateHostJson", 2)};
+
+      if (JS_IsException(replacer.value)) {
+        return transportFailure("Create host JSON validator");
+      }
+
+      Value encoded{m_context,
+                    JS_JSONStringify(m_context, arguments, replacer.value, JS_UNDEFINED)};
+
+      if (JS_IsException(encoded.value)) {
+        return transportFailure("Encode host arguments");
+      }
+
+      if (!JS_IsString(encoded.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Host arguments are not JSON");
+      }
+
+      CString text{m_context, encoded.value};
+
+      if (!text.value) {
+        return transportFailure("Read host arguments");
+      }
+
+      if (text.size > m_config.jsonBytes) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Host argument bytes exceed limit");
+      }
+
+      std::string result{text.value, text.size};
+
+      try {
+        const auto parsed = nlohmann::json::parse(result);
+
+        if (!parsed.is_array() || parsed.size() > 64) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Host encoded arguments must be an array of at most 64 values");
+        }
+      } catch (const nlohmann::json::exception& error) {
+        return Core::fail(
+            Core::ErrorCode::InvalidArgument,
+            "Host arguments require scalar Unicode JSON: " + std::string(error.what()));
+      }
+
+      return result;
+    }
+
+    static auto hostError(JSContext* context, Core::ErrorCode code, std::string_view method,
+                          std::string_view detail) noexcept -> JSValue {
+      try {
+        auto bounded = detail.substr(0, 8192);
+
+        for (int attempt = 0;
+             detail.size() > 8192 && attempt < 4 && !bounded.empty() && !Core::isValidUtf8(bounded);
+             ++attempt) {
+          bounded.remove_suffix(1);
+        }
+
+        if (!Core::isValidUtf8(bounded)) {
+          bounded = "Host diagnostic has invalid UTF-8";
+        }
+
+        const auto message = std::format("Host {}: {}{}", method, bounded,
+                                         detail.size() > bounded.size() ? "..." : "");
+        Value error{context, JS_NewError(context)};
+
+        if (JS_IsException(error.value)) {
+          return JS_EXCEPTION;
+        }
+
+        const auto property = [&](const char* key, std::string_view text) {
+          Value value{context, JS_NewStringLen(context, text.data(), text.size())};
+
+          if (JS_IsException(value.value)) {
+            return false;
+          }
+
+          return JS_DefinePropertyValueStr(context, error.value, key, value.take(), JS_PROP_C_W_E)
+                 >= 0;
+        };
+
+        if (!property("name", "DotHostError") || !property("code", errorName(code))
+            || !property("message", message)) {
+          return JS_EXCEPTION;
+        }
+
+        return JS_Throw(context, error.take());
+      } catch (...) {
+        return JS_ThrowInternalError(context, "Host error construction failed");
+      }
+    }
+
+    static auto hostInvoke(JSContext* context, JSValueConst, int count,
+                           JSValueConst* arguments) noexcept -> JSValue {
+      auto* owner = static_cast<Impl*>(JS_GetContextOpaque(context));
+
+      if (!owner || !owner->m_active) {
+        return JS_ThrowInternalError(context, "Host invocation has no active runtime operation");
+      }
+
+      std::string method;
+
+      try {
+        method = "invoke";
+
+        if (owner->m_hostCalls >= owner->m_config.maxHostCalls) {
+          owner->m_hostLimitExceeded = true;
+          return JS_ThrowInternalError(context, "Script host-call limit exceeded");
+        }
+
+        ++owner->m_hostCalls;
+
+        if (Clock::now() >= owner->m_deadline) {
+          owner->m_interrupted = true;
+          return JS_ThrowInternalError(context, "Script execution time limit exceeded");
+        }
+
+        if (count != 2 || !JS_IsString(arguments[0])) {
+          return hostError(context, Core::ErrorCode::InvalidArgument, method,
+                           "invoke requires a method string and argument array");
+        }
+
+        CString name{context, arguments[0]};
+
+        if (!name.value) {
+          return JS_EXCEPTION;
+        }
+
+        if (!hostNameValid(std::string_view{name.value, name.size})) {
+          return hostError(context, Core::ErrorCode::InvalidArgument, method,
+                           "Invalid method name");
+        }
+
+        method.assign(name.value, name.size);
+        const auto found = owner->m_bindings.find(method);
+
+        if (found == owner->m_bindings.end()) {
+          return hostError(context, Core::ErrorCode::NotFound, method, "Method is not registered");
+        }
+
+        auto encoded = owner->hostArguments(arguments[1]);
+
+        if (!encoded) {
+          return hostError(context, encoded.error().code, method, encoded.error().message);
+        }
+
+        /** Argument getters/toJSON can recursively call the native bridge.
+         * 参数 getter/toJSON 可递归调用原生桥；副作用前必须重新检查共享限制。 */
+        if (owner->m_hostLimitExceeded || owner->m_heap.failed || owner->m_interrupted
+            || Clock::now() >= owner->m_deadline) {
+          owner->m_interrupted = owner->m_interrupted || Clock::now() >= owner->m_deadline;
+          return JS_ThrowInternalError(context, "Host argument execution exceeded runtime limits");
+        }
+
+        auto result = found->second(*encoded);
+
+        if (Clock::now() >= owner->m_deadline) {
+          owner->m_interrupted = true;
+          return JS_ThrowInternalError(context, "Native host work exceeded execution time limit");
+        }
+
+        if (!result) {
+          return hostError(context, result.error().code, method, result.error().message);
+        }
+
+        if (!result->has_value()) {
+          return JS_UNDEFINED;
+        }
+
+        const auto& text = **result;
+
+        if (text.empty() || text.size() > owner->m_config.jsonBytes
+            || text.find('\0') != std::string::npos || !Core::isValidUtf8(text)) {
+          return hostError(context, Core::ErrorCode::External, method,
+                           "Invalid host JSON result bytes");
+        }
+
+        try {
+          static_cast<void>(nlohmann::json::parse(text));
+        } catch (const nlohmann::json::exception&) {
+          return hostError(context, Core::ErrorCode::External, method,
+                           "Invalid finite Unicode host JSON result");
+        }
+
+        Value parsed{context, JS_ParseJSON(context, text.c_str(), text.size(), "<host-result>")};
+
+        if (JS_IsException(parsed.value)) {
+          auto failure = owner->transportFailure("Parse host result");
+          return hostError(context, Core::ErrorCode::External, method, failure.error().message);
+        }
+
+        return parsed.take();
+      } catch (const std::exception& error) {
+        return hostError(context, Core::ErrorCode::External, method, error.what());
+      } catch (...) {
+        return hostError(context, Core::ErrorCode::External, method,
+                         "Non-standard native exception");
+      }
+    }
+
+    static auto hostInit(JSContext* context, JSModuleDef* module) noexcept -> int {
+      Value function{context, JS_NewCFunction(context, hostInvoke, "invoke", 2)};
+
+      if (JS_IsException(function.value)) {
+        return -1;
+      }
+
+      return JS_SetModuleExport(context, module, "invoke", function.take());
     }
 
     static auto jsonValue(JSContext* context, JSValueConst, int count,
@@ -674,14 +982,15 @@ namespace Dot::Script {
     return {liveBytes.load(), liveAllocations.load()};
   }
 
-  auto Runtime::create(const Core::FileSystem& files, const RuntimeConfig& config)
-      -> Core::Result<Runtime> {
+  auto Runtime::create(const Core::FileSystem& files, const RuntimeConfig& config,
+                       const HostBindings& bindings) -> Core::Result<Runtime> {
     if (config.memoryBytes == 0 || config.memoryBytes > 1024ULL * 1024 * 1024
         || config.stackBytes < 64 * 1024 || config.stackBytes > 256 * 1024
         || config.sourceBytes == 0 || config.sourceBytes > 16 * 1024 * 1024 || config.jsonBytes == 0
         || config.jsonBytes > 16 * 1024 * 1024 || config.maxModules == 0 || config.maxModules > 1024
         || config.maxJobs == 0 || config.maxJobs > 65536 || config.milliseconds == 0
-        || config.milliseconds > 1000) {
+        || config.milliseconds > 1000 || config.maxHostCalls == 0 || config.maxHostCalls > 65536
+        || bindings.size() > 256) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid script runtime limits");
     }
 
@@ -696,7 +1005,17 @@ namespace Dot::Script {
     }
 
     try {
-      auto impl = std::make_unique<Impl>(files, config, identity);
+      std::set<std::string_view> names;
+
+      for (const auto& binding : bindings) {
+        if (!hostNameValid(binding.name) || !binding.callback
+            || !names.insert(binding.name).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Host bindings need unique canonical names and nonempty callbacks");
+        }
+      }
+
+      auto impl = std::make_unique<Impl>(files, config, identity, bindings);
       const JSMallocFunctions allocator{Heap::zeroed, Heap::allocate, Heap::release, Heap::resize,
                                         Heap::usable};
       impl->m_runtime = JS_NewRuntime2(&allocator, &impl->m_heap);
@@ -719,6 +1038,8 @@ namespace Dot::Script {
         return Core::fail(Core::ErrorCode::External,
                           "Initialize script context: allocation failure");
       }
+
+      JS_SetContextOpaque(impl->m_context, impl.get());
 
       return Runtime{std::move(impl)};
     } catch (const std::exception& error) {

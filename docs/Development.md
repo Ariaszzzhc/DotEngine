@@ -880,5 +880,68 @@ explicit tool path and retain a CompiledProgram owner while a Runtime uses it.
   linker environment edits were introduced. Windows/Linux code and packages have
   been reviewed but not compiled/executed locally.
 
-Engine host bindings, script components/hot reload, project/editor/export tooling,
-expanded rendering, and the example game remain to be implemented.
+### Registered script services and core scene SDK
+
+Added an owned native ESM host bridge and the first real engine script services,
+with typed Entity/scene wrappers compiled by the official TypeScript tool. This
+stage connects scripts to native scene state and actual rendered pixels; it does
+not yet attach script instances as components or implement lifecycle/hot reload.
+
+- Final macOS Debug and Release each pass all 513 CTest cases (483 doctest cases
+  and thirty executable checks). Twenty-seven new focused cases cover real native
+  ESM/static/dynamic/top-level-await transport, owned callbacks, missing/bounded
+  modules, all Core error codes/context, contained standard/nonstandard C++ throws,
+  strict JSON/Unicode/finite results and undefined/null, invalid arguments before
+  side effects, method/registration limits, shared host budgets through jobs and
+  serialization, recursive argument conversion, native deadline observation,
+  reentry rejection, prototype-setter-independent errors, bounded diagnostics,
+  deep valid JSON rejected by VM stack with preserved method context, and callback/
+  VM cleanup after moves, partial initialization and foreign quiescent destruction.
+- Scene cases cover all eleven methods, owned snapshots, quaternion normalization,
+  unchanged state after invalid transforms/arguments, exact ID/object shapes,
+  foreign/stale IDs, values above JavaScript integer precision, parent/unparent/
+  cycle/subtree semantics, shared scene lifetime, moved-scene invalidation and
+  native thread restrictions. Four SDK cases use actual TypeScript compilation
+  and QuickJS execution to verify native edits, snapshot assignment, recoverable
+  failures, continued state, compile-time ID/transform constraints and contextual
+  uncaught failures retaining earlier successful native operations.
+- `--script-host-test <compiler> <sdk-root> <directory>` compiles the actual source
+  SDK, creates/removes a child, edits hierarchy/names, rejects an invalid transform
+  and applies sixty typed ticks to a native cube. `--script-host-render-test` adds
+  real Metal readback before/after that movement, verifying changed pixels and the
+  retained native mesh/cache. Both verify compiler generation/process/VM cleanup;
+  existing actual CoreAudio/Cocoa/Metal acceptance checks remain passing.
+- Runtime copies an immutable registry of up to 256 canonical named callbacks.
+  Only registered realms expose the reserved `dot:host` module; no host globals or
+  implicit OS services appear. The native module counts toward the module quota.
+  Arrays/results are checked through bounded finite scalar-Unicode JSON. Catchable
+  DotHostError objects carry stable Core code names and method context, with owned
+  properties that bypass script Error prototype setters. C callbacks contain C++
+  exceptions and correctly transfer/free SDK values and native module exports.
+- Host-call budgets default to 256 per public operation (range 1..65536), shared
+  across initializers/jobs/serialization. Catching budget failures cannot hide
+  realm failure. Argument getters/toJSON can recurse, so limits are checked again
+  before native side effects. Native calls are synchronous and not preempted;
+  observed deadlines fault after return. Callback allocations and JSON transport
+  containers remain outside the VM payload quota. Earlier successful operations
+  and candidate module-initializer native side effects are not rolled back.
+- Core scene bindings retain the original shared scene identity and invoke the
+  same native operations as C++ consumers. IDs use scoped canonical decimal string
+  pairs; complete finite float-range TRS shapes are validated before mutation.
+  SDK Entity wrappers own copied IDs/snapshots, and getters only commit changes
+  upon assignment. Component-specific camera/mesh/physics/audio APIs remain future
+  work rather than being implied by the core entity snapshot.
+- Reviewed registration/context/move/destruction ownership, every SDK exceptional
+  result and consumed export/property value, loader budgets/reserved specifiers,
+  JSON bounds/encoding/depth failures, native callback exception containment,
+  deadline/recursive/reentry guards, ID precision/scope, transaction boundaries,
+  native thread rules, typed SDK contracts and real GPU acceptance lifetimes.
+  Formatting/whitespace checks pass. Module interfaces and implementations remain
+  separate; vendor headers stay private. Release runs with NDEBUG; LLVM libc++/
+  libunwind remain caller-selected with no LC_RPATH. No sanitizers or environment
+  edits were introduced. Windows/Linux use the common implementations but remain
+  uncompiled/unexecuted locally.
+
+Script component instances/lifecycles/hot reload, remaining subsystem script APIs,
+project/editor/export tooling, expanded rendering, and the example game remain
+to be implemented.
