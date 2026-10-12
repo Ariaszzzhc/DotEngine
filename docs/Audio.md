@@ -37,5 +37,51 @@ no external media or encoder installation is required. The FLAC fixture follows
 
 The backend is a private C11 static library. macOS links CoreAudio/AudioToolbox
 and CoreFoundation directly; Linux uses its platform backend and dynamic loader,
-and Windows uses its native backend. Only macOS has been validated. This stage
-has no playback device, mixer, spatial voices, or scene audio components yet.
+and Windows uses its native backend. Only macOS has been validated. Playback devices, spatial voices, and scene audio components remain to be
+implemented.
+
+
+# Offline mixing
+
+`Dot.Audio.Mixer` owns an independent miniaudio graph. It currently opens no audio
+device; `render` writes actual interleaved float PCM into the caller's buffer.
+Creation and instance operations run on the creating thread. Moving keeps that
+thread and the mixer identity. Destruction may occur on another thread after all
+use has stopped. Independent mixers can render on different threads.
+
+Output supports mono/stereo at 8000..192000 Hz, with 1..1024 retained voices. A
+voice holds its Clip copy, is initially paused, and has a scoped, non-reused ID.
+Finished voices remain retained until explicitly destroyed; hitting the voice
+capacity is an error. Playing resumes a paused voice and restarts an ended voice.
+Queries report owned format/settings values and playing/end flags.
+
+Voice volume and master volume are [0,1], pan is [-1,1], and pitch is [0.25,4].
+Stereo pan moves and blends channels, so a full left pan combines the right
+signal into the left signal. Mono sources duplicate into stereo. Source rates
+and pitches use the backend resampler. Identical rates at pitch 1 bypass it;
+pitch mode transitions and seeking reset filter history. Resampled output can
+have the backend filter's startup latency. Seeking uses source-frame coordinates
+in [0,clip.frames), clears stale prefetched data/end state, and does not start a
+paused/ended voice. Loop changes preserve unconsumed source position and discard
+old prefetched loop data. These operations require a quiescent graph; the private
+C bridge deliberately manages exposed state in the pinned backend revision.
+
+`render` accepts 1..65536 complete output frames. Empty graphs and naturally
+finished sources produce normal silence; backend failures remain errors. Every
+successful call advances the output frame clock by the requested count. Mixing
+has no hidden limiter and may exceed [-1,1]. Invalid buffers/settings/handles are
+rejected before changes; graph failures after rendering fault the mixer, retaining
+queries and voice cleanup. Recreate a faulted mixer to recover.
+
+The backend payload budget defaults to 16 MiB and must be 1 byte..1 GiB. A
+reservation-aware allocator enforces it, including failed initialization and voice
+preparation. Backend memory counters cover these payloads, excluding their small
+allocation headers, Clip storage, C++ containers, and operating-system internals.
+Process-wide counters are thread-safe informational samples, rather than one
+atomic combined snapshot. Allocation failures preserve the usable existing graph.
+The vendor resource manager is disabled: FileSystem/Clip remain the sole asset
+loading path, avoiding hidden file access and unused loading workers.
+
+Run `DotRuntime --audio-mix-test` for summed PCM, pause/seek/master gain, stale IDs,
+and complete backend allocation cleanup. This is an offline acceptance case;
+it does not establish playback-device operation or audible output.

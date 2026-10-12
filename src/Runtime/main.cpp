@@ -22,6 +22,7 @@ import Dot.Physics.World;
 namespace Dot::Runtime {
   auto testScenePhysics(bool render) -> int;
   auto testAudioClip(const std::filesystem::path& root) -> int;
+  auto testAudioMix() -> int;
 }  // namespace Dot::Runtime
 
 namespace {
@@ -639,6 +640,10 @@ auto main(int argc, char** argv) -> int {
       return Dot::Runtime::testAudioClip(argv[2]);
     }
 
+    if (argc == 2 && std::string_view(argv[1]) == "--audio-mix-test") {
+      return Dot::Runtime::testAudioMix();
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
     }
@@ -655,7 +660,8 @@ auto main(int argc, char** argv) -> int {
           "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
           "--scene-render-test|--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
           "--asset-test <directory>|--scene-file-test <directory>|--physics-test|"
-          "--scene-physics-test|--scene-physics-render-test|--audio-clip-test <directory>]");
+          "--scene-physics-test|--scene-physics-render-test|--audio-clip-test <directory>|"
+          "--audio-mix-test]");
       return 2;
     }
 

@@ -81,6 +81,9 @@ and explicit queue limits; scene events retain entity values after destruction.
 Audio resources decode bounded WAV/FLAC/MP3 into shared immutable float PCM.
 Run `build/debug/bin/DotRuntime --audio-clip-test <existing-directory>` for
 known sample values, ownership, and failures. See `docs/Audio.md` for limits
-and format contracts. Playback and scene audio components are under development.
+and format contracts. Offline mixing provides scoped voices, pause/seek/loop,
+gain/pan/pitch, rate conversion, and allocation budgets. `--audio-mix-test` checks
+actual summed PCM and cleanup. Playback devices and scene audio components are
+under development.
 
 See `docs/Development.md` for implementation milestones and actual validation.

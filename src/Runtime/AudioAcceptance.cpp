@@ -1,14 +1,66 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <print>
 #include <utility>
 
 import Dot.Audio.Clip;
+import Dot.Audio.Mixer;
 import Dot.Core.Files;
 import Dot.Core.Result;
 
 namespace Dot::Runtime {
+  auto testAudioMix() -> int {
+    const auto before = Dot::Audio::Mixer::backendMemory();
+
+    {
+      auto mixer = Dot::Audio::Mixer::create({1, 48000, 2});
+      std::array<float, 128> source{};
+      source.fill(0.25F);
+      auto clip = Dot::Audio::Clip::fromPcm(source, 1, 48000);
+
+      if (!mixer || !clip) {
+        std::println(stderr, "Audio mix acceptance setup failed");
+        return 1;
+      }
+
+      auto first = mixer->createVoice(*clip, {1, 0, 1, true});
+      auto second = mixer->createVoice(*clip, {0.5F, 0, 1, true});
+
+      if (!first || !second || !mixer->play(*first) || !mixer->play(*second)) {
+        std::println(stderr, "Audio mix acceptance voice startup failed");
+        return 1;
+      }
+
+      std::array<float, 64> output{};
+      const auto near = [&](float expected) {
+        return std::ranges::all_of(
+            output, [expected](float sample) { return std::abs(sample - expected) < 0.0001F; });
+      };
+
+      if (!mixer->render(output) || !near(0.375F) || !mixer->pause(*first) || !mixer->render(output)
+          || !near(0.125F) || !mixer->seek(*second, 32) || !mixer->setVolume(0.5F)
+          || !mixer->render(output) || !near(0.0625F) || !mixer->destroyVoice(*first)
+          || mixer->play(*first) || !mixer->destroyVoice(*second) || !mixer->render(output)
+          || !near(0) || mixer->stats()->voices != 0 || mixer->stats()->renderedFrames != 256) {
+        std::println(stderr, "Audio mix acceptance PCM/control/lifetime verification failed");
+        return 1;
+      }
+    }
+
+    const auto after = Dot::Audio::Mixer::backendMemory();
+
+    if (after.bytes != before.bytes || after.allocations != before.allocations) {
+      std::println(stderr, "Audio mix acceptance backend allocation leak");
+      return 1;
+    }
+
+    std::println("Audio mix acceptance passed: summed PCM, pause/seek/gain, and backend cleanup");
+    return 0;
+  }
+
   auto testAudioClip(const std::filesystem::path& root) -> int {
     constexpr std::array<unsigned char, 52> wave{
         'R', 'I', 'F', 'F', 44, 0, 0,    0,    'W', 'A',  'V',  'E',  'f', 'm', 't',  ' ', 16, 0,

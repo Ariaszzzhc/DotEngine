@@ -475,5 +475,45 @@ Root-relative asset loading validates extension/container agreement.
   Tests/documentation preserve the backend's unsigned 8-bit normalization convention.
   Windows/Linux backend/link branches are implemented but remain unverified.
 
-Playback devices/mixing/spatial voices, scene audio components, scripting,
+### Offline voice mixing
+
+Added an independently owned miniaudio graph and scoped voice IDs. Voices retain
+immutable Clips through pause, looping, and completion; explicit destruction
+releases resources. Controls provide volume, pan, pitch, source-frame seek, and
+master gain. Output is actual unclamped float PCM with mono/stereo conversion
+and source-rate resampling. No playback device is opened in this stage.
+
+- macOS Debug and Release each pass all 336 CTest cases (317 doctest cases and
+  nineteen executable checks). Twenty new mixer tests cover known summed PCM,
+  positive/negative stereo pan, voice/master gain, pause/resume position, looping
+  changes preserving unconsumed samples, ended-voice restart/seek, rate/pitch
+  frequency changes, resampled seek matching a fresh graph, format/settings and
+  frame-buffer boundaries, exact maximum frame blocks, stale/foreign/non-reused
+  handles, moved sources/services, retained Clip ownership, voice capacity,
+  initialization/voice-preparation allocation failures, owner-thread checks,
+  quiescent foreign destruction, independent threaded graphs, and repeated
+  initialization/voice cleanup with allocation counters returning to baseline.
+- `--audio-mix-test` checks two summed voices, pause/seek/master gain, stale ID
+  rejection, final silence, and complete backend cleanup. Existing native
+  window/Metal acceptance still passes; offline output does not validate a
+  playback device or audible output.
+- A private bridge manages the pinned backend's exposed input cache and resampler
+  state at quiescent control boundaries. It prevents old cached audio after seek,
+  preserves unread position during loop changes, and bypasses needless rate-1/
+  pitch-1 resampling. The graph clock also advances through natural silence.
+- Backend allocation reservations enforce per-mixer payload budgets. Preparation
+  failure leaves the graph usable and releases partial native resources. Vendor
+  file/resource management is disabled in favor of FileSystem/Clip asset loading.
+- Reviewed private bridge/cache invariants, immutable sample lifetime, sound-before-
+  buffer-before-engine teardown, partial initialization cleanup, budget reservation
+  rollback, handle/thread identity, bounded output, diagnostic short-circuiting on
+  backend failure, and callback ABI/configuration agreement. Formatting/whitespace
+  checks pass. `otool` confirms caller-selected LLVM libc++/libunwind and native
+  frameworks, with no LC_RPATH in either runtime. Windows/Linux remain unverified.
+- Implementation-only edits rebuilt the mixer object and relinked executables;
+  module interfaces and BMI consumers did not recompile. A final native-voice
+  copy/move prohibition rebuilt cleanly, then all 34 audio unit cases and both
+  audio runtime acceptance commands passed again in each configuration.
+
+Playback devices/spatial voices, scene audio components, scripting,
 project/editor/export tooling, and the example game remain to be implemented.
