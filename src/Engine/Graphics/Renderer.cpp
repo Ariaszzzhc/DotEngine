@@ -29,13 +29,13 @@ namespace Dot::Graphics {
     constexpr std::size_t maxVertices = 3'000'000;
     constexpr std::uint32_t maxReadbackDimension = 4096;
     constexpr auto shaderCode = R"(
-struct Camera { transform: mat4x4f }
+struct Camera { transform: mat4x4f, tint: vec4f }
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
 @vertex fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f) -> Output {
   var output: Output;
   output.position = camera.transform * vec4f(position, 1.0);
-  output.color = color;
+  output.color = color * camera.tint;
   return output;
 }
 @fragment fn fragmentMain(input: Output) -> @location(0) vec4f { return input.color; }
@@ -95,7 +95,19 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       std::string error;
     };
 
+    struct UniformData {
+      Math::Mat4 transform;
+      Math::Vec4 tint{1, 1, 1, 1};
+    };
+
+    static_assert(sizeof(UniformData) == 80);
+    static_assert(offsetof(UniformData, tint) == 64);
+
     struct Diagnostics {
+      std::atomic<bool> alive{true};
+      std::atomic<std::uint64_t> meshes{};
+      std::atomic<std::uint64_t> vertexBytes{};
+      std::atomic<std::uint64_t> indexBytes{};
       std::atomic<bool> failed{};
       std::mutex mutex;
       std::string failure;
@@ -187,6 +199,51 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     };
   }  // namespace
 
+  struct Mesh::Impl {
+    std::shared_ptr<Diagnostics> owner;
+    wgpu::Buffer vertices;
+    wgpu::Buffer indices;
+    MeshInfo info{};
+    std::uint64_t vertexBytes{};
+    std::uint64_t indexBytes{};
+    bool tracked{};
+
+    ~Impl() {
+      if (tracked) {
+        owner->meshes.fetch_sub(1);
+        owner->vertexBytes.fetch_sub(vertexBytes);
+        owner->indexBytes.fetch_sub(indexBytes);
+      }
+    }
+  };
+
+  Mesh::Mesh() noexcept = default;
+
+  Mesh::Mesh(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  Mesh::Mesh(const Mesh&) noexcept = default;
+
+  auto Mesh::operator=(const Mesh&) noexcept -> Mesh& = default;
+
+  Mesh::Mesh(Mesh&&) noexcept = default;
+
+  auto Mesh::operator=(Mesh&&) noexcept -> Mesh& = default;
+
+  Mesh::~Mesh() = default;
+
+  auto Mesh::info() const -> Core::Result<MeshInfo> {
+    if (!m_impl || !m_impl->owner->alive.load()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Mesh has no live rendering device");
+    }
+
+    if (m_impl->owner->failed.load()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Mesh rendering device failed");
+    }
+
+    return m_impl->info;
+  }
+
   struct Renderer::Impl {
     std::thread::id thread{std::this_thread::get_id()};
     Platform::Window* window{};
@@ -209,6 +266,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     wgpu::Buffer uniform;
 
     ~Impl() {
+      diagnostics->alive.store(false);
+
       if (surface) {
         if (surfaceWidth != 0) {
           surface.Unconfigure();
@@ -361,9 +420,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       return device.CreateRenderPipeline(&descriptor);
     }
 
-    auto encode(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
-                std::span<const Vertex> vertices, const Math::Mat4& transform, std::uint32_t width,
-                std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
+    template <typename F>
+    auto encodePass(const wgpu::Texture& target, std::uint32_t width, std::uint32_t height,
+                    Math::Vec4 clear, F&& draw) -> wgpu::CommandEncoder {
       wgpu::TextureDescriptor depthDescriptor;
       depthDescriptor.size = {width, height, 1};
       depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
@@ -386,30 +445,114 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       auto encoder = device.CreateCommandEncoder();
       auto pass = encoder.BeginRenderPass(&descriptor);
 
-      if (!vertices.empty()) {
-        wgpu::BufferDescriptor bufferDescriptor;
-        bufferDescriptor.size = vertices.size_bytes();
-        bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
-        auto buffer = device.CreateBuffer(&bufferDescriptor);
-        queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
-        queue.WriteBuffer(uniform, 0, transform.data.data(), sizeof(Math::Mat4));
-        wgpu::BindGroupEntry entry;
-        entry.binding = 0;
-        entry.buffer = uniform;
-        entry.size = sizeof(Math::Mat4);
-        wgpu::BindGroupDescriptor groupDescriptor;
-        groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
-        groupDescriptor.entryCount = 1;
-        groupDescriptor.entries = &entry;
-        auto group = device.CreateBindGroup(&groupDescriptor);
-        pass.SetPipeline(renderPipeline);
-        pass.SetBindGroup(0, group);
-        pass.SetVertexBuffer(0, buffer);
-        pass.Draw(static_cast<std::uint32_t>(vertices.size()));
-      }
-
+      draw(pass);
       pass.End();
       return encoder;
+    }
+
+    auto encode(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
+                std::span<const Vertex> vertices, const Math::Mat4& transform, std::uint32_t width,
+                std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
+      return encodePass(target, width, height, clear, [&](const wgpu::RenderPassEncoder& pass) {
+        if (!vertices.empty()) {
+          wgpu::BufferDescriptor bufferDescriptor;
+          bufferDescriptor.size = vertices.size_bytes();
+          bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+          auto buffer = device.CreateBuffer(&bufferDescriptor);
+          queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
+          const UniformData data{transform};
+          queue.WriteBuffer(uniform, 0, &data, sizeof(data));
+          wgpu::BindGroupEntry entry;
+          entry.binding = 0;
+          entry.buffer = uniform;
+          entry.size = sizeof(UniformData);
+          wgpu::BindGroupDescriptor groupDescriptor;
+          groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
+          groupDescriptor.entryCount = 1;
+          groupDescriptor.entries = &entry;
+          auto group = device.CreateBindGroup(&groupDescriptor);
+          pass.SetPipeline(renderPipeline);
+          pass.SetBindGroup(0, group);
+          pass.SetVertexBuffer(0, buffer);
+          pass.Draw(static_cast<std::uint32_t>(vertices.size()));
+        }
+      });
+    }
+
+    struct PreparedDraw {
+      std::shared_ptr<Mesh::Impl> mesh;
+      UniformData uniform;
+    };
+
+    auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
+                 Math::Vec4 clear) -> Core::Result<std::vector<PreparedDraw>> {
+      if (draws.size() > 4096 || !Math::isFinite(viewProjection) || !colorValid(clear)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid mesh draw count, camera, or clear color");
+      }
+
+      std::vector<PreparedDraw> prepared;
+      prepared.reserve(draws.size());
+
+      for (const auto& draw : draws) {
+        if (!draw.mesh || !draw.mesh->m_impl || draw.mesh->m_impl->owner != diagnostics) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Draw requires a live mesh uploaded by this renderer");
+        }
+
+        if (!colorValid(draw.tint)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Draw tint must be finite and in [0,1]");
+        }
+
+        auto transform = Math::multiply(viewProjection, draw.transform);
+
+        if (!transform) {
+          return std::unexpected(transform.error());
+        }
+
+        prepared.push_back({draw.mesh->m_impl, {*transform, draw.tint}});
+      }
+
+      return prepared;
+    }
+
+    auto encodeMeshes(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
+                      std::span<const PreparedDraw> draws, std::uint32_t width,
+                      std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
+      return encodePass(target, width, height, clear, [&](const wgpu::RenderPassEncoder& pass) {
+        for (const auto& draw : draws) {
+          /** Queue writes precede submission, so a shared uniform would overwrite
+           * earlier draws. The command buffer retains each independent buffer.
+           * 队列写入先于提交，共用 uniform 会覆盖较早对象的数据。
+           * 命令缓冲区会保留每个独立缓冲区的引用。
+           */
+          wgpu::BufferDescriptor descriptor;
+          descriptor.size = sizeof(UniformData);
+          descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+          auto drawUniform = device.CreateBuffer(&descriptor);
+          queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
+          wgpu::BindGroupEntry entry;
+          entry.binding = 0;
+          entry.buffer = drawUniform;
+          entry.size = sizeof(UniformData);
+          wgpu::BindGroupDescriptor groupDescriptor;
+          groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
+          groupDescriptor.entryCount = 1;
+          groupDescriptor.entries = &entry;
+          auto group = device.CreateBindGroup(&groupDescriptor);
+          pass.SetPipeline(renderPipeline);
+          pass.SetBindGroup(0, group);
+          pass.SetVertexBuffer(0, draw.mesh->vertices);
+
+          if (draw.mesh->info.indices != 0) {
+            pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
+            pass.DrawIndexed(draw.mesh->info.indices);
+          } else {
+            pass.Draw(draw.mesh->info.vertices);
+          }
+        }
+      });
     }
 
     auto configureSurface(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
@@ -431,6 +574,171 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       surfaceWidth = width;
       surfaceHeight = height;
       return {};
+    }
+
+    template <typename F>
+    auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget)
+        -> Core::Result<Image> {
+      const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
+
+      if (width == 0 || height == 0 || width > maximum || height > maximum) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          std::format("Readback dimensions must be in [1, {}]", maximum));
+      }
+
+      ErrorScope scope(instance, device);
+      wgpu::TextureDescriptor descriptor;
+      descriptor.size = {width, height, 1};
+      descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+      auto texture = device.CreateTexture(&descriptor);
+      auto encoder = encodeTarget(texture, width, height);
+      const auto rowBytes = width * 4;
+      const auto paddedRowBytes = (rowBytes + 255U) & ~255U;
+      const auto bufferBytes = static_cast<std::size_t>(paddedRowBytes) * height;
+      wgpu::BufferDescriptor bufferDescriptor;
+      bufferDescriptor.size = bufferBytes;
+      bufferDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+      auto buffer = device.CreateBuffer(&bufferDescriptor);
+      wgpu::TexelCopyTextureInfo source;
+      source.texture = texture;
+      wgpu::TexelCopyBufferInfo destination;
+      destination.buffer = buffer;
+      destination.layout.bytesPerRow = paddedRowBytes;
+      destination.layout.rowsPerImage = height;
+      wgpu::Extent3D extent{width, height, 1};
+      encoder.CopyTextureToBuffer(&source, &destination, &extent);
+      auto commands = encoder.Finish();
+      queue.Submit(1, &commands);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      auto pending = std::make_shared<Pending<bool>>();
+      pending->error = "GPU buffer mapping failed";
+      auto future = buffer.MapAsync(
+          wgpu::MapMode::Read, 0, bufferBytes, wgpu::CallbackMode::WaitAnyOnly,
+          [pending](wgpu::MapAsyncStatus status, wgpu::StringView message) noexcept {
+            pending->value = status == wgpu::MapAsyncStatus::Success;
+
+            if (!pending->value) {
+              describeFailure(pending->error, "GPU readback", static_cast<unsigned>(status),
+                              message);
+            }
+          });
+      checked = wait(instance, future, "Readback");
+
+      if (!checked) {
+        buffer.Destroy();
+        return std::unexpected(checked.error());
+      }
+
+      if (!pending->value) {
+        return Core::fail(Core::ErrorCode::External, pending->error);
+      }
+
+      auto* bytes = static_cast<const std::uint8_t*>(buffer.GetConstMappedRange(0, bufferBytes));
+
+      if (!bytes) {
+        buffer.Unmap();
+        return Core::fail(Core::ErrorCode::External, "GPU readback returned no mapped bytes");
+      }
+
+      Image image{width, height,
+                  std::vector<std::uint8_t>(static_cast<std::size_t>(rowBytes) * height)};
+
+      for (std::size_t row = 0; row < height; ++row) {
+        std::memcpy(image.pixels.data() + row * rowBytes, bytes + row * paddedRowBytes, rowBytes);
+      }
+
+      buffer.Unmap();
+      return image;
+    }
+
+    template <typename F>
+    auto presentFrame(F&& encodeTarget) -> Core::Result<PresentResult> {
+      if (!surface) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Renderer has no native surface");
+      }
+
+      auto checked = Core::Result<void>{};
+      auto size = window->pixelSize();
+
+      if (!size) {
+        return std::unexpected(size.error());
+      }
+
+      if (size->width <= 0 || size->height <= 0) {
+        return PresentResult::Deferred;
+      }
+
+      const auto width = static_cast<std::uint32_t>(size->width);
+      const auto height = static_cast<std::uint32_t>(size->height);
+
+      if (width > info.maxTextureDimension || height > info.maxTextureDimension) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Surface exceeds GPU texture limits");
+      }
+
+      if (surfaceWidth != width || surfaceHeight != height) {
+        checked = configureSurface(width, height);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+      }
+
+      wgpu::SurfaceTexture frame;
+      surface.GetCurrentTexture(&frame);
+
+      switch (frame.status) {
+        case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
+        case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
+          break;
+        case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
+          return PresentResult::Deferred;
+        case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
+        case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+          checked = configureSurface(width, height);
+
+          if (!checked) {
+            return std::unexpected(checked.error());
+          }
+
+          return PresentResult::Deferred;
+        default:
+          return Core::fail(Core::ErrorCode::External,
+                            std::format("Acquire surface texture failed ({})",
+                                        static_cast<unsigned>(frame.status)));
+      }
+
+      if (!frame.texture) {
+        return Core::fail(Core::ErrorCode::External, "Surface returned no texture");
+      }
+
+      ErrorScope scope(instance, device);
+      auto encoder = encodeTarget(frame.texture, width, height);
+      auto commands = encoder.Finish();
+      queue.Submit(1, &commands);
+      checked = scope.finish();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      if (surface.Present() != wgpu::Status::Success) {
+        return Core::fail(Core::ErrorCode::External, "Present surface failed");
+      }
+
+      instance.ProcessEvents();
+      checked = check();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      return PresentResult::Presented;
     }
   };
 
@@ -561,7 +869,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     ErrorScope scope(impl->instance, impl->device);
     impl->offscreenPipeline = impl->pipeline(wgpu::TextureFormat::RGBA8Unorm);
     wgpu::BufferDescriptor uniformDescriptor;
-    uniformDescriptor.size = sizeof(Math::Mat4);
+    uniformDescriptor.size = sizeof(UniformData);
     uniformDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     impl->uniform = impl->device.CreateBuffer(&uniformDescriptor);
 
@@ -585,6 +893,72 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     }
 
     return Renderer(std::move(impl));
+  }
+
+  auto Renderer::upload(const MeshData& data) -> Core::Result<Mesh> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = validateMesh(data);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto& gpu = *m_impl;
+    auto mesh = std::make_shared<Mesh::Impl>();
+    mesh->owner = gpu.diagnostics;
+    mesh->info = {static_cast<std::uint32_t>(data.vertices.size()),
+                  static_cast<std::uint32_t>(data.indices.size())};
+    mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
+    mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
+    ErrorScope scope(gpu.instance, gpu.device);
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = mesh->vertexBytes;
+    descriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+    mesh->vertices = gpu.device.CreateBuffer(&descriptor);
+    gpu.queue.WriteBuffer(mesh->vertices, 0, data.vertices.data(), mesh->vertexBytes);
+
+    if (!data.indices.empty()) {
+      descriptor.size = mesh->indexBytes;
+      descriptor.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
+      mesh->indices = gpu.device.CreateBuffer(&descriptor);
+      gpu.queue.WriteBuffer(mesh->indices, 0, data.indices.data(), mesh->indexBytes);
+    }
+
+    checked = scope.finish();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    gpu.diagnostics->meshes.fetch_add(1);
+    gpu.diagnostics->vertexBytes.fetch_add(mesh->vertexBytes);
+    gpu.diagnostics->indexBytes.fetch_add(mesh->indexBytes);
+    mesh->tracked = true;
+    return Mesh(std::move(mesh));
+  }
+
+  auto Renderer::resourceStats() const -> Core::Result<ResourceStats> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto& stats = *m_impl->diagnostics;
+    return ResourceStats{stats.meshes.load(), stats.vertexBytes.load(), stats.indexBytes.load()};
   }
 
   auto Renderer::adapterInfo() const -> Core::Result<AdapterInfo> {
@@ -620,83 +994,11 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       return std::unexpected(checked.error());
     }
 
-    const auto maximum = std::min(maxReadbackDimension, m_impl->info.maxTextureDimension);
-
-    if (width == 0 || height == 0 || width > maximum || height > maximum) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        std::format("Readback dimensions must be in [1, {}]", maximum));
-    }
-
-    auto& gpu = *m_impl;
-    ErrorScope scope(gpu.instance, gpu.device);
-    wgpu::TextureDescriptor descriptor;
-    descriptor.size = {width, height, 1};
-    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
-    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
-    auto texture = gpu.device.CreateTexture(&descriptor);
-    auto encoder
-        = gpu.encode(texture, gpu.offscreenPipeline, vertices, transform, width, height, clear);
-    const auto rowBytes = width * 4;
-    const auto paddedRowBytes = (rowBytes + 255U) & ~255U;
-    const auto bufferBytes = static_cast<std::size_t>(paddedRowBytes) * height;
-    wgpu::BufferDescriptor bufferDescriptor;
-    bufferDescriptor.size = bufferBytes;
-    bufferDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-    auto buffer = gpu.device.CreateBuffer(&bufferDescriptor);
-    wgpu::TexelCopyTextureInfo source;
-    source.texture = texture;
-    wgpu::TexelCopyBufferInfo destination;
-    destination.buffer = buffer;
-    destination.layout.bytesPerRow = paddedRowBytes;
-    destination.layout.rowsPerImage = height;
-    wgpu::Extent3D extent{width, height, 1};
-    encoder.CopyTextureToBuffer(&source, &destination, &extent);
-    auto commands = encoder.Finish();
-    gpu.queue.Submit(1, &commands);
-    checked = scope.finish();
-
-    if (!checked) {
-      return std::unexpected(checked.error());
-    }
-
-    auto pending = std::make_shared<Pending<bool>>();
-    pending->error = "GPU buffer mapping failed";
-    auto future = buffer.MapAsync(
-        wgpu::MapMode::Read, 0, bufferBytes, wgpu::CallbackMode::WaitAnyOnly,
-        [pending](wgpu::MapAsyncStatus status, wgpu::StringView message) noexcept {
-          pending->value = status == wgpu::MapAsyncStatus::Success;
-
-          if (!pending->value) {
-            describeFailure(pending->error, "GPU readback", static_cast<unsigned>(status), message);
-          }
-        });
-    checked = wait(gpu.instance, future, "Readback");
-
-    if (!checked) {
-      buffer.Destroy();
-      return std::unexpected(checked.error());
-    }
-
-    if (!pending->value) {
-      return Core::fail(Core::ErrorCode::External, pending->error);
-    }
-
-    auto* bytes = static_cast<const std::uint8_t*>(buffer.GetConstMappedRange(0, bufferBytes));
-
-    if (!bytes) {
-      buffer.Unmap();
-      return Core::fail(Core::ErrorCode::External, "GPU readback returned no mapped bytes");
-    }
-
-    Image image{width, height,
-                std::vector<std::uint8_t>(static_cast<std::size_t>(rowBytes) * height)};
-
-    for (std::size_t row = 0; row < height; ++row) {
-      std::memcpy(image.pixels.data() + row * rowBytes, bytes + row * paddedRowBytes, rowBytes);
-    }
-
-    buffer.Unmap();
-    return image;
+    return m_impl->readback(width, height,
+                            [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
+                              return m_impl->encode(texture, m_impl->offscreenPipeline, vertices,
+                                                    transform, targetWidth, targetHeight, clear);
+                            });
   }
 
   auto Renderer::present(std::span<const Vertex> vertices, const Math::Mat4& transform,
@@ -722,81 +1024,58 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       return std::unexpected(checked.error());
     }
 
-    auto size = gpu.window->pixelSize();
+    return gpu.presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
+      return gpu.encode(texture, gpu.surfacePipeline, vertices, transform, width, height, clear);
+    });
+  }
 
-    if (!size) {
-      return std::unexpected(size.error());
+  auto Renderer::renderMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
+                              std::uint32_t width, std::uint32_t height, Math::Vec4 clear)
+      -> Core::Result<Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
 
-    if (size->width <= 0 || size->height <= 0) {
-      return PresentResult::Deferred;
-    }
-
-    const auto width = static_cast<std::uint32_t>(size->width);
-    const auto height = static_cast<std::uint32_t>(size->height);
-
-    if (width > gpu.info.maxTextureDimension || height > gpu.info.maxTextureDimension) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Surface exceeds GPU texture limits");
-    }
-
-    if (gpu.surfaceWidth != width || gpu.surfaceHeight != height) {
-      checked = gpu.configureSurface(width, height);
-
-      if (!checked) {
-        return std::unexpected(checked.error());
-      }
-    }
-
-    wgpu::SurfaceTexture frame;
-    gpu.surface.GetCurrentTexture(&frame);
-
-    switch (frame.status) {
-      case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
-      case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
-        break;
-      case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
-        return PresentResult::Deferred;
-      case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
-      case wgpu::SurfaceGetCurrentTextureStatus::Lost:
-        checked = gpu.configureSurface(width, height);
-
-        if (!checked) {
-          return std::unexpected(checked.error());
-        }
-
-        return PresentResult::Deferred;
-      default:
-        return Core::fail(Core::ErrorCode::External,
-                          std::format("Acquire surface texture failed ({})",
-                                      static_cast<unsigned>(frame.status)));
-    }
-
-    if (!frame.texture) {
-      return Core::fail(Core::ErrorCode::External, "Surface returned no texture");
-    }
-
-    ErrorScope scope(gpu.instance, gpu.device);
-    auto encoder
-        = gpu.encode(frame.texture, gpu.surfacePipeline, vertices, transform, width, height, clear);
-    auto commands = encoder.Finish();
-    gpu.queue.Submit(1, &commands);
-    checked = scope.finish();
+    auto checked = m_impl->check();
 
     if (!checked) {
       return std::unexpected(checked.error());
     }
 
-    if (gpu.surface.Present() != wgpu::Status::Success) {
-      return Core::fail(Core::ErrorCode::External, "Present surface failed");
+    auto prepared = m_impl->prepare(draws, viewProjection, clear);
+
+    if (!prepared) {
+      return std::unexpected(prepared.error());
     }
 
-    gpu.instance.ProcessEvents();
-    checked = gpu.check();
+    return m_impl->readback(
+        width, height, [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
+          return m_impl->encodeMeshes(texture, m_impl->offscreenPipeline, *prepared, targetWidth,
+                                      targetHeight, clear);
+        });
+  }
+
+  auto Renderer::presentMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
+                               Math::Vec4 clear) -> Core::Result<PresentResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
 
     if (!checked) {
       return std::unexpected(checked.error());
     }
 
-    return PresentResult::Presented;
+    auto prepared = m_impl->prepare(draws, viewProjection, clear);
+
+    if (!prepared) {
+      return std::unexpected(prepared.error());
+    }
+
+    return m_impl->presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
+      return m_impl->encodeMeshes(texture, m_impl->surfacePipeline, *prepared, width, height,
+                                  clear);
+    });
   }
 }  // namespace Dot::Graphics

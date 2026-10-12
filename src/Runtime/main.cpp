@@ -13,6 +13,54 @@ import Dot.Math;
 import Dot.Graphics.Renderer;
 
 namespace {
+  auto testMesh() -> int {
+    auto renderer = Dot::Graphics::Renderer::create();
+    auto geometry = Dot::Graphics::cube();
+    auto view = Dot::Math::lookAt({2, 2, 4}, {});
+    auto projection = Dot::Math::perspective(60, 1, 0.1F, 100);
+
+    if (!renderer) {
+      std::println(stderr, "{}", renderer.error().message);
+      return 1;
+    }
+
+    if (!geometry || !view || !projection) {
+      std::println(stderr, "Mesh acceptance initialization failed");
+      return 1;
+    }
+
+    auto mesh = renderer->upload(*geometry);
+    auto camera = Dot::Math::multiply(*projection, *view);
+
+    if (!mesh) {
+      std::println(stderr, "{}", mesh.error().message);
+      return 1;
+    }
+
+    if (!camera) {
+      std::println(stderr, "Mesh acceptance upload/camera failed");
+      return 1;
+    }
+
+    const std::array draws{Dot::Graphics::MeshDraw{&*mesh, {}, {0.2F, 0.7F, 1, 1}}};
+    auto image = renderer->renderMeshes(draws, *camera, 64, 64);
+
+    if (!image) {
+      std::println(stderr, "{}", image.error().message);
+      return 1;
+    }
+
+    const auto center = (32 * 64 + 32) * 4;
+
+    if (image->pixels[center + 1] <= 100 || image->pixels[center + 2] <= 200) {
+      std::println(stderr, "Mesh acceptance rasterization failed");
+      return 1;
+    }
+
+    std::println("Mesh acceptance passed: indexed cube with perspective camera");
+    return 0;
+  }
+
   auto testGeometry() -> int {
     auto mesh = Dot::Graphics::cube({2, 4, 6});
 
@@ -229,6 +277,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 2 && std::string_view(argv[1]) == "--mesh-test") {
+      return testMesh();
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--geometry-test") {
       return testGeometry();
     }
@@ -261,7 +313,7 @@ auto main(int argc, char** argv) -> int {
     if (argc > 1 && !(argc == 2 && std::string_view(argv[1]) == "--self-test")) {
       std::println(stderr,
                    "Usage: DotRuntime "
-                   "[--version|--self-test|--math-test|--geometry-test|"
+                   "[--version|--self-test|--math-test|--geometry-test|--mesh-test|"
                    "--window-smoke|--gpu-test|--render-smoke|--file-test <directory>]");
       return 2;
     }

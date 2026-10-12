@@ -132,4 +132,22 @@ and remains re-exported by the renderer for existing consumers.
   renderer compatibility. Formatting/whitespace checks pass.
 - Windows/Linux remain unverified.
 
-Reusable GPU assets, ECS scenes, and all higher milestones remain to be implemented.
+### Shared GPU meshes and draw lists
+
+Added immutable indexed/non-indexed GPU mesh uploads with shared ownership,
+device identity checks, resource statistics, and draw lists with independent
+world transforms and tint uniforms. Mesh resources can be released after their
+renderer is destroyed, while attempts to query/draw them report invalid state.
+Readback, pass setup, and surface presentation are shared by both drawing APIs.
+
+- macOS Debug and Release each pass all 131 CTest cases (121 doctest cases and
+  ten executable checks), including uploaded-data independence, multi-instance
+  transform/tint isolation, shared copy/move accounting, worker-thread release,
+  cross-device rejection, renderer moves, invalid draws, and resource shutdown.
+- A real Metal indexed cube passes perspective-camera readback and native surface
+  presentation. `--mesh-test` provides the standalone 3D acceptance case.
+- Reviewed uniform layout/alignment, queue write ordering, command retention,
+  device/mesh lifetimes, validation before submission, and quiescent counters.
+  Formatting/whitespace checks pass. Windows/Linux remain unverified.
+
+Asset file loading, ECS scenes, and all higher milestones remain to be implemented.

@@ -7,6 +7,7 @@
 #include <span>
 #include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Graphics.Renderer;
 import Dot.Math;
@@ -205,4 +206,224 @@ TEST_CASE("graphics.reject_invalid_surface_owner") {
   REQUIRE_FALSE(renderer);
   CHECK(renderer.error().code == Dot::Core::ErrorCode::InvalidState);
   CHECK(moved.size());
+}
+
+TEST_CASE("graphics.indexed_upload_owns_immutable_geometry") {
+  auto renderer = Renderer::create();
+  auto geometry = quad({1.6F, 1.6F});
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  auto mesh = renderer->upload(*geometry);
+  REQUIRE_MESSAGE(mesh, (mesh ? "" : mesh.error().message));
+  auto info = mesh->info();
+  REQUIRE(info);
+  CHECK(info->vertices == 4);
+  CHECK(info->indices == 6);
+  geometry->vertices.clear();
+  geometry->indices.clear();
+  auto model = Dot::Math::compose({0, 0, 0.5F});
+  REQUIRE(model);
+  const std::array draws{MeshDraw{&*mesh, *model, {0, 1, 0, 1}}};
+  auto image = renderer->renderMeshes(draws, {}, 32, 32);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(pixel(*image, 16, 16) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  CHECK(pixel(*image, 0, 0) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
+}
+
+TEST_CASE("graphics.shared_mesh_draws_use_independent_uniforms") {
+  auto renderer = Renderer::create();
+  auto geometry = quad();
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  auto mesh = renderer->upload(*geometry);
+  REQUIRE(mesh);
+  auto left = Dot::Math::compose({-0.5F, 0, 0.5F}, {}, {0.3F, 0.3F, 1});
+  auto right = Dot::Math::compose({0.5F, 0, 0.5F}, {}, {0.3F, 0.3F, 1});
+  REQUIRE(left);
+  REQUIRE(right);
+  const std::array draws{MeshDraw{&*mesh, *left, {1, 0, 0, 1}},
+                         MeshDraw{&*mesh, *right, {0, 1, 0, 1}}};
+  auto image = renderer->renderMeshes(draws, {}, 100, 100);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(pixel(*image, 25, 50) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  CHECK(pixel(*image, 75, 50) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  CHECK(pixel(*image, 50, 50) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
+}
+
+TEST_CASE("graphics.nonindexed_upload_and_camera_projection") {
+  auto renderer = Renderer::create();
+  REQUIRE(renderer);
+  MeshData geometry;
+  auto vertices = triangle();
+  geometry.vertices.assign(vertices.begin(), vertices.end());
+  auto mesh = renderer->upload(geometry);
+  REQUIRE(mesh);
+  auto info = mesh->info();
+  REQUIRE(info);
+  CHECK(info->indices == 0);
+  const std::array draws{MeshDraw{&*mesh}};
+  auto image = renderer->renderMeshes(draws, {}, 32, 32);
+  REQUIRE(image);
+  CHECK(pixel(*image, 16, 16) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  auto camera = Dot::Math::compose({0.5F, 0, 0}, {}, {0.2F, 0.2F, 1});
+  REQUIRE(camera);
+  image = renderer->renderMeshes(draws, *camera, 100, 100);
+  REQUIRE(image);
+  CHECK(pixel(*image, 75, 50) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  CHECK(pixel(*image, 50, 50) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
+}
+
+TEST_CASE("graphics.mesh_copies_moves_and_release_accounting") {
+  auto renderer = Renderer::create();
+  auto geometry = cube();
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  CHECK_FALSE(renderer->upload({}));
+  auto stats = renderer->resourceStats();
+  REQUIRE(stats);
+  CHECK(stats->meshes == 0);
+
+  {
+    auto mesh = renderer->upload(*geometry);
+    REQUIRE(mesh);
+    auto copy = *mesh;
+    auto moved = std::move(*mesh);
+    CHECK_FALSE(mesh->info());
+    CHECK(copy.info());
+    CHECK(moved.info());
+    stats = renderer->resourceStats();
+    REQUIRE(stats);
+    CHECK(stats->meshes == 1);
+    CHECK(stats->vertexBytes == geometry->vertices.size() * sizeof(Vertex));
+    CHECK(stats->indexBytes == geometry->indices.size() * sizeof(std::uint32_t));
+    copy = Mesh{};
+    stats = renderer->resourceStats();
+    REQUIRE(stats);
+    CHECK(stats->meshes == 1);
+    Mesh workerCopy = moved;
+    std::thread worker([owned = std::move(workerCopy)]() mutable { owned = Mesh{}; });
+    worker.join();
+    CHECK(moved.info());
+  }
+
+  stats = renderer->resourceStats();
+  REQUIRE(stats);
+  CHECK(stats->meshes == 0);
+  CHECK(stats->vertexBytes == 0);
+  CHECK(stats->indexBytes == 0);
+}
+
+TEST_CASE("graphics.mesh_outlives_renderer_and_rejects_foreign_device") {
+  Mesh mesh;
+  auto geometry = cube();
+  REQUIRE(geometry);
+
+  {
+    auto renderer = Renderer::create();
+    REQUIRE(renderer);
+    auto uploaded = renderer->upload(*geometry);
+    REQUIRE(uploaded);
+    mesh = *uploaded;
+    auto foreign = Renderer::create();
+    REQUIRE(foreign);
+    const std::array draws{MeshDraw{&mesh}};
+    CHECK_FALSE(foreign->renderMeshes(draws, {}, 8, 8));
+    CHECK(mesh.info());
+    auto moved = std::move(*renderer);
+    CHECK(mesh.info());
+    CHECK(moved.renderMeshes(draws, {}, 8, 8));
+    CHECK_FALSE(renderer->upload(*geometry));
+    CHECK_FALSE(renderer->resourceStats());
+    CHECK_FALSE(renderer->renderMeshes({}, {}, 8, 8));
+    CHECK_FALSE(renderer->presentMeshes({}, {}));
+  }
+
+  CHECK_FALSE(mesh.info());
+  mesh = Mesh{};
+  CHECK_FALSE(mesh.info());
+}
+
+TEST_CASE("graphics.invalid_mesh_draws_are_transactional") {
+  auto renderer = Renderer::create();
+  auto geometry = quad();
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  auto mesh = renderer->upload(*geometry);
+  REQUIRE(mesh);
+  std::array draws{MeshDraw{&*mesh}};
+  draws[0].mesh = nullptr;
+  CHECK_FALSE(renderer->renderMeshes(draws, {}, 8, 8));
+  Mesh empty;
+  draws[0].mesh = &empty;
+  CHECK_FALSE(renderer->renderMeshes(draws, {}, 8, 8));
+  draws[0].mesh = &*mesh;
+  draws[0].tint.y = -1;
+  CHECK_FALSE(renderer->renderMeshes(draws, {}, 8, 8));
+  draws[0].tint.y = 1;
+  draws[0].transform.data[0] = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(renderer->renderMeshes(draws, {}, 8, 8));
+  draws[0].transform = {};
+  std::vector<MeshDraw> tooMany(4097, draws[0]);
+  CHECK_FALSE(renderer->renderMeshes(tooMany, {}, 8, 8));
+  CHECK_FALSE(renderer->renderMeshes(draws, {}, 0, 8));
+  CHECK_FALSE(renderer->presentMeshes(draws, {}));
+  auto image = renderer->renderMeshes({}, {}, 8, 8, {0, 0, 1, 1});
+  REQUIRE(image);
+  CHECK(pixel(*image, 0, 0) == std::array<std::uint8_t, 4>{0, 0, 255, 255});
+  CHECK(renderer->renderMeshes(draws, {}, 8, 8));
+}
+
+TEST_CASE("graphics.mesh_api_rejects_worker_thread") {
+  auto renderer = Renderer::create();
+  auto geometry = quad();
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  bool rejected = false;
+  std::thread worker([&] {
+    rejected = !renderer->upload(*geometry) && !renderer->resourceStats()
+               && !renderer->renderMeshes({}, {}, 8, 8) && !renderer->presentMeshes({}, {});
+  });
+  worker.join();
+  CHECK(rejected);
+  CHECK(renderer->upload(*geometry));
+}
+
+TEST_CASE("graphics.native_indexed_cube_with_perspective_camera") {
+  Dot::Platform::WindowConfig config;
+  config.title = "DotEngine Indexed Cube";
+  config.width = 320;
+  config.height = 240;
+  config.gpuSurface = true;
+  auto window = Dot::Platform::Window::create(config);
+  REQUIRE(window);
+  auto renderer = Renderer::create(&*window);
+  auto geometry = cube();
+  REQUIRE(renderer);
+  REQUIRE(geometry);
+  auto mesh = renderer->upload(*geometry);
+  REQUIRE(mesh);
+  auto view = Dot::Math::lookAt({2, 2, 4}, {});
+  auto projection = Dot::Math::perspective(60, 4.0F / 3.0F, 0.1F, 100);
+  REQUIRE(view);
+  REQUIRE(projection);
+  auto camera = Dot::Math::multiply(*projection, *view);
+  REQUIRE(camera);
+  const std::array draws{MeshDraw{&*mesh, {}, {0.2F, 0.7F, 1, 1}}};
+  auto image = renderer->renderMeshes(draws, *camera, 64, 64);
+  REQUIRE(image);
+  auto center = pixel(*image, 32, 32);
+  CHECK(center[1] > 100);
+  CHECK(center[2] > 200);
+  int presented = 0;
+
+  for (int frame = 0; frame < 6; ++frame) {
+    auto result = renderer->presentMeshes(draws, *camera);
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+
+    if (*result == PresentResult::Presented) {
+      ++presented;
+    }
+  }
+
+  CHECK(presented >= 4);
 }

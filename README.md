@@ -42,4 +42,9 @@ Run `build/debug/bin/DotRuntime --gpu-test` for pixel readback or
 GPU/native CTest cases require an available device and desktop session; they
 report initialization failures instead of treating missing hardware as success.
 
+Indexed meshes upload once and share GPU buffers across instances. Mesh draws
+carry separate world transforms and tint colors; resource counters report live
+ownership. Run `build/debug/bin/DotRuntime --mesh-test` for a perspective-camera
+cube acceptance case.
+
 See `docs/Development.md` for implementation milestones and actual validation.
