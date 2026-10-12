@@ -29,6 +29,7 @@ find_package(Dawn CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
+find_package(Jolt CONFIG REQUIRED)
 add_library(DotEngine STATIC)
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
@@ -50,11 +51,16 @@ target_sources(DotEngine PRIVATE
     src/Engine/Assets/Mesh.cpp
     src/Engine/World/Scene.cpp
     src/Engine/World/SceneFiles.cpp
+    src/Engine/Physics/World.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
+target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
+# Module producers and consumers must agree on compiler threading mode.
+# 模块生产者与消费者必须使用一致的编译器线程模式。
+target_compile_options(DotEngine PUBLIC "$<TARGET_PROPERTY:Jolt::Jolt,INTERFACE_COMPILE_OPTIONS>")
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
@@ -78,6 +84,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Assets/Mesh.cppm
         src/Engine/World/Scene.cppm
         src/Engine/World/SceneFiles.cppm
+        src/Engine/Physics/World.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp)

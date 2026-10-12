@@ -279,5 +279,39 @@ shares duplicate/depth validation between mesh and scene codecs.
   validation sequencing, common parser bounds, and failed-save preservation.
   Formatting/whitespace checks pass. Windows/Linux remain unverified.
 
-Physics, audio, scripting, project/editor/export tooling, and the example game
-remain to be implemented.
+### Physics world foundation
+
+Added independently owned Jolt worlds with primitive shapes, three motion types,
+sensors, mass-based impulses, pose/velocity operations, nearest ray queries,
+synchronous substeps, optional job workers, and observable body/active counts.
+Public IDs remain valid across moves and cannot alias reused native slots.
+Invalid inputs fail before mutation; real contact/pair capacity errors fault the
+world while preserving diagnostic reads and cleanup operations.
+
+- macOS Debug and Release each pass all 227 CTest cases (212 doctest cases and
+  fifteen executable checks), including actual sphere/box/capsule contacts,
+  restitution, gravity scaling, sensor response, kinematic motion, short-duration
+  quaternion precision, ray hit/miss/inside semantics, finite/range limits,
+  unchanged-state failures, capacity recovery, 3600 native body reuse cycles,
+  moves, wrong-thread rejection, concurrent independent worlds/job workers, and
+  actual contact-capacity exhaustion.
+- `--physics-test` drops a sphere, verifies resting height and its ray hit, and
+  destroys it before checking stale-handle rejection. It accounts for Jolt's
+  default 0.02-metre contact penetration tolerance.
+- Jolt's exported compiler threading options propagate to module consumers;
+  otherwise Clang rejects their BMI threading-mode mismatch. RTTI is enabled in
+  the pinned dependency to match the engine's compilation mode. No compiler,
+  linker environment, or sanitizer setting was changed.
+- Jolt 5.6 asserts immediately before returning recoverable update-capacity flags
+  in Debug. The runtime allows only that known final diagnostic during its own
+  update call; other assertions retain reporting and breakpoint behavior.
+- Reviewed global registration/diagnostic lifetime, partial initialization,
+  body/shape cleanup, worker quiescence, non-reused handle scope, mutation bounds,
+  and post-advancement failure semantics. Formatting/whitespace checks pass;
+  `otool` confirms the caller-selected LLVM libc++ and libunwind. Windows/Linux
+  remain unverified.
+- An implementation-only touch rebuilds the physics object and relinks consumers
+  without rebuilding module interfaces or their BMI consumers.
+
+Physics scene integration/contact events, audio, scripting, project/editor/export
+tooling, and the example game remain to be implemented.

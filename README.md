@@ -64,4 +64,10 @@ files preserve entity values, hierarchy, transforms, and camera/mesh components.
 Run `build/debug/bin/DotRuntime --scene-file-test <existing-directory>` for
 save/load acceptance; see `docs/Scenes.md` for the strict format contract.
 
+Jolt physics provides independently owned worlds, scoped body handles, three
+primitive shapes, static/kinematic/dynamic motion, sensors, impulses, and ray
+queries. Run `build/debug/bin/DotRuntime --physics-test` for falling-body collision
+and lifetime acceptance. See `docs/Physics.md` for limits and failure semantics;
+scene integration remains under development.
+
 See `docs/Development.md` for implementation milestones and actual validation.

@@ -9,6 +9,10 @@
     "tinyobjloader",
     "entt",
     {
+      "name": "joltphysics",
+      "features": ["rtti"]
+    },
+    {
       "name": "dawn",
       "default-features": false,
       "features": [

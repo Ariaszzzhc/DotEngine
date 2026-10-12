@@ -16,8 +16,62 @@ import Dot.Assets.Mesh;
 import Dot.World.Scene;
 import Dot.Graphics.SceneRenderer;
 import Dot.World.SceneFiles;
+import Dot.Physics.World;
 
 namespace {
+  auto testPhysics() -> int {
+    auto world = Dot::Physics::World::create();
+
+    if (!world) {
+      std::println(stderr, "{}", world.error().message);
+      return 1;
+    }
+
+    Dot::Physics::BodyConfig floor;
+    floor.motion = Dot::Physics::Motion::Static;
+    floor.shape = Dot::Physics::Shape::Box;
+    floor.position = {0, -0.5F, 0};
+    floor.halfExtents = {5, 0.5F, 5};
+    auto ground = world->createBody(floor);
+    Dot::Physics::BodyConfig falling;
+    falling.position = {0, 3, 0};
+    auto sphere = world->createBody(falling);
+
+    if (!ground || !sphere) {
+      std::println(stderr, "Physics acceptance body creation failed");
+      return 1;
+    }
+
+    for (int frame = 0; frame < 240; ++frame) {
+      auto step = world->step(1.0 / 60);
+
+      if (!step) {
+        std::println(stderr, "{}", step.error().message);
+        return 1;
+      }
+    }
+
+    auto state = world->body(*sphere);
+    auto ray = world->rayCast({0, 2, 0}, {0, -4, 0});
+
+    if (!state || state->position.y < 0.475F || state->position.y > 0.525F || !ray
+        || !ray->has_value() || (*ray)->body != *sphere || !(*ray)->normal) {
+      std::println(stderr, "Physics acceptance collision/ray verification failed");
+      return 1;
+    }
+
+    auto removed = world->destroyBody(*sphere);
+
+    if (!removed || world->body(*sphere) || world->stats()->bodies != 1) {
+      std::println(stderr, "Physics acceptance lifetime verification failed");
+      return 1;
+    }
+
+    std::println("Physics acceptance passed: sphere rests at y={:.3f}; ray hit; stale ID rejected",
+                 state->position.y);
+    return 0;
+  }
+
   auto testSceneFiles(const std::filesystem::path& root) -> int {
     auto files = Dot::Core::FileSystem::open(root);
     auto scene = Dot::World::Scene::create("Saved Scene");
@@ -545,6 +599,10 @@ auto main(int argc, char** argv) -> int {
       return testFiles(argv[2]);
     }
 
+    if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
+      return testPhysics();
+    }
+
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
       std::println("DotEngine 0.1.0 ({})", Dot::Core::platformName());
       return 0;
@@ -556,7 +614,7 @@ auto main(int argc, char** argv) -> int {
           "Usage: DotRuntime "
           "[--version|--self-test|--math-test|--geometry-test|--mesh-test|--scene-test|"
           "--scene-render-test|--window-smoke|--gpu-test|--render-smoke|--file-test <directory>|"
-          "--asset-test <directory>|--scene-file-test <directory>]");
+          "--asset-test <directory>|--scene-file-test <directory>|--physics-test]");
       return 2;
     }
 
