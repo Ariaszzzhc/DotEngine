@@ -1,0 +1,52 @@
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -30806,14 +30806,23 @@
+                                                          JSValueConst attributes)
+ {
+     const char *base_cname, *cname;
++    size_t name_len;
+     JSModuleDef *m;
+ 
+     base_cname = JS_AtomToCString(ctx, base_module_name);
+     if (!base_cname)
+         return NULL;
+-    cname = JS_AtomToCString(ctx, module_name1);
++    cname = JS_AtomToCStringLen(ctx, &name_len, module_name1);
+     if (!cname) {
+         JS_FreeCString(ctx, base_cname);
++        return NULL;
++    }
++    /* Preserve the full specifier at the C-string boundary.
++       在 C 字符串边界保留完整模块标识符，拒绝截断别名。 */
++    if (memchr(cname, 0, name_len)) {
++        JS_ThrowReferenceError(ctx, "Module specifier contains NUL");
++        JS_FreeCString(ctx, base_cname);
++        JS_FreeCString(ctx, cname);
+         return NULL;
+     }
+     m = js_host_resolve_imported_module(ctx, base_cname, cname, attributes);
+@@ -31881,6 +31890,7 @@
+     JSValueConst specifier = argv[3];
+     JSValueConst attributes = argv[4];
+     const char *basename = NULL, *filename;
++    size_t name_len;
+     JSValue ret, err;
+ 
+     if (!JS_IsString(basename_val)) {
+@@ -31891,9 +31901,15 @@
+     if (!basename)
+         goto exception;
+ 
+-    filename = JS_ToCString(ctx, specifier);
++    filename = JS_ToCStringLen(ctx, &name_len, specifier);
+     if (!filename)
+         goto exception;
++
++    if (memchr(filename, 0, name_len)) {
++        JS_FreeCString(ctx, filename);
++        JS_ThrowReferenceError(ctx, "Module specifier contains NUL");
++        goto exception;
++    }
+ 
+     JS_LoadModuleInternal(ctx, basename, filename, resolving_funcs, attributes);
+     JS_FreeCString(ctx, filename);

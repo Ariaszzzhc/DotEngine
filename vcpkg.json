@@ -10,6 +10,10 @@
     "entt",
     "miniaudio",
     {
+      "name": "quickjs-ng",
+      "default-features": false
+    },
+    {
       "name": "joltphysics",
       "features": ["rtti"]
     },
@@ -40,5 +44,12 @@
       ]
     }
   ],
-  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc"
+  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+  "overrides": [
+    {
+      "name": "quickjs-ng",
+      "version": "0.16.2",
+      "port-version": 1
+    }
+  ]
 }

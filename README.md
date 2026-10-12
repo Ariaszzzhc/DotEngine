@@ -102,3 +102,9 @@ Voice batches prepare every new resource before editing existing voices;
 using actual PCM. Playback runs each batch as one worker command.
 
 See `docs/Development.md` for implementation milestones and actual validation.
+
+`Dot.Script.Runtime` executes project-relative JavaScript ESM through a bounded
+QuickJS-NG realm, with scoped modules, JSON export calls, Promise jobs, contextual
+errors, and allocation/time limits. `--script-test <existing-directory>` exercises
+the real VM and cleanup. See `docs/Scripting.md` for contracts; TypeScript compilation,
+engine host APIs, script components, and hot reload remain under development.

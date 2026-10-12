@@ -30,6 +30,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
+find_package(qjs CONFIG REQUIRED)
 find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
 add_library(DotAudioBackend STATIC src/Engine/Audio/Backend.c)
 target_compile_features(DotAudioBackend PRIVATE c_std_11)
@@ -80,6 +81,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/Voice.cpp
     src/Engine/Audio/Source.cpp
     src/Engine/Audio/SceneAudio.cpp
+    src/Engine/Script/Runtime.cpp
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
@@ -87,6 +89,7 @@ target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjload
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
 target_link_libraries(DotEngine PRIVATE DotAudioBackend)
+target_link_libraries(DotEngine PRIVATE qjs)
 target_include_directories(DotEngine SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
 # Module producers and consumers must agree on compiler threading mode.
 # 模块生产者与消费者必须使用一致的编译器线程模式。
@@ -125,10 +128,11 @@ target_sources(DotEngine PUBLIC
         src/Engine/Audio/Voice.cppm
         src/Engine/Audio/Source.cppm
         src/Engine/Audio/SceneAudio.cppm
+        src/Engine/Script/Runtime.cppm
 )
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/PhysicsAcceptance.cpp
-    src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp)
+    src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp src/Runtime/ScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine)
 
 if(BUILD_TESTING)

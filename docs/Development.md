@@ -739,5 +739,52 @@ synchronization; queries retain owned binding data without a scene reference.
   no LC_RPATH. No environment changes or sanitizers were introduced. Windows/Linux
   implementations remain unverified.
 
-Scripting, project/editor/export tooling, expanded rendering, and the example game
-remain to be implemented.
+### Bounded ESM script runtime
+
+Added an owned QuickJS-NG realm with project-relative ESM imports, scoped module
+handles, cached live bindings, JSON export calls, Promise job execution, and
+contextual errors. Interfaces and implementation remain separate; vendor values
+stay private and explicit RAII releases them before the context/runtime.
+
+- macOS Debug and Release each pass all 452 CTest cases (426 doctest cases and
+  twenty-six executable checks). Twenty-six new unit cases verify file-backed
+  relative/parent/cyclic/dynamic imports, imported-entry cache reuse and shared
+  mutable state, UTF-8 paths/data, undefined/null distinction, top-level await,
+  real async results, contextual recoverable exceptions with retained mutations,
+  malformed/syntax/missing-source failures, path/attribute/NUL rejection, foreign/
+  stale/moved/thread handles, JSON argument/count/result boundaries, strict
+  non-JSON/cyclic/nested-promise/symbol-key rejection, copied unterminated argument
+  views, empty/NUL buffer rejection, infinite-call/initializer interruption,
+  diagnostic getters, stack overflow, bounded allocation failure and cleanup,
+  pending promises/unhandled rejections/infinite jobs, handled rejections,
+  shared execution/serialization job budget, no implicit host I/O bindings,
+  repeated and foreign quiescent destruction, and failed partial initialization.
+- `--script-test <directory>` writes and loads an actual ESM graph, calls async
+  exports with JSON, observes shared counters across calls, recovers from a clean
+  exception, interrupts an infinite function, and restores live allocator counters.
+  Existing real muted CoreAudio/Cocoa/Metal acceptance remains passing.
+- The existing baseline pins QuickJS-NG 0.16.2; a versioned overlay revision adds
+  only full-length NUL checks for static/dynamic import specifiers before the
+  upstream C-string resolver can alias another filename. Both paths are exercised
+  by regression tests. Project-wide vcpkg configuration selects the overlay;
+  Debug configuration succeeds without a cached overlay-port setting. The core
+  library is linked privately without its libc/OS module feature.
+- VM allocator payload, stack, source/JSON, module/job, and cooperative execution
+  limits are explicit. SDK preflight out-of-memory errors are classified even when
+  they occur before the custom allocator callback. Ordinary clean exceptions do
+  not roll back script mutations; loader/resource/job faults require a new realm.
+  These bounds are not a hostile-code process sandbox or a guarantee that native
+  filesystem/compilation/destruction completes within a real-time deadline.
+- Reviewed allocator overflow/alignment/realloc accounting, C ABI exception
+  containment, reference lifetimes and destruction order, module cache identity,
+  root/UTF-8/terminated-buffer boundaries, Promise/rejection ownership, cooperative
+  deadlines covering diagnostic getters, shared job limits, all SDK exception
+  results, strict JSON conversion, scope/thread/reentry guards, and fault recovery.
+- Formatting/whitespace checks pass. Release runs with assertions disabled.
+  Caller-selected LLVM libc++/libunwind/native frameworks remain linked, with no
+  LC_RPATH. No sanitizers or environment changes were introduced. Windows/Linux
+  implementations remain unverified.
+
+TypeScript compilation, engine host bindings, script components/hot reload,
+project/editor/export tooling, expanded rendering, and the example game remain
+to be implemented.

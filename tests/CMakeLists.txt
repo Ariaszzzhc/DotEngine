@@ -29,6 +29,7 @@ add_executable(DotTests
     SceneAudioTests.cpp
     VoiceBatchTests.cpp
     SceneAudioBindingTests.cpp
+    ScriptRuntimeTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 include(doctest)
@@ -66,6 +67,8 @@ add_test(NAME runtime.scene_audio COMMAND DotRuntime --scene-audio-test "${CMAKE
 set_tests_properties(runtime.scene_audio PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.scene_audio_playback COMMAND DotRuntime --scene-audio-play-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.scene_audio_playback PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.script COMMAND DotRuntime --script-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.script PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.physics COMMAND DotRuntime --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntime --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
