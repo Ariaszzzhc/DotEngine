@@ -1535,3 +1535,18 @@ while its main/events/video thread IDs are unset, permitting worker GUI creation
   Windows/Linux checks. Formatting/whitespace checks pass; no environment or
   library initialization is introduced by the query. Other platforms remain
   uncompiled/unexecuted locally.
+
+### Pinned native GUI dependencies
+
+Added Dear ImGui 1.92.9b docking/wchar32, official SDL3/WebGPU bindings and FreeType
+through the pinned manifest. The imgui port-version-1 overlay reuses the checked-in
+baseline's source hashes/build recipe and sets Dawn dependency defaults off, keeping
+the intended Metal/D3D12/Vulkan backend feature selection.
+
+- macOS Debug and Release configurations install successfully without changing
+  caller compiler/linker settings. The complete GUI-stage working tree passes all
+  695 CTest cases in both configurations. Release/NDEBUG executables retain caller
+  LLVM libc++/libunwind and have no LC_RPATH or sanitizer linkage.
+- Reviewed feature/dependency propagation, fixed baseline/source recipe reuse,
+  engine-private vendor linkage and editor frontend linkage. Windows/Linux features
+  are represented in code/manifests but remain uncompiled/unexecuted locally.

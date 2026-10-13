@@ -10,12 +10,25 @@
     "entt",
     "miniaudio",
     {
+      "name": "imgui",
+      "default-features": false,
+      "features": [
+        "docking-experimental",
+        "sdl3-binding",
+        "webgpu-binding",
+        "wchar32",
+        "freetype"
+      ]
+    },
+    {
       "name": "quickjs-ng",
       "default-features": false
     },
     {
       "name": "joltphysics",
-      "features": ["rtti"]
+      "features": [
+        "rtti"
+      ]
     },
     {
       "name": "dawn",
@@ -50,6 +63,11 @@
   ],
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "overrides": [
+    {
+      "name": "imgui",
+      "version": "1.92.9",
+      "port-version": 1
+    },
     {
       "name": "quickjs-ng",
       "version": "0.16.2",
