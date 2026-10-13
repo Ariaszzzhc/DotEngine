@@ -25,6 +25,11 @@ changes; editing the source template updates subsequent builds. Open the copied
 project with DotEditor, use Play, edit scripts through the Resources code page,
 and use [native export](Export.md) to deliver a standalone game.
 
+The repository source project also includes a versioned `scripts/dot` SDK and can
+open directly. Tests compare both source examples' SDK bytes with the canonical
+SDK and compile their real scripts without build-generated injection. The portable
+editor includes complete projects under its top-level `examples` directory.
+
 The saved scene owns 40 native entities and their camera/listener, transforms,
 hierarchy, meshes, rigid bodies, sensor pickups/hazards, audio and script
 attachments. The OBJ crystal and synthesized mono PCM sounds are original sample

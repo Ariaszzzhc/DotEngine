@@ -213,6 +213,9 @@ include(cmake/Examples.cmake)
 
 add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
+if(WIN32)
+    set_target_properties(DotEditor PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 add_dependencies(DotEditor DotRuntimeKit)
 # Refresh owned resources even when code needs no relink; removed sources must not linger.
 # 即使代码无需重新链接也刷新拥有的资源，已删除的源文件不能残留。

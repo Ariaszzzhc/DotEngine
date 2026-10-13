@@ -18,7 +18,13 @@ foreach(dot_notice IN LISTS dot_package_notices)
         COMPONENT EditorDistribution)
 endforeach()
 install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/licenses/" DESTINATION licenses COMPONENT EditorDistribution)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/examples/PrismRelay" DESTINATION examples
+    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" DESTINATION examples
+    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
 install(FILES "${CMAKE_SOURCE_DIR}/docs/Distribution.md" DESTINATION . RENAME README.md COMPONENT EditorDistribution)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/EditorInfo.plist.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/EditorInfo.plist" @ONLY)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/PrepareEditorDistribution.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/PrepareEditorDistribution.cmake" @ONLY)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/PrepareEditorDistribution.cmake" COMPONENT EditorDistribution)

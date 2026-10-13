@@ -21,6 +21,28 @@ import Dot.Platform.Input;
 import Dot.Platform.Events;
 import Dot.World.Scene;
 
+TEST_CASE("example.source_projects_open_and_compile_without_build_generated_sdk") {
+  auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
+  auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+
+  for (const auto* root : {DOT_EXAMPLE_SOURCE, DOT_LAB_SOURCE}) {
+    auto project = Dot::Project::Project::open(root);
+    REQUIRE_MESSAGE(project, (project ? "" : project.error().message));
+    auto files = project->files().value();
+
+    for (const auto* file : {"dot/engine.ts", "dot/host.d.ts"}) {
+      CHECK(files.readText(std::filesystem::path("scripts") / file).value()
+            == sdk.readText(file).value());
+    }
+
+    auto scene = project->loadStartup();
+    REQUIRE_MESSAGE(scene, (scene ? "" : scene.error().message));
+    auto program = compiler.compileProject(files);
+    REQUIRE_MESSAGE(program, (program ? "" : program.error().message));
+    CHECK_FALSE(program->modules()->empty());
+  }
+}
+
 namespace {
   using Json = nlohmann::json;
   using namespace Dot;

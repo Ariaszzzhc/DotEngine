@@ -2283,3 +2283,46 @@ Authoring projects and native player-kit ownership remain separate from these tr
   signing/notarization, installer publication and manual mouse acceptance are not
   claimed. Current renderer/import/editor feature boundaries are explicit in delivery
   documentation rather than hidden by a blanket production or exhaustive claim.
+
+
+### Desktop application entry and complete examples
+
+User desktop use exposed two delivery gaps: Finder opened the naked macOS editor
+executable through Terminal, and opening the repository Prism Relay source failed
+because its scripts/dot SDK existed only in generated projects. The previous
+distribution acceptance checked direct process startup/template creation, which
+did not establish a proper Finder application entry or complete source examples.
+
+macOS distribution now contains DotEngine.app with an APPL Info.plist, executables
+and relative libraries in Contents/MacOS, and compiler/SDK/font/templates/player/
+notices in Contents/Resources. Resource lookup uses SDL's standard bundle base;
+the distribution manifest records executable paths. Library movement is optional
+when the toolchain needs no bundled libraries. Nested binaries are signed before
+the final application signature. Windows editor uses the GUI subsystem and existing
+SDL main wrapper; that branch remains unvalidated locally. CLI/mailbox support stays
+available through the executable inside the macOS app.
+
+Prism Relay and Feature Lab source projects now contain versioned SDK snapshots.
+A regression opens both source projects, compares SDK bytes against the canonical
+source and compiles actual scripts without build-generated SDK injection. The
+distribution includes complete top-level examples, and native acceptance directly
+opens/type-checks its Prism Relay in addition to template creation/Play/export.
+
+- arm64 macOS Debug and Release/NDEBUG each pass 768/768 CTest cases (715 doctest,
+  53 executable checks), taking 72.81/30.74 seconds. Focused source-example and
+  distribution checks pass. The latter starts the relocated app through actual
+  LaunchServices and reads its native project-home response, then runs existing
+  independent native game export/lifetime acceptance. This is programmatic desktop
+  application startup evidence, not a claim of manual mouse testing.
+- Release ZIP: 263 entries, 43,255,944 bytes. CRC, executable permissions, APPL
+  metadata, complete example SDKs and absence of the exposed bare editor/private
+  document pass. Actual extraction verifies the whole application signature and
+  all 16 Mach-O signatures/relative-system loader references. Moving only the app
+  to another directory still starts the home through LaunchServices, opens the
+  extracted example and type-checks it with the compiler inside that moved app.
+- Reviewed complete source/package inventories, shared GUI/CLI entry, SDL bundle
+  resource lookup, executable-relative dependencies, signing order, ownership of
+  generated paths, platform guards and SDK snapshot consistency. Changed C++ files
+  pass clang-format; diff whitespace and private-reference checks pass. Caller
+  environment remains unchanged. Windows/Linux and release identity signing/
+  notarization remain unvalidated. The local private document remains untracked.

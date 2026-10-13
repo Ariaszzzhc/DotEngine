@@ -39,34 +39,47 @@ TEST_CASE("distribution.relocated_editor_creates_checks_plays_and_exports_withou
   std::filesystem::copy(DOT_EDITOR_DISTRIBUTION, files.root() / "relocated editor",
                         std::filesystem::copy_options::recursive);
   auto root = files.root() / "relocated editor";
-#ifdef _WIN32
-  auto editor = root / "DotEditor.exe";
-  auto compiler = root / "resources/typescript-native/tsc.exe";
+  auto distribution = Core::FileSystem::open(root).value();
+  const auto manifest = Json::parse(distribution.readText("distribution.json").value());
+  auto editor = root / manifest["editor"].get<std::string>();
+  auto runtimePlayer = root / manifest["runtime"].get<std::string>();
+#ifdef __APPLE__
+  auto resources = root / "DotEngine.app/Contents/Resources/resources";
+  CHECK_FALSE(std::filesystem::exists(root / "DotEditor"));
+  run("/usr/bin/open", files.root(),
+      {"-W", "-n", "--stdout", utf(files.root() / "launch-output.json"), "--stderr",
+       utf(files.root() / "launch-error.txt"), utf(root / "DotEngine.app"), "--args", "home", "2"});
+  const auto launched = Json::parse(files.readText("launch-output.json").value());
+  CHECK(launched["ok"] == true);
+  CHECK(launched["kind"] == "project-home");
 #else
-  auto editor = root / "DotEditor";
-  auto compiler = root / "resources/typescript-native/tsc";
+  auto resources = root / "resources";
+#endif
+#ifdef _WIN32
+  auto compiler = resources / "typescript-native/tsc.exe";
+#else
+  auto compiler = resources / "typescript-native/tsc";
 #endif
   run(editor, files.root(), {"home", "2"});
-  auto runtime = Core::FileSystem::open(root / "resources/runtime-kit").value();
+  auto runtime = Core::FileSystem::open(resources / "runtime-kit").value();
   REQUIRE(Project::RuntimeKit::open(runtime));
+  auto example = root / "examples/PrismRelay";
+  REQUIRE(Project::Project::open(example));
+  auto exampleChecked = run(editor, files.root(), {"check", utf(example), utf(compiler)});
+  CHECK(Json::parse(exampleChecked.standardOutput)["ok"] == true);
+  run(editor, files.root(), {"open", utf(example), "3"});
   auto request = Json{{"command", "create"},
                       {"parent", utf(files.root())},
                       {"folder", "game project"},
                       {"name", "Portable editor game"},
                       {"template", "prism"}};
   REQUIRE(files.writeTextAtomic("create.json", request.dump()));
-  auto created
-      = run(editor, files.root(), {"project-action", utf(root / "resources"), "create.json"});
+  auto created = run(editor, files.root(), {"project-action", utf(resources), "create.json"});
   CHECK(Json::parse(created.standardOutput)["ok"] == true);
   auto projectRoot = files.root() / "game project";
   auto checked = run(editor, files.root(), {"check", utf(projectRoot), utf(compiler)});
   CHECK(Json::parse(checked.standardOutput)["ok"] == true);
   run(editor, files.root(), {"open", utf(projectRoot), "3"});
-#ifdef _WIN32
-  const auto runtimePlayer = root / "DotRuntime.exe";
-#else
-  const auto runtimePlayer = root / "DotRuntime";
-#endif
   run(runtimePlayer, files.root(), {"--project", utf(projectRoot), utf(compiler), "6"});
   auto exported = run(editor, files.root(),
                       {"export", utf(projectRoot), utf(files.root()), "exported", utf(compiler),

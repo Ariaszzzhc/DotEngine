@@ -1,8 +1,9 @@
 # Feature Lab
 
-An ordinary native project for component and runtime SDK acceptance. Build the
-engine, then open `build/<preset>/acceptance/FeatureLab` with DotEditor. The current
-SDK is supplied by the build. The generated copy is refreshed by builds; copy it
+An ordinary native project for component and runtime SDK acceptance. Open this
+folder directly with DotEditor; it includes its versioned script SDK. The build
+also supplies `build/<preset>/acceptance/FeatureLab` with the current SDK.
+The generated copy is refreshed by builds; copy it
 elsewhere before persistent authoring changes.
 
 The saved scene contains perspective/orthographic cameras, built-in cube/quad and

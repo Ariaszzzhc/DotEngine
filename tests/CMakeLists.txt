@@ -217,6 +217,9 @@ add_executable(DotExampleTests main.cpp ExampleTests.cpp)
 target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotExampleTests PRIVATE
     DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_EXAMPLE_SOURCE="${CMAKE_SOURCE_DIR}/examples/PrismRelay"
+    DOT_LAB_SOURCE="${CMAKE_SOURCE_DIR}/acceptance/FeatureLab"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotExampleTests DotExamples)
 doctest_discover_tests(DotExampleTests PROPERTIES TIMEOUT 60 LABELS "unit")

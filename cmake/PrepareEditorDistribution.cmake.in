@@ -5,18 +5,42 @@ foreach(dot_name IN ITEMS DotEditor DotRuntime)
     set(dot_executable "${dot_kit}/${dot_name}@CMAKE_EXECUTABLE_SUFFIX@")
     include("@CMAKE_CURRENT_BINARY_DIR@/FixNativeDependencies.cmake")
 endforeach()
+set(dot_editor_path "DotEditor@CMAKE_EXECUTABLE_SUFFIX@")
+set(dot_runtime_path "DotRuntime@CMAKE_EXECUTABLE_SUFFIX@")
 if("@CMAKE_SYSTEM_NAME@" STREQUAL "Darwin")
+    # Keep executable-relative libraries and SDL's standard bundle resource base.
+    # 保留相对可执行文件的库路径，并使用 SDL 的标准应用包资源目录。
+    set(dot_app "${dot_kit}/DotEngine.app")
+    file(MAKE_DIRECTORY "${dot_app}/Contents/MacOS" "${dot_app}/Contents/Resources")
+    file(COPY_FILE "@CMAKE_CURRENT_BINARY_DIR@/EditorInfo.plist" "${dot_app}/Contents/Info.plist")
+    foreach(dot_name IN ITEMS DotEditor DotRuntime)
+        file(RENAME "${dot_kit}/${dot_name}" "${dot_app}/Contents/MacOS/${dot_name}")
+    endforeach()
+    if(EXISTS "${dot_kit}/lib")
+        file(RENAME "${dot_kit}/lib" "${dot_app}/Contents/MacOS/lib")
+    endif()
+    foreach(dot_name IN ITEMS resources licenses)
+        file(RENAME "${dot_kit}/${dot_name}" "${dot_app}/Contents/Resources/${dot_name}")
+    endforeach()
+    set(dot_editor_path "DotEngine.app/Contents/MacOS/DotEditor")
+    set(dot_runtime_path "DotEngine.app/Contents/MacOS/DotRuntime")
     file(GLOB_RECURSE dot_native_libraries "${dot_kit}/*.dylib")
     foreach(dot_binary IN LISTS dot_native_libraries)
         execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_binary}"
             COMMAND_ERROR_IS_FATAL ANY)
     endforeach()
-    foreach(dot_binary IN ITEMS DotEditor DotRuntime resources/typescript-native/tsc resources/runtime-kit/DotGame)
+    foreach(dot_binary IN ITEMS "${dot_editor_path}" "${dot_runtime_path}"
+        DotEngine.app/Contents/Resources/resources/typescript-native/tsc
+        DotEngine.app/Contents/Resources/resources/runtime-kit/DotGame)
         execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_kit}/${dot_binary}"
             COMMAND_ERROR_IS_FATAL ANY)
         execute_process(COMMAND "${dot_codesign}" --verify --strict "${dot_kit}/${dot_binary}"
             COMMAND_ERROR_IS_FATAL ANY)
     endforeach()
+    execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_app}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(COMMAND "${dot_codesign}" --verify --deep --strict "${dot_app}"
+        COMMAND_ERROR_IS_FATAL ANY)
 endif()
 file(WRITE "${dot_kit}/distribution.json"
-    "{\"version\":1,\"engine\":\"@PROJECT_VERSION@\",\"platform\":\"@DOT_KIT_PLATFORM@\",\"editor\":\"DotEditor@CMAKE_EXECUTABLE_SUFFIX@\",\"runtime\":\"DotRuntime@CMAKE_EXECUTABLE_SUFFIX@\"}\n")
+    "{\"version\":1,\"engine\":\"@PROJECT_VERSION@\",\"platform\":\"@DOT_KIT_PLATFORM@\",\"editor\":\"${dot_editor_path}\",\"runtime\":\"${dot_runtime_path}\"}\n")

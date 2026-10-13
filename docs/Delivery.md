@@ -22,12 +22,13 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Final arm64 macOS Debug and Release/NDEBUG suites each pass 767/767 CTest cases
-(714 doctest cases and 53 executable checks), taking 76.44 and 32.81 seconds.
-All 211 C/C++ files pass clang-format verification. The final 219-entry native zip
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 768/768 CTest cases
+(715 doctest cases and 53 executable checks), taking 72.81 and 30.74 seconds.
+The C/C++ formatting checks pass. The current 263-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
-and relative/system loader-reference inspection. Its extracted editor starts the
-native project home successfully.
+and relative/system loader-reference inspection. Its extracted macOS application
+starts through LaunchServices, also after moving the application alone. Complete
+source/package examples open and compile with their versioned SDKs.
 
 The supported implementation targets are arm64 macOS and x86_64 Windows/Linux.
 macOS uses Metal through Dawn, Windows D3D12, Linux Vulkan with X11/Wayland surface

@@ -46,6 +46,8 @@ cmake --build --preset release --target DotEditorArchive
 The platform-named zip under `build/release/distribution` contains the editor,
 compiler, SDK, font, templates and native libraries. See
 [distribution and validation](docs/Distribution.md) for usage and tested boundaries.
+On macOS, double-click `DotEngine.app`. Complete projects in the archive's
+`examples` directory can be opened directly or copied through project-home creation.
 
 ## Current state
 

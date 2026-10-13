@@ -14,8 +14,9 @@ scene owns 40 entities: camera/listener, player, floor/walls, sensor pickups,
 visual children, hazards, feedback audio and mesh indicators. The OBJ crystal
 and synthesized PCM sounds are original sample assets.
 
-Build DotEngine, then open `build/<preset>/examples/PrismRelay` with DotEditor.
-The build supplies the current SDK. Copy that generated project to a separate
+Open this project folder with DotEditor; it includes its versioned script SDK.
+The build also supplies `build/<preset>/examples/PrismRelay` with the current SDK.
+Copy that generated project to a separate
 folder before making persistent edits; it is refreshed from this source template.
 Use Play and the Resources code page to edit scripts while running. Save/reload
 migrates the round checkpoint rather than recreating the native scene.
