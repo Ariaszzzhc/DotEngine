@@ -14,8 +14,11 @@ module;
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include "../Serialization/Json.hpp"
 
 module Dot.Script.Compiler;
 
@@ -23,6 +26,8 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.Text;
 import Dot.Core.Process;
+import Dot.Core.Paths;
+import Dot.Core.StagedDirectory;
 
 namespace Dot::Script {
   namespace {
@@ -358,6 +363,344 @@ namespace Dot::Script {
     }
 
     return m_impl->stats;
+  }
+
+  auto CompiledProgram::publish(const Core::FileSystem& parent, const Fs::path& folder) const
+      -> Core::Result<Core::FileSystem> {
+    if (!m_impl) {
+      return Core::fail(ErrorCode::InvalidState, "Compiled program was moved from");
+    }
+
+    if (folder.filename() != folder || !Core::isPortableRelativePath(utf8(folder))) {
+      return Core::fail(ErrorCode::InvalidArgument,
+                        "Published program folder must be one portable name");
+    }
+
+    try {
+      for (auto current = parent.root();;) {
+        std::error_code error;
+
+        if (Fs::equivalent(current, m_impl->generation->root, error) && !error) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Cannot publish inside a temporary compiled generation");
+        }
+
+        const auto next = current.parent_path();
+
+        if (next == current) {
+          break;
+        }
+
+        current = next;
+      }
+
+      auto staging = Core::StagedDirectory::create(parent);
+
+      if (!staging) {
+        return std::unexpected(staging.error());
+      }
+
+      auto files = staging->files().value();
+      auto made = files.createDirectories("modules");
+
+      if (!made) {
+        return std::unexpected(made.error());
+      }
+
+      nlohmann::json entries = nlohmann::json::array();
+      std::uint64_t total = 0;
+      std::unordered_set<std::string> names;
+
+      for (const auto& module : m_impl->modules) {
+        if (!Core::isPortableRelativePath(module)) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Published module path is not portable: " + module);
+        }
+
+        auto folded = module;
+
+        for (auto& c : folded) {
+          if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+          }
+        }
+
+        if (!names.insert(folded).second) {
+          return Core::fail(ErrorCode::InvalidArgument, "Published modules collide by ASCII case");
+        }
+
+        const Fs::path relative{std::u8string(module.begin(), module.end())};
+        auto current = m_impl->files.root();
+
+        for (const auto& part : relative) {
+          current /= part;
+
+          if (Fs::is_symlink(Fs::symlink_status(current))) {
+            return Core::fail(ErrorCode::InvalidArgument, "Compiled module contains a symlink");
+          }
+        }
+
+        if (!Fs::is_regular_file(Fs::symlink_status(current))) {
+          return Core::fail(ErrorCode::InvalidArgument, "Compiled module must be a regular file");
+        }
+
+        auto text = m_impl->files.readText(relative, 64 * 1024 * 1024);
+
+        if (!text) {
+          return std::unexpected(text.error());
+        }
+
+        const auto marker = text->rfind("//# sourceMappingURL=");
+
+        if (marker != std::string::npos && (marker == 0 || (*text)[marker - 1] == '\n')
+            && (text->find('\n', marker) == std::string::npos
+                || text->find('\n', marker) == text->size() - 1)) {
+          text->erase(marker);
+        }
+
+        if (text->empty() || !Core::isValidUtf8(*text) || text->find('\0') != std::string::npos
+            || text->size() > 64 * 1024 * 1024 - total) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Published module text is invalid or exceeds 64 MiB total");
+        }
+
+        const auto destination = Fs::path{"modules"} / relative;
+        auto directory = files.createDirectories(destination.parent_path());
+
+        if (!directory) {
+          return std::unexpected(directory.error());
+        }
+
+        auto written = files.writeTextAtomic(destination, *text);
+
+        if (!written) {
+          return std::unexpected(written.error());
+        }
+
+        total += text->size();
+        entries.push_back({{"path", module}, {"bytes", text->size()}});
+      }
+
+      const auto manifest = nlohmann::json{
+          {"version", 1},
+          {"format", "dot-esm"},
+          {"sourceFiles", m_impl->stats.sourceFiles},
+          {"sourceBytes", m_impl->stats.sourceBytes},
+          {"outputBytes", total},
+          {"modules", entries}}.dump();
+
+      if (manifest.size() > 1024 * 1024) {
+        return Core::fail(ErrorCode::Unavailable, "Published program manifest exceeds 1 MiB");
+      }
+
+      auto written = files.writeTextAtomic("program.json", manifest);
+
+      if (!written) {
+        return std::unexpected(written.error());
+      }
+
+      auto checked = loadPublished(files);
+
+      if (!checked) {
+        return Core::fail(checked.error().code, "Published program exceeds default load contract: "
+                                                    + checked.error().message);
+      }
+
+      return staging->publish(folder);
+    } catch (const Fs::filesystem_error& error) {
+      return Core::fail(ErrorCode::Io, "Publish compiled program: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(ErrorCode::External,
+                        "Publish compiled program: " + std::string(error.what()));
+    }
+  }
+
+  auto CompiledProgram::loadPublished(const Core::FileSystem& package, const CompilerLimits& limits)
+      -> Core::Result<CompiledProgram> {
+    if (!validateLimits(limits)) {
+      return Core::fail(ErrorCode::InvalidArgument, "Invalid published program limits");
+    }
+
+    try {
+      const auto status = Fs::symlink_status(package.root() / "program.json");
+
+      if (!Fs::is_regular_file(status)) {
+        return Core::fail(ErrorCode::InvalidArgument, "Program manifest must be a regular file");
+      }
+
+      auto text = package.readText("program.json", 1024 * 1024);
+
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+
+      auto manifest = Serialization::Detail::parseJson(*text);
+      Serialization::Detail::requireFields(
+          manifest, {"version", "format", "sourceFiles", "sourceBytes", "outputBytes", "modules"});
+
+      const auto number = [](const nlohmann::json& value) -> std::uint64_t {
+        if (!value.is_number_unsigned()) {
+          throw std::invalid_argument("Published counts require unsigned integers");
+        }
+
+        return value.get<std::uint64_t>();
+      };
+      const auto sourceFiles = number(manifest["sourceFiles"]);
+      const auto sourceBytes = number(manifest["sourceBytes"]);
+      const auto outputBytes = number(manifest["outputBytes"]);
+      const auto& entries = manifest["modules"];
+
+      if (number(manifest["version"]) != 1 || manifest["format"] != "dot-esm" || sourceFiles == 0
+          || sourceFiles > limits.sourceFiles || sourceBytes == 0
+          || sourceBytes > limits.sourceBytes || outputBytes == 0
+          || outputBytes > limits.outputBytes || !entries.is_array() || entries.empty()
+          || entries.size() > sourceFiles) {
+        return Core::fail(ErrorCode::InvalidArgument,
+                          "Invalid published program header/count/size");
+      }
+
+      std::vector<std::string> modules;
+      std::vector<std::uint64_t> sizes;
+      std::unordered_set<std::string> unique;
+      std::uint64_t total = 0;
+
+      for (const auto& entry : entries) {
+        Serialization::Detail::requireFields(entry, {"path", "bytes"});
+        const auto name = entry["path"].get<std::string>();
+        const auto size = number(entry["bytes"]);
+        auto folded = name;
+
+        for (auto& c : folded) {
+          if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+          }
+        }
+
+        if (!Core::isPortableRelativePath(name)
+            || (!name.ends_with(".js") && !name.ends_with(".mjs")) || !unique.insert(folded).second
+            || (!modules.empty() && modules.back() >= name) || size == 0 || size > limits.fileBytes
+            || size > limits.outputBytes - total) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Invalid/duplicate/unsorted published module or size");
+        }
+
+        total += size;
+        modules.push_back(name);
+        sizes.push_back(size);
+      }
+
+      if (total != outputBytes) {
+        return Core::fail(ErrorCode::InvalidArgument,
+                          "Published byte count disagrees with manifest");
+      }
+
+      std::vector<std::string> actual;
+      std::unordered_set<std::string> required{"program.json", "modules"};
+
+      for (const auto& name : modules) {
+        auto file = Fs::path{"modules"} / Fs::path(std::u8string(name.begin(), name.end()));
+        required.insert(utf8(file));
+
+        for (auto parent = file.parent_path(); parent != Fs::path{"modules"};
+             parent = parent.parent_path()) {
+          required.insert(utf8(parent));
+        }
+      }
+
+      std::unordered_set<std::string> aliases;
+
+      for (auto name : required) {
+        for (auto& c : name) {
+          if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+          }
+        }
+
+        if (!aliases.insert(std::move(name)).second) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Published module directories collide by ASCII case");
+        }
+      }
+
+      std::size_t count = 0;
+
+      for (auto iterator = Fs::recursive_directory_iterator(package.root());
+           iterator != Fs::recursive_directory_iterator{}; ++iterator) {
+        if (++count > static_cast<std::size_t>(limits.directoryEntries) + 2
+            || iterator.depth() > 33) {
+          return Core::fail(ErrorCode::Unavailable, "Published tree entry/depth limit exceeded");
+        }
+
+        const auto relative = utf8(iterator->path().lexically_relative(package.root()));
+        const auto entryStatus = iterator->symlink_status();
+
+        if (!required.contains(relative) || Fs::is_symlink(entryStatus)
+            || (!Fs::is_directory(entryStatus) && !Fs::is_regular_file(entryStatus))) {
+          return Core::fail(
+              ErrorCode::InvalidArgument,
+              "Published tree contains unexpected files, symlinks or special entries");
+        }
+
+        actual.push_back(relative);
+      }
+
+      if (actual.size() != required.size()) {
+        return Core::fail(ErrorCode::InvalidArgument,
+                          "Published tree is missing modules/directories");
+      }
+
+      auto generation = reserveGeneration();
+
+      if (!generation) {
+        return std::unexpected(generation.error());
+      }
+
+      auto files = Core::FileSystem::open((*generation)->root).value();
+
+      for (std::size_t index = 0; index < modules.size(); ++index) {
+        const Fs::path relative{std::u8string(modules[index].begin(), modules[index].end())};
+        auto source = package.readText(Fs::path{"modules"} / relative,
+                                       static_cast<std::size_t>(limits.fileBytes));
+
+        if (!source) {
+          return std::unexpected(source.error());
+        }
+
+        if (source->size() != sizes[index] || !Core::isValidUtf8(*source)
+            || source->find('\0') != std::string::npos) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Published module is invalid UTF-8/NUL or has a changed size");
+        }
+
+        auto directory = files.createDirectories(
+            relative.parent_path().empty() ? Fs::path{"."} : relative.parent_path());
+
+        if (!directory) {
+          return std::unexpected(directory.error());
+        }
+
+        auto written = files.writeTextAtomic(relative, *source);
+
+        if (!written) {
+          return std::unexpected(written.error());
+        }
+      }
+
+      return CompiledProgram(std::make_shared<Impl>(
+          std::move(*generation), std::move(files), std::move(modules), std::string{},
+          CompiledStats{static_cast<std::uint32_t>(sourceFiles), sourceBytes, outputBytes}));
+    } catch (const nlohmann::json::exception& error) {
+      return Core::fail(ErrorCode::InvalidArgument,
+                        "Published program JSON: " + std::string(error.what()));
+    } catch (const std::invalid_argument& error) {
+      return Core::fail(ErrorCode::InvalidArgument,
+                        "Published program: " + std::string(error.what()));
+    } catch (const Fs::filesystem_error& error) {
+      return Core::fail(ErrorCode::Io, "Load published program: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(ErrorCode::External,
+                        "Load published program: " + std::string(error.what()));
+    }
   }
 
   TypeScriptCompiler::TypeScriptCompiler(Fs::path executable, CompilerLimits limits)

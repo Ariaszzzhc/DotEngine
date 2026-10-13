@@ -58,7 +58,7 @@ doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
-add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp PlayTests.cpp)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp PlayTests.cpp PublishedProgramTests.cpp)
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"

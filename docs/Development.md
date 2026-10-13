@@ -1888,3 +1888,28 @@ resources may be edited while Play runs for real TypeScript hot reload.
 Remaining resource rename/delete, richer code editing, project export, expanded
 rendering, complete acceptance scenes and example game remain subsequent work.
 The full engine goal is still active and has not been marked complete.
+
+
+### Published ESM program foundation
+
+Added separate CompiledProgram publication/loading implementations. A new strict
+version-1 manifest delivers JS/MJS only; trailing source map directives are
+removed. Loading captures validated code into independently owned generations
+without invoking a compiler. Publication satisfies default load bounds before
+exclusive rename and preserves existing destinations.
+
+- Four focused cases pass on arm64 macOS Debug and Release/NDEBUG: real imported
+  ESM execution after source removal, immutable snapshots after package changes,
+  map omission, moves and generation/process cleanup; strict fields/counts/limits,
+  portable and ASCII directory aliases, missing/extra/symlink files, invalid UTF-8/
+  NUL and oversized module rejection, no overwrite and staging cleanup.
+- The integrated export working tree passes all 743 CTest cases in both builds.
+  This includes later consumers being committed in subsequent cohesive stages;
+  it is not an isolated first-stage suite count. Initial map stripping was corrected
+  for compiler output without a trailing newline before the passing final checks.
+- Reviewed exclusive publication, bounded traversal/byte arithmetic, exact tree
+  membership, default load compatibility, expected error propagation, shared
+  generation destruction, portable names and interface/implementation separation.
+  clang-format and diff whitespace checks pass. No toolchain environment changed.
+  Manifest shape/count/size validation does not authenticate code or isolate hostile
+  filesystem races. Windows/Linux remain unvalidated locally.

@@ -75,6 +75,25 @@ export namespace Dot::Script {
     [[nodiscard]] auto diagnostics() const -> Core::Result<std::string>;
     [[nodiscard]] auto stats() const -> Core::Result<CompiledStats>;
 
+    /** Atomically publish portable JS/MJS modules plus a strict version-1
+     * manifest into a new directory within default load limits. Source maps and
+     * TypeScript are omitted. Existing destinations remain untouched; the caller
+     * owns the published directory.
+     * 将可移植 JS/MJS 模块及严格版本 1 清单原子发布到新目录，省略源码映射/TypeScript；
+     * 发布须满足默认加载限额；不覆盖已有目标，发布目录由调用者持有。 */
+    [[nodiscard]] auto publish(const Core::FileSystem& parent,
+                               const std::filesystem::path& folder) const
+        -> Core::Result<Core::FileSystem>;
+    /** Validate a bounded published tree and copy its ESM bytes into an owned
+     * private generation without any compiler/tool/process. Later package edits
+     * do not change this snapshot. Requires serialized input files; manifests
+     * validate shape/count/size, not code authenticity or hostile races.
+     * 校验有界发布树并将 ESM 字节复制到拥有的私有代，不运行编译器/工具/进程；后续包
+     * 修改不改变快照。输入修改须串行，清单校验结构/数量/大小，不保证代码真实性或恶意竞争隔离。 */
+    [[nodiscard]] static auto loadPublished(const Core::FileSystem& package,
+                                            const CompilerLimits& limits = {})
+        -> Core::Result<CompiledProgram>;
+
   private:
     struct Impl;
     explicit CompiledProgram(std::shared_ptr<const Impl> impl) noexcept;

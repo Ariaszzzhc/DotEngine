@@ -839,3 +839,14 @@ checks actual frame delivery and native rejection of offline rendering. Both cas
 verify compiler generations, process/VM handles and mixer/output backend allocations
 return to baseline. Local hardware validation covers macOS CoreAudio; Windows/Linux
 implementations remain unverified.
+
+
+## Published ESM generations
+
+`CompiledProgram::publish` writes JS/MJS and a strict version-1 manifest to a
+new directory without replacing existing destinations. It strips trailing source
+map directives and validates against default loader limits before publication.
+`loadPublished` validates portable sorted names, directory case aliases, exact
+membership/counts/sizes and UTF-8/NUL boundaries, then captures ESM into a private
+owned generation without compiler processes. Keep an owner alive for Runtime
+using its borrowed files. Subsequent package changes do not affect captured code.
