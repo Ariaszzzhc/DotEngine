@@ -41,7 +41,9 @@ namespace {
 }  // namespace
 
 TEST_CASE("texture.gpu_sampling_retains_owned_rgba_top_left_uv_and_material_factor") {
-  auto renderer = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   Image image{2, 2, {255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 255, 255, 255, 255, 255}};
   TextureOptions options{ColorSpace::Linear, TextureFilter::Nearest};
   auto texture = renderer.uploadTexture(image, options);
@@ -60,7 +62,9 @@ TEST_CASE("texture.gpu_sampling_retains_owned_rgba_top_left_uv_and_material_fact
 }
 
 TEST_CASE("texture.color_space_linear_filtering_and_address_modes_are_explicit") {
-  auto renderer = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   Image gray{1, 1, {128, 128, 128, 128}};
   auto linear = renderer.uploadTexture(gray, {.colorSpace = ColorSpace::Linear}).value();
   auto srgb = renderer.uploadTexture(gray).value();
@@ -87,7 +91,9 @@ TEST_CASE("texture.color_space_linear_filtering_and_address_modes_are_explicit")
 }
 
 TEST_CASE("texture.mip_sampling_averages_linear_light_and_preserves_odd_edges") {
-  auto renderer = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   Image image{3, 1, {0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255}};
   auto texture = renderer.uploadTexture(image).value();
   CHECK(texture.info()->mipLevels == 2);
@@ -108,7 +114,9 @@ TEST_CASE("texture.mip_sampling_averages_linear_light_and_preserves_odd_edges") 
 }
 
 TEST_CASE("texture.shared_resources_survive_moves_and_release_once") {
-  auto renderer = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   auto texture = renderer.uploadTexture(Image{1, 1, {255, 0, 0, 255}}).value();
   auto copy = texture;
   auto moved = std::move(texture);
@@ -126,7 +134,9 @@ TEST_CASE("texture.shared_resources_survive_moves_and_release_once") {
   Texture orphan;
 
   {
-    auto temporary = Renderer::create().value();
+    auto temporary
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+              .value();
     orphan = temporary.uploadTexture(Image{1, 1, {255, 255, 255, 255}}).value();
   }
 
@@ -135,8 +145,12 @@ TEST_CASE("texture.shared_resources_survive_moves_and_release_once") {
 }
 
 TEST_CASE("texture.foreign_empty_and_invalid_materials_preserve_the_last_target") {
-  auto renderer = Renderer::create().value();
-  auto other = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
+  auto other
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   auto texture = other.uploadTexture(Image{1, 1, {255, 0, 0, 255}}).value();
   auto mesh = renderer.upload(uvQuad({})).value();
   auto target = renderer.createTarget(16, 16).value();
@@ -160,7 +174,9 @@ TEST_CASE("texture.foreign_empty_and_invalid_materials_preserve_the_last_target"
 }
 
 TEST_CASE("texture.boundaries_thread_ownership_and_recovery_are_enforced") {
-  auto renderer = Renderer::create().value();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
   const Image valid{1, 1, {255, 255, 255, 255}};
   CHECK_FALSE(renderer.uploadTexture({}));
   CHECK_FALSE(renderer.uploadTexture(Image{1, 1, {1, 2, 3}}));

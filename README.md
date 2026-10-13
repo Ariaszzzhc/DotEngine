@@ -58,8 +58,9 @@ On macOS, double-click `DotEngine.app`. Complete projects in the archive's
 
 The [capability roadmap](docs/EngineRoadmap.md) records the required large-3D-game
 and mature-editor end state. Current rendering/editor foundations do not yet meet
-that target; texture sampling and surface resource ownership are implemented; PBR materials,
-HDRI IBL, soft shadows, SSAO, HDR tone mapping and editor production tools remain
+that target; texture sampling, surface resource ownership and HDR exposure/tone mapping are
+implemented; PBR materials,
+HDRI IBL, soft shadows, SSAO and editor production tools remain
 in development. [Rendering](docs/Rendering.md) distinguishes current contracts
 from the required rendering end state.
 

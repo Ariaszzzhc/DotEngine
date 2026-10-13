@@ -17,6 +17,7 @@ import Dot.Platform.Window;
 import Dot.Platform.Events;
 export import Dot.Graphics.Geometry;
 export import Dot.Graphics.Image;
+export import Dot.Graphics.PostProcess;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -43,6 +44,9 @@ export namespace Dot::Graphics {
     std::uint64_t targetBytes{};
     std::uint64_t textures{};
     std::uint64_t textureBytes{};
+    /** Reused renderer working HDR/depth storage, twelve logical bytes per pixel.
+     * 渲染器复用的 HDR/深度工作存储，每像素十二逻辑字节。 */
+    std::uint64_t frameBytes{};
   };
 
   struct TargetInfo {
@@ -171,6 +175,9 @@ export namespace Dot::Graphics {
   struct Material {
     Math::Vec4 baseColor{1, 1, 1, 1};
     std::optional<Texture> baseColorTexture;
+    /** Linear emissive radiance per channel in [0,65503]. No exposure baked in.
+     * 每通道 [0,65503] 的线性自发光亮度，不烘焙曝光。 */
+    Math::Vec3 emissive{};
   };
 
   /** Borrows a mesh for one call; transform maps local vertices into world space.
@@ -190,6 +197,7 @@ export namespace Dot::Graphics {
   struct RendererConfig {
     std::uint32_t maxTextures{4096};
     std::uint64_t maxTextureBytes{512 * 1024 * 1024};
+    PostProcessSettings postProcess{};
   };
 
   /** Owns a Dawn device and optional native surface; all operations and destruction
@@ -226,13 +234,18 @@ export namespace Dot::Graphics {
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
     [[nodiscard]] auto resourceStats() const -> Core::Result<ResourceStats>;
 
-    /** Persistent RGBA8/depth target, each dimension 1..4096 and within device
-     * limits; at most 128 targets/256 MiB logical target bytes per renderer.
-     * Logical target bytes count color+depth as eight bytes per pixel,
-     * independent of driver allocation. Reuse between frames to avoid readback
-     * or reallocating viewport storage. 持久 RGBA8/深度目标，每维 1..4096 且受设备限制；
-     * 每渲染器最多 128 个目标/256 MiB 逻辑目标字节，按颜色+深度每像素八字节计，
-     * 不表示驱动分配量；逐帧复用避免读回及
+    /** Replace future-frame exposure/tone mapping/encoding transactionally; existing
+     * completed targets retain their pixels until redrawn. Validate before change.
+     * 事务式替换未来帧的曝光/映射/编码；已完成目标保留像素直到重绘，修改前校验。 */
+    [[nodiscard]] auto setPostProcess(const PostProcessSettings& settings) -> Core::Result<void>;
+    [[nodiscard]] auto postProcess() const -> Core::Result<PostProcessSettings>;
+
+    /** Persistent RGBA16F HDR + RGBA8 display + depth target, each dimension 1..4096 and within
+     * device limits; at most 128 targets/256 MiB logical target bytes per renderer. Logical target
+     * bytes count HDR+display+depth as sixteen bytes per pixel, independent of driver allocation.
+     * Reuse between frames to avoid readback or reallocating viewport storage. 持久 RGBA16F
+     * HDR/RGBA8 显示/深度目标，每维 1..4096 且受设备限制； 每渲染器最多 128 个目标/256 MiB
+     * 逻辑目标字节，按 HDR+显示+深度每像素十六字节计， 不表示驱动分配量；逐帧复用避免读回及
      * 重新分配视口存储。 */
     [[nodiscard]] auto createTarget(std::uint32_t width, std::uint32_t height)
         -> Core::Result<RenderTarget>;
@@ -248,6 +261,10 @@ export namespace Dot::Graphics {
      * 仅诊断/导出读回，复制/映射失败返回错误，不更改绘制内容。
      * 拒绝其他渲染器的目标及未初始化/故障帧。 */
     [[nodiscard]] auto readTarget(const RenderTarget& target) -> Core::Result<Image>;
+    /** Read the same completed frame before exposure/tone mapping/encoding. RGBA16F
+     * values are returned as owned floats, preserving radiance above one.
+     * 读回同一完成帧在曝光/映射/编码之前的 RGBA16F 数据，返回拥有的浮点值，保留超过一的亮度。 */
+    [[nodiscard]] auto readHdrTarget(const RenderTarget& target) -> Core::Result<HdrImage>;
 
     /** Own an isolated Dear ImGui context and official WebGPU/optional SDL3
      * backends. GUI ownership requires the process main thread. Widgets execute
@@ -279,8 +296,10 @@ export namespace Dot::Graphics {
      * 同步 GPU 读回，每维最多 4096 像素并受设备限制。
      * GPU 等待超时为十秒，失败会返回错误。
      * Triangle-list vertices, finite transform, and linear [0,1] colors are
-     * required. Depth testing uses [0,1]; empty geometry clears the target.
-     * 需要三角形列表顶点、有限变换和线性 [0,1] 颜色；深度测试范围为 [0,1]。
+     * required. Clear RGB is [0,65504], alpha [0,1]; HDR/tone mapping produces
+     * display pixels in the selected output encoding. Depth uses [0,1]. Empty geometry clears.
+     * 需要三角形列表顶点、有限变换和线性 [0,1] 顶点颜色；清空 RGB 在 [0,65504]、alpha
+     * 在 [0,1]，经 HDR/色调映射返回指定编码的显示像素；深度测试范围为 [0,1]。
      * 空几何体用于清空目标。
      */
     [[nodiscard]] auto render(std::span<const Vertex> vertices, const Math::Mat4& transform,

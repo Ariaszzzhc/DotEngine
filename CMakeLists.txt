@@ -100,6 +100,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Renderer.cpp
     src/Engine/Graphics/GuiBackend.cpp
     src/Engine/Graphics/SceneRenderer.cpp
+    src/Engine/Graphics/PostProcess.cpp
     src/Engine/Graphics/Image.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Image.cpp
@@ -174,6 +175,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Math/Math.cppm
         src/Engine/Graphics/Renderer.cppm
         src/Engine/Graphics/SceneRenderer.cppm
+        src/Engine/Graphics/PostProcess.cppm
         src/Engine/Graphics/Image.cppm
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Image.cppm

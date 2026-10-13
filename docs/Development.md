@@ -2505,3 +2505,63 @@ and manifest validation remain strict.
   relative/system loader references pass. Caller environment, active caches and
   the untracked private document are preserved. Windows/Linux remain implemented
   through the common Dawn/decoder paths but locally unvalidated.
+
+
+### Linear HDR scenes and display mapping
+
+Replaced the current immediate/mesh/native/viewport drawing path with RGBA16F
+scene rendering followed by a full-screen exposure/tone-mapping/display pass.
+No legacy eight-bit scene renderer is retained. Persistent targets own separate
+HDR, mapped display and depth attachments; raw pre-map float readback and mapped
+RGBA8 readback refer to the same completed frame. HDR clear and emissive material
+limits keep half-float storage finite; exposure is not baked into materials.
+
+Added PostProcess interface/implementation units with validated exposure stops,
+LinearClamp/Reinhard/AcesFitted and output encoding. Default scene display uses
+ACES fitted/sRGB. The Stephen Hill RRT/ODT fit includes its color matrices and
+packaged MIT attribution; full ACES processing is not claimed. Shader/device
+sRGB attachment handling applies final conversion once. Alpha bypasses exposure,
+mapping and gamma. A review caught a hardware-sRGB linear-output branch applying
+its inverse transfer after an unintended forward transfer; the shader now applies
+the forward transfer only for manual-sRGB output. Windows/Linux branches use the
+same Dawn APIs but remain locally unvalidated.
+
+Native and immediate frames reuse owned internal HDR/depth working attachments;
+resize prepares and validates replacement allocation before publishing it. Working
+logical bytes are reported separately from persistent target residency. Target
+accounting now includes HDR+display+depth (16 bytes per pixel); working storage is
+12 bytes per pixel. GUI widgets bypass scene tone mapping and viewport images use
+the completed mapped texture. Existing targets retain their pixels when settings
+change until redrawn; bad input/settings leave prior state intact.
+
+The new native HDR acceptance renders increasing-emission cubes, inspects actual
+pre-map radiance above one, saves the GPU display PPM, presents/resizes a real native
+window and verifies shared mesh/target release. The captured image was visually
+inspected after lossless PNG format conversion. Face colors are CPU normal
+visualization, not physical lighting or production game art. PBR/IBL/shadows/SSAO
+and scene/editor/agent exposure controls remain planned, alongside the larger
+editor/game requirements.
+
+Initial test builds exposed missing standard declaration visibility in module
+consumers (vector comparisons and expected), corrected with explicit includes.
+Focused Debug GPU/post-process/native checks pass 45/45 in 18.46 seconds. The first
+full Debug run passed 796/798: script tint and physics position acceptance retained
+old ungraded pure-color assumptions (green mapped to RGB 90/207/47). Those semantic
+checks now explicitly select linear diagnostics through the same HDR path, keeping
+all tint/visibility/pixel/cache/physics assertions. New default-mapping checks retain
+actual ACES/HDR/native coverage; no assertion was disabled.
+
+- Final arm64 macOS Debug and Release/NDEBUG pass 798/798 CTest cases
+  (742 doctest, 56 executable checks), taking 88.69 and 35.35 seconds.
+  Focused semantic script/physics GPU checks pass 2/2 in 1.55 seconds. Full suites
+  retain native window/GUI/editor/example/audio and independent exported playback.
+- All 230 C/C++ files pass clang-format; diff whitespace and private-reference
+  checks pass. Reviewed uniform offsets/sizes, exposure/curve ranges, half-float
+  decoding, padded copies/unmap on failure, per-draw emission, render/pass resource
+  retention, frame/target budgets, resize replacement and native format handling.
+  No compiler/linker environment or assertion/warning policy changed.
+- Latest macOS ZIP is refreshed at its existing path: 267 entries, 43,133,434 bytes.
+  CRC, included ACES attribution, absence of acceptance/private/Finder content and
+  runtime manifest metadata exclusion pass. Staged application and all 16 native
+  signatures/relative-system loader references pass. Active caches and the private
+  untracked document remain preserved. Windows/Linux are not locally validated.

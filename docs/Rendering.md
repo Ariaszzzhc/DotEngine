@@ -33,8 +33,8 @@ Every mesh draw carries a `Material`: linear base-color factor and an optional
 shared base-color texture. Fragment output multiplies sampled texels, vertex color,
 object tint and the material factor. No texture selects a constant white texel;
 an explicitly invalid texture is an error. This is the unlit surface stage, not PBR.
-The existing RGBA8 readback target contains linear output; HDR rendering, final
-display encoding and tone mapping are subsequent stages. Transparency blending,
+The material also has finite nonnegative linear emissive radiance in [0,65503]
+per RGB channel, added before exposure; alpha is unaffected. Transparency blending,
 physical material slots, image-based lighting and shadows are not delivered here.
 
 Run the development-only native acceptance with:
@@ -49,6 +49,55 @@ release. Focused tests cover sRGB versus linear sampling, alpha, filtering, UV r
 orientation, addressing outside the unit square, odd-edge mip minification,
 source independence, sharing/moves, foreign handles, invalid inputs, residency
 limits and recovery. Native surface/GUI regressions use the same current pipeline.
+
+## Delivered HDR and display pipeline
+
+Immediate drawing, mesh drawing, persistent viewport targets and native scene
+presentation all render into linear RGBA16F with depth before a separate full-screen
+post pass. Geometry is not drawn into a clipped eight-bit scene target. Persistent
+targets own HDR, RGBA8 display and depth storage (16 logical bytes per pixel);
+`readHdrTarget` reads the completed scene before exposure/mapping as owned float
+RGBA, while `readTarget` reads its completed display pixels. Raw HDR readback also
+validates finite radiance/alpha and handles padded GPU rows. The half-float scene
+range is [0,65504]; invalid clear/emissive inputs fail before changing a target.
+
+`PostProcessSettings` chooses exposure in stops [-16,16], LinearClamp, Reinhard or
+AcesFitted, and linear/sRGB output encoding. Default scene output uses AcesFitted
+and sRGB. Exposure is applied once as `2^exposureEv`, then tone mapping, then display
+encoding; alpha is not exposed, mapped or gamma-converted. AcesFitted uses the
+published [Stephen Hill RRT/ODT fit](https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl),
+including its input/output color matrices; this is an approximation, not full ACES
+processing. Its MIT attribution/license is included in runtime/editor packages.
+Native sRGB attachment encoding is accounted for so shader/device conversion does
+not apply twice. Linear output is an explicit diagnostic choice through the same
+HDR pipeline, not a separate renderer or a compatibility path.
+
+`RendererConfig::postProcess` initializes these settings. `setPostProcess` validates
+before replacing future-frame settings; existing completed targets keep their
+pixels until rendered again. Calls require the creating thread and are forbidden
+inside a GUI callback. GUI widgets are not scene tone-mapped; `guiImage` displays the
+completed mapped viewport texture. Camera/scene authoring and agent controls for
+exposure are subsequent editor integration work, not delivered by this API stage.
+
+The renderer reuses internal HDR/depth working attachments between immediate/native
+frames, replacing them only when dimensions change and allocation succeeds. These
+are separately reported as `frameBytes` (12 logical bytes per pixel, bounded to
+256 MiB); persistent asset targets retain their own count/byte budget. Allocation
+failures return errors and retain the previous working storage.
+
+```sh
+build/debug/bin/DotRuntimeAcceptance --hdr-test build/debug/tests/file_acceptance
+```
+
+This development-only case renders three cubes with increasing emissive radiance,
+checks actual pre-mapping highlights above one, writes the GPU display image to
+`hdr-tonemap.ppm`, presents through the native window, resizes and checks resource
+release. Cube face colors visualize authored normals; this is not a lighting/PBR
+or game-art showcase. Focused tests cover default gray references/highlight
+separation, Reinhard exposure, single input/output sRGB conversion, unchanged alpha,
+emissive draw/depth ownership, invalid input retaining both images, padded readback,
+thread/foreign/moved owners and working-buffer reuse. Existing camera/tint/physics
+pixel tests explicitly select linear diagnostics to keep their assertions focused.
 
 ## Required rendering end state
 

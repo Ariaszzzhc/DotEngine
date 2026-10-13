@@ -88,7 +88,8 @@ namespace {
 }  // namespace
 
 TEST_CASE("scene_render.instance_transforms_tints_and_shared_cache") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
   REQUIRE(service);
@@ -134,7 +135,8 @@ TEST_CASE("scene_render.physics_writeback_changes_actual_metal_pixels") {
   mesh.tint = {0, 1, 0, 1};
   REQUIRE(scene.setMeshRenderer(*body, mesh));
   auto simulation = Dot::Physics::SceneSimulation::create(scene);
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(simulation);
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
@@ -160,7 +162,8 @@ TEST_CASE("scene_render.physics_writeback_changes_actual_metal_pixels") {
 }
 
 TEST_CASE("scene_render.visibility_and_camera_override") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
   REQUIRE(service);
@@ -185,7 +188,8 @@ TEST_CASE("scene_render.visibility_and_camera_override") {
 }
 
 TEST_CASE("scene_render.missing_assets_fail_without_substitutes") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
   REQUIRE(service);
@@ -215,7 +219,8 @@ TEST_CASE("scene_render.file_import_warnings_and_explicit_cache_reload") {
   REQUIRE(files);
   REQUIRE(files->writeTextAtomic(
       "triangle.obj", "o triangle\nv -1 -1 0\nv 1 -1 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n"));
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer, *files);
   REQUIRE(service);
@@ -241,7 +246,8 @@ TEST_CASE("scene_render.file_import_warnings_and_explicit_cache_reload") {
 }
 
 TEST_CASE("scene_render.cache_budget_and_invalid_inputs") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   CHECK_FALSE(SceneRenderer::create(*renderer, std::nullopt, 0));
   CHECK_FALSE(SceneRenderer::create(*renderer, std::nullopt, 1024ULL * 1024 * 1024 + 1));
@@ -263,7 +269,8 @@ TEST_CASE("scene_render.cache_budget_and_invalid_inputs") {
 }
 
 TEST_CASE("scene_render.moves_worker_rejection_and_release") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto scene = makeScene();
   const auto entity = addQuad(scene, 0, {1, 0, 0, 1});
@@ -330,7 +337,8 @@ TEST_CASE("scene_render.native_scene_presentation_and_surface_size") {
 }
 
 TEST_CASE("scene_render.visible_draw_limit_and_clear_validation_precede_upload") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
   REQUIRE(service);
@@ -356,7 +364,8 @@ TEST_CASE("scene_render.visible_draw_limit_and_clear_validation_precede_upload")
 }
 
 TEST_CASE("scene_render.deserialized_scene_preserves_actual_gpu_pixels") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer);
   REQUIRE(service);

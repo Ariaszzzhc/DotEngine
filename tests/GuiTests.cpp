@@ -23,7 +23,8 @@ namespace {
   using namespace Dot::Graphics;
 
   auto renderer() -> Renderer {
-    auto result = Renderer::create();
+    auto result
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     return std::move(*result);
   }
@@ -45,7 +46,7 @@ TEST_CASE("graphics.target_real_frames_reuse_shared_ownership_and_validation_ret
   auto target = gpu.createTarget(65, 33).value();
   auto copy = target;
   CHECK(gpu.resourceStats()->targets == 1);
-  CHECK(gpu.resourceStats()->targetBytes == 65 * 33 * 8);
+  CHECK(gpu.resourceStats()->targetBytes == 65 * 33 * 16);
   CHECK_FALSE(gpu.readTarget(target));
   REQUIRE(gpu.renderMeshesInto(target, {}, {}, {1, 0, 0, 1}));
   auto red = gpu.readTarget(copy).value();
@@ -313,7 +314,8 @@ TEST_CASE("graphics.gui_text_input_preserves_utf8_and_rejects_worker_context_cre
   CHECK(std::string(buffer.data()) == "Hello 中文");
   bool rejected = false;
   std::thread worker([&] {
-    auto native = Renderer::create();
+    auto native
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
     rejected = !native || !native->enableGui();
   });
   worker.join();

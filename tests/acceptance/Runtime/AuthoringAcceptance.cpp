@@ -186,7 +186,9 @@ export class Actor extends ScriptComponent {
       constexpr std::size_t center = (32 * 64 + 32) * 4;
 
       if (render) {
-        auto device = Graphics::Renderer::create();
+        auto device = Graphics::Renderer::create(
+            nullptr,
+            {.postProcess = {0, Graphics::ToneMap::LinearClamp, Graphics::ColorSpace::Linear}});
 
         if (!device) {
           std::println(stderr, "{}", device.error().message);

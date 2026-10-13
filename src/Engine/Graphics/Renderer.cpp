@@ -17,6 +17,7 @@ module;
 #include <mutex>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 module Dot.Graphics.Renderer;
@@ -28,6 +29,7 @@ import Dot.Platform.System;
 import Dot.Platform.Events;
 
 #include "GuiBackend.hpp"
+#include "ToneMapping.hpp"
 
 namespace Dot::Graphics {
   namespace {
@@ -35,7 +37,7 @@ namespace Dot::Graphics {
     constexpr std::size_t maxVertices = 3'000'000;
     constexpr std::uint32_t maxReadbackDimension = 4096;
     constexpr auto shaderCode = R"(
-struct Camera { transform: mat4x4f, tint: vec4f }
+struct Camera { transform: mat4x4f, tint: vec4f, emissive: vec4f }
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
 @group(0) @binding(2) var baseColorSampler: sampler;
@@ -49,7 +51,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
   return output;
 }
 @fragment fn fragmentMain(input: Output) -> @location(0) vec4f {
-  return input.color * textureSample(baseColorTexture, baseColorSampler, input.uv);
+  return input.color * textureSample(baseColorTexture, baseColorSampler, input.uv) + camera.emissive;
 }
 )";
 
@@ -67,6 +69,27 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
              && value.z >= 0 && value.z <= 1 && value.w >= 0 && value.w <= 1;
     }
 
+    auto radianceValid(Math::Vec4 value) -> bool {
+      return Math::isFinite(value) && value.x >= 0 && value.x <= 65504 && value.y >= 0
+             && value.y <= 65504 && value.z >= 0 && value.z <= 65504 && value.w >= 0
+             && value.w <= 1;
+    }
+
+    auto halfFloat(std::uint16_t bits) -> float {
+      const auto exponent = static_cast<int>((bits >> 10) & 31U);
+      const auto mantissa = static_cast<int>(bits & 1023U);
+      const auto sign = (bits & 32768U) != 0 ? -1.0F : 1.0F;
+
+      if (exponent == 31) {
+        return mantissa == 0 ? sign * std::numeric_limits<float>::infinity()
+                             : std::numeric_limits<float>::quiet_NaN();
+      }
+
+      return sign
+             * (exponent == 0 ? std::ldexp(static_cast<float>(mantissa), -24)
+                              : std::ldexp(static_cast<float>(1024 + mantissa), exponent - 25));
+    }
+
     auto validate(std::span<const Vertex> vertices, const Math::Mat4& transform, Math::Vec4 clear)
         -> Core::Result<void> {
       if (vertices.size() > maxVertices || vertices.size() % 3 != 0) {
@@ -74,7 +97,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
                           "Geometry must be a triangle list with at most 3000000 vertices");
       }
 
-      if (!Math::isFinite(transform) || !colorValid(clear)) {
+      if (!Math::isFinite(transform) || !radianceValid(clear)) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid transform or clear color");
       }
 
@@ -118,10 +141,21 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     struct UniformData {
       Math::Mat4 transform;
       Math::Vec4 tint{1, 1, 1, 1};
+      Math::Vec4 emissive{};
     };
 
-    static_assert(sizeof(UniformData) == 80);
+    static_assert(sizeof(UniformData) == 96);
     static_assert(offsetof(UniformData, tint) == 64);
+    static_assert(offsetof(UniformData, emissive) == 80);
+
+    struct PostUniform {
+      float exposure;
+      std::uint32_t toneMap;
+      std::uint32_t encoding;
+      std::uint32_t padding{};
+    };
+
+    static_assert(sizeof(PostUniform) == 16);
 
     struct Diagnostics {
       std::atomic<bool> alive{true};
@@ -272,6 +306,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     std::thread::id thread{std::this_thread::get_id()};
     std::shared_ptr<Diagnostics> owner;
     wgpu::Texture color;
+    wgpu::Texture hdr;
     wgpu::TextureView view;
     wgpu::Texture depth;
     wgpu::TextureView depthView;
@@ -389,8 +424,13 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     wgpu::CompositeAlphaMode alphaMode{};
     std::uint32_t surfaceWidth{};
     std::uint32_t surfaceHeight{};
-    wgpu::RenderPipeline offscreenPipeline;
-    wgpu::RenderPipeline surfacePipeline;
+    wgpu::RenderPipeline scenePipeline;
+    wgpu::RenderPipeline postPipeline;
+    wgpu::RenderPipeline surfacePostPipeline;
+    wgpu::Texture frameHdr;
+    wgpu::Texture frameDepth;
+    std::uint32_t frameWidth{};
+    std::uint32_t frameHeight{};
     wgpu::Buffer uniform;
     wgpu::Texture whiteTexture;
     wgpu::TextureView whiteView;
@@ -562,6 +602,106 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       return device.CreateRenderPipeline(&descriptor);
     }
 
+    auto postPipelineFor(wgpu::TextureFormat format) -> wgpu::RenderPipeline {
+      wgpu::ShaderSourceWGSL source;
+      source.code = Detail::toneMappingShader;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&shaderDescriptor);
+      wgpu::ColorTargetState target;
+      target.format = format;
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+      descriptor.fragment = &fragment;
+      return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto ensureFrame(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
+      if (width == 0 || height == 0 || width > info.maxTextureDimension
+          || height > info.maxTextureDimension
+          || static_cast<std::uint64_t>(width) * height * 12 > 256 * 1024 * 1024) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "HDR working frame exceeds dimension/256 MiB budget");
+      }
+
+      if (width == frameWidth && height == frameHeight) {
+        return {};
+      }
+
+      ErrorScope scope(instance, device);
+      wgpu::TextureDescriptor descriptor;
+      descriptor.size = {width, height, 1};
+      descriptor.format = wgpu::TextureFormat::RGBA16Float;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+      auto hdr = device.CreateTexture(&descriptor);
+      descriptor.format = wgpu::TextureFormat::Depth24Plus;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+      auto depth = device.CreateTexture(&descriptor);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (!hdr || !depth) {
+        return Core::fail(Core::ErrorCode::External, "Allocate HDR working frame failed");
+      }
+
+      frameHdr = std::move(hdr);
+      frameDepth = std::move(depth);
+      frameWidth = width;
+      frameHeight = height;
+      return {};
+    }
+
+    auto encodePost(const wgpu::CommandEncoder& encoder, const wgpu::Texture& hdr,
+                    const wgpu::Texture& output) -> void {
+      const auto format = output.GetFormat();
+      const auto hardwareSrgb = format == wgpu::TextureFormat::RGBA8UnormSrgb
+                                || format == wgpu::TextureFormat::BGRA8UnormSrgb;
+      const auto srgb = config.postProcess.outputEncoding == ColorSpace::Srgb;
+      const PostUniform data{std::exp2(config.postProcess.exposureEv),
+                             static_cast<std::uint32_t>(config.postProcess.toneMap),
+                             srgb ? (hardwareSrgb ? 0U : 1U) : (hardwareSrgb ? 2U : 0U)};
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = sizeof(data);
+      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      const auto& renderPipeline
+          = format == wgpu::TextureFormat::RGBA8Unorm ? postPipeline : surfacePostPipeline;
+      std::array<wgpu::BindGroupEntry, 2> entries{};
+      entries[0].binding = 0;
+      entries[0].textureView = hdr.CreateView();
+      entries[1].binding = 1;
+      entries[1].buffer = buffer;
+      entries[1].size = sizeof(data);
+      wgpu::BindGroupDescriptor groupDescriptor;
+      groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
+      groupDescriptor.entryCount = entries.size();
+      groupDescriptor.entries = entries.data();
+      auto group = device.CreateBindGroup(&groupDescriptor);
+      wgpu::RenderPassColorAttachment color;
+      color.view = output.CreateView();
+      color.loadOp = wgpu::LoadOp::Clear;
+      color.storeOp = wgpu::StoreOp::Store;
+      wgpu::RenderPassDescriptor passDescriptor;
+      passDescriptor.colorAttachmentCount = 1;
+      passDescriptor.colorAttachments = &color;
+      auto pass = encoder.BeginRenderPass(&passDescriptor);
+      pass.SetPipeline(renderPipeline);
+      pass.SetBindGroup(0, group);
+      pass.Draw(3);
+      pass.End();
+    }
+
     template <typename F>
     auto encodePass(const wgpu::Texture& target, std::uint32_t width, std::uint32_t height,
                     Math::Vec4 clear, F&& draw, wgpu::TextureView depthView = {})
@@ -616,25 +756,37 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       return device.CreateBindGroup(&descriptor);
     }
 
-    auto encode(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
-                std::span<const Vertex> vertices, const Math::Mat4& transform, std::uint32_t width,
-                std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
-      return encodePass(target, width, height, clear, [&](const wgpu::RenderPassEncoder& pass) {
-        if (!vertices.empty()) {
-          wgpu::BufferDescriptor bufferDescriptor;
-          bufferDescriptor.size = vertices.size_bytes();
-          bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
-          auto buffer = device.CreateBuffer(&bufferDescriptor);
-          queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
-          const UniformData data{transform};
-          queue.WriteBuffer(uniform, 0, &data, sizeof(data));
-          auto group = bindMaterial(renderPipeline, uniform);
-          pass.SetPipeline(renderPipeline);
-          pass.SetBindGroup(0, group);
-          pass.SetVertexBuffer(0, buffer);
-          pass.Draw(static_cast<std::uint32_t>(vertices.size()));
-        }
-      });
+    auto encode(const wgpu::Texture& target, std::span<const Vertex> vertices,
+                const Math::Mat4& transform, std::uint32_t width, std::uint32_t height,
+                Math::Vec4 clear) -> Core::Result<wgpu::CommandEncoder> {
+      auto ready = ensureFrame(width, height);
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      const auto& renderPipeline = scenePipeline;
+      auto encoder = encodePass(
+          frameHdr, width, height, clear,
+          [&](const wgpu::RenderPassEncoder& pass) {
+            if (!vertices.empty()) {
+              wgpu::BufferDescriptor bufferDescriptor;
+              bufferDescriptor.size = vertices.size_bytes();
+              bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+              auto buffer = device.CreateBuffer(&bufferDescriptor);
+              queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
+              const UniformData data{transform};
+              queue.WriteBuffer(uniform, 0, &data, sizeof(data));
+              auto group = bindMaterial(renderPipeline, uniform);
+              pass.SetPipeline(renderPipeline);
+              pass.SetBindGroup(0, group);
+              pass.SetVertexBuffer(0, buffer);
+              pass.Draw(static_cast<std::uint32_t>(vertices.size()));
+            }
+          },
+          frameDepth.CreateView());
+      encodePost(encoder, frameHdr, target);
+      return encoder;
     }
 
     struct PreparedDraw {
@@ -645,7 +797,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
                  Math::Vec4 clear) -> Core::Result<std::vector<PreparedDraw>> {
-      if (draws.size() > 4096 || !Math::isFinite(viewProjection) || !colorValid(clear)) {
+      if (draws.size() > 4096 || !Math::isFinite(viewProjection) || !radianceValid(clear)) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid mesh draw count, camera, or clear color");
       }
@@ -667,6 +819,14 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
         if (!colorValid(draw.material.baseColor)) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Material base color must be finite and in [0,1]");
+        }
+
+        const auto emissive = draw.material.emissive;
+
+        if (!Math::isFinite(emissive) || emissive.x < 0 || emissive.x > 65503 || emissive.y < 0
+            || emissive.y > 65503 || emissive.z < 0 || emissive.z > 65503) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Material emission must be finite in [0,65503]");
         }
 
         std::shared_ptr<Texture::Impl> texture;
@@ -691,19 +851,32 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
         prepared.push_back(
             {draw.mesh->m_impl,
              {*transform,
-              {tint.x * factor.x, tint.y * factor.y, tint.z * factor.z, tint.w * factor.w}},
+              {tint.x * factor.x, tint.y * factor.y, tint.z * factor.z, tint.w * factor.w},
+              {emissive.x, emissive.y, emissive.z, 0}},
              std::move(texture)});
       }
 
       return prepared;
     }
 
-    auto encodeMeshes(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
-                      std::span<const PreparedDraw> draws, std::uint32_t width,
-                      std::uint32_t height, Math::Vec4 clear, wgpu::TextureView depthView = {})
-        -> wgpu::CommandEncoder {
-      return encodePass(
-          target, width, height, clear,
+    auto encodeMeshes(const wgpu::Texture& target, std::span<const PreparedDraw> draws,
+                      std::uint32_t width, std::uint32_t height, Math::Vec4 clear,
+                      wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
+        -> Core::Result<wgpu::CommandEncoder> {
+      if (!hdr) {
+        auto ready = ensureFrame(width, height);
+
+        if (!ready) {
+          return std::unexpected(ready.error());
+        }
+
+        hdr = frameHdr;
+        depthView = frameDepth.CreateView();
+      }
+
+      const auto& renderPipeline = scenePipeline;
+      auto encoder = encodePass(
+          hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
             for (const auto& draw : draws) {
               /** Queue writes precede submission, so a shared uniform would overwrite
@@ -730,6 +903,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
             }
           },
           depthView);
+      encodePost(encoder, hdr, target);
+      return encoder;
     }
 
     auto configureSurface(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
@@ -753,11 +928,11 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       return {};
     }
 
-    template <typename F>
+    template <typename Readback = Image, typename F>
     auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget,
                   wgpu::Texture existing = {},
                   wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm)
-        -> Core::Result<Image> {
+        -> Core::Result<Readback> {
       const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
 
       if (width == 0 || height == 0 || width > maximum || height > maximum) {
@@ -771,8 +946,15 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       descriptor.format = format;
       descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
       auto texture = existing ? std::move(existing) : device.CreateTexture(&descriptor);
-      auto encoder = encodeTarget(texture, width, height);
-      const auto rowBytes = width * 4;
+      auto encoded = encodeTarget(texture, width, height);
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      auto encoder = *encoded;
+      constexpr auto hdr = std::is_same_v<Readback, HdrImage>;
+      const auto rowBytes = width * (hdr ? 8U : 4U);
       const auto paddedRowBytes = (rowBytes + 255U) & ~255U;
       const auto bufferBytes = static_cast<std::size_t>(paddedRowBytes) * height;
       wgpu::BufferDescriptor bufferDescriptor;
@@ -825,23 +1007,54 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
         return Core::fail(Core::ErrorCode::External, "GPU readback returned no mapped bytes");
       }
 
-      Image image{width, height,
-                  std::vector<std::uint8_t>(static_cast<std::size_t>(rowBytes) * height)};
+      auto mapped = true;
 
-      for (std::size_t row = 0; row < height; ++row) {
-        std::memcpy(image.pixels.data() + row * rowBytes, bytes + row * paddedRowBytes, rowBytes);
-      }
+      try {
+        Readback image{width, height, {}};
+        image.pixels.resize(static_cast<std::size_t>(width) * height * 4);
 
-      buffer.Unmap();
-
-      if (format == wgpu::TextureFormat::BGRA8Unorm
-          || format == wgpu::TextureFormat::BGRA8UnormSrgb) {
-        for (std::size_t offset = 0; offset < image.pixels.size(); offset += 4) {
-          std::swap(image.pixels[offset], image.pixels[offset + 2]);
+        for (std::size_t row = 0; row < height; ++row) {
+          if constexpr (hdr) {
+            for (std::size_t component = 0; component < static_cast<std::size_t>(width) * 4;
+                 ++component) {
+              std::uint16_t bits{};
+              std::memcpy(&bits, bytes + row * paddedRowBytes + component * 2, 2);
+              image.pixels[row * width * 4 + component] = halfFloat(bits);
+            }
+          } else {
+            std::memcpy(image.pixels.data() + row * rowBytes, bytes + row * paddedRowBytes,
+                        rowBytes);
+          }
         }
-      }
 
-      return image;
+        buffer.Unmap();
+        mapped = false;
+
+        if constexpr (hdr) {
+          auto valid = validateImage(image);
+
+          if (!valid) {
+            return Core::fail(Core::ErrorCode::External,
+                              "Invalid HDR readback: " + valid.error().message);
+          }
+        } else {
+          if (format == wgpu::TextureFormat::BGRA8Unorm
+              || format == wgpu::TextureFormat::BGRA8UnormSrgb) {
+            for (std::size_t offset = 0; offset < image.pixels.size(); offset += 4) {
+              std::swap(image.pixels[offset], image.pixels[offset + 2]);
+            }
+          }
+        }
+
+        return image;
+      } catch (const std::exception& error) {
+        if (mapped) {
+          buffer.Unmap();
+        }
+
+        return Core::fail(Core::ErrorCode::External,
+                          "Readback allocation: " + std::string(error.what()));
+      }
     }
 
     auto encodeGui(const wgpu::Texture& target) -> wgpu::CommandEncoder {
@@ -922,7 +1135,12 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
       ErrorScope scope(instance, device);
       auto encoder = encodeTarget(frame.texture, width, height);
-      auto commands = encoder.Finish();
+
+      if (!encoder) {
+        return std::unexpected(encoder.error());
+      }
+
+      auto commands = encoder->Finish();
       queue.Submit(1, &commands);
       checked = scope.finish();
 
@@ -959,6 +1177,12 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     if (config.maxTextures == 0 || config.maxTextures > 4096 || config.maxTextureBytes == 0
         || config.maxTextureBytes > 512 * 1024 * 1024) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture residency budget");
+    }
+
+    auto settings = validatePostProcess(config.postProcess);
+
+    if (!settings) {
+      return std::unexpected(settings.error());
     }
 
     auto impl = std::make_unique<Impl>();
@@ -1077,7 +1301,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
     impl->info.maxTextureDimension = limits.maxTextureDimension2D;
     ErrorScope scope(impl->instance, impl->device);
-    impl->offscreenPipeline = impl->pipeline(wgpu::TextureFormat::RGBA8Unorm);
+    impl->scenePipeline = impl->pipeline(wgpu::TextureFormat::RGBA16Float);
+    impl->postPipeline = impl->postPipelineFor(wgpu::TextureFormat::RGBA8Unorm);
     wgpu::BufferDescriptor uniformDescriptor;
     uniformDescriptor.size = sizeof(UniformData);
     uniformDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
@@ -1111,7 +1336,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
       impl->surfaceFormat = capabilities.formats[0];
       impl->alphaMode = capabilities.alphaModes[0];
-      impl->surfacePipeline = impl->pipeline(impl->surfaceFormat);
+      impl->surfacePostPipeline = impl->postPipelineFor(impl->surfaceFormat);
     }
 
     completed = scope.finish();
@@ -1365,10 +1590,49 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     const auto& stats = *m_impl->diagnostics;
-    return ResourceStats{stats.meshes.load(),      stats.vertexBytes.load(),
-                         stats.indexBytes.load(),  stats.targets.load(),
-                         stats.targetBytes.load(), stats.textures.load(),
-                         stats.textureBytes.load()};
+    return ResourceStats{stats.meshes.load(),
+                         stats.vertexBytes.load(),
+                         stats.indexBytes.load(),
+                         stats.targets.load(),
+                         stats.targetBytes.load(),
+                         stats.textures.load(),
+                         stats.textureBytes.load(),
+                         static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12};
+  }
+
+  auto Renderer::setPostProcess(const PostProcessSettings& settings) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    checked = validatePostProcess(settings);
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->config.postProcess = settings;
+    return {};
+  }
+
+  auto Renderer::postProcess() const -> Core::Result<PostProcessSettings> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->config.postProcess;
   }
 
   auto Renderer::createTarget(std::uint32_t width, std::uint32_t height)
@@ -1391,7 +1655,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     try {
-      const auto bytes = static_cast<std::uint64_t>(width) * height * 8;
+      const auto bytes = static_cast<std::uint64_t>(width) * height * 16;
 
       if (m_impl->diagnostics->targets.load() >= 128
           || m_impl->diagnostics->targetBytes.load() + bytes > 256 * 1024 * 1024) {
@@ -1411,6 +1675,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
                          | wgpu::TextureUsage::CopySrc;
       target->color = m_impl->device.CreateTexture(&descriptor);
       target->view = target->color.CreateView();
+      descriptor.format = wgpu::TextureFormat::RGBA16Float;
+      target->hdr = m_impl->device.CreateTexture(&descriptor);
       descriptor.format = wgpu::TextureFormat::Depth24Plus;
       descriptor.usage = wgpu::TextureUsage::RenderAttachment;
       target->depth = m_impl->device.CreateTexture(&descriptor);
@@ -1421,7 +1687,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
         return std::unexpected(checked.error());
       }
 
-      if (!target->color || !target->view || !target->depth || !target->depthView) {
+      if (!target->color || !target->view || !target->hdr || !target->depth || !target->depthView) {
         return Core::fail(Core::ErrorCode::External, "GPU render target allocation failed");
       }
 
@@ -1470,9 +1736,14 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     ErrorScope scope(m_impl->instance, m_impl->device);
-    auto encoder = m_impl->encodeMeshes(target.m_impl->color, m_impl->offscreenPipeline, *prepared,
-                                        info->width, info->height, clear, target.m_impl->depthView);
-    auto commands = encoder.Finish();
+    auto encoder = m_impl->encodeMeshes(target.m_impl->color, *prepared, info->width, info->height,
+                                        clear, target.m_impl->hdr, target.m_impl->depthView);
+
+    if (!encoder) {
+      return std::unexpected(encoder.error());
+    }
+
+    auto commands = encoder->Finish();
     m_impl->queue.Submit(1, &commands);
     checked = scope.finish();
 
@@ -1513,8 +1784,44 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
     return m_impl->readback(
         info->width, info->height,
-        [&](const auto&, auto, auto) { return m_impl->device.CreateCommandEncoder(); },
+        [&](const auto&, auto, auto) {
+          return Core::Result<wgpu::CommandEncoder>(m_impl->device.CreateCommandEncoder());
+        },
         target.m_impl->color);
+  }
+
+  auto Renderer::readHdrTarget(const RenderTarget& target) -> Core::Result<HdrImage> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!target.m_impl || target.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Render target belongs to another renderer or is empty");
+    }
+
+    auto info = target.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    if (info->frames == 0) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Render target has no completed frame");
+    }
+
+    return m_impl->readback<HdrImage>(
+        info->width, info->height,
+        [&](const auto&, auto, auto) {
+          return Core::Result<wgpu::CommandEncoder>(m_impl->device.CreateCommandEncoder());
+        },
+        target.m_impl->hdr, wgpu::TextureFormat::RGBA16Float);
   }
 
   auto Renderer::enableGui(const GuiConfig& config) -> Core::Result<void> {
@@ -1682,7 +1989,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       const auto format = m_impl->surface ? m_impl->surfaceFormat : wgpu::TextureFormat::RGBA8Unorm;
       auto image = m_impl->readback(
           width, height,
-          [&](const auto& texture, auto, auto) { return m_impl->encodeGui(texture); }, {}, format);
+          [&](const auto& texture, auto, auto) {
+            return Core::Result<wgpu::CommandEncoder>(m_impl->encodeGui(texture));
+          },
+          {}, format);
       m_impl->guiTargets.clear();
 
       if (image) {
@@ -1745,8 +2055,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
         return std::unexpected(built ? checked.error() : built.error());
       }
 
-      auto presented = m_impl->presentFrame(
-          [&](const auto& texture, auto, auto) { return m_impl->encodeGui(texture); });
+      auto presented = m_impl->presentFrame([&](const auto& texture, auto, auto) {
+        return Core::Result<wgpu::CommandEncoder>(m_impl->encodeGui(texture));
+      });
       m_impl->guiTargets.clear();
 
       if (presented && *presented == PresentResult::Presented) {
@@ -1811,11 +2122,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       return std::unexpected(checked.error());
     }
 
-    return m_impl->readback(width, height,
-                            [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
-                              return m_impl->encode(texture, m_impl->offscreenPipeline, vertices,
-                                                    transform, targetWidth, targetHeight, clear);
-                            });
+    return m_impl->readback(
+        width, height, [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
+          return m_impl->encode(texture, vertices, transform, targetWidth, targetHeight, clear);
+        });
   }
 
   auto Renderer::present(std::span<const Vertex> vertices, const Math::Mat4& transform,
@@ -1842,7 +2152,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     return gpu.presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
-      return gpu.encode(texture, gpu.surfacePipeline, vertices, transform, width, height, clear);
+      return gpu.encode(texture, vertices, transform, width, height, clear);
     });
   }
 
@@ -1867,8 +2177,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
     return m_impl->readback(
         width, height, [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
-          return m_impl->encodeMeshes(texture, m_impl->offscreenPipeline, *prepared, targetWidth,
-                                      targetHeight, clear);
+          return m_impl->encodeMeshes(texture, *prepared, targetWidth, targetHeight, clear);
         });
   }
 
@@ -1891,8 +2200,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     return m_impl->presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
-      return m_impl->encodeMeshes(texture, m_impl->surfacePipeline, *prepared, width, height,
-                                  clear);
+      return m_impl->encodeMeshes(texture, *prepared, width, height, clear);
     });
   }
 }  // namespace Dot::Graphics

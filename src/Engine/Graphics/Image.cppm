@@ -20,8 +20,8 @@ export namespace Dot::Graphics {
     std::vector<std::uint8_t> pixels;
   };
 
-  /** Linear floating-point RGBA radiance; RGB may exceed one, alpha is one.
-   * 线性浮点 RGBA 辐射亮度，RGB 可超过一，alpha 为一。 */
+  /** Linear floating-point RGBA radiance; RGB may exceed one, alpha is in [0,1].
+   * 线性浮点 RGBA 辐射亮度，RGB 可超过一，alpha 在 [0,1]。 */
   struct HdrImage {
     std::uint32_t width{};
     std::uint32_t height{};

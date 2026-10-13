@@ -30,7 +30,8 @@ namespace {
 }  // namespace
 
 TEST_CASE("graphics.real_adapter_and_triangle_readback") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE_MESSAGE(renderer, (renderer ? "" : renderer.error().message));
   auto info = renderer->adapterInfo();
   REQUIRE(info);
@@ -51,7 +52,8 @@ TEST_CASE("graphics.real_adapter_and_triangle_readback") {
 }
 
 TEST_CASE("graphics.readback_padding_and_single_pixel") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
 
   for (const auto dimensions : {std::array{13U, 7U}, std::array{1U, 1U}, std::array{65U, 3U}}) {
@@ -72,7 +74,8 @@ TEST_CASE("graphics.readback_padding_and_single_pixel") {
 }
 
 TEST_CASE("graphics.depth_occlusion_and_clip_range") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   std::array<Vertex, 6> geometry;
   auto nearTriangle = triangle(0.2F, {0, 1, 0, 1});
@@ -91,7 +94,8 @@ TEST_CASE("graphics.depth_occlusion_and_clip_range") {
 }
 
 TEST_CASE("graphics.transform_uniform_changes_rasterized_position") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   auto transform = Dot::Math::compose({0.6F, 0, 0}, {}, {0.2F, 0.2F, 1});
   REQUIRE(transform);
@@ -105,7 +109,8 @@ TEST_CASE("graphics.transform_uniform_changes_rasterized_position") {
 }
 
 TEST_CASE("graphics.reject_invalid_inputs_without_poisoning_device") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   CHECK_FALSE(renderer->render({}, {}, 0, 32));
   CHECK_FALSE(renderer->render({}, {}, 32, 0));
@@ -134,7 +139,7 @@ TEST_CASE("graphics.reject_invalid_inputs_without_poisoning_device") {
   Dot::Math::Mat4 invalid;
   invalid.data[4] = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(renderer->render({}, invalid, 32, 32));
-  CHECK_FALSE(renderer->render({}, {}, 32, 32, {0, 0, 2, 1}));
+  CHECK_FALSE(renderer->render({}, {}, 32, 32, {0, 0, 65505, 1}));
   CHECK_FALSE(renderer->present({}, {}));
   auto image = renderer->render(triangle(), {}, 32, 32);
   REQUIRE(image);
@@ -142,8 +147,10 @@ TEST_CASE("graphics.reject_invalid_inputs_without_poisoning_device") {
 }
 
 TEST_CASE("graphics.move_preserves_device_and_rejects_empty_owner") {
-  auto renderer = Renderer::create();
-  auto other = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
+  auto other
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   REQUIRE(other);
   auto moved = std::move(*renderer);
@@ -156,7 +163,8 @@ TEST_CASE("graphics.move_preserves_device_and_rejects_empty_owner") {
 }
 
 TEST_CASE("graphics.reject_foreign_thread_operations") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   bool rejected = false;
   std::thread worker([&] {
@@ -170,7 +178,8 @@ TEST_CASE("graphics.reject_foreign_thread_operations") {
 
 TEST_CASE("graphics.repeated_device_and_resource_lifetime") {
   for (int iteration = 0; iteration < 12; ++iteration) {
-    auto renderer = Renderer::create();
+    auto renderer
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
     REQUIRE_MESSAGE(renderer, (renderer ? "" : renderer.error().message));
 
     for (int frame = 0; frame < 5; ++frame) {
@@ -222,7 +231,8 @@ TEST_CASE("graphics.reject_invalid_surface_owner") {
 }
 
 TEST_CASE("graphics.indexed_upload_owns_immutable_geometry") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   auto geometry = quad({1.6F, 1.6F});
   REQUIRE(renderer);
   REQUIRE(geometry);
@@ -244,7 +254,8 @@ TEST_CASE("graphics.indexed_upload_owns_immutable_geometry") {
 }
 
 TEST_CASE("graphics.shared_mesh_draws_use_independent_uniforms") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   auto geometry = quad();
   REQUIRE(renderer);
   REQUIRE(geometry);
@@ -264,7 +275,8 @@ TEST_CASE("graphics.shared_mesh_draws_use_independent_uniforms") {
 }
 
 TEST_CASE("graphics.nonindexed_upload_and_camera_projection") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   REQUIRE(renderer);
   MeshData geometry;
   auto vertices = triangle();
@@ -287,7 +299,8 @@ TEST_CASE("graphics.nonindexed_upload_and_camera_projection") {
 }
 
 TEST_CASE("graphics.mesh_copies_moves_and_release_accounting") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   auto geometry = cube();
   REQUIRE(renderer);
   REQUIRE(geometry);
@@ -332,12 +345,14 @@ TEST_CASE("graphics.mesh_outlives_renderer_and_rejects_foreign_device") {
   REQUIRE(geometry);
 
   {
-    auto renderer = Renderer::create();
+    auto renderer
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
     REQUIRE(renderer);
     auto uploaded = renderer->upload(*geometry);
     REQUIRE(uploaded);
     mesh = *uploaded;
-    auto foreign = Renderer::create();
+    auto foreign
+        = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
     REQUIRE(foreign);
     const std::array draws{MeshDraw{&mesh}};
     CHECK_FALSE(foreign->renderMeshes(draws, {}, 8, 8));
@@ -357,7 +372,8 @@ TEST_CASE("graphics.mesh_outlives_renderer_and_rejects_foreign_device") {
 }
 
 TEST_CASE("graphics.invalid_mesh_draws_are_transactional") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   auto geometry = quad();
   REQUIRE(renderer);
   REQUIRE(geometry);
@@ -387,7 +403,8 @@ TEST_CASE("graphics.invalid_mesh_draws_are_transactional") {
 }
 
 TEST_CASE("graphics.mesh_api_rejects_worker_thread") {
-  auto renderer = Renderer::create();
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
   auto geometry = quad();
   REQUIRE(renderer);
   REQUIRE(geometry);

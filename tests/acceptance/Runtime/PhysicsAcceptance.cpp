@@ -95,7 +95,9 @@ namespace Dot::Runtime {
     }
 
     if (render) {
-      auto renderer = Graphics::Renderer::create();
+      auto renderer = Graphics::Renderer::create(
+          nullptr,
+          {.postProcess = {0, Graphics::ToneMap::LinearClamp, Graphics::ColorSpace::Linear}});
 
       if (!renderer) {
         std::println(stderr, "{}", renderer.error().message);

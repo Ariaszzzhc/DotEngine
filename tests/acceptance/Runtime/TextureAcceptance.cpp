@@ -27,7 +27,10 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto renderer = Graphics::Renderer::create().value();
+    auto renderer
+        = Graphics::Renderer::create(nullptr, {.postProcess = {0, Graphics::ToneMap::LinearClamp,
+                                                               Graphics::ColorSpace::Linear}})
+              .value();
 
     {
       Graphics::TextureOptions options{Graphics::ColorSpace::Srgb,
