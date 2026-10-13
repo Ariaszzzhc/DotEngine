@@ -50,6 +50,16 @@ TEST_CASE("window.create_resize_title_and_release") {
   CHECK_FALSE(videoInitialized());
 }
 
+TEST_CASE("platform.main_thread_detection_before_video_initialization") {
+  CHECK_FALSE(videoInitialized());
+  CHECK(isMainThread());
+  bool rejected = false;
+  std::thread worker([&] { rejected = !isMainThread(); });
+  worker.join();
+  CHECK(rejected);
+  CHECK_FALSE(videoInitialized());
+}
+
 TEST_CASE("window.invalid_configuration_and_mutations") {
   auto invalid = hiddenWindow();
   invalid.width = 0;

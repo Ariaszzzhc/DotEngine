@@ -1520,3 +1520,18 @@ The graphical editor window remains subsequent work.
 
 Remaining graphical editor/export tooling, expanded rendering, complete acceptance
 scenes and the example game remain to be implemented.
+
+### macOS main-thread detection before initialization
+
+Replaced macOS SDL_IsMainThread with Darwin pthread_main_np for accurate checks
+before any SDL subsystem initializes. SDL 3.4.18 reports true for every thread
+while its main/events/video thread IDs are unset, permitting worker GUI creation.
+
+- A focused test verifies the real main thread and rejects a worker before video
+  initialization without starting video. GUI worker creation now fails while
+  normal main-thread offscreen/native GUI works. The final GUI-stage working tree
+  passes all 695 CTest cases in both macOS Debug and Release/NDEBUG configurations.
+- Reviewed the actual SDL implementation, Darwin guard/header and unchanged
+  Windows/Linux checks. Formatting/whitespace checks pass; no environment or
+  library initialization is introduced by the query. Other platforms remain
+  uncompiled/unexecuted locally.
