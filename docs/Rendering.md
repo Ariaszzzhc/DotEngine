@@ -32,10 +32,12 @@ shutdown. Foreign, empty and moved resources fail explicitly.
 Every mesh draw carries a `Material`: linear base-color factor and an optional
 shared base-color texture. Fragment output multiplies sampled texels, vertex color,
 object tint and the material factor. No texture selects a constant white texel;
-an explicitly invalid texture is an error. This is the unlit surface stage, not PBR.
+an explicitly invalid texture is an error. SurfaceModel selects unlit or
+metallic/roughness shading through the same current HDR pipeline.
 The material also has finite nonnegative linear emissive radiance in [0,65503]
 per RGB channel, added before exposure; alpha is unaffected. Transparency blending,
-physical material slots, image-based lighting and shadows are not delivered here.
+image-based lighting and shadows are not delivered here; direct physical material
+slots and lighting are described below.
 
 Run the development-only native acceptance with:
 
@@ -98,6 +100,69 @@ separation, Reinhard exposure, single input/output sRGB conversion, unchanged al
 emissive draw/depth ownership, invalid input retaining both images, padded readback,
 thread/foreign/moved owners and working-buffer reuse. Existing camera/tint/physics
 pixel tests explicitly select linear diagnostics to keep their assertions focused.
+
+## Delivered direct PBR rendering
+
+`SurfaceModel::MetallicRoughness` uses GGX distribution, height-correlated Smith
+visibility, Schlick Fresnel and an energy-split Lambert diffuse term. Dielectric
+F0 is 0.04; metallic F0 uses the linear base color and has no diffuse lobe. The
+[Filament material model](https://google.github.io/filament/main/filament.html)
+provides the mathematical reference. Roughness/metallic factors are [0,1]; effective
+roughness is at least 0.045 for stable microfacet evaluation. Unlit surfaces remain
+an explicit material choice for debug/emissive content, not an old renderer.
+
+Texture conventions follow [glTF material data](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#materials):
+base/emissive colors are normally sRGB; packed roughness G/metallic B and tangent
+normal RGB are linear data. Factors multiply sampled values. Normal scale [0,8]
+applies to tangent X/Y before normalization. This implementation requires normal
+source B>=128, keeping decoded Z positive through mip/filtering. Occlusion and
+transparency blending are not implemented by this direct-light stage.
+
+Lit meshes require complete unit normals; a requested normal texture also requires
+nondegenerate position/UV triangles, UV magnitudes <=1e6, UV determinant >=1e-12
+in magnitude and relative determinant >1e-6. Missing normals or unusable UVs fail
+before drawing. Normal-map tangent frames derive from world-position/UV screen
+derivatives, including mirrored handedness; stored/imported author tangents are
+not yet supported. World normals use the inverse transpose, direction-preserving
+rescaling and per-fragment normalization. Lit world transforms must be finite
+invertible affine matrices; inverse-normal coefficients are bounded to 1e12 and
+the infinity-norm condition bound to 1e20. Transformed geometry stays within
++/-1e6 world meters. Reflected transforms adjust front winding; single-sided back
+faces are discarded, while double-sided normals face the observer.
+
+`Lighting` owns view position, optional orthographic view-ray direction and at most
+64 direct lights. Perspective reflections use position-dependent view rays;
+orthographic reflections use parallel rays. Directional/spot directions normalize
+when stored. Directional intensity is lux, point/spot intensity candela; light RGB
+is linear [0,1], intensity [0,1e6], point/spot range [0.01,1e6] meters. Point/spot
+lights use inverse-square attenuation with a 1-cm near-distance floor and smooth
+range falloff. Spot inner/outer cones differ by at least 0.1 degree and fade smoothly.
+Empty light arrays supply no ambient substitute: lit surfaces retain emission only.
+Final scene radiance explicitly saturates at the RGBA16F ceiling 65504.
+
+`RendererConfig::lighting` initializes owned data; `setLighting` validates/copies
+transactionally for future frames and `lighting` returns an independent snapshot.
+Texture slots are shared immutable resources and every draw has independent model,
+normal, material and texture data. Frame light buffers are owned by submitted
+commands. Operations remain confined to the renderer thread.
+
+```sh
+build/debug/bin/DotRuntimeAcceptance --pbr-test build/debug/tests/file_acceptance
+```
+
+The native acceptance draws dielectric/gold/copper sphere rows with increasing
+roughness, a normal-mapped sample and two direct lights; it checks HDR highlights,
+writes `pbr-direct.ppm`, presents/resizes and verifies shared resource release.
+Focused GPU tests compare an analytic frontal BRDF value, metal/dielectric response,
+roughness peaks, point distance/range, spot direction, dark/emissive frames, packed
+texture channels, normal/emissive maps, inverse-transpose/mirrored transformations,
+UV handedness, orthographic reflections, the full 64-light array and invalid-input
+retention. The sphere primitive supplies radial normals and explicit UV seams/poles.
+
+These are renderer API capabilities. Material assets, persisted scene lights,
+editor/agent authoring and the requested project/game upgrades remain separate
+integration work. IBL, soft shadows, SSAO, glTF import, author tangents and
+large-scene performance are not established by this material gallery.
 
 ## Required rendering end state
 

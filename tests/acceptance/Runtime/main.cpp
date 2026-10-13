@@ -26,6 +26,7 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto testPbr(const std::filesystem::path& root) -> int;
   auto testHdr(const std::filesystem::path& root) -> int;
   auto testTextures(const std::filesystem::path& root) -> int;
   auto testSurfaceMesh(const std::filesystem::path& root) -> int;
@@ -633,6 +634,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3 && std::string_view(argv[1]) == "--pbr-test") {
+      return Dot::Runtime::testPbr(argv[2]);
+    }
+
     if (argc == 3 && std::string_view(argv[1]) == "--hdr-test") {
       return Dot::Runtime::testHdr(argv[2]);
     }

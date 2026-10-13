@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <cmath>
 #include <expected>
+#include <numbers>
 #include <string>
 
 module Dot.Graphics.Geometry;
@@ -125,6 +126,60 @@ namespace Dot::Graphics {
     }
 
     return result;
+  }
+
+  auto sphere(float radius, std::uint32_t sectors, std::uint32_t rings) -> Core::Result<MeshData> {
+    if (!std::isfinite(radius) || radius <= 0 || sectors < 3 || sectors > 256 || rings < 2
+        || rings > 128) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid sphere radius/tessellation");
+    }
+
+    MeshData mesh;
+    mesh.vertices.reserve(static_cast<std::size_t>(rings + 1) * (sectors + 1));
+    mesh.indices.reserve(static_cast<std::size_t>(rings - 1) * sectors * 6);
+
+    for (std::uint32_t row = 0; row <= rings; ++row) {
+      const auto v = static_cast<double>(row) / rings;
+      const auto phi = v * std::numbers::pi;
+      const auto radial = row == 0 || row == rings ? 0.0 : std::sin(phi);
+
+      for (std::uint32_t column = 0; column <= sectors; ++column) {
+        const auto u = static_cast<double>(column) / sectors;
+        const auto theta = column == sectors ? 0.0 : u * 2 * std::numbers::pi;
+        const Math::Vec3 normal{static_cast<float>(radial * std::cos(theta)),
+                                static_cast<float>(std::cos(phi)),
+                                static_cast<float>(radial * std::sin(theta))};
+        mesh.vertices.push_back({normal * radius,
+                                 {1, 1, 1, 1},
+                                 normal,
+                                 {static_cast<float>(u), static_cast<float>(v)}});
+      }
+    }
+
+    for (std::uint32_t row = 0; row < rings; ++row) {
+      for (std::uint32_t column = 0; column < sectors; ++column) {
+        const auto a = row * (sectors + 1) + column;
+        const auto b = a + 1;
+        const auto c = a + sectors + 1;
+        const auto d = c + 1;
+
+        if (row != 0) {
+          mesh.indices.insert(mesh.indices.end(), {a, b, c});
+        }
+
+        if (row + 1 != rings) {
+          mesh.indices.insert(mesh.indices.end(), {b, d, c});
+        }
+      }
+    }
+
+    auto checked = withFlatNormals(mesh);
+
+    if (!checked) {
+      return Core::fail(checked.error().code, "Sphere face precision: " + checked.error().message);
+    }
+
+    return mesh;
   }
 
   auto cube(Math::Vec3 size) -> Core::Result<MeshData> {

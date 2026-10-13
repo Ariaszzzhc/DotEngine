@@ -29,6 +29,7 @@ import Dot.Platform.System;
 import Dot.Platform.Events;
 
 #include "GuiBackend.hpp"
+#include "SurfaceShader.hpp"
 #include "ToneMapping.hpp"
 
 namespace Dot::Graphics {
@@ -36,24 +37,6 @@ namespace Dot::Graphics {
     constexpr std::uint64_t waitTimeout = 10'000'000'000;
     constexpr std::size_t maxVertices = 3'000'000;
     constexpr std::uint32_t maxReadbackDimension = 4096;
-    constexpr auto shaderCode = R"(
-struct Camera { transform: mat4x4f, tint: vec4f, emissive: vec4f }
-@group(0) @binding(0) var<uniform> camera: Camera;
-@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
-@group(0) @binding(2) var baseColorSampler: sampler;
-struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f }
-@vertex fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
-                      @location(2) uv: vec2f) -> Output {
-  var output: Output;
-  output.position = camera.transform * vec4f(position, 1.0);
-  output.color = color * camera.tint;
-  output.uv = uv;
-  return output;
-}
-@fragment fn fragmentMain(input: Output) -> @location(0) vec4f {
-  return input.color * textureSample(baseColorTexture, baseColorSampler, input.uv) + camera.emissive;
-}
-)";
 
     auto copied(wgpu::StringView value) -> std::string {
       if (!value.data) {
@@ -142,11 +125,35 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       Math::Mat4 transform;
       Math::Vec4 tint{1, 1, 1, 1};
       Math::Vec4 emissive{};
+      Math::Mat4 model{};
+      Math::Mat4 normalMatrix{};
+      Math::Vec4 material{0, 0.5F, 1, 0};
+      Math::Vec4 flags{0, 0, 0, 1};
     };
 
-    static_assert(sizeof(UniformData) == 96);
+    static_assert(sizeof(UniformData) == 256);
     static_assert(offsetof(UniformData, tint) == 64);
     static_assert(offsetof(UniformData, emissive) == 80);
+    static_assert(offsetof(UniformData, model) == 96);
+    static_assert(offsetof(UniformData, normalMatrix) == 160);
+    static_assert(offsetof(UniformData, material) == 224);
+
+    struct LightData {
+      Math::Vec4 directionKind;
+      Math::Vec4 positionRange;
+      Math::Vec4 colorIntensity;
+      Math::Vec4 cone;
+    };
+
+    struct LightingData {
+      Math::Vec4 viewPosition;
+      Math::Vec4 meta;
+      std::array<LightData, 64> lights{};
+    };
+
+    static_assert(sizeof(LightData) == 64);
+    static_assert(offsetof(LightingData, lights) == 32);
+    static_assert(sizeof(LightingData) == 4128);
 
     struct PostUniform {
       float exposure;
@@ -262,6 +269,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     wgpu::Buffer vertices;
     wgpu::Buffer indices;
     MeshInfo info{};
+    Bounds bounds{};
+    bool hasNormals{};
+    bool hasNormalMapFrame{};
     std::uint64_t vertexBytes{};
     std::uint64_t indexBytes{};
     bool tracked{};
@@ -363,6 +373,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     wgpu::TextureView view;
     wgpu::Sampler sampler;
     TextureInfo info{};
+    bool normalEncoding{};
     std::uint64_t bytes{};
     bool tracked{};
 
@@ -561,7 +572,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
 
     auto pipeline(wgpu::TextureFormat format) -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
-      source.code = shaderCode;
+      source.code = Detail::surfaceShader;
       wgpu::ShaderModuleDescriptor shaderDescriptor;
       shaderDescriptor.nextInChain = &source;
       auto shader = device.CreateShaderModule(&shaderDescriptor);
@@ -573,7 +584,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
                                                         .shaderLocation = 1},
                                   wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2,
                                                         .offset = offsetof(Vertex, texCoord),
-                                                        .shaderLocation = 2}};
+                                                        .shaderLocation = 2},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, normal),
+                                                        .shaderLocation = 3}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
       layout.stepMode = wgpu::VertexStepMode::Vertex;
@@ -740,20 +754,66 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     }
 
     auto bindMaterial(const wgpu::RenderPipeline& renderPipeline, const wgpu::Buffer& buffer,
-                      const std::shared_ptr<Texture::Impl>& texture = {}) -> wgpu::BindGroup {
-      std::array<wgpu::BindGroupEntry, 3> entries{};
+                      const std::array<std::shared_ptr<Texture::Impl>, 4>& textures = {})
+        -> wgpu::BindGroup {
+      std::array<wgpu::BindGroupEntry, 9> entries{};
       entries[0].binding = 0;
       entries[0].buffer = buffer;
       entries[0].size = sizeof(UniformData);
-      entries[1].binding = 1;
-      entries[1].textureView = texture ? texture->view : whiteView;
-      entries[2].binding = 2;
-      entries[2].sampler = texture ? texture->sampler : whiteSampler;
+
+      for (std::size_t index = 0; index < textures.size(); ++index) {
+        entries[index * 2 + 1].binding = static_cast<std::uint32_t>(index * 2 + 1);
+        entries[index * 2 + 1].textureView = textures[index] ? textures[index]->view : whiteView;
+        entries[index * 2 + 2].binding = static_cast<std::uint32_t>(index * 2 + 2);
+        entries[index * 2 + 2].sampler = textures[index] ? textures[index]->sampler : whiteSampler;
+      }
+
       wgpu::BindGroupDescriptor descriptor;
       descriptor.layout = renderPipeline.GetBindGroupLayout(0);
       descriptor.entryCount = entries.size();
       descriptor.entries = entries.data();
       return device.CreateBindGroup(&descriptor);
+    }
+
+    auto bindLighting(const wgpu::RenderPipeline& renderPipeline) -> wgpu::BindGroup {
+      LightingData data;
+      const auto position = config.lighting.viewPosition;
+      data.viewPosition = {position.x, position.y, position.z, 0};
+      data.meta.x = static_cast<float>(config.lighting.lights.size());
+
+      if (config.lighting.viewDirection) {
+        const auto direction = *config.lighting.viewDirection;
+        data.meta.y = direction.x;
+        data.meta.z = direction.y;
+        data.meta.w = direction.z;
+      }
+
+      for (std::size_t index = 0; index < config.lighting.lights.size(); ++index) {
+        const auto& light = config.lighting.lights[index];
+        const auto direction = light.direction;
+        const auto p = light.position;
+        const auto c = light.color;
+        data.lights[index]
+            = {{direction.x, direction.y, direction.z, static_cast<float>(light.kind)},
+               {p.x, p.y, p.z, light.range},
+               {c.x, c.y, c.z, light.intensity},
+               {std::cos(light.innerConeDegrees * 0.01745329252F),
+                std::cos(light.outerConeDegrees * 0.01745329252F), 0, 0}};
+      }
+
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = sizeof(data);
+      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      wgpu::BindGroupEntry entry;
+      entry.buffer = buffer;
+      entry.size = sizeof(data);
+      wgpu::BindGroupDescriptor group;
+      group.layout = renderPipeline.GetBindGroupLayout(1);
+      group.entryCount = 1;
+      group.entries = &entry;
+      return device.CreateBindGroup(&group);
     }
 
     auto encode(const wgpu::Texture& target, std::span<const Vertex> vertices,
@@ -780,6 +840,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
               auto group = bindMaterial(renderPipeline, uniform);
               pass.SetPipeline(renderPipeline);
               pass.SetBindGroup(0, group);
+              pass.SetBindGroup(1, bindLighting(renderPipeline));
               pass.SetVertexBuffer(0, buffer);
               pass.Draw(static_cast<std::uint32_t>(vertices.size()));
             }
@@ -792,7 +853,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     struct PreparedDraw {
       std::shared_ptr<Mesh::Impl> mesh;
       UniformData uniform;
-      std::shared_ptr<Texture::Impl> texture;
+      std::array<std::shared_ptr<Texture::Impl>, 4> textures;
     };
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -829,15 +890,132 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
                             "Material emission must be finite in [0,65503]");
         }
 
-        std::shared_ptr<Texture::Impl> texture;
+        const auto& material = draw.material;
 
-        if (draw.material.baseColorTexture) {
-          texture = draw.material.baseColorTexture->m_impl;
+        if ((material.model != SurfaceModel::Unlit
+             && material.model != SurfaceModel::MetallicRoughness)
+            || !std::isfinite(material.metallic) || material.metallic < 0 || material.metallic > 1
+            || !std::isfinite(material.roughness) || material.roughness < 0
+            || material.roughness > 1 || !std::isfinite(material.normalScale)
+            || material.normalScale < 0 || material.normalScale > 8) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid physical material properties");
+        }
 
-          if (!texture || texture->owner != diagnostics) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Material requires a live texture uploaded by this renderer");
+        if (material.model == SurfaceModel::Unlit
+            && (material.metallicRoughnessTexture || material.normalTexture)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Physical data textures require a physical material");
+        }
+
+        std::array<std::shared_ptr<Texture::Impl>, 4> textures{};
+        const std::array slots{&material.baseColorTexture, &material.metallicRoughnessTexture,
+                               &material.normalTexture, &material.emissiveTexture};
+
+        for (std::size_t index = 0; index < slots.size(); ++index) {
+          if (*slots[index]) {
+            textures[index] = (*slots[index])->m_impl;
+
+            if (!textures[index] || textures[index]->owner != diagnostics
+                || ((index == 1 || index == 2)
+                    && textures[index]->info.options.colorSpace != ColorSpace::Linear)
+                || (index == 2 && !textures[index]->normalEncoding)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Invalid/foreign material texture or nonlinear data texture");
+            }
           }
+        }
+
+        Math::Mat4 normalMatrix;
+        float orientation = 1;
+
+        if (material.model == SurfaceModel::MetallicRoughness) {
+          if (!draw.mesh->m_impl->hasNormals
+              || (material.normalTexture && !draw.mesh->m_impl->hasNormalMapFrame)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Physical mesh requires unit normals and valid normal-map UV faces");
+          }
+
+          const auto& m = draw.transform.data;
+
+          if (!Math::isFinite(draw.transform) || m[3] != 0 || m[7] != 0 || m[11] != 0
+              || m[15] != 1) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Physical world transform must be finite affine");
+          }
+
+          auto inverse = Math::inverse(draw.transform);
+
+          if (!inverse) {
+            return std::unexpected(inverse.error());
+          }
+
+          for (std::size_t column = 0; column < 3; ++column) {
+            for (std::size_t row = 0; row < 3; ++row) {
+              const auto value = inverse->data[row * 4 + column];
+
+              if (std::abs(value) > 1e12) {
+                return Core::fail(Core::ErrorCode::InvalidArgument,
+                                  "Physical normal matrix exceeds precision bounds");
+              }
+
+              normalMatrix.data[column * 4 + row] = value;
+            }
+          }
+
+          double worldNorm{};
+          double inverseNorm{};
+          float normalMaximum{};
+
+          for (std::size_t row = 0; row < 3; ++row) {
+            double worldRow{};
+            double inverseRow{};
+
+            for (std::size_t column = 0; column < 3; ++column) {
+              worldRow += std::abs(static_cast<double>(m[column * 4 + row]));
+              inverseRow += std::abs(static_cast<double>(inverse->data[column * 4 + row]));
+              normalMaximum
+                  = std::max(normalMaximum, std::abs(normalMatrix.data[column * 4 + row]));
+            }
+
+            worldNorm = std::max(worldNorm, worldRow);
+            inverseNorm = std::max(inverseNorm, inverseRow);
+          }
+
+          if (normalMaximum == 0 || worldNorm * inverseNorm > 1e20) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Physical transform exceeds relative precision bounds");
+          }
+
+          for (std::size_t column = 0; column < 3; ++column) {
+            for (std::size_t row = 0; row < 3; ++row) {
+              normalMatrix.data[column * 4 + row] /= normalMaximum;
+            }
+          }
+
+          const auto& bounds = draw.mesh->m_impl->bounds;
+
+          for (int corner = 0; corner < 8; ++corner) {
+            auto position = Math::transformPoint(
+                draw.transform, {corner & 1 ? bounds.maximum.x : bounds.minimum.x,
+                                 corner & 2 ? bounds.maximum.y : bounds.minimum.y,
+                                 corner & 4 ? bounds.maximum.z : bounds.minimum.z});
+
+            if (!position || std::abs(position->x) > 1e6 || std::abs(position->y) > 1e6
+                || std::abs(position->z) > 1e6) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Physical geometry exceeds world coordinate bounds");
+            }
+          }
+
+          const auto determinant
+              = static_cast<double>(m[0])
+                    * (static_cast<double>(m[5]) * m[10] - static_cast<double>(m[9]) * m[6])
+                - static_cast<double>(m[4])
+                      * (static_cast<double>(m[1]) * m[10] - static_cast<double>(m[9]) * m[2])
+                + static_cast<double>(m[8])
+                      * (static_cast<double>(m[1]) * m[6] - static_cast<double>(m[5]) * m[2]);
+          orientation = determinant < 0 ? -1.0F : 1.0F;
         }
 
         auto transform = Math::multiply(viewProjection, draw.transform);
@@ -852,8 +1030,14 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
             {draw.mesh->m_impl,
              {*transform,
               {tint.x * factor.x, tint.y * factor.y, tint.z * factor.z, tint.w * factor.w},
-              {emissive.x, emissive.y, emissive.z, 0}},
-             std::move(texture)});
+              {emissive.x, emissive.y, emissive.z, 0},
+              draw.transform,
+              normalMatrix,
+              {material.metallic, material.roughness, material.normalScale, 0},
+              {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
+               material.normalTexture ? 1.0F : 0.0F, material.doubleSided ? 1.0F : 0.0F,
+               orientation}},
+             std::move(textures)});
       }
 
       return prepared;
@@ -878,6 +1062,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
+            auto lights = bindLighting(renderPipeline);
+            pass.SetBindGroup(1, lights);
+
             for (const auto& draw : draws) {
               /** Queue writes precede submission, so a shared uniform would overwrite
                * earlier draws. The command buffer retains each independent buffer.
@@ -889,7 +1076,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
               descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
               auto drawUniform = device.CreateBuffer(&descriptor);
               queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
-              auto group = bindMaterial(renderPipeline, drawUniform, draw.texture);
+              auto group = bindMaterial(renderPipeline, drawUniform, draw.textures);
               pass.SetPipeline(renderPipeline);
               pass.SetBindGroup(0, group);
               pass.SetVertexBuffer(0, draw.mesh->vertices);
@@ -1185,9 +1372,16 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       return std::unexpected(settings.error());
     }
 
+    auto lighting = validatedLighting(config.lighting);
+
+    if (!lighting) {
+      return std::unexpected(lighting.error());
+    }
+
     auto impl = std::make_unique<Impl>();
     impl->window = window;
     impl->config = config;
+    impl->config.lighting = std::move(*lighting);
     const auto feature = wgpu::InstanceFeatureName::TimedWaitAny;
     wgpu::InstanceDescriptor instanceDescriptor;
     instanceDescriptor.requiredFeatureCount = 1;
@@ -1370,6 +1564,43 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
     mesh->owner = gpu.diagnostics;
     mesh->info = {static_cast<std::uint32_t>(data.vertices.size()),
                   static_cast<std::uint32_t>(data.indices.size())};
+    mesh->bounds = meshBounds(data).value();
+    mesh->hasNormals = std::ranges::all_of(
+        data.vertices, [](const Vertex& vertex) { return vertex.normal != Math::Vec3{}; });
+    mesh->hasNormalMapFrame = mesh->hasNormals;
+    const auto count = data.indices.empty() ? data.vertices.size() : data.indices.size();
+    const auto corner = [&](std::size_t index) -> const Vertex& {
+      return data.vertices[data.indices.empty() ? index : data.indices[index]];
+    };
+
+    for (std::size_t face = 0; mesh->hasNormalMapFrame && face < count; face += 3) {
+      const auto& a = corner(face);
+      const auto& b = corner(face + 1);
+      const auto& c = corner(face + 2);
+      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
+      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
+      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
+      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
+      const auto det = ux * vy - uy * vx;
+      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
+      const std::array<double, 3> first{static_cast<double>(b.position.x) - a.position.x,
+                                        static_cast<double>(b.position.y) - a.position.y,
+                                        static_cast<double>(b.position.z) - a.position.z};
+      const std::array<double, 3> second{static_cast<double>(c.position.x) - a.position.x,
+                                         static_cast<double>(c.position.y) - a.position.y,
+                                         static_cast<double>(c.position.z) - a.position.z};
+      const auto area = std::hypot(first[1] * second[2] - first[2] * second[1],
+                                   first[2] * second[0] - first[0] * second[2],
+                                   first[0] * second[1] - first[1] * second[0]);
+      mesh->hasNormalMapFrame
+          = scale > 0 && std::abs(det) >= 1e-12 && std::abs(det) > scale * 1e-6 && area > 0;
+
+      for (const auto* vertex : {&a, &b, &c}) {
+        mesh->hasNormalMapFrame = mesh->hasNormalMapFrame && std::abs(vertex->texCoord.x) <= 1e6
+                                  && std::abs(vertex->texCoord.y) <= 1e6;
+      }
+    }
+
     mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
     mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
     ErrorScope scope(gpu.instance, gpu.device);
@@ -1463,6 +1694,12 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
       texture->owner = m_impl->diagnostics;
       texture->bytes = bytes;
       texture->info = {image.width, image.height, levels, options};
+      texture->normalEncoding = options.colorSpace == ColorSpace::Linear;
+
+      for (std::size_t index = 2; texture->normalEncoding && index < image.pixels.size();
+           index += 4) {
+        texture->normalEncoding = image.pixels[index] >= 128;
+      }
       ErrorScope scope(m_impl->instance, m_impl->device);
       wgpu::TextureDescriptor descriptor;
       descriptor.size = {image.width, image.height, 1};
@@ -1598,6 +1835,41 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @
                          stats.textures.load(),
                          stats.textureBytes.load(),
                          static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12};
+  }
+
+  auto Renderer::setLighting(const Lighting& lighting) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    auto validated = validatedLighting(lighting);
+
+    if (!validated) {
+      return std::unexpected(validated.error());
+    }
+
+    m_impl->config.lighting = std::move(*validated);
+    return {};
+  }
+
+  auto Renderer::lighting() const -> Core::Result<Lighting> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return validatedLighting(m_impl->config.lighting);
   }
 
   auto Renderer::setPostProcess(const PostProcessSettings& settings) -> Core::Result<void> {

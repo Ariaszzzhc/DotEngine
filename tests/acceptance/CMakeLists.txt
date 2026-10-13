@@ -12,6 +12,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/InputAcceptance.cpp
     Runtime/InstanceAcceptance.cpp
     Runtime/PhysicsAcceptance.cpp
+    Runtime/PbrAcceptance.cpp
     Runtime/PhysicsScriptAcceptance.cpp
     Runtime/ProcessAcceptance.cpp
     Runtime/ProjectPlayerAcceptance.cpp

@@ -43,6 +43,13 @@ export namespace Dot::Graphics {
    * 产生独立拥有的无索引三角形，按绕序计算平面法线；保留颜色/UV 和源数据。
    * 拒绝退化面，并在结果分配前拒绝超过一百万顶点的展开。 */
   [[nodiscard]] auto withFlatNormals(const MeshData& mesh) -> Core::Result<MeshData>;
+  /** Owned UV sphere with radial normals, explicit seam/pole vertices and outward
+   * triangles. Radius is finite positive; sectors 3..256, rings 2..128. Reject
+   * position precision that collapses faces. V=0 is the north pole.
+   * 拥有的 UV 球带径向法线、显式接缝/极点顶点和向外三角形；半径有限正值，
+   * 经向分段 3..256、纬向分段 2..128，拒绝位置精度使面塌缩的情况；V=0 为北极。 */
+  [[nodiscard]] auto sphere(float radius = 0.5F, std::uint32_t sectors = 48,
+                            std::uint32_t rings = 24) -> Core::Result<MeshData>;
   /** Centered unit primitives, scaled to positive finite dimensions.
    * 居中单位几何体，按正值有限尺寸缩放。 */
   [[nodiscard]] auto cube(Math::Vec3 size = {1, 1, 1}) -> Core::Result<MeshData>;

@@ -18,6 +18,7 @@ import Dot.Platform.Events;
 export import Dot.Graphics.Geometry;
 export import Dot.Graphics.Image;
 export import Dot.Graphics.PostProcess;
+export import Dot.Graphics.Lighting;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -165,19 +166,35 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  enum class SurfaceModel { Unlit, MetallicRoughness };
+
   /** Linear base-color factor multiplied by vertex color, object tint and sampled
    * base-color texture. Absence means a constant white texel; an explicitly empty
-   * or foreign texture fails. This surface stage is unlit; physical shading is a
-   * separate service. Owns its optional texture by shared value.
+   * or foreign texture fails. Unlit and metallic/roughness surfaces share the same
+   * HDR pipeline. Physical data textures require linear encoding. Owns texture
+   * slots by shared value; alpha is retained without transparency blending.
    * 线性基础颜色因子乘顶点颜色、对象染色及基础颜色纹理；缺省表示常量白纹素，
-   * 显式空纹理或跨设备纹理失败。本表面阶段无光照，物理着色是独立服务。
-   * 通过共享值拥有可选纹理。 */
+   * 显式空纹理或跨设备纹理失败。无光照和金属度/粗糙度表面使用同一 HDR 管线，
+   * 物理数据纹理要求线性编码；通过共享值拥有纹理槽，保留 alpha，尚无透明混合。 */
   struct Material {
     Math::Vec4 baseColor{1, 1, 1, 1};
     std::optional<Texture> baseColorTexture;
     /** Linear emissive radiance per channel in [0,65503]. No exposure baked in.
      * 每通道 [0,65503] 的线性自发光亮度，不烘焙曝光。 */
     Math::Vec3 emissive{};
+    SurfaceModel model{SurfaceModel::Unlit};
+    float metallic{};
+    float roughness{0.5F};
+    float normalScale{1};
+    bool doubleSided{};
+    /** Linear packed G=roughness, B=metallic data; factors multiply samples.
+     * 线性打包数据 G=粗糙度、B=金属度，因子乘采样值。 */
+    std::optional<Texture> metallicRoughnessTexture{};
+    /** Linear tangent-space RGB normals with source B>=128 (positive Z); requires
+     * nondegenerate position/UV faces.
+     * 线性切线空间 RGB 法线，源 B>=128（正 Z），要求位置/UV 三角面非退化。 */
+    std::optional<Texture> normalTexture{};
+    std::optional<Texture> emissiveTexture{};
   };
 
   /** Borrows a mesh for one call; transform maps local vertices into world space.
@@ -198,6 +215,7 @@ export namespace Dot::Graphics {
     std::uint32_t maxTextures{4096};
     std::uint64_t maxTextureBytes{512 * 1024 * 1024};
     PostProcessSettings postProcess{};
+    Lighting lighting{};
   };
 
   /** Owns a Dawn device and optional native surface; all operations and destruction
@@ -233,6 +251,14 @@ export namespace Dot::Graphics {
      * A coherent snapshot requires resource destruction to be quiescent.
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
     [[nodiscard]] auto resourceStats() const -> Core::Result<ResourceStats>;
+
+    /** Replace owned camera/direct-light data for future frames transactionally.
+     * Lit draws require complete unit normals and finite affine world transforms;
+     * no-light frames retain emission only. No IBL or shadows are implicit.
+     * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
+     * 无光帧仅保留自发光，不隐式提供 IBL 或阴影。 */
+    [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
+    [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 
     /** Replace future-frame exposure/tone mapping/encoding transactionally; existing
      * completed targets retain their pixels until redrawn. Validate before change.

@@ -181,3 +181,46 @@ TEST_CASE("geometry.surface_attributes_require_finite_uvs_and_unit_or_absent_nor
   mesh.vertices[0].texCoord.x = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(validateMesh(mesh));
 }
+
+TEST_CASE("geometry.uv_sphere_has_radial_normals_seams_and_outward_nondegenerate_faces") {
+  auto mesh = sphere(2, 16, 8);
+  REQUIRE(mesh);
+  REQUIRE(mesh->vertices.size() == 17 * 9);
+  CHECK(mesh->indices.size() == 16 * 7 * 6);
+  CHECK(validateMesh(*mesh));
+
+  for (const auto& vertex : mesh->vertices) {
+    CHECK(Dot::Math::length(vertex.position) == doctest::Approx(2));
+    CHECK(Dot::Math::length(vertex.normal) == doctest::Approx(1));
+    CHECK(vertex.texCoord.x >= 0);
+    CHECK(vertex.texCoord.x <= 1);
+    CHECK(vertex.texCoord.y >= 0);
+    CHECK(vertex.texCoord.y <= 1);
+  }
+
+  for (std::size_t row = 0; row <= 8; ++row) {
+    CHECK(mesh->vertices[row * 17].position == mesh->vertices[row * 17 + 16].position);
+    CHECK(mesh->vertices[row * 17].texCoord.x == 0);
+    CHECK(mesh->vertices[row * 17 + 16].texCoord.x == 1);
+  }
+
+  auto flat = withFlatNormals(*mesh);
+  REQUIRE(flat);
+
+  for (std::size_t index = 0; index < flat->vertices.size(); index += 3) {
+    CHECK(Dot::Math::dot(flat->vertices[index].normal, flat->vertices[index].position) > 0);
+  }
+}
+
+TEST_CASE("geometry.sphere_rejects_bad_tessellation_radius_and_collapsed_precision") {
+  CHECK(sphere(1, 3, 2));
+  CHECK(sphere(1, 256, 128));
+  CHECK_FALSE(sphere(0));
+  CHECK_FALSE(sphere(-1));
+  CHECK_FALSE(sphere(std::numeric_limits<float>::infinity()));
+  CHECK_FALSE(sphere(std::numeric_limits<float>::denorm_min()));
+  CHECK_FALSE(sphere(1, 2));
+  CHECK_FALSE(sphere(1, 257));
+  CHECK_FALSE(sphere(1, 8, 1));
+  CHECK_FALSE(sphere(1, 8, 129));
+}

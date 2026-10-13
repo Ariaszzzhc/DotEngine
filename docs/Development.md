@@ -2565,3 +2565,59 @@ actual ACES/HDR/native coverage; no assertion was disabled.
   runtime manifest metadata exclusion pass. Staged application and all 16 native
   signatures/relative-system loader references pass. Active caches and the private
   untracked document remain preserved. Windows/Linux are not locally validated.
+
+
+### Direct physical materials and lights
+
+Added a separate Lighting interface/implementation with owned perspective or
+orthographic camera data and bounded directional/point/spot descriptions.
+Validation normalizes applicable ray directions, checks all numeric fields/counts
+and retains contextual expected errors. Renderer initialization and setters own
+validated copies; invalid changes preserve previous state and completed targets.
+
+The current surface shader now supports explicit unlit or metallic/roughness
+materials through the same HDR pipeline. Physical shading uses GGX, correlated
+Smith visibility, Schlick Fresnel and energy-split Lambert diffuse, with dielectric
+F0=0.04, metallic base-color F0 and a stable minimum effective roughness. Linear
+packed G/B roughness/metallic data, tangent normal maps and color emissive maps
+affect actual lighting; normal maps require forward-hemisphere linear source
+data. Base color/alpha continue to multiply authored factors/vertex/object color.
+No IBL, invented ambient light, occlusion texture effect or shadows are supplied.
+
+Physical draws require complete normals, invertible affine world transforms and
+bounded coordinates/normal precision. Normals use a direction-preserving scaled
+inverse transpose; reflected transforms adjust front winding, and double-sided
+materials face the observer. Derivative position/UV frames preserve mirrored
+normal-map handedness; unusable/degenerate UV faces fail before submission.
+Perspective view rays depend on position, while orthographic rays remain parallel.
+Directional lights use lux; point/spot lights use candela, inverse-square falloff
+with a 1-cm distance floor and smooth range/cone edges. Accumulated scene radiance
+explicitly saturates at the finite half-float ceiling.
+
+Added a bounded UV sphere with radial normals, explicit seam/pole vertices and
+outward triangles; degenerate finite-position precision fails. The native PBR
+acceptance renders dielectric/gold/copper roughness rows and a normal-mapped sphere
+under two direct lights, verifies actual HDR highlights, saves a GPU image, presents
+and resizes a native window and checks shared mesh/target/texture release. Its
+rendered image was visually inspected after lossless PNG format conversion.
+This is a renderer API gallery, not persisted scene/material/editor authoring,
+IBL/shadow/SSAO integration, large-scene performance or final realistic game art.
+Those broader requirements remain planned.
+
+The initial shader check failed because WGSL reserves "meta"; renaming the field
+to "counts" restored actual shader creation without relaxing validation. The first
+focused normal/material/light/HDR regressions pass 18/18 in 6.02 seconds. Final
+focused material/light/native tests pass 12/12 in 5.40 seconds, including the full
+64-light GPU array and orthographic reflections. Reviewed CPU/GPU struct offsets,
+per-draw texture/uniform retention, world/normal transforms, UV/normal-map boundaries,
+light units/falloff, finite HDR saturation, typed validation, resource release and
+platform-neutral Dawn paths. Caller toolchain settings remain unchanged.
+
+- Final arm64 macOS Debug and Release/NDEBUG suites pass 812/812 CTest cases
+  (755 doctest, 57 executable checks), taking 107.26 and 37.48 seconds.
+  All 236 C/C++ files pass clang-format and diff/private-reference checks pass.
+- Refreshed latest macOS ZIP: 267 entries, 43,165,492 bytes. CRC, executable
+  modes, attribution, private/test/Finder exclusions and runtime manifest checks
+  pass. Staged app and all 16 native signatures/relative-system loader references
+  pass. Build caches and the untracked private document remain preserved.
+  Windows/Linux are implemented but not locally validated.
