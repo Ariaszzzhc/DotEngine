@@ -2130,3 +2130,27 @@ behavior checks into disabled native report metadata, which does not run hooks.
   focused suites and executable acceptance rather than unsupported script bindings.
   GUI project creation/launch ergonomics and further distribution work remain
   subsequent stages; the full goal remains active.
+
+
+### Validated project template foundation
+
+Added Dot.Project.Templates with separate interface/implementation. It copies a
+bounded authored template, replaces the source SDK with the current SDK, applies
+the requested project name and validates scene, real compilation, static resources
+and script preparation before exclusive publication. Validation output belongs to
+a separate private owner, so ordinary template paths cannot be deleted as scratch.
+
+- Two focused cases pass on arm64 macOS Debug and Release/NDEBUG: complete 40-entity
+  game copy, binary resource equality, replacement of obsolete SDK while preserving
+  source bytes/metadata, compiler generation cleanup/no validation artifacts, no
+  overwrite, traversal/source-directory rejection, actual compile failure leaving
+  no destination, symlink and private staging rejection with cleanup.
+- Final integrated working trees pass all 766 CTest cases in both configurations.
+  This includes subsequent home consumers and the separately committed native
+  acceptance focus correction; it is not an isolated foundation suite count.
+- Reviewed portable names/aliases, traversal/depth/count/byte arithmetic, exclusive
+  publication and partial ownership, replacing rather than using obsolete SDK,
+  current descriptor/resource validation, external errors and source preservation.
+  Formatting/whitespace/private-reference checks pass. Input changes require caller
+  serialization; gameplay hooks, hostile races and crash durability are not promised.
+  Windows/Linux code remains unvalidated locally. The LLVM environment is unchanged.

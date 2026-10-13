@@ -249,3 +249,12 @@ target_compile_definitions(DotFeatureLabNativeTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
 add_dependencies(DotFeatureLabNativeTests DotFeatureLab DotRuntimeKit DotEditor)
 doctest_discover_tests(DotFeatureLabNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_executable(DotTemplateTests main.cpp TemplateTests.cpp)
+target_link_libraries(DotTemplateTests PRIVATE DotEngine doctest::doctest)
+target_compile_definitions(DotTemplateTests PRIVATE
+    DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
+add_dependencies(DotTemplateTests DotExamples)
+doctest_discover_tests(DotTemplateTests PROPERTIES TIMEOUT 30 LABELS "unit")

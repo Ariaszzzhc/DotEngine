@@ -76,6 +76,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/GameSession.cpp
     src/Engine/Project/GamePackage.cpp
     src/Engine/Project/GameExport.cpp
+    src/Engine/Project/Templates.cpp
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/Resources.cpp
     src/Engine/Editor/Play.cpp
@@ -150,6 +151,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/GameSession.cppm
         src/Engine/Project/GamePackage.cppm
         src/Engine/Project/GameExport.cppm
+        src/Engine/Project/Templates.cppm
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/Resources.cppm
         src/Engine/Editor/Play.cppm
