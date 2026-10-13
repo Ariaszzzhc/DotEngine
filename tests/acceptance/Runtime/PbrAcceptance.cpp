@@ -10,6 +10,12 @@
 
 import Dot.Core.Application;
 import Dot.Core.Files;
+import Dot.Core.StagedDirectory;
+import Dot.Assets.Material;
+import Dot.Assets.Mesh;
+import Dot.Graphics.SceneRenderer;
+import Dot.World.Scene;
+import Dot.World.SceneFiles;
 import Dot.Core.Result;
 import Dot.Graphics.Renderer;
 import Dot.Math;
@@ -29,52 +35,84 @@ namespace Dot::Runtime {
     config.frameDelay = std::chrono::milliseconds{5};
     auto application = Core::Application::create(config).value();
     auto renderer = Graphics::Renderer::create(&application.window()).value();
-    Graphics::Lighting lights;
-    lights.viewPosition = {0, 1.2F, 9};
-    lights.lights = {{.direction = {-0.6F, -0.8F, -1}, .color = {1, 0.95F, 0.9F}, .intensity = 5},
-                     {.direction = {1, -0.3F, -0.5F}, .color = {0.6F, 0.75F, 1}, .intensity = 2}};
-    renderer.setLighting(lights).value();
     std::size_t presented{};
 
     {
-      auto mesh = renderer.upload(Graphics::sphere(0.5F, 64, 32).value()).value();
-      Graphics::Image normal{8, 8, {}};
-      normal.pixels.resize(8 * 8 * 4);
+      auto storage = Core::StagedDirectory::create(files).value();
+      auto assets = storage.files().value();
+      assets.createDirectories("assets").value();
+      Assets::saveMesh(assets, "assets/sphere.dotmesh", Graphics::sphere(0.5F, 64, 32).value())
+          .value();
+      auto fixtures = Core::FileSystem::open(DOT_IMAGE_FIXTURE_DIRECTORY).value();
+      assets.writeAtomic("assets/normal.png", fixtures.readBytes("normal.png").value()).value();
+      auto scene = World::Scene::create("Persisted physical gallery").value();
+      const auto pose = [](Math::Vec3 position, Math::Vec3 target) -> World::Transform {
+        const auto world = Math::inverse(Math::lookAt(position, target).value()).value();
+        const auto parts = Math::decomposeTrs(world).value();
+        return {parts.position, parts.rotation, parts.scale};
+      };
+      auto camera = scene.createEntity("Camera").value();
+      scene
+          .setCamera(camera,
+                     World::Camera{.verticalFovDegrees = 42, .farPlane = 100, .primary = true})
+          .value();
+      scene.setTransform(camera, pose({0, 1.2F, 9}, {})).value();
+      const std::array<Math::Vec3, 2> directions{{{-0.6F, -0.8F, -1}, {1, -0.3F, -0.5F}}};
+      const std::array<Math::Vec3, 2> lightColors{{{1, 0.95F, 0.9F}, {0.6F, 0.75F, 1}}};
 
-      for (std::size_t index = 0; index < 64; ++index) {
-        normal.pixels[index * 4] = (index / 8 + index % 8) % 2 == 0 ? 218 : 38;
-        normal.pixels[index * 4 + 1] = 128;
-        normal.pixels[index * 4 + 2] = 218;
-        normal.pixels[index * 4 + 3] = 255;
+      for (std::size_t index = 0; index < 2; ++index) {
+        auto light = scene.createEntity("Direct light").value();
+        scene
+            .setLight(light, World::Light{.color = lightColors[index],
+                                          .intensity = index == 0 ? 5.0F : 2.0F})
+            .value();
+        scene.setTransform(light, pose({}, directions[index])).value();
       }
 
-      auto mapped
-          = renderer.uploadTexture(normal, {.colorSpace = Graphics::ColorSpace::Linear}).value();
-      std::array<Graphics::MeshDraw, 15> draws{};
       const std::array<float, 5> roughness{0.12F, 0.28F, 0.45F, 0.65F, 0.9F};
       const std::array<Math::Vec4, 3> colors{
           {{0.6F, 0.6F, 0.6F, 1}, {1, 0.766F, 0.336F, 1}, {0.955F, 0.638F, 0.538F, 1}}};
 
       for (std::size_t row = 0; row < 3; ++row) {
         for (std::size_t column = 0; column < 5; ++column) {
-          auto& draw = draws[row * 5 + column];
-          draw.mesh = &mesh;
-          draw.transform = Math::compose({static_cast<float>(column) * 1.2F - 2.4F,
-                                          1.2F - static_cast<float>(row) * 1.2F, 0})
-                               .value();
-          draw.material.model = Graphics::SurfaceModel::MetallicRoughness;
-          draw.material.baseColor = colors[row];
-          draw.material.metallic = row == 0 ? 0 : 1;
-          draw.material.roughness = roughness[column];
+          const auto path = std::format("assets/material-{}-{}.dotmaterial", row, column);
+          Assets::MaterialDescription material;
+          material.baseColor = colors[row];
+          material.metallic = row == 0 ? 0 : 1;
+          material.roughness = roughness[column];
+
+          if (row == 2 && column == 4) {
+            Graphics::TextureOptions linear;
+            linear.colorSpace = Graphics::ColorSpace::Linear;
+            material.normalTexture = Assets::TextureSource{"assets/normal.png", linear};
+          }
+
+          Assets::saveMaterial(assets, path, material).value();
+          auto entity = scene.createEntity("Physical sphere").value();
+          scene
+              .setMeshRenderer(entity, World::MeshRenderer{.kind = World::MeshKind::Asset,
+                                                           .asset = "assets/sphere.dotmesh"})
+              .value();
+          scene.setMaterial(entity, World::MaterialBinding{path}).value();
+          scene
+              .setTransform(entity, {{static_cast<float>(column) * 1.2F - 2.4F,
+                                      1.2F - static_cast<float>(row) * 1.2F, 0}})
+              .value();
         }
       }
 
-      draws.back().material.normalTexture = mapped;
-      const auto camera = Math::multiply(Math::perspective(42, 16.0F / 9.0F, 0.1F, 100).value(),
-                                         Math::lookAt(lights.viewPosition, {}).value())
-                              .value();
+      World::saveScene(assets, "gallery.dotscene", scene).value();
+      auto loaded = World::loadScene(assets, "gallery.dotscene").value();
+      auto drawing = Graphics::SceneRenderer::create(renderer, assets).value();
       auto target = renderer.createTarget(960, 540).value();
-      renderer.renderMeshesInto(target, draws, camera).value();
+      drawing.renderInto(loaded, target).value();
+      const auto cache = drawing.stats().value();
+
+      if (cache.meshes != 1 || cache.materials != 15 || cache.textures != 1) {
+        std::println(stderr, "Persisted scene did not retain shared material resources");
+        return 1;
+      }
+
       auto raw = renderer.readHdrTarget(target).value();
       auto image = renderer.readTarget(target).value();
       const auto maximum = *std::max_element(raw.pixels.begin(), raw.pixels.end());
@@ -109,7 +147,7 @@ namespace Dot::Runtime {
           }
         }
 
-        auto result = renderer.presentMeshes(draws, camera);
+        auto result = drawing.present(loaded);
 
         if (!result) {
           return std::unexpected(result.error());
@@ -130,7 +168,7 @@ namespace Dot::Runtime {
 
     std::println(
         "PBR acceptance passed: dielectric/metal roughness grid, normal mapping, direct light and "
-        "HDR");
+        "HDR from saved material/light scene assets");
     return 0;
   }
 }  // namespace Dot::Runtime

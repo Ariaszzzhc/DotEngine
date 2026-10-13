@@ -1564,43 +1564,15 @@ namespace Dot::Graphics {
     mesh->owner = gpu.diagnostics;
     mesh->info = {static_cast<std::uint32_t>(data.vertices.size()),
                   static_cast<std::uint32_t>(data.indices.size())};
-    mesh->bounds = meshBounds(data).value();
-    mesh->hasNormals = std::ranges::all_of(
-        data.vertices, [](const Vertex& vertex) { return vertex.normal != Math::Vec3{}; });
-    mesh->hasNormalMapFrame = mesh->hasNormals;
-    const auto count = data.indices.empty() ? data.vertices.size() : data.indices.size();
-    const auto corner = [&](std::size_t index) -> const Vertex& {
-      return data.vertices[data.indices.empty() ? index : data.indices[index]];
-    };
+    auto surface = meshSurface(data);
 
-    for (std::size_t face = 0; mesh->hasNormalMapFrame && face < count; face += 3) {
-      const auto& a = corner(face);
-      const auto& b = corner(face + 1);
-      const auto& c = corner(face + 2);
-      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
-      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
-      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
-      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
-      const auto det = ux * vy - uy * vx;
-      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
-      const std::array<double, 3> first{static_cast<double>(b.position.x) - a.position.x,
-                                        static_cast<double>(b.position.y) - a.position.y,
-                                        static_cast<double>(b.position.z) - a.position.z};
-      const std::array<double, 3> second{static_cast<double>(c.position.x) - a.position.x,
-                                         static_cast<double>(c.position.y) - a.position.y,
-                                         static_cast<double>(c.position.z) - a.position.z};
-      const auto area = std::hypot(first[1] * second[2] - first[2] * second[1],
-                                   first[2] * second[0] - first[0] * second[2],
-                                   first[0] * second[1] - first[1] * second[0]);
-      mesh->hasNormalMapFrame
-          = scale > 0 && std::abs(det) >= 1e-12 && std::abs(det) > scale * 1e-6 && area > 0;
-
-      for (const auto* vertex : {&a, &b, &c}) {
-        mesh->hasNormalMapFrame = mesh->hasNormalMapFrame && std::abs(vertex->texCoord.x) <= 1e6
-                                  && std::abs(vertex->texCoord.y) <= 1e6;
-      }
+    if (!surface) {
+      return std::unexpected(surface.error());
     }
 
+    mesh->bounds = surface->bounds;
+    mesh->hasNormals = surface->hasNormals;
+    mesh->hasNormalMapFrame = surface->hasNormalMapFrame;
     mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
     mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
     ErrorScope scope(gpu.instance, gpu.device);
@@ -1630,6 +1602,23 @@ namespace Dot::Graphics {
     return Mesh(std::move(mesh));
   }
 
+  auto validateTextureOptions(const TextureOptions& options) -> Core::Result<void> {
+    const auto addressValid = [](TextureAddress address) {
+      return address == TextureAddress::Clamp || address == TextureAddress::Repeat
+             || address == TextureAddress::Mirror;
+    };
+
+    if ((options.colorSpace != ColorSpace::Linear && options.colorSpace != ColorSpace::Srgb)
+        || (options.filter != TextureFilter::Nearest && options.filter != TextureFilter::Linear)
+        || !addressValid(options.addressU) || !addressValid(options.addressV)
+        || options.maxAnisotropy == 0 || options.maxAnisotropy > 16
+        || (options.filter == TextureFilter::Nearest && options.maxAnisotropy != 1)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture sampling/color options");
+    }
+
+    return {};
+  }
+
   auto Renderer::uploadTexture(const Image& image, const TextureOptions& options)
       -> Core::Result<Texture> {
     if (!m_impl) {
@@ -1653,17 +1642,10 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Texture exceeds device dimensions");
     }
 
-    const auto addressValid = [](TextureAddress address) {
-      return address == TextureAddress::Clamp || address == TextureAddress::Repeat
-             || address == TextureAddress::Mirror;
-    };
+    checked = validateTextureOptions(options);
 
-    if ((options.colorSpace != ColorSpace::Linear && options.colorSpace != ColorSpace::Srgb)
-        || (options.filter != TextureFilter::Nearest && options.filter != TextureFilter::Linear)
-        || !addressValid(options.addressU) || !addressValid(options.addressV)
-        || options.maxAnisotropy == 0 || options.maxAnisotropy > 16
-        || (options.filter == TextureFilter::Nearest && options.maxAnisotropy != 1)) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture sampling/color options");
+    if (!checked) {
+      return std::unexpected(checked.error());
     }
 
     std::uint64_t bytes{};

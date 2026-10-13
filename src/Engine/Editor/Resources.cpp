@@ -58,7 +58,8 @@ namespace Dot::Editor {
 
       const auto extension = path(value).extension();
       return extension == ".ts" || extension == ".mts" || extension == ".json" || extension == ".md"
-             || extension == ".txt" || extension == ".obj" || extension == ".wgsl";
+             || extension == ".txt" || extension == ".obj" || extension == ".wgsl"
+             || extension == ".dotmaterial";
     }
 
     auto validText(std::string_view text, std::size_t limit) -> Core::Result<void> {

@@ -19,12 +19,20 @@ export namespace Dot::Graphics {
   struct SceneRenderStats {
     std::size_t meshes;
     std::uint64_t bytes;
+    std::size_t materials{};
+    std::size_t textures{};
+    std::uint64_t textureBytes{};
   };
 
-  /** Owns a bounded mesh cache and a copy of the optional asset-root descriptor.
+  /** Owns bounded shared mesh/material/texture caches and an optional asset-root
+   * descriptor. Byte budget covers logical GPU mesh/texture bytes; at most 4096
+   * materials and 4096 textures. Immutable assets reload explicitly via clearCache.
+   * Scene light poses and camera view rays come from current world transforms.
    * Borrows a renderer that must stay at the same address and outlive this service.
    * Operations/destruction require the renderer's creating thread.
-   * 拥有有界网格缓存及可选资产根目录描述的副本；借用渲染器，须保持其地址且更晚销毁。
+   * 拥有有界共享网格/材质/贴图缓存及可选资产根目录描述；字节预算覆盖逻辑 GPU 数据，
+   * 最多 4096 材质/4096 贴图，缓存不可变资源由 clearCache 显式重载；光源位姿/视线取世界变换。
+   * 借用渲染器，须保持其地址且更晚销毁。
    * 操作及销毁须在渲染器的创建线程进行。
    */
   class SceneRenderer {

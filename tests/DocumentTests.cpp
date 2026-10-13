@@ -419,3 +419,29 @@ TEST_CASE("document_failed_batch_preserves_selection_and_repeated_history_roundt
     REQUIRE(document.undo(revision(document)));
   }
 }
+
+TEST_CASE("document_material_and_light_components_share_history_save_and_agent_validation") {
+  Fixture fixture;
+  auto document = fixture.document();
+  Json material{{"asset", "assets/steel.dotmaterial"}};
+  Json light{{"kind", "point"},        {"color", {1, 0.5, 0.25}}, {"intensity", 25}, {"range", 12},
+             {"innerConeDegrees", 20}, {"outerConeDegrees", 30},  {"enabled", true}};
+  const auto operations = Json::array(
+      {{{"op", "component"}, {"entity", "2"}, {"component", "material"}, {"value", material}},
+       {{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", light}}});
+  edit(document, operations);
+  CHECK(state(document)["scene"]["entities"][1]["material"] == material);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["material"].is_null());
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["light"] == light);
+  const auto before = document.snapshot().value();
+  auto invalid = operations;
+  invalid[1]["value"]["range"] = -1;
+  CHECK_FALSE(document.apply(invalid.dump(), revision(document)));
+  CHECK(document.snapshot().value() == before);
+  REQUIRE(document.save(revision(document)));
+  auto saved = fixture.project().loadStartup().value();
+  CHECK(saved.entities()->at(1).material->asset == "assets/steel.dotmaterial");
+  CHECK(saved.entities()->at(1).light->kind == Dot::World::LightKind::Point);
+}

@@ -65,6 +65,31 @@ namespace Dot::World {
       return result;
     }
 
+    auto light(const Json& value) -> Light {
+      Codec::requireFields(value, {"kind", "color", "intensity", "range", "innerConeDegrees",
+                                   "outerConeDegrees", "enabled"});
+      Light result;
+      const auto kind = value["kind"].get<std::string>();
+
+      if (kind == "directional") {
+        result.kind = LightKind::Directional;
+      } else if (kind == "point") {
+        result.kind = LightKind::Point;
+      } else if (kind == "spot") {
+        result.kind = LightKind::Spot;
+      } else {
+        throw std::invalid_argument("Unknown scene light kind");
+      }
+
+      result.color = vector3(value["color"]);
+      result.intensity = Codec::number(value["intensity"]);
+      result.range = Codec::number(value["range"]);
+      result.innerConeDegrees = Codec::number(value["innerConeDegrees"]);
+      result.outerConeDegrees = Codec::number(value["outerConeDegrees"]);
+      result.enabled = value["enabled"].get<bool>();
+      return result;
+    }
+
     auto mesh(const Json& value) -> MeshRenderer {
       Codec::requireFields(value, {"kind", "asset", "tint", "visible"});
       MeshRenderer result;
@@ -212,6 +237,8 @@ namespace Dot::World {
       std::optional<AudioSource> audioSource;
       std::optional<AudioListener> audioListener;
       std::optional<ScriptComponent> script;
+      std::optional<MaterialBinding> material;
+      std::optional<Light> light;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -228,9 +255,9 @@ namespace Dot::World {
       std::unordered_set<std::uint64_t> ids;
 
       for (const auto& value : root["entities"]) {
-        Codec::requireFields(
-            value, {"id", "name", "parent", "transform"},
-            {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script"});
+        Codec::requireFields(value, {"id", "name", "parent", "transform"},
+                             {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
+                              "script", "material", "light"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -266,6 +293,15 @@ namespace Dot::World {
 
         if (value.contains("script") && !value["script"].is_null()) {
           record.script = script(value["script"]);
+        }
+
+        if (value.contains("material") && !value["material"].is_null()) {
+          Codec::requireFields(value["material"], {"asset"});
+          record.material = MaterialBinding{value["material"]["asset"].get<std::string>()};
+        }
+
+        if (value.contains("light") && !value["light"].is_null()) {
+          record.light = light(value["light"]);
         }
 
         records.push_back(std::move(record));
@@ -334,6 +370,18 @@ namespace Dot::World {
           return std::unexpected(changed.error());
         }
 
+        changed = scene->setMaterial(entity, record.material);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        changed = scene->setLight(entity, record.light);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
         changed = scene->setRigidBody(entity, record.rigidBody);
 
         if (!changed) {
@@ -397,6 +445,19 @@ namespace Dot::World {
               {"primary", value.primary}};
     }
 
+    auto lightJson(const Light& value) -> Json {
+      const auto kind = value.kind == LightKind::Directional ? "directional"
+                        : value.kind == LightKind::Point     ? "point"
+                                                             : "spot";
+      return {{"kind", kind},
+              {"color", {value.color.x, value.color.y, value.color.z}},
+              {"intensity", value.intensity},
+              {"range", value.range},
+              {"innerConeDegrees", value.innerConeDegrees},
+              {"outerConeDegrees", value.outerConeDegrees},
+              {"enabled", value.enabled}};
+    }
+
     auto meshJson(const MeshRenderer& value) -> Json {
       const auto kind = value.kind == MeshKind::Cube   ? "cube"
                         : value.kind == MeshKind::Quad ? "quad"
@@ -456,6 +517,8 @@ namespace Dot::World {
              {"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}}},
            {"camera", entity.camera ? cameraJson(*entity.camera) : Json(nullptr)},
            {"mesh", entity.mesh ? meshJson(*entity.mesh) : Json(nullptr)},
+           {"material", entity.material ? Json{{"asset", entity.material->asset}} : Json(nullptr)},
+           {"light", entity.light ? lightJson(*entity.light) : Json(nullptr)},
            {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)},
            {"audioSource", entity.audioSource ? sourceJson(*entity.audioSource) : Json(nullptr)},
            {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}

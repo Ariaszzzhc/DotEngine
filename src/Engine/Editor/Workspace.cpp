@@ -151,7 +151,8 @@ namespace Dot::Editor {
           if (item.key() == "projection") {
             options = "perspective\0orthographic\0";
           } else if (item.key() == "kind") {
-            options = "cube\0quad\0asset\0";
+            options = object.contains("outerConeDegrees") ? "directional\0point\0spot\0"
+                                                          : "cube\0quad\0asset\0";
           } else if (item.key() == "motion") {
             options = "static\0kinematic\0dynamic\0";
           } else if (item.key() == "shape") {
@@ -224,6 +225,8 @@ namespace Dot::Editor {
       const std::array results{
           scene->setCamera(id, World::Camera{}),
           scene->setMeshRenderer(id, World::MeshRenderer{}),
+          scene->setMaterial(id, World::MaterialBinding{"assets/material.dotmaterial"}),
+          scene->setLight(id, World::Light{}),
           scene->setRigidBody(id, World::RigidBody{}),
           scene->setAudioSource(id, audio),
           scene->setAudioListener(id, World::AudioListener{}),
@@ -1269,8 +1272,8 @@ namespace Dot::Editor {
         fields(m_edit["transform"]);
       }
 
-      for (const auto* component :
-           {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script"}) {
+      for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
+                                    "script", "material", "light"}) {
         ImGui::PushID(component);
         const auto title = label(component);
 
@@ -1380,8 +1383,8 @@ namespace Dot::Editor {
         operations.push_back({{"op", "transform"}, {"entity", id}, {"value", m_edit["transform"]}});
       }
 
-      for (const auto* component :
-           {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script"}) {
+      for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
+                                    "script", "material", "light"}) {
         if (m_edit[component] != m_original[component]) {
           operations.push_back({{"op", "component"},
                                 {"entity", id},

@@ -105,6 +105,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Image.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Image.cpp
+    src/Engine/Assets/Material.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/World/Scene.cpp
     src/Engine/World/SceneFiles.cpp
@@ -181,6 +182,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Image.cppm
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Image.cppm
+        src/Engine/Assets/Material.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/World/Scene.cppm
         src/Engine/World/SceneFiles.cppm

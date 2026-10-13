@@ -34,6 +34,19 @@
       },
       "audioListener": {
         "primary": true
+      },
+      "light": {
+        "kind": "directional",
+        "color": [
+          1,
+          0.95,
+          0.9
+        ],
+        "intensity": 5,
+        "range": 10,
+        "innerConeDegrees": 20,
+        "outerConeDegrees": 30,
+        "enabled": true
       }
     },
     {
@@ -204,6 +217,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/copper.dotmaterial"
       }
     },
     {
@@ -457,6 +473,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/normal-surface.dotmaterial"
       }
     },
     {

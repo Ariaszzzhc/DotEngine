@@ -62,6 +62,7 @@ add_executable(DotTests
     AudioHostTests.cpp
     AssetTests.cpp
     ImageTests.cpp
+    MaterialTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp
@@ -115,6 +116,8 @@ set_tests_properties(runtime.self_test runtime.version PROPERTIES TIMEOUT 15 LAB
 add_test(NAME runtime.invalid_argument COMMAND DotRuntime --invalid)
 set_tests_properties(runtime.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.material COMMAND DotRuntimeAcceptance --material-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.material PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.pbr COMMAND DotRuntimeAcceptance --pbr-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.pbr PROPERTIES TIMEOUT 60 LABELS "native;gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.hdr COMMAND DotRuntimeAcceptance --hdr-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
@@ -188,8 +191,9 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp HdrTests.cpp PbrTests.cpp SceneRenderTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
+target_compile_definitions(DotGraphicsTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 dotDiscoverTests(DotGraphicsTests LABELS "integration;gpu;offscreen" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_executable(DotNativeGraphicsTests main.cpp NativeSurfaceTests.cpp)
 target_link_libraries(DotNativeGraphicsTests PRIVATE DotEngine doctest::doctest)

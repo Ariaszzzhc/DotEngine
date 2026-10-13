@@ -75,6 +75,9 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     REQUIRE_FALSE(started->realmFaulted);
     auto scene = session.scene().value();
     auto before = sceneRenderer.render(*scene, 192, 144).value();
+    CHECK(sceneRenderer.stats()->materials == 2);
+    CHECK(sceneRenderer.stats()->textures == 1);
+    CHECK(renderer.lighting()->lights.size() == 1);
     auto entitiesBefore = scene->entities().value();
     auto orthographic = std::ranges::find(entitiesBefore, "Orthographic", &World::EntityInfo::name);
     REQUIRE(orthographic != entitiesBefore.end());

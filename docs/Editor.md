@@ -60,7 +60,7 @@ Edit operations use strict fields:
 | transform | entity, value | Replace the complete native transform |
 | component | entity, component, value | Replace/remove one native component |
 
-Components are camera, mesh, rigidBody, audioSource, audioListener and script.
+Components are camera, mesh, rigidBody, audioSource, audioListener, script, material and light.
 Values use the same schema as native scene files; null removes the component.
 Script authoring describes a source/class/properties/enabled attachment and does
 not execute code. Asset existence belongs to runtime bindings, so documents may
@@ -414,3 +414,24 @@ available through the checkbox.
 DotEditor now opens a [native project home](ProjectHome.md) by default, with open
 and validated creation from the starter project, Prism Relay and Feature Lab.
 The GUI, direct JSON command and live mailbox share the same project operations.
+
+## Material and direct light authoring
+
+The inspector can add/remove `material` and `light` components. Material binds a
+portable project-root `.dotmaterial` path; light kind uses directional/point/spot
+choices with color, intensity/range, cone angles and enabled fields. Transform
+controls move/rotate the light's local -Z ray. All edits, history, save and Play
+use the same scene validation as strict agent `component` operations. For example:
+
+```json
+{"op":"component","entity":"2","component":"material","value":{"asset":"assets/copper.dotmaterial"}}
+```
+
+Materials are owned resource files with the strict schema in [Rendering](Rendering.md).
+Resource creation/import/save supports `.dotmaterial`; successful saves refresh the
+shared preview cache. Preview/Play/export load actual referenced data and expose
+failures. Feature Lab is an editable project demonstrating persisted PBR and normal
+mapping. This stage provides basic inspectors and resource/agent authoring; dedicated
+material panels, visual light tools and the requested mature editor layout remain
+in development. The embedded source buffer is still present and its removal remains
+part of the roadmap; it is not required for creating material files through agents.

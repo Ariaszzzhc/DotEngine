@@ -14,6 +14,7 @@ export module Dot.World.Scene;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Graphics.Lighting;
 export import Dot.Audio.Source;
 export import Dot.Script.Source;
 
@@ -59,6 +60,31 @@ export namespace Dot::World {
     bool visible{true};
   };
 
+  /** Project-root material asset binding; absent binding deliberately uses the
+   * mesh's unlit tint. Presence requires a portable .dotmaterial asset path.
+   * 项目根材质资源绑定；未绑定时明确使用网格的无光照染色，绑定须为可移植 .dotmaterial 路径。 */
+  struct MaterialBinding {
+    std::string asset;
+  };
+
+  using LightKind = Graphics::LightKind;
+
+  /** Direct-light authoring without a device. Entity world position and local -Z
+   * ray direction provide the light pose; range is world meters, unaffected by scale.
+   * Directional intensity is lux; point/spot intensity is candela. Enabled scene
+   * lights are bounded by the renderer's 64-light limit; excess is an error.
+   * 不含设备的直接光编辑描述；实体世界位置及局部 -Z 光线方向决定光源位姿，范围按世界米计，
+   * 不受缩放影响；方向光为 lux，点光/聚光为 candela。启用光源遵守渲染器 64 光源限制，超限报错。 */
+  struct Light {
+    LightKind kind{LightKind::Directional};
+    Math::Vec3 color{1, 1, 1};
+    float intensity{1};
+    float range{10};
+    float innerConeDegrees{20};
+    float outerConeDegrees{30};
+    bool enabled{true};
+  };
+
   struct TransformUpdate {
     EntityId entity;
     Transform transform;
@@ -102,6 +128,8 @@ export namespace Dot::World {
     std::optional<AudioSource> audioSource{};
     std::optional<AudioListener> audioListener{};
     std::optional<ScriptComponent> script{};
+    std::optional<MaterialBinding> material{};
+    std::optional<Light> light{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -168,6 +196,12 @@ export namespace Dot::World {
      * 保存描述，由渲染服务检查资产是否存在并负责加载。 */
     [[nodiscard]] auto setMeshRenderer(EntityId entity, std::optional<MeshRenderer> mesh)
         -> Core::Result<void>;
+    /** Store validated authoring, without loading assets or creating GPU resources.
+     * Failures retain existing components; removal is idempotent.
+     * 保存已校验编辑描述，不加载资源或创建 GPU 资源；失败保留组件，移除幂等。 */
+    [[nodiscard]] auto setMaterial(EntityId entity, std::optional<MaterialBinding> material)
+        -> Core::Result<void>;
+    [[nodiscard]] auto setLight(EntityId entity, std::optional<Light> light) -> Core::Result<void>;
     /** Validate every body property before replacement; removal is idempotent.
      * 替换前校验所有刚体属性，移除具有幂等性。 */
     [[nodiscard]] auto setRigidBody(EntityId entity, std::optional<RigidBody> body)

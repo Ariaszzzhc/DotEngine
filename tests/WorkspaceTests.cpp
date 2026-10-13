@@ -10,6 +10,7 @@
 #include <utility>
 
 import Dot.Core.Files;
+import Dot.Assets.Material;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Workspace;
@@ -578,4 +579,55 @@ TEST_CASE("workspace.export_native_game_preserves_unsaved_authoring") {
   CHECK_FALSE(workspace.dispatch(
       Json{{"command", "export"}, {"parent", parent}, {"folder", "stale"}, {"revision", "1"}}
           .dump()));
+}
+
+TEST_CASE("workspace_material_and_light_authoring_preview_play_and_save_share_native_paths") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.step(16ms));
+  const auto before = workspace.captureViewport().value();
+  Dot::Assets::MaterialDescription material;
+  material.baseColor = {0.1F, 0.1F, 0.2F, 1};
+  material.emissive = {0, 0, 4};
+  material.metallic = 0.75F;
+  auto text = Dot::Assets::encodeMaterial(material).value();
+  REQUIRE(workspace.dispatch(Json{
+      {"command", "create-text"},
+      {"path", "assets/metal.dotmaterial"},
+      {"text", text}}.dump()));
+  Json light{{"kind", "directional"},  {"color", {1, 1, 1}},     {"intensity", 4}, {"range", 10},
+             {"innerConeDegrees", 20}, {"outerConeDegrees", 30}, {"enabled", true}};
+  command(
+      workspace,
+      {{"command", "edit"},
+       {"operations",
+        Json::array(
+            {{{"op", "component"},
+              {"entity", "2"},
+              {"component", "material"},
+              {"value", {{"asset", "assets/metal.dotmaterial"}}}},
+             {{"op", "component"}, {"entity", "1"}, {"component", "light"}, {"value", light}}})}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels != before.pixels);
+  auto authored = snapshot(workspace);
+  CHECK(authored["scene"]["entities"][0]["light"]["intensity"] == 4);
+  command(workspace, {{"command", "undo"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == before.pixels);
+  command(workspace, {{"command", "redo"}});
+  REQUIRE(workspace.step(16ms));
+  const auto physical = workspace.captureViewport()->pixels;
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.captureViewport());
+  auto runtime = Json::parse(workspace.dispatch("{\"command\":\"inspect-play\"}").value());
+  CHECK(runtime["scene"]["entities"][1]["material"]["asset"] == "assets/metal.dotmaterial");
+  command(workspace, {{"command", "stop-play"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == physical);
+  command(workspace, {{"command", "save"}});
+  auto saved = fixture.project.loadStartup().value();
+  CHECK(saved.entities()->at(1).material->asset == "assets/metal.dotmaterial");
+  CHECK(saved.entities()->front().light->intensity == 4);
 }

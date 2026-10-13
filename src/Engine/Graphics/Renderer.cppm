@@ -137,6 +137,11 @@ export namespace Dot::Graphics {
     std::uint16_t maxAnisotropy{1};
   };
 
+  /** CPU-only validation of sampling enums and anisotropy [1,16]; nearest
+   * filtering requires anisotropy one. 不初始化设备，校验采样枚举及 [1,16] 各向异性，
+   * 最近点过滤要求各向异性为一。 */
+  [[nodiscard]] auto validateTextureOptions(const TextureOptions& options) -> Core::Result<void>;
+
   struct TextureInfo {
     std::uint32_t width;
     std::uint32_t height;

@@ -173,3 +173,35 @@ TEST_CASE("scene.mesh_invalid_descriptions_are_transactional") {
   CHECK(scene->entity(*entity)->mesh->kind == MeshKind::Cube);
   CHECK(scene->entity(*entity)->mesh->asset.empty());
 }
+
+TEST_CASE("scene_material_and_light_authoring_are_owned_validated_and_transactional") {
+  auto scene = Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  MaterialBinding binding{"assets/steel.dotmaterial"};
+  REQUIRE(scene.setMaterial(entity, binding));
+  binding.asset = "changed.dotmaterial";
+  CHECK(scene.entity(entity)->material->asset == "assets/steel.dotmaterial");
+  CHECK_FALSE(scene.setMaterial(entity, MaterialBinding{"../steel.dotmaterial"}));
+  CHECK_FALSE(scene.setMaterial(entity, MaterialBinding{"assets/steel.json"}));
+  CHECK(scene.entity(entity)->material->asset == "assets/steel.dotmaterial");
+  Light source;
+  source.kind = LightKind::Spot;
+  source.intensity = 40;
+  REQUIRE(scene.setLight(entity, source));
+  source.intensity = -1;
+  CHECK_FALSE(scene.setLight(entity, source));
+  CHECK(scene.entity(entity)->light->intensity == 40);
+  source.intensity = 40;
+  source.outerConeDegrees = source.innerConeDegrees;
+  CHECK_FALSE(scene.setLight(entity, source));
+  REQUIRE(scene.setLight(entity, std::nullopt));
+  REQUIRE(scene.setLight(entity, std::nullopt));
+  REQUIRE(scene.setMaterial(entity, std::nullopt));
+  CHECK_FALSE(scene.entity(entity)->light);
+  CHECK_FALSE(scene.entity(entity)->material);
+  auto other = Scene::create().value();
+  CHECK_FALSE(other.setLight(entity, Light{}));
+  CHECK_FALSE(other.setMaterial(entity, binding));
+  REQUIRE(scene.destroyEntity(entity));
+  CHECK_FALSE(scene.setLight(entity, Light{}));
+}

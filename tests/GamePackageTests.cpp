@@ -9,6 +9,9 @@
 #include "SceneAudioFixture.hpp"
 
 import Dot.Core.Files;
+import Dot.Assets.Material;
+import Dot.Assets.Mesh;
+import Dot.Graphics.Geometry;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GamePackage;
@@ -147,4 +150,50 @@ TEST_CASE("game_package_invalid_scripts_assets_paths_and_destinations_do_not_pub
   CHECK_FALSE(GamePackage::publish(fixture.project, scene, fixture.compiler(),
                                    fixture.directory.files(), "failed"));
   CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "failed"));
+}
+
+TEST_CASE("game_package_persists_physical_authoring_and_rejects_missing_material_dependencies") {
+  Fixture fixture;
+  auto scene = fixture.project.loadStartup().value();
+  const auto mesh = scene.entities()->at(1).id;
+  REQUIRE(scene.setMaterial(mesh, Dot::World::MaterialBinding{"assets/metal.dotmaterial"}));
+  auto light = scene.createEntity("Key light").value();
+  REQUIRE(scene.setLight(light, Dot::World::Light{.intensity = 4}));
+  const auto compiler = fixture.compiler();
+  auto missing
+      = GamePackage::publish(fixture.project, scene, compiler, fixture.directory.files(), "game");
+  REQUIRE_FALSE(missing);
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "game"));
+  Dot::Assets::MaterialDescription material;
+  material.metallic = 1;
+  material.roughness = 0.4F;
+  material.baseColorTexture = Dot::Assets::TextureSource{"assets/missing.png"};
+  REQUIRE(Dot::Assets::saveMaterial(fixture.project.files().value(), "assets/metal.dotmaterial",
+                                    material));
+  CHECK_FALSE(
+      GamePackage::publish(fixture.project, scene, compiler, fixture.directory.files(), "game"));
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "game"));
+  material.baseColorTexture.reset();
+  REQUIRE(Dot::Assets::saveMaterial(fixture.project.files().value(), "assets/metal.dotmaterial",
+                                    material));
+  auto bad = Dot::Graphics::quad().value();
+
+  for (auto& vertex : bad.vertices) {
+    vertex.normal = {};
+  }
+
+  REQUIRE(Dot::Assets::saveMesh(fixture.project.files().value(), "assets/mesh.dotmesh", bad));
+  REQUIRE(scene.setMeshRenderer(mesh, Dot::World::MeshRenderer{.kind = Dot::World::MeshKind::Asset,
+                                                               .asset = "assets/mesh.dotmesh"}));
+  CHECK_FALSE(
+      GamePackage::publish(fixture.project, scene, compiler, fixture.directory.files(), "game"));
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "game"));
+  REQUIRE(scene.setMeshRenderer(mesh, Dot::World::MeshRenderer{}));
+  auto published
+      = GamePackage::publish(fixture.project, scene, compiler, fixture.directory.files(), "game");
+  REQUIRE_MESSAGE(published, (published ? "" : published.error().message));
+  auto package = GamePackage::open(*published).value();
+  auto saved = package.scene().value();
+  CHECK(saved.entities()->at(1).material->asset == "assets/metal.dotmaterial");
+  CHECK(saved.entities()->back().light->intensity == 4);
 }

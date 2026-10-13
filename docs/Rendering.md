@@ -150,8 +150,9 @@ commands. Operations remain confined to the renderer thread.
 build/debug/bin/DotRuntimeAcceptance --pbr-test build/debug/tests/file_acceptance
 ```
 
-The native acceptance draws dielectric/gold/copper sphere rows with increasing
-roughness, a normal-mapped sample and two direct lights; it checks HDR highlights,
+The native acceptance saves and loads a real scene, sphere mesh, fifteen material
+assets and a normal-map image before drawing dielectric/gold/copper roughness rows
+under two persisted lights. It checks HDR highlights,
 writes `pbr-direct.ppm`, presents/resizes and verifies shared resource release.
 Focused GPU tests compare an analytic frontal BRDF value, metal/dielectric response,
 roughness peaks, point distance/range, spot direction, dark/emissive frames, packed
@@ -159,10 +160,74 @@ texture channels, normal/emissive maps, inverse-transpose/mirrored transformatio
 UV handedness, orthographic reflections, the full 64-light array and invalid-input
 retention. The sphere primitive supplies radial normals and explicit UV seams/poles.
 
-These are renderer API capabilities. Material assets, persisted scene lights,
-editor/agent authoring and the requested project/game upgrades remain separate
-integration work. IBL, soft shadows, SSAO, glTF import, author tangents and
-large-scene performance are not established by this material gallery.
+Material assets, persisted scene lights and basic shared inspector/agent authoring
+now use this renderer in preview, Play and exported games. Dedicated material tooling,
+the requested project/game visual upgrades, IBL, soft shadows, SSAO, glTF import,
+author tangents and large-scene performance remain incomplete; the gallery does
+not establish those capabilities.
+
+## Persisted scene materials and lights
+
+`Dot.Assets.Material` owns GPU-free authoring data, with one strict `.dotmaterial`
+JSON structure (no version dispatch). Files are limited to 1 MiB and reject unknown,
+missing/duplicate fields, invalid factors and unsafe paths. Material files and
+parents must be regular files/directories without symlinks. Save is atomic and
+requires existing parents. Referenced textures are resolved by rendering/export,
+not replaced by sample or missing-resource colors.
+
+```json
+{
+  "model": "metallicRoughness",
+  "baseColor": [0.955, 0.638, 0.538, 1],
+  "emissive": [0, 0, 0],
+  "metallic": 1,
+  "roughness": 0.4,
+  "normalScale": 1,
+  "doubleSided": false,
+  "baseColorTexture": null,
+  "metallicRoughnessTexture": null,
+  "normalTexture": null,
+  "emissiveTexture": null
+}
+```
+
+Each non-null texture slot contains `path` and a complete `sampling` object:
+`colorSpace` (`linear`/`srgb`), `filter` (`nearest`/`linear`), `addressU`/`addressV`
+(`clamp`/`repeat`/`mirror`), boolean `mipmaps`, integer `maxAnisotropy` (1..16).
+Nearest filtering requires anisotropy one. Paths are portable, lowercase-suffix
+`.png`/`.jpg`/`.jpeg` paths relative to the project root, including when the material
+lives in a subdirectory. Color slots may be sRGB/linear; normal and packed MR slots
+must be linear and require the physical model. Normal images require source B>=128.
+A null slot deliberately uses its documented constant; an invalid present slot fails.
+
+An entity's `material` component binds `{ "asset": "assets/copper.dotmaterial" }`.
+The `light` component describes directional/point/spot kind, linear color, intensity,
+range, inner/outer cone degrees and enabled state. World pose comes from the entity
+hierarchy: local -Z is the emitted ray, position is transformed origin, and range is
+in world meters without scale multiplication. Camera position/orthographic rays
+come from the selected camera's current world matrix. Disabled lights are skipped;
+more than 64 enabled lights fails without submitting a new target frame.
+
+`SceneRenderer` shares meshes, materials and textures by path and full sampling
+options. Its byte budget includes logical mesh/texture GPU bytes; material and
+texture counts are bounded by 4096. New textures enter the cache only after all
+slots load successfully. Nonreferenced visible-scene resources are pruned;
+immutable assets reload via `clearCache`. Saved editor resources request that same
+refresh. Cache counters include materials/textures/texture bytes; failure retains
+completed target pixels, and clear/destruction releases owned resources. Material
+loads and camera/light preparation report contextual errors without fake surfaces.
+Built-in cube/quad geometry now carries unit normals and full-face UVs; cubes use
+24 split face-corner vertices. Authored assets keep their actual attributes: missing
+normals/normal-map frames fail rather than receiving invented data.
+
+Export validates referenced material definitions, images/normal encoding and every
+physical mesh's normal/UV requirements through the same CPU surface analysis used
+by GPU upload. It stages and publishes only after validation; bad dependencies do
+not leave a published destination. Component descriptions survive scene save/load,
+editor undo/redo, Play cloning and exported package loading. Current inspector
+fields and agent component edits share document validation; dedicated visual
+material graphs/light gizmos and material/light script accessors remain planned.
+Feature Lab includes a copper cube, a normal-mapped quad and a directional headlight.
 
 ## Required rendering end state
 

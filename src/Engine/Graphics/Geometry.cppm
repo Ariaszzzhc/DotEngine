@@ -37,6 +37,20 @@ export namespace Dot::Graphics {
 
   [[nodiscard]] auto validateMesh(const MeshData& mesh) -> Core::Result<void>;
   [[nodiscard]] auto meshBounds(const MeshData& mesh) -> Core::Result<Bounds>;
+
+  struct MeshSurface {
+    Bounds bounds;
+    bool hasNormals{};
+    bool hasNormalMapFrame{};
+  };
+
+  /** Analyze validated triangles without a device. Normal maps require complete
+   * normals, nondegenerate positions/UVs, UV magnitudes <=1e6, absolute UV area
+   * >=1e-12 and relative area >1e-6. Shares renderer/export surface requirements.
+   * 无设备分析已校验三角面；法线贴图要求完整法线、非退化位置/UV、UV 绝对值 <=1e6，
+   * UV 绝对面积 >=1e-12 且相对面积 >1e-6；渲染器和出包共用表面要求。 */
+  [[nodiscard]] auto meshSurface(const MeshData& mesh) -> Core::Result<MeshSurface>;
+
   /** Produce independently owned, non-indexed triangles with winding-derived
    * flat normals. Preserve colors/UVs and the source; reject degenerate faces
    * and expansion beyond one million vertices before allocating the result.
@@ -50,8 +64,11 @@ export namespace Dot::Graphics {
    * 经向分段 3..256、纬向分段 2..128，拒绝位置精度使面塌缩的情况；V=0 为北极。 */
   [[nodiscard]] auto sphere(float radius = 0.5F, std::uint32_t sectors = 48,
                             std::uint32_t rings = 24) -> Core::Result<MeshData>;
-  /** Centered unit primitives, scaled to positive finite dimensions.
-   * 居中单位几何体，按正值有限尺寸缩放。 */
+  /** Centered primitives with unit face normals and full-face UVs (V=0 at top).
+   * Cubes split 24 face-corner vertices to preserve sharp normals/UV seams.
+   * Scaled to positive finite dimensions.
+   * 居中几何体具有单位面法线及完整面 UV（顶部 V=0），立方体拆为 24 个面角顶点，
+   * 保留硬边法线与 UV 接缝；按正值有限尺寸缩放。 */
   [[nodiscard]] auto cube(Math::Vec3 size = {1, 1, 1}) -> Core::Result<MeshData>;
   [[nodiscard]] auto quad(Math::Vec2 size = {1, 1}) -> Core::Result<MeshData>;
 }  // namespace Dot::Graphics

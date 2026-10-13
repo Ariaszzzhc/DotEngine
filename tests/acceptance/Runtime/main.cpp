@@ -26,6 +26,7 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto testMaterial(const std::filesystem::path& root) -> int;
   auto testPbr(const std::filesystem::path& root) -> int;
   auto testHdr(const std::filesystem::path& root) -> int;
   auto testTextures(const std::filesystem::path& root) -> int;
@@ -353,7 +354,8 @@ namespace {
       return 1;
     }
 
-    if (loaded->data.indices != geometry->indices || loaded->data.vertices.size() != 8) {
+    if (loaded->data.indices != geometry->indices
+        || loaded->data.vertices.size() != geometry->vertices.size()) {
       std::println(stderr, "Asset acceptance round trip failed");
       return 1;
     }
@@ -634,6 +636,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3 && std::string_view(argv[1]) == "--material-test") {
+      return Dot::Runtime::testMaterial(argv[2]);
+    }
+
     if (argc == 3 && std::string_view(argv[1]) == "--pbr-test") {
       return Dot::Runtime::testPbr(argv[2]);
     }

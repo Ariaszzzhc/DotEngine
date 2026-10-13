@@ -170,7 +170,13 @@ TEST_CASE("pbr.inverse_transpose_normals_and_reflected_winding_preserve_surface_
 TEST_CASE("pbr.invalid_material_geometry_textures_and_transforms_retain_last_frame") {
   auto device = renderer();
   auto mesh = device.upload(physicalQuad()).value();
-  auto missing = device.upload(quad({2, 2}).value()).value();
+  auto missingData = quad({2, 2}).value();
+
+  for (auto& vertex : missingData.vertices) {
+    vertex.normal = {};
+  }
+
+  auto missing = device.upload(missingData).value();
   auto target = device.createTarget(1, 1).value();
   std::array draws{MeshDraw{&mesh, {}, {1, 1, 1, 1}, material()}};
   REQUIRE(device.renderMeshesInto(target, draws, {}));

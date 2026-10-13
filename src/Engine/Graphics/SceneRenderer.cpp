@@ -1,6 +1,8 @@
 module;
 
 #include <algorithm>
+#include <array>
+#include <exception>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -17,6 +19,8 @@ import Dot.World.Scene;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.Geometry;
 import Dot.Assets.Mesh;
+import Dot.Assets.Material;
+import Dot.Assets.Image;
 
 namespace Dot::Graphics {
   namespace {
@@ -28,6 +32,35 @@ namespace Dot::Graphics {
       }
 
       return {};
+    }
+
+    auto assetPath(std::string_view text) -> std::filesystem::path {
+      return std::filesystem::path(std::u8string(text.begin(), text.end()));
+    }
+
+    auto textureKey(const Assets::TextureSource& source) -> std::string {
+      const auto& options = source.sampling;
+      return std::format("{}:{}:{}:{}:{}:{}:{}", source.path, static_cast<int>(options.colorSpace),
+                         static_cast<int>(options.filter), static_cast<int>(options.addressU),
+                         static_cast<int>(options.addressV), options.mipmaps,
+                         options.maxAnisotropy);
+    }
+
+    auto textureBytes(const Image& image, bool mipmaps) -> std::uint64_t {
+      auto width = image.width;
+      auto height = image.height;
+      std::uint64_t result{};
+
+      do {
+        result += static_cast<std::uint64_t>(width) * height * 4;
+
+        if (!mipmaps || (width == 1 && height == 1)) {
+          return result;
+        }
+
+        width = std::max(1U, width / 2);
+        height = std::max(1U, height / 2);
+      } while (true);
     }
 
     auto key(const World::MeshRenderer& component) -> Core::Result<std::string> {
@@ -51,6 +84,17 @@ namespace Dot::Graphics {
       std::string warning;
     };
 
+    struct TextureEntry {
+      Texture texture;
+      std::uint64_t bytes;
+      bool normalEncoding;
+    };
+
+    struct MaterialEntry {
+      Material material;
+      std::vector<std::string> textures;
+    };
+
     struct Frame {
       Math::Mat4 camera;
       std::vector<Mesh> meshes;
@@ -72,6 +116,8 @@ namespace Dot::Graphics {
     std::uint64_t budget;
     std::uint64_t bytes{};
     std::unordered_map<std::string, Entry> cache;
+    std::unordered_map<std::string, MaterialEntry> materials;
+    std::unordered_map<std::string, TextureEntry> textures;
 
     auto check() const -> Core::Result<void> {
       auto info = renderer->adapterInfo();
@@ -134,99 +180,336 @@ namespace Dot::Graphics {
       return Entry{std::move(*uploaded), resourceBytes, std::move(warning)};
     }
 
+    auto loadMaterial(std::string_view path) -> Core::Result<MaterialEntry> {
+      if (!assets) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Scene material has no asset root");
+      }
+
+      auto description = Assets::loadMaterial(*assets, assetPath(path));
+
+      if (!description) {
+        return std::unexpected(description.error());
+      }
+
+      MaterialEntry result;
+      result.material.baseColor = description->baseColor;
+      result.material.emissive = description->emissive;
+      result.material.model = description->model;
+      result.material.metallic = description->metallic;
+      result.material.roughness = description->roughness;
+      result.material.normalScale = description->normalScale;
+      result.material.doubleSided = description->doubleSided;
+      const std::array sources{&description->baseColorTexture,
+                               &description->metallicRoughnessTexture, &description->normalTexture,
+                               &description->emissiveTexture};
+      const std::array slots{&result.material.baseColorTexture,
+                             &result.material.metallicRoughnessTexture,
+                             &result.material.normalTexture, &result.material.emissiveTexture};
+      std::unordered_map<std::string, TextureEntry> pending;
+      std::uint64_t pendingBytes{};
+
+      for (std::size_t index = 0; index < sources.size(); ++index) {
+        if (!*sources[index]) {
+          continue;
+        }
+
+        const auto& source = **sources[index];
+        const auto key = textureKey(source);
+        result.textures.push_back(key);
+        auto existing = textures.find(key);
+
+        if (existing != textures.end()) {
+          if (index == 2 && !existing->second.normalEncoding) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Normal texture requires source B>=128: " + source.path);
+          }
+
+          *slots[index] = existing->second.texture;
+          continue;
+        }
+
+        auto local = pending.find(key);
+
+        if (local != pending.end()) {
+          if (index == 2 && !local->second.normalEncoding) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Normal texture requires source B>=128: " + source.path);
+          }
+
+          *slots[index] = local->second.texture;
+          continue;
+        }
+
+        auto image = Assets::loadImage(*assets, assetPath(source.path));
+
+        if (!image) {
+          return Core::fail(image.error().code,
+                            "Material texture '" + source.path + "': " + image.error().message);
+        }
+
+        bool normalEncoding = true;
+
+        for (std::size_t pixel = 2; normalEncoding && pixel < image->pixels.size(); pixel += 4) {
+          normalEncoding = image->pixels[pixel] >= 128;
+        }
+
+        if (index == 2 && !normalEncoding) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Normal texture requires source B>=128: " + source.path);
+        }
+
+        const auto size = textureBytes(*image, source.sampling.mipmaps);
+
+        if (size > budget - bytes - pendingBytes || textures.size() + pending.size() >= 4096) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Scene texture cache budget exhausted");
+        }
+
+        auto uploaded = renderer->uploadTexture(*image, source.sampling);
+
+        if (!uploaded) {
+          return Core::fail(uploaded.error().code,
+                            "Material texture '" + source.path + "': " + uploaded.error().message);
+        }
+
+        *slots[index] = *uploaded;
+        pending.emplace(key, TextureEntry{std::move(*uploaded), size, normalEncoding});
+        pendingBytes += size;
+      }
+
+      /** Only complete material loads publish new textures into the cache.
+       * 只有完整材质加载成功后，才将新上传的贴图发布到缓存。 */
+      textures.reserve(textures.size() + pending.size());
+
+      while (!pending.empty()) {
+        auto node = pending.extract(pending.begin());
+        const auto inserted = textures.insert(std::move(node));
+        bytes += inserted.position->second.bytes;
+      }
+      return result;
+    }
+
+    auto lighting(const World::Scene& scene, World::EntityId camera,
+                  const std::vector<World::EntityInfo>& entities) -> Core::Result<Lighting> {
+      auto world = scene.worldTransform(camera);
+      auto cameraInfo = scene.entity(camera);
+
+      if (!world || !cameraInfo) {
+        return std::unexpected(!world ? world.error() : cameraInfo.error());
+      }
+
+      auto position = Math::transformPoint(*world, {});
+
+      if (!position) {
+        return std::unexpected(position.error());
+      }
+
+      Lighting result;
+      result.viewPosition = *position;
+
+      if (cameraInfo->camera->projection == World::Projection::Orthographic) {
+        auto direction = Math::transformVector(*world, {0, 0, -1});
+
+        if (!direction) {
+          return std::unexpected(direction.error());
+        }
+
+        result.viewDirection = *direction;
+      }
+
+      for (const auto& entity : entities) {
+        if (!entity.light || !entity.light->enabled) {
+          continue;
+        }
+
+        if (result.lights.size() == 64) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Scene exceeds 64 enabled direct lights");
+        }
+
+        const auto& source = *entity.light;
+        auto transform = scene.worldTransform(entity.id);
+
+        if (!transform) {
+          return std::unexpected(transform.error());
+        }
+
+        auto lightPosition = Math::transformPoint(*transform, {});
+        auto direction = Math::transformVector(*transform, {0, 0, -1});
+
+        if (!lightPosition || !direction) {
+          return std::unexpected(!lightPosition ? lightPosition.error() : direction.error());
+        }
+
+        result.lights.push_back({.kind = source.kind,
+                                 .direction = *direction,
+                                 .position = *lightPosition,
+                                 .color = source.color,
+                                 .intensity = source.intensity,
+                                 .range = source.range,
+                                 .innerConeDegrees = source.innerConeDegrees,
+                                 .outerConeDegrees = source.outerConeDegrees});
+      }
+
+      return validatedLighting(result);
+    }
+
     auto frame(const World::Scene& scene, float aspect, std::optional<World::EntityId> camera)
         -> Core::Result<Frame> {
-      auto selected = camera ? Core::Result<World::EntityId>{*camera} : scene.primaryCamera();
+      try {
+        auto selected = camera ? Core::Result<World::EntityId>{*camera} : scene.primaryCamera();
 
-      if (!selected) {
-        return std::unexpected(selected.error());
-      }
+        if (!selected) {
+          return std::unexpected(selected.error());
+        }
 
-      auto view = scene.viewProjection(*selected, aspect);
-      auto entities = scene.entities();
+        auto view = scene.viewProjection(*selected, aspect);
+        auto entities = scene.entities();
 
-      if (!view) {
-        return std::unexpected(view.error());
-      }
+        if (!view) {
+          return std::unexpected(view.error());
+        }
 
-      if (!entities) {
-        return std::unexpected(entities.error());
-      }
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
 
-      std::unordered_set<std::string> needed;
-      std::size_t drawCount = 0;
+        auto lights = lighting(scene, *selected, *entities);
 
-      for (const auto& entity : *entities) {
-        if (entity.mesh && entity.mesh->visible) {
-          auto resourceKey = key(*entity.mesh);
+        if (!lights) {
+          return std::unexpected(lights.error());
+        }
+
+        std::unordered_set<std::string> needed;
+        std::unordered_set<std::string> neededMaterials;
+        std::size_t drawCount = 0;
+
+        for (const auto& entity : *entities) {
+          if (entity.mesh && entity.mesh->visible) {
+            auto resourceKey = key(*entity.mesh);
+
+            if (!resourceKey) {
+              return std::unexpected(resourceKey.error());
+            }
+
+            needed.insert(*resourceKey);
+
+            if (entity.material) {
+              neededMaterials.insert(entity.material->asset);
+            }
+            ++drawCount;
+          }
+        }
+
+        if (drawCount > 4096) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Visible scene exceeds 4096 mesh draws");
+        }
+
+        for (auto iterator = cache.begin(); iterator != cache.end();) {
+          if (!needed.contains(iterator->first)) {
+            bytes -= iterator->second.bytes;
+            iterator = cache.erase(iterator);
+          } else {
+            ++iterator;
+          }
+        }
+
+        for (auto iterator = materials.begin(); iterator != materials.end();) {
+          if (!neededMaterials.contains(iterator->first)) {
+            iterator = materials.erase(iterator);
+          } else {
+            ++iterator;
+          }
+        }
+
+        std::unordered_set<std::string> neededTextures;
+
+        for (const auto& [path, material] : materials) {
+          neededTextures.insert(material.textures.begin(), material.textures.end());
+        }
+
+        for (auto iterator = textures.begin(); iterator != textures.end();) {
+          if (!neededTextures.contains(iterator->first)) {
+            bytes -= iterator->second.bytes;
+            iterator = textures.erase(iterator);
+          } else {
+            ++iterator;
+          }
+        }
+
+        Frame frame;
+        frame.camera = *view;
+        /** Draw pointers borrow these mesh handles; reserve once and keep the frame
+         * move-only so their addresses remain stable throughout submission.
+         * 绘制指针借用这些网格句柄；一次性预留空间并仅允许移动帧，确保提交期间地址稳定。
+         */
+        frame.meshes.reserve(drawCount);
+        frame.draws.reserve(drawCount);
+
+        for (const auto& entity : *entities) {
+          if (!entity.mesh || !entity.mesh->visible) {
+            continue;
+          }
+
+          const auto resourceKey = key(*entity.mesh);
 
           if (!resourceKey) {
             return std::unexpected(resourceKey.error());
           }
 
-          needed.insert(*resourceKey);
-          ++drawCount;
-        }
-      }
+          auto found = cache.find(*resourceKey);
 
-      if (drawCount > 4096) {
-        return Core::fail(Core::ErrorCode::Unavailable, "Visible scene exceeds 4096 mesh draws");
-      }
+          if (found == cache.end()) {
+            auto entry = load(*entity.mesh);
 
-      for (auto iterator = cache.begin(); iterator != cache.end();) {
-        if (!needed.contains(iterator->first)) {
-          bytes -= iterator->second.bytes;
-          iterator = cache.erase(iterator);
-        } else {
-          ++iterator;
-        }
-      }
+            if (!entry) {
+              return std::unexpected(entry.error());
+            }
 
-      Frame frame;
-      frame.camera = *view;
-      /** Draw pointers borrow these mesh handles; reserve once and keep the frame
-       * move-only so their addresses remain stable throughout submission.
-       * 绘制指针借用这些网格句柄；一次性预留空间并仅允许移动帧，确保提交期间地址稳定。
-       */
-      frame.meshes.reserve(drawCount);
-      frame.draws.reserve(drawCount);
-
-      for (const auto& entity : *entities) {
-        if (!entity.mesh || !entity.mesh->visible) {
-          continue;
-        }
-
-        const auto resourceKey = key(*entity.mesh);
-
-        if (!resourceKey) {
-          return std::unexpected(resourceKey.error());
-        }
-
-        auto found = cache.find(*resourceKey);
-
-        if (found == cache.end()) {
-          auto entry = load(*entity.mesh);
-
-          if (!entry) {
-            return std::unexpected(entry.error());
+            auto inserted = cache.emplace(*resourceKey, std::move(*entry));
+            found = inserted.first;
+            bytes += found->second.bytes;
           }
 
-          auto inserted = cache.emplace(*resourceKey, std::move(*entry));
-          found = inserted.first;
-          bytes += found->second.bytes;
+          auto world = scene.worldTransform(entity.id);
+
+          if (!world) {
+            return std::unexpected(world.error());
+          }
+
+          Material material;
+
+          if (entity.material) {
+            auto cached = materials.find(entity.material->asset);
+
+            if (cached == materials.end()) {
+              auto loaded = loadMaterial(entity.material->asset);
+
+              if (!loaded) {
+                return Core::fail(loaded.error().code, "Scene material '" + entity.material->asset
+                                                           + "': " + loaded.error().message);
+              }
+
+              cached = materials.emplace(entity.material->asset, std::move(*loaded)).first;
+            }
+
+            material = cached->second.material;
+          }
+
+          frame.meshes.push_back(found->second.mesh);
+          frame.draws.push_back(
+              {&frame.meshes.back(), *world, entity.mesh->tint, std::move(material)});
         }
 
-        auto world = scene.worldTransform(entity.id);
+        auto changed = renderer->setLighting(*lights);
 
-        if (!world) {
-          return std::unexpected(world.error());
+        if (!changed) {
+          return std::unexpected(changed.error());
         }
 
-        frame.meshes.push_back(found->second.mesh);
-        frame.draws.push_back({&frame.meshes.back(), *world, entity.mesh->tint});
+        return Core::Result<Frame>{std::move(frame)};
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          "Prepare scene frame: " + std::string(error.what()));
       }
-
-      return Core::Result<Frame>{std::move(frame)};
     }
   };
 
@@ -377,7 +660,14 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    return SceneRenderStats{m_impl->cache.size(), m_impl->bytes};
+    std::uint64_t textureBytes{};
+
+    for (const auto& [key, entry] : m_impl->textures) {
+      textureBytes += entry.bytes;
+    }
+
+    return SceneRenderStats{m_impl->cache.size(), m_impl->bytes, m_impl->materials.size(),
+                            m_impl->textures.size(), textureBytes};
   }
 
   auto SceneRenderer::warnings() const -> Core::Result<std::vector<std::string>> {
@@ -414,6 +704,8 @@ namespace Dot::Graphics {
       return checked;
     }
 
+    m_impl->materials.clear();
+    m_impl->textures.clear();
     m_impl->cache.clear();
     m_impl->bytes = 0;
     return {};

@@ -312,3 +312,40 @@ TEST_CASE("scene_files.large_scene_round_trip_uses_batch_import") {
   REQUIRE(decoded);
   CHECK(decoded->entityCount().value() == 1000);
 }
+
+TEST_CASE("scene_files_material_and_light_roundtrip_and_strict_component_rejection") {
+  auto scene = makeScene();
+  const auto entity = scene.entities()->front().id;
+  REQUIRE(scene.setMaterial(entity, MaterialBinding{"assets/金属.dotmaterial"}));
+  Light light;
+  light.kind = LightKind::Spot;
+  light.color = {1, 0.5F, 0.2F};
+  light.intensity = 42;
+  light.range = 20;
+  light.innerConeDegrees = 10;
+  light.outerConeDegrees = 35;
+  light.enabled = false;
+  REQUIRE(scene.setLight(entity, light));
+  const auto source = encodeScene(scene).value();
+  auto decoded = decodeScene(source);
+  REQUIRE(decoded);
+  const auto loaded = decoded->entities()->front();
+  CHECK(loaded.material->asset == "assets/金属.dotmaterial");
+  CHECK(loaded.light->kind == LightKind::Spot);
+  CHECK(loaded.light->color == light.color);
+  CHECK(loaded.light->intensity == 42);
+  CHECK_FALSE(loaded.light->enabled);
+  CHECK(encodeScene(*decoded).value() == source);
+  auto json = Json::parse(source);
+  json["entities"][0]["light"]["kind"] = "unknown";
+  CHECK_FALSE(decodeScene(json.dump()));
+  json = Json::parse(source);
+  json["entities"][0]["light"]["range"] = -1;
+  CHECK_FALSE(decodeScene(json.dump()));
+  json = Json::parse(source);
+  json["entities"][0]["material"]["unknown"] = true;
+  CHECK_FALSE(decodeScene(json.dump()));
+  json = Json::parse(source);
+  json["entities"][0]["material"]["asset"] = "../escape.dotmaterial";
+  CHECK_FALSE(decodeScene(json.dump()));
+}

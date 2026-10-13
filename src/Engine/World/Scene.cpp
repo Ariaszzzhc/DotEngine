@@ -18,6 +18,8 @@ module Dot.World.Scene;
 
 import Dot.Core.Result;
 import Dot.Core.Text;
+import Dot.Core.Paths;
+import Dot.Graphics.Lighting;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Audio.Source;
@@ -237,6 +239,8 @@ namespace Dot::World {
       const auto* source = registry.try_get<AudioSource>(native);
       const auto* listener = registry.try_get<AudioListener>(native);
       const auto* script = registry.try_get<ScriptComponent>(native);
+      const auto* material = registry.try_get<MaterialBinding>(native);
+      const auto* light = registry.try_get<Light>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
@@ -246,7 +250,9 @@ namespace Dot::World {
               body ? std::optional{*body} : std::nullopt,
               source ? std::optional{*source} : std::nullopt,
               listener ? std::optional{*listener} : std::nullopt,
-              script ? std::optional{*script} : std::nullopt};
+              script ? std::optional{*script} : std::nullopt,
+              material ? std::optional{*material} : std::nullopt,
+              light ? std::optional{*light} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -835,6 +841,66 @@ namespace Dot::World {
     }
 
     m_impl->registry.emplace_or_replace<MeshRenderer>(*native, std::move(*mesh));
+    return {};
+  }
+
+  auto Scene::setMaterial(EntityId entity, std::optional<MaterialBinding> material)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!material) {
+      m_impl->registry.remove<MaterialBinding>(*native);
+      return {};
+    }
+
+    if (!Core::isPortableRelativePath(material->asset)
+        || !material->asset.ends_with(".dotmaterial")) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Material binding requires a portable .dotmaterial asset path");
+    }
+
+    m_impl->registry.emplace_or_replace<MaterialBinding>(*native, std::move(*material));
+    return {};
+  }
+
+  auto Scene::setLight(EntityId entity, std::optional<Light> light) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!light) {
+      m_impl->registry.remove<Light>(*native);
+      return {};
+    }
+
+    Graphics::Lighting source;
+    source.lights = {{.kind = light->kind,
+                      .color = light->color,
+                      .intensity = light->intensity,
+                      .range = light->range,
+                      .innerConeDegrees = light->innerConeDegrees,
+                      .outerConeDegrees = light->outerConeDegrees}};
+    auto checked = Graphics::validatedLighting(source);
+
+    if (!checked) {
+      return Core::fail(checked.error().code, "Scene light: " + checked.error().message);
+    }
+
+    m_impl->registry.emplace_or_replace<Light>(*native, *light);
     return {};
   }
 

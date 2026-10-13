@@ -14,7 +14,7 @@ TEST_CASE("geometry.cube_bounds_and_outward_faces") {
   auto mesh = cube({2, 4, 6});
   REQUIRE(mesh);
   REQUIRE(validateMesh(*mesh));
-  CHECK(mesh->vertices.size() == 8);
+  CHECK(mesh->vertices.size() == 24);
   CHECK(mesh->indices.size() == 36);
   auto bounds = meshBounds(*mesh);
   REQUIRE(bounds);
@@ -31,6 +31,9 @@ TEST_CASE("geometry.cube_bounds_and_outward_faces") {
                                  first.z * second.x - first.x * second.z,
                                  first.x * second.y - first.y * second.x};
     CHECK(Dot::Math::dot(normal, a) > 0);
+    const auto authored = mesh->vertices[mesh->indices[face]].normal;
+    CHECK(Dot::Math::dot(normal, authored) > 0);
+    CHECK(Dot::Math::length(authored) == doctest::Approx(1));
   }
 }
 
@@ -40,6 +43,9 @@ TEST_CASE("geometry.quad_bounds_and_positive_z_winding") {
   REQUIRE(validateMesh(*mesh));
   CHECK(mesh->vertices.size() == 4);
   CHECK(mesh->indices.size() == 6);
+  CHECK(mesh->vertices[0].normal == Dot::Math::Vec3{0, 0, 1});
+  CHECK(mesh->vertices[0].texCoord == Dot::Math::Vec2{0, 1});
+  CHECK(mesh->vertices[2].texCoord == Dot::Math::Vec2{1, 0});
   auto bounds = meshBounds(*mesh);
   REQUIRE(bounds);
   CHECK(bounds->minimum == Dot::Math::Vec3{-1, -2, 0});
@@ -140,8 +146,8 @@ TEST_CASE("geometry.flat_normals_preserve_winding_surface_attributes_and_source"
 
   CHECK(result->vertices[0].texCoord == source.vertices[0].texCoord);
   CHECK(result->vertices[0].color == source.vertices[0].color);
-  CHECK(source.vertices[0].normal == Dot::Math::Vec3{});
-  CHECK(source.vertices.size() == 8);
+  CHECK(source.vertices[0].normal == Dot::Math::Vec3{0, 0, -1});
+  CHECK(source.vertices.size() == 24);
 }
 
 TEST_CASE("geometry.flat_normals_handle_extreme_scales_and_reject_degenerate_expansion") {
@@ -223,4 +229,29 @@ TEST_CASE("geometry.sphere_rejects_bad_tessellation_radius_and_collapsed_precisi
   CHECK_FALSE(sphere(1, 257));
   CHECK_FALSE(sphere(1, 8, 1));
   CHECK_FALSE(sphere(1, 8, 129));
+}
+
+TEST_CASE("geometry.surface_analysis_shares_normal_map_requirements_without_a_device") {
+  auto mesh = quad().value();
+  auto surface = meshSurface(mesh);
+  REQUIRE(surface);
+  CHECK(surface->hasNormals);
+  CHECK(surface->hasNormalMapFrame);
+  CHECK(meshSurface(cube().value())->hasNormalMapFrame);
+  CHECK(meshSurface(sphere().value())->hasNormalMapFrame);
+  mesh.vertices[0].normal = {};
+  CHECK_FALSE(meshSurface(mesh)->hasNormals);
+  CHECK_FALSE(meshSurface(mesh)->hasNormalMapFrame);
+  mesh = quad().value();
+
+  for (auto& vertex : mesh.vertices) {
+    vertex.texCoord = {};
+  }
+
+  CHECK(meshSurface(mesh)->hasNormals);
+  CHECK_FALSE(meshSurface(mesh)->hasNormalMapFrame);
+  mesh = quad().value();
+  mesh.vertices[0].texCoord.x = 1e6F + 1;
+  CHECK_FALSE(meshSurface(mesh)->hasNormalMapFrame);
+  CHECK_FALSE(meshSurface({}));
 }

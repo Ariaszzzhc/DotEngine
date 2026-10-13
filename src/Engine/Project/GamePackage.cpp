@@ -1,11 +1,13 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <expected>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -20,6 +22,10 @@ import Dot.Core.Text;
 import Dot.World.SceneFiles;
 import Dot.Project.GameSession;
 import Dot.Assets.Mesh;
+import Dot.Assets.Material;
+import Dot.Assets.Image;
+import Dot.Graphics.Geometry;
+import Dot.Graphics.Renderer;
 import Dot.Audio.Clip;
 
 namespace Dot::Project {
@@ -287,6 +293,9 @@ namespace Dot::Project {
       }
 
       std::unordered_set<std::string> meshes;
+      std::unordered_map<std::string, Assets::MaterialDescription> materials;
+      std::unordered_map<std::string, Graphics::MeshSurface> surfaces;
+      std::unordered_map<std::string, bool> images;
       std::unordered_set<std::string> clips;
 
       for (const auto& entity : validationScene->entities().value()) {
@@ -297,6 +306,98 @@ namespace Dot::Project {
           if (!mesh) {
             return Core::fail(mesh.error().code,
                               "Export mesh " + entity.mesh->asset + ": " + mesh.error().message);
+          }
+        }
+
+        if (entity.material) {
+          auto cached = materials.find(entity.material->asset);
+
+          if (cached == materials.end()) {
+            auto loaded
+                = Assets::loadMaterial(checked->files().value(), path(entity.material->asset));
+
+            if (!loaded) {
+              return Core::fail(loaded.error().code, "Export material " + entity.material->asset
+                                                         + ": " + loaded.error().message);
+            }
+
+            cached = materials.emplace(entity.material->asset, std::move(*loaded)).first;
+          }
+
+          const auto* material = &cached->second;
+
+          if (entity.mesh && material->model == Graphics::SurfaceModel::MetallicRoughness) {
+            const auto key = entity.mesh->kind == World::MeshKind::Cube   ? "builtin:cube"
+                             : entity.mesh->kind == World::MeshKind::Quad ? "builtin:quad"
+                                                                          : entity.mesh->asset;
+            auto analyzed = surfaces.find(key);
+
+            if (analyzed == surfaces.end()) {
+              auto geometry = entity.mesh->kind == World::MeshKind::Cube ? Graphics::cube()
+                                                                         : Graphics::quad();
+
+              if (entity.mesh->kind == World::MeshKind::Asset) {
+                auto loaded = Assets::loadMesh(checked->files().value(), path(entity.mesh->asset));
+
+                if (!loaded) {
+                  return std::unexpected(loaded.error());
+                }
+
+                geometry = std::move(loaded->data);
+              }
+
+              if (!geometry) {
+                return std::unexpected(geometry.error());
+              }
+
+              auto surface = Graphics::meshSurface(*geometry);
+
+              if (!surface) {
+                return std::unexpected(surface.error());
+              }
+
+              analyzed = surfaces.emplace(key, *surface).first;
+            }
+
+            if (!analyzed->second.hasNormals
+                || (material->normalTexture && !analyzed->second.hasNormalMapFrame)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Export physical mesh lacks required normals/UVs: " + entity.name);
+            }
+          }
+
+          const std::array sources{&material->baseColorTexture, &material->metallicRoughnessTexture,
+                                   &material->normalTexture, &material->emissiveTexture};
+
+          for (std::size_t index = 0; index < sources.size(); ++index) {
+            if (!*sources[index]) {
+              continue;
+            }
+
+            const auto& source = **sources[index];
+            auto found = images.find(source.path);
+
+            if (found == images.end()) {
+              auto image = Assets::loadImage(checked->files().value(), path(source.path));
+
+              if (!image) {
+                return Core::fail(image.error().code,
+                                  "Export texture " + source.path + ": " + image.error().message);
+              }
+
+              bool normalEncoding = true;
+
+              for (std::size_t pixel = 2; pixel < image->pixels.size(); pixel += 4) {
+                normalEncoding = normalEncoding && image->pixels[pixel] >= 128;
+              }
+
+              found = images.emplace(source.path, normalEncoding).first;
+            }
+
+            if (index == 2 && !found->second) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Export normal map requires source B>=128: " + source.path);
+            }
           }
         }
 

@@ -69,6 +69,8 @@ namespace Dot::Editor {
               {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}},
              {"camera", nullptr},
              {"mesh", nullptr},
+             {"material", nullptr},
+             {"light", nullptr},
              {"rigidBody", nullptr},
              {"audioSource", nullptr},
              {"audioListener", nullptr},
@@ -134,8 +136,8 @@ namespace Dot::Editor {
         (*entity)["transform"] = command["value"];
       } else {
         const auto component = command["component"].get<std::string>();
-        constexpr std::array components{"camera",      "mesh",          "rigidBody",
-                                        "audioSource", "audioListener", "script"};
+        constexpr std::array components{"camera",        "mesh",   "rigidBody", "audioSource",
+                                        "audioListener", "script", "material",  "light"};
 
         if (std::ranges::find(components, component) == components.end()) {
           return Core::fail(Core::ErrorCode::InvalidArgument,

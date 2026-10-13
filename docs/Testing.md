@@ -42,9 +42,9 @@ resize, event dispatch, presentation and destruction. Unit tests must not create
 window just to inspect pure data. Separate CPU validation and pixel checks from
 native presentation. Repeated creation/destruction specifically verifies lifetime;
 do not share one global fixture if that would hide leaks or initialization failures.
-The current selections contain 182 unit, 456 device-free integration, 59 offscreen
-GPU, 39 native and 85 acceptance cases. Counts overlap through native/acceptance
-labels; all 812 original CTest identities remain covered.
+The current selections contain 184 unit, 463 device-free integration, 63 offscreen
+GPU, 40 native and 87 acceptance cases. Counts overlap through native/acceptance
+labels; all 827 CTest identities remain covered, including every previous case.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
 
@@ -55,3 +55,12 @@ and Epic's [low-level tests](https://dev.epicgames.com/documentation/unreal-engi
 and [automation categories](https://dev.epicgames.com/documentation/en-us/unreal-engine/automation-test-framework-in-unreal-engine).
 DotEngine retains its own test-only executables, APIs and lifecycle checks; these
 references explain test methodology, not implementation compatibility.
+
+A subsequent source review used the authenticated local GitHub CLI to access
+EpicGames/UnrealEngine (`release`):
+[DateTimeTest.cpp](https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Source/Runtime/Core/Tests/Misc/DateTimeTest.cpp)
+performs date/time API assertions, while
+[FoundationTests.Target.cs](https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Source/Programs/LowLevelTests/FoundationTests/FoundationTests.Target.cs)
+defines a separate low-level test target. The connected GitHub app's earlier 404
+was an access-path limitation, not evidence that the human account lacked access.
+No Unreal source is copied into the engine.

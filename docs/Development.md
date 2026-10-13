@@ -2667,3 +2667,75 @@ pass. Latest native archive remains 267 entries / 43,165,492 bytes, with CRC and
 private/test/Finder exclusions verified; staged application signatures are verified
 by archive preparation. Active caches, latest package and the private untracked
 document remain preserved. Validation is arm64 macOS only.
+
+
+### Persisted physical materials and scene lights
+
+Added a separate Dot.Assets.Material interface/implementation for GPU-free physical
+material descriptions and one strict, bounded .dotmaterial structure. Factors,
+texture paths/slot spaces and full sampler options are validated before loading;
+files reject links/special files and unsafe parents, and saves are atomic. Material
+codec/file acceptance passed before rendering consumers were exercised. Texture
+sampling validation is now shared with direct renderer upload. No format version,
+legacy loader, public header tree or compiler/linker override was added.
+
+World scenes now own optional material bindings and directional/point/spot light
+descriptions. Setters validate without opening devices/assets and preserve old
+state on failure. Scene codec, document history, inspector/agent component edits,
+Play clones and exported packages preserve these descriptions. Lights use entity
+world position and local -Z direction; selected-camera world pose supplies actual
+perspective/orthographic view rays. More than 64 enabled lights fails explicitly.
+Built-in cube geometry is replaced by 24 sharp face-corner normal/UV vertices;
+quad carries positive-Z normals and full UVs. Authored missing attributes are not
+invented. CPU mesh-surface analysis is shared by GPU upload and export validation.
+
+SceneRenderer now owns bounded shared mesh/material/texture caches, including
+texture GPU bytes in its budget. Keys include actual paths and sampling choices;
+new slot textures publish only after complete loads, and partial failure releases
+pending resources. Pruning, explicit clear/reload, counters and creating-thread
+constraints remain real. GPU readback tests cover saved physical response, point
+light hierarchy/range, camera overrides, shared sampling, cache refresh/pruning,
+wrong/missing resources, normal encoding, light counts and byte budgets. Export
+checks actual materials/images and physical mesh normal/UV requirements before
+publishing, with no leftover destination on failure.
+
+Native PBR acceptance now loads saved scene/mesh/material/image assets before
+rendering its fifteen-sphere gallery, checks HDR highlights and shared counts,
+presents/resizes and verifies release. The GPU image was visually inspected after
+lossless format conversion. Feature Lab retains its independent editable project
+and now includes copper PBR, a normal-mapped quad and a directional headlight; its
+real preview/play/export acceptance checks the new native components/cache counts.
+These are basic inspector/resource/agent authoring capabilities, not a mature
+material UI, IBL/shadows/SSAO, realistic finished game or large-scene performance.
+Material/light script accessors and the requested script namespace/editor replacement
+remain planned, along with the rest of the original roadmap.
+
+Read-only Unreal source access succeeded through local gh as Ariaszzzhc, on the
+repository's release branch. DateTimeTest.cpp and FoundationTests.Target.cs were
+reviewed; the earlier connected-app 404 did not reflect the user's account access.
+Testing.md records primary references. No Unreal code was copied.
+
+Initial checks caught an unsupported expected comparison in a test, material-file
+symlink handling inherited from canonical FileSystem access, test aggregate/API
+usage and float32 JSON roundtrip expectations. Fixed explicit value comparison,
+strict material path checks and test construction. Replaced the old primitive
+layout assertion with full normals/UV checks; the missing-normal GPU failure case
+still explicitly supplies missing normals. No failure assertion was removed.
+Focused final material/scene/native regressions pass 38/38 in 17.08 seconds.
+The inventory retains every prior name and adds 15 cases: 827 total, with 184 pure
+CPU unit, 63 offscreen GPU, 40 native and 87 acceptance selections. Debug full
+suite passes 827/827 in 122.47 seconds.
+
+Final arm64 macOS Release/NDEBUG full suite passes 827/827 in 32.74 seconds
+(769 doctest cases, 58 executable checks). Unit-only runs with invalid SDL video/
+audio drivers pass 184/184 in Debug/Release (1.15/0.45 seconds). All 242 C/C++
+files pass clang-format; diff/private-reference checks pass. Reviewed owned
+asset descriptions, strict parsing/types/paths, cache failure/pruning/byte accounting,
+texture sharing/sampling/normal encoding, camera/light hierarchy, CPU/GPU surface
+requirements, editor transactions and export-before-publication failure cleanup.
+
+Latest native ZIP is refreshed at its existing path: 273 entries, 43,401,235 bytes.
+CRC, new Feature Lab material assets, executable modes, runtime manifests and
+private/test/Finder exclusions pass. Staged app and all 16 native strict signatures
+and relative/system loader references pass. Preserved build caches/latest package
+and the private untracked document; no Windows/Linux validation is claimed.

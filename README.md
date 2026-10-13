@@ -68,7 +68,8 @@ The [capability roadmap](docs/EngineRoadmap.md) records the required large-3D-ga
 and mature-editor end state. Current rendering/editor foundations do not yet meet
 that target; texture sampling, surface resource ownership and HDR exposure/tone mapping are
 implemented; direct metallic/roughness PBR and punctual lighting are available
-through the renderer API. Scene/material authoring, HDRI IBL, soft shadows, SSAO and editor production tools remain
+through saved scene material/light components, shared preview/Play/export and basic
+inspector/agent authoring. HDRI IBL, soft shadows, SSAO and mature editor tools remain
 in development. [Rendering](docs/Rendering.md) distinguishes current contracts
 from the required rendering end state.
 

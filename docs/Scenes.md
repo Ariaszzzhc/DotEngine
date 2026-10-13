@@ -8,7 +8,7 @@ fresh scene identity. Existing live scenes and their handles remain independent.
 
 The root requires exactly `version` (integer 1), `name`, and `entities`. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
-`rigidBody`, `audioSource`, `audioListener`, and `script` are optional and may be null.
+`rigidBody`, `audioSource`, `audioListener`, `script`, `material`, and `light` are optional and may be null.
 Unknown or duplicate fields are rejected.
 Documents are limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
 acyclic with depth at most 256.
@@ -49,6 +49,14 @@ Meshes require `kind` (`cube`/`quad`/`asset`), `asset`, `tint`, and boolean `vis
 Built-ins require an empty asset path. Asset paths use relative UTF-8 forward-slash
 paths without drive prefixes or parent traversal, ending in `.dotmesh` or `.obj`.
 Asset existence is checked when rendering, rather than substituting missing data.
+
+Material bindings require `asset`, a portable project-root relative `.dotmaterial`
+path. Missing bindings use the mesh's deliberate unlit tint. Light descriptions
+require `kind` (`directional`/`point`/`spot`), RGB `color`, `intensity`, `range`,
+`innerConeDegrees`, `outerConeDegrees` and boolean `enabled`. Entity transforms
+provide the world position and local -Z ray direction; ranges are world meters.
+Descriptions are validated without opening a GPU or reading material/texture
+files. See [rendering contracts](Rendering.md) for factor/unit/resource limits.
 
 Rigid bodies require `motion` (`static`/`kinematic`/`dynamic`), `shape`
 (`box`/`sphere`/`capsule`), `halfExtents`, `radius`, `halfHeight`, `velocity`, `mass`,

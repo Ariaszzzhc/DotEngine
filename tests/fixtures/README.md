@@ -18,3 +18,7 @@ external artwork or HDRI assets.
 PNG chunks were written with standard CRC/zlib encoding; the Radiance payload uses
 uncompressed RGBE texels appropriate for its tiny width. Committed fixture bytes
 are platform-independent. Runtime and CTest do not invoke image conversion tools.
+
+`normal.png` is an 8x8 procedurally encoded tangent-normal checker (RGBA8, B=218),
+used as linear data for persisted material/scene acceptance. It is a test fixture,
+not a production art asset.

@@ -73,6 +73,54 @@ namespace Dot::Graphics {
     return bounds;
   }
 
+  auto meshSurface(const MeshData& data) -> Core::Result<MeshSurface> {
+    auto bounds = meshBounds(data);
+
+    if (!bounds) {
+      return std::unexpected(bounds.error());
+    }
+
+    MeshSurface result;
+    result.bounds = *bounds;
+    result.hasNormals = std::ranges::all_of(
+        data.vertices, [](const Vertex& vertex) { return vertex.normal != Math::Vec3{}; });
+    result.hasNormalMapFrame = result.hasNormals;
+    const auto count = data.indices.empty() ? data.vertices.size() : data.indices.size();
+    const auto corner = [&](std::size_t index) -> const Vertex& {
+      return data.vertices[data.indices.empty() ? index : data.indices[index]];
+    };
+
+    for (std::size_t face = 0; result.hasNormalMapFrame && face < count; face += 3) {
+      const auto& a = corner(face);
+      const auto& b = corner(face + 1);
+      const auto& c = corner(face + 2);
+      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
+      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
+      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
+      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
+      const auto det = ux * vy - uy * vx;
+      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
+      const std::array<double, 3> first{static_cast<double>(b.position.x) - a.position.x,
+                                        static_cast<double>(b.position.y) - a.position.y,
+                                        static_cast<double>(b.position.z) - a.position.z};
+      const std::array<double, 3> second{static_cast<double>(c.position.x) - a.position.x,
+                                         static_cast<double>(c.position.y) - a.position.y,
+                                         static_cast<double>(c.position.z) - a.position.z};
+      const auto area = std::hypot(first[1] * second[2] - first[2] * second[1],
+                                   first[2] * second[0] - first[0] * second[2],
+                                   first[0] * second[1] - first[1] * second[0]);
+      result.hasNormalMapFrame
+          = scale > 0 && std::abs(det) >= 1e-12 && std::abs(det) > scale * 1e-6 && area > 0;
+
+      for (const auto* vertex : {&a, &b, &c}) {
+        result.hasNormalMapFrame = result.hasNormalMapFrame && std::abs(vertex->texCoord.x) <= 1e6
+                                   && std::abs(vertex->texCoord.y) <= 1e6;
+      }
+    }
+
+    return result;
+  }
+
   auto withFlatNormals(const MeshData& mesh) -> Core::Result<MeshData> {
     auto checked = validateMesh(mesh);
 
@@ -193,13 +241,33 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Cube size underflows its vertex range");
     }
 
+    const std::array<Math::Vec3, 8> positions{{{-half.x, -half.y, -half.z},
+                                               {half.x, -half.y, -half.z},
+                                               {half.x, half.y, -half.z},
+                                               {-half.x, half.y, -half.z},
+                                               {-half.x, -half.y, half.z},
+                                               {half.x, -half.y, half.z},
+                                               {half.x, half.y, half.z},
+                                               {-half.x, half.y, half.z}}};
+    const std::array<std::array<std::uint32_t, 4>, 6> faces{
+        {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {3, 7, 6, 2}, {0, 4, 7, 3}, {1, 2, 6, 5}}};
+    const std::array<Math::Vec3, 6> normals{
+        {{0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}}};
+    const std::array<Math::Vec2, 4> uvs{{{0, 1}, {1, 1}, {1, 0}, {0, 0}}};
     MeshData mesh;
-    mesh.vertices
-        = {{{-half.x, -half.y, -half.z}}, {{half.x, -half.y, -half.z}}, {{half.x, half.y, -half.z}},
-           {{-half.x, half.y, -half.z}},  {{-half.x, -half.y, half.z}}, {{half.x, -half.y, half.z}},
-           {{half.x, half.y, half.z}},    {{-half.x, half.y, half.z}}};
-    mesh.indices = {0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
-                    3, 7, 6, 3, 6, 2, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5};
+    mesh.vertices.reserve(24);
+    mesh.indices.reserve(36);
+
+    for (std::uint32_t face = 0; face < 6; ++face) {
+      for (std::uint32_t corner = 0; corner < 4; ++corner) {
+        mesh.vertices.push_back(
+            {positions[faces[face][corner]], {1, 1, 1, 1}, normals[face], uvs[corner]});
+      }
+
+      const auto base = face * 4;
+      mesh.indices.insert(mesh.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+    }
+
     return mesh;
   }
 
@@ -216,8 +284,10 @@ namespace Dot::Graphics {
     }
 
     MeshData mesh;
-    mesh.vertices
-        = {{{-halfX, -halfY, 0}}, {{halfX, -halfY, 0}}, {{halfX, halfY, 0}}, {{-halfX, halfY, 0}}};
+    mesh.vertices = {{{-halfX, -halfY, 0}, {1, 1, 1, 1}, {0, 0, 1}, {0, 1}},
+                     {{halfX, -halfY, 0}, {1, 1, 1, 1}, {0, 0, 1}, {1, 1}},
+                     {{halfX, halfY, 0}, {1, 1, 1, 1}, {0, 0, 1}, {1, 0}},
+                     {{-halfX, halfY, 0}, {1, 1, 1, 1}, {0, 0, 1}, {0, 0}}};
     mesh.indices = {0, 1, 2, 0, 2, 3};
     return mesh;
   }
