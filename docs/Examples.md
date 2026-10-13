@@ -57,12 +57,9 @@ a native audio endpoint, and relocated standalone startup after authoring deleti
 A GPU readback preview is generated under the test build's example_acceptance
 folder. Local verification covers arm64 macOS; Windows/Linux remain unvalidated.
 
-This sample exercises the listed systems. Dedicated exhaustive component/API
-acceptance scenes are separate work; this game is not evidence of full API coverage.
-
-
-The [Feature Lab acceptance project](Acceptance.md) separately inventories and
-executes the complete current runtime SDK against native components and services.
+This sample exercises the listed systems. The [Feature Lab acceptance project](Acceptance.md)
+separately inventories and executes the complete current runtime SDK against native
+components and services; the sample alone is not evidence of full API coverage.
 
 
 The [project home](ProjectHome.md) can create a writable Prism Relay copy with the

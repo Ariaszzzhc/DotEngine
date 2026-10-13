@@ -2,7 +2,7 @@
 
 The graphics layer provides persistent GPU scene targets and an isolated Dear
 ImGui context with official SDL3/WebGPU backends. This is the rendering/input
-foundation for the editor; the full project editor window remains subsequent work.
+foundation for the [native project editor](Editor.md) and [project home](ProjectHome.md).
 
 The vcpkg manifest pins Dear ImGui 1.92.9b docking through the checked-in baseline
 recipe and an overlay at port version 1. The overlay exposes only the required

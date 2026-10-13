@@ -33,7 +33,8 @@ resource/script authoring, Play/hot reload and standalone native game export.
 
 See [project home and automation](docs/ProjectHome.md), [editor workflow](docs/Editor.md),
 [playable example](docs/Examples.md), [export](docs/Export.md) and
-[acceptance coverage](docs/Acceptance.md). Local validation is arm64 macOS;
+[acceptance coverage](docs/Acceptance.md). [Delivery evidence](docs/Delivery.md)
+records the usable workflow and current feature boundaries. Local validation is arm64 macOS;
 Windows/Linux implementation support is not a claim of local validation.
 
 ## Portable editor distribution
@@ -48,12 +49,13 @@ compiler, SDK, font, templates and native libraries. See
 
 ## Current state
 
-The core is a static library using C++ modules, with diagnostics, error results,
-fixed-step timing, and memory statistics. The runtime currently exercises these
-foundations, scoped events, and atomic project file access. Interfaces and
-implementation units are separate. The native editor opens a project home by default,
-with validated starter/game/laboratory creation, project editing, Play and native export.
-Further release/distribution refinement remains under development.
+The static C++26 module library provides native scenes, WebGPU rendering, physics,
+audio and entity-attached TypeScript scripts. Interfaces and implementation units
+are separate. The editor includes validated project creation, scene/resource/script
+editing, Play with hot reload, automation and standalone native export. Prism Relay
+is a playable example; Feature Lab exercises every component and runtime SDK member.
+The portable editor archive supports tested local deployment. Release signing,
+notarization and installer publication have not been validated.
 
 SDL3 windowing, input, and the application loop are available. Run
 `build/debug/bin/DotRuntime --window-smoke` in a desktop session for a short native
@@ -134,11 +136,11 @@ See `docs/Development.md` for implementation milestones and actual validation.
 `Dot.Script.Runtime` executes project-relative JavaScript ESM through a bounded
 QuickJS-NG realm, with scoped modules, JSON export calls, Promise jobs, contextual
 errors, and allocation/time limits. `--script-test <existing-directory>` exercises
-the real VM and cleanup. See `docs/Scripting.md` for contracts; TypeScript compilation,
-engine host APIs, script components, and hot reload remain under development.
+the real VM and cleanup. See `docs/Scripting.md` for native TypeScript compilation,
+scene/component/input/physics/audio APIs, entity lifecycle and hot-reload contracts.
 
 `Dot.Core.Process` runs explicit tools without shell interpolation, captures
 bounded stdout/stderr, preserves real exit status, and cleans up on timeout.
 `--process-test <fixture-executable> <existing-directory>` verifies real children;
-see `docs/Processes.md`. This supplies the execution boundary for the standalone
-TypeScript compiler, whose integration remains to be implemented.
+see `docs/Processes.md`. This supplies the execution boundary for the integrated
+standalone Go TypeScript compiler, without a Node.js dependency.

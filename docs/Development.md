@@ -2244,3 +2244,42 @@ ad-hoc signs distributed binaries.
 - The earlier three project-home commits were pushed after a definitive GitHub SSL
   timeout and a bounded HTTP/1.1 retry; remote main was verified at 841ad7b. The full
   engine objective remains active pending final delivery audit of all requirements.
+
+
+### Final workflow delivery audit and resource refresh
+
+The final audit traced the authoring-to-native-game workflow through implementation
+and runnable acceptance: required native stack/static module library, project home,
+native scene/components, resource and attached ESM authoring, Play/hot reload, shared
+agent commands, independent native export, playable Prism Relay, Feature Lab and
+portable editor deployment. docs/Delivery.md records the evidence and current
+feature boundaries. Earlier milestone limitations remain historical entries;
+stale current README/editor/script/GUI/example claims were corrected.
+
+The audit found editor SDK/templates were copied only after relinking. They now
+have an explicit resource dependency refreshed on every editor/distribution build,
+removing only owned generated SDK/template trees so deleted files do not linger.
+Debug and Release probes inserted obsolete generated files, rebuilt resources
+without relinking and verified exact source/copy byte inventories and probe removal.
+Authoring projects and native player-kit ownership remain separate from these trees.
+
+- Final arm64 macOS Debug and Release/NDEBUG pass all 767/767 CTest cases (714
+  doctest and 53 executable checks), taking 76.44/32.81 seconds. Both builds pass;
+  the actual Release build uses -O3 -DNDEBUG. Native graphics/audio, compiler,
+  lifetime/failure, full SDK/component, example and relocated distribution cases
+  pass. No assertions-only validation or fake hardware success was substituted.
+- All 211 C/C++ files pass clang-format; diff whitespace and private/reference/
+  toolchain-path scans pass. Delivery-related local document links resolve.
+  The private local design document remains untracked and is absent from the archive.
+- Regenerated Release archive: 219 entries, 43,122,457 bytes. CRC, executable
+  permissions and private/stale-resource exclusion pass. All 16 delivered Mach-O
+  files pass strict codesign verification and relative/system loader-reference
+  inspection. Actual final archive extraction and native home startup pass.
+- Reviewed generated-directory ownership, dependency ordering/no target cycle,
+  rebuilds without code relinking, removed source cleanup, shared installation
+  inputs, platform-independent CMake paths and evidence accuracy. No public header
+  installation or local LLVM path was introduced. Caller environment is preserved.
+  Windows/Linux implementation remains unvalidated locally; release identity
+  signing/notarization, installer publication and manual mouse acceptance are not
+  claimed. Current renderer/import/editor feature boundaries are explicit in delivery
+  documentation rather than hidden by a blanket production or exhaustive claim.

@@ -7,8 +7,8 @@ The API follows the [official embedding API](https://quickjs-ng.github.io/quickj
 The [native TypeScript compiler](#native-typescript-compilation) produces ESM for
 this layer. The [registered host bridge and core scene SDK](#registered-host-services)
 are implemented together with persistent instances and the entity lifecycle service.
-Source hot reload is implemented through the service below; remaining subsystem
-APIs are still to be implemented.
+Source hot reload and native scene/component/input/physics/audio APIs are implemented
+through the services below. See [acceptance coverage](Acceptance.md) for SDK evidence.
 
 Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entry,
 and call an exported function through its scoped ModuleId. Entry paths are root
@@ -366,8 +366,8 @@ for actual TypeScript classes with private state and inherited hooks, two native
 entities driven independently through sixty async updates, contextual failure
 recovery, explicit stop calls, stale-handle rejection and complete compiler/process/
 VM cleanup. This acceptance caller invokes hooks explicitly; the entity lifecycle
-service below provides attached descriptions, persistence and scheduling. Hot
-reload remains to be implemented.
+service below provides attached descriptions, persistence and scheduling, with
+source hot reload provided by LiveScripts.
 
 # Entity-attached lifecycle service
 
@@ -457,8 +457,9 @@ start/sixty async updates/fixed updates/stop on two independent native entities,
 and verify original handles are foreign after load plus full compiler/process/VM
 cleanup. `--script-components-render-test` also validates real GPU pixels before/
 after lifecycle-driven native movement. Only macOS Debug/Release are validated.
-The source hot-reload service below extends this lifecycle layer. Remaining
-subsystem APIs, editor/project/export and the example game remain future work.
+The source hot-reload service below extends this lifecycle layer. Native input,
+physics and audio bindings are described below; [editor](Editor.md), [export](Export.md)
+and [example](Examples.md) workflows consume these same native services.
 
 # Source hot reload
 

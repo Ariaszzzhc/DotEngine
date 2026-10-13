@@ -214,15 +214,21 @@ include(cmake/Examples.cmake)
 add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 add_dependencies(DotEditor DotRuntimeKit)
-add_custom_command(TARGET DotEditor POST_BUILD
+# Refresh owned resources even when code needs no relink; removed sources must not linger.
+# 即使代码无需重新链接也刷新拥有的资源，已删除的源文件不能残留。
+add_custom_target(DotEditorResources
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
+        "$<TARGET_FILE_DIR:DotEditor>/resources/templates"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/scripts" "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/examples/PrismRelay" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/PrismRelay"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_TYPESCRIPT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native/LICENSE.txt"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt")
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt"
+    VERBATIM)
+add_dependencies(DotEditor DotEditorResources)
 
 include(cmake/EditorDistribution.cmake)
 

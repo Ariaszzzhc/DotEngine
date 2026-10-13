@@ -157,8 +157,8 @@ resource file drafts, opening Save and close / Discard / Cancel confirmation.
 The viewport renders the actual game primary camera into a reusable GPU target;
 missing camera/assets display errors and can be recovered by editing/undo. Native
 renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
-resource/code authoring is provided through Resources and the code page; project
-export remains a subsequent stage.
+resource/code authoring is provided through Resources and the code page. Export
+publishes standalone native games or data packages through the shared command below.
 
 `send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
 It returns `queued:true` and an absolute `response` path, **not** applied success.
