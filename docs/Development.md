@@ -1931,3 +1931,44 @@ continue using real compilation/live reload.
   branch invariants, setup failures/realm faults, native service destruction and
   unchanged update/close semantics. Formatting and whitespace checks pass; no
   sanitizer or environment override was introduced. Other platforms unvalidated.
+
+
+### Portable game data and editor export
+
+Added Dot.Project.GamePackage with separate interface/implementation, strict
+versioned manifests, bounded native-scene/resource/ESM publication and independently
+owned loaded snapshots. CLI and the workspace Export data modal share publication;
+workspace export includes unsaved native scene values without changing authoring
+revision/dirty state. DotRuntime --game plays captured code without a compiler.
+
+- arm64 macOS Debug and Release/NDEBUG each pass 743/743 CTest cases: 691 doctest
+  cases and 52 executable checks. Three package cases verify relocation, source/
+  published-directory removal with surviving captured resources/code, binary byte
+  preservation, moves/copies, strict metadata/tree/limits and cleanup, invalid
+  scripts/missing audio, no overwrite/path escape and symlink failures. CLI/workspace
+  cases verify actual publication, invalid budgets, unsaved scene preservation and
+  stale revision/Play/pending resource draft protection.
+- runtime.exported_game passes in both configurations: relocates package, deletes
+  authoring data, then exercises real native window, published input, rendered GPU
+  pixel change, audio endpoint and explicit shutdown with generation/VM/audio
+  counters returning to baseline. Existing project/player/workspace acceptance
+  and all GPU/audio suites also pass. Debug took 50.87 seconds; Release 21.46 seconds.
+  Initial supplemental tests had two expectation mistakes (canonical temporary
+  paths and the stop-play command), corrected before the final passing suites.
+- Before exclusive publication, staged data is reopened, static mesh/audio assets
+  are decoded and the compiled session is prepared with offline audio. Gameplay
+  hooks and dynamically chosen assets are not predicted. Strict tree membership,
+  per-file/total bytes, portable names and directory ASCII aliases are checked;
+  no TypeScript/maps/source SDK/metadata/owned staging directories are delivered.
+- Reviewed rooted traversal, finite limits and byte arithmetic, source preservation,
+  validation-before-publication and partial cleanup, snapshot/borrowed asset lifetime,
+  script preparation, default load contract, revision/draft guards, GUI/automation
+  parity, contextual failures, platform-independent paths and module separation.
+  clang-format and whitespace/private-reference checks pass. Release DotRuntime
+  retains caller-selected LLVM libc++/libunwind, with no LC_RPATH or sanitizer
+  linkage. No environment settings changed. Windows/Linux remain unvalidated.
+- No manual mouse/visual acceptance is claimed. This stage delivers game data for
+  an existing matching runtime, not a standalone executable distribution. Native
+  executable/dynamic-library bundling, richer rendering/editor tools, exhaustive
+  component/API acceptance scenes and the example game remain subsequent work.
+  The full engine goal remains active.

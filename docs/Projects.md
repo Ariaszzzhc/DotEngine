@@ -57,9 +57,9 @@ old file descriptors still describe the old location.
 
 ## DotEditor command line
 
-DotEditor currently provides JSON authoring commands. The graphical editor and
-project export are subsequent work; these commands use the shared engine
-project operations that those clients can consume.
+DotEditor provides JSON authoring commands and a native graphical workspace.
+These commands share engine project operations with that workspace.
+[Game data export](Export.md) is available; executable bundling remains subsequent work.
 
 ```text
 DotEditor create <existing-parent> <folder> <name> <sdk-root>
@@ -86,7 +86,7 @@ The document command exposes transactional native scene editing, selection,
 bounded undo/redo and explicit conflict-checked saves. It emits one JSON response
 line per request and shares the Document module used by editor clients. See
 [editor documents and automation](Editor.md) for the strict protocol and lifetime
-contracts. A graphical editor is still subsequent work.
+contracts and the native graphical workspace.
 
 `--project-test <absolute-compiler> <sdk-root> <existing-parent>` exercises exclusive
 creation, real template compilation and attached script/input execution, native scene
@@ -152,3 +152,5 @@ borrowed asset files require a separate owner alive until session destruction.
 Invalid metadata, moved code and failed native/script setup return contextual
 errors and release partial service ownership. Start/update/close keep the normal
 session lifecycle and hook semantics.
+
+See [game data export](Export.md) for compiler-independent packaged playback.

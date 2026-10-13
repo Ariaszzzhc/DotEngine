@@ -16,6 +16,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 import Dot.Script.Runtime;
 import Dot.Audio.Mixer;
@@ -40,10 +41,11 @@ namespace Dot::Runtime {
       return {};
     }
 
-    auto execute(const Project::Project& project, const Script::TypeScriptCompiler& compiler,
-                 std::size_t frameBudget, bool acceptance) -> Core::Result<void> {
-      auto description = project.description();
-      auto files = project.files();
+    auto execute(const Project::Project* project, const Script::TypeScriptCompiler* compiler,
+                 const Project::GamePackage* game, std::size_t frameBudget, bool acceptance)
+        -> Core::Result<void> {
+      auto description = game ? game->description() : project->description();
+      auto files = game ? game->files() : project->files();
 
       if (!description) {
         return std::unexpected(description.error());
@@ -89,7 +91,10 @@ namespace Dot::Runtime {
       Project::GameSessionConfig sessionConfig;
       sessionConfig.audioMode = Project::SessionAudio::Playback;
       sessionConfig.audio.output.volume = acceptance ? 0 : 1;
-      auto session = Project::GameSession::create(project, compiler, sessionConfig);
+      auto session
+          = game ? Project::GameSession::createCompiled(*files, *description, game->scene().value(),
+                                                        game->program().value(), sessionConfig)
+                 : Project::GameSession::create(*project, *compiler, sessionConfig);
 
       if (!session) {
         return std::unexpected(session.error());
@@ -265,13 +270,83 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = execute(*project, *compiler, frameBudget, false);
+    auto played = execute(&*project, &*compiler, nullptr, frameBudget, false);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);
       return 1;
     }
 
+    return 0;
+  }
+
+  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int {
+    auto files = Core::FileSystem::open(root);
+    auto game = files ? Project::GamePackage::open(*files)
+                      : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
+
+    if (!game) {
+      std::println(stderr, "{}", game.error().message);
+      return 1;
+    }
+
+    auto played = execute(nullptr, nullptr, &*game, frames, false);
+
+    if (!played) {
+      std::println(stderr, "{}", played.error().message);
+      return 1;
+    }
+
+    return 0;
+  }
+
+  auto testGamePlayer(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
+                      const std::filesystem::path& parentRoot) -> int {
+    auto parent = Core::FileSystem::open(parentRoot).value();
+    auto storage = Core::StagedDirectory::create(parent).value();
+    auto files = storage.files().value();
+    auto sdk = Core::FileSystem::open(sdkRoot).value();
+    auto project = Project::Project::create(files, "authoring", {}, sdk).value();
+    auto compiler = Script::TypeScriptCompiler::create(executable).value();
+    auto scene = project.loadStartup().value();
+    auto published = Project::GamePackage::publish(project, scene, compiler, files, "game");
+
+    if (!published) {
+      std::println(stderr, "{}", published.error().message);
+      return 1;
+    }
+
+    std::filesystem::rename(published->root(), files.root() / "relocated");
+    std::filesystem::remove_all(project.files()->root());
+    const auto generations = Script::compilerGenerations();
+    const auto vm = Script::Runtime::backendMemory();
+    const auto audio = Audio::Mixer::backendMemory();
+    auto run = [&]() -> Core::Result<void> {
+      auto source = Core::FileSystem::open(files.root() / "relocated").value();
+      auto game = Project::GamePackage::open(source);
+
+      if (!game) {
+        return std::unexpected(game.error());
+      }
+
+      return execute(nullptr, nullptr, &*game, 30, true);
+    }();
+
+    if (!run) {
+      std::println(stderr, "{}", run.error().message);
+      return 1;
+    }
+
+    if (Script::compilerGenerations() != generations
+        || Script::Runtime::backendMemory().bytes != vm.bytes
+        || Audio::Mixer::backendMemory().bytes != audio.bytes) {
+      std::println(stderr, "Exported game retained program/VM/audio ownership");
+      return 1;
+    }
+
+    std::println(
+        "Exported game acceptance passed: relocated package, no authoring/compiler at playback, "
+        "native input/GPU/audio and shutdown");
     return 0;
   }
 
@@ -307,7 +382,7 @@ namespace Dot::Runtime {
     const auto generations = Script::compilerGenerations();
     const auto vm = Script::Runtime::backendMemory();
     const auto audio = Audio::Mixer::backendMemory();
-    auto played = execute(*project, *compiler, 30, true);
+    auto played = execute(&*project, &*compiler, nullptr, 30, true);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);

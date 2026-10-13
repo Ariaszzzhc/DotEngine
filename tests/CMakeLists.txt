@@ -58,7 +58,7 @@ doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
-add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp PlayTests.cpp PublishedProgramTests.cpp)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp PlayTests.cpp PublishedProgramTests.cpp GamePackageTests.cpp)
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
@@ -199,3 +199,6 @@ target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
 doctest_discover_tests(DotWorkspaceTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_test(NAME runtime.exported_game COMMAND DotRuntime --game-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(runtime.exported_game PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)

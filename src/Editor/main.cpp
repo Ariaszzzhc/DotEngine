@@ -21,6 +21,7 @@
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Project;
+import Dot.Project.GamePackage;
 import Dot.Editor.Document;
 import Dot.Editor.Workspace;
 import Dot.Core.Text;
@@ -164,6 +165,33 @@ namespace {
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 6 && std::string_view(argv[1]) == "export-data") {
+      auto project = Dot::Project::Project::open(path(argv[2]));
+      auto parent = Dot::Core::FileSystem::open(path(argv[3]));
+      auto compiler = Dot::Script::TypeScriptCompiler::create(path(argv[5]));
+
+      if (!project || !parent || !compiler) {
+        return error(!project ? project.error() : !parent ? parent.error() : compiler.error());
+      }
+
+      auto scene = project->loadStartup();
+
+      if (!scene) {
+        return error(scene.error());
+      }
+
+      auto output
+          = Dot::Project::GamePackage::publish(*project, *scene, *compiler, *parent, path(argv[4]));
+
+      if (!output) {
+        return error(output.error());
+      }
+
+      std::println(
+          "{}", Json{{"ok", true}, {"package", utf(output->root())}, {"kind", "game-data"}}.dump());
+      return 0;
+    }
+
     if (argc == 4 && std::string_view(argv[1]) == "--workspace-test") {
       return Dot::Editor::testWorkspace(path(argv[2]), path(argv[3]));
     }
@@ -314,7 +342,8 @@ auto main(int argc, char** argv) -> int {
     }
 
     return error({Dot::Core::ErrorCode::InvalidArgument,
-                  "Usage: DotEditor open <root> [frames] | send <control> <id> <request-file> | "
+                  "Usage: DotEditor export-data <root> <parent> <folder> <compiler> | open <root> "
+                  "[frames] | send <control> <id> <request-file> | "
                   "--workspace-test <sdk> <parent> | create <parent> <folder> <name> <sdk> | "
                   "inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "

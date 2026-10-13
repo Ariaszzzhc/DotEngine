@@ -397,3 +397,12 @@ changes. Native acceptance opens the code page, uses actual Cmd/Ctrl+S to persis
 source while Play runs, then verifies faster real rigid-body motion from hot-reloaded
 TypeScript while authoring and native audio stay intact. Local validation remains
 arm64 macOS; Windows/Linux code is not locally validated.
+
+
+## Exporting the current scene
+
+The toolbar's **Export data** modal uses the strict `export-data` command to
+publish the current scene and saved resources without saving the authoring scene.
+It requires stopped Play, the current revision and no pending inspector/file
+drafts. See [game data export](Export.md) for the format, CLI, limits and ownership.
+Executable bundling is a separate forthcoming step.

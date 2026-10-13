@@ -74,6 +74,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/StagedDirectory.cpp
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
+    src/Engine/Project/GamePackage.cpp
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/Resources.cpp
     src/Engine/Editor/Play.cpp
@@ -146,6 +147,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/StagedDirectory.cppm
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
+        src/Engine/Project/GamePackage.cppm
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/Resources.cppm
         src/Engine/Editor/Play.cppm

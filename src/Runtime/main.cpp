@@ -26,6 +26,9 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int;
+  auto testGamePlayer(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
+                      const std::filesystem::path& parent) -> int;
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
                    std::size_t frameBudget) -> int;
   auto testProjectPlayer(const std::filesystem::path& executable,
@@ -776,6 +779,27 @@ auto main(int argc, char** argv) -> int {
                                            std::string_view(argv[1]) == "--script-audio-play-test");
     }
 
+    if ((argc == 3 || argc == 4) && std::string_view(argv[1]) == "--game") {
+      std::size_t frames = 0;
+
+      if (argc == 4) {
+        const std::string_view value(argv[3]);
+        auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
+
+        if (value.empty() || parsed.ec != std::errc{}
+            || parsed.ptr != value.data() + value.size()) {
+          std::println(stderr, "Game frame budget must be an unsigned integer");
+          return 2;
+        }
+      }
+
+      return Dot::Runtime::playGame(argv[2], frames);
+    }
+
+    if (argc == 5 && std::string_view(argv[1]) == "--game-player-test") {
+      return Dot::Runtime::testGamePlayer(argv[2], argv[3], argv[4]);
+    }
+
     if ((argc == 4 || argc == 5) && std::string_view(argv[1]) == "--project") {
       std::size_t frameBudget = 0;
 
@@ -832,7 +856,8 @@ auto main(int argc, char** argv) -> int {
           "--script-physics-render-test <compiler> <sdk> <directory>|"
           "--script-audio-test <compiler> <sdk> <directory>|"
           "--script-audio-play-test <compiler> <sdk> <directory>|"
-          "--project <root> <compiler> [frames]|--project-player-test <compiler> <sdk> <parent>]");
+          "--game <package> [frames]|--game-player-test <compiler> <sdk> <parent>|--project <root> "
+          "<compiler> [frames]|--project-player-test <compiler> <sdk> <parent>]");
       return 2;
     }
 

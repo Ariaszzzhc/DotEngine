@@ -38,6 +38,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
 import Dot.Editor.Document;
 import Dot.Project;
+import Dot.Project.GamePackage;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 import Dot.Platform.Events;
@@ -254,6 +255,9 @@ namespace Dot::Editor {
     bool m_showCode{};
     bool m_assetRefresh{};
     std::string m_checkMessage;
+    std::string m_exportParent;
+    std::string m_exportFolder{"game-export"};
+    bool m_exportDialog{};
     std::optional<PlaySession> m_play;
     Platform::InputState m_gameInput;
     bool m_captureInput{};
@@ -599,6 +603,46 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "export-data") {
+        Codec::requireFields(parsed, {"command", "revision", "parent", "folder"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats().value().revision || playing()
+            || pendingInspector() || pendingText()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Export requires current revision, stopped Play and no pending inspector/file edits");
+        }
+
+        const auto parentText = parsed.at("parent").get<std::string>();
+        const auto folderText = parsed.at("folder").get<std::string>();
+
+        if (!Core::isValidUtf8(parentText) || parentText.find('\0') != std::string::npos) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Export parent must be a UTF-8 path without NUL");
+        }
+
+        auto parent = Core::FileSystem::open(
+            std::filesystem::path(std::u8string(parentText.begin(), parentText.end())));
+        auto tool = compiler();
+
+        if (!parent || !tool) {
+          return std::unexpected(parent ? tool.error() : parent.error());
+        }
+
+        auto output = Project::GamePackage::publish(
+            *m_project, *m_document->scene().value(), *tool, *parent,
+            std::filesystem::path(std::u8string(folderText.begin(), folderText.end())));
+
+        if (!output) {
+          return std::unexpected(output.error());
+        }
+
+        const auto utf = output->root().generic_u8string();
+        return Json{
+            {"ok", true}, {"kind", "game-data"}, {"package", std::string(utf.begin(), utf.end())}}
+            .dump();
+      }
 
       if (command == "resources") {
         Codec::requireFields(parsed, {"command"});
@@ -1533,6 +1577,11 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
+      if (ImGui::Button("Export data")) {
+        m_exportDialog = true;
+      }
+
+      ImGui::SameLine();
       ImGui::TextUnformatted(m_snapshot["dirty"].get<bool>() ? "Unsaved changes" : "Saved");
       ImGui::Separator();
 
@@ -1613,6 +1662,51 @@ namespace Dot::Editor {
       inspector();
       ImGui::EndDisabled();
       ImGui::EndChild();
+
+      if (m_exportDialog) {
+        ImGui::OpenPopup("Export game data");
+        m_exportDialog = false;
+      }
+
+      ImGui::SetNextWindowSize({600, 0}, ImGuiCond_Appearing);
+
+      if (ImGui::BeginPopupModal("Export game data", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped(
+            "Export the current scene, resources and precompiled scripts. This data package runs "
+            "with DotRuntime; executable bundling is separate.");
+        ImGui::InputText("Existing parent directory", &m_exportParent);
+        ImGui::InputText("New folder", &m_exportFolder);
+        ImGui::BeginDisabled(playing() || pendingInspector() || pendingText());
+
+        if (ImGui::Button("Export")) {
+          auto request = Json{{"command", "export-data"},
+                              {"revision", std::to_string(m_document->stats().value().revision)},
+                              {"parent", m_exportParent},
+                              {"folder", m_exportFolder}};
+          auto result = safeExecute(request.dump());
+
+          if (result) {
+            m_message
+                = "Game data exported: " + Codec::parseJson(*result)["package"].get<std::string>();
+            ImGui::CloseCurrentPopup();
+          } else {
+            m_message = result.error().message;
+          }
+        }
+
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+
+        if (ImGui::Button("Cancel export")) {
+          ImGui::CloseCurrentPopup();
+        }
+
+        if (!m_message.empty()) {
+          ImGui::TextWrapped("%s", m_message.c_str());
+        }
+
+        ImGui::EndPopup();
+      }
 
       if (m_pendingClose) {
         ImGui::OpenPopup("Unsaved changes");
@@ -1788,6 +1882,8 @@ namespace Dot::Editor {
 
       impl->m_resources.emplace(std::move(*resources));
       impl->m_newPath = project.description().value().scriptsDirectory + "/behavior.ts";
+      const auto exportParent = project.files().value().root().parent_path().generic_u8string();
+      impl->m_exportParent.assign(exportParent.begin(), exportParent.end());
       auto listed = impl->catalog();
 
       if (!listed) {

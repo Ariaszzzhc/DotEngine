@@ -12,6 +12,7 @@
 import Dot.Core.Files;
 import Dot.Core.Process;
 import Dot.Project;
+import Dot.Project.GamePackage;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 
@@ -303,4 +304,39 @@ TEST_CASE("editor_commands_check_reports_actual_type_errors_and_relocated_projec
   auto checked
       = command(directory, {"check", utf(directory.root / "moved"), DOT_TYPESCRIPT_COMPILER});
   CHECK(checked["sourceFiles"] == 3);
+}
+
+TEST_CASE("editor_commands_export_data_and_runtime_game_validate_real_packages") {
+  Directory directory;
+  create(directory);
+  auto result = command(directory, {"export-data", utf(directory.root / "game folder"),
+                                    utf(directory.root), "published", DOT_TYPESCRIPT_COMPILER});
+  CHECK(result["kind"] == "game-data");
+  CHECK(result["package"] == utf(std::filesystem::canonical(directory.root / "published")));
+  auto files = Dot::Core::FileSystem::open(directory.root / "published").value();
+  auto package = Dot::Project::GamePackage::open(files);
+  REQUIRE_MESSAGE(package, (package ? "" : package.error().message));
+  CHECK(package->scene()->entities()->size() == 2);
+  CHECK_FALSE(package->description()->hotReload);
+  const auto baseline = files.readText("game.json").value();
+  command(directory,
+          {"export-data", utf(directory.root / "game folder"), utf(directory.root), "published",
+           DOT_TYPESCRIPT_COMPILER},
+          false);
+  CHECK(files.readText("game.json").value() == baseline);
+  command(directory,
+          {"export-data", utf(directory.root / "game folder"), utf(directory.root), "../escape",
+           DOT_TYPESCRIPT_COMPILER},
+          false);
+
+  for (const auto* budget : {"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {
+    auto invalid = Dot::Core::runProcess(
+        {DOT_RUNTIME_EXECUTABLE, {"--game", "missing", budget}, directory.root});
+    REQUIRE(invalid);
+    CHECK(invalid->exitCode == 2);
+    CHECK(invalid->standardError.find("frame budget") != std::string::npos);
+  }
+
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
 }

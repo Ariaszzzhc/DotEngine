@@ -15,6 +15,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Editor.Workspace;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 import Dot.Script.Host;
 import Dot.Graphics.Renderer;
@@ -518,4 +519,42 @@ TEST_CASE("workspace.resource_import_readonly_sdk_and_strict_requests_preserve_s
       "{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":1}"));
   auto after = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
   CHECK(after["file"] == file);
+}
+
+TEST_CASE("workspace.export_data_captures_unsaved_scene_and_guards_pending_state") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  const auto saved = fixture.project.loadStartup()->entities()->at(1).name;
+  rename(workspace);
+  const auto before = workspace.snapshot().value();
+  const auto parentPath = fixture.storage.files()->root().generic_u8string();
+  const std::string parent(parentPath.begin(), parentPath.end());
+  Json request{
+      {"command", "export-data"}, {"parent", parent}, {"folder", "game"}, {"revision", "1"}};
+  CHECK_FALSE(workspace.dispatch(request.dump()));
+  auto response = command(workspace, request);
+  CHECK(response["kind"] == "game-data");
+  auto files = Dot::Core::FileSystem::open(fixture.storage.files()->root() / "game").value();
+  auto game = Dot::Project::GamePackage::open(files).value();
+  CHECK(game.scene()->entities()->at(1).name == "玩家");
+  CHECK(fixture.project.loadStartup()->entities()->at(1).name == saved);
+  CHECK(workspace.snapshot().value() == before);
+  request["revision"] = snapshot(workspace)["revision"];
+  CHECK_FALSE(workspace.dispatch(request.dump()));
+  request["folder"] = "blocked";
+  command(workspace, {{"command", "play"}});
+  CHECK_FALSE(workspace.dispatch(request.dump()));
+  command(workspace, {{"command", "stop-play"}});
+  auto file = Json::parse(
+      workspace
+          .dispatch("{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}")
+          .value())["file"];
+  REQUIRE(workspace.dispatch(Json{{"command", "replace-text"},
+                                  {"buffer", file["buffer"]},
+                                  {"revision", "1"},
+                                  {"text", "export const draft=1;"}}
+                                 .dump()));
+  CHECK_FALSE(workspace.dispatch(request.dump()));
+  CHECK_FALSE(std::filesystem::exists(fixture.storage.files()->root() / "blocked"));
+  CHECK(workspace.snapshot().value() == before);
 }
