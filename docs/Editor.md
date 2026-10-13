@@ -156,8 +156,8 @@ while text input is active. Native close/quit checks both document dirtiness and
 pending inspector changes, opening Save and close / Discard / Cancel confirmation.
 The viewport renders the actual game primary camera into a reusable GPU target;
 missing camera/assets display errors and can be recovered by editing/undo. Native
-renderer faults stop the loop. Play preview, project resource/code authoring and
-export interfaces remain subsequent stages.
+renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
+resource/code authoring and export interfaces remain subsequent stages.
 
 `send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
 It returns `queued:true` and an absolute `response` path, **not** applied success.
@@ -197,3 +197,86 @@ cleanup. Focused workspace CTest cases cover strict commands, dirty close and ac
 save, absent-camera recovery, malformed mailbox requests, terminal response-I/O
 failure/no replay, pending overflow and repeated initialization/lifetime. Local
 verification is on arm64 macOS; Windows/Linux remain uncompiled/unexecuted locally.
+
+
+## Game preview
+
+Play clones the current validated Document scene, including unsaved edits, into a
+fresh scope and starts real TypeScript scripts, Jolt physics and native audio.
+No authoring file is saved. Pending inspector changes must be applied or reset
+first. Play/Stop and all close actions share the automation dispatcher. Scene
+editing, selection, history and saving are locked while the game is running or
+faulted; stopping returns to the authoring camera preview without changing the
+Document's revision, dirty state, selection or undo history.
+
+```json
+{"command":"play","revision":"4"}
+```
+
+```json
+{"command":"stop-play","revision":"4"}
+```
+
+These requests require the current authoring revision and return updated inspect
+responses. Repeated play while active fails; stopping is idempotent. F5 toggles the
+same operation. Inspect's `workspace.play` contains idle/running/faulted/stopped
+state, frame/fixed-step counters, latest dropped time, input capture, errors and
+at most 64 historical diagnostics. `workspace.message` exposes current GUI action
+errors. `inspect-play` (only a command field) returns the actual game scene and
+play status, including the retained final scene after stop.
+
+Simulation owns independent fixed timing at the project's fixedHz and caps
+catch-up work at eight steps per frame by default. Dropped fixed time is reported;
+variable script/audio updates occur once per frame with delta capped at one second.
+Native configuration may choose 1..64 steps. Scripts hot reload from project files
+when configured; failed source keeps the old generation running and reports the
+error. Ordinary component errors isolate that component and remain visible.
+Realm/native game failures stop game advancement and stay observable in the editor;
+Stop releases services and permits authoring/restarting. The editor frame itself
+may succeed while displaying a faulted game; that does not claim game execution
+succeeded. Stop executes script hooks and releases native audio/physics/script
+ownership, including after game faults. Editor closure, frame failure and ownership
+destruction also stop active games; destructor diagnostics go to stderr.
+
+The packaged standalone TypeScript compiler includes its pinned standard library
+files and license/notice, with no Node/npm dependency or hardcoded development
+path. A custom WorkspaceConfig compiler path may be provided; missing/incompatible
+compilers and missing native audio endpoints fail explicitly, without fallback.
+Tests explicitly use offline audio where appropriate; the native acceptance uses
+real playback with endpoint software volume zero.
+
+```json
+{"command":"capture-input","capture":true}
+```
+
+The Game input checkbox uses this same request. Capture starts disabled; it routes
+native keyboard/text to the game, leaving editor shortcuts inactive except F5.
+Pointer coordinates are relative to the viewport in logical pixels. Escape or
+clicking outside the viewport releases capture; focus loss releases native held
+keys. Released capture publishes released edges from the last game input, then
+empty frames. Capture does not pause simulation/audio. No pause or single-step
+control is provided by this stage. F5 and Escape are reserved editor controls.
+
+```json
+{"command":"save-close","revision":"4"}
+```
+
+```json
+{"command":"cancel-close","revision":"4"}
+```
+
+These requests share the confirmation dialog's Save and close / Cancel operations.
+Save and close first stops Play, applies the inspector, saves authoring and closes
+only after success. Failure retains the editor and unsaved document; completed
+stop/apply effects are not rolled back. Cancel clears the close confirmation.
+Discard uses the existing close request with discard=true. Close cleanup errors
+are returned by frame/run operations rather than substituted with successful exit.
+
+The extended native workspace acceptance receives F5 through SDL and an actual
+ImGui shortcut, opens real native playback, runs a script controlling a real rigid
+body from captured D input and querying its real audio voice, releases capture via
+Escape and stops via F5. It verifies changed/restored GPU pixels, authoring isolation,
+stop hooks and compiled generation release. Additional tests cover unsaved scene
+cloning, fixed timing/input bounds, hot reload, ordinary/realm errors, moves/source
+lifetime/thread/reentry, partial creation cleanup, factory failure/recovery,
+close/cancel/save while playing and save conflicts. Validation is on arm64 macOS.

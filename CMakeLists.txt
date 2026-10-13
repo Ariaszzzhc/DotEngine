@@ -45,6 +45,10 @@ endif()
 find_program(DOT_TYPESCRIPT_COMPILER NAMES tsc
     PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/tools/typescript-native"
     NO_DEFAULT_PATH REQUIRED)
+get_filename_component(DOT_TYPESCRIPT_TOOL_DIRECTORY "${DOT_TYPESCRIPT_COMPILER}" DIRECTORY)
+find_file(DOT_TYPESCRIPT_LICENSE NAMES copyright
+    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/share/vcpkg-tool-typescript"
+    NO_DEFAULT_PATH REQUIRED)
 find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
 add_library(DotAudioBackend STATIC src/Engine/Audio/Backend.c)
 target_compile_features(DotAudioBackend PRIVATE c_std_11)
@@ -190,6 +194,8 @@ add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp sr
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 add_custom_command(TARGET DotEditor POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_TYPESCRIPT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native/LICENSE.txt"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt")
 

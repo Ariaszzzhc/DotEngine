@@ -4,6 +4,7 @@
 #include <expected>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -13,7 +14,11 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Workspace;
 import Dot.Project;
+import Dot.Project.GameSession;
+import Dot.Script.Compiler;
+import Dot.Script.Host;
 import Dot.Graphics.Renderer;
+import Dot.World.SceneFiles;
 
 namespace {
   using namespace Dot::Editor;
@@ -37,6 +42,9 @@ namespace {
     auto open() -> Workspace {
       WorkspaceConfig config;
       config.font = DOT_EDITOR_FONT;
+      config.compiler = DOT_TYPESCRIPT_COMPILER;
+      config.play.session.audioMode = Dot::Project::SessionAudio::Offline;
+      config.play.session.pollInterval = 0ms;
       auto result = Workspace::open(project, config);
       REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
       return std::move(*result);
@@ -205,4 +213,169 @@ TEST_CASE("workspace.invalid_initialization_move_and_reopen_release_resources") 
   }
 
   CHECK(Dot::Graphics::guiContexts() == contexts);
+}
+
+TEST_CASE("workspace.play_uses_unsaved_scene_and_stop_restores_authoring_pixels") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  auto transform = snapshot(workspace)["scene"]["entities"][1]["transform"];
+  transform["position"][0] = 0.25;
+  command(workspace,
+          {{"command", "edit"},
+           {"operations",
+            Json::array({{{"op", "transform"}, {"entity", "2"}, {"value", transform}}})}});
+  REQUIRE(fixture.project.files()->writeTextAtomic(
+      "scripts/mover.ts",
+      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent "
+      "{onUpdate(){const "
+      "t=this.self.transform;t.position.x+=.2;this.self.transform=t;}onStop(){this.self.name='"
+      "stopped';}}"));
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  }
+
+  const auto authored = workspace.snapshot().value();
+  const auto before = workspace.captureViewport().value();
+  const auto generations = Dot::Script::compilerGenerations();
+  auto playing = command(workspace, {{"command", "play"}});
+  CHECK(playing["workspace"]["play"]["state"] == "running");
+  CHECK_FALSE(workspace.captureViewport());
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"play\",\"revision\":\"2\"}"));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"undo\",\"revision\":\"2\"}"));
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  }
+
+  auto runtime = Json::parse(workspace.dispatch("{\"command\":\"inspect-play\"}").value());
+  CHECK(runtime["scene"]["entities"][1]["transform"]["position"][0].get<double>() > 0.25);
+  CHECK(runtime["play"]["frames"] == "3");
+  CHECK(workspace.captureViewport()->pixels != before.pixels);
+  CHECK(workspace.snapshot().value() == authored);
+  CHECK(fixture.project.loadStartup()->entities()->at(1).transform.position.x == 0);
+  CHECK(command(workspace, {{"command", "stop-play"}})["workspace"]["play"]["state"] == "stopped");
+  CHECK_FALSE(workspace.captureViewport());
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  CHECK(workspace.captureViewport()->pixels == before.pixels);
+  CHECK(workspace.snapshot().value() == authored);
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  runtime = Json::parse(workspace.dispatch("{\"command\":\"inspect-play\"}").value());
+  CHECK(runtime["scene"]["entities"][1]["name"] == "stopped");
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
+  CHECK(Dot::Script::compilerGenerations() == generations);
+}
+
+TEST_CASE("workspace.play_failure_and_realm_fault_keep_editor_recoverable") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  const auto initial = workspace.snapshot().value();
+  const auto generations = Dot::Script::compilerGenerations();
+  REQUIRE(
+      fixture.project.files()->writeTextAtomic("scripts/mover.ts", "export const bad:number='x';"));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"play\",\"revision\":\"1\"}"));
+  CHECK(workspace.snapshot().value() == initial);
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  REQUIRE(fixture.project.files()->writeTextAtomic(
+      "scripts/mover.ts",
+      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent "
+      "{onUpdate(){while(true){}}}"));
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  auto runtime = Json::parse(workspace.dispatch("{\"command\":\"inspect-play\"}").value());
+  CHECK(runtime["play"]["state"] == "faulted");
+  CHECK_FALSE(runtime["play"]["error"].is_null());
+  CHECK_FALSE(runtime["play"]["diagnostics"].empty());
+  CHECK(workspace.snapshot().value() == initial);
+  command(workspace, {{"command", "stop-play"}});
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  command(workspace,
+          {{"command", "edit"},
+           {"operations",
+            Json::array({{{"op", "name"}, {"entity", "2"}, {"name", "Recovered editor"}}})}});
+  CHECK(snapshot(workspace)["scene"]["entities"][1]["name"] == "Recovered editor");
+}
+
+TEST_CASE("workspace.direct_play_commands_reject_reentrant_script_services") {
+  Fixture fixture;
+  REQUIRE(fixture.project.files()->writeTextAtomic(
+      "scripts/mover.ts",
+      "import {ScriptComponent} from './dot/engine.js';import {invoke} from 'dot:host';export "
+      "class Mover extends ScriptComponent "
+      "{onStart(){invoke('test.reentry',[]);}onStop(){invoke('test.reentry',[]);}}"));
+  WorkspaceConfig config;
+  config.font = DOT_EDITOR_FONT;
+  config.compiler = DOT_TYPESCRIPT_COMPILER;
+  config.play.session.audioMode = Dot::Project::SessionAudio::Offline;
+  Workspace* current = nullptr;
+  unsigned rejected = 0;
+  config.play.session.scripts.services.push_back(
+      {"test.reentry", [&](std::string_view) -> Dot::Core::Result<std::optional<std::string>> {
+         auto result = current->dispatch("{\"command\":\"inspect\"}");
+
+         if (!result && result.error().code == Dot::Core::ErrorCode::InvalidState
+             && !current->snapshot() && !current->captureViewport()) {
+           ++rejected;
+         }
+
+         return std::optional<std::string>{};
+       }});
+  auto workspace = Workspace::open(fixture.project, config).value();
+  current = &workspace;
+  const auto before = workspace.snapshot().value();
+  command(workspace, {{"command", "play"}});
+  CHECK(rejected == 1);
+  command(workspace, {{"command", "stop-play"}});
+  CHECK(rejected == 2);
+  CHECK(workspace.snapshot().value() == before);
+}
+
+TEST_CASE("workspace.close_confirmation_cancel_and_save_close_share_play_cleanup") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"capture-input\",\"capture\":true}"));
+  rename(workspace);
+  const auto generations = Dot::Script::compilerGenerations();
+  command(workspace, {{"command", "play"}});
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"capture-input\",\"capture\":1}"));
+  auto captured
+      = Json::parse(workspace.dispatch("{\"command\":\"capture-input\",\"capture\":true}").value());
+  CHECK(captured["workspace"]["play"]["captureInput"] == true);
+  auto closing
+      = Json::parse(workspace.dispatch("{\"command\":\"close\",\"discard\":false}").value());
+  CHECK(closing["confirmation"] == true);
+  CHECK(closing["running"] == true);
+  auto canceled = command(workspace, {{"command", "cancel-close"}});
+  CHECK_FALSE(canceled["workspace"]["pendingClose"].get<bool>());
+  CHECK(canceled["workspace"]["play"]["state"] == "running");
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"save-close\",\"revision\":\"1\"}"));
+  CHECK(snapshot(workspace)["dirty"] == true);
+  auto saved = command(workspace, {{"command", "save-close"}});
+  CHECK_FALSE(saved["running"].get<bool>());
+  CHECK_FALSE(saved["confirmation"].get<bool>());
+  CHECK_FALSE(snapshot(workspace)["dirty"].get<bool>());
+  CHECK(fixture.project.loadStartup()->entities()->at(1).name == "玩家");
+  CHECK(Dot::Script::compilerGenerations() == generations);
+}
+
+TEST_CASE("workspace.save_close_conflict_stops_game_but_keeps_unsaved_editor_open") {
+  Fixture fixture;
+  auto disk = fixture.project.loadStartup().value();
+  const auto initialDisk = Dot::World::encodeScene(disk).value();
+  auto workspace = fixture.open();
+  rename(workspace);
+  const auto authored = workspace.snapshot().value();
+  const auto generations = Dot::Script::compilerGenerations();
+  command(workspace, {{"command", "play"}});
+  REQUIRE(fixture.project.files()->writeTextAtomic("scenes/main.dotscene", "{malformed"));
+  auto failed = workspace.dispatch("{\"command\":\"save-close\",\"revision\":\"2\"}");
+  CHECK_FALSE(failed);
+  CHECK(workspace.snapshot().value() == authored);
+  auto inspected = Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value());
+  CHECK(inspected["workspace"]["running"] == true);
+  CHECK(inspected["workspace"]["play"]["state"] == "stopped");
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scenes/main.dotscene", initialDisk));
+  CHECK_FALSE(command(workspace, {{"command", "save-close"}})["running"].get<bool>());
 }

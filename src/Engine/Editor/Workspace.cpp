@@ -7,6 +7,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -14,6 +15,7 @@ module;
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "../Serialization/Json.hpp"
@@ -22,6 +24,11 @@ module Dot.Editor.Workspace;
 
 import Dot.Core.Application;
 import Dot.Core.Events;
+import Dot.Script.SceneScripts;
+import Dot.Editor.Play;
+import Dot.Script.Compiler;
+import Dot.Script.LiveScripts;
+import Dot.Platform.Input;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -232,6 +239,16 @@ namespace Dot::Editor {
   struct Workspace::Impl {
     std::thread::id m_thread{std::this_thread::get_id()};
     std::optional<Document> m_document;
+    std::optional<Project::Project> m_project;
+    WorkspaceConfig m_config;
+    std::optional<PlaySession> m_play;
+    Platform::InputState m_gameInput;
+    bool m_captureInput{};
+    bool m_resetGuiInput{};
+    ImVec2 m_viewOrigin{};
+    Json m_playDiagnostics = Json::array();
+    std::optional<Core::Error> m_playError;
+    std::optional<Core::Error> m_closeError;
     std::optional<Core::Application> m_application;
     std::optional<Graphics::Renderer> m_renderer;
     std::optional<Graphics::SceneRenderer> m_drawing;
@@ -257,6 +274,198 @@ namespace Dot::Editor {
     float m_viewHeight{480};
     std::optional<Core::Error> m_inputError;
     Core::Signal<Platform::Event>::Connection m_events;
+
+    ~Impl() {
+      ActiveScope active{m_active};
+
+      try {
+        if (playing()) {
+          auto stopped = m_play->stop();
+
+          if (!stopped) {
+            std::fprintf(stderr, "Workspace play cleanup: %s\n", stopped.error().message.c_str());
+          } else {
+            for (const auto& failure : stopped->failures) {
+              std::fprintf(stderr, "Workspace stop hook: %s\n", failure.error.message.c_str());
+            }
+          }
+        }
+      } catch (const std::exception& error) {
+        std::fprintf(stderr, "Workspace play cleanup: %s\n", error.what());
+      } catch (...) {
+        std::fprintf(stderr, "Workspace play cleanup: unknown exception\n");
+      }
+    }
+
+    auto finish(Core::Result<void> result) -> Core::Result<void> {
+      if (!m_application->running() && playing()) {
+        auto stopped = stopPlay();
+
+        if (!stopped) {
+          return Core::fail(stopped.error().code,
+                            (result ? std::string{} : result.error().message + "; ")
+                                + "Play cleanup: " + stopped.error().message);
+        }
+      }
+
+      if (!m_application->running() && m_closeError) {
+        return std::unexpected(*m_closeError);
+      }
+
+      return result;
+    }
+
+    auto playing() const -> bool {
+      return m_play && m_play->stats()->state != PlayState::Stopped;
+    }
+
+    auto resource(std::string_view name) const -> Core::Result<std::filesystem::path> {
+      const auto* base = SDL_GetBasePath();
+
+      if (!base) {
+        return Core::fail(Core::ErrorCode::Io,
+                          "Resolve editor resources: " + std::string(SDL_GetError()));
+      }
+
+      const std::string path = std::string(base) + "resources/" + std::string(name);
+      return std::filesystem::path(std::u8string(path.begin(), path.end()));
+    }
+
+    auto diagnostic(Json value) -> void {
+      if (!m_playDiagnostics.empty() && m_playDiagnostics.back() == value) {
+        return;
+      }
+
+      if (m_playDiagnostics.size() == 64) {
+        m_playDiagnostics.erase(m_playDiagnostics.begin());
+      }
+
+      m_playDiagnostics.push_back(std::move(value));
+    }
+
+    auto report(const Script::ScriptReport& report) -> void {
+      constexpr std::array phases{"prepare", "start", "update", "fixedUpdate", "stop"};
+
+      for (const auto& failure : report.failures) {
+        auto value = errorJson(failure.error);
+        value["phase"] = phases.at(static_cast<std::size_t>(failure.phase));
+        value["entity"] = std::to_string(failure.entity.value);
+        diagnostic(std::move(value));
+      }
+    }
+
+    auto remember() -> Core::Result<void> {
+      auto frame = m_play->lastFrame();
+
+      if (!frame) {
+        return std::unexpected(frame.error());
+      }
+
+      for (const auto& item : frame->reports) {
+        if (item.source.error) {
+          auto value = errorJson(*item.source.error);
+          value["phase"] = "reload";
+          diagnostic(std::move(value));
+        }
+
+        if (item.source.reload) {
+          report(item.source.reload->retired);
+        }
+
+        report(item.frame);
+      }
+
+      return {};
+    }
+
+    auto captureInput(bool capture) -> void {
+      if (m_captureInput != capture) {
+        m_captureInput = capture;
+        m_resetGuiInput = true;
+      }
+    }
+
+    auto startPlay() -> Core::Result<void> {
+      if (playing() || pendingInspector() || !m_application->running()) {
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Play requires a running editor without pending inspector changes or an active game");
+      }
+
+      auto path = m_config.compiler.empty()
+#if defined(_WIN32)
+                      ? resource("typescript-native/tsc.exe")
+#else
+                      ? resource("typescript-native/tsc")
+#endif
+                      : Core::Result<std::filesystem::path>{m_config.compiler};
+
+      if (!path) {
+        return std::unexpected(path.error());
+      }
+
+      auto compiler = Script::TypeScriptCompiler::create(*path);
+
+      if (!compiler) {
+        return std::unexpected(compiler.error());
+      }
+
+      auto created
+          = PlaySession::create(*m_project, *compiler, *m_document->scene().value(), m_config.play);
+
+      if (!created) {
+        return std::unexpected(created.error());
+      }
+
+      m_play.emplace(std::move(*created));
+      m_playDiagnostics = Json::array();
+      m_playError.reset();
+      m_gameInput = Platform::InputState{};
+      captureInput(false);
+      m_previewReady = false;
+      auto remembered = remember();
+      return remembered ? Core::Result<void>{}
+                        : Core::fail(remembered.error().code, "Play started; report read failed: "
+                                                                  + remembered.error().message);
+    }
+
+    auto stopPlay() -> Core::Result<void> {
+      if (!playing()) {
+        return {};
+      }
+
+      auto stopped = m_play->stop();
+      captureInput(false);
+      m_previewReady = false;
+
+      if (!stopped) {
+        m_playError = stopped.error();
+        diagnostic(errorJson(stopped.error()));
+        return std::unexpected(stopped.error());
+      }
+
+      report(*stopped);
+      return {};
+    }
+
+    auto playStatus() const -> Json {
+      Json status{{"state", "idle"},
+                  {"captureInput", m_captureInput},
+                  {"diagnostics", m_playDiagnostics},
+                  {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
+
+      if (m_play) {
+        const auto stats = m_play->stats().value();
+        constexpr std::array states{"running", "faulted", "stopped"};
+        status["state"] = states.at(static_cast<std::size_t>(stats.state));
+        status["fixedHz"] = stats.fixedHz;
+        status["frames"] = std::to_string(stats.frames);
+        status["fixedSteps"] = std::to_string(stats.fixedSteps);
+        status["droppedNanoseconds"] = std::to_string(stats.dropped.count());
+      }
+
+      return status;
+    }
 
     auto pendingInspector() const -> bool {
       return m_edit != m_original || m_propertiesInvalid;
@@ -293,6 +502,92 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (command == "save-close" || command == "cancel-close") {
+        Codec::requireFields(parsed, {"command", "revision"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Close request has a stale document revision");
+        }
+
+        if (command == "cancel-close") {
+          m_pendingClose = false;
+          return execute("{\"command\":\"inspect\"}");
+        }
+
+        auto stopped = stopPlay();
+
+        if (!stopped) {
+          return std::unexpected(stopped.error());
+        }
+
+        auto applied = applyInspector();
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
+        auto saved = execute(
+            Json{{"command", "save"}, {"revision", std::to_string(m_document->stats()->revision)}}
+                .dump());
+
+        if (!saved) {
+          return saved;
+        }
+
+        return execute("{\"command\":\"close\",\"discard\":false}");
+      }
+
+      if (command == "play" || command == "stop-play") {
+        Codec::requireFields(parsed, {"command", "revision"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Play request has a stale document revision");
+        }
+
+        auto result = command == "play" ? startPlay() : stopPlay();
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "capture-input") {
+        Codec::requireFields(parsed, {"command", "capture"});
+        const bool capture = parsed["capture"].get<bool>();
+
+        if (!playing() || m_play->stats()->state != PlayState::Running) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Game input capture requires running Play");
+        }
+
+        captureInput(capture);
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "inspect-play") {
+        Codec::requireFields(parsed, {"command"});
+
+        if (!m_play) {
+          return Core::fail(Core::ErrorCode::InvalidState, "No game preview session");
+        }
+
+        auto encoded = World::encodeScene(*m_play->scene().value());
+        return encoded ? Core::Result<std::string>{Json{{"ok", true},
+                                                        {"play", playStatus()},
+                                                        {"scene", Codec::parseJson(*encoded)}}
+                                                       .dump()}
+                       : std::unexpected(encoded.error());
+      }
+
+      if (playing() && command != "inspect" && command != "close") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Stop Play before changing the authoring document");
+      }
+
       if (command == "apply-inspector" || command == "reset-inspector") {
         Codec::requireFields(parsed, {"command", "revision"});
 
@@ -324,7 +619,13 @@ namespace Dot::Editor {
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
+          auto stopped = stopPlay();
           m_application->stop();
+
+          if (!stopped) {
+            m_closeError = stopped.error();
+            return std::unexpected(stopped.error());
+          }
         }
 
         return Json{
@@ -348,10 +649,14 @@ namespace Dot::Editor {
 
       if (result && command == "inspect") {
         auto response = Codec::parseJson(*result);
-        response["workspace"] = {
-            {"pendingInspector", pendingInspector()}, {"pendingClose", m_pendingClose},
-            {"running", m_application->running()},    {"inspector", m_edit},
-            {"propertiesText", m_propertiesText},     {"propertiesInvalid", m_propertiesInvalid}};
+        response["workspace"] = {{"pendingInspector", pendingInspector()},
+                                 {"pendingClose", m_pendingClose},
+                                 {"running", m_application->running()},
+                                 {"inspector", m_edit},
+                                 {"propertiesText", m_propertiesText},
+                                 {"propertiesInvalid", m_propertiesInvalid},
+                                 {"play", playStatus()},
+                                 {"message", m_message}};
         return response.dump();
       }
 
@@ -495,8 +800,13 @@ namespace Dot::Editor {
         m_target.emplace(std::move(*created));
       }
 
-      auto drawn = m_drawing->renderInto(*m_document->scene().value(), *m_target,
-                                         {0.055F, 0.06F, 0.075F, 1});
+      auto scene = playing() ? m_play->scene() : m_document->scene();
+
+      if (!scene) {
+        return std::unexpected(scene.error());
+      }
+
+      auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1});
       m_previewReady = drawn.has_value();
       m_previewError = drawn ? "" : drawn.error().message;
 
@@ -759,7 +1069,9 @@ namespace Dot::Editor {
                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
                        | ImGuiWindowFlags_NoSavedSettings);
 
-      if (ImGui::Button("Save") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S)) {
+      ImGui::BeginDisabled(playing());
+
+      if ((ImGui::Button("Save") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S)) && !playing()) {
         if (applyInspector()) {
           action({{"command", "save"}});
         }
@@ -768,7 +1080,8 @@ namespace Dot::Editor {
       ImGui::SameLine();
       ImGui::BeginDisabled(!stats.canUndo);
 
-      if ((ImGui::Button("Undo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z)) && stats.canUndo) {
+      if ((ImGui::Button("Undo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z)) && stats.canUndo
+          && !playing()) {
         action({{"command", "undo"}});
       }
 
@@ -777,14 +1090,14 @@ namespace Dot::Editor {
       ImGui::BeginDisabled(!stats.canRedo);
 
       if ((ImGui::Button("Redo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))
-          && stats.canRedo) {
+          && stats.canRedo && !playing()) {
         action({{"command", "redo"}});
       }
 
       ImGui::EndDisabled();
       ImGui::SameLine();
 
-      if (ImGui::Button("New entity")) {
+      if (ImGui::Button("New entity") && !playing()) {
         edit(Json::array({{{"op", "create"}, {"name", "Entity"}}}));
       }
 
@@ -793,13 +1106,39 @@ namespace Dot::Editor {
 
       if ((ImGui::Button("Delete")
            || (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete)))
-          && m_document->stats()->selected) {
+          && m_document->stats()->selected && !playing()) {
         edit(Json::array({{{"op", "remove"},
                            {"entity", std::to_string(m_document->stats()->selected->value)}}}));
       }
 
       ImGui::EndDisabled();
+      ImGui::EndDisabled();
       ImGui::SameLine();
+      ImGui::BeginDisabled(!playing() && pendingInspector());
+
+      if (ImGui::Button(playing() ? "Stop" : "Play")
+          || ImGui::Shortcut(ImGuiKey_F5, ImGuiInputFlags_RouteGlobal)) {
+        action({{"command", playing() ? "stop-play" : "play"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+
+      if (playing()) {
+        bool capture = m_captureInput;
+
+        if (ImGui::Checkbox("Game input (Esc releases)", &capture)) {
+          auto response
+              = safeExecute(Json{{"command", "capture-input"}, {"capture", capture}}.dump());
+
+          if (!response) {
+            m_message = response.error().message;
+          }
+        }
+
+        ImGui::SameLine();
+      }
+
       ImGui::TextUnformatted(m_snapshot["dirty"].get<bool>() ? "Unsaved changes" : "Saved");
       ImGui::Separator();
 
@@ -812,12 +1151,26 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("Scene");
       ImGui::Separator();
       auto entities = m_snapshot["scene"]["entities"];
+      ImGui::BeginDisabled(playing());
       tree(entities, nullptr);
+      ImGui::EndDisabled();
       ImGui::EndChild();
       ImGui::SameLine();
       ImGui::BeginChild("Viewport", {std::max(100.F, available.x - 220 - 340 - 24), available.y},
                         ImGuiChildFlags_Borders);
-      ImGui::TextUnformatted("Game camera preview");
+      ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
+
+      if (m_playError) {
+        ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
+      }
+
+      if (!m_playDiagnostics.empty()) {
+        ImGui::TextWrapped(
+            "Play diagnostics: %s",
+            m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
+      }
+
+      m_viewOrigin = ImGui::GetCursorScreenPos();
       const auto content = ImGui::GetContentRegionAvail();
       m_viewWidth = std::max(1.F, content.x);
       m_viewHeight = std::max(1.F, content.y);
@@ -840,7 +1193,9 @@ namespace Dot::Editor {
       ImGui::BeginChild("Inspector", {0, available.y}, ImGuiChildFlags_Borders);
       ImGui::TextUnformatted("Inspector");
       ImGui::Separator();
+      ImGui::BeginDisabled(playing());
       inspector();
+      ImGui::EndDisabled();
       ImGui::EndChild();
 
       if (m_pendingClose) {
@@ -850,20 +1205,28 @@ namespace Dot::Editor {
       if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Save changes before closing?");
 
-        if (ImGui::Button("Save and close") && applyInspector() && action({{"command", "save"}})) {
-          m_application->stop();
+        if (!m_pendingClose) {
+          ImGui::CloseCurrentPopup();
+        }
+
+        if (ImGui::Button("Save and close")) {
+          action({{"command", "save-close"}});
         }
 
         ImGui::SameLine();
 
         if (ImGui::Button("Discard")) {
-          m_application->stop();
+          auto result = safeExecute("{\"command\":\"close\",\"discard\":true}");
+
+          if (!result) {
+            m_message = result.error().message;
+          }
         }
 
         ImGui::SameLine();
 
         if (ImGui::Button("Cancel")) {
-          m_pendingClose = false;
+          action({{"command", "cancel-close"}});
           ImGui::CloseCurrentPopup();
         }
 
@@ -878,10 +1241,71 @@ namespace Dot::Editor {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
         m_pendingClose = m_document->stats()->dirty || pendingInspector();
+        if (!m_pendingClose) {
+          auto stopped = stopPlay();
+
+          if (!stopped) {
+            return std::unexpected(stopped.error());
+          }
+        }
+
         return !m_pendingClose;
       };
-      callbacks.prepareFrame = [&](const auto&) -> Core::Result<void> { return processRequests(); };
+      callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
+        auto processed = processRequests();
+
+        if (!processed) {
+          return processed;
+        }
+
+        if (m_captureInput && (input.key(Platform::Key::Escape).pressed || m_pendingClose)) {
+          captureInput(false);
+        }
+
+        if (m_resetGuiInput) {
+          for (bool focused : {false, true}) {
+            auto forwarded
+                = m_renderer->guiEvent({m_application->window().id(), 0, Platform::Focus{focused}});
+
+            if (!forwarded) {
+              return std::unexpected(forwarded.error());
+            }
+          }
+
+          m_resetGuiInput = false;
+        }
+
+        if (m_captureInput) {
+          m_gameInput = input;
+          auto pointer = input.pointer();
+          static_cast<void>(
+              m_gameInput.consume({m_application->window().id(), 0,
+                                   Platform::PointerMoved{pointer.x - m_viewOrigin.x,
+                                                          pointer.y - m_viewOrigin.y, 0, 0}}));
+        } else {
+          m_gameInput.beginFrame();
+          static_cast<void>(
+              m_gameInput.consume({m_application->window().id(), 0, Platform::Focus{false}}));
+        }
+
+        return {};
+      };
       callbacks.render = [&](const auto& frame) -> Core::Result<void> {
+        if (playing() && m_play->stats()->state == PlayState::Running) {
+          auto advanced = m_play->advance(m_gameInput, frame.elapsed);
+          auto remembered = remember();
+
+          if (!remembered) {
+            return remembered;
+          }
+
+          if (!advanced) {
+            m_playError = advanced.error();
+            diagnostic(errorJson(advanced.error()));
+            captureInput(false);
+          }
+        }
+
         auto ready = preview();
 
         if (!ready) {
@@ -920,6 +1344,8 @@ namespace Dot::Editor {
 
     try {
       auto impl = std::make_unique<Impl>();
+      impl->m_project = project;
+      impl->m_config = config;
       auto document = Document::open(project);
 
       if (!document) {
@@ -966,15 +1392,13 @@ namespace Dot::Editor {
       gui.font = config.font;
 
       if (gui.font.empty()) {
-        const auto* base = SDL_GetBasePath();
+        auto font = impl->resource("NotoSansSC.ttf");
 
-        if (!base) {
-          return Core::fail(Core::ErrorCode::Io,
-                            "Resolve editor resource directory: " + std::string(SDL_GetError()));
+        if (!font) {
+          return std::unexpected(font.error());
         }
 
-        const std::string path = std::string(base) + "resources/NotoSansSC.ttf";
-        gui.font = std::filesystem::path(std::u8string(path.begin(), path.end()));
+        gui.font = std::move(*font);
       }
 
       auto enabled = impl->m_renderer->enableGui(gui);
@@ -1023,15 +1447,32 @@ namespace Dot::Editor {
         return std::unexpected(metadata.error());
       }
 
-      impl->m_events
-          = impl->m_application->events().subscribe([state = impl.get()](const auto& event) {
-              auto handled = state->m_renderer->guiEvent(event);
+      impl->m_events = impl->m_application->events().subscribe([state
+                                                                = impl.get()](const auto& event) {
+        if (state->m_captureInput && std::holds_alternative<Platform::ButtonChanged>(event.data)) {
+          const auto pointer = state->m_application->input().pointer();
 
-              if (!handled) {
-                state->m_inputError = handled.error();
-                state->m_application->stop();
-              }
-            });
+          if (pointer.x < state->m_viewOrigin.x || pointer.y < state->m_viewOrigin.y
+              || pointer.x >= state->m_viewOrigin.x + state->m_viewWidth
+              || pointer.y >= state->m_viewOrigin.y + state->m_viewHeight) {
+            state->captureInput(false);
+          }
+        }
+
+        if (state->m_captureInput
+            && ((std::holds_alternative<Platform::KeyChanged>(event.data)
+                 && std::get<Platform::KeyChanged>(event.data).key != Platform::Key::F5)
+                || std::holds_alternative<Platform::Text>(event.data))) {
+          return;
+        }
+
+        auto handled = state->m_renderer->guiEvent(event);
+
+        if (!handled) {
+          state->m_inputError = handled.error();
+          state->m_application->stop();
+        }
+      });
       return Workspace(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -1058,8 +1499,8 @@ namespace Dot::Editor {
     ActiveScope scope{m_impl->m_active};
 
     auto result = m_impl->m_application->run(callbacks, frames);
-    return m_impl->m_inputError ? Core::Result<void>{std::unexpected(*m_impl->m_inputError)}
-                                : result;
+    return m_impl->finish(
+        m_impl->m_inputError ? Core::Result<void>{std::unexpected(*m_impl->m_inputError)} : result);
   }
 
   auto Workspace::step(std::chrono::nanoseconds elapsed) -> Core::Result<void> {
@@ -1081,8 +1522,9 @@ namespace Dot::Editor {
     ActiveScope scope{m_impl->m_active};
 
     auto result = m_impl->m_application->step(elapsed, callbacks);
-    return m_impl->m_inputError ? Core::Result<void>{std::unexpected(*m_impl->m_inputError)}
-                                : result.transform([](const auto&) {});
+    return m_impl->finish(m_impl->m_inputError
+                              ? Core::Result<void>{std::unexpected(*m_impl->m_inputError)}
+                              : result.transform([](const auto&) {}));
   }
 
   auto Workspace::dispatch(std::string_view request) -> Core::Result<std::string> {
@@ -1096,6 +1538,7 @@ namespace Dot::Editor {
       return std::unexpected(checked.error());
     }
 
+    ActiveScope active{m_impl->m_active};
     return m_impl->safeExecute(request);
   }
 

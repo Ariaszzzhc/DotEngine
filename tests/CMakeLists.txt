@@ -194,5 +194,6 @@ add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp)
 target_link_libraries(DotWorkspaceTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
 doctest_discover_tests(DotWorkspaceTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)

@@ -1738,3 +1738,58 @@ reports/read-only runtime scene; it has no window or document dependency.
   catch-up bounds, input publication before effects, partial-update accounting,
   report ownership, reentry/thread/move rules and explicit stop/resource lifetime.
   Formatting/whitespace checks pass; other platforms remain unvalidated locally.
+
+
+### Native workspace game preview and shared close actions
+
+Integrated PlaySession into Workspace with shared Play/Stop/F5, input capture,
+actual runtime inspection and diagnostics. Current unsaved authoring is cloned;
+editing/history/save are locked until Stop. Editor state and files are preserved
+while the game runs and when returning to authoring preview.
+
+- macOS Debug and Release/NDEBUG each pass all 720 CTest cases (669 doctest cases
+  and 51 executable checks). Five added workspace cases cover unsaved runtime/
+  authoring separation with actual changed/restored GPU pixels and stop hooks,
+  factory failure cleanup and realm-fault editor recovery, direct command script
+  reentry rejection, strict capture/close/revision input and cancel/save-close
+  while playing, external save conflicts stopping the game but preserving the
+  open/dirty editor, repair/retry, and compiled-generation release.
+- The extended native workspace acceptance uses the packaged compiler/font and a
+  real Cocoa/Metal window, SDL F5 activating actual GUI shortcuts, captured D input
+  driving a Jolt rigid body and a script querying its real native-playback voice,
+  Escape releasing input and F5 Stop invoking hooks/releasing generations. It
+  checks runtime GPU pixel changes, exact authoring pixel restoration and unchanged
+  authoring snapshot/files. Playback is a real endpoint with instance software
+  volume zero; no silent-device fallback is used. Existing native GPU/audio,
+  project/runtime/script cases also pass. Manual mouse/visual review remains
+  unavailable from the previously observed locked desktop; no such result is claimed.
+- Capture starts disabled, routes keyboard/text to game and uses viewport-local
+  logical pointer coordinates. Escape/outside click releases capture and publishes
+  released edges before empty input; F5 stays an editor control. Focus loss clears
+  native held keys. Capture does not pause simulation/audio. Historical diagnostics
+  retain up to 64 entries; current game faults remain observable while the editor
+  can stop/recover rather than reporting game success from editor-frame success.
+- Play/Stop/inspect-play/capture-input/save-close/cancel-close share GUI/automation
+  implementations. Save-close stops the game, applies pending inspector values,
+  saves and closes only on success; completed stop/apply effects are not rolled
+  back on later save conflict. Close/error/ownership paths stop hooks and release
+  native services; destructor diagnostics use stderr. Direct dispatch/destruction
+  now guard against reentry from trusted native script services.
+- Packaged the full pinned native TypeScript tool directory plus combined license/
+  notice. A first binary-only copy failed its version probe because lib.d.ts was
+  absent; this was a packaging omission, not a caller environment problem. Both
+  final compiler probes report 7.0.2 and all 109 packaged tool/standard-library files
+  match the installed pinned files byte-for-byte. Runtime lookup uses executable-
+  relative resources and supports custom compiler configuration without hardcoded
+  development paths, Node/npm or compiler/linker environment changes.
+- Reviewed scope/ownership and destruction order, partial creation/explicit stop,
+  expected/report error handling and terminal game recovery, fixed/input timing,
+  GUI capture/shortcut/reentry behavior, mutation locks, shared close/save failure
+  ordering, persistent GPU target/cache borrows, relocated compiler data/license
+  completeness and actual native/Release evidence. Formatting/whitespace/private-
+  reference checks pass. Release uses caller LLVM libc++/libunwind, without
+  LC_RPATH or sanitizer linkage. Windows/Linux code remains unvalidated locally.
+
+Remaining resource/script-code authoring, project export, expanded rendering,
+complete acceptance scenes and example game remain to be implemented. Full engine
+completion has not been claimed; the goal remains active.
