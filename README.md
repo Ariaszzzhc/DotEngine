@@ -36,6 +36,16 @@ See [project home and automation](docs/ProjectHome.md), [editor workflow](docs/E
 [acceptance coverage](docs/Acceptance.md). Local validation is arm64 macOS;
 Windows/Linux implementation support is not a claim of local validation.
 
+## Portable editor distribution
+
+```sh
+cmake --build --preset release --target DotEditorArchive
+```
+
+The platform-named zip under `build/release/distribution` contains the editor,
+compiler, SDK, font, templates and native libraries. See
+[distribution and validation](docs/Distribution.md) for usage and tested boundaries.
+
 ## Current state
 
 The core is a static library using C++ modules, with diagnostics, error results,

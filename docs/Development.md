@@ -2204,3 +2204,43 @@ Reviewed that the correction is limited to synthetic test setup and retains actu
 window events, body motion, gameplay, pixel and audio assertions. Final Debug and
 Release/NDEBUG full suites both pass 766/766; formatting/whitespace checks pass.
 No Windows/Linux or manual desktop result is claimed.
+
+
+### Portable complete editor distribution
+
+Added EditorDistribution installation and DotEditorDistribution/DotEditorArchive
+build targets. The portable directory includes editor/runtime, current native
+compiler/standard libraries, SDK, CJK font, source templates, native player kit
+and license notices. Runtime/editor now share one native dependency relocation
+implementation, preserving caller compiler/linker settings. Linux installs relative
+library lookup; Windows copies detected CRT/non-system DLLs; macOS relocates and
+ad-hoc signs distributed binaries.
+
+- arm64 macOS Debug and Release/NDEBUG each pass all 767 CTest cases (714 doctest,
+  53 executable checks), taking 74.44/29.08 seconds. The new acceptance copies the
+  complete editor to a path containing spaces, starts actual native home, creates
+  Prism Relay with packaged SDK/compiler/templates, checks real TypeScript, opens
+  editor preview and runs the native project runtime, exports a standalone game,
+  deletes both authoring project and editor copy, then runs the delivered player.
+  Process ownership returns to baseline. Existing native/GUI/audio/API suites pass.
+- The Release zip contains 219 entries and occupies 43,122,457 bytes. CRC, expected
+  resources, executable bits and private-document exclusion pass. The actual zip
+  was extracted with CMake and its native project home starts successfully. Every
+  delivered Mach-O executable/library passes strict signature verification and
+  loader inspection finds only relative bundle references and system dependencies.
+  Nested player manifest byte counts remain valid after packaging.
+- Initial package inspection caught the bundled Go TypeScript compiler's signature
+  being invalidated during loader fixup. Final preparation now signs/verifies all
+  four delivered executables after dependency relocation, plus all copied dylibs.
+  Only distributed copies change. A doctest diagnostic expression was parenthesized
+  before passing compilation. No toolchain environment workaround was applied.
+- Reviewed common fixup behavior, native dependency closure/system exclusions,
+  permission-preserving resources, compiler/SDK/template location independence,
+  notices, final signature order, installed relative RPATH on Linux and generated
+  directory/archive ownership. Formatting/whitespace/private-reference checks pass.
+  Windows/Linux are implemented but unvalidated locally. No manual desktop, release
+  signing/notarization or installer-publication result is claimed; the native zip
+  supports tested local deployment without a developer checkout/toolchain path.
+- The earlier three project-home commits were pushed after a definitive GitHub SSL
+  timeout and a bounded HTTP/1.1 retry; remote main was verified at 841ad7b. The full
+  engine objective remains active pending final delivery audit of all requirements.

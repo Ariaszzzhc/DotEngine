@@ -224,6 +224,8 @@ add_custom_command(TARGET DotEditor POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt")
 
+include(cmake/EditorDistribution.cmake)
+
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

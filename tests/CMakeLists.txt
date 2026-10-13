@@ -267,3 +267,10 @@ doctest_discover_tests(DotHomeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIA
 
 add_test(NAME editor.home_smoke COMMAND DotEditor home 3)
 set_tests_properties(editor.home_smoke PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_executable(DotEditorDistributionTests main.cpp EditorDistributionTests.cpp)
+target_link_libraries(DotEditorDistributionTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotEditorDistributionTests PRIVATE
+    DOT_EDITOR_DISTRIBUTION="${CMAKE_BINARY_DIR}/distribution/DotEngine")
+add_dependencies(DotEditorDistributionTests DotEditorDistribution)
+doctest_discover_tests(DotEditorDistributionTests PROPERTIES TIMEOUT 120 LABELS "gpu" RUN_SERIAL TRUE)

@@ -3,59 +3,7 @@ set(dot_kit "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 set(dot_executable "${dot_kit}/DotGame@CMAKE_EXECUTABLE_SUFFIX@")
 set(dot_search "@DOT_KIT_SEARCH@")
 
-if("@CMAKE_SYSTEM_NAME@" STREQUAL "Darwin")
-    include(BundleUtilities)
-    function(gp_item_default_embedded_path_override item result)
-        set(${result} "@executable_path/lib" PARENT_SCOPE)
-    endfunction()
-    fixup_bundle("${dot_executable}" "" "${dot_search}")
-    find_program(dot_codesign codesign REQUIRED)
-    file(GLOB dot_libraries "${dot_kit}/lib/*")
-    foreach(dot_file IN LISTS dot_libraries)
-        execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_file}"
-            COMMAND_ERROR_IS_FATAL ANY)
-    endforeach()
-    execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_executable}"
-        COMMAND_ERROR_IS_FATAL ANY)
-elseif("@CMAKE_SYSTEM_NAME@" STREQUAL "Windows")
-    file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${dot_executable}"
-        RESOLVED_DEPENDENCIES_VAR dot_dependencies
-        DIRECTORIES ${dot_search}
-        PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
-        POST_EXCLUDE_REGEXES "[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32")
-    foreach(dot_file IN LISTS dot_dependencies)
-        file(COPY "${dot_file}" DESTINATION "${dot_kit}" FOLLOW_SYMLINK_CHAIN)
-    endforeach()
-else()
-    file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${dot_executable}"
-        RESOLVED_DEPENDENCIES_VAR dot_dependencies
-        DIRECTORIES ${dot_search}
-        PRE_EXCLUDE_REGEXES "^ld-linux" "^lib(c|m|pthread|dl|rt)\\.so")
-    foreach(dot_file IN LISTS dot_dependencies)
-        file(COPY "${dot_file}" DESTINATION "${dot_kit}/lib" FOLLOW_SYMLINK_CHAIN)
-    endforeach()
-endif()
-
-
-if(NOT "@CMAKE_SYSTEM_NAME@" STREQUAL "Darwin")
-    if("@CMAKE_SYSTEM_NAME@" STREQUAL "Windows")
-        file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${dot_executable}"
-            RESOLVED_DEPENDENCIES_VAR dot_verified
-            DIRECTORIES "${dot_kit}"
-            PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
-            POST_EXCLUDE_REGEXES "[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32")
-    else()
-        file(GET_RUNTIME_DEPENDENCIES EXECUTABLES "${dot_executable}"
-            RESOLVED_DEPENDENCIES_VAR dot_verified
-            PRE_EXCLUDE_REGEXES "^ld-linux" "^lib(c|m|pthread|dl|rt)\\.so")
-    endif()
-    foreach(dot_file IN LISTS dot_verified)
-        file(RELATIVE_PATH dot_relative "${dot_kit}" "${dot_file}")
-        if(dot_relative MATCHES "^\\.\\./" OR IS_ABSOLUTE "${dot_relative}")
-            message(FATAL_ERROR "Packaged runtime still depends on an external library: ${dot_file}")
-        endif()
-    endforeach()
-endif()
+include("@CMAKE_CURRENT_BINARY_DIR@/FixNativeDependencies.cmake")
 
 set(dot_files "[]")
 file(GLOB_RECURSE dot_entries LIST_DIRECTORIES FALSE RELATIVE "${dot_kit}" "${dot_kit}/*")

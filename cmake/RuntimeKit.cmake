@@ -22,6 +22,8 @@ else()
     set(DOT_KIT_PLATFORM "linux-x64")
 endif()
 set(DOT_KIT_SEARCH "${CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES};${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin;${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin")
+configure_file("${CMAKE_CURRENT_LIST_DIR}/FixNativeDependencies.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/FixNativeDependencies.cmake" @ONLY)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/PrepareRuntimeKit.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/PrepareRuntimeKit.cmake" @ONLY)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/PrepareRuntimeKit.cmake" COMPONENT RuntimeKit)

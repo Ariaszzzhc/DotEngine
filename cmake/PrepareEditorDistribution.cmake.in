@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.31)
+set(dot_kit "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(dot_search "@DOT_KIT_SEARCH@")
+foreach(dot_name IN ITEMS DotEditor DotRuntime)
+    set(dot_executable "${dot_kit}/${dot_name}@CMAKE_EXECUTABLE_SUFFIX@")
+    include("@CMAKE_CURRENT_BINARY_DIR@/FixNativeDependencies.cmake")
+endforeach()
+if("@CMAKE_SYSTEM_NAME@" STREQUAL "Darwin")
+    file(GLOB_RECURSE dot_native_libraries "${dot_kit}/*.dylib")
+    foreach(dot_binary IN LISTS dot_native_libraries)
+        execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_binary}"
+            COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
+    foreach(dot_binary IN ITEMS DotEditor DotRuntime resources/typescript-native/tsc resources/runtime-kit/DotGame)
+        execute_process(COMMAND "${dot_codesign}" --force --sign - "${dot_kit}/${dot_binary}"
+            COMMAND_ERROR_IS_FATAL ANY)
+        execute_process(COMMAND "${dot_codesign}" --verify --strict "${dot_kit}/${dot_binary}"
+            COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
+endif()
+file(WRITE "${dot_kit}/distribution.json"
+    "{\"version\":1,\"engine\":\"@PROJECT_VERSION@\",\"platform\":\"@DOT_KIT_PLATFORM@\",\"editor\":\"DotEditor@CMAKE_EXECUTABLE_SUFFIX@\",\"runtime\":\"DotRuntime@CMAKE_EXECUTABLE_SUFFIX@\"}\n")
