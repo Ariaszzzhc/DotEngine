@@ -1811,3 +1811,31 @@ foundation. Windows device names include superscript COM/LPT digits, according t
   reserved-device rules, byte boundaries and shared project behavior. Formatting/
   whitespace checks pass. These are lexical rules, not a promise every filesystem
   accepts a path. Windows/Linux remain unvalidated locally.
+
+
+### Rooted resource authoring and text documents
+
+Added Dot.Editor.Resources with separate interface/implementation. ResourceStore
+lists actual asset/script files, creates one-level directories/text and imports
+bounded bytes without replacing existing destinations or removing source data.
+TextDocument owns a UTF-8 draft and exact disk baseline with local revisions.
+
+- Six focused resource cases pass on macOS Debug and Release/NDEBUG: real Unicode
+  files/sorted catalog/SDK read-only protection, exact-byte/no-op/revision behavior,
+  external changes retaining dirty drafts and repair/save, binary import/source
+  preservation/no overwrite/invalid text, path/text/binary size/NUL/UTF-8/metadata/
+  parent boundaries, symlink/deleted-file/depth/capacity failures, store/text moves,
+  shared descriptor lifetime and worker rejection. The final workspace working
+  tree passes all 731 CTest cases in each configuration.
+- Paths stay in assets/configured scripts. SDK protection includes directory
+  identity; symlinks/special files and ASCII case aliases/collisions are rejected.
+  Defaults bound text at 1 MiB, binary imports at 64 MiB, catalog/lookup entries at
+  8192 and depth at 64. Changed metadata requires reopening. Save verifies exact
+  baseline bytes before atomic replacement and prepares the next baseline before
+  effects. No-op replace/save preserve revision; destruction never implicitly saves.
+- Reviewed rooted/source path boundaries, SDK/alias protection, finite traversal,
+  source preservation, expected I/O versus argument errors, baseline conflict and
+  allocation-before-write ordering, thread/move/shared ownership and partial errors.
+  Formatting/whitespace checks pass. Caller-serialized checks/replacement are not
+  OS compare-and-swap, hostile-race isolation or crash-durability guarantees. Other
+  platforms remain unvalidated locally.

@@ -11,6 +11,7 @@ add_executable(DotTests
     StagedDirectoryTests.cpp
     ProjectTests.cpp
     DocumentTests.cpp
+    ResourceTests.cpp
     InputTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
