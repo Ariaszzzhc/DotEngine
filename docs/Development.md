@@ -1793,3 +1793,21 @@ while the game runs and when returning to authoring preview.
 Remaining resource/script-code authoring, project export, expanded rendering,
 complete acceptance scenes and example game remain to be implemented. Full engine
 completion has not been claimed; the goal remains active.
+
+
+### Shared portable project path rules
+
+Added Dot.Core.Paths with separate interface/implementation and allocation-free
+UTF-8 lexical validation. Project metadata/folder validation now uses this shared
+foundation. Windows device names include superscript COM/LPT digits, according to
+[Microsoft naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+
+- The focused path case and eight project cases pass on macOS Debug and Release/
+  NDEBUG, including Unicode, reserved names/characters, traversal/NUL/invalid UTF-8,
+  exact 240-byte component/4096-byte path limits and preserving existing project
+  behavior. The final resource workspace working tree passes all 731 CTest cases
+  in each configuration (680 doctest cases, 51 executable checks).
+- Reviewed no-allocation/noexcept validation, ASCII folding without locale,
+  reserved-device rules, byte boundaries and shared project behavior. Formatting/
+  whitespace checks pass. These are lexical rules, not a promise every filesystem
+  accepts a path. Windows/Linux remain unvalidated locally.

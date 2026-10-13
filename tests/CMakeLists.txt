@@ -5,6 +5,7 @@ add_executable(DotTests
     main.cpp
     CoreTests.cpp
     TextTests.cpp
+    PathTests.cpp
     EventTests.cpp
     FileTests.cpp
     StagedDirectoryTests.cpp

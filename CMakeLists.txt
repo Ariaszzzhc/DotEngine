@@ -70,6 +70,7 @@ target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
     src/Engine/Core/Files.cpp
+    src/Engine/Core/Paths.cpp
     src/Engine/Core/StagedDirectory.cpp
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
@@ -140,6 +141,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Process.cppm
         src/Engine/Core/Events.cppm
         src/Engine/Core/Files.cppm
+        src/Engine/Core/Paths.cppm
         src/Engine/Core/StagedDirectory.cppm
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm

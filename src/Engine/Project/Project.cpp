@@ -18,6 +18,7 @@ module Dot.Project;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.Text;
+import Dot.Core.Paths;
 import Dot.Core.StagedDirectory;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -35,49 +36,6 @@ namespace Dot::Project {
     auto utf(const std::filesystem::path& value) -> std::string {
       const auto bytes = value.generic_u8string();
       return std::string(bytes.begin(), bytes.end());
-    }
-
-    auto portable(std::string_view value) -> bool {
-      if (value.empty() || value.size() > 4096 || value.front() == '/' || value.back() == '/'
-          || value.find_first_of("\\:<>\"|?*") != std::string_view::npos
-          || !Core::isValidUtf8(value)
-          || std::ranges::any_of(value, [](unsigned char c) { return c < 32 || c == 127; })) {
-        return false;
-      }
-
-      std::size_t begin = 0;
-
-      while (begin < value.size()) {
-        const auto end = value.find('/', begin);
-        const auto part = value.substr(begin, end == std::string_view::npos ? end : end - begin);
-
-        if (part.empty() || part == "." || part == ".." || part.back() == '.' || part.back() == ' '
-            || part.size() > 240) {
-          return false;
-        }
-
-        auto stem = std::string(part.substr(0, part.find('.')));
-
-        for (auto& c : stem) {
-          if (c >= 'a' && c <= 'z') {
-            c = static_cast<char>(c - 'a' + 'A');
-          }
-        }
-
-        if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL"
-            || (stem.size() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
-                && stem[3] >= '1' && stem[3] <= '9')) {
-          return false;
-        }
-
-        if (end == std::string_view::npos) {
-          break;
-        }
-
-        begin = end + 1;
-      }
-
-      return true;
     }
 
     auto regular(const Core::FileSystem& files, const std::filesystem::path& relative,
@@ -169,8 +127,9 @@ namespace Dot::Project {
     if (description.name.empty() || description.name.size() > 128
         || !Core::isValidUtf8(description.name)
         || std::ranges::any_of(description.name, [](unsigned char c) { return c < 32 || c == 127; })
-        || !portable(description.startScene) || !description.startScene.ends_with(".dotscene")
-        || !portable(description.scriptsDirectory) || description.width == 0
+        || !Core::isPortableRelativePath(description.startScene)
+        || !description.startScene.ends_with(".dotscene")
+        || !Core::isPortableRelativePath(description.scriptsDirectory) || description.width == 0
         || description.width > 8192 || description.height == 0 || description.height > 8192
         || description.fixedHz == 0 || description.fixedHz > 240) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -285,7 +244,7 @@ namespace Dot::Project {
     const auto utf = folder.generic_u8string();
     const std::string name(utf.begin(), utf.end());
 
-    if (!metadata || folder.filename() != folder || !portable(name)) {
+    if (!metadata || folder.filename() != folder || !Core::isPortableRelativePath(name)) {
       return metadata ? Core::Result<Project>{Core::fail(
                             Core::ErrorCode::InvalidArgument,
                             "Project folder must be one portable relative name")}
