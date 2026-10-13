@@ -54,6 +54,14 @@ export namespace Dot::Project {
                                      const Script::TypeScriptCompiler& compiler,
                                      const GameSessionConfig& config = {})
         -> Core::Result<GameSession>;
+    /** Clone a validated authoring scene into a fresh scope without saving or
+     * borrowing it. Project resources/scripts remain rooted at the project.
+     * 克隆已校验的编辑场景到新范围，不保存也不借用源场景；资源/脚本仍以项目为根。 */
+    [[nodiscard]] static auto createFromScene(const Project& project,
+                                              const Script::TypeScriptCompiler& compiler,
+                                              const World::Scene& scene,
+                                              const GameSessionConfig& config = {})
+        -> Core::Result<GameSession>;
     GameSession(const GameSession&) = delete;
     auto operator=(const GameSession&) -> GameSession& = delete;
     GameSession(GameSession&&) noexcept;
@@ -81,6 +89,10 @@ export namespace Dot::Project {
     [[nodiscard]] auto close() -> Core::Result<Script::ScriptReport>;
 
   private:
+    [[nodiscard]] static auto prepare(const Project& project,
+                                      const Script::TypeScriptCompiler& compiler,
+                                      World::Scene scene, const GameSessionConfig& config)
+        -> Core::Result<GameSession>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

@@ -16,6 +16,7 @@ import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Core.Result;
 import Dot.World.Scene;
+import Dot.World.SceneFiles;
 import Dot.Platform.Input;
 import Dot.Platform.Events;
 import Dot.Script.Compiler;
@@ -367,4 +368,52 @@ TEST_CASE("game_session_audio_velocity_uses_all_fixed_steps_once_per_frame") {
   good(session.update(0));
   CHECK(actor(session).name == "velocity0.000");
   good(session.close());
+}
+
+TEST_CASE("game_session_unsaved_scene_clone_is_independent_and_never_persists") {
+  Fixture fixture(false);
+  auto authoring = fixture.project.loadStartup().value();
+  const auto id = authoring.entities()->at(1).id;
+  auto transform = authoring.entity(id)->transform;
+  transform.position.x = 4;
+  REQUIRE(authoring.setTransform(id, transform));
+  const auto original = Dot::World::encodeScene(authoring).value();
+  auto prepared = GameSession::createFromScene(fixture.project, fixture.compiler(), authoring);
+  REQUIRE_MESSAGE(prepared, (prepared ? "" : prepared.error().message));
+  auto session = std::move(*prepared);
+  REQUIRE(session.scene()->get()->id() != authoring.id());
+  CHECK(actor(session).transform.position.x == 4);
+  good(session.start());
+  REQUIRE(session.publish(held()));
+  good(session.update(0.5));
+  CHECK(actor(session).transform.position.x > 4);
+  CHECK(Dot::World::encodeScene(authoring).value() == original);
+  CHECK(fixture.project.loadStartup()->entities()->at(1).transform.position.x == 0);
+  good(session.close());
+  CHECK(Dot::World::encodeScene(authoring).value() == original);
+}
+
+TEST_CASE("game_session_clone_survives_source_replacement_and_factory_failure_cleans_up") {
+  Fixture fixture;
+  auto authoring = fixture.project.loadStartup().value();
+  const auto generations = Dot::Script::compilerGenerations();
+  {
+    auto session
+        = GameSession::createFromScene(fixture.project, fixture.compiler(), authoring).value();
+    authoring = Dot::World::Scene::create("Replacement").value();
+    good(session.start());
+    good(session.update(0.1));
+    CHECK(session.scene()->get()->entityCount().value() == 2);
+    good(session.close());
+  }
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  auto original = fixture.project.loadStartup().value();
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts",
+                                                   "export const x: number = 'bad';"));
+  CHECK_FALSE(GameSession::createFromScene(fixture.project, fixture.compiler(), original));
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  GameSessionConfig invalid;
+  invalid.pollInterval = std::chrono::milliseconds{-1};
+  CHECK_FALSE(GameSession::createFromScene(fixture.project, fixture.compiler(), original, invalid));
+  CHECK(Dot::Script::compilerGenerations() == generations);
 }

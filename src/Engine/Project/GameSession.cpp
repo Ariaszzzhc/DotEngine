@@ -16,11 +16,25 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Project;
 import Dot.World.Scene;
+import Dot.World.SceneFiles;
 import Dot.Platform.Input;
 import Dot.Script.AudioSession;
 
 namespace Dot::Project {
   namespace {
+    auto validate(const GameSessionConfig& config) -> Core::Result<void> {
+      if (config.audioMode != SessionAudio::Offline && config.audioMode != SessionAudio::Playback) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid game session audio mode");
+      }
+
+      if (config.pollInterval.count() < 0 || config.pollInterval.count() > 60000) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Game poll interval must be 0..60000 ms");
+      }
+
+      return {};
+    }
+
     struct ActiveScope {
       bool& active;
 
@@ -133,18 +147,44 @@ namespace Dot::Project {
 
   auto GameSession::create(const Project& project, const Script::TypeScriptCompiler& compiler,
                            const GameSessionConfig& config) -> Core::Result<GameSession> {
-    if (config.audioMode != SessionAudio::Offline && config.audioMode != SessionAudio::Playback) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid game session audio mode");
+    auto valid = validate(config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
     }
 
-    if (config.pollInterval.count() < 0 || config.pollInterval.count() > 60000) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Game poll interval must be 0..60000 ms");
+    auto loaded = project.loadStartup();
+    return loaded ? prepare(project, compiler, std::move(*loaded), config)
+                  : std::unexpected(loaded.error());
+  }
+
+  auto GameSession::createFromScene(const Project& project,
+                                    const Script::TypeScriptCompiler& compiler,
+                                    const World::Scene& scene, const GameSessionConfig& config)
+      -> Core::Result<GameSession> {
+    auto valid = validate(config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
     }
 
+    auto encoded = World::encodeScene(scene);
+
+    if (!encoded) {
+      return std::unexpected(encoded.error());
+    }
+
+    auto cloned = World::decodeScene(*encoded);
+    return cloned ? prepare(project, compiler, std::move(*cloned), config)
+                  : std::unexpected(cloned.error());
+  }
+
+  auto GameSession::prepare(const Project& project, const Script::TypeScriptCompiler& compiler,
+                            World::Scene scene, const GameSessionConfig& config)
+      -> Core::Result<GameSession> {
     try {
       auto description = project.description();
       auto files = project.files();
-      auto loaded = project.loadStartup();
 
       if (!description) {
         return std::unexpected(description.error());
@@ -154,14 +194,10 @@ namespace Dot::Project {
         return std::unexpected(files.error());
       }
 
-      if (!loaded) {
-        return std::unexpected(loaded.error());
-      }
-
       auto impl = std::make_unique<Impl>();
       impl->m_description = std::move(*description);
       impl->m_audioMode = config.audioMode;
-      impl->m_scene = std::make_shared<World::Scene>(std::move(*loaded));
+      impl->m_scene = std::make_shared<World::Scene>(std::move(scene));
       impl->m_identity = impl->m_scene->id();
       auto input = Script::InputSource::create(config.input);
 

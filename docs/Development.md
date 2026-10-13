@@ -1694,3 +1694,20 @@ real project editing and serialized local automation through shared operations.
 Remaining workspace play preview, project resources/script-code authoring and
 export tooling, expanded rendering, complete acceptance scenes and example game
 remain to be implemented. The full engine goal is still active.
+
+
+### Independent game-session scene cloning
+
+GameSession::createFromScene validates/encodes/clones current authoring into a
+fresh scope, with no source borrow or save. Both factories share backend/script
+preparation and cleanup; normal project runtime still loads its startup scene.
+
+- Twelve focused GameSession cases pass on macOS Debug and Release/NDEBUG,
+  including two new cases for unsaved state, independent script mutation, unchanged
+  authoring/disk files, replacing the source owner, malformed scripts/invalid
+  configuration and compiled-generation release. Existing native project-player
+  acceptance also passes. The final Play workspace working tree passes all 720
+  CTest cases in each configuration (669 doctest cases, 51 executable checks).
+- Reviewed validated fresh scope/explicit ownership, shared preparation ordering,
+  expected failure propagation, no persistence and partial backend/realm cleanup.
+  Formatting/whitespace checks pass. Windows/Linux remain unvalidated locally.
