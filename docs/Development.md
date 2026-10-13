@@ -1455,3 +1455,36 @@ Graphical editing, game export and the example game remain subsequent work.
 
 Remaining graphical editor/export tooling, expanded rendering, complete acceptance
 scenes and the example game remain to be implemented.
+
+### Editor document transactions and history
+
+Added a window-independent authoring Document with native scene validation,
+selection, bounded undo/redo, explicit saves and a shared JSON request protocol.
+
+- Fourteen focused document cases pass on macOS Debug and Release, including
+  Release with NDEBUG. The full working tree with the command consumers passes
+  682/682 CTest cases in each configuration. Tests cover owned/read-only snapshots,
+  selection and stale revisions/handles, every component and hierarchy edits,
+  final primary-camera validation, component removal, invalid late operations
+  rolling back the whole batch, subtree removal/selection restoration, no-op
+  scope/revision/history retention, repeated undo/redo and branch ID non-reuse,
+  entry/byte eviction and invalid capacities, dirty state around saved baselines,
+  external metadata/scene conflicts and missing-file failures retaining edits,
+  moves/stable borrows/foreign-thread rejection, uint64 entity exhaustion and
+  strict transport/schema/canonical IDs/UTF-8/duplicate/depth/count/byte limits.
+- Edit batches prepare the final scene through the native SceneFiles codec,
+  canonicalize it, prepare history/selection and then commit with nonthrowing
+  transfers. Successful edits/undo/redo get fresh scene scopes; published entity
+  values are never reused within the document. Histories share immutable payloads,
+  retain a configured entry/byte budget and evict old entries as needed. The saved
+  baseline may retain one extra native snapshot. No-op batches preserve redo.
+- Mutations require the current document revision. Saves revalidate project
+  metadata and the saved semantic scene baseline before atomic replacement;
+  conflicts preserve unsaved state. This is not OS compare-and-swap and filesystem
+  edits still require caller serialization. The model opens no runtime backends.
+- Reviewed transactional allocation/commit boundaries, ID/revision exhaustion,
+  scope replacement and stable-borrow lifetime, selection/history consistency,
+  subtree traversal, final native validation, save conflicts/failure retention,
+  response failures after mutation and bounded ownership. Formatting/whitespace
+  checks pass; module interface and implementation remain separate. Caller LLVM
+  environment is unchanged; Windows/Linux common code remains unvalidated locally.

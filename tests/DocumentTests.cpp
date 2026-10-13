@@ -1,0 +1,421 @@
+#include <doctest/doctest.h>
+
+#include <algorithm>
+#include <expected>
+#include <filesystem>
+#include <limits>
+#include <nlohmann/json.hpp>
+#include <random>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+import Dot.Core.Files;
+import Dot.Core.Result;
+import Dot.Project;
+import Dot.Editor.Document;
+import Dot.World.Scene;
+import Dot.World.SceneFiles;
+
+namespace {
+  using namespace Dot::Editor;
+  using Json = nlohmann::json;
+
+  struct Fixture {
+    std::filesystem::path root;
+
+    Fixture() {
+      std::random_device random;
+      root = std::filesystem::temp_directory_path()
+             / ("dot-document-" + std::to_string(random()) + "-" + std::to_string(random()));
+      REQUIRE(std::filesystem::create_directory(root));
+      REQUIRE(Dot::Project::Project::create(
+          Dot::Core::FileSystem::open(root).value(), "game", {},
+          Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value()));
+    }
+
+    ~Fixture() {
+      std::error_code ignored;
+      std::filesystem::remove_all(root, ignored);
+    }
+
+    auto project() const -> Dot::Project::Project {
+      return Dot::Project::Project::open(root / "game").value();
+    }
+
+    auto document(const DocumentConfig& config = {}) const -> Document {
+      auto result = Document::open(project(), config);
+      REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+      return std::move(*result);
+    }
+  };
+
+  auto edit(Document& document, const Json& operations) -> EditReport {
+    auto result = document.apply(operations.dump(), document.stats()->revision);
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    return std::move(*result);
+  }
+
+  auto rename(std::string name = "Changed") -> Json {
+    return Json::array({{{"op", "name"}, {"entity", "2"}, {"name", std::move(name)}}});
+  }
+
+  auto state(const Document& document) -> Json {
+    return Json::parse(document.snapshot().value());
+  }
+
+  auto revision(const Document& document) -> std::uint64_t {
+    return document.stats()->revision;
+  }
+
+  auto request(Document& document, Json value) -> Json {
+    if (value["command"] != "inspect") {
+      value["revision"] = std::to_string(revision(document));
+    }
+
+    auto result = document.dispatch(value.dump());
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    return Json::parse(*result);
+  }
+}  // namespace
+
+TEST_CASE("document_open_selection_owned_snapshot_and_stale_requests") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto initial = state(document);
+  CHECK(initial["revision"] == "1");
+  CHECK(initial["nextEntity"] == "3");
+  CHECK_FALSE(initial["dirty"].get<bool>());
+  CHECK_FALSE(document.undo(1));
+  CHECK_FALSE(document.redo(1));
+  auto entity = document.scene().value()->findEntity(2).value();
+  REQUIRE(document.select(entity, 1));
+  CHECK(document.stats()->selected == entity);
+  CHECK(revision(document) == 2);
+  REQUIRE(document.select(entity, 2));
+  CHECK(revision(document) == 2);
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK_FALSE(document.stats()->canUndo);
+  CHECK_FALSE(document.apply(rename().dump(), 1));
+  CHECK_FALSE(document.save(1));
+  CHECK_FALSE(document.select({Dot::World::EntityId{entity.scene + 1, entity.value}}, 2));
+  initial["scene"]["entities"].clear();
+  CHECK(document.scene().value()->entityCount().value() == 2);
+  REQUIRE(document.select({}, 2));
+  CHECK_FALSE(document.stats()->selected);
+  CHECK(revision(document) == 3);
+}
+
+TEST_CASE("document_atomic_batch_authors_every_component_and_hierarchy") {
+  Fixture fixture;
+  auto seed = Dot::World::Scene::create("Seed").value();
+  auto id = seed.createEntity().value();
+  REQUIRE(seed.setCamera(id, Dot::World::Camera{}));
+  REQUIRE(seed.setMeshRenderer(id, Dot::World::MeshRenderer{}));
+  REQUIRE(seed.setRigidBody(id, Dot::World::RigidBody{}));
+  Dot::World::AudioSource audio;
+  audio.asset = "assets/tone.wav";
+  REQUIRE(seed.setAudioSource(id, audio));
+  REQUIRE(seed.setAudioListener(id, Dot::World::AudioListener{true}));
+  REQUIRE(seed.setScript(id, Dot::World::ScriptComponent{"mover.ts", "Mover", "{\"speed\":2}"}));
+  auto encoded = Json::parse(Dot::World::encodeScene(seed).value())["entities"][0];
+  auto document = fixture.document();
+  Json operations = Json::array({{{"op", "create"}, {"name", "Child"}},
+                                 {{"op", "parent"}, {"entity", "3"}, {"parent", "2"}},
+                                 {{"op", "scene-name"}, {"name", "Authored"}}});
+  encoded["transform"]["position"] = {7, 1, 0};
+  operations.push_back({{"op", "transform"}, {"entity", "3"}, {"value", encoded["transform"]}});
+
+  for (const auto* component :
+       {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script"}) {
+    operations.push_back({{"op", "component"},
+                          {"entity", "3"},
+                          {"component", component},
+                          {"value", encoded[component]}});
+  }
+
+  auto report = edit(document, operations);
+  CHECK(report.changed);
+  CHECK(report.created == std::vector<std::uint64_t>{3});
+  CHECK(revision(document) == 2);
+  const auto* scene = document.scene().value();
+  auto child = scene->entity(scene->findEntity(3).value()).value();
+  CHECK(child.transform.position.x == 7);
+  CHECK(child.parent->value == 2);
+  CHECK(child.camera.has_value());
+  CHECK(child.mesh.has_value());
+  CHECK(child.rigidBody.has_value());
+  CHECK(child.audioSource == audio);
+  CHECK(child.audioListener->primary);
+  CHECK(child.script->properties == "{\"speed\":2}");
+  CHECK(scene->name().value() == "Authored");
+  CHECK(document.stats()->dirty);
+}
+
+TEST_CASE("document_invalid_later_operations_and_final_scene_validation_are_transactional") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto before = document.snapshot().value();
+  std::vector<Json> bad{
+      {{"op", "name"}, {"entity", "2"}, {"name", ""}},
+      {{"op", "component"}, {"entity", "2"}, {"component", "mesh"}, {"value", Json::object()}},
+      {{"op", "parent"}, {"entity", "2"}, {"parent", "2"}},
+      {{"op", "remove"}, {"entity", "999"}},
+      {{"op", "component"}, {"entity", "2"}, {"component", "unknown"}, {"value", nullptr}},
+      {{"op", "name"}, {"entity", "02"}, {"name", "Changed"}},
+      {{"op", "transform"}, {"entity", "2"}, {"value", nullptr}},
+      {{"op", "create"}, {"name", 1}},
+      {{"op", "scene-name"}, {"name", false}}};
+
+  for (const auto& failure : bad) {
+    INFO(failure.dump());
+    auto commands = rename();
+    commands.push_back({{"op", "create"}, {"name", "Pending"}});
+    commands.push_back(failure);
+    REQUIRE_FALSE(document.apply(commands.dump(), 1));
+    CHECK(document.snapshot().value() == before);
+  }
+
+  auto report = edit(document, Json::array({{{"op", "create"}, {"name", "Created"}}}));
+  CHECK(report.created == std::vector<std::uint64_t>{3});
+}
+
+TEST_CASE("document_undo_redo_branch_preserves_selection_and_never_reuses_published_values") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto initialScene = document.stats()->scene;
+  auto cube = document.scene().value()->findEntity(2).value();
+  REQUIRE(document.select(cube, revision(document)));
+  edit(document, Json::array({{{"op", "create"}, {"name", "First"}}}));
+  CHECK_FALSE(document.scene().value()->entity(cube));
+  auto current = document.stats()->selected.value();
+  CHECK(current.value == 2);
+  CHECK(current.scene != initialScene);
+  REQUIRE(document.undo(revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(document.scene().value()->entityCount().value() == 2);
+  CHECK(document.stats()->selected->value == 2);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(document.scene().value()->findEntity(3));
+  REQUIRE(document.undo(revision(document)));
+  auto report = edit(document, Json::array({{{"op", "create"}, {"name", "Branch"}}}));
+  CHECK(report.created == std::vector<std::uint64_t>{4});
+  CHECK_FALSE(document.stats()->canRedo);
+  CHECK_FALSE(document.scene().value()->findEntity(3));
+  CHECK(document.stats()->nextEntity == 5);
+}
+
+TEST_CASE("document_subtree_removal_restores_selected_descendants_on_undo") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, Json::array({{{"op", "create"}, {"name", "Child"}},
+                              {{"op", "create"}, {"name", "Grandchild"}},
+                              {{"op", "parent"}, {"entity", "3"}, {"parent", "2"}},
+                              {{"op", "parent"}, {"entity", "4"}, {"parent", "3"}}}));
+  REQUIRE(document.select(document.scene().value()->findEntity(4).value(), revision(document)));
+  edit(document, Json::array({{{"op", "remove"}, {"entity", "2"}}}));
+  CHECK(document.scene().value()->entityCount().value() == 1);
+  CHECK_FALSE(document.stats()->selected);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(document.scene().value()->entityCount().value() == 4);
+  CHECK(document.stats()->selected->value == 4);
+  REQUIRE(document.redo(revision(document)));
+  CHECK_FALSE(document.stats()->selected);
+}
+
+TEST_CASE("document_noop_preserves_scope_revision_history_and_redo") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, rename());
+  REQUIRE(document.undo(revision(document)));
+  auto before = document.snapshot().value();
+  CHECK_FALSE(edit(document, rename("Cube")).changed);
+  CHECK(document.snapshot().value() == before);
+  CHECK_FALSE(edit(document, Json::array({{{"op", "create"}, {"name", "Temporary"}},
+                                          {{"op", "remove"}, {"entity", "3"}}}))
+                  .changed);
+  CHECK(document.snapshot().value() == before);
+  REQUIRE(document.redo(revision(document)));
+}
+
+TEST_CASE("document_history_count_bytes_eviction_and_invalid_capacities") {
+  Fixture fixture;
+
+  for (auto config : {DocumentConfig{0, 1024}, DocumentConfig{1025, 1024}, DocumentConfig{1, 0},
+                      DocumentConfig{1, 512ULL * 1024 * 1024 + 1}}) {
+    CHECK_FALSE(Document::open(fixture.project(), config));
+  }
+
+  auto document = fixture.document({2, 1024 * 1024});
+  edit(document, rename("A"));
+  edit(document, rename("B"));
+  CHECK(document.stats()->historyEntries == 2);
+  REQUIRE(document.undo(revision(document)));
+  CHECK_FALSE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["name"] == "A");
+  auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  CHECK_FALSE(Document::open(fixture.project(), {128, bytes - 1}));
+  auto bounded = fixture.document({128, bytes});
+  edit(bounded, rename("A"));
+  CHECK(bounded.stats()->historyBytes <= bytes);
+  CHECK(bounded.stats()->historyEntries == 1);
+  CHECK_FALSE(bounded.stats()->canUndo);
+  auto before = bounded.snapshot().value();
+  CHECK_FALSE(bounded.apply(rename(std::string(256, 'x')).dump(), revision(bounded)));
+  CHECK(bounded.snapshot().value() == before);
+}
+
+TEST_CASE("document_saved_baseline_dirty_state_and_failed_external_scene_save") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, rename());
+  REQUIRE(document.save(revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(fixture.project().loadStartup()->entities()->at(1).name == "Changed");
+  REQUIRE(document.undo(revision(document)));
+  CHECK(document.stats()->dirty);
+  REQUIRE(document.redo(revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  edit(document, rename("Pending"));
+  auto disk = fixture.project().loadStartup().value();
+  REQUIRE(disk.rename("External"));
+  REQUIRE(fixture.project().saveStartup(disk));
+  auto before = document.snapshot().value();
+  auto saved = document.save(revision(document));
+  REQUIRE_FALSE(saved);
+  CHECK(saved.error().code == Dot::Core::ErrorCode::InvalidState);
+  CHECK(document.snapshot().value() == before);
+  CHECK(fixture.project().loadStartup()->name().value() == "External");
+}
+
+TEST_CASE("document_metadata_and_missing_startup_conflicts_preserve_unsaved_history") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, rename());
+  auto before = document.snapshot().value();
+  auto project = fixture.project();
+  auto description = project.description().value();
+  description.width = 640;
+  REQUIRE(project.save(description));
+  CHECK_FALSE(document.save(revision(document)));
+  CHECK(document.snapshot().value() == before);
+  description.width = 1280;
+  REQUIRE(project.save(description));
+  std::filesystem::remove(fixture.root / "game/scenes/main.dotscene");
+  CHECK_FALSE(document.save(revision(document)));
+  CHECK(document.snapshot().value() == before);
+}
+
+TEST_CASE("document_moves_stable_scene_borrows_owner_thread_and_exhausted_entity_values") {
+  Fixture fixture;
+  auto original = fixture.document();
+  auto borrowed = original.scene().value();
+  auto document = std::move(original);
+  CHECK_FALSE(original.scene());
+  CHECK_FALSE(original.undo(1));
+  CHECK(document.scene().value() == borrowed);
+  bool rejected = false;
+  std::thread worker([&] {
+    rejected = !document.snapshot() && !document.apply(rename().dump(), 1) && !document.save(1)
+               && !document.dispatch("{\"command\":\"inspect\"}");
+  });
+  worker.join();
+  CHECK(rejected);
+  edit(document, rename());
+  CHECK(document.scene().value() == borrowed);
+  auto large = Dot::World::Scene::create().value();
+  REQUIRE(large.createEntityWithId("Last", std::numeric_limits<std::uint64_t>::max() - 1));
+  REQUIRE(fixture.project().saveStartup(large));
+  auto exhausted = fixture.document();
+  CHECK_FALSE(exhausted.stats()->nextEntity);
+  auto before = exhausted.snapshot().value();
+  CHECK_FALSE(exhausted.apply("[{\"op\":\"create\",\"name\":\"Never\"}]", 1));
+  CHECK(exhausted.snapshot().value() == before);
+}
+
+TEST_CASE("document_protocol_inspect_edit_select_undo_redo_save_share_native_operations") {
+  Fixture fixture;
+  auto document = fixture.document();
+  CHECK(request(document, {{"command", "inspect"}})["ok"] == true);
+  auto created = request(
+      document,
+      {{"command", "edit"}, {"operations", Json::array({{{"op", "create"}, {"name", "New"}}})}});
+  CHECK(created["created"] == Json::array({"3"}));
+  CHECK(request(document, {{"command", "select"}, {"entity", "3"}})["selected"] == "3");
+  CHECK(request(document, {{"command", "undo"}})["scene"]["entities"].size() == 2);
+  CHECK(request(document, {{"command", "redo"}})["scene"]["entities"].size() == 3);
+  CHECK_FALSE(request(document, {{"command", "save"}})["dirty"].get<bool>());
+  CHECK(fixture.project().loadStartup()->entityCount().value() == 3);
+}
+
+TEST_CASE("document_json_transport_schema_limits_and_revisions_reject_without_effects") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto before = document.snapshot().value();
+
+  for (const auto& request : std::vector<std::string>{
+           "", "[]", "[", "{}", "{\"command\":7}", "{\"command\":\"inspect\",\"extra\":1}",
+           "{\"command\":\"inspect\",\"command\":\"save\"}",
+           "{\"command\":\"undo\",\"revision\":1}", "{\"command\":\"undo\",\"revision\":\"01\"}",
+           "{\"command\":\"save\",\"revision\":\"2\"}", "{\"command\":\"missing\"}",
+           std::string(1024 * 1024 + 1, ' '), std::string("{}\0", 3), "\xc0\x80"}) {
+    CHECK_FALSE(document.dispatch(request));
+    CHECK(document.snapshot().value() == before);
+  }
+
+  for (const auto& operations : std::vector<std::string>{
+           "[]", "{}", "[{}]", "[null]", "[{\"op\":\"create\",\"name\":\"N\",\"id\":\"3\"}]",
+           "[{\"op\":\"create\",\"op\":\"remove\",\"name\":\"N\"}]",
+           Json(std::vector<Json>(257, rename()[0])).dump(),
+           std::string(65, '[') + "0" + std::string(65, ']')}) {
+    CHECK_FALSE(document.apply(operations, 1));
+    CHECK(document.snapshot().value() == before);
+  }
+}
+
+TEST_CASE("document_validates_final_primary_camera_state_and_component_removal") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto camera = state(document)["scene"]["entities"][0]["camera"];
+  auto inactive = camera;
+  inactive["primary"] = false;
+  edit(document,
+       Json::array(
+           {{{"op", "component"}, {"entity", "2"}, {"component", "camera"}, {"value", camera}},
+            {{"op", "component"}, {"entity", "1"}, {"component", "camera"}, {"value", inactive}}}));
+  CHECK(document.scene().value()->primaryCamera()->value == 2);
+  edit(document,
+       Json::array(
+           {{{"op", "component"}, {"entity", "2"}, {"component", "mesh"}, {"value", nullptr}},
+            {{"op", "component"}, {"entity", "2"}, {"component", "script"}, {"value", nullptr}}}));
+  auto cube
+      = document.scene().value()->entity(document.scene().value()->findEntity(2).value()).value();
+  CHECK_FALSE(cube.mesh);
+  CHECK_FALSE(cube.script);
+  REQUIRE(document.undo(revision(document)));
+  cube = document.scene().value()->entity(document.scene().value()->findEntity(2).value()).value();
+  CHECK(cube.mesh.has_value());
+  CHECK(cube.script.has_value());
+}
+
+TEST_CASE("document_failed_batch_preserves_selection_and_repeated_history_roundtrips") {
+  Fixture fixture;
+  auto document = fixture.document();
+  REQUIRE(document.select(document.scene().value()->findEntity(2).value(), revision(document)));
+  const auto baseline = state(document)["scene"];
+
+  for (int iteration = 0; iteration < 10; ++iteration) {
+    auto before = document.snapshot().value();
+    auto bad = Json::array(
+        {{{"op", "remove"}, {"entity", "2"}}, {{"op", "name"}, {"entity", "2"}, {"name", "Gone"}}});
+    CHECK_FALSE(document.apply(bad.dump(), revision(document)));
+    CHECK(document.snapshot().value() == before);
+    edit(document, rename());
+    REQUIRE(document.undo(revision(document)));
+    CHECK(state(document)["scene"] == baseline);
+    CHECK(document.stats()->selected->value == 2);
+    REQUIRE(document.redo(revision(document)));
+    REQUIRE(document.undo(revision(document)));
+  }
+}

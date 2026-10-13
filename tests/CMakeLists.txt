@@ -9,6 +9,7 @@ add_executable(DotTests
     FileTests.cpp
     StagedDirectoryTests.cpp
     ProjectTests.cpp
+    DocumentTests.cpp
     InputTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp

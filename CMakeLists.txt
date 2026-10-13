@@ -62,6 +62,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/StagedDirectory.cpp
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
+    src/Engine/Editor/Document.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -127,6 +128,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/StagedDirectory.cppm
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
+        src/Engine/Editor/Document.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
