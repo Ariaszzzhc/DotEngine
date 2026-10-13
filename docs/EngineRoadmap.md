@@ -13,8 +13,11 @@ the `dot:` namespace; project imports use relative paths without extensions.
 
 | Required end state | Work and evidence needed |
 | --- | --- |
-| Materials and textures | Retained normal/UV/tangent data; bounded image/model import; owned GPU textures/samplers; authored material assets, physical shading and texture slots; serialization, asset references, editor inspection and actual rendered validation |
-| Lighting and shadows | Authored directional/point/spot lights, physically consistent surface response, shadow resources and filtering, environment/exposure controls; dynamic edits, lifetime/failure tests and visual/native GPU evidence |
+| PBR materials and textures | Retained normal/UV/tangent data; bounded image/model import; owned GPU textures/samplers; authored metallic/roughness PBR assets, GGX surface response and texture slots; serialization, asset references, editor inspection and actual rendered validation |
+| Lighting and soft shadows | Authored directional/point/spot lights, physically consistent surface response, cascaded directional shadow maps, point/spot shadow resources and soft filtering, environment/exposure controls; dynamic edits, lifetime/failure tests and visual/native GPU evidence |
+| HDRI image-based lighting | Bounded HDR import; environment rotation/intensity; diffuse irradiance, GGX specular prefilter and BRDF integration; real [Poly Haven HDRI](https://polyhaven.com/hdris) scenes with metallic/roughness response and owned GPU resources |
+| HDR pipeline and tone mapping | Linear floating-point render targets, exposure, tone mapping and correct final display encoding; retain highlights above one, explicit color/data texture spaces, visual/native GPU evidence |
+| SSAO | Depth/normal-based ambient occlusion, controllable radius/intensity, edge-aware filtering and stable resize/camera motion; quality and populated-scene GPU cost comparisons |
 | Large 3D game production | Scalable resource loading, scene organization, animation, rendering queues/culling/instancing, scene and asset streaming; meaningful populated-content performance/lifetime evidence, not merely an empty entity-count test |
 | Mature editor workflow | Docked scene/project/inspector views, independent editor camera, picking/gizmos, multiselection and transactions, asset/material/light tools, clear diagnostics, shortcuts and Play workflow; shared agent operations and actual visual/interaction review |
 | External source editor | Open script/source diagnostics in the external default editor; retain agent source-file operations, compilation and hot reload; remove the embedded code-editor UI |

@@ -35,6 +35,7 @@ find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
     NO_DEFAULT_PATH REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(qjs CONFIG REQUIRED)
@@ -65,6 +66,9 @@ if(APPLE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(DotAudioBackend PUBLIC ${CMAKE_DL_LIBS} m)
 endif()
+add_library(DotImageBackend STATIC src/Engine/Assets/ImageBackend.c)
+target_compile_features(DotImageBackend PRIVATE c_std_11)
+target_include_directories(DotImageBackend SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 add_library(DotEngine STATIC)
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
@@ -96,7 +100,9 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Renderer.cpp
     src/Engine/Graphics/GuiBackend.cpp
     src/Engine/Graphics/SceneRenderer.cpp
+    src/Engine/Graphics/Image.cpp
     src/Engine/Graphics/Geometry.cpp
+    src/Engine/Assets/Image.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/World/Scene.cpp
     src/Engine/World/SceneFiles.cpp
@@ -129,7 +135,8 @@ target_link_libraries(DotEngine PRIVATE imgui::imgui)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
-target_link_libraries(DotEngine PRIVATE DotAudioBackend)
+target_link_libraries(DotEngine PRIVATE DotAudioBackend DotImageBackend)
+target_include_directories(DotEngine SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 target_link_libraries(DotEngine PRIVATE qjs)
 target_include_directories(DotEngine SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
 # Module producers and consumers must agree on compiler threading mode.
@@ -167,7 +174,9 @@ target_sources(DotEngine PUBLIC
         src/Engine/Math/Math.cppm
         src/Engine/Graphics/Renderer.cppm
         src/Engine/Graphics/SceneRenderer.cppm
+        src/Engine/Graphics/Image.cppm
         src/Engine/Graphics/Geometry.cppm
+        src/Engine/Assets/Image.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/World/Scene.cppm
         src/Engine/World/SceneFiles.cppm

@@ -2430,3 +2430,78 @@ unchanged. Local validation is arm64 macOS; Windows/Linux results are not claime
   signatures/relative-system loader references pass. Full suites retain relocated
   editor/example/export coverage. Active build caches and the private untracked
   document are preserved. No publication or new release version is claimed.
+
+
+### Owned image and texture surfaces
+
+Added separate Graphics.Image and Assets.Image module interfaces/implementations
+for owned pixel data and bounded PNG/JPEG/Radiance decoding. The fixed manifest
+baseline now includes stb; its implementation is an isolated static C backend,
+while engine boundaries retain contextual expected results and RAII. Native image
+fixtures verify exact PNG row order/alpha, JPEG output, HDR radiance above one,
+malformed sources, precision rejection, input/dimension limits, independent
+parallel decoding and project-path context. No global flip/gamma state is changed.
+
+Replaced the current mesh shader's fragment path with actual texture sampling.
+Every draw carries its material base-color factor and optional shared texture;
+base color multiplies vertex color and object tint. A missing texture deliberately
+represents a constant white texel; an explicitly empty or foreign texture fails.
+The same pipeline serves immediate meshes, persistent targets and native surfaces.
+This stage is unlit, and existing RGBA8 output is linear: it does not deliver PBR,
+HDR render targets, tone mapping, IBL, shadows or SSAO. Those requested capabilities
+and their quality/evidence gates are explicit in the rendering development document
+and capability roadmap; no production-rendering completion claim is made.
+
+Owned GPU textures include explicit sRGB/linear formats, nearest/linear samplers,
+clamp/repeat/mirror addressing, anisotropy and complete optional mip chains. Mips
+average linear light with linear alpha and preserve odd edges. Texture queries
+require the creating thread; copies share ownership and count once, while quiescent
+destruction may occur after device shutdown. Configurable count/logical-byte
+residency budgets are enforced before upload/mip allocation; allocation/scope
+failures retain expected error paths and do not increment resource counters.
+
+The native development-only texture acceptance loads actual PNG/HDR fixtures,
+samples a material into a persistent GPU target, checks RGBA pixels and verifies
+mesh/target/texture release. Focused tests additionally exercise sRGB conversion,
+alpha, linear filtering, negative/outside-unit UV addressing, odd-edge mip
+minification, source independence, sharing/moves/orphans, thread rejection,
+invalid material/foreign textures retaining the last frame, exact budgets and
+recovery after release. Reviewed ABI/layout, per-draw uniform/texture ownership,
+queue write lifetime, mip color math, bounded counts and platform-independent
+native decoder/binding APIs. Caller compiler/linker environment is preserved.
+
+Initial builds exposed missing standard declarations in implementation global
+fragments, an omitted structured-error origin initializer, and unparenthesized
+conditional messages in doctest macros. These were corrected without weakening
+warnings/assertions. The final focused Debug run passes 45/45 in 14.07 seconds.
+
+The first full Debug run passed 788/789; its failing existing native audio test
+compared consumed-frame counters after a fixed 30 ms sleep and observed 0/0.
+That test now uses the existing two-second bounded wait helper for actual healthy
+worker/device progress, preserving the allocation-failure, state, voice, memory
+and frame-consumption assertions. The audio implementation is unchanged.
+
+A subsequent full Debug run exposed six export/distribution failures with
+"Invalid runtime file record". Inspection found Finder's .DS_Store had entered
+the generated runtime manifest. Runtime tree validation already permits bounded
+regular Finder metadata on macOS, but manifest generation incorrectly inventoried
+it as runtime content. The shared CMake writer now removes metadata from its owned
+output and excludes it from records; a regression seeds root/nested metadata, runs
+the actual writer and verifies the unchanged strict manifest opens. General tree
+and manifest validation remain strict.
+
+- Final arm64 macOS Debug and Release/NDEBUG pass 790/790 CTest cases
+  (735 doctest, 55 executable checks), taking 86.40 and 33.42 seconds.
+  Focused export/distribution regressions pass 10/10 in 23.70 seconds; the audio
+  progress regression passes ten consecutive runs in 1.29 seconds. Actual native
+  surface, GUI, editor/example and independent exported-player checks remain.
+- All 224 C/C++ files pass clang-format; diff whitespace/private-reference checks
+  pass. The 1,076-byte image fixture set is authored test data, not external art;
+  tests do not require platform image-conversion tools. Acceptance implementation
+  remains gated by BUILD_TESTING and excluded from products/install contents.
+- Latest macOS ZIP is refreshed at its existing path: 265 entries, 43,108,375 bytes.
+  CRC, included stb notices, absence of acceptance/private/Finder files and runtime
+  metadata exclusion pass. Staged application and all 16 native signatures and
+  relative/system loader references pass. Caller environment, active caches and
+  the untracked private document are preserved. Windows/Linux remain implemented
+  through the common Dawn/decoder paths but locally unvalidated.

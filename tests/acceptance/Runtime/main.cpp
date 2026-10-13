@@ -26,6 +26,7 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto testTextures(const std::filesystem::path& root) -> int;
   auto testSurfaceMesh(const std::filesystem::path& root) -> int;
   auto verifyGame(const std::filesystem::path& root) -> int;
   auto testGamePlayer(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
@@ -631,6 +632,10 @@ namespace {
 
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3 && std::string_view(argv[1]) == "--texture-test") {
+      return Dot::Runtime::testTextures(argv[2]);
+    }
+
     if (argc == 3 && std::string_view(argv[1]) == "--surface-mesh-test") {
       return Dot::Runtime::testSurfaceMesh(argv[2]);
     }

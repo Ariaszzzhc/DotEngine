@@ -53,3 +53,10 @@ vertices otherwise keep missing normals; rendering does not pretend lighting exi
 persistence and an owned normal-color visualization through actual GPU upload and
 pixel readback. Material/texture sampling and light/shadow rendering are subsequent
 capabilities in the [engine roadmap](EngineRoadmap.md).
+
+## Images and surface textures
+
+PNG/JPEG and Radiance RGBE import, explicit color spaces, immutable GPU texture
+ownership, mips, samplers and material base-color sampling are documented in
+[rendering development](Rendering.md). Physical PBR/HDRI/soft-shadow/SSAO/HDR
+rendering remains planned; retaining HDR pixels does not yet provide IBL.

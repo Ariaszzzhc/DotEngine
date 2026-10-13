@@ -315,7 +315,11 @@ TEST_CASE("audio.playback_recoverable_voice_allocation_failure_keeps_worker_runn
   CHECK_FALSE(playback->createVoice(*source));
   auto before = playback->stats();
   REQUIRE(before);
-  std::this_thread::sleep_for(std::chrono::milliseconds{30});
+  REQUIRE(waitFor([&] {
+    auto snapshot = playback->stats();
+    return snapshot && snapshot->state == PlaybackState::Running
+           && snapshot->output.consumedFrames > before->output.consumedFrames;
+  }));
   auto after = playback->stats();
   REQUIRE(after);
   CHECK(after->state == PlaybackState::Running);

@@ -127,6 +127,28 @@ TEST_CASE("runtime_kit.strict_manifest_tree_limits_and_permissions") {
 #endif
 }
 
+TEST_CASE("runtime_kit.manifest_generation_excludes_finder_metadata") {
+  Fixture fixture;
+  auto files = sample(fixture);
+  const auto original = Json::parse(files.readText("runtime.json").value());
+  REQUIRE(files.writeTextAtomic(".DS_Store", "finder metadata"));
+  REQUIRE(files.writeTextAtomic("licenses/.DS_Store", "nested finder metadata"));
+  const auto root = files.root().generic_string();
+  auto generated = Dot::Core::runProcess(
+      {DOT_CMAKE_EXECUTABLE,
+       {"-Ddot_kit=" + root, "-Ddot_platform=" + original["platform"].get<std::string>(),
+        "-Ddot_runtime_executable=" + original["executable"].get<std::string>(), "-P",
+        DOT_RUNTIME_MANIFEST_SCRIPT},
+       files.root()});
+  REQUIRE_MESSAGE(generated, (generated ? "" : generated.error().message));
+  REQUIRE_MESSAGE(generated->exitCode == 0, generated->standardError);
+  CHECK_FALSE(Fs::exists(files.root() / ".DS_Store"));
+  CHECK_FALSE(Fs::exists(files.root() / "licenses/.DS_Store"));
+  const auto manifest = Json::parse(files.readText("runtime.json").value());
+  CHECK(manifest["files"] == original["files"]);
+  REQUIRE(RuntimeKit::open(files));
+}
+
 TEST_CASE("runtime_kit.publication_preserves_sources_destination_and_move_state") {
   Fixture fixture;
   auto source = sample(fixture);

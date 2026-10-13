@@ -10,6 +10,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | Static C++26 engine, separate module interfaces/implementations | `DotEngine` static target and CXX_MODULES file set; runtime/editor consume modules without installed public headers |
 | Required native stack | Pinned vcpkg manifest: SDL3, Dawn, GLM, miniaudio, Jolt, EnTT, Go TypeScript compiler and QuickJS-NG; actual GPU, audio, physics and compiler acceptance |
 | Create/open projects and edit games | [Project home](ProjectHome.md) creates three validated templates; [workspace](Editor.md) edits native scene/hierarchy/components, resources and TypeScript, with undo/redo and conflict-aware saves |
+| Surface image/texture resources | [Rendering](Rendering.md): bounded PNG/JPEG/Radiance import, explicit color spaces, shared GPU textures/samplers/mips and unlit material base-color sampling; native pixel/lifetime checks |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
@@ -23,9 +24,9 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 775/775 CTest cases
-(721 doctest cases and 54 executable checks), taking 77.96 and 35.90 seconds.
-All 216 C/C++ files pass formatting checks. The current 263-entry native zip
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 790/790 CTest cases
+(735 doctest cases and 55 executable checks), taking 86.40 and 33.42 seconds.
+All 224 C/C++ files pass formatting checks. The current 265-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete
@@ -44,8 +45,9 @@ The caller's LLVM/compiler/linker environment is preserved.
 
 The current renderer draws colored meshes with cameras and depth; asset import is
 bounded OBJ/dotmesh retaining authored normals and UVs. Surface attributes are
-persisted and uploaded; the current shader still reads only position and color. The editor uses component inspectors and one active source
-buffer. These are the delivered feature boundaries, not promises of material/lighting
+persisted and uploaded; the shader samples base-color textures and multiplies
+linear material/vertex/object colors, without physical lighting. The editor uses
+component inspectors and one active source buffer. These are the delivered feature boundaries, not promises of material/lighting
 systems or a general IDE. Runtime-member coverage is not exhaustive driver/device
 or argument-permutation coverage. macOS copies are ad-hoc signed and locally tested;
 release identity signing/notarization and installer publication have not been performed.

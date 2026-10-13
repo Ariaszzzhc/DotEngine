@@ -23,6 +23,7 @@ add_executable(DotTests
     MathTests.cpp
     GeometryTests.cpp
     AssetTests.cpp
+    ImageTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
@@ -48,7 +49,8 @@ add_executable(DotTests
     SceneHostTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
-target_compile_definitions(DotTests PRIVATE DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
+target_compile_definitions(DotTests PRIVATE DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
+    DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 include(doctest)
 doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
@@ -84,6 +86,8 @@ set_tests_properties(runtime.self_test runtime.version PROPERTIES TIMEOUT 15 LAB
 add_test(NAME runtime.invalid_argument COMMAND DotRuntime --invalid)
 set_tests_properties(runtime.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.textures COMMAND DotRuntimeAcceptance --texture-test "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+set_tests_properties(runtime.textures PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.surface_mesh COMMAND DotRuntimeAcceptance --surface-mesh-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.surface_mesh PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.files COMMAND DotRuntimeAcceptance --file-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
@@ -151,7 +155,7 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp SceneRenderTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp SceneRenderTests.cpp GuiTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 doctest_discover_tests(DotGraphicsTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.gpu COMMAND DotRuntimeAcceptance --gpu-test)
@@ -212,6 +216,8 @@ set_tests_properties(runtime.exported_game PROPERTIES TIMEOUT 60 LABELS "native;
 add_executable(DotExportTests main.cpp GameExportTests.cpp)
 target_link_libraries(DotExportTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotExportTests PRIVATE
+    DOT_CMAKE_EXECUTABLE="${CMAKE_COMMAND}"
+    DOT_RUNTIME_MANIFEST_SCRIPT="${CMAKE_SOURCE_DIR}/cmake/WriteRuntimeManifest.cmake"
     DOT_RUNTIME_ACCEPTANCE="$<TARGET_FILE:DotRuntimeAcceptance>"
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"

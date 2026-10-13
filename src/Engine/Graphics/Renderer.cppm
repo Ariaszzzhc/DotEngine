@@ -4,6 +4,7 @@ module;
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@ import Dot.Math;
 import Dot.Platform.Window;
 import Dot.Platform.Events;
 export import Dot.Graphics.Geometry;
+export import Dot.Graphics.Image;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -24,14 +26,6 @@ export namespace Dot::Graphics {
     std::string name;
     std::string description;
     std::uint32_t maxTextureDimension;
-  };
-
-  /** RGBA8 pixels in top-to-bottom row order; no row padding.
-   * RGBA8 像素按从上到下的行顺序存储，无行填充。 */
-  struct Image {
-    std::uint32_t width;
-    std::uint32_t height;
-    std::vector<std::uint8_t> pixels;
   };
 
   enum class PresentResult { Presented, Deferred };
@@ -47,6 +41,8 @@ export namespace Dot::Graphics {
     std::uint64_t indexBytes;
     std::uint64_t targets{};
     std::uint64_t targetBytes{};
+    std::uint64_t textures{};
+    std::uint64_t textureBytes{};
   };
 
   struct TargetInfo {
@@ -124,12 +120,76 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  enum class TextureFilter { Nearest, Linear };
+  enum class TextureAddress { Clamp, Repeat, Mirror };
+
+  struct TextureOptions {
+    ColorSpace colorSpace{ColorSpace::Srgb};
+    TextureFilter filter{TextureFilter::Linear};
+    TextureAddress addressU{TextureAddress::Repeat};
+    TextureAddress addressV{TextureAddress::Repeat};
+    bool mipmaps{true};
+    std::uint16_t maxAnisotropy{1};
+  };
+
+  struct TextureInfo {
+    std::uint32_t width;
+    std::uint32_t height;
+    std::uint32_t mipLevels;
+    TextureOptions options;
+  };
+
+  /** Immutable shared GPU texture/sampler. Queries require its creating thread;
+   * copies retain the resource once. Destruction after quiescence may occur on
+   * another thread or after renderer shutdown; subsequent queries/draws fail.
+   * 不可变共享 GPU 纹理/采样器，查询限创建线程；副本仅持有同一资源。
+   * 静止后可在其他线程或渲染器关闭后销毁，此后查询/绘制失败。 */
+  class Texture {
+  public:
+    Texture() noexcept;
+    Texture(const Texture&) noexcept;
+    auto operator=(const Texture&) noexcept -> Texture&;
+    Texture(Texture&&) noexcept;
+    auto operator=(Texture&&) noexcept -> Texture&;
+    ~Texture();
+    [[nodiscard]] auto info() const -> Core::Result<TextureInfo>;
+
+  private:
+    friend class Renderer;
+    struct Impl;
+    explicit Texture(std::shared_ptr<Impl> impl) noexcept;
+    std::shared_ptr<Impl> m_impl;
+  };
+
+  /** Linear base-color factor multiplied by vertex color, object tint and sampled
+   * base-color texture. Absence means a constant white texel; an explicitly empty
+   * or foreign texture fails. This surface stage is unlit; physical shading is a
+   * separate service. Owns its optional texture by shared value.
+   * 线性基础颜色因子乘顶点颜色、对象染色及基础颜色纹理；缺省表示常量白纹素，
+   * 显式空纹理或跨设备纹理失败。本表面阶段无光照，物理着色是独立服务。
+   * 通过共享值拥有可选纹理。 */
+  struct Material {
+    Math::Vec4 baseColor{1, 1, 1, 1};
+    std::optional<Texture> baseColorTexture;
+  };
+
   /** Borrows a mesh for one call; transform maps local vertices into world space.
    * 单次调用期间借用网格；变换将局部顶点映射至世界空间。 */
   struct MeshDraw {
     const Mesh* mesh{};
     Math::Mat4 transform{};
     Math::Vec4 tint{1, 1, 1, 1};
+    Material material{};
+  };
+
+  /** Texture residency budget, checked before upload/mip allocation. Bounds are
+   * 1..4096 resources and 1..512 MiB logical bytes; internal constant texels are
+   * pipeline storage, not asset residency. Logical bytes are not driver memory.
+   * 纹理驻留预算在上传/mip 分配前校验；资源数 1..4096，逻辑字节 1..512 MiB。
+   * 内部常量纹素属于管线存储，不属于资产驻留；逻辑字节不代表驱动内存。 */
+  struct RendererConfig {
+    std::uint32_t maxTextures{4096};
+    std::uint64_t maxTextureBytes{512 * 1024 * 1024};
   };
 
   /** Owns a Dawn device and optional native surface; all operations and destruction
@@ -140,7 +200,8 @@ export namespace Dot::Graphics {
    */
   class Renderer {
   public:
-    [[nodiscard]] static auto create(Platform::Window* window = nullptr) -> Core::Result<Renderer>;
+    [[nodiscard]] static auto create(Platform::Window* window = nullptr,
+                                     const RendererConfig& config = {}) -> Core::Result<Renderer>;
     Renderer(const Renderer&) = delete;
     auto operator=(const Renderer&) -> Renderer& = delete;
     Renderer(Renderer&&) noexcept;
@@ -150,7 +211,17 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto adapterInfo() const -> Core::Result<AdapterInfo>;
     [[nodiscard]] auto surfaceSize() const -> Core::Result<Platform::Extent>;
     [[nodiscard]] auto upload(const MeshData& data) -> Core::Result<Mesh>;
-    /** Logical bytes owned by live mesh/target resources, including shared copies once.
+    /** RGBA8 texture upload within image/device limits; at most 4096 textures and
+     * 512 MiB logical texels including mip levels (configurable residency budget). Mips average
+     * linear light (sRGB decoded/re-encoded; alpha stays linear), preserve odd edges, and are owned
+     * independently from the source. Nearest sampling requires anisotropy one;
+     * linear sampling supports 1..16. UV (0,0) addresses the top-left image texel.
+     * RGBA8 纹理上传受图像/设备限制，最多 4096 纹理及含 mip 的 512 MiB 逻辑纹素。
+     * mip 平均线性光（sRGB 解码/重编码，alpha 保持线性），保留奇数边缘并独立于源；
+     * 最近采样各向异性须为一，线性采样支持 1..16；UV (0,0) 对应图像左上纹素。 */
+    [[nodiscard]] auto uploadTexture(const Image& image, const TextureOptions& options = {})
+        -> Core::Result<Texture>;
+    /** Logical bytes owned by live mesh/texture/target resources, including shared copies once.
      * A coherent snapshot requires resource destruction to be quiescent.
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
     [[nodiscard]] auto resourceStats() const -> Core::Result<ResourceStats>;

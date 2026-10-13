@@ -37,14 +37,20 @@ namespace Dot::Graphics {
     constexpr auto shaderCode = R"(
 struct Camera { transform: mat4x4f, tint: vec4f }
 @group(0) @binding(0) var<uniform> camera: Camera;
-struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
-@vertex fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f) -> Output {
+@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
+@group(0) @binding(2) var baseColorSampler: sampler;
+struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f }
+@vertex fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
+                      @location(2) uv: vec2f) -> Output {
   var output: Output;
   output.position = camera.transform * vec4f(position, 1.0);
   output.color = color * camera.tint;
+  output.uv = uv;
   return output;
 }
-@fragment fn fragmentMain(input: Output) -> @location(0) vec4f { return input.color; }
+@fragment fn fragmentMain(input: Output) -> @location(0) vec4f {
+  return input.color * textureSample(baseColorTexture, baseColorSampler, input.uv);
+}
 )";
 
     auto copied(wgpu::StringView value) -> std::string {
@@ -124,6 +130,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       std::atomic<std::uint64_t> indexBytes{};
       std::atomic<std::uint64_t> targets{};
       std::atomic<std::uint64_t> targetBytes{};
+      std::atomic<std::uint64_t> textures{};
+      std::atomic<std::uint64_t> textureBytes{};
       std::atomic<bool> failed{};
       std::mutex mutex;
       std::string failure;
@@ -313,9 +321,60 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     return m_impl->info;
   }
 
+  struct Texture::Impl {
+    std::shared_ptr<Diagnostics> owner;
+    std::thread::id thread{std::this_thread::get_id()};
+    wgpu::Texture texture;
+    wgpu::TextureView view;
+    wgpu::Sampler sampler;
+    TextureInfo info{};
+    std::uint64_t bytes{};
+    bool tracked{};
+
+    ~Impl() {
+      if (tracked) {
+        owner->textures.fetch_sub(1);
+        owner->textureBytes.fetch_sub(bytes);
+      }
+    }
+  };
+
+  Texture::Texture() noexcept = default;
+
+  Texture::Texture(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  Texture::Texture(const Texture&) noexcept = default;
+
+  auto Texture::operator=(const Texture&) noexcept -> Texture& = default;
+
+  Texture::Texture(Texture&&) noexcept = default;
+
+  auto Texture::operator=(Texture&&) noexcept -> Texture& = default;
+
+  Texture::~Texture() = default;
+
+  auto Texture::info() const -> Core::Result<TextureInfo> {
+    if (!m_impl || !m_impl->owner->alive.load()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Texture has no live rendering device");
+    }
+
+    if (m_impl->thread != std::this_thread::get_id()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Texture query requires its creating thread");
+    }
+
+    if (m_impl->owner->failed.load()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Texture device faulted");
+    }
+
+    return m_impl->info;
+  }
+
   struct Renderer::Impl {
     std::thread::id thread{std::this_thread::get_id()};
     Platform::Window* window{};
+    RendererConfig config;
     std::shared_ptr<Diagnostics> diagnostics{std::make_shared<Diagnostics>()};
     wgpu::Instance instance;
     wgpu::Adapter adapter;
@@ -333,6 +392,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     wgpu::RenderPipeline offscreenPipeline;
     wgpu::RenderPipeline surfacePipeline;
     wgpu::Buffer uniform;
+    wgpu::Texture whiteTexture;
+    wgpu::TextureView whiteView;
+    wgpu::Sampler whiteSampler;
     std::unique_ptr<Detail::GuiBackend> gui;
     std::vector<RenderTarget> guiTargets;
 
@@ -468,7 +530,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
                                                         .shaderLocation = 0},
                                   wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
                                                         .offset = offsetof(Vertex, color),
-                                                        .shaderLocation = 1}};
+                                                        .shaderLocation = 1},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2,
+                                                        .offset = offsetof(Vertex, texCoord),
+                                                        .shaderLocation = 2}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
       layout.stepMode = wgpu::VertexStepMode::Vertex;
@@ -534,6 +599,23 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       return encoder;
     }
 
+    auto bindMaterial(const wgpu::RenderPipeline& renderPipeline, const wgpu::Buffer& buffer,
+                      const std::shared_ptr<Texture::Impl>& texture = {}) -> wgpu::BindGroup {
+      std::array<wgpu::BindGroupEntry, 3> entries{};
+      entries[0].binding = 0;
+      entries[0].buffer = buffer;
+      entries[0].size = sizeof(UniformData);
+      entries[1].binding = 1;
+      entries[1].textureView = texture ? texture->view : whiteView;
+      entries[2].binding = 2;
+      entries[2].sampler = texture ? texture->sampler : whiteSampler;
+      wgpu::BindGroupDescriptor descriptor;
+      descriptor.layout = renderPipeline.GetBindGroupLayout(0);
+      descriptor.entryCount = entries.size();
+      descriptor.entries = entries.data();
+      return device.CreateBindGroup(&descriptor);
+    }
+
     auto encode(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
                 std::span<const Vertex> vertices, const Math::Mat4& transform, std::uint32_t width,
                 std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
@@ -546,15 +628,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
           queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
           const UniformData data{transform};
           queue.WriteBuffer(uniform, 0, &data, sizeof(data));
-          wgpu::BindGroupEntry entry;
-          entry.binding = 0;
-          entry.buffer = uniform;
-          entry.size = sizeof(UniformData);
-          wgpu::BindGroupDescriptor groupDescriptor;
-          groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
-          groupDescriptor.entryCount = 1;
-          groupDescriptor.entries = &entry;
-          auto group = device.CreateBindGroup(&groupDescriptor);
+          auto group = bindMaterial(renderPipeline, uniform);
           pass.SetPipeline(renderPipeline);
           pass.SetBindGroup(0, group);
           pass.SetVertexBuffer(0, buffer);
@@ -566,6 +640,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     struct PreparedDraw {
       std::shared_ptr<Mesh::Impl> mesh;
       UniformData uniform;
+      std::shared_ptr<Texture::Impl> texture;
     };
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -589,13 +664,35 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
                             "Draw tint must be finite and in [0,1]");
         }
 
+        if (!colorValid(draw.material.baseColor)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Material base color must be finite and in [0,1]");
+        }
+
+        std::shared_ptr<Texture::Impl> texture;
+
+        if (draw.material.baseColorTexture) {
+          texture = draw.material.baseColorTexture->m_impl;
+
+          if (!texture || texture->owner != diagnostics) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Material requires a live texture uploaded by this renderer");
+          }
+        }
+
         auto transform = Math::multiply(viewProjection, draw.transform);
 
         if (!transform) {
           return std::unexpected(transform.error());
         }
 
-        prepared.push_back({draw.mesh->m_impl, {*transform, draw.tint}});
+        const auto tint = draw.tint;
+        const auto factor = draw.material.baseColor;
+        prepared.push_back(
+            {draw.mesh->m_impl,
+             {*transform,
+              {tint.x * factor.x, tint.y * factor.y, tint.z * factor.z, tint.w * factor.w}},
+             std::move(texture)});
       }
 
       return prepared;
@@ -619,15 +716,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
               descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
               auto drawUniform = device.CreateBuffer(&descriptor);
               queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
-              wgpu::BindGroupEntry entry;
-              entry.binding = 0;
-              entry.buffer = drawUniform;
-              entry.size = sizeof(UniformData);
-              wgpu::BindGroupDescriptor groupDescriptor;
-              groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
-              groupDescriptor.entryCount = 1;
-              groupDescriptor.entries = &entry;
-              auto group = device.CreateBindGroup(&groupDescriptor);
+              auto group = bindMaterial(renderPipeline, drawUniform, draw.texture);
               pass.SetPipeline(renderPipeline);
               pass.SetBindGroup(0, group);
               pass.SetVertexBuffer(0, draw.mesh->vertices);
@@ -865,9 +954,16 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
   Renderer::~Renderer() = default;
 
-  auto Renderer::create(Platform::Window* window) -> Core::Result<Renderer> {
+  auto Renderer::create(Platform::Window* window, const RendererConfig& config)
+      -> Core::Result<Renderer> {
+    if (config.maxTextures == 0 || config.maxTextures > 4096 || config.maxTextureBytes == 0
+        || config.maxTextureBytes > 512 * 1024 * 1024) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture residency budget");
+    }
+
     auto impl = std::make_unique<Impl>();
     impl->window = window;
+    impl->config = config;
     const auto feature = wgpu::InstanceFeatureName::TimedWaitAny;
     wgpu::InstanceDescriptor instanceDescriptor;
     instanceDescriptor.requiredFeatureCount = 1;
@@ -987,6 +1083,24 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     uniformDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     impl->uniform = impl->device.CreateBuffer(&uniformDescriptor);
 
+    wgpu::TextureDescriptor whiteDescriptor;
+    whiteDescriptor.size = {1, 1, 1};
+    whiteDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    whiteDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+    impl->whiteTexture = impl->device.CreateTexture(&whiteDescriptor);
+    impl->whiteView = impl->whiteTexture.CreateView();
+    wgpu::SamplerDescriptor whiteSampler;
+    impl->whiteSampler = impl->device.CreateSampler(&whiteSampler);
+    const std::array<std::uint8_t, 4> white{255, 255, 255, 255};
+    wgpu::TexelCopyTextureInfo whiteDestination;
+    whiteDestination.texture = impl->whiteTexture;
+    wgpu::TexelCopyBufferLayout whiteLayout;
+    whiteLayout.bytesPerRow = 4;
+    whiteLayout.rowsPerImage = 1;
+    const wgpu::Extent3D whiteExtent{1, 1, 1};
+    impl->queue.WriteTexture(&whiteDestination, white.data(), white.size(), &whiteLayout,
+                             &whiteExtent);
+
     if (impl->surface) {
       wgpu::SurfaceCapabilities capabilities;
 
@@ -1060,6 +1174,185 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     return Mesh(std::move(mesh));
   }
 
+  auto Renderer::uploadTexture(const Image& image, const TextureOptions& options)
+      -> Core::Result<Texture> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = validateImage(image);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (image.width > m_impl->info.maxTextureDimension
+        || image.height > m_impl->info.maxTextureDimension) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Texture exceeds device dimensions");
+    }
+
+    const auto addressValid = [](TextureAddress address) {
+      return address == TextureAddress::Clamp || address == TextureAddress::Repeat
+             || address == TextureAddress::Mirror;
+    };
+
+    if ((options.colorSpace != ColorSpace::Linear && options.colorSpace != ColorSpace::Srgb)
+        || (options.filter != TextureFilter::Nearest && options.filter != TextureFilter::Linear)
+        || !addressValid(options.addressU) || !addressValid(options.addressV)
+        || options.maxAnisotropy == 0 || options.maxAnisotropy > 16
+        || (options.filter == TextureFilter::Nearest && options.maxAnisotropy != 1)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture sampling/color options");
+    }
+
+    std::uint64_t bytes{};
+    std::uint32_t levels{};
+    auto width = image.width;
+    auto height = image.height;
+
+    do {
+      bytes += static_cast<std::uint64_t>(width) * height * 4;
+      ++levels;
+
+      if (!options.mipmaps || (width == 1 && height == 1)) {
+        break;
+      }
+
+      width = std::max(1U, width / 2);
+      height = std::max(1U, height / 2);
+    } while (true);
+
+    if (m_impl->diagnostics->textures.load() >= m_impl->config.maxTextures
+        || m_impl->diagnostics->textureBytes.load() + bytes > m_impl->config.maxTextureBytes) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Renderer texture count/byte budget exhausted");
+    }
+
+    try {
+      auto texture = std::make_shared<Texture::Impl>();
+      texture->owner = m_impl->diagnostics;
+      texture->bytes = bytes;
+      texture->info = {image.width, image.height, levels, options};
+      ErrorScope scope(m_impl->instance, m_impl->device);
+      wgpu::TextureDescriptor descriptor;
+      descriptor.size = {image.width, image.height, 1};
+      descriptor.mipLevelCount = levels;
+      descriptor.format = options.colorSpace == ColorSpace::Srgb
+                              ? wgpu::TextureFormat::RGBA8UnormSrgb
+                              : wgpu::TextureFormat::RGBA8Unorm;
+      descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+      texture->texture = m_impl->device.CreateTexture(&descriptor);
+      texture->view = texture->texture.CreateView();
+      const auto addressMode = [](TextureAddress address) {
+        switch (address) {
+          case TextureAddress::Clamp:
+            return wgpu::AddressMode::ClampToEdge;
+          case TextureAddress::Repeat:
+            return wgpu::AddressMode::Repeat;
+          case TextureAddress::Mirror:
+            return wgpu::AddressMode::MirrorRepeat;
+        }
+
+        std::unreachable();
+      };
+      wgpu::SamplerDescriptor sampler;
+      sampler.addressModeU = addressMode(options.addressU);
+      sampler.addressModeV = addressMode(options.addressV);
+      sampler.magFilter = sampler.minFilter = options.filter == TextureFilter::Linear
+                                                  ? wgpu::FilterMode::Linear
+                                                  : wgpu::FilterMode::Nearest;
+      sampler.mipmapFilter = options.filter == TextureFilter::Linear
+                                 ? wgpu::MipmapFilterMode::Linear
+                                 : wgpu::MipmapFilterMode::Nearest;
+      sampler.maxAnisotropy = options.maxAnisotropy;
+      texture->sampler = m_impl->device.CreateSampler(&sampler);
+      Image mip = image;
+
+      for (std::uint32_t level = 0; level < levels; ++level) {
+        wgpu::TexelCopyTextureInfo destination;
+        destination.texture = texture->texture;
+        destination.mipLevel = level;
+        wgpu::TexelCopyBufferLayout layout;
+        layout.bytesPerRow = mip.width * 4;
+        layout.rowsPerImage = mip.height;
+        const wgpu::Extent3D extent{mip.width, mip.height, 1};
+        m_impl->queue.WriteTexture(&destination, mip.pixels.data(), mip.pixels.size(), &layout,
+                                   &extent);
+
+        if (level + 1 == levels) {
+          break;
+        }
+
+        Image next{std::max(1U, mip.width / 2), std::max(1U, mip.height / 2), {}};
+        next.pixels.resize(static_cast<std::size_t>(next.width) * next.height * 4);
+
+        for (std::uint32_t y = 0; y < next.height; ++y) {
+          for (std::uint32_t x = 0; x < next.width; ++x) {
+            const auto beginX = x * mip.width / next.width;
+            const auto endX = (x + 1) * mip.width / next.width;
+            const auto beginY = y * mip.height / next.height;
+            const auto endY = (y + 1) * mip.height / next.height;
+            const auto count = static_cast<double>((endX - beginX) * (endY - beginY));
+
+            for (std::size_t channel = 0; channel < 4; ++channel) {
+              double sum{};
+              const auto srgb = channel != 3 && options.colorSpace == ColorSpace::Srgb;
+
+              for (auto sy = beginY; sy < endY; ++sy) {
+                for (auto sx = beginX; sx < endX; ++sx) {
+                  auto value
+                      = mip.pixels[(static_cast<std::size_t>(sy) * mip.width + sx) * 4 + channel]
+                        / 255.0;
+
+                  if (srgb) {
+                    value
+                        = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+                  }
+
+                  sum += value;
+                }
+              }
+
+              auto value = sum / count;
+
+              if (srgb) {
+                value = value <= 0.0031308 ? value * 12.92
+                                           : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
+              }
+
+              next.pixels[(static_cast<std::size_t>(y) * next.width + x) * 4 + channel]
+                  = static_cast<std::uint8_t>(std::clamp(std::round(value * 255), 0.0, 255.0));
+            }
+          }
+        }
+
+        mip = std::move(next);
+      }
+
+      checked = scope.finish();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      if (!texture->texture || !texture->view || !texture->sampler) {
+        return Core::fail(Core::ErrorCode::External, "GPU texture/sampler allocation failed");
+      }
+
+      texture->owner->textures.fetch_add(1);
+      texture->owner->textureBytes.fetch_add(bytes);
+      texture->tracked = true;
+      return Texture(std::move(texture));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Upload texture: " + std::string(error.what()));
+    }
+  }
+
   auto Renderer::resourceStats() const -> Core::Result<ResourceStats> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
@@ -1072,8 +1365,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     }
 
     const auto& stats = *m_impl->diagnostics;
-    return ResourceStats{stats.meshes.load(), stats.vertexBytes.load(), stats.indexBytes.load(),
-                         stats.targets.load(), stats.targetBytes.load()};
+    return ResourceStats{stats.meshes.load(),      stats.vertexBytes.load(),
+                         stats.indexBytes.load(),  stats.targets.load(),
+                         stats.targetBytes.load(), stats.textures.load(),
+                         stats.textureBytes.load()};
   }
 
   auto Renderer::createTarget(std::uint32_t width, std::uint32_t height)
