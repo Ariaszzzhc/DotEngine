@@ -102,6 +102,37 @@ TEST_CASE("runtime_project_command_rejects_invalid_budgets_before_opening_resour
   CHECK(Dot::Core::processResources().handles == 0);
 }
 
+TEST_CASE("editor_workspace_commands_validate_before_opening_native_resources") {
+  Directory directory;
+
+  for (const auto* budget : {"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {
+    auto result = Dot::Core::runProcess(
+        {DOT_EDITOR_EXECUTABLE, {"open", "missing", budget}, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 1);
+    auto response = Json::parse(result->standardOutput);
+    CHECK(response["error"]["code"] == "InvalidArgument");
+    CHECK(response["error"]["message"].get<std::string>().find("frame budget")
+          != std::string::npos);
+  }
+
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  REQUIRE(files.writeTextAtomic("request.json", "{\"command\":\"inspect\"}"));
+  auto invalidId = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE, {"send", "missing", "../bad", "request.json"}, directory.root});
+  REQUIRE(invalidId);
+  CHECK(invalidId->exitCode == 1);
+  CHECK(Json::parse(invalidId->standardOutput)["error"]["code"] == "InvalidArgument");
+  REQUIRE(files.writeTextAtomic("request.json", "{\"command\":1,\"command\":2}"));
+  auto malformed = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE, {"send", "missing", "valid-id", "request.json"}, directory.root});
+  REQUIRE(malformed);
+  CHECK(malformed->exitCode == 1);
+  CHECK(Json::parse(malformed->standardOutput)["error"]["code"] == "InvalidArgument");
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
+}
+
 TEST_CASE("editor_document_command_sequences_native_edits_history_selection_and_explicit_save") {
   Directory directory;
   create(directory);

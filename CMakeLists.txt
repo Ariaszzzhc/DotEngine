@@ -70,6 +70,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
     src/Engine/Editor/Document.cpp
+    src/Engine/Editor/Workspace.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -138,6 +139,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
         src/Engine/Editor/Document.cppm
+        src/Engine/Editor/Workspace.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
@@ -182,7 +184,7 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src
     src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
-add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp)
+add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 add_custom_command(TARGET DotEditor POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"

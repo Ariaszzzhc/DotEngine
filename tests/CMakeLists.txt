@@ -186,3 +186,13 @@ target_compile_definitions(DotEditorTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotEditorTests DotEditor DotRuntime)
 doctest_discover_tests(DotEditorTests PROPERTIES TIMEOUT 30 LABELS "unit")
+
+add_test(NAME editor.workspace COMMAND DotEditor --workspace-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(editor.workspace PROPERTIES TIMEOUT 60 LABELS "gpu;native" RUN_SERIAL TRUE)
+
+add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp)
+target_link_libraries(DotWorkspaceTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotWorkspaceTests PRIVATE
+    DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
+doctest_discover_tests(DotWorkspaceTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)

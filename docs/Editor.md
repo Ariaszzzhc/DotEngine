@@ -1,9 +1,9 @@
 # Editor documents and automation
 
 The editor currently provides native scene authoring through a shared document
-service and JSON commands. The graphical editor is subsequent work. Runtime play
-uses a separate GameSession scene; document editing opens no audio, physics,
-compiler or window backend.
+service, JSON commands and a native project editing window. Runtime play uses a
+separate GameSession scene; the Document service opens no audio, physics, compiler
+or window backend. Workspace adds window/GPU/GUI ownership around that document.
 
 `Dot.Editor.Document` opens the configured project startup scene with fresh scope,
 owns bounded history and exposes read-only scene access. Each changed edit,
@@ -125,7 +125,75 @@ These acceptances test the authoring model and renderer, without claiming a
 graphical editor window. Local verification is on macOS; Windows/Linux common
 code remains uncompiled/unexecuted locally.
 
-The native [GUI rendering layer](Gui.md) adds persistent GPU previews, isolated
-ImGui/SDL3/WebGPU contexts and an actual window/widget/document acceptance. This
-enables the graphical editor frontend; it does not yet provide the complete
-project editing window.
+The native [GUI rendering layer](Gui.md) provides persistent GPU previews and
+isolated ImGui/SDL3/WebGPU contexts.
+
+## Native workspace
+
+```text
+DotEditor open <project-root> [frames]
+DotEditor send <control-directory> <request-id> <request-file>
+```
+
+`open` opens the project startup scene, a native window and the packaged Noto Sans
+SC font. A zero/omitted frame budget runs until closed; a positive budget is useful
+for diagnostics. It prints and flushes one JSON line containing `ok` and an absolute
+`control` path. Window dimensions start at 1280x800 with minimum 800x480.
+
+The scene tree selects entities; the inspector edits names, local transforms,
+parents and all six native components. Script properties use strict JSON object
+input, including arrays/null/nested values. Add/remove and property changes are
+buffered until Apply changes or Save; Reset discards that buffer. Applying the
+inspector produces one native document history entry. Selecting another entity,
+undo/redo or automation mutations are rejected while inspector changes remain
+pending. Save applies the inspector first. A primary camera switch clears the
+previous primary in the same transaction. Component attachments describe resource
+paths and do not implicitly generate assets/scripts.
+
+The toolbar provides Save, Undo, Redo, New entity and Delete; Cmd+S/Cmd+Z/
+Cmd+Shift+Z are used on macOS, Ctrl equivalents on Windows/Linux. Delete is guarded
+while text input is active. Native close/quit checks both document dirtiness and
+pending inspector changes, opening Save and close / Discard / Cancel confirmation.
+The viewport renders the actual game primary camera into a reusable GPU target;
+missing camera/assets display errors and can be recovered by editing/undo. Native
+renderer faults stop the loop. Play preview, project resource/code authoring and
+export interfaces remain subsequent stages.
+
+`send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
+It returns `queued:true` and an absolute `response` path, **not** applied success.
+Read that JSON file to observe the actual outcome. The record contains the original
+request string in `source` (null for unreadable/non-UTF-8 input) and the native
+result/error in `response`. Document
+commands are the same inspect/edit/select/undo/redo/save protocol above. Inspect
+also returns `workspace` with running/close/inspector status, buffered entity fields,
+properties text and validation status. `apply-inspector` and `reset-inspector` require
+a current canonical decimal `revision`, share the GUI implementation and return
+an updated inspection. Close uses this strict request without a revision:
+
+```json
+{"command":"close","discard":false}
+```
+
+Dirty close returns `confirmation:true` while keeping the application running;
+clients can save then close, or explicitly close with `discard:true`. Applying
+pending inspector changes is a separate explicit automation command.
+
+Request IDs are 1..64 ASCII letters/digits/_/-. Identical-content retries reuse
+one receipt without replay; different content for the same ID fails. Callers
+serialize submissions and filesystem changes. Requests commit independently in
+lexical ID order, at most sixteen per frame; at most 256 may be pending and 4096
+IDs are retained per session. Use sequential submissions/current returned revisions
+for dependent changes. A response failure after possible effects permanently faults
+mailbox/frame processing without replay; the owner may still inspect/save the
+Document directly. Readiness metadata identifies the owning session, not a process
+liveness/heartbeat guarantee. No hostile filesystem-race isolation or crash durability
+is promised. The private control directory is removed with Workspace ownership;
+it is temporary session data, not project authoring content.
+
+`--workspace-test <sdk-root> <existing-parent>` exercises the packaged font, real
+native project window, SDL Cmd/Ctrl+Z activation, changed/restored Metal viewport
+pixels, online edit/stale/retry responses, moved/worker guards and control/context
+cleanup. Focused workspace CTest cases cover strict commands, dirty close and actual
+save, absent-camera recovery, malformed mailbox requests, terminal response-I/O
+failure/no replay, pending overflow and repeated initialization/lifetime. Local
+verification is on arm64 macOS; Windows/Linux remain uncompiled/unexecuted locally.

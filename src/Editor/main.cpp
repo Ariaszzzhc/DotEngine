@@ -1,4 +1,6 @@
+#include <charconv>
 #include <cstddef>
+#include <cstdio>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -20,11 +22,13 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Editor.Document;
+import Dot.Editor.Workspace;
 import Dot.Core.Text;
 import Dot.World.SceneFiles;
 import Dot.Script.Compiler;
 
 namespace Dot::Editor {
+  auto testWorkspace(const std::filesystem::path& sdk, const std::filesystem::path& parent) -> int;
   auto testGui(const std::filesystem::path& sdk, const std::filesystem::path& parent) -> int;
   auto testDocument(const std::filesystem::path& sdk, const std::filesystem::path& parent,
                     bool render) -> int;
@@ -160,6 +164,58 @@ namespace {
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 4 && std::string_view(argv[1]) == "--workspace-test") {
+      return Dot::Editor::testWorkspace(path(argv[2]), path(argv[3]));
+    }
+
+    if ((argc == 3 || argc == 4) && std::string_view(argv[1]) == "open") {
+      std::size_t frames = 0;
+
+      if (argc == 4) {
+        const std::string_view text(argv[3]);
+        auto parsed = std::from_chars(text.data(), text.data() + text.size(), frames);
+
+        if (text.empty() || parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size()) {
+          return error({Dot::Core::ErrorCode::InvalidArgument, "Invalid editor frame budget", {}});
+        }
+      }
+
+      auto project = Dot::Project::Project::open(path(argv[2]));
+
+      if (!project) {
+        return error(project.error());
+      }
+
+      auto workspace = Dot::Editor::Workspace::open(*project);
+
+      if (!workspace) {
+        return error(workspace.error());
+      }
+
+      std::println(
+          "{}", Json{{"ok", true}, {"control", utf(workspace->controlDirectory().value())}}.dump());
+      std::fflush(stdout);
+      auto result = workspace->run(frames);
+      return result ? 0 : error(result.error());
+    }
+
+    if (argc == 5 && std::string_view(argv[1]) == "send") {
+      auto request = read(path(argv[4]), 1024 * 1024);
+
+      if (!request) {
+        return error(request.error());
+      }
+
+      auto response = Dot::Editor::submitWorkspaceRequest(path(argv[2]), argv[3], *request);
+
+      if (!response) {
+        return error(response.error());
+      }
+
+      std::println("{}", Json{{"ok", true}, {"queued", true}, {"response", utf(*response)}}.dump());
+      return 0;
+    }
+
     if (argc == 4 && std::string_view(argv[1]) == "--gui-test") {
       return Dot::Editor::testGui(path(argv[2]), path(argv[3]));
     }
@@ -258,7 +314,9 @@ auto main(int argc, char** argv) -> int {
     }
 
     return error({Dot::Core::ErrorCode::InvalidArgument,
-                  "Usage: DotEditor create <parent> <folder> <name> <sdk> | inspect <root> | "
+                  "Usage: DotEditor open <root> [frames] | send <control> <id> <request-file> | "
+                  "--workspace-test <sdk> <parent> | create <parent> <folder> <name> <sdk> | "
+                  "inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "
                   "check <root> <compiler> | document <root> <requests-json-file> | "
                   "--document[-render]-test <sdk> <parent> | "

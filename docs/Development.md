@@ -1640,3 +1640,57 @@ wrapper; this common source path has not been compiled or executed locally.
   cleanup. Formatting/whitespace checks pass. Release DotEditor retains caller
   LLVM libc++/libunwind without LC_RPATH or sanitizer linkage. No compiler/linker
   environment setting was changed; other platforms remain unvalidated locally.
+
+
+### Native project editing workspace
+
+Added Dot.Editor.Workspace with separate interface/implementation and stable RAII
+ownership of the authoring document, application/window, renderer/GUI, scene cache,
+GPU preview and private temporary command directory. DotEditor open/send expose
+real project editing and serialized local automation through shared operations.
+
+- macOS Debug and Release/NDEBUG each pass all 708 CTest cases (657 doctest cases,
+  51 executable checks). Six focused workspace cases cover strict malformed/
+  duplicate fields, inspector apply/reset revisions, dirty close and actual native
+  save, absent-camera error/undo preview recovery, bad commands/invalid UTF-8
+  receipts followed by successful requests, request ID/size/NUL boundaries,
+  response-I/O failure after actual effects with terminal/no-replay behavior and
+  explicit save recovery, pending overflow before effects, invalid initialization,
+  moved owners/negative timing and repeated initialization/context release.
+  The CLI case checks invalid budgets and malformed send requests before native
+  initialization and confirms process ownership is released.
+- The executable workspace acceptance opens the packaged font and real Cocoa
+  window, applies online document edits with actual Metal pixel changes, verifies
+  identical-ID retries and stale revision failures, activates GUI Undo through
+  native SDL Cmd/Ctrl+Z and checks exact initial pixel restoration. It exercises
+  missing-font partial cleanup, worker/move guards and command-directory/context
+  lifetime. Native mouse injection did not activate Undo while the Mac was locked;
+  computer-use visual/manual review was unavailable. No mouse/visual-review result
+  is claimed; existing native Tab/space GUI button acceptance also passes.
+- Scene tree/inspector authoring supports names, local transforms, parents and all
+  six native components, including strict JSON script properties. Buffered edits
+  cannot be silently replaced by selection/history/automation. Apply/Reset share
+  automation operations; Save applies buffered changes first. Applied edits send
+  only changed fields as one atomic history entry, including primary-camera
+  replacement. Actual preview errors remain visible and recoverable; native
+  renderer faults stop the loop. Close/quit confirms unsaved document/draft changes.
+- Requests are <=1 MiB strict UTF-8 objects with canonical revisions and ASCII IDs;
+  processing is lexical, sixteen per frame with at most 256 pending/4096 retained
+  IDs. Submission reports queued status only. Responses preserve the source when
+  UTF-8-readable and contain actual success/error outcomes. IDs cannot change
+  content. Possible-effects response failures permanently fault processing before
+  a retry, while owner inspection/save remain available. Callers serialize local
+  filesystem activity; readiness is not a liveness heartbeat or hostile-race/
+  crash-durability guarantee. The control directory is removed with its owner.
+- Reviewed destruction order/event disconnection, partial opening cleanup, stable
+  renderer/window/scene borrows and moves, main-thread/reentry rules, input/focus/
+  close behavior, inspector field validation/primary switching/history boundaries,
+  frame/dimension/DPI limits, expected preview and mailbox failures, invalid-UTF-8
+  response serialization, retry/no-replay semantics, request limits and honest CLI
+  outcomes. Formatting/whitespace/private-reference checks pass. Release uses
+  caller LLVM libc++/libunwind without LC_RPATH or sanitizers; no environment setting
+  was changed. Windows/Linux common code remains uncompiled/unexecuted locally.
+
+Remaining workspace play preview, project resources/script-code authoring and
+export tooling, expanded rendering, complete acceptance scenes and example game
+remain to be implemented. The full engine goal is still active.
