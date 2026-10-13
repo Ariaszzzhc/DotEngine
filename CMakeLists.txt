@@ -173,7 +173,7 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src
     src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
-add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp)
+add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine nlohmann_json::nlohmann_json)
 
 if(BUILD_TESTING)

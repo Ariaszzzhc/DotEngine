@@ -67,6 +67,7 @@ DotEditor inspect <project-root>
 DotEditor configure <project-root> <description-json-file>
 DotEditor save-scene <project-root> <dotscene-file>
 DotEditor check <project-root> <absolute-typescript-compiler>
+DotEditor document <project-root> <requests-json-file>
 ```
 
 The SDK root contains dot/engine.ts and dot/host.d.ts. Creation takes one portable
@@ -80,6 +81,12 @@ from file presence or use an author's tsconfig. Normal success exits zero;
 validation/IO/compiler failures exit one with ok=false and a stable error code/
 contextual message. Paths/names are literal arguments; no shell is invoked by the
 engine process API. Unknown commands return a structured usage failure.
+
+The document command exposes transactional native scene editing, selection,
+bounded undo/redo and explicit conflict-checked saves. It emits one JSON response
+line per request and shares the Document module used by editor clients. See
+[editor documents and automation](Editor.md) for the strict protocol and lifetime
+contracts. A graphical editor is still subsequent work.
 
 `--project-test <absolute-compiler> <sdk-root> <existing-parent>` exercises exclusive
 creation, real template compilation and attached script/input execution, native scene

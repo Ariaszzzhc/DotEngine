@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,6 +100,116 @@ TEST_CASE("runtime_project_command_rejects_invalid_budgets_before_opening_resour
 
   CHECK(Dot::Core::processResources().children == 0);
   CHECK(Dot::Core::processResources().handles == 0);
+}
+
+TEST_CASE("editor_document_command_sequences_native_edits_history_selection_and_explicit_save") {
+  Directory directory;
+  create(directory);
+  Json requests = Json::array(
+      {{{"command", "inspect"}},
+       {{"command", "edit"},
+        {"revision", "1"},
+        {"operations", Json::array({{{"op", "name"}, {"entity", "2"}, {"name", "Edited"}}})}},
+       {{"command", "select"}, {"revision", "2"}, {"entity", "2"}},
+       {{"command", "undo"}, {"revision", "3"}},
+       {{"command", "redo"}, {"revision", "4"}},
+       {{"command", "save"}, {"revision", "5"}},
+       {{"command", "inspect"}}});
+  REQUIRE(directory.files().writeTextAtomic("requests.json", requests.dump()));
+  auto result = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE,
+       {"document", utf(directory.root / "game folder"), utf(directory.root / "requests.json")},
+       directory.root});
+  REQUIRE(result);
+  INFO(result->standardError);
+  REQUIRE(result->exitCode == 0);
+  std::istringstream lines(result->standardOutput);
+  std::vector<Json> responses;
+
+  for (std::string line; std::getline(lines, line);) {
+    responses.push_back(Json::parse(line));
+  }
+
+  REQUIRE(responses.size() == 7);
+  CHECK(responses[0]["revision"] == "1");
+  CHECK(responses[2]["selected"] == "2");
+  CHECK(responses[3]["scene"]["entities"][1]["name"] == "Cube");
+  CHECK(responses[4]["scene"]["entities"][1]["name"] == "Edited");
+  CHECK_FALSE(responses[5]["dirty"].get<bool>());
+  CHECK(responses[6]["revision"] == "6");
+  CHECK(Dot::Project::Project::open(directory.root / "game folder")
+            ->loadStartup()
+            ->entities()
+            ->at(1)
+            .name
+        == "Edited");
+}
+
+TEST_CASE("editor_document_command_reports_partial_sequence_and_stops_after_stale_revision") {
+  Directory directory;
+  create(directory);
+  auto edit
+      = Json{{"command", "edit"},
+             {"revision", "1"},
+             {"operations", Json::array({{{"op", "name"}, {"entity", "2"}, {"name", "Saved"}}})}};
+  Json requests = Json::array({edit,
+                               {{"command", "save"}, {"revision", "2"}},
+                               edit,
+                               {{"command", "undo"}, {"revision", "3"}}});
+  REQUIRE(directory.files().writeTextAtomic("requests.json", requests.dump()));
+  auto result = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE,
+       {"document", utf(directory.root / "game folder"), utf(directory.root / "requests.json")},
+       directory.root});
+  REQUIRE(result);
+  CHECK(result->exitCode == 1);
+  std::istringstream lines(result->standardOutput);
+  std::vector<Json> responses;
+
+  for (std::string line; std::getline(lines, line);) {
+    responses.push_back(Json::parse(line));
+  }
+
+  REQUIRE(responses.size() == 3);
+  CHECK(responses[0]["ok"] == true);
+  CHECK(responses[1]["dirty"] == false);
+  CHECK(responses[2]["ok"] == false);
+  CHECK(responses[2]["error"]["code"] == "InvalidState");
+  CHECK(Dot::Project::Project::open(directory.root / "game folder")
+            ->loadStartup()
+            ->entities()
+            ->at(1)
+            .name
+        == "Saved");
+  CHECK(Dot::Core::processResources().children == 0);
+}
+
+TEST_CASE("editor_document_single_requests_require_explicit_save_and_reject_duplicate_fields") {
+  Directory directory;
+  create(directory);
+  auto projectRoot = directory.root / "game folder";
+  auto edit
+      = Json{{"command", "edit"},
+             {"revision", "1"},
+             {"operations", Json::array({{{"op", "name"}, {"entity", "2"}, {"name", "Unsaved"}}})}};
+  REQUIRE(directory.files().writeTextAtomic("requests.json", edit.dump()));
+  auto result = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE,
+       {"document", utf(projectRoot), utf(directory.root / "requests.json")},
+       directory.root});
+  REQUIRE(result);
+  CHECK(result->exitCode == 0);
+  CHECK(Json::parse(result->standardOutput)["dirty"] == true);
+  CHECK(Dot::Project::Project::open(projectRoot)->loadStartup()->entities()->at(1).name == "Cube");
+  REQUIRE(directory.files().writeTextAtomic(
+      "requests.json", "{\"command\":\"inspect\",\"command\":\"save\",\"revision\":\"1\"}"));
+  auto bad = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE,
+       {"document", utf(projectRoot), utf(directory.root / "requests.json")},
+       directory.root});
+  REQUIRE(bad);
+  CHECK(bad->exitCode == 1);
+  CHECK(Json::parse(bad->standardOutput)["error"]["code"] == "InvalidArgument");
 }
 
 TEST_CASE("editor_commands_configure_and_save_scene_persist_the_same_validated_operations") {

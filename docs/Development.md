@@ -1488,3 +1488,35 @@ selection, bounded undo/redo, explicit saves and a shared JSON request protocol.
   response failures after mutation and bounded ownership. Formatting/whitespace
   checks pass; module interface and implementation remain separate. Caller LLVM
   environment is unchanged; Windows/Linux common code remains unvalidated locally.
+
+### Editor document commands and rendering acceptance
+
+Added DotEditor document command sequences and executable model/rendering
+acceptances using the same Document operations that graphical clients can consume.
+The graphical editor window remains subsequent work.
+
+- macOS Debug and Release each pass all 682 CTest cases (633 doctest cases and
+  forty-nine executable checks). Three new real child-process cases verify every
+  document request, owned per-request JSON lines, literal paths, exact revisions/
+  statuses, selection and undo/redo, native persisted saves, independent requests
+  preserving earlier explicit saves after a later failure, stopping the remaining
+  sequence, no implicit save on document destruction and strict duplicate fields.
+- `DotEditor document <root> <requests-json-file>` accepts one request or 1..256
+  requests within a 1 MiB/depth-64 strict UTF-8 JSON file. It owns one document
+  for the sequence, returns one JSON line per request and stops with a structured
+  error/exit one on failure. Requests commit independently; there is no implicit
+  save. The native protocol reports complete snapshots plus created values.
+- `--document-test <sdk> <parent>` owns a complete temporary project, selects/
+  moves its attached cube, checks stale-handle/dirty behavior, undoes/redoes and
+  saves/reopens the actual native scene. `--document-render-test` verifies real
+  Metal pixel changes and exact restoration of initial/edited pixels after undo/
+  redo. It tests the model/renderer and does not claim a graphical editor window.
+- Reviewed strict parsing before command execution, independent sequence effects,
+  failure statuses and honest responses, scene/native renderer borrowing and
+  temporary storage lifetime, explicit persistence, protocol documentation and
+  actual pixel restoration. Formatting/whitespace checks pass. Release uses
+  NDEBUG and caller LLVM libc++/libunwind without LC_RPATH, sanitizers or environment
+  changes. Windows/Linux common implementations remain uncompiled/unexecuted locally.
+
+Remaining graphical editor/export tooling, expanded rendering, complete acceptance
+scenes and the example game remain to be implemented.

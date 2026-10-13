@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -9,16 +10,22 @@
 #include <utility>
 #include <vector>
 
+#include "../Engine/Serialization/Json.hpp"
+
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Project;
+import Dot.Editor.Document;
+import Dot.Core.Text;
 import Dot.World.SceneFiles;
 import Dot.Script.Compiler;
 
 namespace Dot::Editor {
+  auto testDocument(const std::filesystem::path& sdk, const std::filesystem::path& parent,
+                    bool render) -> int;
   auto testProject(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
                    const std::filesystem::path& parent, bool render) -> int;
-}
+}  // namespace Dot::Editor
 
 namespace {
   using Json = nlohmann::json;
@@ -43,7 +50,8 @@ namespace {
     return 1;
   }
 
-  auto read(const std::filesystem::path& file) -> Dot::Core::Result<std::string> {
+  auto read(const std::filesystem::path& file, std::size_t limit = 64 * 1024 * 1024)
+      -> Dot::Core::Result<std::string> {
     std::error_code ignored;
     auto absolute = std::filesystem::absolute(file, ignored);
 
@@ -53,7 +61,7 @@ namespace {
     }
 
     auto files = Dot::Core::FileSystem::open(absolute.parent_path());
-    return files ? files->readText(absolute.filename(), 64 * 1024 * 1024)
+    return files ? files->readText(absolute.filename(), limit)
                  : Dot::Core::Result<std::string>{std::unexpected(files.error())};
   }
 
@@ -80,12 +88,84 @@ namespace {
                            .dump());
     return 0;
   }
+
+  auto document(const std::filesystem::path& root, const std::filesystem::path& requests) -> int {
+    auto source = read(requests, 1024 * 1024);
+
+    if (!source) {
+      return error(source.error());
+    }
+
+    if (source->empty() || source->find('\0') != std::string::npos
+        || !Dot::Core::isValidUtf8(*source)) {
+      return error({Dot::Core::ErrorCode::InvalidArgument,
+                    "Document request requires UTF-8 without NUL",
+                    {}});
+    }
+
+    try {
+      auto values = Dot::Serialization::Detail::parseJson(*source);
+
+      if (values.is_object()) {
+        values = Json::array({std::move(values)});
+      }
+
+      if (!values.is_array() || values.empty() || values.size() > 256) {
+        return error({Dot::Core::ErrorCode::InvalidArgument,
+                      "Document command requires 1..256 requests",
+                      {}});
+      }
+
+      auto project = Dot::Project::Project::open(root);
+
+      if (!project) {
+        return error(project.error());
+      }
+
+      auto document = Dot::Editor::Document::open(*project);
+
+      if (!document) {
+        return error(document.error());
+      }
+
+      for (const auto& value : values) {
+        auto response = document->dispatch(value.dump());
+
+        if (!response) {
+          return error(response.error());
+        }
+
+        std::println("{}", *response);
+      }
+
+      return 0;
+    } catch (const Json::exception& value) {
+      return error({Dot::Core::ErrorCode::InvalidArgument,
+                    "Document request JSON: " + std::string(value.what()),
+                    {}});
+    } catch (const std::invalid_argument& value) {
+      return error({Dot::Core::ErrorCode::InvalidArgument,
+                    "Document request: " + std::string(value.what()),
+                    {}});
+    }
+  }
 }  // namespace
 
 /** Commands expose shared project operations for automation clients.
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 4 && std::string_view(argv[1]) == "document") {
+      return document(path(argv[2]), path(argv[3]));
+    }
+
+    if (argc == 4
+        && (std::string_view(argv[1]) == "--document-test"
+            || std::string_view(argv[1]) == "--document-render-test")) {
+      return Dot::Editor::testDocument(path(argv[2]), path(argv[3]),
+                                       std::string_view(argv[1]) == "--document-render-test");
+    }
+
     if (argc == 6 && std::string_view(argv[1]) == "create") {
       auto parent = Dot::Core::FileSystem::open(path(argv[2]));
       auto sdk = Dot::Core::FileSystem::open(path(argv[5]));
@@ -171,7 +251,9 @@ auto main(int argc, char** argv) -> int {
     return error({Dot::Core::ErrorCode::InvalidArgument,
                   "Usage: DotEditor create <parent> <folder> <name> <sdk> | inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "
-                  "check <root> <compiler> | --project[-render]-test <compiler> <sdk> <parent>",
+                  "check <root> <compiler> | document <root> <requests-json-file> | "
+                  "--document[-render]-test <sdk> <parent> | "
+                  "--project[-render]-test <compiler> <sdk> <parent>",
                   {}});
   } catch (const std::exception& value) {
     return error({Dot::Core::ErrorCode::External, value.what(), {}});
