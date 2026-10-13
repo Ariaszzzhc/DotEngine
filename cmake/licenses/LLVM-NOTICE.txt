@@ -1,0 +1,6 @@
+LLVM runtime license notices
+Source: llvm/llvm-project at fda66c5ab9b49af68d2205f1127b21567a42b9ef
+
+The packaged libc++, libc++abi and libunwind binaries are copied from the
+caller-selected compiler environment. Their load commands are relocated and
+macOS binaries receive an ad-hoc signature for local execution.

@@ -75,6 +75,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
     src/Engine/Project/GamePackage.cpp
+    src/Engine/Project/GameExport.cpp
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/Resources.cpp
     src/Engine/Editor/Play.cpp
@@ -148,6 +149,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
         src/Engine/Project/GamePackage.cppm
+        src/Engine/Project/GameExport.cppm
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/Resources.cppm
         src/Engine/Editor/Play.cppm
@@ -196,8 +198,17 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src
     src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
+add_executable(DotGame src/Runtime/GameMain.cpp src/Runtime/ProjectPlayer.cpp)
+target_link_libraries(DotGame PRIVATE DotEngine SDL3::SDL3)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_target_properties(DotGame PROPERTIES INSTALL_RPATH "$ORIGIN/lib")
+    target_link_options(DotGame PRIVATE "LINKER:--disable-new-dtags")
+endif()
+include(cmake/RuntimeKit.cmake)
+
 add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
+add_dependencies(DotEditor DotRuntimeKit)
 add_custom_command(TARGET DotEditor POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"

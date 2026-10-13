@@ -1972,3 +1972,43 @@ revision/dirty state. DotRuntime --game plays captured code without a compiler.
   executable/dynamic-library bundling, richer rendering/editor tools, exhaustive
   component/API acceptance scenes and the example game remain subsequent work.
   The full engine goal remains active.
+
+
+### Native runtime and distribution foundation
+
+Added a dedicated DotGame player and generated runtime-kit installation component,
+plus Dot.Project.GameExport with separate module interface/implementation. RuntimeKit
+validates a bounded native tree and publishes permission/notice-preserving copies;
+exportGame prepares native files and the current scene/data package in owned private
+staging before exclusive whole-directory publication. Playback resolves adjacent
+game data from the executable directory, independent of working directory.
+
+- Four focused distribution cases pass on arm64 macOS Debug and Release/NDEBUG:
+  strict platform/version/path/count/size/permission/tree validation, normal copies,
+  moved owners/manifest changes/source preservation/no overwrite, actual relocated
+  standalone execution after deleting authoring/intermediate kit data, and compiler
+  failure after native copying with staging cleanup and compiler/process counters
+  returning to baseline. Native playback verifies real input, GPU pixel movement,
+  audio endpoint and explicit stop hooks. Integration working trees pass 749/749
+  CTest cases in each configuration; this includes subsequent editor consumers.
+- CMake macOS dependency fixup copies caller-selected LLVM libc++/libc++abi/libunwind,
+  rewrites their references and signs copied binaries ad hoc. All seven delivered
+  binaries in Debug and Release pass codesign --verify --strict; otool -L finds no
+  non-system absolute dependency and DotGame has no LC_RPATH. Release kit occupies
+  22 MiB. Windows CRT/non-system DLL and Linux relative-search/dependency-copy paths
+  are implemented, with post-copy external-resolution failures, but unvalidated.
+- Kit notices include installed vcpkg copyrights and upstream LLVM runtime licenses
+  recorded at fda66c5ab9b49af68d2205f1127b21567a42b9ef. Caller build environment is
+  preserved; only distributed copies receive loader-reference/signature changes.
+- Initial verification exposed an untracked regular .DS_Store in the generated
+  kit. RuntimeKit now ignores only macOS ordinary Finder files up to 64 KiB and
+  omits them from copying; symlink metadata and other extra files still fail. A
+  bounded visited-entry limit remains in force. An unused helper and a shadowed
+  test variable were corrected under warnings-as-errors before final passing builds.
+- Reviewed native dependency closure/system exclusions, relative loader behavior,
+  signed-copy preservation, path/size bounds and aliases, borrowed source ownership,
+  manifest revalidation, permission preservation, failure cleanup, exclusive rename,
+  expected diagnostics, platform branches and interface/implementation separation.
+  Formatting/whitespace/private-reference checks pass. No manual visual, other-host,
+  release signing/notarization or installer validation is claimed. Format checks
+  do not authenticate arbitrary executable bytes; input changes must be serialized.

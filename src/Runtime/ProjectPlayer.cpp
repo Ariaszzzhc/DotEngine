@@ -280,7 +280,7 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int {
+  auto playGame(const std::filesystem::path& root, std::size_t frames, bool acceptance) -> int {
     auto files = Core::FileSystem::open(root);
     auto game = files ? Project::GamePackage::open(*files)
                       : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
@@ -290,7 +290,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = execute(nullptr, nullptr, &*game, frames, false);
+    auto played = execute(nullptr, nullptr, &*game, frames, acceptance);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);

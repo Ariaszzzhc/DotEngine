@@ -26,7 +26,8 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
-  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int;
+  auto playGame(const std::filesystem::path& root, std::size_t frames, bool acceptance = false)
+      -> int;
   auto testGamePlayer(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
                       const std::filesystem::path& parent) -> int;
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,

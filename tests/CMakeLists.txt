@@ -202,3 +202,12 @@ doctest_discover_tests(DotWorkspaceTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_
 
 add_test(NAME runtime.exported_game COMMAND DotRuntime --game-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(runtime.exported_game PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)
+
+add_executable(DotExportTests main.cpp GameExportTests.cpp)
+target_link_libraries(DotExportTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotExportTests PRIVATE
+    DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
+add_dependencies(DotExportTests DotRuntimeKit)
+doctest_discover_tests(DotExportTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
