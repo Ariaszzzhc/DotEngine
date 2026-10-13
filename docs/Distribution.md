@@ -1,7 +1,7 @@
 # DotEngine editor distribution
 
 The native distribution includes DotEditor, DotRuntime, the native player kit,
-TypeScript compiler/standard libraries, current script SDK, CJK font, templates
+TypeScript compiler/standard libraries, embedded engine script modules, CJK font, templates
 and third-party notices. The engine remains a static C++26 module library; no
 public header installation is needed by the delivered editor or games.
 
@@ -27,7 +27,7 @@ are in `DotEngine.app/Contents/Resources/resources`. The bundle uses SDL's stand
 The native distribution manifest records executable paths for automation.
 
 The top-level `examples/PrismRelay` and `examples/FeatureLab` directories are complete
-projects, including their versioned `scripts/dot` SDK. Open these project folders
+projects that import the embedded `dot:engine` module. Open these project folders
 directly, or create a writable copy using the home template choices. A project folder
 contains `project.dotproject`; its parent `examples` directory is not itself a project.
 Keep persistent authoring copies outside generated distribution/build directories.
@@ -50,7 +50,7 @@ Output is `build/release/distribution/DotEngine` and the platform-named zip besi
 it. Debug offers the same targets for diagnostic acceptance. These outputs are
 owned/generated and refreshed by those targets; keep authored projects elsewhere.
 Do not edit the delivered templates in place: project-home creation copies them
-into the new project and installs the current SDK.
+into the new project; engine modules remain owned by the engine binaries.
 
 macOS dependency relocation and ad-hoc signatures enable tested local execution.
 Release signing/notarization or native installer publication require a separate

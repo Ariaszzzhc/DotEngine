@@ -28,6 +28,8 @@ import Dot.Core.Text;
 import Dot.Core.Process;
 import Dot.Core.Paths;
 import Dot.Core.StagedDirectory;
+import Dot.Script.Modules;
+import Dot.Script.Runtime;
 
 namespace Dot::Script {
   namespace {
@@ -261,6 +263,66 @@ namespace Dot::Script {
         }
 
         files.push_back(utf8(target));
+      }
+
+      /** Bundler resolution does not probe .mts for an extensionless name.
+       * Private declaration aliases retain its real exports/types and .mjs emit;
+       * the shared runtime linker checks actual exports, including default.
+       * Bundler 不为无扩展名探测 .mts；私有声明映射保留真实类型和 .mjs 输出，
+       * 共用运行时链接器校验实际导出（含 default）。 */
+      for (const auto& source : sources) {
+        const auto name = utf8(source.relative);
+
+        if (!name.ends_with(".mts") || name.ends_with(".d.mts")) {
+          continue;
+        }
+
+        auto alias = source.relative;
+        alias.replace_extension(".d.ts");
+        auto ts = source.relative;
+        ts.replace_extension(".ts");
+
+        if (std::ranges::any_of(sources, [&](const auto& candidate) {
+              return candidate.relative == alias || candidate.relative == ts;
+            })) {
+          return Core::fail(ErrorCode::InvalidArgument,
+                            "Ambiguous extensionless TypeScript module: " + name);
+        }
+
+        auto emitted = source.relative.filename();
+        emitted.replace_extension(".mjs");
+        const auto import = "./" + utf8(emitted);
+        const auto quoted = nlohmann::json(import).dump();
+        const auto declaration = "export * from " + quoted + ";\n"
+            "declare const defaultValue: typeof import(" + quoted
+            + ") extends { default: infer T } ? T : never;\nexport default defaultValue;\n";
+        const auto path = Fs::path{"src"} / alias;
+        auto written = generation.writeTextAtomic(path, declaration);
+
+        if (!written) {
+          return written;
+        }
+
+        files.push_back(utf8(path));
+      }
+
+      auto builtinDirectory = generation.createDirectories("engine-types");
+
+      if (!builtinDirectory) {
+        return builtinDirectory;
+      }
+
+      std::size_t index{};
+
+      for (const auto& module : engineModules()) {
+        const auto name = std::format("engine-types/module-{}.d.ts", index++);
+        auto written = generation.writeTextAtomic(name, module.declarations);
+
+        if (!written) {
+          return written;
+        }
+
+        files.push_back(name);
       }
 
       const nlohmann::json options{{"target", "ES2022"},
@@ -923,6 +985,12 @@ namespace Dot::Script {
 
       if (actual != expected) {
         return Core::fail(ErrorCode::External, "TypeScript output is missing modules/source maps");
+      }
+
+      auto graph = Runtime::validateProgram(*output, modules);
+
+      if (!graph) {
+        return Core::fail(graph.error().code, "TypeScript module graph: " + graph.error().message);
       }
 
       std::ranges::sort(modules);

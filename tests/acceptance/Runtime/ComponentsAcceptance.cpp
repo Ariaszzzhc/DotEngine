@@ -20,33 +20,19 @@ import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Runtime {
   auto testScriptComponents(const std::filesystem::path& executable,
-                            const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
-                            bool render) -> int {
+                            const std::filesystem::path& root, bool render) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto scene = World::Scene::create("Saved Script Components");
 
-    if (!files || !sdk || !compiler || !scene
-        || !files->createDirectories("component-acceptance/dot")) {
+    if (!files || !compiler || !scene || !files->createDirectories("component-acceptance")) {
       std::println(stderr, "Component acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"component-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Component acceptance SDK copy failed");
-        return 1;
-      }
-    }
-
     auto source = files->writeTextAtomic(
         "component-acceptance/actor.ts",
-        "import {ScriptComponent} from './dot/engine.js';"
+        "import {ScriptComponent} from 'dot:engine';"
         "export class Actor extends ScriptComponent<{speed:number}>{#ticks=0;"
         "onStart(){this.self.name+=' started';}"
         "async onUpdate(seconds:number){await Promise.resolve();++this.#ticks;const "

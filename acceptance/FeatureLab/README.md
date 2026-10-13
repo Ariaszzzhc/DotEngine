@@ -1,8 +1,8 @@
 # Feature Lab
 
 An ordinary native project for component and runtime SDK acceptance. Open this
-folder directly with DotEditor; it includes its versioned script SDK. The build
-also supplies `build/<preset>/acceptance/FeatureLab` with the current SDK.
+folder directly with DotEditor; its scripts import the engine-owned `dot:engine` module. The build
+also supplies `build/<preset>/acceptance/FeatureLab` without copying engine SDK sources.
 The generated copy is refreshed by builds; copy it
 elsewhere before persistent authoring changes.
 

@@ -710,17 +710,10 @@ namespace Dot::Editor {
                               "scripts directory");
           }
 
-          const auto sdk
-              = std::filesystem::path(std::u8string(root.begin(), root.end())) / "dot/engine.js";
-          auto relative = sdk.lexically_relative(target.parent_path()).generic_u8string();
-          std::string import(relative.begin(), relative.end());
-
-          if (!import.starts_with(".")) {
-            import = "./" + import;
-          }
-
-          result = m_resources->createText(name, "import {ScriptComponent} from '" + import
-              + "';\n\nexport class Behavior extends ScriptComponent {\n  onUpdate(seconds: number): void {\n  }\n}\n");
+          result = m_resources->createText(
+              name,
+              "import {ScriptComponent} from 'dot:engine';\n\nexport class Behavior extends "
+              "ScriptComponent {\n  onUpdate(seconds: number): void {\n  }\n}\n");
         } else if (command == "create-text") {
           result = m_resources->createText(name, parsed.at("text").get<std::string>());
         } else {

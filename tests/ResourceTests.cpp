@@ -26,10 +26,7 @@ namespace {
         : storage(Dot::Core::StagedDirectory::create(
                       Dot::Core::FileSystem::open(std::filesystem::temp_directory_path()).value())
                       .value()),
-          project(Dot::Project::Project::create(
-                      storage.files().value(), "project", {},
-                      Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value())
-                      .value()) {
+          project(Dot::Project::Project::create(storage.files().value(), "project", {}).value()) {
     }
 
     auto files() -> Dot::Core::FileSystem {
@@ -50,7 +47,10 @@ TEST_CASE("resources.list_create_unicode_and_readonly_sdk_are_actual_files") {
   CHECK(code->text);
   CHECK_FALSE(code->readOnly);
   CHECK(code->bytes == std::string("export const 游戏 = 1;").size());
-  auto sdk = resources.openText("scripts/dot/engine.ts").value();
+  REQUIRE(fixture.files().createDirectories("scripts/dot"));
+  REQUIRE(
+      fixture.files().writeTextAtomic("scripts/dot/protected.ts", "export const marker = true;"));
+  auto sdk = resources.openText("scripts/dot/protected.ts").value();
   CHECK(sdk.snapshot()->readOnly);
   CHECK_FALSE(sdk.replace("bad", 1));
   CHECK_FALSE(sdk.save(1));

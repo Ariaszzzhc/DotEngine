@@ -30,15 +30,7 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-reload-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
-      REQUIRE(files().createDirectories("scripts/dot"));
-
-      for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto source = sdk->readText(path);
-        REQUIRE(source);
-        REQUIRE(files().writeTextAtomic(std::filesystem::path{"scripts"} / path, *source));
-      }
+      REQUIRE(files().createDirectories("scripts"));
     }
 
     ~Project() {
@@ -71,7 +63,7 @@ namespace {
 
   auto actor(int factor = 1, std::string_view load = "this.#ticks=state.ticks;",
              std::string_view save = "return {ticks:this.#ticks};") -> std::string {
-    return "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+    return "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
            "#ticks=0;onStart(){const t=this.self.transform;t.position.x=0;this.self.transform=t;this.self.name='started';}"
            "onUpdate(){++this.#ticks;const t=this.self.transform;t.position.x+=" + std::to_string(factor)
            + ";this.self.transform=t;this.self.name='tick'+this.#ticks;}"
@@ -193,10 +185,9 @@ TEST_CASE("reload_constructor_initializer_and_state_load_failure_keep_old_realm_
 
   for (const auto& bad :
        {actor(10, "throw Error('load failed');"),
-        std::string{"import {ScriptComponent} from './dot/engine.js';export class Actor extends "
+        std::string{"import {ScriptComponent} from 'dot:engine';export class Actor extends "
                     "ScriptComponent{constructor(c:any){super(c);throw Error('ctor failed');}}"},
-        std::string{
-            "import {scene} from './dot/engine.js';scene.rename('BAD');export class Actor{}"}}) {
+        std::string{"import {scene} from 'dot:engine';scene.rename('BAD');export class Actor{}"}}) {
     project.write(bad);
     auto candidate = project.compile();
     const auto before = native->entities()->front().transform.position.x;
@@ -262,7 +253,7 @@ TEST_CASE("reload_state_contract_missing_loader_undefined_nonvoid_and_aggregate_
 TEST_CASE("reload_faulted_realm_can_recover_and_unstarted_or_new_components_start_normally") {
   Project project;
   project.write(
-      "import {ScriptComponent} from './dot/engine.js';export class Actor extends "
+      "import {ScriptComponent} from 'dot:engine';export class Actor extends "
       "ScriptComponent{onUpdate(){while(true){}}}");
   auto native = scene();
   SceneScriptsConfig config;
@@ -354,16 +345,9 @@ TEST_CASE("reload_capture_failure_removal_and_added_imports_report_without_fakin
   auto missing = good(live->update(0));
   REQUIRE(missing.source.error);
   CHECK(native->entities()->front().name == "tick2");
-  REQUIRE(project.files().createDirectories("scripts/dot"));
-  auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-  REQUIRE(sdk);
+  REQUIRE(project.files().createDirectories("scripts"));
 
-  for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-    REQUIRE(project.files().writeTextAtomic(std::filesystem::path{"scripts"} / path,
-                                            sdk->readText(path).value()));
-  }
-
-  project.write(original + "\nimport './extra.js';\n");
+  project.write(original + "\nimport './extra';\n");
   REQUIRE(project.files().writeTextAtomic("scripts/extra.ts", "export const value=42;"));
   auto repaired = good(live->update(0));
   CHECK(repaired.source.committed);
@@ -458,7 +442,7 @@ TEST_CASE("reload_removed_disabled_and_changed_type_components_stop_after_succes
 TEST_CASE("reload_cleanup_failure_reports_committed_generation_and_lost_candidate_owner") {
   Project project;
   project.write(
-      "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
       "onStop(){this.self.destroy();throw Error('cleanup failure');}}export class Other extends "
       "ScriptComponent{}");
   auto native = scene();

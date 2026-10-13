@@ -1,5 +1,5 @@
-import {Entity, input, physics, scene, ScriptComponent, type Transform} from './dot/engine.js';
-import {type Checkpoint, RelayRules, type Settings} from './rules.js';
+import {Entity, input, physics, scene, ScriptComponent, type Transform} from "dot:engine";
+import {type Checkpoint, RelayRules, type Settings} from './rules';
 
 /**
  * Attached player behavior. Native Jolt contacts decide pickups/damage;

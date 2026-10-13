@@ -34,8 +34,7 @@ namespace {
     explicit Fixture(bool reload = true, std::uint32_t hz = 60)
         : project(
               Project::create(directory.files(), "game",
-                              {"Session", "scenes/main.dotscene", "scripts", 320, 240, hz, reload},
-                              Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value())
+                              {"Session", "scenes/main.dotscene", "scripts", 320, 240, hz, reload})
                   .value()) {
     }
 
@@ -69,7 +68,7 @@ namespace {
 
     auto writeController(int speed) const -> void {
       auto source
-          = "import {ScriptComponent,input,physics,audio} from './dot/engine.js';"
+          = "import {ScriptComponent,input,physics,audio} from 'dot:engine';"
             "export class Mover extends ScriptComponent {#ticks=0;boot=input.index;"
             "onStart(){this.self.name='start'+this.boot;this.self.playAudio();audio.setVolume(.5);}"
             "onFixedUpdate(){++this.#ticks;this.self.setVelocity({x:input.key('D').down?"
@@ -296,7 +295,7 @@ TEST_CASE("game_session_ordinary_script_failure_is_reported_and_isolated") {
   Fixture fixture(false);
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
       "onUpdate(){throw new Error('controller failed');}onStop(){this.self.name='isolated';}}"));
   auto session = fixture.session();
   good(session.start());
@@ -315,7 +314,7 @@ TEST_CASE("game_session_realm_timeout_faults_dispatch_but_close_releases_resourc
   Fixture fixture(false);
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
       "onUpdate(){while(true){}}}"));
   GameSessionConfig config;
   config.scripts.runtime.milliseconds = 10;
@@ -352,7 +351,7 @@ TEST_CASE("game_session_audio_velocity_uses_all_fixed_steps_once_per_frame") {
   REQUIRE(fixture.project.saveStartup(scene));
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
       "onFixedUpdate(){this.self.setVelocity({x:2,y:0,z:0});}"
       "onUpdate(){this.self.name='velocity'+this.self.audioVoice.spatial.velocity.x.toFixed(3);}"
       "}"));

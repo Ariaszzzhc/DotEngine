@@ -83,7 +83,7 @@ TEST_CASE("script.esm_relative_graph_and_imported_entry_reuse_owned_live_binding
   Project project;
   project.write("shared/counter.js", "let count=0;export function next(){return ++count;}");
   project.write("game/main.js",
-                "import {next} from '../shared/counter.js';export function run(){return next();}");
+                "import {next} from '../shared/counter';export function run(){return next();}");
   auto runtime = Runtime::create(project.files());
   REQUIRE(runtime);
   auto main = load(*runtime, "game/main.js");
@@ -127,7 +127,7 @@ TEST_CASE("script.dynamic_import_loads_real_module_and_keeps_module_state") {
   Project project;
   project.write("part.js", "export let count=0;export function next(){return ++count;}");
   project.write("main.js",
-                "export async function run(){const m=await import('./part.js');return m.next();}");
+                "export async function run(){const m=await import('./part');return m.next();}");
   auto runtime = Runtime::create(project.files());
   REQUIRE(runtime);
   auto module = load(*runtime);
@@ -141,8 +141,8 @@ TEST_CASE("script.cyclic_module_graph_resolves_without_duplicate_execution") {
   Project project;
   project.write(
       "a.js",
-      "import {read} from './b.js';export const value=42;export function run(){return read();}");
-  project.write("b.js", "import {value} from './a.js';export function read(){return value;}");
+      "import {read} from './b';export const value=42;export function run(){return read();}");
+  project.write("b.js", "import {value} from './a';export function read(){return value;}");
   auto runtime = Runtime::create(project.files());
   REQUIRE(runtime);
   CHECK(call(*runtime, load(*runtime, "a.js")) == "42");
@@ -170,8 +170,8 @@ TEST_CASE("script.syntax_missing_and_corrupt_source_failures_fault_and_release_r
   const auto before = Runtime::backendMemory();
 
   for (const auto& source :
-       std::vector<std::string>{"export function {", "import './missing.js';",
-                                std::string{"\xc0\x80"}, std::string{"let a='\0';", 10}}) {
+       std::vector<std::string>{"export function {", "import './missing';", std::string{"\xc0\x80"},
+                                std::string{"let a='\0';", 10}}) {
     project.write("main.js", source);
     auto runtime = Runtime::create(project.files());
     REQUIRE(runtime);
@@ -199,7 +199,7 @@ TEST_CASE("script.paths_and_imports_reject_escaping_bare_and_unsupported_attribu
   project.write("ok.js", "export const value=42;");
 
   for (const auto* source :
-       {"import 'ok.js';", "import '../ok.js';", "import './ok.js' with {type:'json'};"}) {
+       {"import 'ok.js';", "import '../ok';", "import './ok' with {type:'json'};"}) {
     project.write("main.js", source);
     auto candidate = Runtime::create(project.files());
     REQUIRE(candidate);
@@ -211,15 +211,14 @@ TEST_CASE("script.paths_and_imports_reject_escaping_bare_and_unsupported_attribu
 TEST_CASE("script.embedded_nul_static_and_dynamic_imports_never_alias_valid_file") {
   Project project;
   project.write("ok.js", "export const value=42;");
-  project.write("main.js", "import './ok.js\\u0000evil.js';");
+  project.write("main.js", "import './ok.js\\u0000evil';");
   auto runtime = Runtime::create(project.files());
   REQUIRE(runtime);
   auto rejected = runtime->loadModule("main.js");
   REQUIRE_FALSE(rejected);
   CHECK(rejected.error().message.find("NUL") != std::string::npos);
-  project.write(
-      "main.js",
-      "export async function run(){return (await import('./ok.js\\u0000evil.js')).value;}");
+  project.write("main.js",
+                "export async function run(){return (await import('./ok.js\\u0000evil')).value;}");
   auto dynamic = Runtime::create(project.files());
   REQUIRE(dynamic);
   auto result = dynamic->call(load(*dynamic), "run");
@@ -369,7 +368,7 @@ TEST_CASE("script_source_json_and_module_limits_reject_boundaries") {
   Project project;
   project.write(
       "main.js",
-      "import './dep.js'; export function run(){return 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';}");
+      "import './dep'; export function run(){return 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';}");
   project.write("dep.js", "export const value=1;");
   RuntimeConfig config;
   config.maxModules = 1;
@@ -525,4 +524,24 @@ TEST_CASE("script_enumerable_symbol_result_keys_are_rejected_instead_of_dropped"
   REQUIRE_FALSE(failed);
   CHECK(failed.error().message.find("symbol keys") != std::string::npos);
   CHECK_FALSE(runtime->stats()->faulted);
+}
+
+TEST_CASE("script_engine_module_is_owned_cached_and_missing_services_are_explicit") {
+  Project project;
+  project.write("main.js", R"js(
+import {keys, input} from 'dot:engine';
+export async function run() {
+  const again = await import('dot:engine');
+  let missing = false;
+  try { input.snapshot(); } catch (error) { missing = error.name === 'DotHostError' && error.message.includes('Host input.snapshot:'); }
+  return {same: again.keys === keys, first: keys[0], missing};
+}
+)js");
+  RuntimeConfig limits;
+  limits.maxModules = 1;
+  auto runtime = Runtime::create(project.files(), limits).value();
+  auto module = load(runtime);
+  CHECK(call(runtime, module) == "{\"same\":true,\"first\":\"A\",\"missing\":true}");
+  CHECK(runtime.stats()->modules == 3);
+  CHECK_FALSE(runtime.stats()->faulted);
 }

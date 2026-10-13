@@ -124,6 +124,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/SceneAudio.cpp
     src/Engine/Script/Runtime.cpp
     src/Engine/Script/Compiler.cpp
+    src/Engine/Script/Modules.cpp
     src/Engine/Script/SceneHost.cpp
     src/Engine/Script/InputSource.cpp
     src/Engine/Script/PhysicsSource.cpp
@@ -207,7 +208,10 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/SceneScripts.cppm
         src/Engine/Script/LiveScripts.cppm
         src/Engine/Script/Compiler.cppm
+        src/Engine/Script/Modules.cppm
 )
+
+include(cmake/ScriptModules.cmake)
 
 add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
@@ -233,7 +237,6 @@ add_custom_target(DotEditorResources
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
         "$<TARGET_FILE_DIR:DotEditor>/resources/templates"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/scripts" "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/examples/PrismRelay" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/PrismRelay"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"

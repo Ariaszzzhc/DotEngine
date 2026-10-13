@@ -34,25 +34,25 @@ export namespace Dot::Project {
   [[nodiscard]] auto encodeDescription(const Description& description) -> Core::Result<std::string>;
   [[nodiscard]] auto decodeDescription(std::string_view source) -> Core::Result<Description>;
 
-  /** Rooted authoring descriptor. Open validates startup scene and required SDK
+  /** Rooted authoring descriptor. Open validates startup scene and required script
    * files/directories with no symlink components. Scene loads return independent
    * scopes. Copies retain descriptor snapshots, not file ownership; callers must
    * serialize authoring edits. No backend/compiler/window is started implicitly.
-   * 根目录编辑描述，打开校验启动场景与 SDK 文件/目录，并禁止符号链接段；加载场景生成
+   * 根目录编辑描述，打开校验启动场景与脚本目录，并禁止符号链接段；加载场景生成
    * 独立范围。副本保留描述快照但不拥有文件，调用者须串行化编辑；不隐式启动后端/编译器/
    * 窗口。 */
   class Project {
   public:
     [[nodiscard]] static auto open(const std::filesystem::path& root) -> Core::Result<Project>;
-    /** Prepare complete SDK, attached Mover script and native camera/cube scene,
+    /** Prepare an attached Mover script using engine-owned dot:engine and native camera/cube scene,
      * then exclusively publish one directory under an existing parent. Failure
      * before publication leaves the destination untouched and removes staging.
-     * 描述、SDK、附着 Mover 脚本及原生相机/立方体场景全部准备后，在已有父目录下不替换
+     * 描述、使用引擎 dot:engine 的附着 Mover
+     * 脚本及原生相机/立方体场景全部准备后，在已有父目录下不替换
      * 发布单个目录；发布前失败不改变目标并清理暂存。 */
     [[nodiscard]] static auto create(const Core::FileSystem& parent,
                                      const std::filesystem::path& folder,
-                                     const Description& description, const Core::FileSystem& sdk)
-        -> Core::Result<Project>;
+                                     const Description& description = {}) -> Core::Result<Project>;
     Project(const Project&);
     auto operator=(const Project&) -> Project&;
     Project(Project&&) noexcept;

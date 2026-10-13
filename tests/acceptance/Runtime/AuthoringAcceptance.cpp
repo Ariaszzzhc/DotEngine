@@ -20,33 +20,20 @@ import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Runtime {
   auto testScriptAuthoring(const std::filesystem::path& executable,
-                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
-                           bool render) -> int {
+                           const std::filesystem::path& root, bool render) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Component Authoring");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("script-authoring-acceptance/dot")) {
+    if (!files || !compiler || !created
+        || !files->createDirectories("script-authoring-acceptance")) {
       std::println(stderr, "Script authoring acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-authoring-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Script authoring SDK copy failed");
-        return 1;
-      }
-    }
-
     auto source = files->writeTextAtomic("script-authoring-acceptance/main.ts", R"ts(
-import {components, scene, ScriptComponent} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {components, scene, ScriptComponent} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export function author(): void {
   const camera = scene.create('Camera');

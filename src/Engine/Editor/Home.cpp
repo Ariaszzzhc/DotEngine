@@ -114,7 +114,6 @@ namespace Dot::Editor {
       }
 
       auto parent = Core::FileSystem::open(path(value["parent"]));
-      auto sdk = Core::FileSystem::open(resources.root() / "script-sdk");
 #ifdef _WIN32
       auto compiler
           = Script::TypeScriptCompiler::create(resources.root() / "typescript-native/tsc.exe");
@@ -123,8 +122,8 @@ namespace Dot::Editor {
           = Script::TypeScriptCompiler::create(resources.root() / "typescript-native/tsc");
 #endif
 
-      if (!parent || !sdk || !compiler) {
-        return std::unexpected(!parent ? parent.error() : !sdk ? sdk.error() : compiler.error());
+      if (!parent || !compiler) {
+        return std::unexpected(!parent ? parent.error() : compiler.error());
       }
 
       const auto folder = path(value["folder"]);
@@ -139,19 +138,19 @@ namespace Dot::Editor {
 
         Project::Description description;
         description.name = name;
-        auto seed = Project::Project::create(staging->files().value(), "seed", description, *sdk);
+        auto seed = Project::Project::create(staging->files().value(), "seed", description);
 
         if (!seed) {
           return std::unexpected(seed.error());
         }
 
-        return Project::instantiateTemplate(seed->files().value(), *parent, folder, name, *sdk,
+        return Project::instantiateTemplate(seed->files().value(), *parent, folder, name,
                                             *compiler);
       }
 
       auto source = Core::FileSystem::open(resources.root() / "templates"
                                            / (choice == "prism" ? "PrismRelay" : "FeatureLab"));
-      return source ? Project::instantiateTemplate(*source, *parent, folder, name, *sdk, *compiler)
+      return source ? Project::instantiateTemplate(*source, *parent, folder, name, *compiler)
                     : Core::Result<Project::Project>{std::unexpected(source.error())};
     } catch (const Json::exception& value) {
       return Core::fail(Core::ErrorCode::InvalidArgument,

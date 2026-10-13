@@ -1,4 +1,4 @@
-import {ScriptComponent} from './dot/engine.js';
+import {ScriptComponent} from "dot:engine";
 
 /**
  * Animate a visual child so the authored sensor pose remains stable.

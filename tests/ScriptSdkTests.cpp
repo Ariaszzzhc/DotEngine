@@ -28,16 +28,8 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-sdk-test-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
       auto project = files();
-      REQUIRE(project.createDirectories("scripts/dot"));
-
-      for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto source = sdk->readText(path);
-        REQUIRE(source);
-        REQUIRE(project.writeTextAtomic(std::filesystem::path{"scripts"} / path, *source));
-      }
+      REQUIRE(project.createDirectories("scripts"));
     }
 
     ~Project() {
@@ -93,7 +85,7 @@ namespace {
 TEST_CASE("script_sdk.real_typescript_entities_transforms_and_hierarchy_edit_native_scene") {
   Project project;
   project.write(
-      "import {scene} from './dot/engine.js';export function run():number[]{"
+      "import {scene} from 'dot:engine';export function run():number[]{"
       "scene.rename('Script Created');const parent=scene.create('Parent');const "
       "child=scene.create('Child');"
       "const a=parent.transform;a.position.x=2;parent.transform=a;child.parent=parent;"
@@ -121,7 +113,7 @@ TEST_CASE("script_sdk.real_typescript_entities_transforms_and_hierarchy_edit_nat
 TEST_CASE("script_sdk_snapshot_edits_commit_only_on_assignment_and_native_failures_recover") {
   Project project;
   project.write(
-      "import {scene,Entity} from './dot/engine.js';import type {HostError} from './dot/engine.js';"
+      "import {scene,Entity} from 'dot:engine';import type {HostError} from 'dot:engine';"
       "let self:Entity;export function init(){self=scene.create('Actor');}"
       "export function preview():number{const t=self.transform;t.position.x=9;return "
       "self.transform.position.x;}"
@@ -152,10 +144,10 @@ TEST_CASE("script_sdk_type_errors_prevent_invalid_ids_and_incomplete_transforms"
   auto compiler = tool();
 
   for (const auto* source :
-       {"import {Entity} from './dot/engine.js';const e=new Entity({scene:1,value:2});",
-        "import {scene} from './dot/engine.js';const "
+       {"import {Entity} from 'dot:engine';const e=new Entity({scene:1,value:2});",
+        "import {scene} from 'dot:engine';const "
         "e=scene.create();e.transform={position:{x:0,y:0,z:0}};",
-        "import {scene} from './dot/engine.js';const e=scene.create();e.id.value='42';"}) {
+        "import {scene} from 'dot:engine';const e=scene.create();e.id.value='42';"}) {
     project.write(source);
     auto result = compiler.compileProject(project.files());
     REQUIRE_FALSE(result);
@@ -166,7 +158,7 @@ TEST_CASE("script_sdk_type_errors_prevent_invalid_ids_and_incomplete_transforms"
 TEST_CASE("script_sdk_native_callback_failure_keeps_context_and_prior_successful_mutations") {
   Project project;
   project.write(
-      "import {scene} from './dot/engine.js';export function run(){const e=scene.create('Kept');"
+      "import {scene} from 'dot:engine';export function run(){const e=scene.create('Kept');"
       "const t=e.transform;t.scale.y=0;e.transform=t;}export function count(){return "
       "scene.info().entities;}");
   auto program = compile(project);
@@ -185,7 +177,7 @@ TEST_CASE("script_sdk_native_callback_failure_keeps_context_and_prior_successful
 TEST_CASE("component_sdk_real_typescript_defaults_match_native_and_nested_factories_are_owned") {
   Project project;
   project.write(R"ts(
-import {components, scene} from './dot/engine.js';
+import {components, scene} from 'dot:engine';
 
 export function run(): boolean {
   const e = scene.create('Configured');
@@ -255,7 +247,7 @@ export function run(): boolean {
 TEST_CASE("component_sdk_changes_and_primary_queries_use_native_state_and_removal") {
   Project project;
   project.write(R"ts(
-import {components, scene} from './dot/engine.js';
+import {components, scene} from 'dot:engine';
 
 export function run(): string[] {
   const camera = scene.create('Camera');
@@ -309,8 +301,8 @@ export function run(): string[] {
 TEST_CASE("component_sdk_invalid_assignment_recovers_without_changing_previous_description") {
   Project project;
   project.write(R"ts(
-import {components, Entity, scene} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {components, Entity, scene} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export function run(): string[] {
   const e = scene.create('Actor');
@@ -383,14 +375,14 @@ TEST_CASE("component_sdk_typecheck_rejects_incomplete_unknown_and_non_json_descr
   auto compiler = tool();
 
   for (const auto* source :
-       {"import {scene} from './dot/engine.js';scene.create().camera={primary:true};",
-        "import {components} from './dot/engine.js';components.mesh({kind:'triangle'});",
-        "import {components} from './dot/engine.js';components.rigidBody({motion:'auto'});",
-        "import {components} from './dot/engine.js';components.audioSource();",
-        "import {components} from './dot/engine.js';components.audioListener(1);",
+       {"import {scene} from 'dot:engine';scene.create().camera={primary:true};",
+        "import {components} from 'dot:engine';components.mesh({kind:'triangle'});",
+        "import {components} from 'dot:engine';components.rigidBody({motion:'auto'});",
+        "import {components} from 'dot:engine';components.audioSource();",
+        "import {components} from 'dot:engine';components.audioListener(1);",
         "import {components} from "
-        "'./dot/engine.js';components.script('actor.ts').properties={bad:()=>1};",
-        "import {scene} from './dot/engine.js';scene.primaryCamera=scene.create();"}) {
+        "'dot:engine';components.script('actor.ts').properties={bad:()=>1};",
+        "import {scene} from 'dot:engine';scene.primaryCamera=scene.create();"}) {
     project.write(source);
     auto result = compiler.compileProject(project.files());
     REQUIRE_FALSE(result);

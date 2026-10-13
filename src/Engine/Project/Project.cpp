@@ -75,8 +75,7 @@ namespace Dot::Project {
 
       const auto scripts = path(description.scriptsDirectory);
 
-      for (const auto& file :
-           {path(description.startScene), scripts / "dot/engine.ts", scripts / "dot/host.d.ts"}) {
+      for (const auto& file : {path(description.startScene)}) {
         auto found = regular(files, file);
 
         if (!found) {
@@ -94,20 +93,6 @@ namespace Dot::Project {
 
       if (!scene) {
         return std::unexpected(scene.error());
-      }
-
-      for (const auto& file : {scripts / "dot/engine.ts", scripts / "dot/host.d.ts"}) {
-        auto source = files.readText(file, 1024 * 1024);
-
-        if (!source) {
-          return std::unexpected(source.error());
-        }
-
-        if (source->empty() || !Core::isValidUtf8(*source)
-            || source->find('\0') != std::string::npos) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Project SDK requires nonempty scalar UTF-8 source");
-        }
       }
 
       return {};
@@ -238,8 +223,7 @@ namespace Dot::Project {
   }
 
   auto Project::create(const Core::FileSystem& parent, const std::filesystem::path& folder,
-                       const Description& description, const Core::FileSystem& sdk)
-      -> Core::Result<Project> {
+                       const Description& description) -> Core::Result<Project> {
     auto metadata = encodeDescription(description);
     const auto utf = folder.generic_u8string();
     const std::string name(utf.begin(), utf.end());
@@ -253,20 +237,6 @@ namespace Dot::Project {
 
     try {
       auto ownedDescription = description;
-      auto engine = sdk.readText("dot/engine.ts", 1024 * 1024);
-      auto host = sdk.readText("dot/host.d.ts", 1024 * 1024);
-
-      if (!engine || !host) {
-        return std::unexpected(engine ? host.error() : engine.error());
-      }
-
-      if (engine->empty() || host->empty() || !Core::isValidUtf8(*engine)
-          || !Core::isValidUtf8(*host) || engine->find('\0') != std::string::npos
-          || host->find('\0') != std::string::npos) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Template SDK requires nonempty scalar UTF-8 source");
-      }
-
       auto staging = Core::StagedDirectory::create(parent);
 
       if (!staging) {
@@ -283,7 +253,7 @@ namespace Dot::Project {
       const auto scenePath = path(description.startScene);
 
       for (const auto& directory :
-           {scripts / "dot", scenePath.parent_path(), std::filesystem::path{"assets"}}) {
+           {scripts, scenePath.parent_path(), std::filesystem::path{"assets"}}) {
         if (!directory.empty()) {
           auto made = files->createDirectories(directory);
 
@@ -325,10 +295,8 @@ namespace Dot::Project {
       const auto write = [&](const std::filesystem::path& file, std::string_view text) {
         return files->writeTextAtomic(file, text);
       };
-      auto engineSet = write(scripts / "dot/engine.ts", *engine);
-      auto hostSet = write(scripts / "dot/host.d.ts", *host);
       auto moverSet = write(scripts / "mover.ts", R"ts(
-import {ScriptComponent, input} from './dot/engine.js';
+import {ScriptComponent, input} from 'dot:engine';
 
 /** Frame-driven movement of an attached native entity.
  * 逐帧驱动附着原生实体的移动。 */
@@ -348,8 +316,7 @@ export class Mover extends ScriptComponent<{speed: number}> {
           "use A/D to move. Scripts live in " + description.scriptsDirectory + ".\n\n"
           "Engine objects are authored in scenes; TypeScript components control their behavior.\n");
 
-      for (const auto* result :
-           {&engineSet, &hostSet, &moverSet, &manifestSet, &sceneSet, &guideSet}) {
+      for (const auto* result : {&moverSet, &manifestSet, &sceneSet, &guideSet}) {
         if (!*result) {
           return std::unexpected(result->error());
         }

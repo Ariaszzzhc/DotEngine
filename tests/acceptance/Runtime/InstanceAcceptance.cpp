@@ -16,15 +16,13 @@ import Dot.World.Scene;
 
 namespace Dot::Runtime {
   auto testScriptInstances(const std::filesystem::path& executable,
-                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root)
-      -> int {
+                           const std::filesystem::path& root) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Instance Acceptance");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("script-instance-acceptance/dot")) {
+    if (!files || !compiler || !created
+        || !files->createDirectories("script-instance-acceptance")) {
       std::println(stderr, "Script instance acceptance setup failed");
       return 1;
     }
@@ -38,20 +36,9 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-instance-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Script instance acceptance SDK copy failed");
-        return 1;
-      }
-    }
-
     auto source = files->writeTextAtomic(
         "script-instance-acceptance/main.ts",
-        "import {Entity} from './dot/engine.js';import type {EntityId} from './dot/engine.js';"
+        "import {Entity} from 'dot:engine';import type {EntityId} from 'dot:engine';"
         "class Base{readonly self:Entity;constructor(id:EntityId){this.self=new Entity(id);}"
         "onStart():void{this.self.name+=' started';}onStop():void{this.self.name+=' stopped';}}"
         "export class Actor extends Base{#ticks=0;readonly speed:number;"

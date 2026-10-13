@@ -21,12 +21,9 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Editor {
-  auto testGui(const std::filesystem::path& sdkRoot, const std::filesystem::path& parentRoot)
-      -> int {
+  auto testGui(const std::filesystem::path& parentRoot) -> int {
     auto parent = Core::FileSystem::open(parentRoot);
-    auto sdk = Core::FileSystem::open(sdkRoot);
-
-    if (!parent || !sdk) {
+    if (!parent) {
       std::println(stderr, "GUI acceptance setup failed");
       return 1;
     }
@@ -41,7 +38,7 @@ namespace Dot::Editor {
     const auto contexts = Graphics::guiContexts();
 
     {
-      auto project = Project::Project::create(storage->files().value(), "gui", {}, *sdk);
+      auto project = Project::Project::create(storage->files().value(), "gui", {});
 
       if (!project) {
         std::println(stderr, "{}", project.error().message);

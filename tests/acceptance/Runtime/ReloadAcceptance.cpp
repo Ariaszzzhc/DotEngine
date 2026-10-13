@@ -19,31 +19,19 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Runtime {
-  auto testScriptReload(const std::filesystem::path& executable,
-                        const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+  auto testScriptReload(const std::filesystem::path& executable, const std::filesystem::path& root,
                         bool render) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Live Reload");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("reload-acceptance/dot")) {
+    if (!files || !compiler || !created || !files->createDirectories("reload-acceptance")) {
       std::println(stderr, "Reload acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"reload-acceptance"} / path, *source)) {
-        return 1;
-      }
-    }
-
     const auto source = [](int factor) -> std::string {
-      return "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+      return "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
              "#ticks=0;onStart(){const t=this.self.transform;t.position.x=0;this.self.transform=t;}"
              "async onUpdate(seconds:number){await Promise.resolve();++this.#ticks;const t=this.self.transform;"
              "t.position.x+=" + std::to_string(factor) + "*seconds;this.self.transform=t;this.self.name='tick'+this.#ticks;}"

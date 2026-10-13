@@ -32,10 +32,9 @@ namespace Dot::Runtime {
   auto testTextures(const std::filesystem::path& root) -> int;
   auto testSurfaceMesh(const std::filesystem::path& root) -> int;
   auto verifyGame(const std::filesystem::path& root) -> int;
-  auto testGamePlayer(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
-                      const std::filesystem::path& parent) -> int;
+  auto testGamePlayer(const std::filesystem::path& compiler, const std::filesystem::path& parent)
+      -> int;
   auto testProjectPlayer(const std::filesystem::path& executable,
-                         const std::filesystem::path& sdkRoot,
                          const std::filesystem::path& parentRoot) -> int;
   auto testScenePhysics(bool render) -> int;
   auto testAudioClip(const std::filesystem::path& root) -> int;
@@ -51,28 +50,21 @@ namespace Dot::Runtime {
       -> int;
   auto testCompiler(const std::filesystem::path& executable, const std::filesystem::path& root)
       -> int;
-  auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
-                      const std::filesystem::path& root, bool render) -> int;
+  auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& root,
+                      bool render) -> int;
   auto testScriptInstances(const std::filesystem::path& executable,
-                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root)
-      -> int;
+                           const std::filesystem::path& root) -> int;
   auto testScriptComponents(const std::filesystem::path& executable,
-                            const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
-                            bool render) -> int;
-  auto testScriptAudio(const std::filesystem::path& executable,
-                       const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+                            const std::filesystem::path& root, bool render) -> int;
+  auto testScriptAudio(const std::filesystem::path& executable, const std::filesystem::path& root,
                        bool native) -> int;
-  auto testScriptPhysics(const std::filesystem::path& executable,
-                         const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+  auto testScriptPhysics(const std::filesystem::path& executable, const std::filesystem::path& root,
                          bool render) -> int;
-  auto testScriptInput(const std::filesystem::path& executable,
-                       const std::filesystem::path& sdkRoot, const std::filesystem::path& root)
+  auto testScriptInput(const std::filesystem::path& executable, const std::filesystem::path& root)
       -> int;
   auto testScriptAuthoring(const std::filesystem::path& executable,
-                           const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
-                           bool render) -> int;
-  auto testScriptReload(const std::filesystem::path& executable,
-                        const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+                           const std::filesystem::path& root, bool render) -> int;
+  auto testScriptReload(const std::filesystem::path& executable, const std::filesystem::path& root,
                         bool render) -> int;
 }  // namespace Dot::Runtime
 
@@ -756,63 +748,62 @@ auto main(int argc, char** argv) -> int {
       return Dot::Runtime::testCompiler(argv[2], argv[3]);
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-host-test"
             || std::string_view(argv[1]) == "--script-host-render-test")) {
-      return Dot::Runtime::testScriptHost(argv[2], argv[3], argv[4],
+      return Dot::Runtime::testScriptHost(argv[2], argv[3],
                                           std::string_view(argv[1]) == "--script-host-render-test");
     }
 
-    if (argc == 5 && std::string_view(argv[1]) == "--script-instance-test") {
-      return Dot::Runtime::testScriptInstances(argv[2], argv[3], argv[4]);
+    if (argc == 4 && std::string_view(argv[1]) == "--script-instance-test") {
+      return Dot::Runtime::testScriptInstances(argv[2], argv[3]);
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-components-test"
             || std::string_view(argv[1]) == "--script-components-render-test")) {
       return Dot::Runtime::testScriptComponents(
-          argv[2], argv[3], argv[4],
-          std::string_view(argv[1]) == "--script-components-render-test");
+          argv[2], argv[3], std::string_view(argv[1]) == "--script-components-render-test");
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-reload-test"
             || std::string_view(argv[1]) == "--script-reload-render-test")) {
       return Dot::Runtime::testScriptReload(
-          argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-reload-render-test");
+          argv[2], argv[3], std::string_view(argv[1]) == "--script-reload-render-test");
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-authoring-test"
             || std::string_view(argv[1]) == "--script-authoring-render-test")) {
       return Dot::Runtime::testScriptAuthoring(
-          argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-authoring-render-test");
+          argv[2], argv[3], std::string_view(argv[1]) == "--script-authoring-render-test");
     }
 
-    if (argc == 5 && std::string_view(argv[1]) == "--script-input-test") {
-      return Dot::Runtime::testScriptInput(argv[2], argv[3], argv[4]);
+    if (argc == 4 && std::string_view(argv[1]) == "--script-input-test") {
+      return Dot::Runtime::testScriptInput(argv[2], argv[3]);
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-physics-test"
             || std::string_view(argv[1]) == "--script-physics-render-test")) {
       return Dot::Runtime::testScriptPhysics(
-          argv[2], argv[3], argv[4], std::string_view(argv[1]) == "--script-physics-render-test");
+          argv[2], argv[3], std::string_view(argv[1]) == "--script-physics-render-test");
     }
 
-    if (argc == 5
+    if (argc == 4
         && (std::string_view(argv[1]) == "--script-audio-test"
             || std::string_view(argv[1]) == "--script-audio-play-test")) {
-      return Dot::Runtime::testScriptAudio(argv[2], argv[3], argv[4],
+      return Dot::Runtime::testScriptAudio(argv[2], argv[3],
                                            std::string_view(argv[1]) == "--script-audio-play-test");
     }
 
-    if (argc == 5 && std::string_view(argv[1]) == "--game-player-test") {
-      return Dot::Runtime::testGamePlayer(argv[2], argv[3], argv[4]);
+    if (argc == 4 && std::string_view(argv[1]) == "--game-player-test") {
+      return Dot::Runtime::testGamePlayer(argv[2], argv[3]);
     }
 
-    if (argc == 5 && std::string_view(argv[1]) == "--project-player-test") {
-      return Dot::Runtime::testProjectPlayer(argv[2], argv[3], argv[4]);
+    if (argc == 4 && std::string_view(argv[1]) == "--project-player-test") {
+      return Dot::Runtime::testProjectPlayer(argv[2], argv[3]);
     }
 
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {

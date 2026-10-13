@@ -174,8 +174,7 @@ TEST_CASE("runtime_kit.publication_preserves_sources_destination_and_move_state"
 TEST_CASE("runtime_distribution.actual_relocated_native_game_needs_no_authoring_or_tools") {
   Fixture fixture;
   auto parent = fixture.files();
-  auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
-  auto project = Project::create(parent, "authoring", {}, sdk).value();
+  auto project = Project::create(parent, "authoring", {}).value();
   auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
   auto opened = RuntimeKit::open(Dot::Core::FileSystem::open(DOT_RUNTIME_KIT).value());
   REQUIRE_MESSAGE(opened, (opened ? "" : opened.error().message));
@@ -216,8 +215,7 @@ TEST_CASE("runtime_distribution.actual_relocated_native_game_needs_no_authoring_
 TEST_CASE("runtime_distribution.compile_failure_discards_private_output") {
   Fixture fixture;
   auto parent = fixture.files();
-  auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
-  auto project = Project::create(parent, "authoring", {}, sdk).value();
+  auto project = Project::create(parent, "authoring", {}).value();
   auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
   auto files = sample(fixture);
   auto kit = RuntimeKit::open(files).value();

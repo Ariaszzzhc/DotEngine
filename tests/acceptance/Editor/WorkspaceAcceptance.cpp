@@ -132,14 +132,11 @@ namespace Dot::Editor {
 
   /** Exercise the real project window, GPU preview and live command mailbox.
    * 验证真实项目窗口、GPU 预览以及在线命令邮箱。 */
-  auto testWorkspace(const std::filesystem::path& sdkRoot, const std::filesystem::path& parentRoot)
-      -> int {
+  auto testWorkspace(const std::filesystem::path& parentRoot) -> int {
     try {
       auto parent = checked(Core::FileSystem::open(parentRoot));
-      auto sdk = checked(Core::FileSystem::open(sdkRoot));
       auto storage = checked(Core::StagedDirectory::create(parent));
-      auto project
-          = checked(Project::Project::create(checked(storage.files()), "workspace", {}, sdk));
+      auto project = checked(Project::Project::create(checked(storage.files()), "workspace", {}));
       auto game = project.loadStartup().value();
       const auto actor = game.entities()->at(1).id;
       require(game.setRigidBody(actor, World::RigidBody{}).has_value(),
@@ -154,7 +151,7 @@ namespace Dot::Editor {
       require(project.files()
                   ->writeTextAtomic(
                       "scripts/mover.ts",
-                      "import {ScriptComponent,input} from './dot/engine.js';export class Mover "
+                      "import {ScriptComponent,input} from 'dot:engine';export class Mover "
                       "extends ScriptComponent "
                       "{onStart(){this.self.playAudio();}onFixedUpdate(){this.self.setVelocity({x:"
                       "input.key('D').down?1.5:0,y:0,z:0});}onUpdate(){this.self.name=this.self."

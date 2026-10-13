@@ -64,35 +64,22 @@ namespace Dot::Runtime {
     }
   }  // namespace
 
-  auto testScriptAudio(const std::filesystem::path& executable,
-                       const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+  auto testScriptAudio(const std::filesystem::path& executable, const std::filesystem::path& root,
                        bool native) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Script Audio");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("script-audio-acceptance/dot") || !wave(*files)) {
+    if (!files || !compiler || !created || !files->createDirectories("script-audio-acceptance")
+        || !wave(*files)) {
       std::println(stderr, "Script audio acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-audio-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Script audio SDK copy failed");
-        return 1;
-      }
-    }
-
     auto writeActor = [&](int version) -> Core::Result<void> {
       std::string source = R"ts(
-import {ScriptComponent, audio} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {ScriptComponent, audio} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   #ticks = 0;

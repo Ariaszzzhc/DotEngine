@@ -94,7 +94,7 @@ TEST_CASE("compiler.real_typescript_strict_esm_relative_graph_runs_in_runtime") 
   Project project;
   project.write("scripts/model.ts", "export const n:number=40;");
   project.write("scripts/main.ts",
-                "import {n} from './model.js';export async function run():Promise<number>"
+                "import {n} from './model';export async function run():Promise<number>"
                 "{return n+await Promise.resolve(2);}");
   auto tool = compiler();
   auto program = compile(tool, project);
@@ -127,7 +127,7 @@ TEST_CASE("compiler_unicode_paths_mts_and_declarations_compile_without_node") {
   project.write("类型🙂/globals.d.mts", "declare const unusedGlobal:number;");
   project.write("类型🙂/中文.mts", "export const value:string='中文🙂';");
   project.write("类型🙂/main.mts",
-                "import {value} from './中文.mjs';export function run():string{return value;}");
+                "import {value} from './中文';export function run():string{return value;}");
   auto program = compile(compiler(), project, "类型🙂");
   CHECK(program.modules().value() == std::vector<std::string>{"main.mjs", "中文.mjs"});
   CHECK(program.stats()->sourceFiles == 3);
@@ -200,7 +200,7 @@ TEST_CASE("compiler_snapshot_survives_authoring_removal_for_lazy_module_import")
   project.write("scripts/model.ts", "export const n:number=42;");
   project.write("scripts/main.ts",
                 "export async function run():Promise<number>"
-                "{return (await import('./model.js')).n;}");
+                "{return (await import('./model')).n;}");
   auto program = compile(compiler(), project);
   Fs::remove_all(project.root / "scripts");
   CHECK(run(program) == "42");
@@ -222,12 +222,12 @@ TEST_CASE("compiler_imports_do_not_implicitly_add_sources_outside_snapshot") {
   Project project;
   project.write("outside/model.ts", "export const n:number=42;");
   project.write("scripts/main.ts",
-                "import {n} from '../outside/model.js';export function run(){return n;}");
+                "import {n} from '../outside/model';export function run(){return n;}");
   auto tool = compiler();
   auto failed = tool.compileProject(project.files());
   REQUIRE_FALSE(failed);
   CHECK(failed.error().message.find("TS2307") != std::string::npos);
-  project.write("scripts/main.ts", "import './missing.js';export function run(){return 42;}");
+  project.write("scripts/main.ts", "import './missing';export function run(){return 42;}");
   CHECK_FALSE(tool.compileProject(project.files()));
   project.write("scripts/main.ts", "import {n} from 'package';export function run(){return n;}");
   CHECK_FALSE(tool.compileProject(project.files()));
@@ -421,4 +421,57 @@ TEST_CASE("compiler_concurrent_real_compilation_owns_distinct_generations") {
   second.reset();
   CHECK(compilerGenerations() == before);
   CHECK(Dot::Core::processResources().children == 0);
+}
+
+TEST_CASE("compiler.engine_namespace_uses_injected_types_without_project_sdk_files") {
+  Project project;
+  project.write("scripts/main.ts", R"ts(
+import {keys, ScriptComponent, type Transform} from 'dot:engine';
+export class Behavior extends ScriptComponent {}
+export function run(): number { return keys.indexOf('A') + 42; }
+export function typed(value: Transform): number { return value.position.x; }
+)ts");
+  auto program = compile(compiler(), project);
+  CHECK(program.stats()->sourceFiles == 1);
+  CHECK(program.modules().value() == std::vector<std::string>{"main.js"});
+  CHECK_FALSE(Fs::exists(project.root / "scripts/dot"));
+  CHECK_FALSE(Fs::exists(program.files()->root() / "dot"));
+  CHECK(run(program) == "42");
+}
+
+TEST_CASE(
+    "compiler.static_graph_policy_rejects_unknown_dot_and_explicit_extensions_without_execution") {
+  Project project;
+  project.write("scripts/other.ts", "export const value=42;");
+  auto tool = compiler();
+  project.write("scripts/main.ts",
+                "import {value} from './other.js';export function run(){return value;}");
+  CHECK_FALSE(tool.compileProject(project.files()));
+  project.write("scripts/main.ts",
+                "import {keys} from 'dot:missing';export function run(){return keys;}");
+  CHECK_FALSE(tool.compileProject(project.files()));
+  project.write("scripts/main.ts",
+                "import {value} from 'dot:missing';export function run(){return value;}");
+  project.write("scripts/decl.d.ts",
+                "declare module 'dot:missing' { export const value: number; }");
+  CHECK_FALSE(tool.compileProject(project.files()));
+  project.write("scripts/main.ts",
+                "import {value} from './other';throw new Error('must not execute');export function "
+                "run(){return value;}");
+  auto parsed = tool.compileProject(project.files());
+  REQUIRE_MESSAGE(parsed, (parsed ? "" : parsed.error().message));
+  auto vm = Runtime::create(parsed->files().value()).value();
+  CHECK_FALSE(vm.loadModule("main.js"));
+}
+
+TEST_CASE("compiler_extensionless_mts_default_types_and_ambiguous_sources_are_checked") {
+  Project project;
+  project.write("scripts/value.mts", "export default function value():number{return 42;}");
+  project.write("scripts/main.ts",
+                "import value from './value';export function run():number{return value();}");
+  auto tool = compiler();
+  auto program = compile(tool, project);
+  CHECK(run(program) == "42");
+  project.write("scripts/value.ts", "export default function value():number{return 99;}");
+  CHECK_FALSE(tool.compileProject(project.files()));
 }

@@ -31,15 +31,7 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-components-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
-      REQUIRE(files().createDirectories("scripts/dot"));
-
-      for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto text = sdk->readText(path);
-        REQUIRE(text);
-        REQUIRE(files().writeTextAtomic(std::filesystem::path{"scripts"} / path, *text));
-      }
+      REQUIRE(files().createDirectories("scripts"));
     }
 
     ~Project() {
@@ -67,7 +59,7 @@ namespace {
   };
 
   constexpr auto actor
-      = "import {ScriptComponent,scene} from './dot/engine.js';"
+      = "import {ScriptComponent,scene} from 'dot:engine';"
         "export class Actor extends "
         "ScriptComponent<{speed:number,failStart?:boolean,failUpdate?:boolean,failStop?:boolean}>{"
         "#ticks=0;onStart(){this.self.name+='S';if(this.properties.failStart)throw Error('start "
@@ -179,10 +171,10 @@ TEST_CASE(
 
 TEST_CASE("components_preparation_forbids_native_constructor_initializer_and_getter_mutations") {
   for (const auto* code :
-       {"import {ScriptComponent} from './dot/engine.js';export class Actor extends "
+       {"import {ScriptComponent} from 'dot:engine';export class Actor extends "
         "ScriptComponent{constructor(c:any){super(c);this.self.name='BAD';}}",
-        "import {scene} from './dot/engine.js';scene.rename('BAD');export class Actor{}",
-        "import {Entity} from './dot/engine.js';export class "
+        "import {scene} from 'dot:engine';scene.rename('BAD');export class Actor{}",
+        "import {Entity} from 'dot:engine';export class "
         "Actor{self:Entity;constructor(c:any){this.self=new Entity(c.entity);}"
         "get onUpdate():any{this.self.name='BAD';return ()=>{};}}"}) {
     Project project;
@@ -271,7 +263,7 @@ TEST_CASE("components_start_failure_is_reported_and_cleanup_runs_once") {
 TEST_CASE("components_all_pending_starts_finish_before_frame_updates_in_creation_order") {
   Project project;
   project.write(
-      "import {ScriptComponent,scene} from './dot/engine.js';export class Actor extends "
+      "import {ScriptComponent,scene} from 'dot:engine';export class Actor extends "
       "ScriptComponent{"
       "onStart(){this.self.name+='S';}onUpdate(){if(scene.entities().some(e=>!e.name.endsWith('S'))"
       ")"
@@ -289,7 +281,7 @@ TEST_CASE("components_self_deletion_during_start_and_update_releases_bindings_im
   for (const auto* hook : {"onStart", "onUpdate"}) {
     Project project;
     project.write(
-        "import {ScriptComponent} from './dot/engine.js';export class Actor extends "
+        "import {ScriptComponent} from 'dot:engine';export class Actor extends "
         "ScriptComponent{"
         + std::string(hook) + "(){this.self.destroy();}}");
     auto program = project.compile();
@@ -337,7 +329,7 @@ TEST_CASE("components_capacity_and_delta_boundaries_fail_before_native_lifecycle
 TEST_CASE("components_realm_resource_failure_stops_further_dispatch_and_releases_all_objects") {
   Project project;
   project.write(
-      "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
       "onUpdate(){while(true){}}}");
   auto program = project.compile();
   auto native = scene();
@@ -409,7 +401,7 @@ TEST_CASE(
 TEST_CASE("components_replacement_stop_that_removes_owner_never_activates_stale_candidate") {
   Project project;
   project.write(
-      "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
       "onStop(){this.self.destroy();}}");
   auto program = project.compile();
   auto native = scene();
@@ -479,7 +471,7 @@ TEST_CASE("components_preparation_loader_fault_releases_existing_active_handles"
 TEST_CASE("components_replacement_stop_resource_fault_releases_newly_prepared_objects") {
   Project project;
   project.write(
-      "import {ScriptComponent} from './dot/engine.js';export class Actor extends ScriptComponent{"
+      "import {ScriptComponent} from 'dot:engine';export class Actor extends ScriptComponent{"
       "onStop(){while(true){}}}");
   auto program = project.compile();
   auto native = scene();
@@ -503,7 +495,7 @@ TEST_CASE("components_replacement_stop_resource_fault_releases_newly_prepared_ob
 TEST_CASE("component_api_lifecycle_edits_descriptions_and_self_disable_stops_next_dispatch") {
   Project project;
   project.write(R"ts(
-import {components, ScriptComponent} from './dot/engine.js';
+import {components, ScriptComponent} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onStart(): void {
@@ -560,8 +552,8 @@ TEST_CASE("component_api_constructor_and_migration_allow_reads_and_reject_all_co
   project.write(R"ts(
 import {invoke} from 'dot:host';
 
-import {Entity, scene, ScriptComponent} from './dot/engine.js';
-import type {HostError, ScriptContext} from './dot/engine.js';
+import {Entity, scene, ScriptComponent} from 'dot:engine';
+import type {HostError, ScriptContext} from 'dot:engine';
 
 function inspect(e: Entity): void {
   if (!e.exists || !e.info().script || e.camera !== null || e.mesh !== null || e.rigidBody !== null

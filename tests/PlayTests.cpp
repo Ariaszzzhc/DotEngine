@@ -28,11 +28,7 @@ namespace {
     DotTest::Audio::Directory directory;
     Dot::Project::Project project;
 
-    Fixture()
-        : project(Dot::Project::Project::create(
-                      directory.files(), "play", {},
-                      Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value())
-                      .value()) {
+    Fixture() : project(Dot::Project::Project::create(directory.files(), "play", {}).value()) {
     }
 
     auto compiler() -> Dot::Script::TypeScriptCompiler {
@@ -48,7 +44,7 @@ namespace {
     }
 
     auto controller(int speed = 2, bool fail = false) -> void {
-      const auto source = std::string("import {ScriptComponent,input} from './dot/engine.js';")
+      const auto source = std::string("import {ScriptComponent,input} from 'dot:engine';")
                           + "export class Mover extends ScriptComponent {"
                             "onFixedUpdate(){this.self.setVelocity({x:input.key('D').down?"
                           + std::to_string(speed)
@@ -154,7 +150,7 @@ TEST_CASE("play.hot_reload_failure_keeps_running_and_new_source_recovers") {
   const auto before = play.scene().value()->entities()->at(1).transform.position.x;
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js'; export class Mover extends ScriptComponent "
+      "import {ScriptComponent} from 'dot:engine'; export class Mover extends ScriptComponent "
       "{onUpdate(){const t=this.self.transform;t.position.x+=2;this.self.transform=t;}}"));
   REQUIRE(play.advance(Dot::Platform::InputState{}, 0ns));
   CHECK(play.lastFrame()->reports.back().source.committed);
@@ -177,7 +173,7 @@ TEST_CASE("play.component_errors_are_visible_and_realm_fault_requires_stop") {
   REQUIRE(play.stop());
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent "
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent "
       "{onUpdate(){while(true){}}}"));
   config.session.scripts.runtime.milliseconds = 5;
   auto faulted

@@ -35,7 +35,7 @@ namespace {
       REQUIRE(access.createDirectories("scripts/nested"));
       REQUIRE(access.writeTextAtomic(
           "scripts/main.ts",
-          "import {value} from './nested/other.js';export function run(){return value+1;}"));
+          "import {value} from './nested/other';export function run(){return value+1;}"));
       REQUIRE(access.writeTextAtomic("scripts/nested/other.ts", "export const value=6;"));
       return TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER)->compileProject(access).value();
     }

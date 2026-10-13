@@ -2,7 +2,8 @@
 
 `Dot.Project.GamePackage` publishes the current native scene, regular resources
 and compiled ESM into a new directory. The package can move independently of the
-authoring project. Playback uses no TypeScript compiler, source files or SDK.
+authoring project. Playback uses no TypeScript compiler or source SDK; engine modules are embedded
+in the native player.
 Data-only export requires a matching DotRuntime. Native export includes a
 standalone player and its resolved native runtime libraries.
 
@@ -36,7 +37,7 @@ code/modules/<relative .js/.mjs modules>
 ```
 
 Export compiles real TypeScript, strips trailing source-map directives, omits
-.ts/.mts/.map files, the source SDK, project metadata and owned staging/control
+.ts/.mts/.map files, project metadata and owned staging/control
 directories. Other regular files are included with their relative names. It writes
 the supplied scene at the configured startup path and disables hot reload in the
 exported description. The compiler publishes within default load limits: 1024

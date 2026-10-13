@@ -21,35 +21,21 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Runtime {
-  auto testScriptPhysics(const std::filesystem::path& executable,
-                         const std::filesystem::path& sdkRoot, const std::filesystem::path& root,
+  auto testScriptPhysics(const std::filesystem::path& executable, const std::filesystem::path& root,
                          bool render) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Scripted Physics");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("script-physics-acceptance/dot")) {
+    if (!files || !compiler || !created || !files->createDirectories("script-physics-acceptance")) {
       std::println(stderr, "Script physics acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-physics-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Script physics SDK copy failed");
-        return 1;
-      }
-    }
-
     auto writeActor = [&](int version) -> Core::Result<void> {
       std::string source = R"ts(
-import {ScriptComponent, physics} from './dot/engine.js';
-import type {EntityId, HostError, ScriptContext} from './dot/engine.js';
+import {ScriptComponent, physics} from 'dot:engine';
+import type {EntityId, HostError, ScriptContext} from 'dot:engine';
 
 export class Actor extends ScriptComponent<{mover: EntityId}> {
   #ticks = 0;

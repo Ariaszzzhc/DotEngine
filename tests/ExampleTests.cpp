@@ -22,18 +22,13 @@ import Dot.Platform.Events;
 import Dot.World.Scene;
 
 TEST_CASE("example.source_projects_open_and_compile_without_build_generated_sdk") {
-  auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
   auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
 
   for (const auto* root : {DOT_EXAMPLE_SOURCE, DOT_LAB_SOURCE}) {
     auto project = Dot::Project::Project::open(root);
     REQUIRE_MESSAGE(project, (project ? "" : project.error().message));
     auto files = project->files().value();
-
-    for (const auto* file : {"dot/engine.ts", "dot/host.d.ts"}) {
-      CHECK(files.readText(std::filesystem::path("scripts") / file).value()
-            == sdk.readText(file).value());
-    }
+    CHECK_FALSE(std::filesystem::exists(files.root() / "scripts/dot"));
 
     auto scene = project->loadStartup();
     REQUIRE_MESSAGE(scene, (scene ? "" : scene.error().message));
@@ -183,7 +178,7 @@ namespace {
     Model()
         : program([&]() {
             REQUIRE(fixture.project.files()->writeTextAtomic("scripts/driver.ts", R"(
-import {RelayRules, type Settings, type Checkpoint} from './rules.js';
+import {RelayRules, type Settings, type Checkpoint} from './rules';
 export function run(request: {settings: Settings; targets: string[];
   ops: {op: string; name?: string; seconds?: number; state?: Checkpoint}[]}) {
   const rules = new RelayRules(request.settings, request.targets);

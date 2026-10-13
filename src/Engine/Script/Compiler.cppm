@@ -117,6 +117,10 @@ export namespace Dot::Script {
      * regular files are ignored. An explicit file list, noResolve and no ambient
      * package types prevent adding sources outside the snapshot. Project tsconfig
      * is never used. Emit strict ES2022 ESM and source maps with original sources.
+     * Inject engine-owned dot: declarations outside project sources/statistics.
+     * Resolve the emitted static graph without executing code before publication;
+     * relative imports omit extensions, including .mts through private type aliases.
+     * Dynamic imports are checked when executed by the same runtime resolver.
      * Exit/output/timeout/type errors return real context and discard the entire
      * candidate; existing generations and source files are untouched. No source
      * edits may race capture. Limits bound capture/output inspection and process
@@ -124,6 +128,8 @@ export namespace Dot::Script {
      * 将规范相对目录内有界 UTF-8 .ts/.mts（含声明）复制到私有代，拒绝符号链接、特殊
      * 文件、.tsx/.cts/.js/.mjs/.jsx 源码及超过 32 层的目录，其余普通文件忽略。显式
      * 文件清单、noResolve 与禁用环境包类型避免添加快照外源码，不采用项目 tsconfig。
+     * 注入引擎拥有的 dot: 声明，不计项目源码统计；发布前只链接静态导入图而不执行代码。
+     * 相对导入不含扩展名，.mts 使用私有类型映射；动态导入执行时由共用解析器校验。
      * 输出严格 ES2022 ESM 与内含原源码的映射；退出/输出/超时/类型错误保留真实上下文
      * 并丢弃整代，已有代及源文件不变。捕获时禁止并发改源码；限制捕获/输出检查及进程
      * 时间/诊断，不构成操作系统内存/磁盘配额或恶意隔离。 */

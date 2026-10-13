@@ -1,7 +1,7 @@
 # Projects and authoring commands
 
 A project is a rooted directory containing `project.dotproject`, a startup
-`.dotscene`, and TypeScript sources with the local `dot/engine.ts`/`host.d.ts` SDK.
+`.dotscene`, and a TypeScript source directory. Engine APIs come from `dot:engine`.
 Version 1 uses these exact JSON fields:
 
 ```json
@@ -26,8 +26,8 @@ non-integer numbers, unsupported versions, nesting beyond 8, invalid bytes and
 manifests larger than 64 KiB. Metadata parsing starts no subsystems.
 
 `Dot.Project` exposes Description codecs and Project::create/open/files/description/
-loadStartup/save/saveStartup. Open validates the startup scene and required SDK
-files/directories and rejects symlink components, even when they point inside the
+loadStartup/save/saveStartup. Open validates the startup scene and configured script
+directory and rejects symlink components, even when they point inside the
 root. Loading produces fresh scene scope IDs while preserving entity values.
 Copies hold description snapshots/file descriptors, not filesystem ownership;
 callers serialize authoring operations. No compiler/window/backend starts during open.
@@ -42,7 +42,7 @@ is an explicit error rather than a replacing fallback. Publication does not prom
 crash durability or isolation against hostile concurrent filesystem changes.
 
 The template contains a primary camera, a colored cube and an attached Mover
-TypeScript class with owned speed properties. It copies the actual local SDK and
+TypeScript class with owned speed properties and a `dot:engine` import. It
 creates scenes/scripts/assets directories and a README. The class reads A/D through
 the input SDK and edits its attached native entity; the scene remains native authoring
 rather than replacing the engine with a standalone TypeScript game.
@@ -51,7 +51,7 @@ Save validates metadata/resources, prepares a description copy and atomically
 replaces project.dotproject before changing memory. Failed validation or writes
 retain the old in-memory descriptor. Startup scene saves use the existing atomic
 SceneFiles implementation. Changing startup/script paths requires creating valid
-resources first. SDK/scene data can change on disk; subsequent loads/checks report
+resources first. Script/scene data can change on disk; subsequent loads/checks report
 actual failures. Moving a project directory and reopening works with relative paths;
 old file descriptors still describe the old location.
 
@@ -62,7 +62,7 @@ These commands share engine project operations with that workspace.
 [Native game and data export](Export.md) are available.
 
 ```text
-DotEditor create <existing-parent> <folder> <name> <sdk-root>
+DotEditor create <existing-parent> <folder> <name>
 DotEditor inspect <project-root>
 DotEditor configure <project-root> <description-json-file>
 DotEditor save-scene <project-root> <dotscene-file>
@@ -70,8 +70,7 @@ DotEditor check <project-root> <absolute-typescript-compiler>
 DotEditor document <project-root> <requests-json-file>
 ```
 
-The SDK root contains dot/engine.ts and dot/host.d.ts. Creation takes one portable
-folder name and does not create missing parent directories. Inspect/create/save
+Creation takes one portable folder name and does not create missing parent directories. Inspect/create/save
 return one JSON object with ok=true, canonical root, project description and
 owned startup scene. Configure expects the complete version-1 description.
 Save-scene accepts the strict native scene format and persists it as the configured
@@ -88,7 +87,7 @@ line per request and shares the Document module used by editor clients. See
 [editor documents and automation](Editor.md) for the strict protocol and lifetime
 contracts and the native graphical workspace.
 
-`DotEditorAcceptance --project-test <absolute-compiler> <sdk-root> <existing-parent>` exercises exclusive
+`DotEditorAcceptance --project-test <absolute-compiler> <existing-parent>` exercises exclusive
 creation, real template compilation and attached script/input execution, native scene
 and descriptor saves, relocation with fresh scene scope, recompilation and compiler/
 process/VM cleanup. `--project-render-test` additionally verifies actual Metal pixels
@@ -134,7 +133,7 @@ calling script hooks. Offline mode renders real PCM; playback opens a real endpo
 and rejects offline rendering. Native failure after side effects faults the session,
 with no rollback; closing releases it even when scene identity has been invalidated.
 
-`--project-player-test <absolute-compiler> <sdk-root> <existing-parent>` creates a
+`--project-player-test <absolute-compiler> <existing-parent>` creates a
 complete temporary template, uses the same player/session loop with deterministic
 published input, verifies real native presentation and changed rendered pixels,
 opens a muted real endpoint, and checks compiler/VM/audio ownership returns to

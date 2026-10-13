@@ -58,8 +58,7 @@ namespace {
   }
 
   auto create(const Directory& directory) -> Json {
-    return command(directory, {"create", utf(directory.root), "game folder", "游戏 $ literal",
-                               DOT_SCRIPT_SDK_DIRECTORY});
+    return command(directory, {"create", utf(directory.root), "game folder", "游戏 $ literal"});
   }
 }  // namespace
 
@@ -73,8 +72,8 @@ TEST_CASE(
   auto inspected = command(directory, {"inspect", utf(root)});
   CHECK(inspected["project"] == created["project"]);
   auto checked = command(directory, {"check", utf(root), DOT_TYPESCRIPT_COMPILER});
-  CHECK(checked["sourceFiles"] == 3);
-  CHECK(checked["modules"].size() == 2);
+  CHECK(checked["sourceFiles"] == 1);
+  CHECK(checked["modules"].size() == 1);
   CHECK(Dot::Project::Project::open(root)->loadStartup()->entities()->size() == 2);
 }
 
@@ -113,8 +112,7 @@ TEST_CASE("product_commands_reject_development_acceptance_without_side_effects")
     CHECK(result->standardError.find("Usage: DotRuntime") != std::string::npos);
   }
 
-  auto editor = command(directory,
-                        {"--document-test", DOT_SCRIPT_SDK_DIRECTORY, utf(directory.root)}, false);
+  auto editor = command(directory, {"--document-test", utf(directory.root)}, false);
   CHECK(editor["error"]["code"] == "InvalidArgument");
   CHECK(editor["error"]["message"].get<std::string>().starts_with("Usage: DotEditor"));
   auto game = Dot::Core::runProcess({DOT_GAME_EXECUTABLE, {"--verify-native"}, directory.root});
@@ -299,9 +297,8 @@ TEST_CASE(
   create(directory);
   auto root = directory.root / "game folder";
   auto old = directory.files().readText("game folder/project.dotproject").value();
-  auto collision = command(
-      directory,
-      {"create", utf(directory.root), "game folder", "Overwrite", DOT_SCRIPT_SDK_DIRECTORY}, false);
+  auto collision
+      = command(directory, {"create", utf(directory.root), "game folder", "Overwrite"}, false);
   CHECK(collision["error"]["code"] == "Io");
   CHECK(directory.files().readText("game folder/project.dotproject").value() == old);
   REQUIRE(directory.files().writeTextAtomic("bad.json", "{\"version\":99}"));
@@ -326,7 +323,7 @@ TEST_CASE("editor_commands_check_reports_actual_type_errors_and_relocated_projec
   std::filesystem::rename(root, directory.root / "moved");
   auto checked
       = command(directory, {"check", utf(directory.root / "moved"), DOT_TYPESCRIPT_COMPILER});
-  CHECK(checked["sourceFiles"] == 3);
+  CHECK(checked["sourceFiles"] == 1);
 }
 
 TEST_CASE("editor_commands_export_data_and_runtime_game_validate_real_packages") {

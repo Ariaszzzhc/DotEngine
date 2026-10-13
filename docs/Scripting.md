@@ -14,10 +14,23 @@ Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entr
 and call an exported function through its scoped ModuleId. Entry paths are root
 relative, have no empty/dot/parent components, drive prefixes, backslashes, control
 characters, or trailing dot/space components. Paths are limited to 4096 bytes.
-Imports must use ./ or ../ with an explicit .js/.mjs extension; normalized paths
-must stay inside the root. Filesystem canonical checks also reject symlink escape.
-Apart from the explicit registered `dot:host` module, bare packages, OS modules,
-import attributes, extension guessing and bytecode loading are unsupported.
+Project imports use extensionless ./ or ../ names and resolve to exactly one
+regular compiled .js/.mjs file within the root. Missing files, ambiguous outputs,
+explicit extensions, case aliases and symlink components fail. Directory/index
+and package guessing are unsupported. Engine modules use exact registered names
+such as `dot:engine` and the native `dot:host`; unknown `dot:` names never fall back
+to project files. Bare packages, OS modules, import attributes and bytecode loading
+are unsupported. Entry paths remain compiled filenames, separate from imports.
+
+```ts
+import {Entity, input, ScriptComponent, type Transform} from 'dot:engine';
+import {settings} from './config/settings';
+```
+
+The engine compiles its sole SDK implementation at build time and embeds its ESM
+and declarations in the static library. Projects, templates and published game
+module trees contain only their own sources/modules. `Dot.Script.Modules` owns the
+registry shared by compiler and runtime; future engine modules use this registry.
 Source is bounded UTF-8 without raw NUL; escaped NUL is
 valid string data but forbidden in import specifiers.
 
@@ -59,9 +72,11 @@ module/export context and bounded diagnostics/stack when available; earlier scri
 mutations are not rolled back. Diagnostic getters remain under the execution budget.
 
 Default limits are 16 MiB live VM allocator payload, 128 KiB JS stack, 1 MiB per
-source and JSON buffer, 256 modules, 1024 jobs, and 100 ms cooperative execution per
+source and JSON buffer, 256 project modules, 1024 jobs, and 100 ms cooperative execution per
 operation. Configurable ranges are: memory 1 byte..1 GiB, stack 64..256 KiB,
 source/JSON 1 byte..16 MiB, modules 1..1024, jobs 1..65536, and time 1..1000 ms.
+The fixed engine registry is separate from the project-module quota; statistics
+include loaded engine modules and their VM allocations still count toward memory.
 Tiny memory budgets can fail runtime/context initialization and release partial
 owners. Runtime payload allocation counters include arenas/backing allocations;
 allocator headers, host containers/source copies, and OS internals are excluded.
@@ -118,12 +133,21 @@ resolution, forced module detection, isolated modules, verbatim module syntax,
 noEmitOnError, noUncheckedSideEffectImports, consistent casing, noResolve, no ambient
 package types and the ES2022 standard library. An explicit file list supplies all
 snapshot sources, including referenced relative modules. Project tsconfig files
-are ignored. Imports name the emitted `.js`/`.mjs` files; noResolve prevents the
-compiler from implicitly adding project-external sources. ESM paths/imports must
-also satisfy the Runtime loader contract when activated. Projects copy the
-versioned `assets/scripts/dot` SDK into their source tree for the implemented
-services. Source maps contain the original TypeScript text and relative paths
-into the retained snapshot.
+are ignored. Relative imports omit extensions; engine imports use `dot:` names.
+Engine-owned ambient declarations are injected outside the project source tree
+and source statistics. noResolve prevents implicitly adding external sources.
+For `.mts`, private declaration aliases direct extensionless type resolution to
+its actual exports while retaining `.mjs` output. Source maps contain the original
+TypeScript text and relative paths into the retained snapshot.
+
+After emission, the shared runtime loader parses and links the entire static graph
+without executing initializers, constructors or host services. Unknown engine names,
+explicit project extensions, missing/ambiguous imports and invalid exports discard
+the candidate before Check/Play publication. Dynamic imports use the same resolver
+when executed. Graph validation uses a private 256 MiB VM, 16 MiB per source, 1024
+project modules and one second of cooperative time per graph; filesystem waits are
+not an OS sandbox or hard wall-clock limit. These VM allocations release on both
+success and failure.
 
 Successful compilation checks actual regular output files against every expected
 module and source map, with UTF-8 and aggregate byte checks. Zero exit status with
@@ -171,11 +195,12 @@ only through the callback. Moving the Runtime preserves its private context owne
 Do not move/destroy a Runtime from inside its active callback. Reentrant public
 loads/calls/statistics are rejected.
 
-An empty registry exposes no native module. Registered realms permit only the
-reserved `import {invoke} from 'dot:host'`; the function is not installed globally.
-Static/dynamic imports and top-level await share the same native module, which
-counts toward `maxModules`. Other bare names, attributes and NUL aliases still
-fail. `invoke(method, arguments)` looks up exactly the registered method and
+Every realm provides the reserved `import {invoke} from 'dot:host'`; the function
+is not installed globally. Static/dynamic imports and top-level await share the
+same native module, separate from the project-module quota. An empty callback
+registry allows importing engine types/constants but calling an unregistered
+service raises a contextual `DotHostError`. Other bare names, attributes and NUL
+aliases still fail. `invoke(method, arguments)` looks up exactly the registered method and
 validates a finite JSON argument array of at most 64 values, under `jsonBytes`.
 Serialization follows the strict runtime replacer, including `toJSON`/getter
 semantics, then requires a scalar-Unicode JSON array. Missing/invalid methods or
@@ -246,11 +271,10 @@ entity; a destroyed owner remains an explicit error. A missing primary component
 is null. `Entity.exists` is false for missing IDs in this scene, while foreign,
 invalid and moved-scene handles remain errors.
 
-Copy `assets/scripts/dot/engine.ts` and `host.d.ts` into a project's `scripts/dot`
-directory, then compile that source tree with TypeScriptCompiler. The declaration
-resolves the reserved module; the TypeScript implementation exposes `scene` and an
-`Entity` view, typed IDs/vectors/quaternions/transforms/snapshots and HostError codes.
-These wrappers own copied identity/snapshots and do not own native entities.
+Import the embedded `dot:engine` module directly. TypeScriptCompiler supplies its
+matching declarations; no SDK installation/copy step is needed. It exposes `scene`
+and an `Entity` view, typed IDs/vectors/quaternions/transforms/snapshots and HostError
+codes. These wrappers own copied identity/snapshots and do not own native entities.
 
 Component fields use the native authoring contracts, with object vectors `{x,y,z}`
 and colors `{x,y,z,w}`. Complete assignments require every documented field and
@@ -270,7 +294,7 @@ path. Default nested objects are independent; caller-supplied override objects
 remain ordinary caller-owned values until an assignment copies them.
 
 ```ts
-import {scene, components} from './dot/engine.js';
+import {scene, components} from 'dot:engine';
 
 const actor = scene.create('Actor');
 actor.mesh = components.mesh({tint: {x: 0, y: 1, z: 0, w: 1}});
@@ -284,7 +308,7 @@ actor.audioSource = source;
 actor.rigidBody = null;
 ```
 
-`--script-authoring-test <absolute-compiler> <sdk-root> <directory>` creates all
+`--script-authoring-test <absolute-compiler> <directory>` creates all
 six components through actual compiled TypeScript, checks native rejection,
 saves/loads the authored scene in a fresh scope and dispatches typed lifecycle
 edits and removal. Audio paths intentionally need not exist for this authoring
@@ -297,8 +321,8 @@ save/load just like earlier scene writes. Lifecycle callbacks may edit authoring
 self-disable takes effect when the next lifecycle dispatch synchronizes the scene.
 
 ```ts
-import {Entity} from './dot/engine.js';
-import type {EntityId} from './dot/engine.js';
+import {Entity} from 'dot:engine';
+import type {EntityId} from 'dot:engine';
 
 let actor: Entity;
 
@@ -318,10 +342,10 @@ the entity-attached lifecycle service below provides scheduled instances. Candid
 load/initializer failures through this direct bridge can have native side effects,
 so it must not be mistaken for transactional hot reload.
 
-Run `DotRuntimeAcceptance --script-host-test <absolute-compiler> <sdk-root> <directory>` for
+Run `DotRuntimeAcceptance --script-host-test <absolute-compiler> <directory>` for
 the actual TypeScript SDK, native entity creation/deletion and parenting, renaming,
 recoverable transform rejection, sixty typed transform ticks, and compiler/process/
-VM cleanup. `<sdk-root>` contains `dot/engine.ts` and `dot/host.d.ts`.
+VM cleanup.
 `--script-host-render-test` takes the same arguments and also checks actual GPU
 pixels before/after script-driven movement of a native cube. macOS uses Metal;
 Windows/Linux implementations are not validated locally. No sanitizers are used.
@@ -361,7 +385,7 @@ is allowed on a faulted realm but still requires its owner thread without reentr
 Moves preserve instances; quiescent realm destruction may occur on another thread.
 `RuntimeStats.instances` reports live host-held handles, not every object in JS.
 
-Run `DotRuntimeAcceptance --script-instance-test <absolute-compiler> <sdk-root> <directory>`
+Run `DotRuntimeAcceptance --script-instance-test <absolute-compiler> <directory>`
 for actual TypeScript classes with private state and inherited hooks, two native
 entities driven independently through sixty async updates, contextual failure
 recovery, explicit stop calls, stale-handle rejection and complete compiler/process/
@@ -440,7 +464,7 @@ allocator quota. Failed preparation may leave retained module-global JS state;
 stopping releases host objects but does not reset module globals.
 
 ```ts
-import {ScriptComponent} from './dot/engine.js';
+import {ScriptComponent} from 'dot:engine';
 
 export class Player extends ScriptComponent<{speed: number}> {
   onUpdate(seconds: number): void {
@@ -451,8 +475,8 @@ export class Player extends ScriptComponent<{speed: number}> {
 }
 ```
 
-Run `--script-components-test <compiler> <sdk-root> <directory>` to save/load an
-actual authored scene, compile the source SDK/classes, automatically dispatch
+Run `--script-components-test <compiler> <directory>` to save/load an
+actual authored scene, compile project classes with engine-owned declarations, automatically dispatch
 start/sixty async updates/fixed updates/stop on two independent native entities,
 and verify original handles are foreign after load plus full compiler/process/VM
 cleanup. `--script-components-render-test` also validates real GPU pixels before/
@@ -537,7 +561,7 @@ compiler invocations retain Process time/output bounds. Captured text and native
 transport containers are outside the VM allocator quota. This version uses
 portable content capture rather than platform notification APIs.
 
-Run `--script-reload-test <compiler> <sdk-root> <directory>` for actual source edits,
+Run `--script-reload-test <compiler> <directory>` for actual source edits,
 type-error retention while old code continues, new code compiled into another
 realm, private state migration without duplicate startup/cleanup, changed native
 movement and compiler/process/VM teardown. `--script-reload-render-test` also checks
@@ -599,7 +623,7 @@ must be finite; text must be scalar UTF-8 within a configured byte limit (defaul
 Native host transport budgets still apply: large custom text limits may require a
 larger Runtime JSON budget, especially when control characters need escaping.
 Valid reads before publication fail Unavailable. A missing input service fails
-NotFound through invoke; an entirely empty host registry exposes no dot:host module.
+NotFound through invoke, including with an entirely empty callback registry.
 
 | Native method | Arguments | Owned result |
 | --- | --- | --- |
@@ -625,7 +649,7 @@ hold a key without adding a press. Focus loss releases held keys/buttons. Editin
 returned snapshots never changes input or the native InputState.
 
 ```ts
-import {ScriptComponent, input} from './dot/engine.js';
+import {ScriptComponent, input} from 'dot:engine';
 
 export class Mover extends ScriptComponent {
   onUpdate(seconds: number): void {
@@ -648,7 +672,7 @@ rebuilds guards for each candidate realm; LiveScripts carries the same services
 through compilation failures and successful reloads. Capture owned dependencies,
 or keep borrowed dependencies alive for the service lifetime.
 
-Run `--script-input-test <absolute-compiler> <sdk-root> <directory>` for deterministic
+Run `--script-input-test <absolute-compiler> <directory>` for deterministic
 SDL event injection through the application event pump and publication callback,
 real TypeScript components, fixed-step edge sharing, repeat keys, Unicode text,
 mouse/pointer/wheel, focus release and source hot reload with private state migration.
@@ -700,7 +724,7 @@ an inside hit may have fraction zero and null normal. Returned poses, velocities
 ray geometry and contact geometry are world-space metres/seconds.
 
 ```ts
-import {ScriptComponent, physics} from './dot/engine.js';
+import {ScriptComponent, physics} from 'dot:engine';
 
 export class Player extends ScriptComponent {
   onStart(): void {
@@ -747,7 +771,7 @@ prepares its empty encoded batch before replacing the world. A Runtime rejecting
 an otherwise valid published batch does not consume native data; another reader
 with adequate transport capacity can still read it.
 
-`--script-physics-test <absolute-compiler> <sdk-root> <directory>` compiles actual
+`--script-physics-test <absolute-compiler> <directory>` compiles actual
 TypeScript classes controlling real linear/angular velocity, impulse and kinematic
 motion. It checks rays and sensor batches, catches invalid control, advances thirty
 fixed frames, changes source and migrates a private counter halfway through while
@@ -798,7 +822,7 @@ playback implicitly. Native callback bytes are bounded to 64 KiB/depth 16 with
 strict UTF-8/JSON/duplicate/object-shape checks. Gain is finite [0,1].
 
 ```ts
-import {ScriptComponent, audio} from './dot/engine.js';
+import {ScriptComponent, audio} from 'dot:engine';
 
 export class Music extends ScriptComponent {
   onStart(): void {
@@ -831,7 +855,7 @@ continues during compilation/preparation, so snapshots can advance independently
 Stats expose actual playback state/errors and queue/frame/callback counters; offline
 mode explicitly reports null playback data.
 
-`--script-audio-test <absolute-compiler> <sdk-root> <directory>` compiles actual
+`--script-audio-test <absolute-compiler> <directory>` compiles actual
 TypeScript components and verifies play/seek/gain through deterministic PCM, pause
 through silence, atomic stop, changed-source migration with the same paused voice/
 cursor/gain, and explicit stop/resource cleanup. `--script-audio-play-test` exercises

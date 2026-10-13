@@ -23,10 +23,6 @@ namespace Dot::Project {
       return {bytes.begin(), bytes.end()};
     }
 
-    auto path(std::string_view value) -> Fs::path {
-      return Fs::path(std::u8string(value.begin(), value.end()));
-    }
-
     auto fold(std::string value) -> std::string {
       for (auto& c : value) {
         if (c >= 'A' && c <= 'Z') {
@@ -40,8 +36,7 @@ namespace Dot::Project {
 
   auto instantiateTemplate(const Core::FileSystem& source, const Core::FileSystem& parent,
                            const Fs::path& folder, std::string_view name,
-                           const Core::FileSystem& sdk, const Script::TypeScriptCompiler& compiler)
-      -> Core::Result<Project> {
+                           const Script::TypeScriptCompiler& compiler) -> Core::Result<Project> {
     if (folder.filename() != folder || !Core::isPortableRelativePath(utf(folder))) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Template target requires one portable name");
@@ -101,7 +96,6 @@ namespace Dot::Project {
       }
 
       auto output = staging->files().value();
-      const auto sdkDirectory = path(description->scriptsDirectory) / "dot";
       std::uint64_t total = 0;
       std::size_t count = 0;
       std::unordered_set<std::string> aliases;
@@ -126,14 +120,10 @@ namespace Dot::Project {
         }
 
         if (Fs::is_directory(status)) {
-          if (relative == sdkDirectory) {
-            iterator.disable_recursion_pending();
-          } else {
-            auto made = output.createDirectories(relative);
+          auto made = output.createDirectories(relative);
 
-            if (!made) {
-              return std::unexpected(made.error());
-            }
+          if (!made) {
+            return std::unexpected(made.error());
           }
 
           continue;
@@ -174,26 +164,6 @@ namespace Dot::Project {
         }
 
         total += size;
-      }
-
-      auto made = output.createDirectories(sdkDirectory);
-
-      if (!made) {
-        return std::unexpected(made.error());
-      }
-
-      for (const auto* file : {"engine.ts", "host.d.ts"}) {
-        auto data = sdk.readText(Fs::path{"dot"} / file, 1024 * 1024);
-
-        if (!data) {
-          return std::unexpected(data.error());
-        }
-
-        auto written = output.writeTextAtomic(sdkDirectory / file, *data);
-
-        if (!written) {
-          return std::unexpected(written.error());
-        }
       }
 
       auto written = output.writeTextAtomic("project.dotproject", *metadata);

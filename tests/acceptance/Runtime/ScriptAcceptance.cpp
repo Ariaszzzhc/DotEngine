@@ -19,7 +19,7 @@ namespace Dot::Runtime {
                                         "let ticks=0;export function step(){return ++ticks;}");
     auto main = files->writeTextAtomic(
         "scripts/main.mjs",
-        "import {step} from './model.js';"
+        "import {step} from './model';"
         "export async function sum(a,b){await Promise.resolve();return {sum:a+b,ticks:step()};}"
         "export function fail(){throw new Error('expected failure');}"
         "export function loop(){while(true){}}");

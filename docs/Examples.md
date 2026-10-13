@@ -18,16 +18,16 @@ Enter/Space starts, WASD/arrows move, P pauses/resumes and R resets to the ready
 screen. Diagonal speed is normalized. Player color changes on damage and victory;
 crystals disappear after collection and their score indicators turn green.
 
-The build copies `examples/PrismRelay` and the current script SDK to
+The build copies `examples/PrismRelay` to
 `build/<preset>/examples/PrismRelay`. That output is generated and refreshed by
 builds. Copy the project to a separate directory before persistent authoring
 changes; editing the source template updates subsequent builds. Open the copied
 project with DotEditor, use Play, edit scripts through the Resources code page,
 and use [native export](Export.md) to deliver a standalone game.
 
-The repository source project also includes a versioned `scripts/dot` SDK and can
-open directly. Tests compare both source examples' SDK bytes with the canonical
-SDK and compile their real scripts without build-generated injection. The portable
+The repository source projects open directly and import `dot:engine`. Tests compile
+their actual game scripts using the engine's embedded modules/declarations; SDK
+sources are absent from both project trees. The portable
 editor includes complete projects under its top-level `examples` directory.
 
 The saved scene owns 40 native entities and their camera/listener, transforms,
@@ -68,4 +68,4 @@ components and services; the sample alone is not evidence of full API coverage.
 
 
 The [project home](ProjectHome.md) can create a writable Prism Relay copy with the
-current SDK directly from its packaged template; manual copying is optional.
+engine module imports directly from its packaged template; manual copying is optional.

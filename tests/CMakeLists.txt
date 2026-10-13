@@ -63,6 +63,7 @@ add_executable(DotTests
     AssetTests.cpp
     ImageTests.cpp
     MaterialTests.cpp
+    ModuleTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp
@@ -80,8 +81,7 @@ add_executable(DotTests
     SceneHostTests.cpp
 )
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
-target_compile_definitions(DotTests PRIVATE DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
-    DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+target_compile_definitions(DotTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 dotDiscoverTests(DotTests LABELS "integration" PROPERTIES TIMEOUT 15)
 
 add_executable(DotProcessTests main.cpp ProcessTests.cpp)
@@ -96,7 +96,6 @@ add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp Sc
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_COMPILER_FIXTURE="$<TARGET_FILE:DotCompilerFixture>"
     DOT_PROCESS_FIXTURE="$<TARGET_FILE:DotProcessFixture>")
 add_dependencies(DotCompilerTests DotCompilerFixture DotProcessFixture)
@@ -150,33 +149,33 @@ add_test(NAME runtime.process COMMAND DotRuntimeAcceptance --process-test "$<TAR
 set_tests_properties(runtime.process PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.typescript COMMAND DotRuntimeAcceptance --typescript-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.typescript PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_host COMMAND DotRuntimeAcceptance --script-host-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_host COMMAND DotRuntimeAcceptance --script-host-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_host PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_host_render COMMAND DotRuntimeAcceptance --script-host-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_host_render COMMAND DotRuntimeAcceptance --script-host-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_host_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.script_instance COMMAND DotRuntimeAcceptance --script-instance-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_instance COMMAND DotRuntimeAcceptance --script-instance-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_instance PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_components COMMAND DotRuntimeAcceptance --script-components-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_components COMMAND DotRuntimeAcceptance --script-components-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_components PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_components_render COMMAND DotRuntimeAcceptance --script-components-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_components_render COMMAND DotRuntimeAcceptance --script-components-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_components_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.script_reload COMMAND DotRuntimeAcceptance --script-reload-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_reload COMMAND DotRuntimeAcceptance --script-reload-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_reload PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_reload_render COMMAND DotRuntimeAcceptance --script-reload-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_reload_render COMMAND DotRuntimeAcceptance --script-reload-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_reload_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.script_authoring COMMAND DotRuntimeAcceptance --script-authoring-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_authoring COMMAND DotRuntimeAcceptance --script-authoring-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_authoring PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_authoring_render COMMAND DotRuntimeAcceptance --script-authoring-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_authoring_render COMMAND DotRuntimeAcceptance --script-authoring-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_authoring_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.script_input COMMAND DotRuntimeAcceptance --script-input-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_input COMMAND DotRuntimeAcceptance --script-input-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_input PROPERTIES TIMEOUT 30 LABELS "acceptance" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
-add_test(NAME runtime.script_physics COMMAND DotRuntimeAcceptance --script-physics-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_physics COMMAND DotRuntimeAcceptance --script-physics-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_physics PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_physics_render COMMAND DotRuntimeAcceptance --script-physics-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_physics_render COMMAND DotRuntimeAcceptance --script-physics-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_physics_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.script_audio COMMAND DotRuntimeAcceptance --script-audio-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_audio COMMAND DotRuntimeAcceptance --script-audio-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_audio PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME runtime.script_audio_play COMMAND DotRuntimeAcceptance --script-audio-play-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.script_audio_play COMMAND DotRuntimeAcceptance --script-audio-play-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.script_audio_play PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.physics COMMAND DotRuntimeAcceptance --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
@@ -214,19 +213,19 @@ set_tests_properties(runtime.render PROPERTIES TIMEOUT 60 LABELS "native" RUN_SE
 add_test(NAME editor.invalid_argument COMMAND DotEditor --invalid)
 set_tests_properties(editor.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
-add_test(NAME editor.gui COMMAND DotEditorAcceptance --gui-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.gui COMMAND DotEditorAcceptance --gui-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.gui PROPERTIES TIMEOUT 60 LABELS "gpu;native" RUN_SERIAL TRUE)
-add_test(NAME editor.document COMMAND DotEditorAcceptance --document-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.document COMMAND DotEditorAcceptance --document-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.document PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME editor.document_render COMMAND DotEditorAcceptance --document-render-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.document_render COMMAND DotEditorAcceptance --document-render-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.document_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
-add_test(NAME runtime.project_player COMMAND DotRuntimeAcceptance --project-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME runtime.project_player COMMAND DotRuntimeAcceptance --project-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(runtime.project_player PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.project_bad_budget COMMAND DotRuntime --project missing missing -1)
 set_tests_properties(runtime.project_bad_budget PROPERTIES WILL_FAIL TRUE TIMEOUT 15 LABELS "acceptance")
-add_test(NAME editor.project COMMAND DotEditorAcceptance --project-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.project COMMAND DotEditorAcceptance --project-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.project PROPERTIES TIMEOUT 30 LABELS "acceptance")
-add_test(NAME editor.project_render COMMAND DotEditorAcceptance --project-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.project_render COMMAND DotEditorAcceptance --project-render-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.project_render PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 
 add_executable(DotEditorTests main.cpp EditorCommandTests.cpp)
@@ -236,23 +235,21 @@ target_compile_definitions(DotEditorTests PRIVATE
     DOT_EDITOR_EXECUTABLE="$<TARGET_FILE:DotEditor>"
     DOT_RUNTIME_EXECUTABLE="$<TARGET_FILE:DotRuntime>"
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotEditorTests DotEditor DotRuntime DotGame)
 dotDiscoverTests(DotEditorTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
-add_test(NAME editor.workspace COMMAND DotEditorAcceptance --workspace-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME editor.workspace COMMAND DotEditorAcceptance --workspace-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.workspace PROPERTIES TIMEOUT 60 LABELS "gpu;native" RUN_SERIAL TRUE)
 
 add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp)
 target_link_libraries(DotWorkspaceTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
-    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 dotDiscoverTests(DotWorkspaceTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
-add_test(NAME runtime.exported_game COMMAND DotRuntimeAcceptance --game-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+add_test(NAME runtime.exported_game COMMAND DotRuntimeAcceptance --game-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(runtime.exported_game PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)
 
 add_executable(DotExportTests main.cpp GameExportTests.cpp)
@@ -262,8 +259,7 @@ target_compile_definitions(DotExportTests PRIVATE
     DOT_RUNTIME_MANIFEST_SCRIPT="${CMAKE_SOURCE_DIR}/cmake/WriteRuntimeManifest.cmake"
     DOT_RUNTIME_ACCEPTANCE="$<TARGET_FILE:DotRuntimeAcceptance>"
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
-    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotExportTests DotRuntimeKit DotRuntimeAcceptance)
 dotDiscoverTests(DotExportTests LABELS "acceptance;process;compiler;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
@@ -273,7 +269,6 @@ target_compile_definitions(DotExampleTests PRIVATE
     DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
     DOT_EXAMPLE_SOURCE="${CMAKE_SOURCE_DIR}/examples/PrismRelay"
     DOT_LAB_SOURCE="${CMAKE_SOURCE_DIR}/acceptance/FeatureLab"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotExampleTests DotExamples)
 dotDiscoverTests(DotExampleTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
@@ -293,6 +288,7 @@ add_executable(DotFeatureLabTests main.cpp FeatureLabTests.cpp)
 target_link_libraries(DotFeatureLabTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotFeatureLabTests PRIVATE
     DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
+    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotFeatureLabTests DotFeatureLab)
 dotDiscoverTests(DotFeatureLabTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
@@ -311,7 +307,6 @@ add_executable(DotTemplateTests main.cpp TemplateTests.cpp)
 target_link_libraries(DotTemplateTests PRIVATE DotEngine doctest::doctest)
 target_compile_definitions(DotTemplateTests PRIVATE
     DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
-    DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotTemplateTests DotExamples)
 dotDiscoverTests(DotTemplateTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)

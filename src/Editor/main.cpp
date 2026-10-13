@@ -333,17 +333,16 @@ auto main(int argc, char** argv) -> int {
       return document(path(argv[2]), path(argv[3]));
     }
 
-    if (argc == 6 && std::string_view(argv[1]) == "create") {
+    if (argc == 5 && std::string_view(argv[1]) == "create") {
       auto parent = Dot::Core::FileSystem::open(path(argv[2]));
-      auto sdk = Dot::Core::FileSystem::open(path(argv[5]));
 
-      if (!parent || !sdk) {
-        return error(parent ? sdk.error() : parent.error());
+      if (!parent) {
+        return error(parent.error());
       }
 
       Dot::Project::Description description;
       description.name = argv[4];
-      auto project = Dot::Project::Project::create(*parent, path(argv[3]), description, *sdk);
+      auto project = Dot::Project::Project::create(*parent, path(argv[3]), description);
       return project ? inspect(*project) : error(project.error());
     }
 
@@ -413,7 +412,7 @@ auto main(int argc, char** argv) -> int {
                   "export <root> <parent> <folder> <compiler> <kit> | export-data "
                   "<root> <parent> <folder> <compiler> | open <root> "
                   "[frames] | send <control> <id> <request-file> | "
-                  "create <parent> <folder> <name> <sdk> | "
+                  "create <parent> <folder> <name> | "
                   "inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "
                   "check <root> <compiler> | document <root> <requests-json-file>",

@@ -3,6 +3,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -30,6 +31,9 @@ export namespace Dot::Script {
     std::uint32_t stackBytes{128 * 1024};
     std::uint32_t sourceBytes{1024 * 1024};
     std::uint32_t jsonBytes{1024 * 1024};
+    /** Project modules only; the fixed registered engine modules are counted in
+     * stats but do not consume the project quota. 仅限制项目模块，固定引擎模块计入
+     * 统计但不消耗项目额度。 */
     std::uint32_t maxModules{256};
     std::uint32_t maxJobs{1024};
     std::uint32_t milliseconds{100};
@@ -64,6 +68,16 @@ export namespace Dot::Script {
     [[nodiscard]] static auto create(const Core::FileSystem& files,
                                      const RuntimeConfig& config = {},
                                      const HostBindings& bindings = {}) -> Core::Result<Runtime>;
+    /** Parse/link static module graphs without evaluating code, constructors or
+     * host callbacks. Uses the actual reserved-module/relative loader and a separate
+     * bounded 256-MiB, 1024-project-module, one-second-cooperative-per-graph realm. Dynamic imports
+     * are validated when executed. 不执行代码/构造器/宿主回调地解析并链接静态模块图，
+     * 使用实际加载器和独立有界 realm（256 MiB、1024 项目模块、每图协作式 1
+     * 秒），动态导入在执行时校验。
+     */
+    [[nodiscard]] static auto validateProgram(const Core::FileSystem& files,
+                                              std::span<const std::string> modules)
+        -> Core::Result<void>;
     Runtime(const Runtime&) = delete;
     auto operator=(const Runtime&) -> Runtime& = delete;
     Runtime(Runtime&&) noexcept;
@@ -71,19 +85,17 @@ export namespace Dot::Script {
     ~Runtime();
 
     [[nodiscard]] static auto backendMemory() noexcept -> RuntimeMemory;
-    /** Root-relative canonical UTF-8 .js/.mjs entry. Imports must be ./ or ../
-     * relative paths staying inside the root; no bare names, attributes, extension
-     * guessing, or bytecode. Registered services are available only through the
-     * reserved dot:host ESM invoke(name, arguments) function. Host calls share a
-     * per-operation limit across initializers/jobs/serialization; excess faults
-     * the realm even if caught. Modules cache per realm; loading an imported module
-     * as an entry reuses its state. Top-level await must settle through bounded
-     * jobs. Load/resolution failures fault the realm; create another to recover.
-     * 根目录相对规范 UTF-8 .js/.mjs 入口；导入须为 ./ 或 ../ 相对路径且不逃逸根目录，
-     * 不支持裸名称、属性、扩展名猜测或字节码；注册服务仅经保留的 dot:host ESM
-     * invoke(name, arguments) 访问。初始化/任务/序列化共享每操作宿主调用限制，捕获
-     * 超限异常也会使 realm 故障。模块在 realm 内缓存，把已导入模块作为
-     * 入口时复用状态；顶层 await 须通过有界任务完成，加载/解析失败须新建 realm 恢复。 */
+    /** Root-relative canonical UTF-8 .js/.mjs compiled entry. Project imports use
+     * extensionless ./ or ../ names, resolving exactly one .js/.mjs file without
+     * directory/package guessing. Engine imports use the exact registered dot:
+     * namespace (dot:engine and native dot:host); no filesystem fallback. Registered
+     * services use invoke; missing services fail explicitly. Host calls share one
+     * operation limit. Modules cache per realm; top-level await uses bounded jobs.
+     * Load/resolution failures fault the realm; create another to recover.
+     * 根相对规范 UTF-8 .js/.mjs 编译入口；项目导入使用无扩展名 ./ 或 ../ 名称，须唯一
+     * 对应 .js/.mjs 文件，不猜测目录或包；引擎导入为精确注册 dot: 名称（dot:engine、
+     * 原生 dot:host），不回退磁盘。invoke 访问服务，缺失服务明确失败；宿主调用共用每
+     * 操作限额。模块在 realm 内缓存，顶层 await 使用有界任务；加载/解析失败须新建 realm。 */
     [[nodiscard]] auto loadModule(std::string_view relative) -> Core::Result<ModuleId>;
     /** Invoke an exported function with a JSON array of at most 64 arguments.
      * Results must be finite, JSON-serializable values without omitted undefined/

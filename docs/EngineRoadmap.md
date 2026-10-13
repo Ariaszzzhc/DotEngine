@@ -26,6 +26,11 @@ the `dot:` namespace; project imports use relative paths without extensions.
 | Capability showcase | Feature Lab stays an independently editable editor project with real native features and complete SDK/component acceptance; demonstrations consume delivered engine capabilities |
 | High-quality 3D example | Prism Relay becomes a realistic science-fiction game with coherent assets/materials/light, camera/HUD, polished gameplay/feedback and independent deployment; actual played and rendered evidence is required |
 
+The engine script namespace and extensionless project-module contracts are
+implemented with a shared registry/resolver, injected declarations, static linking
+during Check, and actual native reload/export/distribution tests. This closes those
+two rows; material/light scripting accessors and the other listed work remain.
+
 Development order follows dependencies: surface geometry and resource ownership,
 texture/material rendering, authored light/shadow services and editor integration,
 then content-production/scalability/game polish. Script namespace/resolution and

@@ -81,13 +81,16 @@ TEST_CASE("host.native_esm_owned_callbacks_and_json_transport_are_real") {
   CHECK(runtime->stats()->modules == 2);
 }
 
-TEST_CASE("host.native_module_is_absent_without_registration_and_imports_remain_scoped") {
+TEST_CASE("host.native_module_requires_registered_services_and_imports_remain_scoped") {
   Project project;
   project.write("import {invoke} from 'dot:host';export function run(){return invoke('echo',[]);}");
   auto missing = Runtime::create(project.files());
   REQUIRE(missing);
-  CHECK_FALSE(missing->loadModule("main.js"));
-  CHECK(missing->stats()->faulted);
+  auto available = missing->loadModule("main.js");
+  REQUIRE(available);
+  auto unregistered = missing->call(*available, "run");
+  CHECK_FALSE(unregistered);
+  CHECK_FALSE(missing->stats()->faulted);
 
   for (const auto* name : {"dot:os", "dot:host/sub", "./dot:host", "dot:host\\u0000x"}) {
     project.write("import {invoke} from '" + std::string(name) + "';");
@@ -101,7 +104,8 @@ TEST_CASE("host.native_module_is_absent_without_registration_and_imports_remain_
   limits.maxModules = 1;
   auto bounded = Runtime::create(project.files(), limits, echo());
   REQUIRE(bounded);
-  CHECK_FALSE(bounded->loadModule("main.js"));
+  CHECK(bounded->loadModule("main.js"));
+  CHECK(bounded->stats()->modules == 2);
 }
 
 TEST_CASE("host_dynamic_import_and_top_level_await_use_one_native_module") {

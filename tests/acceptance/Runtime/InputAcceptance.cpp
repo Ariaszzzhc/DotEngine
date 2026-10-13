@@ -43,11 +43,9 @@ namespace Dot::Runtime {
     }
   }  // namespace
 
-  auto testScriptInput(const std::filesystem::path& executable,
-                       const std::filesystem::path& sdkRoot, const std::filesystem::path& root)
+  auto testScriptInput(const std::filesystem::path& executable, const std::filesystem::path& root)
       -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Input Acceptance");
     auto publisher = Script::InputSource::create();
@@ -59,27 +57,16 @@ namespace Dot::Runtime {
     options.frameDelay = std::chrono::nanoseconds{0};
     auto application = Core::Application::create(options);
 
-    if (!files || !sdk || !compiler || !created || !publisher || !application
-        || !files->createDirectories("script-input-acceptance/dot")) {
+    if (!files || !compiler || !created || !publisher || !application
+        || !files->createDirectories("script-input-acceptance")) {
       std::println(stderr, "Input acceptance setup failed");
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-input-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Input acceptance SDK copy failed");
-        return 1;
-      }
-    }
-
     auto writeActor = [&](int factor) -> Core::Result<void> {
       auto source = std::string{R"ts(
-import {ScriptComponent, input, keys, mouseButtons} from './dot/engine.js';
-import type {ScriptContext} from './dot/engine.js';
+import {ScriptComponent, input, keys, mouseButtons} from 'dot:engine';
+import type {ScriptContext} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   #ticks = 0;

@@ -25,7 +25,8 @@ namespace Dot::Runtime {
                                  "let ticks=0;export function step():number{return ++ticks;}");
     auto main = files->writeTextAtomic(
         "typescript-acceptance/main.ts",
-        "import {step} from './model.js';"
+        "import {keys} from 'dot:engine';import {step} from './model';"
+        "if(!keys.includes('A'))throw new Error('Engine namespace failed');"
         "export async function sum(a:number,b:number):Promise<{sum:number,ticks:number}>"
         "{await Promise.resolve();return {sum:a+b,ticks:step()};}");
 
@@ -50,6 +51,12 @@ namespace Dot::Runtime {
 
       if (!generated || program->modules()->size() != 2 || !generated->readText("main.js.map")) {
         std::println(stderr, "TypeScript acceptance output/source map failed");
+        return 1;
+      }
+
+      if (program->stats()->sourceFiles != 2 || std::filesystem::exists(generated->root() / "dot")
+          || std::filesystem::exists(files->root() / "typescript-acceptance/dot")) {
+        std::println(stderr, "TypeScript namespace unexpectedly required/copied a project SDK");
         return 1;
       }
 

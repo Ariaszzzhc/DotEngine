@@ -38,14 +38,10 @@ namespace {
     }
   };
 
-  auto sdk() -> Dot::Core::FileSystem {
-    return Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
-  }
-
   auto create(const Parent& parent, std::string name = "Project") -> Project {
     Description description;
     description.name = std::move(name);
-    auto result = Project::create(parent.files(), "game", description, sdk());
+    auto result = Project::create(parent.files(), "game", description);
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     return std::move(*result);
   }
@@ -113,13 +109,13 @@ TEST_CASE("project_metadata_rejects_unknown_missing_duplicate_versions_types_and
   CHECK_FALSE(decodeDescription(std::string("\xc0\x80", 2)));
 }
 
-TEST_CASE("project_create_publishes_real_sdk_attached_script_camera_mesh_and_owned_description") {
+TEST_CASE("project_create_publishes_engine_import_script_camera_mesh_and_owned_description") {
   Parent parent;
   auto project = create(parent, "Unicode 项目🙂");
   auto files = project.files().value();
   CHECK(files.root() == std::filesystem::canonical(parent.root / "game"));
-  CHECK(files.readText("scripts/dot/engine.ts").value() == sdk().readText("dot/engine.ts").value());
-  CHECK(files.readText("scripts/dot/host.d.ts").value() == sdk().readText("dot/host.d.ts").value());
+  CHECK_FALSE(std::filesystem::exists(files.root() / "scripts/dot"));
+  CHECK(files.readText("scripts/mover.ts")->find("dot:engine") != std::string::npos);
   CHECK(files.readText("scripts/mover.ts")->find("class Mover") != std::string::npos);
   auto scene = project.loadStartup();
   REQUIRE(scene);
@@ -171,7 +167,7 @@ TEST_CASE("project_save_and_scene_save_commit_valid_resources_and_preserve_faile
   CHECK(project.description().value() == description);
 }
 
-TEST_CASE("project_open_rejects_missing_bad_scene_and_sdk_symlink_components") {
+TEST_CASE("project_open_rejects_missing_bad_scene_and_script_symlink_components") {
   Parent parent;
   auto project = create(parent);
   auto files = project.files().value();
@@ -188,21 +184,22 @@ TEST_CASE("project_open_rejects_missing_bad_scene_and_sdk_symlink_components") {
 
 TEST_CASE("project_creation_failures_remove_staging_and_never_replace_existing_destinations") {
   Parent parent;
-  auto emptySdk = parent.files();
-  CHECK_FALSE(Project::create(parent.files(), "absent", Description{}, emptySdk));
+  Description invalid;
+  invalid.name = "";
+  CHECK_FALSE(Project::create(parent.files(), "absent", invalid));
   CHECK(std::filesystem::is_empty(parent.root));
   Description conflict;
   conflict.scriptsDirectory = "project.dotproject";
-  CHECK_FALSE(Project::create(parent.files(), "failed", conflict, sdk()));
+  CHECK_FALSE(Project::create(parent.files(), "failed", conflict));
   CHECK(std::filesystem::is_empty(parent.root));
   REQUIRE(parent.files().createDirectories("existing"));
-  CHECK_FALSE(Project::create(parent.files(), "existing", Description{}, sdk()));
+  CHECK_FALSE(Project::create(parent.files(), "existing", Description{}));
   CHECK(std::filesystem::is_empty(parent.root / "existing"));
   REQUIRE(parent.files().writeTextAtomic("existing/user.txt", "untouched"));
-  CHECK_FALSE(Project::create(parent.files(), "existing", Description{}, sdk()));
+  CHECK_FALSE(Project::create(parent.files(), "existing", Description{}));
   CHECK(parent.files().readText("existing/user.txt").value() == "untouched");
-  CHECK_FALSE(Project::create(parent.files(), "../escape", Description{}, sdk()));
-  CHECK_FALSE(Project::create(parent.files(), "CON", Description{}, sdk()));
+  CHECK_FALSE(Project::create(parent.files(), "../escape", Description{}));
+  CHECK_FALSE(Project::create(parent.files(), "CON", Description{}));
   CHECK(std::distance(std::filesystem::directory_iterator(parent.root),
                       std::filesystem::directory_iterator{})
         == 1);

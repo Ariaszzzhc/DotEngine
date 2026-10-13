@@ -113,13 +113,12 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto testGamePlayer(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
+  auto testGamePlayer(const std::filesystem::path& executable,
                       const std::filesystem::path& parentRoot) -> int {
     auto parent = Core::FileSystem::open(parentRoot).value();
     auto storage = Core::StagedDirectory::create(parent).value();
     auto files = storage.files().value();
-    auto sdk = Core::FileSystem::open(sdkRoot).value();
-    auto project = Project::Project::create(files, "authoring", {}, sdk).value();
+    auto project = Project::Project::create(files, "authoring", {}).value();
     auto compiler = Script::TypeScriptCompiler::create(executable).value();
     auto scene = project.loadStartup().value();
     auto published = Project::GamePackage::publish(project, scene, compiler, files, "game");
@@ -164,13 +163,11 @@ namespace Dot::Runtime {
   }
 
   auto testProjectPlayer(const std::filesystem::path& executable,
-                         const std::filesystem::path& sdkRoot,
                          const std::filesystem::path& parentRoot) -> int {
     auto parent = Core::FileSystem::open(parentRoot);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
 
-    if (!parent || !sdk || !compiler) {
+    if (!parent || !compiler) {
       std::println(stderr, "Project player acceptance setup failed");
       return 1;
     }
@@ -184,8 +181,8 @@ namespace Dot::Runtime {
 
     auto project = Project::Project::create(
         staging->files().value(), "game",
-        Project::Description{"DotEngine Project Test", "scenes/main.dotscene", "scripts", 320, 240},
-        *sdk);
+        Project::Description{"DotEngine Project Test", "scenes/main.dotscene", "scripts", 320,
+                             240});
 
     if (!project) {
       std::println(stderr, "{}", project.error().message);

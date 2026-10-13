@@ -28,10 +28,7 @@ namespace {
     DotTest::Audio::Directory directory;
     Project project;
 
-    Fixture()
-        : project(Project::create(directory.files(), "source", {},
-                                  Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value())
-                      .value()) {
+    Fixture() : project(Project::create(directory.files(), "source", {}).value()) {
       REQUIRE(project.files()->writeTextAtomic("assets/owned.bin", std::string("A\0B", 3)));
     }
 
@@ -128,7 +125,7 @@ TEST_CASE("game_package_invalid_scripts_assets_paths_and_destinations_do_not_pub
   CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "failed"));
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends "
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends "
       "ScriptComponent{}"));
   auto id = scene.entities()->at(1).id;
   Dot::World::AudioSource audio;

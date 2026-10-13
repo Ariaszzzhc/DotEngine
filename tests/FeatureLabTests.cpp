@@ -110,7 +110,8 @@ namespace {
 
 TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   Fixture fixture;
-  const auto sdk = fixture.project.files()->readText("scripts/dot/engine.ts").value();
+  const auto sdk
+      = Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY)->readText("sdk/engine.ts").value();
   std::set<std::string> expected{"keys",
                                  "mouseButtons",
                                  "invoke",

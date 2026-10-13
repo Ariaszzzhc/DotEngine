@@ -3,7 +3,7 @@
 Starting DotEditor with no arguments opens the native project home. It opens an
 existing project folder or creates a validated project from Camera and cube,
 Prism Relay or the component/SDK laboratory. All three creation choices publish
-one new folder under an existing parent, with the current packaged SDK/compiler.
+one new folder under an existing parent, using the embedded engine modules and packaged compiler.
 Existing directories/files/symlinks are preserved. Select a project to enter the
 normal editor workspace; the home GUI/video resources release before that window
 opens. An open/create failure stays visible in the home for correction.
@@ -28,7 +28,7 @@ operation called by the native buttons and returns the normal project/scene JSON
 ```
 
 Template IDs are blank, prism and lab. Open reads and validates without writing.
-Creation copies rather than modifying the template. It installs the current SDK,
+Creation copies rather than modifying the template. It
 validates metadata/scene, compiles actual TypeScript and checks static resources
 and compiled script setup before exclusive publication. It does not run arbitrary
 gameplay hooks or promise future dynamic resource loads will succeed. Camera/cube
@@ -37,7 +37,7 @@ and then reporting a compiler error.
 
 Dot.Project.Templates exposes instantiateTemplate for native clients. Input changes
 must be serialized. The copied source is limited to 8192 visited entries, 64 levels,
-64 MiB/file and 512 MiB total; the replaced SDK subtree is excluded. Portable paths,
+64 MiB/file and 512 MiB total. Portable paths,
 ASCII aliases, symlinks/special files and private staging data are checked. On macOS,
 ordinary .DS_Store files up to 64 KiB are ignored. Source metadata and bytes remain
 unchanged; validation and copy failures remove only owned private staging. These
@@ -70,7 +70,7 @@ not an authenticated remote protocol.
 
 Native acceptance renders the home, creates/selects via the shared mailbox, reads
 its response, releases the GUI, opens/renders the chosen workspace and runs Play/
-Stop. Other cases cover source preservation/current SDK, invalid inputs/compiler
+Stop. Other cases cover source preservation/engine module ownership, invalid inputs/compiler
 failures/no overwrite, all three template choices, thread/move/lifetime checks,
 response failure after committed creation and real CLI arguments/budgets. Local
 validation is arm64 macOS; Windows/Linux remain unvalidated. No manual mouse/

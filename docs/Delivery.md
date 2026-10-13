@@ -14,11 +14,12 @@ and its evidence; passing these tests does not establish missing product capabil
 | Direct physical rendering | Metallic/roughness GGX, normal/emissive/data texture slots, directional/point/spot lights and perspective/orthographic view rays; saved material/light components, shared preview/Play/export, basic inspector/agent authoring and actual gallery/pixel/lifetime checks; dedicated material tooling remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
+| Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
 | Playable example | [Prism Relay](Examples.md): collection, collisions, hazards, audio, score, deadline, pause, victory/defeat, restart and reload; real native input/GPU/audio acceptance |
 | Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 81 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
-| Deployable editor | [Portable distribution](Distribution.md) includes compiler/SDK/font/templates/player and dependencies; relocated editor creates, checks, previews, runs and exports an independent game |
+| Deployable editor | [Portable distribution](Distribution.md) includes compiler/embedded modules/font/templates/player and dependencies; relocated editor creates, checks, previews, runs and exports an independent game |
 
 Development proceeded in reviewed, tested commits from core files/processes/events
 through native devices, scenes, physics/audio, scripting, project services and the
@@ -26,16 +27,16 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 827/827 CTest cases
-(769 doctest cases and 58 executable checks), taking 122.47 and 32.74 seconds.
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 833/833 CTest cases
+(775 doctest cases and 58 executable checks), taking 118.20 and 29.90 seconds.
 The [test layers](Testing.md) separate 184 pure CPU unit cases from files/compiler/
 platform integration, 63 offscreen GPU cases and native/acceptance workflows.
 Unit-only Debug/Release runs pass with deliberately invalid SDL device drivers.
-All 242 C/C++ files pass formatting checks. The current 273-entry native zip
+All 243 engine/test C/C++ files pass formatting checks. The current 257-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete
-source/package examples open and compile with their included SDK snapshots.
+source/package examples open and compile with embedded engine modules.
 
 All former acceptance dispatch/implementations are now development-only targets
 under `tests/acceptance`, compiled only with `BUILD_TESTING=ON`. An actual OFF build

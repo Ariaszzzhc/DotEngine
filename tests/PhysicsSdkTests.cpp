@@ -31,15 +31,7 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-physics-sdk-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
-      REQUIRE(files().createDirectories("scripts/dot"));
-
-      for (const auto* name : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto text = sdk->readText(name);
-        REQUIRE(text);
-        REQUIRE(files().writeTextAtomic(std::filesystem::path{"scripts"} / name, *text));
-      }
+      REQUIRE(files().createDirectories("scripts"));
     }
 
     ~Project() {
@@ -103,7 +95,7 @@ namespace {
 TEST_CASE("physics_sdk_real_typescript_controls_native_motion_rays_and_owned_runtime_state") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, physics} from './dot/engine.js';
+import {ScriptComponent, physics} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onStart(): void {
@@ -147,8 +139,8 @@ export class Actor extends ScriptComponent {
 TEST_CASE("physics_sdk_preparation_and_migration_allow_queries_deny_controls_and_keep_motion") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, physics} from './dot/engine.js';
-import type {ScriptContext, HostError, Entity} from './dot/engine.js';
+import {ScriptComponent, physics} from 'dot:engine';
+import type {ScriptContext, HostError, Entity} from 'dot:engine';
 
 function inspect(self: Entity): void {
   self.physicsBody;
@@ -227,8 +219,8 @@ export class Actor extends ScriptComponent {
 TEST_CASE("physics_sdk_invalid_control_is_catchable_and_missing_bodies_are_not_fake_success") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, scene} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {ScriptComponent, scene} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onStart(): void {
@@ -274,7 +266,7 @@ export class Actor extends ScriptComponent {
 TEST_CASE("physics_sdk_two_components_read_the_same_contact_batch_without_consuming_it") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, physics} from './dot/engine.js';
+import {ScriptComponent, physics} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onUpdate(): void {
@@ -310,12 +302,12 @@ TEST_CASE("physics_sdk_typecheck_rejects_incomplete_vectors_states_and_unsupport
   Project project;
 
   for (const auto* code :
-       {"import {physics} from './dot/engine.js';physics.rayCast({x:1}, {x:0,y:1,z:0});",
-        "import {physics} from './dot/engine.js';physics.body({scene:1,value:2});",
-        "import {physics} from './dot/engine.js';physics.step(0.1);",
+       {"import {physics} from 'dot:engine';physics.rayCast({x:1}, {x:0,y:1,z:0});",
+        "import {physics} from 'dot:engine';physics.body({scene:1,value:2});",
+        "import {physics} from 'dot:engine';physics.step(0.1);",
         "import {scene} from "
-        "'./dot/engine.js';scene.create().moveKinematic({x:0,y:0,z:0},{w:1},0.1);",
-        "import {physics} from './dot/engine.js';physics.contacts={events:[]};"}) {
+        "'dot:engine';scene.create().moveKinematic({x:0,y:0,z:0},{w:1},0.1);",
+        "import {physics} from 'dot:engine';physics.contacts={events:[]};"}) {
     project.write(code);
     auto compiler = TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
     auto result = compiler.compileProject(project.files());

@@ -36,15 +36,7 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-input-sdk-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
-      REQUIRE(files().createDirectories("scripts/dot"));
-
-      for (const auto* name : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto text = sdk->readText(name);
-        REQUIRE(text);
-        REQUIRE(files().writeTextAtomic(std::filesystem::path{"scripts"} / name, *text));
-      }
+      REQUIRE(files().createDirectories("scripts"));
     }
 
     ~Project() {
@@ -104,8 +96,8 @@ namespace {
 
   auto actor(int factor = 1) -> std::string {
     return R"ts(
-import {ScriptComponent, input} from './dot/engine.js';
-import type {ScriptContext} from './dot/engine.js';
+import {ScriptComponent, input} from 'dot:engine';
+import type {ScriptContext} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   #ticks = 0;
@@ -147,8 +139,8 @@ export class Actor extends ScriptComponent {
 TEST_CASE("input_sdk_real_typescript_names_owned_snapshots_and_missing_services_fail_explicitly") {
   Project project;
   project.write(R"ts(
-import {input, keys, mouseButtons} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {input, keys, mouseButtons} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export function run(): object {
   const frame = input.snapshot();
@@ -207,8 +199,8 @@ export function missing(): string {
 TEST_CASE("input_sdk_editor_navigation_names_typecheck_and_read_native_edges") {
   Project project;
   project.write(R"ts(
-import {input} from './dot/engine.js';
-import type {Key} from './dot/engine.js';
+import {input} from 'dot:engine';
+import type {Key} from 'dot:engine';
 const navigation: readonly Key[] = ['Delete','Insert','Home','End','PageUp','PageDown','KeypadEnter'];
 export function run(): string[] { return navigation.filter(key => input.key(key).pressed); }
 )ts");
@@ -322,8 +314,8 @@ TEST_CASE("input_sdk_failed_compile_and_reloaded_realms_keep_the_original_live_p
 TEST_CASE("script_services_native_read_write_classification_survives_preparation_and_reload") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent} from './dot/engine.js';
-import type {ScriptContext, HostError} from './dot/engine.js';
+import {ScriptComponent} from 'dot:engine';
+import type {ScriptContext, HostError} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 function inspect(): void {
@@ -435,11 +427,11 @@ TEST_CASE("script_services_invalid_registry_fails_before_preparation_or_vm_alloc
 TEST_CASE("input_sdk_typecheck_rejects_unsupported_names_and_readonly_service_assignment") {
   Project project;
 
-  for (const auto* source : {"import {input} from './dot/engine.js';input.key('Unknown');",
-                             "import {input} from './dot/engine.js';input.key('ArrowLeft');",
-                             "import {input} from './dot/engine.js';input.key(1);",
-                             "import {input} from './dot/engine.js';input.button('primary');",
-                             "import {input} from './dot/engine.js';input.text='injected';"}) {
+  for (const auto* source : {"import {input} from 'dot:engine';input.key('Unknown');",
+                             "import {input} from 'dot:engine';input.key('ArrowLeft');",
+                             "import {input} from 'dot:engine';input.key(1);",
+                             "import {input} from 'dot:engine';input.button('primary');",
+                             "import {input} from 'dot:engine';input.text='injected';"}) {
     project.write(source);
     auto result = project.compiler().compileProject(project.files());
     REQUIRE_FALSE(result);

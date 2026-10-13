@@ -30,9 +30,7 @@ namespace {
       root = std::filesystem::temp_directory_path()
              / ("dot-document-" + std::to_string(random()) + "-" + std::to_string(random()));
       REQUIRE(std::filesystem::create_directory(root));
-      REQUIRE(Dot::Project::Project::create(
-          Dot::Core::FileSystem::open(root).value(), "game", {},
-          Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value()));
+      REQUIRE(Dot::Project::Project::create(Dot::Core::FileSystem::open(root).value(), "game", {}));
     }
 
     ~Fixture() {

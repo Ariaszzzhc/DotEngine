@@ -57,7 +57,7 @@ cmake --build --preset release --target DotEditorArchive
 ```
 
 The platform-named zip under `build/release/distribution` contains the editor,
-compiler, SDK, font, templates and native libraries. See
+compiler, embedded engine modules, font, templates and native libraries. See
 [distribution and validation](docs/Distribution.md) for usage and tested boundaries.
 On macOS, double-click `DotEngine.app`. Complete projects in the archive's
 `examples` directory can be opened directly or copied through project-home creation.
@@ -103,7 +103,7 @@ carry separate world transforms and tint colors; resource counters report live
 ownership. Run `build/debug/bin/DotRuntimeAcceptance --mesh-test` for a perspective-camera
 cube acceptance case.
 
-Mesh assets support strict versioned `.dotmesh` JSON and bounded OBJ geometry
+Mesh assets support strict `.dotmesh` JSON and bounded OBJ geometry
 import, with explicit warnings for unsupported retained attributes. Run
 `build/debug/bin/DotRuntimeAcceptance --asset-test <existing-directory>` for atomic save/load
 acceptance. See `docs/Assets.md` for the format and importer contract.

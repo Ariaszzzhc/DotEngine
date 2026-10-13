@@ -117,7 +117,7 @@ This sequence edits and explicitly saves:
 ]
 ```
 
-`DotEditorAcceptance --document-test <sdk-root> <existing-parent>` creates an owned temporary project,
+`DotEditorAcceptance --document-test <existing-parent>` creates an owned temporary project,
 selects and moves the attached cube, rejects its stale handle, undoes/redoes,
 saves and reopens. `--document-render-test` additionally verifies changed actual
 GPU pixels and exact restoration of the initial/edited frames on undo/redo.
@@ -191,7 +191,7 @@ liveness/heartbeat guarantee. No hostile filesystem-race isolation or crash dura
 is promised. The private control directory is removed with Workspace ownership;
 it is temporary session data, not project authoring content.
 
-`DotEditorAcceptance --workspace-test <sdk-root> <existing-parent>` exercises the packaged font, real
+`DotEditorAcceptance --workspace-test <existing-parent>` exercises the packaged font, real
 native project window, SDL Cmd/Ctrl+Z activation, changed/restored Metal viewport
 pixels, online edit/stale/retry responses, moved/worker guards and control/context
 cleanup. Focused workspace CTest cases cover strict commands, dirty close and actual
@@ -290,7 +290,7 @@ sorted project-relative order. Refresh rereads the bounded catalog; external
 changes do not automatically update the displayed catalog. Select a supported text
 file to open the code page, or use New script / Folder / Import to path. Import
 source is an explicit filesystem path; source bytes remain unchanged. New script
-creates an export named Behavior and computes its relative SDK import for nested
+creates an export named Behavior with a `dot:engine` import, including in nested
 folders. Attach it using the existing Script component inspector.
 
 The code page edits UTF-8 text, accepts tabs, supports Save file and native
@@ -300,7 +300,8 @@ feeds the existing TypeScript hot reload; save success does not claim the source
 compiles. Invalid compiled candidates keep old scripts running with diagnostics.
 OBJ saves/imports invalidate the scene mesh cache before the next render (the
 current implementation conservatively clears the cache after any resource write).
-SDK files remain visible/read-only. This stage provides one active text buffer;
+The protected `scripts/dot` resource path remains read-only, but project creation
+no longer installs SDK files there. This stage provides one active text buffer;
 rename/delete, multiple buffers, syntax highlighting and completion are not claimed.
 
 The same operations are available through live workspace requests:
@@ -360,7 +361,7 @@ implicit code attachment or source compilation.
 
 Replace changes only the in-memory draft; save compares exact on-disk baseline
 bytes before atomic replacement. Stale identity/revision, invalid UTF-8/NUL/size,
-SDK writes, external changes, missing files and changed project metadata fail
+protected resource writes, external changes, missing files and changed project metadata fail
 without losing the draft. No-op replace/save preserve revision. Close rejects
 unsaved state unless explicitly discarded. Normal window close checks file drafts;
 Save and close saves both the scene and resource file, retaining the editor if a
@@ -378,7 +379,7 @@ Opening/editing/saving a file clears earlier check messages, avoiding a stale
 success label for changed source.
 
 Resource operations are restricted to assets and the configured scripts subtree.
-SDK protection also checks filesystem directory identity. Paths follow shared
+The protected `scripts/dot` path also checks filesystem directory identity. Paths follow shared
 lexical [portable naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
 including Windows superscript device names, and reject symlinks/special files and
 ASCII case aliases/collisions. The limits are 1 MiB per editable text, 64 MiB per
@@ -388,7 +389,7 @@ promise every filesystem accepts the path. Callers serialize project filesystem
 changes: the baseline check plus replacement is not an OS compare-and-swap, hostile
 race isolation or crash-durability promise.
 
-Focused resource tests cover actual Unicode files/catalog, SDK protection,
+Focused resource tests cover actual Unicode files/catalog, protected-path enforcement,
 revision/no-op/conflict behavior, binary source preservation/import boundaries,
 invalid paths/text/metadata, symlinks/depth/capacity, moves/thread ownership and
 shared descriptor lifetime. Workspace tests additionally verify buffer identity,

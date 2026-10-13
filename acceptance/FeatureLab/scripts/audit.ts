@@ -1,6 +1,6 @@
 import {invoke} from 'dot:host';
 
-import {audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, ScriptComponent, type Transform} from './dot/engine.js';
+import {audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, ScriptComponent, type Transform} from "dot:engine";
 
 /**
  * Equality checks compare DTO contents independently of member order, with native float tolerance.

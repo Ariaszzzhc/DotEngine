@@ -34,6 +34,8 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.Text;
 import Dot.Script.Host;
+import Dot.Script.Modules;
+import Dot.Core.Paths;
 
 namespace Dot::Script {
   namespace {
@@ -252,84 +254,16 @@ namespace Dot::Script {
       }
     };
 
-    auto canonical(std::string_view input, std::string_view base = {})
-        -> Core::Result<std::string> {
-      if (input.empty() || input.size() > 4096 || !Core::isValidUtf8(input)
-          || input.find_first_of("\\:<>\"|?*") != std::string_view::npos
-          || input.find('\0') != std::string_view::npos || input.front() == '/'
-          || input.back() == '/') {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid script module path");
-      }
-
-      const bool importing = !base.empty();
-
-      if (importing && !input.starts_with("./") && !input.starts_with("../")) {
+    auto canonical(std::string_view input) -> Core::Result<std::string> {
+      if (!Core::isPortableRelativePath(input)
+          || (!input.ends_with(".js") && !input.ends_with(".mjs"))) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Script imports require ./ or ../ paths");
+                          "Entry must be a canonical root-relative .js/.mjs compiled file");
       }
 
-      std::string combined;
-
-      if (importing) {
-        const auto slash = base.rfind('/');
-        combined = slash == std::string_view::npos ? "" : std::string{base.substr(0, slash + 1)};
-      }
-
-      combined += input;
-      std::vector<std::string_view> components;
-      std::size_t begin = 0;
-
-      while (begin < combined.size()) {
-        const auto end = combined.find('/', begin);
-        const auto part = std::string_view{combined}.substr(
-            begin, end == std::string::npos ? end : end - begin);
-
-        if (part.empty() || (!importing && (part == "." || part == ".."))) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Script paths require canonical components");
-        }
-
-        if (part == "..") {
-          if (components.empty()) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Script import escapes project root");
-          }
-
-          components.pop_back();
-        } else if (part != ".") {
-          if (part.back() == '.' || part.back() == ' '
-              || std::ranges::any_of(part,
-                                     [](unsigned char character) { return character < 32; })) {
-            return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid script path component");
-          }
-
-          components.push_back(part);
-        }
-
-        if (end == std::string::npos) {
-          break;
-        }
-
-        begin = end + 1;
-      }
-
-      std::string result;
-
-      for (auto part : components) {
-        if (!result.empty()) {
-          result += '/';
-        }
-
-        result += part;
-      }
-
-      if (result.size() > 4096 || (!result.ends_with(".js") && !result.ends_with(".mjs"))) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Script module must end in .js or .mjs");
-      }
-
-      return result;
+      return std::string(input);
     }
+
   }  // namespace
 
   struct Runtime::Impl {
@@ -461,9 +395,8 @@ namespace Dot::Script {
       auto& owner = *static_cast<Impl*>(opaque);
 
       try {
-        auto path = std::string_view{name} == "dot:host" && !owner.m_bindings.empty()
-                        ? Core::Result<std::string>{"dot:host"}
-                        : canonical(name, base);
+        auto path = resolveImport(owner.m_files, base ? std::string_view(base) : std::string_view{},
+                                  name);
 
         if (!path) {
           owner.m_loaderFailed = true;
@@ -481,19 +414,36 @@ namespace Dot::Script {
     }
 
     auto compile(const std::string& path) -> Core::Result<Value> {
-      if (m_sources.size() >= m_config.maxModules && !m_sources.contains(path)) {
+      const auto projectCount = std::ranges::count_if(
+          m_sources, [](const auto& name) { return !name.starts_with("dot:"); });
+
+      if (!path.starts_with("dot:") && projectCount >= m_config.maxModules
+          && !m_sources.contains(path)) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Script module count exceeds limit");
       }
 
-      auto source = m_files.readText(std::filesystem::path{std::u8string(path.begin(), path.end())},
-                                     m_config.sourceBytes);
+      auto source = [&]() -> Core::Result<std::string> {
+        if (path.starts_with("dot:")) {
+          auto builtin = engineModule(path);
+
+          if (!builtin) {
+            return std::unexpected(builtin.error());
+          }
+
+          return std::string(builtin->source);
+        }
+
+        return m_files.readText(std::filesystem::path{std::u8string(path.begin(), path.end())},
+                                m_config.sourceBytes);
+      }();
 
       if (!source) {
         return Core::fail(source.error().code,
                           std::format("Module '{}': {}", path, source.error().message));
       }
 
-      if (!Core::isValidUtf8(*source) || source->find('\0') != std::string::npos) {
+      if (source->size() > m_config.sourceBytes || !Core::isValidUtf8(*source)
+          || source->find('\0') != std::string::npos) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Script source must be UTF-8 without NUL");
       }
@@ -515,12 +465,6 @@ namespace Dot::Script {
 
       try {
         if (std::string_view{name} == "dot:host") {
-          if (owner.m_bindings.empty() || owner.m_sources.size() >= owner.m_config.maxModules) {
-            owner.m_loaderFailed = true;
-            JS_ThrowReferenceError(context, "Host module is unavailable or module limit exceeded");
-            return nullptr;
-          }
-
           auto* module = JS_NewCModule(context, "dot:host", hostInit);
 
           if (!module || JS_AddModuleExport(context, module, "invoke") < 0) {
@@ -1187,6 +1131,55 @@ namespace Dot::Script {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         std::format("Create script runtime: {}", error.what()));
+    }
+  }
+
+  auto Runtime::validateProgram(const Core::FileSystem& files, std::span<const std::string> modules)
+      -> Core::Result<void> {
+    RuntimeConfig config;
+    config.memoryBytes = 256 * 1024 * 1024;
+    config.sourceBytes = 16 * 1024 * 1024;
+    config.maxModules = 1024;
+    config.milliseconds = 1000;
+    auto candidate = Runtime::create(files, config);
+
+    if (!candidate) {
+      return std::unexpected(candidate.error());
+    }
+
+    try {
+      for (const auto& name : modules) {
+        auto path = canonical(name);
+
+        if (!path) {
+          return std::unexpected(path.error());
+        }
+
+        if (candidate->m_impl->m_sources.contains(*path)) {
+          continue;
+        }
+
+        Impl::Execution execution{*candidate->m_impl};
+        auto compiled = candidate->m_impl->compile(*path);
+
+        if (!compiled) {
+          return std::unexpected(compiled.error());
+        }
+
+        if (JS_ResolveModule(candidate->m_impl->m_context, compiled->value) < 0) {
+          return std::unexpected(candidate->m_impl->exception("Resolve " + *path));
+        }
+
+        if (Impl::Clock::now() >= candidate->m_impl->m_deadline) {
+          return Core::fail(Core::ErrorCode::External,
+                            "Validate compiled graph exceeded cooperative time limit: " + *path);
+        }
+      }
+
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Validate compiled modules: " + std::string(error.what()));
     }
   }
 

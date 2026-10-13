@@ -14,8 +14,8 @@ scene owns 40 entities: camera/listener, player, floor/walls, sensor pickups,
 visual children, hazards, feedback audio and mesh indicators. The OBJ crystal
 and synthesized PCM sounds are original sample assets.
 
-Open this project folder with DotEditor; it includes its versioned script SDK.
-The build also supplies `build/<preset>/examples/PrismRelay` with the current SDK.
+Open this project folder with DotEditor; its scripts import the engine-owned `dot:engine` module.
+The build also supplies `build/<preset>/examples/PrismRelay` without copying engine SDK sources.
 Copy that generated project to a separate
 folder before making persistent edits; it is refreshed from this source template.
 Use Play and the Resources code page to edit scripts while running. Save/reload

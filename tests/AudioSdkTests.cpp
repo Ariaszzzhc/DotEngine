@@ -22,16 +22,8 @@ namespace {
     DotTest::Audio::Directory directory;
 
     Project() {
-      auto sdk = Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY);
-      REQUIRE(sdk);
       auto files = directory.files();
-      REQUIRE(files.createDirectories("scripts/dot"));
-
-      for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-        auto source = sdk->readText(path);
-        REQUIRE(source);
-        REQUIRE(files.writeTextAtomic(std::filesystem::path{"scripts"} / path, *source));
-      }
+      REQUIRE(files.createDirectories("scripts"));
 
       std::vector<float> samples(4096, 0.25F);
       std::fill(samples.begin() + 2048, samples.end(), 0.5F);
@@ -82,7 +74,7 @@ namespace {
 TEST_CASE("audio_sdk_real_typescript_seek_gain_play_pause_stop_and_owned_state_control_pcm") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, audio} from './dot/engine.js';
+import {ScriptComponent, audio} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   #ticks = 0;
@@ -139,8 +131,8 @@ export class Actor extends ScriptComponent {
 TEST_CASE("audio_sdk_preparation_and_reload_allow_reads_deny_controls_and_keep_paused_cursor") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, audio} from './dot/engine.js';
-import type {Entity, ScriptContext, HostError} from './dot/engine.js';
+import {ScriptComponent, audio} from 'dot:engine';
+import type {Entity, ScriptContext, HostError} from 'dot:engine';
 
 function inspect(self: Entity): void {
   self.audioVoice;
@@ -213,8 +205,8 @@ export class Actor extends ScriptComponent {
 TEST_CASE("audio_sdk_invalid_controls_and_missing_voices_are_catchable_without_mutation") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, scene, audio} from './dot/engine.js';
-import type {HostError} from './dot/engine.js';
+import {ScriptComponent, scene, audio} from 'dot:engine';
+import type {HostError} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onStart(): void {
@@ -260,7 +252,7 @@ export class Actor extends ScriptComponent {
 TEST_CASE("audio_sdk_source_setting_edits_apply_on_native_sync_and_keep_manual_pause") {
   Project project;
   project.write(R"ts(
-import {ScriptComponent, audio} from './dot/engine.js';
+import {ScriptComponent, audio} from 'dot:engine';
 
 export class Actor extends ScriptComponent {
   onStart(): void {
@@ -301,11 +293,11 @@ TEST_CASE("audio_sdk_typecheck_rejects_numeric_frames_wrong_ids_and_native_sched
   Project project;
 
   for (const auto* source :
-       {"import {audio} from './dot/engine.js';audio.seek({scene:'1',value:'1'},0);",
-        "import {audio} from './dot/engine.js';audio.play({scene:1,value:2});",
-        "import {audio} from './dot/engine.js';audio.render(256);",
-        "import {scene} from './dot/engine.js';scene.create().seekAudio(1);",
-        "import {audio} from './dot/engine.js';audio.setVolume('0.5');"}) {
+       {"import {audio} from 'dot:engine';audio.seek({scene:'1',value:'1'},0);",
+        "import {audio} from 'dot:engine';audio.play({scene:1,value:2});",
+        "import {audio} from 'dot:engine';audio.render(256);",
+        "import {scene} from 'dot:engine';scene.create().seekAudio(1);",
+        "import {audio} from 'dot:engine';audio.setVolume('0.5');"}) {
     project.write(source);
     auto compiler = TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
     auto result = compiler.compileProject(project.directory.files());

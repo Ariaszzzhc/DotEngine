@@ -24,13 +24,12 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Editor {
-  auto testProject(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
-                   const std::filesystem::path& parentRoot, bool render) -> int {
+  auto testProject(const std::filesystem::path& executable, const std::filesystem::path& parentRoot,
+                   bool render) -> int {
     auto parent = Core::FileSystem::open(parentRoot);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
 
-    if (!parent || !sdk || !compiler) {
+    if (!parent || !compiler) {
       std::println(stderr, "Project acceptance setup failed");
       return 1;
     }
@@ -47,7 +46,7 @@ namespace Dot::Editor {
 
     {
       auto project = Project::Project::create(owned->files().value(), "template",
-                                              Project::Description{"模板"}, *sdk);
+                                              Project::Description{"模板"});
 
       if (!project) {
         std::println(stderr, "{}", project.error().message);

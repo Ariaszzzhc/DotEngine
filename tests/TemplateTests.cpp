@@ -37,18 +37,17 @@ namespace {
 
     auto create(const Core::FileSystem& source, std::string_view folder = "project")
         -> Core::Result<Project::Project> {
-      auto sdk = Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
       auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
-      return Project::instantiateTemplate(source, files(), folder, "游戏", sdk, compiler);
+      return Project::instantiateTemplate(source, files(), folder, "游戏", compiler);
     }
   };
 }  // namespace
 
-TEST_CASE("templates.copy_complete_game_with_current_sdk_without_source_changes") {
+TEST_CASE("templates.copy_complete_game_with_engine_imports_without_source_changes") {
   Fixture fixture;
   auto source = fixture.source();
   const auto manifest = source.readText("project.dotproject").value();
-  REQUIRE(source.writeTextAtomic("scripts/dot/engine.ts", "old SDK"));
+  REQUIRE(source.writeTextAtomic("assets/authored.txt", "owned resource"));
   const auto generations = Script::compilerGenerations();
   auto created = fixture.create(source);
   REQUIRE_MESSAGE(created, (created ? "" : created.error().message));
@@ -56,8 +55,9 @@ TEST_CASE("templates.copy_complete_game_with_current_sdk_without_source_changes"
   CHECK(created->loadStartup()->entityCount().value() == 40);
   CHECK(created->files()->readBytes("assets/pickup.wav").value()
         == source.readBytes("assets/pickup.wav").value());
-  CHECK(created->files()->readText("scripts/dot/engine.ts").value() != "old SDK");
-  CHECK(source.readText("scripts/dot/engine.ts").value() == "old SDK");
+  CHECK_FALSE(std::filesystem::exists(created->files()->root() / "scripts/dot"));
+  CHECK(created->files()->readText("assets/authored.txt").value() == "owned resource");
+  CHECK(source.readText("assets/authored.txt").value() == "owned resource");
   CHECK(source.readText("project.dotproject").value() == manifest);
   CHECK_FALSE(std::filesystem::exists(created->files()->root() / "validation"));
   CHECK(Script::compilerGenerations() == generations);
@@ -71,8 +71,7 @@ TEST_CASE("templates.invalid_sources_paths_and_compile_failures_leave_no_output"
   auto source = fixture.source();
   CHECK_FALSE(fixture.create(source, "../escape"));
   auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
-  auto sdk = Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value();
-  CHECK_FALSE(Project::instantiateTemplate(source, source, "nested", "Name", sdk, compiler));
+  CHECK_FALSE(Project::instantiateTemplate(source, source, "nested", "Name", compiler));
   const auto player = source.readText("scripts/player.ts").value();
   REQUIRE(source.writeTextAtomic("scripts/player.ts", "export const bad:number='x';"));
   CHECK_FALSE(fixture.create(source));

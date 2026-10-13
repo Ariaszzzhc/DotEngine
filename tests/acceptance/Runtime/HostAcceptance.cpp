@@ -19,15 +19,13 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 
 namespace Dot::Runtime {
-  auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
-                      const std::filesystem::path& root, bool render) -> int {
+  auto testScriptHost(const std::filesystem::path& executable, const std::filesystem::path& root,
+                      bool render) -> int {
     auto files = Core::FileSystem::open(root);
-    auto sdk = Core::FileSystem::open(sdkRoot);
     auto compiler = Script::TypeScriptCompiler::create(executable);
     auto created = World::Scene::create("Native Host Scene");
 
-    if (!files || !sdk || !compiler || !created
-        || !files->createDirectories("script-host-acceptance/dot")) {
+    if (!files || !compiler || !created || !files->createDirectories("script-host-acceptance")) {
       std::println(stderr, "Script host acceptance initialization failed");
       return 1;
     }
@@ -52,21 +50,10 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    for (const auto* path : {"dot/engine.ts", "dot/host.d.ts"}) {
-      auto source = sdk->readText(path);
-
-      if (!source
-          || !files->writeTextAtomic(std::filesystem::path{"script-host-acceptance"} / path,
-                                     *source)) {
-        std::println(stderr, "Script host acceptance SDK copy failed");
-        return 1;
-      }
-    }
-
     auto source = files->writeTextAtomic(
         "script-host-acceptance/main.ts",
-        "import {Entity,scene} from './dot/engine.js';"
-        "import type {EntityId,HostError} from './dot/engine.js';let self:Entity;"
+        "import {Entity,scene} from 'dot:engine';"
+        "import type {EntityId,HostError} from 'dot:engine';let self:Entity;"
         "export function init(id:EntityId):void{self=new Entity(id);self.name='Script Cube';"
         "scene.rename('Typed Host Scene');const child=scene.create('Child');child.parent=self;"
         "if(child.parent?.id.value!==self.id.value)throw Error('parent identity');child.destroy();}"

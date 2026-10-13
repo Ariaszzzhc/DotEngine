@@ -35,10 +35,7 @@ namespace {
         : storage(Dot::Core::StagedDirectory::create(
                       Dot::Core::FileSystem::open(std::filesystem::temp_directory_path()).value())
                       .value()),
-          project(Dot::Project::Project::create(
-                      storage.files().value(), "project", {},
-                      Dot::Core::FileSystem::open(DOT_SCRIPT_SDK_DIRECTORY).value())
-                      .value()) {
+          project(Dot::Project::Project::create(storage.files().value(), "project", {}).value()) {
     }
 
     auto open() -> Workspace {
@@ -228,7 +225,7 @@ TEST_CASE("workspace.play_uses_unsaved_scene_and_stop_restores_authoring_pixels"
             Json::array({{{"op", "transform"}, {"entity", "2"}, {"value", transform}}})}});
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent "
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent "
       "{onUpdate(){const "
       "t=this.self.transform;t.position.x+=.2;this.self.transform=t;}onStop(){this.self.name='"
       "stopped';}}"));
@@ -281,7 +278,7 @@ TEST_CASE("workspace.play_failure_and_realm_fault_keep_editor_recoverable") {
   CHECK(Dot::Script::compilerGenerations() == generations);
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';export class Mover extends ScriptComponent "
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent "
       "{onUpdate(){while(true){}}}"));
   command(workspace, {{"command", "play"}});
   REQUIRE(workspace.step(std::chrono::milliseconds{16}));
@@ -303,7 +300,7 @@ TEST_CASE("workspace.direct_play_commands_reject_reentrant_script_services") {
   Fixture fixture;
   REQUIRE(fixture.project.files()->writeTextAtomic(
       "scripts/mover.ts",
-      "import {ScriptComponent} from './dot/engine.js';import {invoke} from 'dot:host';export "
+      "import {ScriptComponent} from 'dot:engine';import {invoke} from 'dot:host';export "
       "class Mover extends ScriptComponent "
       "{onStart(){invoke('test.reentry',[]);}onStop(){invoke('test.reentry',[]);}}"));
   WorkspaceConfig config;
@@ -396,7 +393,7 @@ TEST_CASE("workspace.resource_creation_nested_script_check_and_buffer_identity")
                                           "controllers/player.ts\",\"discard\":false}")
                                 .value());
   const auto first = opened["file"];
-  CHECK(first["text"].get<std::string>().find("../dot/engine.js") != std::string::npos);
+  CHECK(first["text"].get<std::string>().find("dot:engine") != std::string::npos);
   REQUIRE(workspace.dispatch(Json{{"command", "replace-text"},
                                   {"buffer", first["buffer"]},
                                   {"revision", first["revision"]},
@@ -492,6 +489,9 @@ TEST_CASE("workspace.resource_import_readonly_sdk_and_strict_requests_preserve_s
   auto source = fixture.storage.files().value();
   const std::string bytes("A\0B", 3);
   REQUIRE(source.writeTextAtomic("input.bin", bytes));
+  REQUIRE(fixture.project.files()->createDirectories("scripts/dot"));
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/dot/protected.ts",
+                                                   "export const marker = true;"));
   auto workspace = fixture.open();
   const auto utf = (source.root() / "input.bin").generic_u8string();
   const std::string input(utf.begin(), utf.end());
@@ -503,7 +503,7 @@ TEST_CASE("workspace.resource_import_readonly_sdk_and_strict_requests_preserve_s
   auto opened = Json::parse(
       workspace
           .dispatch(
-              "{\"command\":\"open-text\",\"path\":\"scripts/dot/engine.ts\",\"discard\":false}")
+              "{\"command\":\"open-text\",\"path\":\"scripts/dot/protected.ts\",\"discard\":false}")
           .value());
   CHECK(opened["file"]["readOnly"] == true);
   auto file = opened["file"];

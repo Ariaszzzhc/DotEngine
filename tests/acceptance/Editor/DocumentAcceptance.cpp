@@ -164,12 +164,9 @@ namespace Dot::Editor {
     }
   }  // namespace
 
-  auto testDocument(const std::filesystem::path& sdkRoot, const std::filesystem::path& parentRoot,
-                    bool render) -> int {
+  auto testDocument(const std::filesystem::path& parentRoot, bool render) -> int {
     auto parent = Core::FileSystem::open(parentRoot);
-    auto sdk = Core::FileSystem::open(sdkRoot);
-
-    if (!parent || !sdk) {
+    if (!parent) {
       std::println(stderr, "Editor document acceptance setup failed");
       return 1;
     }
@@ -181,7 +178,7 @@ namespace Dot::Editor {
       return 1;
     }
 
-    auto project = Project::Project::create(owned->files().value(), "game", {}, *sdk);
+    auto project = Project::Project::create(owned->files().value(), "game", {});
 
     if (!project) {
       std::println(stderr, "{}", project.error().message);

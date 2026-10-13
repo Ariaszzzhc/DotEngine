@@ -2739,3 +2739,68 @@ CRC, new Feature Lab material assets, executable modes, runtime manifests and
 private/test/Finder exclusions pass. Staged app and all 16 native strict signatures
 and relative/system loader references pass. Preserved build caches/latest package
 and the private untracked document; no Windows/Linux validation is claimed.
+
+
+## 2026-10-13 — Engine-owned script modules
+
+The single SDK implementation now lives in assets/scripts/sdk and is compiled by
+pinned TypeScript at build time. Generated ESM and matching ambient declarations
+are embedded privately in the static engine. Dot.Script.Modules provides the
+immutable exact-name registry for dot:engine and native dot:host; unknown reserved
+names never use a project-file fallback. Engine imports are realm-cached, with
+project-module quotas separate from the fixed registry and VM memory still counted.
+Unregistered native services remain contextual DotHostError failures.
+
+All project, template, example, scaffold and acceptance callers now import
+engine-owned dot:engine. Removed copied SDK source trees and SDK directory inputs,
+including the native create command. Source statistics and published module trees
+count only project files. Feature Lab still independently compares its inventory
+with the sole authored SDK and exercises every existing runtime member.
+
+Project imports uniformly omit extensions. The shared resolver requires exactly
+one regular .js/.mjs output with portable canonical paths and exact filename case;
+it rejects extensions, ambiguity, missing files, symlinks, root escape, packages
+and directory/index guessing. Compilation injects engine declarations outside the
+snapshot. Private declaration aliases give extensionless .mts imports their real
+types/default exports while preserving .mjs emission and original source maps.
+Before returning a candidate, the compiler uses a separate bounded VM to parse and
+link the static graph without initializers/constructors/host calls. Dynamic imports
+are checked at execution. Final review added an explicit post-link deadline check.
+No legacy import/SDK loader or format compatibility branch was added.
+
+Retained failure, boundary, cleanup, reload, scene/native-service, Play, export and
+relocation coverage. Added six tests for registry ownership, strict resolution,
+injected typing, static graph rejection without execution, .mts default typing/
+ambiguity and cached engine modules with explicit missing-service errors. Four old
+case titles now describe the replaced contracts. Protected resource-path guards
+and their write-rejection tests remain; only test-owned marker files supply their
+fixtures. Automatic review rejected an earlier proposed removal of those guards;
+the safer implementation leaves Resources.cpp byte-for-byte unchanged.
+
+Early verification caught source/module-count expectations, TypeScript's lack of
+extensionless .mts probing, a leftover reload import, and incorrect test assumptions
+about HostError (a type) and its actual name/code/message transport. Fixed those
+contracts and retained rejection assertions. The final deadline check initially
+missed the nested Clock qualifier; compilation caught it and Impl::Clock fixed it.
+An archive invocation named a nonexistent test target; corrected it to the existing
+DotTests/Template targets before any verification result was claimed.
+
+Final arm64 macOS Debug and Release/NDEBUG full suites pass 833/833, in 118.20 and
+29.90 seconds (775 doctest cases, 58 executable checks). The six added cases retain
+184 pure CPU unit, 63 offscreen GPU, 40 native and 87 acceptance selections;
+device-free integration is 469. Intermediate final CLI integration checks passed
+469/469 in Debug/Release (31.01/5.42 seconds), and reviewed module/project/template/
+command checks passed 21/21 (5.01/1.81 seconds). No sanitizer was used. All 243
+engine/test C/C++ files pass clang-format; diff/reference checks pass. Reviewed
+registry/source ownership, reserved-name rejection, exact/portable resolution,
+static linking without execution, quotas/deadlines, partial failure cleanup,
+project/template publication and protected resource write checks.
+
+Refreshed the latest native ZIP at its existing path: 257 entries, 43,408,651 bytes.
+CRC, modes, manifests, embedded-module imports and private/test/Finder/SDK-copy
+exclusions pass. The app passes deep strict signature checks; all 16 Mach-O entries
+(including three symlink aliases) pass signatures and relative/system loader checks.
+Removed the owned temporary migration script; retained build caches, latest package
+and the private untracked document. Windows/Linux remain implementation-only.
+The larger rendering/editor/game roadmap remains unfinished; this stage closes
+script namespace and import syntax requirements only.
