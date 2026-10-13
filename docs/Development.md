@@ -1620,3 +1620,23 @@ handlers retain normal closure and handler failures stop later frame callbacks.
 - Reviewed preserved key values, complete constexpr host coverage, SDK/native
   agreement, close ownership/event ordering and expected failure propagation.
   Formatting/whitespace checks pass. Other platforms remain unvalidated locally.
+
+
+### Packaged Unicode font and Windows entry
+
+Pinned Noto Sans SC 2.004 to an immutable Google Fonts revision and SHA512 hashes
+in a local vcpkg manifest port. DotEditor receives the font and OFL license beside
+its executable. Windows editor/runtime entry points use SDL_main's UTF-8 argv
+wrapper; this common source path has not been compiled or executed locally.
+
+- Debug and Release configuration/install/build succeed with the caller LLVM
+  environment. Both packaged font hashes match the pin and both contain the OFL
+  license. The final workspace acceptance actually opens the packaged font; a
+  missing explicit font fails without fallback and releases its partial context.
+  The final workspace working tree passes all 708 CTest cases in each macOS
+  configuration, including Release/NDEBUG.
+- Reviewed immutable source/license hashes, manifest override, resource location,
+  UTF-8 Windows entry integration, private dependency ownership and partial-init
+  cleanup. Formatting/whitespace checks pass. Release DotEditor retains caller
+  LLVM libc++/libunwind without LC_RPATH or sanitizer linkage. No compiler/linker
+  environment setting was changed; other platforms remain unvalidated locally.

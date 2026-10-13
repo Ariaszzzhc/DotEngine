@@ -10,6 +10,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#  include <SDL3/SDL_main.h>
+#endif
+
 #include "../Engine/Serialization/Json.hpp"
 
 import Dot.Core.Files;

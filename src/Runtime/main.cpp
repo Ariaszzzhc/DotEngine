@@ -10,6 +10,10 @@
 #include <string_view>
 #include <vector>
 
+#if defined(_WIN32)
+#  include <SDL3/SDL_main.h>
+#endif
+
 import Dot.Core;
 import Dot.Core.Application;
 import Dot.Platform.Window;

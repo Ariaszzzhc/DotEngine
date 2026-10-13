@@ -27,6 +27,12 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Dawn CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_file(DOT_EDITOR_FONT NAMES NotoSansSC.ttf
+    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
+    NO_DEFAULT_PATH REQUIRED)
+find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
+    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
+    NO_DEFAULT_PATH REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -178,6 +184,10 @@ target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlo
 
 add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
+add_custom_command(TARGET DotEditor POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt")
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
