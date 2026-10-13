@@ -231,3 +231,21 @@ target_compile_definitions(DotExampleNativeTests PRIVATE
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit")
 add_dependencies(DotExampleNativeTests DotExamples DotRuntimeKit)
 doctest_discover_tests(DotExampleNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_executable(DotFeatureLabTests main.cpp FeatureLabTests.cpp)
+target_link_libraries(DotFeatureLabTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotFeatureLabTests PRIVATE
+    DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
+add_dependencies(DotFeatureLabTests DotFeatureLab)
+doctest_discover_tests(DotFeatureLabTests PROPERTIES TIMEOUT 60 LABELS "unit")
+
+add_executable(DotFeatureLabNativeTests main.cpp FeatureLabNativeTests.cpp)
+target_link_libraries(DotFeatureLabNativeTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
+target_compile_definitions(DotFeatureLabNativeTests PRIVATE
+    DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
+    DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
+    DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
+add_dependencies(DotFeatureLabNativeTests DotFeatureLab DotRuntimeKit DotEditor)
+doctest_discover_tests(DotFeatureLabNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)

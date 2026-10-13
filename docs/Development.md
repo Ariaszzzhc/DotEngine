@@ -2087,3 +2087,46 @@ through the existing native window API, with unchanged-title writes skipped.
   persistent authoring edits. The sample is playable and exportable, but dedicated
   exhaustive component/API scenes, further editor usability and distribution work
   remain subsequent stages. The full goal remains active.
+
+
+### Dedicated component and runtime SDK acceptance
+
+Added an ordinary Feature Lab project with 13 authored native entities, both camera
+projections, cube/quad/OBJ geometry, hierarchy, all three body motions/shapes, a
+sensor, spatial audio source/listener and active/disabled script descriptors.
+The hierarchy includes an ID above 2^53. The attached auditor records successful
+behavior checks into disabled native report metadata, which does not run hooks.
+
+- arm64 macOS Debug and Release/NDEBUG each pass all 759 CTest cases (707 doctest
+  cases, 52 executable checks), taking 57.81/22.61 seconds respectively. Four new
+  focused cases pass: independent SDK inventory, actual services/lifecycle/failure
+  behavior, checkpoint migration and real graphics/audio/workspace/export acceptance.
+- The inventory contains all 81 current runtime SDK members with getter/setter
+  distinctions. It is independently compared with actual SDK declarations, readonly
+  fields, constants/functions and class names, then with checks actually completed
+  after explicit shutdown. All members execute through the native compiler/runtime.
+  Five additional checks cover high-precision identity, component removal and failed
+  component/physics/audio changes preserving prior state. Checks are not inferred
+  from names alone and no JavaScript scene/rendering/physics replacement is used.
+- Real service tests verify scoped/frozen/owned IDs and transforms, native parent/
+  world matrix behavior, component description round trips/removal, every declared
+  key/button against published snapshots, nonzero pointer/delta/wheel and Unicode
+  text, Jolt ray/body/control/contact results, actual PCM, native HostError context,
+  start/fixed/update/stop counts and compiler/VM/mixer cleanup. Compatible reload
+  migrates the one active auditor and keeps verified checks/start counts intact.
+- Native acceptance verifies actual GPU pixels/presentation and different camera
+  projections, body movement from SDL key events, real muted audio callback progress,
+  native editor preview/Play/Stop with unchanged authoring snapshot, and standalone
+  relocated startup after deleting the authoring directory. All CTest cases pass;
+  no manual desktop/mouse or Windows/Linux validation is claimed.
+- Reviewed float tolerance versus exact IDs/booleans, metadata-only report ownership,
+  physical effects versus authored descriptions, lifecycle ordering, invalid-write
+  preservation, source inventory drift, reload semantics, stable window/renderer
+  borrows, private-source exclusion and native/export boundaries. C++/TypeScript
+  formatting and whitespace checks pass. The caller LLVM environment is unchanged.
+- docs/Acceptance.md indexes this scene and the existing engine subsystem unit/
+  command/native evidence, distinguishing runtime member coverage from exhaustive
+  argument/device/driver permutations. Core low-level features remain covered by
+  focused suites and executable acceptance rather than unsupported script bindings.
+  GUI project creation/launch ergonomics and further distribution work remain
+  subsequent stages; the full goal remains active.

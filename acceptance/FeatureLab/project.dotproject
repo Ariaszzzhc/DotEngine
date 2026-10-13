@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Feature Lab | D moves body",
+  "startScene": "scenes/main.dotscene",
+  "scriptsDirectory": "scripts",
+  "window": {
+    "width": 1280,
+    "height": 720
+  },
+  "fixedHz": 60,
+  "hotReload": true
+}

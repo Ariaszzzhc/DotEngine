@@ -59,3 +59,7 @@ folder. Local verification covers arm64 macOS; Windows/Linux remain unvalidated.
 
 This sample exercises the listed systems. Dedicated exhaustive component/API
 acceptance scenes are separate work; this game is not evidence of full API coverage.
+
+
+The [Feature Lab acceptance project](Acceptance.md) separately inventories and
+executes the complete current runtime SDK against native components and services.

@@ -7,3 +7,11 @@ add_custom_target(DotExamples ALL
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/scripts"
         "${CMAKE_BINARY_DIR}/examples/PrismRelay/scripts"
     VERBATIM)
+
+add_custom_target(DotFeatureLab ALL
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/acceptance/FeatureLab/scripts"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab"
+        "${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/scripts"
+        "${CMAKE_BINARY_DIR}/acceptance/FeatureLab/scripts"
+    VERBATIM)
