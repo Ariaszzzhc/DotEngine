@@ -558,3 +558,24 @@ TEST_CASE("workspace.export_data_captures_unsaved_scene_and_guards_pending_state
   CHECK_FALSE(std::filesystem::exists(fixture.storage.files()->root() / "blocked"));
   CHECK(workspace.snapshot().value() == before);
 }
+
+TEST_CASE("workspace.export_native_game_preserves_unsaved_authoring") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  rename(workspace);
+  const auto before = workspace.snapshot().value();
+  const auto parentPath = fixture.storage.files()->root().generic_u8string();
+  const std::string parent(parentPath.begin(), parentPath.end());
+  auto exported
+      = command(workspace, {{"command", "export"}, {"parent", parent}, {"folder", "native"}});
+  CHECK(exported["kind"] == "game-native");
+  auto files = Dot::Core::FileSystem::open(fixture.storage.files()->root() / "native/game").value();
+  auto package = Dot::Project::GamePackage::open(files).value();
+  CHECK(package.scene()->entities()->at(1).name == "玩家");
+  CHECK(fixture.project.loadStartup()->entities()->at(1).name != "玩家");
+  CHECK(workspace.snapshot().value() == before);
+  CHECK(std::filesystem::exists(fixture.storage.files()->root() / "native/runtime.json"));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "export"}, {"parent", parent}, {"folder", "stale"}, {"revision", "1"}}
+          .dump()));
+}

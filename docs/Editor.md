@@ -401,8 +401,9 @@ arm64 macOS; Windows/Linux code is not locally validated.
 
 ## Exporting the current scene
 
-The toolbar's **Export data** modal uses the strict `export-data` command to
+The toolbar's **Export game** modal uses the strict `export` or `export-data` command to
 publish the current scene and saved resources without saving the authoring scene.
 It requires stopped Play, the current revision and no pending inspector/file
 drafts. See [game data export](Export.md) for the format, CLI, limits and ownership.
-Executable bundling is a separate forthcoming step.
+Native export includes the player and runtime libraries; data-only export remains
+available through the checkbox.

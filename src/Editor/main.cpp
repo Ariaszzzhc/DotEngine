@@ -22,6 +22,7 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GamePackage;
+import Dot.Project.GameExport;
 import Dot.Editor.Document;
 import Dot.Editor.Workspace;
 import Dot.Core.Text;
@@ -165,7 +166,8 @@ namespace {
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
-    if (argc == 6 && std::string_view(argv[1]) == "export-data") {
+    if ((argc == 6 && std::string_view(argv[1]) == "export-data")
+        || (argc == 7 && std::string_view(argv[1]) == "export")) {
       auto project = Dot::Project::Project::open(path(argv[2]));
       auto parent = Dot::Core::FileSystem::open(path(argv[3]));
       auto compiler = Dot::Script::TypeScriptCompiler::create(path(argv[5]));
@@ -180,15 +182,29 @@ auto main(int argc, char** argv) -> int {
         return error(scene.error());
       }
 
-      auto output
-          = Dot::Project::GamePackage::publish(*project, *scene, *compiler, *parent, path(argv[4]));
+      auto output = [&]() -> Dot::Core::Result<Dot::Core::FileSystem> {
+        if (argc == 6) {
+          return Dot::Project::GamePackage::publish(*project, *scene, *compiler, *parent,
+                                                    path(argv[4]));
+        }
+
+        auto files = Dot::Core::FileSystem::open(path(argv[6]));
+        auto kit
+            = files ? Dot::Project::RuntimeKit::open(*files)
+                    : Dot::Core::Result<Dot::Project::RuntimeKit>{std::unexpected(files.error())};
+        return kit ? Dot::Project::exportGame(*project, *scene, *compiler, *kit, *parent,
+                                              path(argv[4]))
+                   : std::unexpected(kit.error());
+      }();
 
       if (!output) {
         return error(output.error());
       }
 
-      std::println(
-          "{}", Json{{"ok", true}, {"package", utf(output->root())}, {"kind", "game-data"}}.dump());
+      std::println("{}", Json{{"ok", true},
+                              {"package", utf(output->root())},
+                              {"kind", argc == 7 ? "game-native" : "game-data"}}
+                             .dump());
       return 0;
     }
 
@@ -342,7 +358,8 @@ auto main(int argc, char** argv) -> int {
     }
 
     return error({Dot::Core::ErrorCode::InvalidArgument,
-                  "Usage: DotEditor export-data <root> <parent> <folder> <compiler> | open <root> "
+                  "Usage: DotEditor export <root> <parent> <folder> <compiler> <kit> | export-data "
+                  "<root> <parent> <folder> <compiler> | open <root> "
                   "[frames] | send <control> <id> <request-file> | "
                   "--workspace-test <sdk> <parent> | create <parent> <folder> <name> <sdk> | "
                   "inspect <root> | "

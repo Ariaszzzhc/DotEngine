@@ -59,7 +59,7 @@ old file descriptors still describe the old location.
 
 DotEditor provides JSON authoring commands and a native graphical workspace.
 These commands share engine project operations with that workspace.
-[Game data export](Export.md) is available; executable bundling remains subsequent work.
+[Native game and data export](Export.md) are available.
 
 ```text
 DotEditor create <existing-parent> <folder> <name> <sdk-root>
@@ -153,4 +153,5 @@ Invalid metadata, moved code and failed native/script setup return contextual
 errors and release partial service ownership. Start/update/close keep the normal
 session lifecycle and hook semantics.
 
-See [game data export](Export.md) for compiler-independent packaged playback.
+See [native game and data export](Export.md) for compiler-independent playback
+and standalone game distributions.

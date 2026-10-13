@@ -184,6 +184,7 @@ target_link_libraries(DotEditorTests PRIVATE DotEngine doctest::doctest nlohmann
 target_compile_definitions(DotEditorTests PRIVATE
     DOT_EDITOR_EXECUTABLE="$<TARGET_FILE:DotEditor>"
     DOT_RUNTIME_EXECUTABLE="$<TARGET_FILE:DotRuntime>"
+    DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotEditorTests DotEditor DotRuntime)

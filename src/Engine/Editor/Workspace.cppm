@@ -22,6 +22,9 @@ export namespace Dot::Editor {
     /** Empty resolves the packaged native TypeScript compiler when Play starts.
      * 空路径在启动 Play 时查找随附的原生 TypeScript 编译器。 */
     std::filesystem::path compiler;
+    /** Empty resolves the packaged native runtime kit when exporting.
+     * 空路径在导出时查找随附的原生运行时目录。 */
+    std::filesystem::path runtimeKit;
     PlayConfig play;
     int width{1280};
     int height{800};

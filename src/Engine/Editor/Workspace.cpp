@@ -39,6 +39,7 @@ import Dot.Core.Text;
 import Dot.Editor.Document;
 import Dot.Project;
 import Dot.Project.GamePackage;
+import Dot.Project.GameExport;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 import Dot.Platform.Events;
@@ -258,6 +259,7 @@ namespace Dot::Editor {
     std::string m_exportParent;
     std::string m_exportFolder{"game-export"};
     bool m_exportDialog{};
+    bool m_exportDataOnly{};
     std::optional<PlaySession> m_play;
     Platform::InputState m_gameInput;
     bool m_captureInput{};
@@ -604,7 +606,7 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
-      if (command == "export-data") {
+      if (command == "export-data" || command == "export") {
         Codec::requireFields(parsed, {"command", "revision", "parent", "folder"});
 
         if (Codec::id(parsed["revision"]) != m_document->stats().value().revision || playing()
@@ -630,17 +632,38 @@ namespace Dot::Editor {
           return std::unexpected(parent ? tool.error() : parent.error());
         }
 
-        auto output = Project::GamePackage::publish(
-            *m_project, *m_document->scene().value(), *tool, *parent,
-            std::filesystem::path(std::u8string(folderText.begin(), folderText.end())));
+        const auto folder
+            = std::filesystem::path(std::u8string(folderText.begin(), folderText.end()));
+        auto output = [&]() -> Core::Result<Core::FileSystem> {
+          if (command == "export-data") {
+            return Project::GamePackage::publish(*m_project, *m_document->scene().value(), *tool,
+                                                 *parent, folder);
+          }
+
+          auto location = m_config.runtimeKit.empty()
+                              ? resource("runtime-kit")
+                              : Core::Result<std::filesystem::path>{m_config.runtimeKit};
+
+          if (!location) {
+            return std::unexpected(location.error());
+          }
+
+          auto files = Core::FileSystem::open(*location);
+          auto kit = files ? Project::RuntimeKit::open(*files)
+                           : Core::Result<Project::RuntimeKit>{std::unexpected(files.error())};
+          return kit ? Project::exportGame(*m_project, *m_document->scene().value(), *tool, *kit,
+                                           *parent, folder)
+                     : std::unexpected(kit.error());
+        }();
 
         if (!output) {
           return std::unexpected(output.error());
         }
 
         const auto utf = output->root().generic_u8string();
-        return Json{
-            {"ok", true}, {"kind", "game-data"}, {"package", std::string(utf.begin(), utf.end())}}
+        return Json{{"ok", true},
+                    {"kind", command == "export" ? "game-native" : "game-data"},
+                    {"package", std::string(utf.begin(), utf.end())}}
             .dump();
       }
 
@@ -1577,8 +1600,9 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
-      if (ImGui::Button("Export data")) {
+      if (ImGui::Button("Export game")) {
         m_exportDialog = true;
+        m_message.clear();
       }
 
       ImGui::SameLine();
@@ -1664,30 +1688,29 @@ namespace Dot::Editor {
       ImGui::EndChild();
 
       if (m_exportDialog) {
-        ImGui::OpenPopup("Export game data");
+        ImGui::OpenPopup("Export game");
         m_exportDialog = false;
       }
 
       ImGui::SetNextWindowSize({600, 0}, ImGuiCond_Appearing);
 
-      if (ImGui::BeginPopupModal("Export game data", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      if (ImGui::BeginPopupModal("Export game", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextWrapped(
-            "Export the current scene, resources and precompiled scripts. This data package runs "
-            "with DotRuntime; executable bundling is separate.");
+            "Export the current scene, resources and compiled scripts with a native player.");
+        ImGui::Checkbox("Data package only", &m_exportDataOnly);
         ImGui::InputText("Existing parent directory", &m_exportParent);
         ImGui::InputText("New folder", &m_exportFolder);
         ImGui::BeginDisabled(playing() || pendingInspector() || pendingText());
 
         if (ImGui::Button("Export")) {
-          auto request = Json{{"command", "export-data"},
+          auto request = Json{{"command", m_exportDataOnly ? "export-data" : "export"},
                               {"revision", std::to_string(m_document->stats().value().revision)},
                               {"parent", m_exportParent},
                               {"folder", m_exportFolder}};
           auto result = safeExecute(request.dump());
 
           if (result) {
-            m_message
-                = "Game data exported: " + Codec::parseJson(*result)["package"].get<std::string>();
+            m_message = "Game exported: " + Codec::parseJson(*result)["package"].get<std::string>();
             ImGui::CloseCurrentPopup();
           } else {
             m_message = result.error().message;

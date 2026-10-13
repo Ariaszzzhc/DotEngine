@@ -2012,3 +2012,29 @@ game data from the executable directory, independent of working directory.
   Formatting/whitespace/private-reference checks pass. No manual visual, other-host,
   release signing/notarization or installer validation is claimed. Format checks
   do not authenticate arbitrary executable bytes; input changes must be serialized.
+
+
+### Workspace and CLI native game export
+
+Added DotEditor export and the workspace Export game modal/command using the same
+exportGame implementation. Native export is the GUI default; the data-only checkbox
+retains export-data. WorkspaceConfig may supply a runtime kit explicitly or resolve
+the editor's packaged kit lazily. The current native scene is exported without
+implicitly saving or changing authoring revision/dirty state.
+
+- arm64 macOS Debug and Release/NDEBUG pass all 749 CTest cases (697 doctest cases,
+  52 executable checks). New CLI and workspace cases verify complete player/data/
+  runtime-manifest delivery, strict frame budget errors before native setup, missing
+  kit errors leaving no destination, current unsaved scene values, saved authoring
+  preservation and stale revision rejection. Existing shared export-data cases
+  still verify stopped Play and pending file draft guards. Debug suite took 52.33
+  seconds, Release 22.01 seconds. Native relocated distribution and all existing
+  GPU/audio/project/editor cases also pass.
+- Reviewed shared GUI/protocol/CLI behavior, strict request fields and canonical
+  revision guards, Play/inspector/text boundaries, lazy tool/kit resolution, expected
+  failures and source-preserving publication. Formatting and whitespace checks
+  pass. Only arm64 macOS is locally validated; no manual mouse/visual result is
+  claimed. Native export requires a compatible runtime kit for this platform.
+- Standalone directory export is implemented. Native installers/release signing,
+  fuller rendering/editor tools, comprehensive component/API acceptance scenes
+  and a playable example game remain subsequent work. The overall goal is active.

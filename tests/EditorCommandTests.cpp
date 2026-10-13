@@ -340,3 +340,33 @@ TEST_CASE("editor_commands_export_data_and_runtime_game_validate_real_packages")
   CHECK(Dot::Core::processResources().children == 0);
   CHECK(Dot::Core::processResources().handles == 0);
 }
+
+TEST_CASE("editor_commands_export_native_game_with_packaged_runtime") {
+  Directory directory;
+  create(directory);
+  auto result
+      = command(directory, {"export", utf(directory.root / "game folder"), utf(directory.root),
+                            "native", DOT_TYPESCRIPT_COMPILER, DOT_RUNTIME_KIT});
+  CHECK(result["kind"] == "game-native");
+  auto files = Dot::Core::FileSystem::open(directory.root / "native/game").value();
+  REQUIRE(Dot::Project::GamePackage::open(files));
+  CHECK(std::filesystem::exists(directory.root / "native/runtime.json"));
+#ifdef _WIN32
+  const auto player = directory.root / "native/DotGame.exe";
+#else
+  const auto player = directory.root / "native/DotGame";
+#endif
+
+  for (const auto* budget : {"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {
+    auto invalid = Dot::Core::runProcess({player, {"--frames", budget}, directory.root});
+    REQUIRE(invalid);
+    CHECK(invalid->exitCode == 2);
+    CHECK(invalid->standardError.find("frame budget") != std::string::npos);
+  }
+
+  command(directory,
+          {"export", utf(directory.root / "game folder"), utf(directory.root), "bad-kit",
+           DOT_TYPESCRIPT_COMPILER, "missing"},
+          false);
+  CHECK_FALSE(std::filesystem::exists(directory.root / "bad-kit"));
+}
