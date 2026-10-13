@@ -80,7 +80,7 @@ context/runtime. SDK callbacks contain C++ exceptions rather than unwinding over
 the C ABI. Faulted statistics remain queryable; calls/loads require a new realm.
 `backendMemory` reports process-wide live allocator payload for lifetime checks.
 
-Run `DotRuntime --script-test <existing-directory>` for an actual file-backed ESM
+Run `DotRuntimeAcceptance --script-test <existing-directory>` for an actual file-backed ESM
 graph, async JSON calls, shared state, recoverable exceptions, execution interruption,
 and complete allocator cleanup. Unit tests also cover malformed inputs, import
 paths/attributes/NUL, strict results, memory/job/stack limits, diagnostic getters,
@@ -150,7 +150,7 @@ owns termination/reaping. These are not OS memory/disk quotas or hard real-time
 guarantees: output size is checked after the compiler finishes, and generation
 destruction cannot report filesystem deletion failures.
 
-Run `DotRuntime --typescript-test <absolute-compiler> <existing-directory>` for real
+Run `DotRuntimeAcceptance --typescript-test <absolute-compiler> <existing-directory>` for real
 type checking, ESM emission/execution, source maps, deliberate type diagnostics,
 continued old-runtime execution and complete generation/process/VM cleanup.
 Focused tests include actual Unicode/mts/declaration compilation, source maps,
@@ -318,7 +318,7 @@ the entity-attached lifecycle service below provides scheduled instances. Candid
 load/initializer failures through this direct bridge can have native side effects,
 so it must not be mistaken for transactional hot reload.
 
-Run `DotRuntime --script-host-test <absolute-compiler> <sdk-root> <directory>` for
+Run `DotRuntimeAcceptance --script-host-test <absolute-compiler> <sdk-root> <directory>` for
 the actual TypeScript SDK, native entity creation/deletion and parenting, renaming,
 recoverable transform rejection, sixty typed transform ticks, and compiler/process/
 VM cleanup. `<sdk-root>` contains `dot/engine.ts` and `dot/host.d.ts`.
@@ -361,7 +361,7 @@ is allowed on a faulted realm but still requires its owner thread without reentr
 Moves preserve instances; quiescent realm destruction may occur on another thread.
 `RuntimeStats.instances` reports live host-held handles, not every object in JS.
 
-Run `DotRuntime --script-instance-test <absolute-compiler> <sdk-root> <directory>`
+Run `DotRuntimeAcceptance --script-instance-test <absolute-compiler> <sdk-root> <directory>`
 for actual TypeScript classes with private state and inherited hooks, two native
 entities driven independently through sixty async updates, contextual failure
 recovery, explicit stop calls, stale-handle rejection and complete compiler/process/

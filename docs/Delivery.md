@@ -22,13 +22,18 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 768/768 CTest cases
-(715 doctest cases and 53 executable checks), taking 72.81 and 30.74 seconds.
-The C/C++ formatting checks pass. The current 263-entry native zip
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 769/769 CTest cases
+(716 doctest cases and 53 executable checks), taking 77.58 and 35.23 seconds.
+All 215 C/C++ files pass formatting checks. The current 263-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete
 source/package examples open and compile with their versioned SDKs.
+
+All former acceptance dispatch/implementations are now development-only targets
+under `tests/acceptance`, compiled only with `BUILD_TESTING=ON`. An actual OFF build
+has no test compilation entries, acceptance targets or former acceptance symbols
+in the three product executables. Playback/authoring and agent commands remain.
 
 The supported implementation targets are arm64 macOS and x86_64 Windows/Linux.
 macOS uses Metal through Dawn, Windows D3D12, Linux Vulkan with X11/Wayland surface

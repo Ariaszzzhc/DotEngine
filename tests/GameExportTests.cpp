@@ -177,10 +177,16 @@ TEST_CASE("runtime_distribution.actual_relocated_native_game_needs_no_authoring_
 #else
   const auto executable = parent.root() / "relocated game/DotGame";
 #endif
-  auto result = Dot::Core::runProcess({executable, {"--verify-native"}, parent.root()});
+  auto result = Dot::Core::runProcess({executable, {"--frames", "30"}, parent.root()});
   REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
   CHECK_MESSAGE(result->exitCode == 0, result->standardError);
-  CHECK(result->standardOutput.find("Standalone game acceptance passed") != std::string::npos);
+  auto verified
+      = Dot::Core::runProcess({DOT_RUNTIME_ACCEPTANCE,
+                               {"--game-verify", (parent.root() / "relocated game/game").string()},
+                               parent.root()});
+  REQUIRE_MESSAGE(verified, (verified ? "" : verified.error().message));
+  CHECK_MESSAGE(verified->exitCode == 0, verified->standardError);
+  CHECK(verified->standardOutput.find("Standalone game acceptance passed") != std::string::npos);
   CHECK(Dot::Core::processResources().children == 0);
   CHECK(Dot::Core::processResources().handles == 0);
 }

@@ -2326,3 +2326,54 @@ opens/type-checks its Prism Relay in addition to template creation/Play/export.
   pass clang-format; diff whitespace and private-reference checks pass. Caller
   environment remains unchanged. Windows/Linux and release identity signing/
   notarization remain unvalidated. The local private document remains untracked.
+
+
+### Isolated acceptance targets and temporary-output cleanup
+
+Moved the runtime/editor acceptance dispatchers and implementations into
+tests/acceptance. Its two executable targets are reachable only through the
+BUILD_TESTING-gated tests subdirectory and are never installed. Product entry points
+now contain only playback, authoring/automation and normal argument handling.
+The runtime main is 55 lines; all test-prefixed implementations left product sources.
+The standalone player no longer implements --verify-native.
+
+The shared native player retains session start/close, input/script/render callbacks,
+error precedence and stable local resource ownership. A private synchronous loop
+driver lets the test side supply deterministic input/steps and inspect actual
+presentations/pixels without copying the product loop. Tests verify returned driver
+errors and thrown exceptions keep context and release compiler/VM/audio ownership.
+An explicit default empty callback fixed a warnings-as-errors initializer diagnostic;
+no compiler/environment settings or warning policies were weakened.
+
+- The before/after CTest inventory retains all 768 original cases and adds one
+  product-CLI rejection/no-side-effects case. Debug full suite passes 769/769 in
+  77.58 seconds; after adding driver-failure assertions its focused native player
+  check passes in 2.35 seconds. Final Release/NDEBUG passes 769/769 in 35.23 seconds
+  (716 doctest, 53 executable checks). Four initial focused playback/export/CLI cases
+  pass. Export coverage runs the real shipped player after removing authoring/tools,
+  then uses the separate native driver to preserve input/pixel/lifetime assertions.
+- Built Release with BUILD_TESTING=OFF using existing caches: all 115 compilation
+  entries are product sources, the graph has no acceptance targets, and nm finds
+  none of the former runtime/editor test symbols in DotRuntime/DotEditor/DotGame.
+  Restored ON afterwards. All 215 C/C++ files pass clang-format; whitespace checks
+  pass. Acceptance command documentation now names development executables.
+- Updated latest native ZIP remains at its existing path: 263 entries, 43,072,411
+  bytes. CRC, absence of acceptance executables/private data, complete app signature,
+  all native binary signatures and relative/system loader references pass. Product
+  editor/runtime symbols contain no former acceptance functions; native relocated
+  editor/example/export coverage passes in the full suite. Caller environment stays
+  unchanged; Windows/Linux implementation remains locally unvalidated.
+- Removed the three owned distribution verification copies (about 425 MiB), obsolete
+  sanitize output (about 55 MiB), 99 historical diagnostics (4,482,098 bytes) and 12
+  Finder metadata files. Removed this cleanup's temporary inventory files after
+  verification. Active Debug/Release/vcpkg/clangd caches and the latest distribution/
+  archive are preserved; the local private document's content hash is unchanged and
+  it remains untracked. New validation logs retain this stage's actual evidence.
+- Reviewed build gating/source inventories, preserved CTest names, normal product
+  command behavior, callback borrow lifetime, close on driver failures, native
+  export independence, installed contents and narrowly scoped cleanup paths.
+
+Planned next: Feature Lab remains a separate editable capability-showcase project.
+Prism Relay's requested realistic science-fiction presentation and game-quality
+upgrade requires further rendering/content/interaction work; that upgrade is not
+claimed as implemented by this acceptance-code refactor.

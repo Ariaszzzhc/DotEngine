@@ -88,7 +88,7 @@ line per request and shares the Document module used by editor clients. See
 [editor documents and automation](Editor.md) for the strict protocol and lifetime
 contracts and the native graphical workspace.
 
-`--project-test <absolute-compiler> <sdk-root> <existing-parent>` exercises exclusive
+`DotEditorAcceptance --project-test <absolute-compiler> <sdk-root> <existing-parent>` exercises exclusive
 creation, real template compilation and attached script/input execution, native scene
 and descriptor saves, relocation with fresh scene scope, recompilation and compiler/
 process/VM cleanup. `--project-render-test` additionally verifies actual Metal pixels

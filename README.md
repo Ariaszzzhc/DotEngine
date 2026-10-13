@@ -14,8 +14,13 @@ git submodule update --init --recursive
 cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug
-build/debug/bin/DotRuntime --self-test
+build/debug/bin/DotRuntimeAcceptance --self-test
 ```
+
+Acceptance implementations live in `tests/acceptance`. `DotRuntimeAcceptance` and
+`DotEditorAcceptance` are built only with `BUILD_TESTING=ON` and are never installed
+in editor/game distributions. Product executables retain playback and authoring/
+automation commands. Use `-DBUILD_TESTING=OFF` when configuring a product-only build.
 
 The `release` configure, build, and test presets provide the optimized configuration.
 Executables use the `.exe` suffix on Windows.
@@ -60,47 +65,47 @@ The portable editor archive supports tested local deployment. Release signing,
 notarization and installer publication have not been validated.
 
 SDL3 windowing, input, and the application loop are available. Run
-`build/debug/bin/DotRuntime --window-smoke` in a desktop session for a short native
+`build/debug/bin/DotRuntimeAcceptance --window-smoke` in a desktop session for a short native
 window acceptance case. Automated window tests use SDL's dummy video driver.
 
 The math module provides checked transforms, quaternions, camera matrices, and
-WebGPU depth conventions. Run `build/debug/bin/DotRuntime --math-test` for its
+WebGPU depth conventions. Run `build/debug/bin/DotRuntimeAcceptance --math-test` for its
 camera projection and TRS decomposition acceptance case. Matrix decomposition
 validates affine structure, shear, reflection, and reconstruction precision.
 GLM stays private to the implementation.
 
 Dawn rendering supports colored triangle lists, camera transforms, depth testing,
 RGBA8 offscreen readback, and native window presentation with resize handling.
-Run `build/debug/bin/DotRuntime --gpu-test` for pixel readback or
-`build/debug/bin/DotRuntime --render-smoke` for a short visible triangle case.
+Run `build/debug/bin/DotRuntimeAcceptance --gpu-test` for pixel readback or
+`build/debug/bin/DotRuntimeAcceptance --render-smoke` for a short visible triangle case.
 GPU/native CTest cases require an available device and desktop session; they
 report initialization failures instead of treating missing hardware as success.
 
 Indexed meshes upload once and share GPU buffers across instances. Mesh draws
 carry separate world transforms and tint colors; resource counters report live
-ownership. Run `build/debug/bin/DotRuntime --mesh-test` for a perspective-camera
+ownership. Run `build/debug/bin/DotRuntimeAcceptance --mesh-test` for a perspective-camera
 cube acceptance case.
 
 Mesh assets support strict versioned `.dotmesh` JSON and bounded OBJ geometry
 import, with explicit warnings for unsupported retained attributes. Run
-`build/debug/bin/DotRuntime --asset-test <existing-directory>` for atomic save/load
+`build/debug/bin/DotRuntimeAcceptance --asset-test <existing-directory>` for atomic save/load
 acceptance. See `docs/Assets.md` for the format and importer contract.
 
 EnTT scenes provide scoped entity handles, owned snapshots, validated transforms,
 parent hierarchies, and subtree lifetime management. Run
-`build/debug/bin/DotRuntime --scene-test` for hierarchy/world-transform acceptance.
+`build/debug/bin/DotRuntimeAcceptance --scene-test` for hierarchy/world-transform acceptance.
 Camera and mesh description components are available, with checked projection
 matrices and primary-camera ownership. The scene render service loads shared
 meshes within a byte budget, prunes unused resources, and reports missing assets
-or importer warnings. `build/debug/bin/DotRuntime --scene-render-test` verifies
+or importer warnings. `build/debug/bin/DotRuntimeAcceptance --scene-render-test` verifies
 an actual entity/camera scene through Metal pixel readback. Versioned `.dotscene`
 files preserve entity values, hierarchy, transforms, and camera/mesh components.
-Run `build/debug/bin/DotRuntime --scene-file-test <existing-directory>` for
+Run `build/debug/bin/DotRuntimeAcceptance --scene-file-test <existing-directory>` for
 save/load acceptance; see `docs/Scenes.md` for the strict format contract.
 
 Jolt physics provides independently owned worlds, scoped body handles, three
 primitive shapes, static/kinematic/dynamic motion, sensors, impulses, and ray
-queries. Run `build/debug/bin/DotRuntime --physics-test` for falling-body collision
+queries. Run `build/debug/bin/DotRuntimeAcceptance --physics-test` for falling-body collision
 and lifetime acceptance. See `docs/Physics.md` for limits and failure semantics;
 optional rigid-body descriptions support validated editing, owned scene snapshots,
 and scene persistence. The scene simulation service synchronizes component/pose
@@ -111,7 +116,7 @@ Owned contact events cover begin/stay/sleep/end, sensors, removal/reconfiguratio
 and explicit queue limits; scene events retain entity values after destruction.
 
 Audio resources decode bounded WAV/FLAC/MP3 into shared immutable float PCM.
-Run `build/debug/bin/DotRuntime --audio-clip-test <existing-directory>` for
+Run `build/debug/bin/DotRuntimeAcceptance --audio-clip-test <existing-directory>` for
 known sample values, ownership, and failures. See `docs/Audio.md` for limits
 and format contracts. Offline mixing provides scoped voices, pause/seek/loop,
 gain/pan/pitch, rate conversion, and allocation budgets. `--audio-mix-test` checks

@@ -102,7 +102,7 @@ return an error. A hit contains the public body handle, segment fraction, and
 point. Fraction-zero hits can start inside a shape and have no surface normal;
 positive-fraction hits include a normalized world-space normal.
 
-Run `build/debug/bin/DotRuntime --physics-test` to drop a sphere onto a static
+Run `build/debug/bin/DotRuntimeAcceptance --physics-test` to drop a sphere onto a static
 box, verify its resting height and a ray hit, then destroy it and reject its old
 handle. Focused tests also cover restitution, gravity scaling, all three shapes,
 kinematic motion, sensors, limits, transactional input failures, native sequence
@@ -146,7 +146,7 @@ candidate world and replaces bindings only on success. It restarts motion from
 authoring descriptions and can bind a different scene. It is required to recover
 from writeback or backend faults.
 
-Run `DotRuntime --scene-physics-test` for a falling scene cube, entity-scoped ray
+Run `DotRuntimeAcceptance --scene-physics-test` for a falling scene cube, entity-scoped ray
 query, and synchronized cleanup. `--scene-physics-render-test` additionally checks
 the actual GPU pixels at its resting position. GPU tests also compare the initial
 and final pixels to prove that scene writeback changes rendering.

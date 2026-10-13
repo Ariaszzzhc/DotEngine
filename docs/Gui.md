@@ -81,7 +81,7 @@ clipboard and IME placement remain in the official platform backend. Core's key
 vocabulary includes Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter, with exact
 SDL, GUI and script SDK mappings.
 
-`DotEditor --gui-test <sdk-root> <existing-parent>` creates an owned temporary
+`DotEditorAcceptance --gui-test <sdk-root> <existing-parent>` creates an owned temporary
 project and real native window. Tab/space events travel through SDL, Platform and
 Application into a real ImGui button. Its handler edits the native Document;
 the GPU preview changes actual pixels and uses one reused target. The test checks

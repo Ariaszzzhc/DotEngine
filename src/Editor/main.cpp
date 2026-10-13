@@ -30,15 +30,6 @@ import Dot.Core.Text;
 import Dot.World.SceneFiles;
 import Dot.Script.Compiler;
 
-namespace Dot::Editor {
-  auto testWorkspace(const std::filesystem::path& sdk, const std::filesystem::path& parent) -> int;
-  auto testGui(const std::filesystem::path& sdk, const std::filesystem::path& parent) -> int;
-  auto testDocument(const std::filesystem::path& sdk, const std::filesystem::path& parent,
-                    bool render) -> int;
-  auto testProject(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
-                   const std::filesystem::path& parent, bool render) -> int;
-}  // namespace Dot::Editor
-
 namespace {
   using Json = nlohmann::json;
 
@@ -290,10 +281,6 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
 
-    if (argc == 4 && std::string_view(argv[1]) == "--workspace-test") {
-      return Dot::Editor::testWorkspace(path(argv[2]), path(argv[3]));
-    }
-
     if ((argc == 3 || argc == 4) && std::string_view(argv[1]) == "open") {
       std::size_t frames = 0;
 
@@ -342,19 +329,8 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
 
-    if (argc == 4 && std::string_view(argv[1]) == "--gui-test") {
-      return Dot::Editor::testGui(path(argv[2]), path(argv[3]));
-    }
-
     if (argc == 4 && std::string_view(argv[1]) == "document") {
       return document(path(argv[2]), path(argv[3]));
-    }
-
-    if (argc == 4
-        && (std::string_view(argv[1]) == "--document-test"
-            || std::string_view(argv[1]) == "--document-render-test")) {
-      return Dot::Editor::testDocument(path(argv[2]), path(argv[3]),
-                                       std::string_view(argv[1]) == "--document-render-test");
     }
 
     if (argc == 6 && std::string_view(argv[1]) == "create") {
@@ -432,25 +408,15 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
 
-    if (argc == 5
-        && (std::string_view(argv[1]) == "--project-test"
-            || std::string_view(argv[1]) == "--project-render-test")) {
-      return Dot::Editor::testProject(path(argv[2]), path(argv[3]), path(argv[4]),
-                                      std::string_view(argv[1]) == "--project-render-test");
-    }
-
     return error({Dot::Core::ErrorCode::InvalidArgument,
                   "Usage: DotEditor [home [frames]] | project-action <resources> <request-file> | "
                   "export <root> <parent> <folder> <compiler> <kit> | export-data "
                   "<root> <parent> <folder> <compiler> | open <root> "
                   "[frames] | send <control> <id> <request-file> | "
-                  "--workspace-test <sdk> <parent> | create <parent> <folder> <name> <sdk> | "
+                  "create <parent> <folder> <name> <sdk> | "
                   "inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "
-                  "check <root> <compiler> | document <root> <requests-json-file> | "
-                  "--document[-render]-test <sdk> <parent> | "
-                  "--gui-test <sdk> <parent> | "
-                  "--project[-render]-test <compiler> <sdk> <parent>",
+                  "check <root> <compiler> | document <root> <requests-json-file>",
                   {}});
   } catch (const std::exception& value) {
     return error({Dot::Core::ErrorCode::External, value.what(), {}});

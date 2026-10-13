@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -13,18 +12,17 @@
 import Dot.Core.Application;
 import Dot.Core.Files;
 import Dot.Core.Result;
-import Dot.Core.StagedDirectory;
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
-import Dot.Script.Runtime;
-import Dot.Audio.Mixer;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
 import Dot.World.Scene;
+
+#include "Player.hpp"
 
 namespace Dot::Runtime {
   namespace {
@@ -42,7 +40,7 @@ namespace Dot::Runtime {
     }
 
     auto execute(const Project::Project* project, const Script::TypeScriptCompiler* compiler,
-                 const Project::GamePackage* game, std::size_t frameBudget, bool acceptance)
+                 const Project::GamePackage* game, const PlayerOptions& options)
         -> Core::Result<void> {
       auto description = game ? game->description() : project->description();
       auto files = game ? game->files() : project->files();
@@ -61,7 +59,7 @@ namespace Dot::Runtime {
       applicationConfig.window.height = static_cast<int>(description->height);
       applicationConfig.window.gpuSurface = true;
       applicationConfig.fixedStep = std::chrono::nanoseconds{1'000'000'000 / description->fixedHz};
-      applicationConfig.pauseOnFocusLoss = !acceptance;
+      applicationConfig.pauseOnFocusLoss = options.pauseOnFocusLoss;
       auto application = Core::Application::create(applicationConfig);
 
       if (!application) {
@@ -90,7 +88,7 @@ namespace Dot::Runtime {
 
       Project::GameSessionConfig sessionConfig;
       sessionConfig.audioMode = Project::SessionAudio::Playback;
-      sessionConfig.audio.output.volume = acceptance ? 0 : 1;
+      sessionConfig.audio.output.volume = options.volume;
       auto session
           = game ? Project::GameSession::createCompiled(*files, *description, game->scene().value(),
                                                         game->program().value(), sessionConfig)
@@ -141,13 +139,6 @@ namespace Dot::Runtime {
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
         if (input.key(Platform::Key::Escape).pressed) {
           application->stop();
-        }
-
-        if (acceptance) {
-          Platform::InputState driven;
-          static_cast<void>(
-              driven.consume({0, 0, Platform::KeyChanged{Platform::Key::D, true, false}}));
-          return session->publish(driven).transform([](auto) {});
         }
 
         return session->publish(input).transform([](auto) {});
@@ -212,44 +203,13 @@ namespace Dot::Runtime {
           return checked;
         }
 
-        if (!acceptance) {
-          return application->run(callbacks, frameBudget);
+        try {
+          return options.driver ? options.driver(*application, *session, *sceneRenderer, callbacks,
+                                                 presentations)
+                                : application->run(callbacks, options.frames);
+        } catch (const std::exception& error) {
+          return Core::fail(Core::ErrorCode::External, "Player loop: " + std::string(error.what()));
         }
-
-        auto before = sceneRenderer->render(**scene, 96, 96);
-
-        if (!before) {
-          return std::unexpected(before.error());
-        }
-
-        for (std::size_t frame = 0; frame < frameBudget; ++frame) {
-          auto advanced = application->step(std::chrono::milliseconds{16}, callbacks);
-
-          if (!advanced) {
-            return std::unexpected(advanced.error());
-          }
-        }
-
-        auto after = sceneRenderer->render(**scene, 96, 96);
-        auto entities = (*scene)->entities();
-
-        if (!after) {
-          return std::unexpected(after.error());
-        }
-
-        if (!entities) {
-          return std::unexpected(entities.error());
-        }
-
-        auto cube = std::ranges::find(*entities, "Cube", &World::EntityInfo::name);
-
-        if (cube == entities->end() || std::abs(cube->transform.position.x - 0.72F) > 0.001F
-            || before->pixels == after->pixels || presentations == 0) {
-          return Core::fail(Core::ErrorCode::InvalidState,
-                            "Project player acceptance did not move/present the actual template");
-        }
-
-        return {};
       }();
       auto closed = session->close();
 
@@ -271,6 +231,16 @@ namespace Dot::Runtime {
     }
   }  // namespace
 
+  auto runProject(const Project::Project& project, const Script::TypeScriptCompiler& compiler,
+                  const PlayerOptions& options) -> Core::Result<void> {
+    return execute(&project, &compiler, nullptr, options);
+  }
+
+  auto runGame(const Project::GamePackage& game, const PlayerOptions& options)
+      -> Core::Result<void> {
+    return execute(nullptr, nullptr, &game, options);
+  }
+
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
                    std::size_t frameBudget) -> int {
     auto project = Project::Project::open(root);
@@ -287,7 +257,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = execute(&*project, &*compiler, nullptr, frameBudget, false);
+    auto played = runProject(*project, *compiler, {.frames = frameBudget});
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);
@@ -297,7 +267,7 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto playGame(const std::filesystem::path& root, std::size_t frames, bool acceptance) -> int {
+  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int {
     auto files = Core::FileSystem::open(root);
     auto game = files ? Project::GamePackage::open(*files)
                       : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
@@ -307,7 +277,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = execute(nullptr, nullptr, &*game, frames, acceptance);
+    auto played = runGame(*game, {.frames = frames});
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);
@@ -317,105 +287,4 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto testGamePlayer(const std::filesystem::path& executable, const std::filesystem::path& sdkRoot,
-                      const std::filesystem::path& parentRoot) -> int {
-    auto parent = Core::FileSystem::open(parentRoot).value();
-    auto storage = Core::StagedDirectory::create(parent).value();
-    auto files = storage.files().value();
-    auto sdk = Core::FileSystem::open(sdkRoot).value();
-    auto project = Project::Project::create(files, "authoring", {}, sdk).value();
-    auto compiler = Script::TypeScriptCompiler::create(executable).value();
-    auto scene = project.loadStartup().value();
-    auto published = Project::GamePackage::publish(project, scene, compiler, files, "game");
-
-    if (!published) {
-      std::println(stderr, "{}", published.error().message);
-      return 1;
-    }
-
-    std::filesystem::rename(published->root(), files.root() / "relocated");
-    std::filesystem::remove_all(project.files()->root());
-    const auto generations = Script::compilerGenerations();
-    const auto vm = Script::Runtime::backendMemory();
-    const auto audio = Audio::Mixer::backendMemory();
-    auto run = [&]() -> Core::Result<void> {
-      auto source = Core::FileSystem::open(files.root() / "relocated").value();
-      auto game = Project::GamePackage::open(source);
-
-      if (!game) {
-        return std::unexpected(game.error());
-      }
-
-      return execute(nullptr, nullptr, &*game, 30, true);
-    }();
-
-    if (!run) {
-      std::println(stderr, "{}", run.error().message);
-      return 1;
-    }
-
-    if (Script::compilerGenerations() != generations
-        || Script::Runtime::backendMemory().bytes != vm.bytes
-        || Audio::Mixer::backendMemory().bytes != audio.bytes) {
-      std::println(stderr, "Exported game retained program/VM/audio ownership");
-      return 1;
-    }
-
-    std::println(
-        "Exported game acceptance passed: relocated package, no authoring/compiler at playback, "
-        "native input/GPU/audio and shutdown");
-    return 0;
-  }
-
-  auto testProjectPlayer(const std::filesystem::path& executable,
-                         const std::filesystem::path& sdkRoot,
-                         const std::filesystem::path& parentRoot) -> int {
-    auto parent = Core::FileSystem::open(parentRoot);
-    auto sdk = Core::FileSystem::open(sdkRoot);
-    auto compiler = Script::TypeScriptCompiler::create(executable);
-
-    if (!parent || !sdk || !compiler) {
-      std::println(stderr, "Project player acceptance setup failed");
-      return 1;
-    }
-
-    auto staging = Core::StagedDirectory::create(*parent);
-
-    if (!staging) {
-      std::println(stderr, "{}", staging.error().message);
-      return 1;
-    }
-
-    auto project = Project::Project::create(
-        staging->files().value(), "game",
-        Project::Description{"DotEngine Project Test", "scenes/main.dotscene", "scripts", 320, 240},
-        *sdk);
-
-    if (!project) {
-      std::println(stderr, "{}", project.error().message);
-      return 1;
-    }
-
-    const auto generations = Script::compilerGenerations();
-    const auto vm = Script::Runtime::backendMemory();
-    const auto audio = Audio::Mixer::backendMemory();
-    auto played = execute(&*project, &*compiler, nullptr, 30, true);
-
-    if (!played) {
-      std::println(stderr, "{}", played.error().message);
-      return 1;
-    }
-
-    if (Script::compilerGenerations() != generations
-        || Script::Runtime::backendMemory().bytes != vm.bytes
-        || Audio::Mixer::backendMemory().bytes != audio.bytes) {
-      std::println(stderr, "Project player retained compiler/VM/audio resources");
-      return 1;
-    }
-
-    std::println(
-        "Project player acceptance passed: published input, attached TypeScript, native "
-        "window/GPU presentation and pixel changes, real audio endpoint, explicit shutdown");
-    return 0;
-  }
 }  // namespace Dot::Runtime

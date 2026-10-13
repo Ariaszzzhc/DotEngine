@@ -12,20 +12,14 @@
 #include <string>
 #include <string_view>
 
-namespace Dot::Runtime {
-  auto playGame(const std::filesystem::path& root, std::size_t frames, bool acceptance) -> int;
-}
+#include "Player.hpp"
 
 /** Play the adjacent game package independently of working directory/compiler.
  * 播放相邻游戏包，不依赖工作目录或编译器。 */
 auto main(int argc, char** argv) -> int {
   try {
     std::size_t frames = 0;
-    const bool acceptance = argc == 2 && std::string_view(argv[1]) == "--verify-native";
-
-    if (acceptance) {
-      frames = 30;
-    } else if (argc == 3 && std::string_view(argv[1]) == "--frames") {
+    if (argc == 3 && std::string_view(argv[1]) == "--frames") {
       const std::string_view value(argv[2]);
       const auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
 
@@ -34,7 +28,7 @@ auto main(int argc, char** argv) -> int {
         return 2;
       }
     } else if (argc != 1) {
-      std::println(stderr, "Usage: DotGame [--frames <count>|--verify-native]");
+      std::println(stderr, "Usage: DotGame [--frames <count>]");
       return 2;
     }
 
@@ -47,13 +41,7 @@ auto main(int argc, char** argv) -> int {
 
     const std::string_view text(base);
     const auto root = std::filesystem::path(std::u8string(text.begin(), text.end()));
-    const auto result = Dot::Runtime::playGame(root / "game", frames, acceptance);
-
-    if (result == 0 && acceptance) {
-      std::println("Standalone game acceptance passed: relocated native input/GPU/audio");
-    }
-
-    return result;
+    return Dot::Runtime::playGame(root / "game", frames);
   } catch (const std::exception& error) {
     std::println(stderr, "Standalone game: {}", error.what());
     return 1;

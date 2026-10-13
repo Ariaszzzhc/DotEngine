@@ -89,7 +89,9 @@ and a `game/` data package. Playback finds `game/` relative to the executable,
 independent of the current working directory. It needs no authoring directory,
 TypeScript compiler, editor font or engine build checkout. Zero/omitted frame
 budget runs until close; malformed budgets fail before loading game resources.
-`--verify-native` is a deterministic acceptance mode for the built-in template.
+Deterministic native checks belong to the development-only
+`DotRuntimeAcceptance --game-verify <data-package>` driver. Exported DotGame accepts
+normal playback/frame budgets and contains no acceptance command or input assertions.
 
 The build creates `bin/resources/runtime-kit`, also available via the RuntimeKit
 installation component. macOS uses [CMake BundleUtilities](https://cmake.org/cmake/help/latest/module/BundleUtilities.html)

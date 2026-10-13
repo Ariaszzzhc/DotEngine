@@ -117,7 +117,7 @@ This sequence edits and explicitly saves:
 ]
 ```
 
-`--document-test <sdk-root> <existing-parent>` creates an owned temporary project,
+`DotEditorAcceptance --document-test <sdk-root> <existing-parent>` creates an owned temporary project,
 selects and moves the attached cube, rejects its stale handle, undoes/redoes,
 saves and reopens. `--document-render-test` additionally verifies changed actual
 GPU pixels and exact restoration of the initial/edited frames on undo/redo.
@@ -191,7 +191,7 @@ liveness/heartbeat guarantee. No hostile filesystem-race isolation or crash dura
 is promised. The private control directory is removed with Workspace ownership;
 it is temporary session data, not project authoring content.
 
-`--workspace-test <sdk-root> <existing-parent>` exercises the packaged font, real
+`DotEditorAcceptance --workspace-test <sdk-root> <existing-parent>` exercises the packaged font, real
 native project window, SDL Cmd/Ctrl+Z activation, changed/restored Metal viewport
 pixels, online edit/stale/retry responses, moved/worker guards and control/context
 cleanup. Focused workspace CTest cases cover strict commands, dirty close and actual

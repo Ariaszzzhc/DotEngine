@@ -103,6 +103,29 @@ TEST_CASE("runtime_project_command_rejects_invalid_budgets_before_opening_resour
   CHECK(Dot::Core::processResources().handles == 0);
 }
 
+TEST_CASE("product_commands_reject_development_acceptance_without_side_effects") {
+  Directory directory;
+
+  for (const auto* option : {"--self-test", "--math-test"}) {
+    auto result = Dot::Core::runProcess({DOT_RUNTIME_EXECUTABLE, {option}, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 2);
+    CHECK(result->standardError.find("Usage: DotRuntime") != std::string::npos);
+  }
+
+  auto editor = command(directory,
+                        {"--document-test", DOT_SCRIPT_SDK_DIRECTORY, utf(directory.root)}, false);
+  CHECK(editor["error"]["code"] == "InvalidArgument");
+  CHECK(editor["error"]["message"].get<std::string>().starts_with("Usage: DotEditor"));
+  auto game = Dot::Core::runProcess({DOT_GAME_EXECUTABLE, {"--verify-native"}, directory.root});
+  REQUIRE(game);
+  CHECK(game->exitCode == 2);
+  CHECK(game->standardError.find("Usage: DotGame") != std::string::npos);
+  CHECK(std::filesystem::is_empty(directory.root));
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
+}
+
 TEST_CASE("editor_workspace_commands_validate_before_opening_native_resources") {
   Directory directory;
 

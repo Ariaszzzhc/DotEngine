@@ -5,6 +5,14 @@ Release enables NDEBUG; behavioral checks use doctest/CTest rather than assertio
 Native GPU/audio checks are serialized where required. Only arm64 macOS is locally
 validated; Windows/Linux implementation support is not cross-platform evidence.
 
+The development-only `DotRuntimeAcceptance` and `DotEditorAcceptance` executables
+own all subsystem acceptance dispatch and implementations under `tests/acceptance`.
+They exist in the build graph only with `BUILD_TESTING=ON`; they are not installed.
+The CTest case names, assertions and native services remain the same. Product CLI
+checks still invoke the actual DotRuntime/DotEditor/DotGame, and exported-game
+coverage starts the shipped player before the separate deterministic native driver
+checks the relocated package through the shared player lifecycle and callbacks.
+
 ## Dedicated component and SDK scene
 
 [Feature Lab](../acceptance/FeatureLab/README.md) is an ordinary editable native

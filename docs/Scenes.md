@@ -77,7 +77,7 @@ See `Physics.md` for the binding and failure contracts.
 }
 ```
 
-Run `DotRuntime --scene-file-test <existing-directory>` for save/load acceptance
+Run `DotRuntimeAcceptance --scene-file-test <existing-directory>` for save/load acceptance
 at `scenes/main.dotscene`. Renderable scenes also need a camera; the file codec
 permits scenes without one so editing and persistence can occur independently.
 
@@ -94,7 +94,7 @@ primary, independently of the camera. Multiple primary listeners fail loading
 the whole candidate scene. Missing/null audio fields remain valid in older files.
 No audio asset is opened or native voice/device created by component editing or
 scene loading; `Dot.Audio.SceneAudio` resolves them in an explicit binding step. See `Audio.md`
-for parameter/path contracts. Run `DotRuntime --scene-audio-test <existing-directory>`
+for parameter/path contracts. Run `DotRuntimeAcceptance --scene-audio-test <existing-directory>`
 for persistence, parent transforms, independent scene identity, and failed-load
 isolation at `scenes/audio.dotscene`.
 

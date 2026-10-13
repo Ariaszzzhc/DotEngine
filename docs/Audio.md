@@ -29,7 +29,7 @@ the same sample budget. `loadClip` uses root-relative FileSystem access and
 case-insensitive `.wav`, `.flac`, or `.mp3` extensions matching the container.
 Existing clips retain their samples when the source file is replaced.
 
-Run `DotRuntime --audio-clip-test <existing-directory>` for atomic WAV write/load,
+Run `DotRuntimeAcceptance --audio-clip-test <existing-directory>` for atomic WAV write/load,
 known PCM values, shared ownership/move semantics, and failure-path acceptance.
 Tests generate their own WAV, constant-zero FLAC, and four silent MP3 frames;
 no external media or encoder installation is required. The FLAC fixture follows
@@ -80,7 +80,7 @@ atomic combined snapshot. Allocation failures preserve the usable existing graph
 The vendor resource manager is disabled: FileSystem/Clip remain the sole asset
 loading path, avoiding hidden file access and unused loading workers.
 
-Run `DotRuntime --audio-mix-test` for summed PCM, pause/seek/master gain, stale IDs,
+Run `DotRuntimeAcceptance --audio-mix-test` for summed PCM, pause/seek/master gain, stale IDs,
 and complete backend allocation cleanup. This is an offline acceptance case;
 it does not establish playback-device operation or audible output.
 
@@ -121,7 +121,7 @@ fault the endpoint. Queries and stop remain available; recreate the Output to
 recover. Uninitialization joins callbacks before freeing the queue/context, even
 when the application hands quiescent destruction to another thread.
 
-`DotRuntime --audio-output-test` opens the real default endpoint, consumes actual
+`DotRuntimeAcceptance --audio-output-test` opens the real default endpoint, consumes actual
 mixed PCM, observes underruns, stops, and checks native allocation cleanup. It
 uses endpoint software volume zero so automated runs stay quiet. This proves
 native backend/callback delivery, rather than physical speaker audibility. Native
@@ -170,7 +170,7 @@ closure is idempotent. Faulted closure still returns its error; terminal statist
 remain readable. SDK device operations and control calls may block on their
 worker/backend completion and are not intended for a real-time callback.
 
-Run `DotRuntime --audio-playback-test` for two actual looping voices, PCM delivery
+Run `DotRuntimeAcceptance --audio-playback-test` for two actual looping voices, PCM delivery
 while the client waits 250 ms, endpoint clipping, and joined cleanup. Native tests
 also cover pause/seek/loop/pitch controls, retained/finished voices, moved/foreign
 handles, client thread checks, initialization failures, bounded allocation failure,
@@ -213,7 +213,7 @@ Playback forwards spatial/listener setters and queries through the same owned
 worker command path. Already-queued PCM keeps its previous content; controls
 apply to future blocks. Listener/source changes allocate no native resources.
 
-Run `DotRuntime --audio-spatial-test` for actual stereo PCM side changes, listener
+Run `DotRuntimeAcceptance --audio-spatial-test` for actual stereo PCM side changes, listener
 yaw, and stale-voice cleanup. Tests verify distance-model ratios/range clamping,
 listener translation/yaw/roll, source cones, real Doppler frequency changes,
 disable/seek/pitch transitions, independent mono-output listeners, normalized
@@ -248,7 +248,7 @@ destruction follows entity/subtree lifetime and retains no native audio resource
 
 Scene files preserve every source/listener property with strict nested fields and
 types. Pose remains in the entity transform; decoding builds a fresh independent
-scene. `DotRuntime --scene-audio-test <existing-directory>` verifies saved UTF-8
+scene. `DotRuntimeAcceptance --scene-audio-test <existing-directory>` verifies saved UTF-8
 asset descriptions, primary/hierarchy restoration, malformed-load isolation, and
 scoped subtree cleanup. Runtime binding is a separate explicit service below.
 
@@ -278,7 +278,7 @@ between individual edits. Queued PCM retains its previous content. Large batches
 can occupy the control worker long enough to cause observable native underruns;
 the bounded command path is not a real-time scheduling guarantee.
 
-Run `DotRuntime --audio-batch-test` for actual mixed PCM, failed-edit isolation,
+Run `DotRuntimeAcceptance --audio-batch-test` for actual mixed PCM, failed-edit isolation,
 full-capacity replacement, handle retirement, unchanged batch graph time, and
 cleanup. Unit/native tests additionally cover cursor continuity, optional play
 controls and finished restart, combined spatial transitions and stereo direction,
@@ -343,7 +343,7 @@ without writing the caller's buffer. Statistics expose cache ownership, mixer
 state and, in native mode, actual device/frame/fault totals. Queries and controls
 can remain useful after the source scene is destroyed because binding data is owned.
 
-Run `DotRuntime --scene-audio-play-test <existing-directory>` for saved-scene
+Run `DotRuntimeAcceptance --scene-audio-play-test <existing-directory>` for saved-scene
 loading, real WAV-backed left/right PCM, missing-file retention, and synchronized
 cleanup. Native tests use real CoreAudio at endpoint software gain zero and verify
 continuous frame delivery, failed-edit retention, failed initialization cleanup,

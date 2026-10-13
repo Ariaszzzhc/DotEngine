@@ -34,6 +34,6 @@ material files are never opened. Normal/UV/group data that the colored mesh cann
 retain is explicitly reported in the returned asset's `warnings` field. OBJ lines
 are limited to 1 MiB; malformed numbers cannot fall back to zero/default values.
 
-Run `DotRuntime --asset-test <existing-directory>` to save and reload a cube at
+Run `DotRuntimeAcceptance --asset-test <existing-directory>` to save and reload a cube at
 `assets/cube.dotmesh`. This acceptance case reports file/codec errors and returns
 a non-zero exit status when its checks fail.

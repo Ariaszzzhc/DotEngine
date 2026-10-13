@@ -52,7 +52,7 @@ for quiescent lifetime checks; it does not enumerate child-internal resources.
 Calls can run concurrently with independent outputs/directories. Descriptor, spawn
 attribute/action, process/thread/job, and inheritance-list ownership is RAII.
 
-Run `DotRuntime --process-test <fixture-executable> <existing-directory>` using
+Run `DotRuntimeAcceptance --process-test <fixture-executable> <existing-directory>` using
 `build/debug/bin/DotProcessFixture` (or Release) for actual status/stdin/stdout/
 stderr capture, output beyond pipe capacity, timeout and cleanup. Focused tests also
 cover literal/Unicode arguments and paths, binary output, combined/exact limits,

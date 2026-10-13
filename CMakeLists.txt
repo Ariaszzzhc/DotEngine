@@ -194,12 +194,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/Compiler.cppm
 )
 
-add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src/Runtime/PhysicsAcceptance.cpp
-    src/Runtime/AudioAcceptance.cpp src/Runtime/SceneAudioAcceptance.cpp
-    src/Runtime/ScriptAcceptance.cpp src/Runtime/ProcessAcceptance.cpp
-    src/Runtime/CompilerAcceptance.cpp src/Runtime/HostAcceptance.cpp src/Runtime/InstanceAcceptance.cpp
-    src/Runtime/ComponentsAcceptance.cpp src/Runtime/ReloadAcceptance.cpp
-    src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
+add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
 add_executable(DotGame src/Runtime/GameMain.cpp src/Runtime/ProjectPlayer.cpp)
@@ -211,7 +206,7 @@ endif()
 include(cmake/RuntimeKit.cmake)
 include(cmake/Examples.cmake)
 
-add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
+add_executable(DotEditor src/Editor/main.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 if(WIN32)
     set_target_properties(DotEditor PROPERTIES WIN32_EXECUTABLE TRUE)
