@@ -1913,3 +1913,21 @@ exclusive rename and preserves existing destinations.
   clang-format and diff whitespace checks pass. No toolchain environment changed.
   Manifest shape/count/size validation does not authenticate code or isolate hostile
   filesystem races. Windows/Linux remain unvalidated locally.
+
+
+### Precompiled game session foundation
+
+Added GameSession::createCompiled and a shared internal session preparation path.
+Precompiled sessions clone native scene values into fresh scope, retain owned ESM,
+require hotReload=false and borrow the resource root. Existing authoring factories
+continue using real compilation/live reload.
+
+- Two new focused cases and all 14 GameSession cases pass on arm64 macOS Debug
+  and Release/NDEBUG. They verify actual attached scripts, published input, rigid
+  body motion, offline PCM and stop hooks after deleting TypeScript sources;
+  hot-reload/moved-owner/missing-class rejection and VM/mixer cleanup on failed
+  preparation. Integrated export working-tree suites pass 743/743 in both builds.
+- Reviewed fresh scene ownership, borrowed asset lifetime, compiler/precompiled
+  branch invariants, setup failures/realm faults, native service destruction and
+  unchanged update/close semantics. Formatting and whitespace checks pass; no
+  sanitizer or environment override was introduced. Other platforms unvalidated.

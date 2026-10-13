@@ -140,3 +140,15 @@ published input, verifies real native presentation and changed rendered pixels,
 opens a muted real endpoint, and checks compiler/VM/audio ownership returns to
 baseline after explicit shutdown. This checks the endpoint opening and cleanup;
 the audio playback acceptance cases separately verify delivered PCM/frame counters.
+
+
+## Precompiled game sessions
+
+`GameSession::createCompiled` takes a validated description with hotReload=false,
+a native scene and an owned CompiledProgram. It clones the scene into a fresh
+scope and prepares the same input/script/physics/audio services without reading
+TypeScript or invoking a compiler. The session keeps compiled code alive; its
+borrowed asset files require a separate owner alive until session destruction.
+Invalid metadata, moved code and failed native/script setup return contextual
+errors and release partial service ownership. Start/update/close keep the normal
+session lifecycle and hook semantics.

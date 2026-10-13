@@ -194,8 +194,53 @@ namespace Dot::Project {
         return std::unexpected(files.error());
       }
 
+      return prepareSession(*files, std::move(*description), std::move(scene), config, &compiler,
+                            nullptr);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare project session: " + std::string(error.what()));
+    }
+  }
+
+  auto GameSession::createCompiled(const Core::FileSystem& assets, const Description& description,
+                                   const World::Scene& scene,
+                                   const Script::CompiledProgram& program,
+                                   const GameSessionConfig& config) -> Core::Result<GameSession> {
+    auto checked = validate(config);
+    auto metadata = validateDescription(description);
+    auto modules = program.modules();
+
+    if (!checked || !metadata || !modules) {
+      return std::unexpected(!checked    ? checked.error()
+                             : !metadata ? metadata.error()
+                                         : modules.error());
+    }
+
+    if (description.hotReload) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Compiled sessions require hotReload=false");
+    }
+
+    auto encoded = World::encodeScene(scene);
+
+    if (!encoded) {
+      return std::unexpected(encoded.error());
+    }
+
+    auto cloned = World::decodeScene(*encoded);
+    return cloned
+               ? prepareSession(assets, description, std::move(*cloned), config, nullptr, &program)
+               : std::unexpected(cloned.error());
+  }
+
+  auto GameSession::prepareSession(const Core::FileSystem& assets, Description description,
+                                   World::Scene scene, const GameSessionConfig& config,
+                                   const Script::TypeScriptCompiler* compiler,
+                                   const Script::CompiledProgram* precompiled)
+      -> Core::Result<GameSession> {
+    try {
       auto impl = std::make_unique<Impl>();
-      impl->m_description = std::move(*description);
+      impl->m_description = std::move(description);
       impl->m_audioMode = config.audioMode;
       impl->m_scene = std::make_shared<World::Scene>(std::move(scene));
       impl->m_identity = impl->m_scene->id();
@@ -220,9 +265,9 @@ namespace Dot::Project {
 
       impl->m_physics.emplace(std::move(*physics));
       auto audio = config.audioMode == SessionAudio::Playback
-                       ? Script::AudioSession::createPlayback(impl->m_scene, *files, config.audio,
+                       ? Script::AudioSession::createPlayback(impl->m_scene, assets, config.audio,
                                                               config.audioLimits)
-                       : Script::AudioSession::create(impl->m_scene, *files, config.audio.mixer,
+                       : Script::AudioSession::create(impl->m_scene, assets, config.audio.mixer,
                                                       config.audioLimits);
 
       if (!audio) {
@@ -246,7 +291,7 @@ namespace Dot::Project {
       if (impl->m_description.hotReload) {
         Script::LiveScriptsConfig liveConfig{
             std::move(scriptsConfig), impl->m_description.scriptsDirectory, config.pollInterval};
-        auto scripts = Script::LiveScripts::create(impl->m_scene, *files, compiler, liveConfig);
+        auto scripts = Script::LiveScripts::create(impl->m_scene, assets, *compiler, liveConfig);
 
         if (!scripts) {
           return std::unexpected(scripts.error());
@@ -254,7 +299,9 @@ namespace Dot::Project {
 
         impl->m_live.emplace(std::move(*scripts));
       } else {
-        auto program = compiler.compileProject(*files, impl->m_description.scriptsDirectory);
+        auto program = precompiled
+                           ? Core::Result<Script::CompiledProgram>{*precompiled}
+                           : compiler->compileProject(assets, impl->m_description.scriptsDirectory);
 
         if (!program) {
           return std::unexpected(program.error());
@@ -270,6 +317,10 @@ namespace Dot::Project {
 
         if (!prepared) {
           return std::unexpected(prepared.error());
+        }
+
+        if (prepared->realmFaulted) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Prepare script realm faulted");
         }
 
         if (!prepared->failures.empty()) {

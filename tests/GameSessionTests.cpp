@@ -417,3 +417,59 @@ TEST_CASE("game_session_clone_survives_source_replacement_and_factory_failure_cl
   CHECK_FALSE(GameSession::createFromScene(fixture.project, fixture.compiler(), original, invalid));
   CHECK(Dot::Script::compilerGenerations() == generations);
 }
+
+TEST_CASE("game_session_precompiled_pipeline_needs_no_typescript_or_compiler") {
+  Fixture fixture(false);
+  fixture.controller();
+  auto scene = fixture.project.loadStartup().value();
+  auto compiled = fixture.compiler().compileProject(fixture.project.files().value()).value();
+  auto published = compiled.publish(fixture.directory.files(), "published").value();
+  auto program = Dot::Script::CompiledProgram::loadPublished(published).value();
+  std::filesystem::remove_all(fixture.project.files()->root() / "scripts");
+  GameSessionConfig config;
+  config.physics.simulation.gravity = {};
+  auto session
+      = GameSession::createCompiled(fixture.project.files().value(),
+                                    fixture.project.description().value(), scene, program, config)
+            .value();
+  CHECK_FALSE(session.stats()->hotReload);
+  good(session.start());
+  REQUIRE(session.publish(held()));
+  good(session.fixedUpdate());
+  good(session.update(0.1));
+  CHECK(actor(session).transform.position.x > 0);
+  CHECK(actor(session).name == "update1play");
+  std::vector<float> pcm(128);
+  REQUIRE(session.renderAudio(pcm));
+  CHECK(std::ranges::any_of(pcm, [](float value) { return value > 0.1F; }));
+  good(session.close());
+  CHECK(actor(session).name == "stopped");
+}
+
+TEST_CASE("game_session_precompiled_validation_and_failed_preparation_release_resources") {
+  Fixture fixture;
+  auto scene = fixture.project.loadStartup().value();
+  auto program = fixture.compiler().compileProject(fixture.project.files().value()).value();
+  auto description = fixture.project.description().value();
+  CHECK_FALSE(
+      GameSession::createCompiled(fixture.project.files().value(), description, scene, program));
+  description.hotReload = false;
+  auto original = Dot::World::encodeScene(scene).value();
+  auto id = scene.entities()->at(1).id;
+  REQUIRE(scene.setScript(id, Dot::World::ScriptComponent{"missing.ts", "Missing"}));
+  const auto memory = Dot::Script::Runtime::backendMemory();
+  const auto mixer = Dot::Audio::Mixer::backendMemory();
+  CHECK_FALSE(
+      GameSession::createCompiled(fixture.project.files().value(), description, scene, program));
+  CHECK(Dot::Script::Runtime::backendMemory().bytes == memory.bytes);
+  CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixer.bytes);
+  auto moved = std::move(program);
+  scene = Dot::World::decodeScene(original).value();
+  CHECK_FALSE(
+      GameSession::createCompiled(fixture.project.files().value(), description, scene, program));
+  auto session
+      = GameSession::createCompiled(fixture.project.files().value(), description, scene, moved)
+            .value();
+  good(session.start());
+  good(session.close());
+}

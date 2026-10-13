@@ -9,6 +9,7 @@ module;
 export module Dot.Project.GameSession;
 
 import Dot.Core.Result;
+import Dot.Core.Files;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.Platform.Input;
@@ -62,6 +63,17 @@ export namespace Dot::Project {
                                               const World::Scene& scene,
                                               const GameSessionConfig& config = {})
         -> Core::Result<GameSession>;
+    /** Start-ready session from an owned compiled generation, without reading
+     * TypeScript or invoking a compiler. Description must disable hot reload;
+     * authoring is cloned, and asset-root files must outlive the session.
+     * 从拥有的编译代建立待启动会话，不读 TypeScript 也不调用编译器；描述须关闭热重载。
+     * 克隆编辑场景，资产根目录文件须比会话存活更久。 */
+    [[nodiscard]] static auto createCompiled(const Core::FileSystem& assets,
+                                             const Description& description,
+                                             const World::Scene& scene,
+                                             const Script::CompiledProgram& program,
+                                             const GameSessionConfig& config = {})
+        -> Core::Result<GameSession>;
     GameSession(const GameSession&) = delete;
     auto operator=(const GameSession&) -> GameSession& = delete;
     GameSession(GameSession&&) noexcept;
@@ -92,6 +104,12 @@ export namespace Dot::Project {
     [[nodiscard]] static auto prepare(const Project& project,
                                       const Script::TypeScriptCompiler& compiler,
                                       World::Scene scene, const GameSessionConfig& config)
+        -> Core::Result<GameSession>;
+    [[nodiscard]] static auto prepareSession(const Core::FileSystem& assets,
+                                             Description description, World::Scene scene,
+                                             const GameSessionConfig& config,
+                                             const Script::TypeScriptCompiler* compiler,
+                                             const Script::CompiledProgram* program)
         -> Core::Result<GameSession>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;
