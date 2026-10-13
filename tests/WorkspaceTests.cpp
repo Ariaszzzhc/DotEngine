@@ -379,3 +379,143 @@ TEST_CASE("workspace.save_close_conflict_stops_game_but_keeps_unsaved_editor_ope
   REQUIRE(fixture.project.files()->writeTextAtomic("scenes/main.dotscene", initialDisk));
   CHECK_FALSE(command(workspace, {{"command", "save-close"}})["running"].get<bool>());
 }
+
+TEST_CASE("workspace.resource_creation_nested_script_check_and_buffer_identity") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  const auto original = workspace.snapshot().value();
+  REQUIRE(
+      workspace.dispatch("{\"command\":\"create-directory\",\"path\":\"scripts/controllers\"}"));
+  REQUIRE(workspace.dispatch(
+      "{\"command\":\"create-script\",\"path\":\"scripts/controllers/player.ts\"}"));
+  REQUIRE(workspace.dispatch("{\"command\":\"check-scripts\"}"));
+  auto opened = Json::parse(workspace
+                                .dispatch("{\"command\":\"open-text\",\"path\":\"scripts/"
+                                          "controllers/player.ts\",\"discard\":false}")
+                                .value());
+  const auto first = opened["file"];
+  CHECK(first["text"].get<std::string>().find("../dot/engine.js") != std::string::npos);
+  REQUIRE(workspace.dispatch(Json{{"command", "replace-text"},
+                                  {"buffer", first["buffer"]},
+                                  {"revision", first["revision"]},
+                                  {"text", "export const draft=1;"}}
+                                 .dump()));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"check-scripts\"}"));
+  CHECK_FALSE(workspace.dispatch(
+      "{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}"));
+  opened = Json::parse(workspace
+                           .dispatch("{\"command\":\"open-text\",\"path\":\"scripts/controllers/"
+                                     "player.ts\",\"discard\":true}")
+                           .value());
+  CHECK(opened["file"]["buffer"] != first["buffer"]);
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "replace-text"},
+                                      {"buffer", first["buffer"]},
+                                      {"revision", "1"},
+                                      {"text", "stale write"}}
+                                     .dump()));
+  auto resources = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
+  CHECK(resources["file"]["text"] == first["text"]);
+  CHECK(workspace.snapshot().value() == original);
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"create-script\",\"path\":\"assets/fake.ts\"}"));
+  CHECK_FALSE(
+      workspace.dispatch("{\"command\":\"create-script\",\"path\":\"scripts/dot/fake.ts\"}"));
+}
+
+TEST_CASE("workspace.resource_draft_conflict_and_save_close_preserve_editor") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  auto file = Json::parse(
+      workspace
+          .dispatch("{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}")
+          .value())["file"];
+  const auto baseline = file["text"].get<std::string>();
+  REQUIRE(workspace.dispatch(Json{{"command", "replace-text"},
+                                  {"buffer", file["buffer"]},
+                                  {"revision", "1"},
+                                  {"text", "export const edited=1;"}}
+                                 .dump()));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"play\",\"revision\":\"1\"}"));
+  auto closed
+      = Json::parse(workspace.dispatch("{\"command\":\"close\",\"discard\":false}").value());
+  CHECK(closed["confirmation"] == true);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", "external"));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"save-close\",\"revision\":\"1\"}"));
+  auto status = Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value());
+  CHECK(status["workspace"]["running"] == true);
+  CHECK(status["workspace"]["file"]["dirty"] == true);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", baseline));
+  CHECK_FALSE(command(workspace, {{"command", "save-close"}})["running"].get<bool>());
+  CHECK(fixture.project.files()->readText("scripts/mover.ts").value() == "export const edited=1;");
+}
+
+TEST_CASE("workspace.saved_resource_mesh_refresh_changes_real_cached_gpu_geometry") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  const std::string triangle
+      = "v -0.8 -0.8 0\nv 0.8 -0.8 0\nv 0 0.8 0\nvn 0 0 1\nf 1//1 2//1 3//1\n";
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "create-text"}, {"path", "assets/shape.obj"}, {"text", triangle}}.dump()));
+  auto mesh = snapshot(workspace)["scene"]["entities"][1]["mesh"];
+  mesh["kind"] = "asset";
+  mesh["asset"] = "assets/shape.obj";
+  command(
+      workspace,
+      {{"command", "edit"},
+       {"operations",
+        Json::array(
+            {{{"op", "component"}, {"entity", "2"}, {"component", "mesh"}, {"value", mesh}}})}});
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  }
+
+  const auto before = workspace.captureViewport().value();
+  auto file = Json::parse(
+      workspace
+          .dispatch("{\"command\":\"open-text\",\"path\":\"assets/shape.obj\",\"discard\":false}")
+          .value())["file"];
+  const std::string smaller
+      = "v -0.2 -0.2 0\nv 0.2 -0.2 0\nv 0 0.2 0\nvn 0 0 1\nf 1//1 2//1 3//1\n";
+  REQUIRE(workspace.dispatch(Json{
+      {"command", "replace-text"}, {"buffer", file["buffer"]}, {"revision", "1"}, {"text", smaller}}
+                                 .dump()));
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "save-text"}, {"buffer", file["buffer"]}, {"revision", "2"}}.dump()));
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  CHECK(workspace.captureViewport()->pixels != before.pixels);
+}
+
+TEST_CASE("workspace.resource_import_readonly_sdk_and_strict_requests_preserve_state") {
+  Fixture fixture;
+  auto source = fixture.storage.files().value();
+  const std::string bytes("A\0B", 3);
+  REQUIRE(source.writeTextAtomic("input.bin", bytes));
+  auto workspace = fixture.open();
+  const auto utf = (source.root() / "input.bin").generic_u8string();
+  const std::string input(utf.begin(), utf.end());
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "import-resource"}, {"source", input}, {"path", "assets/owned.bin"}}
+          .dump()));
+  CHECK(fixture.project.files()->readText("assets/owned.bin").value() == bytes);
+  CHECK(source.readText("input.bin").value() == bytes);
+  auto opened = Json::parse(
+      workspace
+          .dispatch(
+              "{\"command\":\"open-text\",\"path\":\"scripts/dot/engine.ts\",\"discard\":false}")
+          .value());
+  CHECK(opened["file"]["readOnly"] == true);
+  auto file = opened["file"];
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "replace-text"},
+                                      {"buffer", file["buffer"]},
+                                      {"revision", "1"},
+                                      {"text", "SDK overwrite"}}
+                                     .dump()));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "save-text"}, {"buffer", file["buffer"]}, {"revision", "1"}}.dump()));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"resources\",\"extra\":0}"));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"create-script\",\"path\":\"scripts/foo.d.ts\"}"));
+  CHECK_FALSE(workspace.dispatch(
+      "{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":1}"));
+  auto after = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
+  CHECK(after["file"] == file);
+}

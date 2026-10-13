@@ -152,12 +152,13 @@ paths and do not implicitly generate assets/scripts.
 
 The toolbar provides Save, Undo, Redo, New entity and Delete; Cmd+S/Cmd+Z/
 Cmd+Shift+Z are used on macOS, Ctrl equivalents on Windows/Linux. Delete is guarded
-while text input is active. Native close/quit checks both document dirtiness and
-pending inspector changes, opening Save and close / Discard / Cancel confirmation.
+while text input is active. Native close/quit checks document dirtiness, pending inspector changes and
+resource file drafts, opening Save and close / Discard / Cancel confirmation.
 The viewport renders the actual game primary camera into a reusable GPU target;
 missing camera/assets display errors and can be recovered by editing/undo. Native
 renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
-resource/code authoring and export interfaces remain subsequent stages.
+resource/code authoring is provided through Resources and the code page; project
+export remains a subsequent stage.
 
 `send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
 It returns `queued:true` and an absolute `response` path, **not** applied success.
@@ -280,3 +281,119 @@ stop hooks and compiled generation release. Additional tests cover unsaved scene
 cloning, fixed timing/input bounds, hot reload, ordinary/realm errors, moves/source
 lifetime/thread/reentry, partial creation cleanup, factory failure/recovery,
 close/cancel/save while playing and save conflicts. Validation is on arm64 macOS.
+
+
+## Resources and script editing
+
+The Resources tab lists the actual assets and configured script directory in
+sorted project-relative order. Refresh rereads the bounded catalog; external
+changes do not automatically update the displayed catalog. Select a supported text
+file to open the code page, or use New script / Folder / Import to path. Import
+source is an explicit filesystem path; source bytes remain unchanged. New script
+creates an export named Behavior and computes its relative SDK import for nested
+folders. Attach it using the existing Script component inspector.
+
+The code page edits UTF-8 text, accepts tabs, supports Save file and native
+Cmd/Ctrl+S, and runs Check scripts against saved project files. Pending drafts must
+be saved/discarded before checking or starting Play. Saving source during Play
+feeds the existing TypeScript hot reload; save success does not claim the source
+compiles. Invalid compiled candidates keep old scripts running with diagnostics.
+OBJ saves/imports invalidate the scene mesh cache before the next render (the
+current implementation conservatively clears the cache after any resource write).
+SDK files remain visible/read-only. This stage provides one active text buffer;
+rename/delete, multiple buffers, syntax highlighting and completion are not claimed.
+
+The same operations are available through live workspace requests:
+
+```json
+{"command":"resources"}
+```
+
+This returns entries with path, byte-count string, directory/text/binary type and
+readOnly, plus the current file or null. File state includes path/text, a canonical
+nonzero buffer identity and revision, dirty and readOnly. Opening or reopening
+increments buffer identity, so requests from an older buffer cannot modify the
+new one even if its local revision is 1.
+
+```json
+{"command":"create-directory","path":"scripts/controllers"}
+```
+
+```json
+{"command":"create-script","path":"scripts/controllers/player.ts"}
+```
+
+```json
+{"command":"create-text","path":"assets/notes.txt","text":"Owned project notes"}
+```
+
+```json
+{"command":"import-resource","path":"assets/model.obj","source":"/absolute/source/model.obj"}
+```
+
+Directories are created one level at a time; parent directories must exist. Existing
+files/directories are never replaced by create/import. These operations write
+immediately and return the refreshed catalog; if refresh fails after writing, the
+error explicitly reports that creation committed.
+
+```json
+{"command":"open-text","path":"scripts/controllers/player.ts","discard":false}
+```
+
+Opening another/reopening file rejects pending changes unless discard=true is
+explicit. Unsupported/binary files cannot be opened as text. Supported extensions
+are .ts/.mts/.json/.md/.txt/.obj/.wgsl. Script templates require .ts/.mts rather than
+declaration files, and must be inside the configured script tree. There is no
+implicit code attachment or source compilation.
+
+```json
+{"command":"replace-text","buffer":"1","revision":"1","text":"export const score=1;"}
+```
+
+```json
+{"command":"save-text","buffer":"1","revision":"2"}
+```
+
+```json
+{"command":"close-text","buffer":"1","revision":"3","discard":false}
+```
+
+Replace changes only the in-memory draft; save compares exact on-disk baseline
+bytes before atomic replacement. Stale identity/revision, invalid UTF-8/NUL/size,
+SDK writes, external changes, missing files and changed project metadata fail
+without losing the draft. No-op replace/save preserve revision. Close rejects
+unsaved state unless explicitly discarded. Normal window close checks file drafts;
+Save and close saves both the scene and resource file, retaining the editor if a
+conflict occurs. Completed stop/apply/file saves are not rolled back if a later
+scene save fails. Destruction never implicitly saves drafts.
+
+```json
+{"command":"check-scripts"}
+```
+
+This actually compiles/types-checks the on-disk project using the packaged native
+compiler and releases the temporary generation after obtaining its result. It
+returns actual sourceFiles on success and contextual diagnostics on failure.
+Opening/editing/saving a file clears earlier check messages, avoiding a stale
+success label for changed source.
+
+Resource operations are restricted to assets and the configured scripts subtree.
+SDK protection also checks filesystem directory identity. Paths follow shared
+lexical [portable naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
+including Windows superscript device names, and reject symlinks/special files and
+ASCII case aliases/collisions. The limits are 1 MiB per editable text, 64 MiB per
+binary import, 8192 catalog/lookup entries and 64 levels by default. Native callers
+may lower limits; bounds are enforced before writes. Lexical validity does not
+promise every filesystem accepts the path. Callers serialize project filesystem
+changes: the baseline check plus replacement is not an OS compare-and-swap, hostile
+race isolation or crash-durability promise.
+
+Focused resource tests cover actual Unicode files/catalog, SDK protection,
+revision/no-op/conflict behavior, binary source preservation/import boundaries,
+invalid paths/text/metadata, symlinks/depth/capacity, moves/thread ownership and
+shared descriptor lifetime. Workspace tests additionally verify buffer identity,
+nested-template compilation, dirty close/recovery and actual cached-mesh GPU
+changes. Native acceptance opens the code page, uses actual Cmd/Ctrl+S to persist
+source while Play runs, then verifies faster real rigid-body motion from hot-reloaded
+TypeScript while authoring and native audio stay intact. Local validation remains
+arm64 macOS; Windows/Linux code is not locally validated.

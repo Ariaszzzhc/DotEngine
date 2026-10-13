@@ -10,6 +10,7 @@ module;
 #include <cstdio>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,10 +27,12 @@ import Dot.Core.Application;
 import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
+import Dot.Editor.Resources;
 import Dot.Script.Compiler;
 import Dot.Script.LiveScripts;
 import Dot.Platform.Input;
 import Dot.Core.Files;
+import Dot.Core.Paths;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
@@ -241,6 +244,16 @@ namespace Dot::Editor {
     std::optional<Document> m_document;
     std::optional<Project::Project> m_project;
     WorkspaceConfig m_config;
+    std::optional<ResourceStore> m_resources;
+    std::optional<TextDocument> m_text;
+    std::uint64_t m_buffer{};
+    Json m_catalog = Json::array();
+    std::string m_codeDraft;
+    std::string m_newPath;
+    std::string m_importSource;
+    bool m_showCode{};
+    bool m_assetRefresh{};
+    std::string m_checkMessage;
     std::optional<PlaySession> m_play;
     Platform::InputState m_gameInput;
     bool m_captureInput{};
@@ -385,13 +398,7 @@ namespace Dot::Editor {
       }
     }
 
-    auto startPlay() -> Core::Result<void> {
-      if (playing() || pendingInspector() || !m_application->running()) {
-        return Core::fail(
-            Core::ErrorCode::InvalidState,
-            "Play requires a running editor without pending inspector changes or an active game");
-      }
-
+    auto compiler() const -> Core::Result<Script::TypeScriptCompiler> {
       auto path = m_config.compiler.empty()
 #if defined(_WIN32)
                       ? resource("typescript-native/tsc.exe")
@@ -400,18 +407,109 @@ namespace Dot::Editor {
 #endif
                       : Core::Result<std::filesystem::path>{m_config.compiler};
 
-      if (!path) {
-        return std::unexpected(path.error());
+      return path ? Script::TypeScriptCompiler::create(*path) : std::unexpected(path.error());
+    }
+
+    auto pendingText() const -> bool {
+      if (!m_text) {
+        return false;
       }
 
-      auto compiler = Script::TypeScriptCompiler::create(*path);
+      const auto file = m_text->snapshot().value();
+      return file.dirty || m_codeDraft != file.text;
+    }
 
-      if (!compiler) {
-        return std::unexpected(compiler.error());
+    auto textStatus() const -> Json {
+      if (!m_text) {
+        return nullptr;
+      }
+
+      const auto file = m_text->snapshot().value();
+      return {{"buffer", std::to_string(m_buffer)},
+              {"path", file.path},
+              {"text", file.text},
+              {"revision", std::to_string(file.revision)},
+              {"dirty", pendingText()},
+              {"readOnly", file.readOnly}};
+    }
+
+    auto catalog() -> Core::Result<void> {
+      auto entries = m_resources->list();
+
+      if (!entries) {
+        return std::unexpected(entries.error());
+      }
+
+      Json candidate = Json::array();
+
+      for (const auto& entry : *entries) {
+        candidate.push_back({{"path", entry.path},
+                             {"bytes", std::to_string(entry.bytes)},
+                             {"type", entry.directory ? "directory"
+                                      : entry.text    ? "text"
+                                                      : "binary"},
+                             {"readOnly", entry.readOnly}});
+      }
+
+      m_catalog.swap(candidate);
+      return {};
+    }
+
+    auto saveText() -> Core::Result<void> {
+      if (!m_text) {
+        return Core::fail(Core::ErrorCode::InvalidState, "No resource text buffer");
+      }
+
+      auto file = m_text->snapshot().value();
+
+      if (m_codeDraft != file.text) {
+        auto replaced = m_text->replace(m_codeDraft, file.revision);
+
+        if (!replaced) {
+          return replaced;
+        }
+
+        file = m_text->snapshot().value();
+      }
+
+      auto saved = m_text->save(file.revision);
+
+      if (!saved) {
+        return saved;
+      }
+
+      m_assetRefresh = true;
+      m_checkMessage.clear();
+      auto refreshed = catalog();
+      return refreshed
+                 ? Core::Result<void>{}
+                 : Core::fail(refreshed.error().code, "Resource saved; catalog refresh failed: "
+                                                          + refreshed.error().message);
+    }
+
+    auto textRequest(const Json& request) -> Core::Result<void> {
+      if (!m_text || Codec::id(request.at("buffer")) != m_buffer
+          || Codec::id(request.at("revision")) != m_text->snapshot().value().revision) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Resource buffer/revision is stale");
+      }
+
+      return {};
+    }
+
+    auto startPlay() -> Core::Result<void> {
+      if (playing() || pendingInspector() || pendingText() || !m_application->running()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Play requires no pending inspector/file edits or active game");
+      }
+
+      auto tool = compiler();
+
+      if (!tool) {
+        return std::unexpected(tool.error());
       }
 
       auto created
-          = PlaySession::create(*m_project, *compiler, *m_document->scene().value(), m_config.play);
+          = PlaySession::create(*m_project, *tool, *m_document->scene().value(), m_config.play);
 
       if (!created) {
         return std::unexpected(created.error());
@@ -502,6 +600,184 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (command == "resources") {
+        Codec::requireFields(parsed, {"command"});
+        auto refreshed = catalog();
+
+        if (!refreshed) {
+          return std::unexpected(refreshed.error());
+        }
+
+        return Json{{"ok", true}, {"entries", m_catalog}, {"file", textStatus()}}.dump();
+      }
+
+      if (command == "create-directory" || command == "create-text" || command == "import-resource"
+          || command == "create-script") {
+        if (command == "create-directory") {
+          Codec::requireFields(parsed, {"command", "path"});
+        } else if (command == "create-script") {
+          Codec::requireFields(parsed, {"command", "path"});
+        } else if (command == "create-text") {
+          Codec::requireFields(parsed, {"command", "path", "text"});
+        } else {
+          Codec::requireFields(parsed, {"command", "path", "source"});
+        }
+
+        const auto name = parsed.at("path").get<std::string>();
+        Core::Result<void> result;
+
+        if (command == "create-directory") {
+          result = m_resources->createDirectory(name);
+        } else if (command == "create-script") {
+          const auto root = m_project->description().value().scriptsDirectory;
+          const auto target = std::filesystem::path(std::u8string(name.begin(), name.end()));
+
+          if (!Core::isPortableRelativePath(name) || !name.starts_with(root + "/")
+              || (target.extension() != ".ts" && target.extension() != ".mts")
+              || name.ends_with(".d.ts") || name.ends_with(".d.mts")) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "New script must be a portable .ts/.mts path inside the configured "
+                              "scripts directory");
+          }
+
+          const auto sdk
+              = std::filesystem::path(std::u8string(root.begin(), root.end())) / "dot/engine.js";
+          auto relative = sdk.lexically_relative(target.parent_path()).generic_u8string();
+          std::string import(relative.begin(), relative.end());
+
+          if (!import.starts_with(".")) {
+            import = "./" + import;
+          }
+
+          result = m_resources->createText(name, "import {ScriptComponent} from '" + import
+              + "';\n\nexport class Behavior extends ScriptComponent {\n  onUpdate(seconds: number): void {\n  }\n}\n");
+        } else if (command == "create-text") {
+          result = m_resources->createText(name, parsed.at("text").get<std::string>());
+        } else {
+          const auto source = parsed.at("source").get<std::string>();
+          result = m_resources->importFile(
+              std::filesystem::path(std::u8string(source.begin(), source.end())), name);
+        }
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        m_assetRefresh = true;
+        auto refreshed = catalog();
+
+        if (!refreshed) {
+          return Core::fail(
+              refreshed.error().code,
+              "Resource creation committed; catalog refresh failed: " + refreshed.error().message);
+        }
+
+        return Json{{"ok", true}, {"entries", m_catalog}, {"file", textStatus()}}.dump();
+      }
+
+      if (command == "open-text") {
+        Codec::requireFields(parsed, {"command", "path", "discard"});
+        const bool discard = parsed.at("discard").get<bool>();
+        const auto name = parsed.at("path").get<std::string>();
+
+        if (pendingText() && !discard) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Save or discard the current resource draft before opening another");
+        }
+
+        if (m_buffer == std::numeric_limits<std::uint64_t>::max() - 1) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Resource buffer identities exhausted");
+        }
+
+        auto opened = m_resources->openText(name);
+
+        if (!opened) {
+          return std::unexpected(opened.error());
+        }
+
+        auto draft = opened->snapshot().value().text;
+        m_text.emplace(std::move(*opened));
+        m_codeDraft.swap(draft);
+        m_checkMessage.clear();
+        ++m_buffer;
+        m_showCode = true;
+        captureInput(false);
+        return Json{{"ok", true}, {"file", textStatus()}}.dump();
+      }
+
+      if (command == "replace-text" || command == "save-text" || command == "close-text") {
+        if (command == "replace-text") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "text"});
+        } else if (command == "close-text") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "discard"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        }
+
+        auto current = textRequest(parsed);
+
+        if (!current) {
+          return std::unexpected(current.error());
+        }
+
+        if (command == "replace-text") {
+          auto text = parsed.at("text").get<std::string>();
+          auto replaced = m_text->replace(text, m_text->snapshot().value().revision);
+
+          if (!replaced) {
+            return std::unexpected(replaced.error());
+          }
+
+          m_codeDraft.swap(text);
+          m_checkMessage.clear();
+        } else if (command == "save-text") {
+          auto saved = saveText();
+
+          if (!saved) {
+            return std::unexpected(saved.error());
+          }
+        } else {
+          const bool discard = parsed.at("discard").get<bool>();
+
+          if (pendingText() && !discard) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Resource buffer has unsaved changes");
+          }
+
+          m_text.reset();
+          m_codeDraft.clear();
+          m_showCode = false;
+        }
+
+        return Json{{"ok", true}, {"file", textStatus()}}.dump();
+      }
+
+      if (command == "check-scripts") {
+        Codec::requireFields(parsed, {"command"});
+
+        if (pendingText()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Save or discard the current resource draft before checking on-disk scripts");
+        }
+
+        auto tool = compiler();
+
+        if (!tool) {
+          return std::unexpected(tool.error());
+        }
+
+        auto compiled = tool->compileProject(m_project->files().value(),
+                                             m_project->description().value().scriptsDirectory);
+
+        if (!compiled) {
+          m_checkMessage = compiled.error().message;
+          return std::unexpected(compiled.error());
+        }
+
+        m_checkMessage = "TypeScript checked successfully";
+        return Json{{"ok", true}, {"sourceFiles", compiled->stats().value().sourceFiles}}.dump();
+      }
+
       if (command == "save-close" || command == "cancel-close") {
         Codec::requireFields(parsed, {"command", "revision"});
 
@@ -525,6 +801,14 @@ namespace Dot::Editor {
 
         if (!applied) {
           return std::unexpected(applied.error());
+        }
+
+        if (pendingText()) {
+          auto savedText = saveText();
+
+          if (!savedText) {
+            return std::unexpected(savedText.error());
+          }
         }
 
         auto saved = execute(
@@ -565,6 +849,11 @@ namespace Dot::Editor {
         }
 
         captureInput(capture);
+
+        if (capture) {
+          m_showCode = false;
+        }
+
         return execute("{\"command\":\"inspect\"}");
       }
 
@@ -615,7 +904,7 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "discard"});
         const bool discard = parsed["discard"].get<bool>();
 
-        if ((m_document->stats()->dirty || pendingInspector()) && !discard) {
+        if ((m_document->stats()->dirty || pendingInspector() || pendingText()) && !discard) {
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
@@ -656,7 +945,8 @@ namespace Dot::Editor {
                                  {"propertiesText", m_propertiesText},
                                  {"propertiesInvalid", m_propertiesInvalid},
                                  {"play", playStatus()},
-                                 {"message", m_message}};
+                                 {"message", m_message},
+                                 {"file", textStatus()}};
         return response.dump();
       }
 
@@ -1035,6 +1325,7 @@ namespace Dot::Editor {
 
       /** Switch primary cameras as one atomic document/history operation.
        * 切换主相机作为一个原子文档/历史操作。 */
+
       if (!m_edit["camera"].is_null() && m_edit["camera"]["primary"] == true) {
         for (const auto& entity : m_snapshot["scene"]["entities"]) {
           if (entity["id"] != id && !entity["camera"].is_null()
@@ -1060,6 +1351,108 @@ namespace Dot::Editor {
       return applied ? Core::Result<void>{} : std::unexpected(*m_actionError);
     }
 
+    auto fileAction(Json request) -> bool {
+      if (m_text
+          && (request["command"] == "save-text" || request["command"] == "replace-text"
+              || request["command"] == "close-text")) {
+        request["buffer"] = std::to_string(m_buffer);
+        request["revision"] = std::to_string(m_text->snapshot().value().revision);
+      }
+
+      auto result = safeExecute(request.dump());
+      m_message = result ? "" : result.error().message;
+      return result.has_value();
+    }
+
+    auto resourcesPanel() -> void {
+      if (ImGui::Button("Refresh files")) {
+        fileAction({{"command", "resources"}});
+      }
+
+      ImGui::InputText("Path", &m_newPath);
+
+      if (ImGui::Button("New script")) {
+        if (fileAction({{"command", "create-script"}, {"path", m_newPath}})) {
+          fileAction({{"command", "open-text"}, {"path", m_newPath}, {"discard", false}});
+        }
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Folder")) {
+        fileAction({{"command", "create-directory"}, {"path", m_newPath}});
+      }
+
+      ImGui::InputText("Import source", &m_importSource);
+
+      if (ImGui::Button("Import to path")) {
+        fileAction(
+            {{"command", "import-resource"}, {"path", m_newPath}, {"source", m_importSource}});
+      }
+
+      ImGui::Separator();
+      const auto entries = m_catalog;
+
+      for (const auto& entry : entries) {
+        const auto name = entry["path"].get<std::string>();
+
+        if (entry["type"] == "text") {
+          if (ImGui::Selectable(name.c_str(), m_text && m_text->snapshot().value().path == name)) {
+            fileAction({{"command", "open-text"}, {"path", name}, {"discard", false}});
+          }
+        } else {
+          ImGui::TextWrapped("%s%s", entry["type"] == "directory" ? "[dir] " : "[asset] ",
+                             name.c_str());
+        }
+      }
+    }
+
+    auto codePanel() -> void {
+      if (!m_text) {
+        ImGui::TextWrapped("Open a text file from Resources.");
+        return;
+      }
+
+      const auto file = m_text->snapshot().value();
+      ImGui::TextUnformatted(file.path.c_str());
+      ImGui::BeginDisabled(file.readOnly);
+
+      if ((ImGui::Button("Save file")
+           || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+          && !file.readOnly) {
+        fileAction({{"command", "save-text"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+
+      if (ImGui::Button("Check scripts")) {
+        fileAction({{"command", "check-scripts"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Discard buffer")) {
+        fileAction({{"command", "close-text"}, {"discard", true}});
+        return;
+      }
+
+      if (!m_checkMessage.empty()) {
+        ImGui::TextWrapped("%s", m_checkMessage.c_str());
+      }
+
+      ImGui::TextUnformatted(file.readOnly   ? "SDK (read-only)"
+                             : pendingText() ? "Unsaved file"
+                                             : "File saved");
+      auto flags
+          = ImGuiInputTextFlags_AllowTabInput | (file.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
+
+      if (ImGui::InputTextMultiline("##source", &m_codeDraft, ImGui::GetContentRegionAvail(),
+                                    flags)) {
+        fileAction({{"command", "replace-text"}, {"text", m_codeDraft}});
+      }
+    }
+
     auto draw() -> Core::Result<void> {
       const auto stats = m_document->stats().value();
       auto* viewport = ImGui::GetMainViewport();
@@ -1069,9 +1462,10 @@ namespace Dot::Editor {
                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
                        | ImGuiWindowFlags_NoSavedSettings);
 
-      ImGui::BeginDisabled(playing());
+      ImGui::BeginDisabled(playing() || m_showCode);
 
-      if ((ImGui::Button("Save") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S)) && !playing()) {
+      if ((ImGui::Button("Save") || (!m_showCode && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S)))
+          && !playing() && !m_showCode) {
         if (applyInspector()) {
           action({{"command", "save"}});
         }
@@ -1081,7 +1475,7 @@ namespace Dot::Editor {
       ImGui::BeginDisabled(!stats.canUndo);
 
       if ((ImGui::Button("Undo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z)) && stats.canUndo
-          && !playing()) {
+          && !playing() && !m_showCode) {
         action({{"command", "undo"}});
       }
 
@@ -1090,14 +1484,14 @@ namespace Dot::Editor {
       ImGui::BeginDisabled(!stats.canRedo);
 
       if ((ImGui::Button("Redo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))
-          && stats.canRedo && !playing()) {
+          && stats.canRedo && !playing() && !m_showCode) {
         action({{"command", "redo"}});
       }
 
       ImGui::EndDisabled();
       ImGui::SameLine();
 
-      if (ImGui::Button("New entity") && !playing()) {
+      if (ImGui::Button("New entity") && !playing() && !m_showCode) {
         edit(Json::array({{{"op", "create"}, {"name", "Entity"}}}));
       }
 
@@ -1106,7 +1500,7 @@ namespace Dot::Editor {
 
       if ((ImGui::Button("Delete")
            || (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete)))
-          && m_document->stats()->selected && !playing()) {
+          && m_document->stats()->selected && !playing() && !m_showCode) {
         edit(Json::array({{{"op", "remove"},
                            {"entity", std::to_string(m_document->stats()->selected->value)}}}));
       }
@@ -1114,7 +1508,7 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      ImGui::BeginDisabled(!playing() && pendingInspector());
+      ImGui::BeginDisabled(!playing() && (pendingInspector() || pendingText()));
 
       if (ImGui::Button(playing() ? "Stop" : "Play")
           || ImGui::Shortcut(ImGuiKey_F5, ImGuiInputFlags_RouteGlobal)) {
@@ -1148,44 +1542,66 @@ namespace Dot::Editor {
 
       const auto available = ImGui::GetContentRegionAvail();
       ImGui::BeginChild("Scene", {220, available.y}, ImGuiChildFlags_Borders);
-      ImGui::TextUnformatted("Scene");
-      ImGui::Separator();
-      auto entities = m_snapshot["scene"]["entities"];
-      ImGui::BeginDisabled(playing());
-      tree(entities, nullptr);
-      ImGui::EndDisabled();
+
+      if (ImGui::BeginTabBar("Project panes")) {
+        if (ImGui::BeginTabItem("Scene")) {
+          auto entities = m_snapshot["scene"]["entities"];
+          ImGui::BeginDisabled(playing());
+          tree(entities, nullptr);
+          ImGui::EndDisabled();
+          ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Resources")) {
+          resourcesPanel();
+          ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+      }
+
       ImGui::EndChild();
       ImGui::SameLine();
       ImGui::BeginChild("Viewport", {std::max(100.F, available.x - 220 - 340 - 24), available.y},
                         ImGuiChildFlags_Borders);
-      ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
 
-      if (m_playError) {
-        ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
+      if (ImGui::Button(m_showCode ? "Show preview" : "Show code")) {
+        m_showCode = !m_showCode;
+        captureInput(false);
       }
 
-      if (!m_playDiagnostics.empty()) {
-        ImGui::TextWrapped(
-            "Play diagnostics: %s",
-            m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
-      }
-
-      m_viewOrigin = ImGui::GetCursorScreenPos();
-      const auto content = ImGui::GetContentRegionAvail();
-      m_viewWidth = std::max(1.F, content.x);
-      m_viewHeight = std::max(1.F, content.y);
-
-      if (m_previewReady && m_target) {
-        auto image = m_renderer->guiImage(*m_target, m_viewWidth, m_viewHeight);
-
-        if (!image) {
-          ImGui::EndChild();
-          ImGui::End();
-          return image;
-        }
+      if (m_showCode) {
+        codePanel();
       } else {
-        ImGui::TextWrapped(
-            "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
+        ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
+
+        if (m_playError) {
+          ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
+        }
+
+        if (!m_playDiagnostics.empty()) {
+          ImGui::TextWrapped(
+              "Play diagnostics: %s",
+              m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
+        }
+
+        m_viewOrigin = ImGui::GetCursorScreenPos();
+        const auto content = ImGui::GetContentRegionAvail();
+        m_viewWidth = std::max(1.F, content.x);
+        m_viewHeight = std::max(1.F, content.y);
+
+        if (m_previewReady && m_target) {
+          auto image = m_renderer->guiImage(*m_target, m_viewWidth, m_viewHeight);
+
+          if (!image) {
+            ImGui::EndChild();
+            ImGui::End();
+            return image;
+          }
+        } else {
+          ImGui::TextWrapped(
+              "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
+        }
       }
 
       ImGui::EndChild();
@@ -1240,7 +1656,8 @@ namespace Dot::Editor {
     auto callbacks() -> Core::LoopCallbacks {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
-        m_pendingClose = m_document->stats()->dirty || pendingInspector();
+        m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingText();
+
         if (!m_pendingClose) {
           auto stopped = stopPlay();
 
@@ -1306,6 +1723,16 @@ namespace Dot::Editor {
           }
         }
 
+        if (m_assetRefresh) {
+          auto cleared = m_drawing->clearCache();
+
+          if (!cleared) {
+            return cleared;
+          }
+
+          m_assetRefresh = false;
+        }
+
         auto ready = preview();
 
         if (!ready) {
@@ -1353,6 +1780,20 @@ namespace Dot::Editor {
       }
 
       impl->m_document.emplace(std::move(*document));
+      auto resources = ResourceStore::open(project);
+
+      if (!resources) {
+        return std::unexpected(resources.error());
+      }
+
+      impl->m_resources.emplace(std::move(*resources));
+      impl->m_newPath = project.description().value().scriptsDirectory + "/behavior.ts";
+      auto listed = impl->catalog();
+
+      if (!listed) {
+        return std::unexpected(listed.error());
+      }
+
       Core::ApplicationConfig application;
       application.window = {"DotEngine — " + project.description()->name,
                             config.width,

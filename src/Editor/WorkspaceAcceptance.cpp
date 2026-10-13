@@ -101,7 +101,7 @@ namespace Dot::Editor {
       return files.writeAtomic("assets/tone.wav", bytes);
     }
 
-    auto undoShortcut(Workspace& workspace) -> void {
+    auto commandShortcut(Workspace& workspace, SDL_Scancode command) -> void {
       int count = 0;
       auto** windows = SDL_GetWindows(&count);
       require(windows && count == 1, "Acceptance requires one native workspace window");
@@ -116,9 +116,8 @@ namespace Dot::Editor {
 #else
       const auto modifier = SDL_SCANCODE_LCTRL;
 #endif
-      for (const auto& [key, down] :
-           {std::pair{modifier, true}, std::pair{SDL_SCANCODE_Z, true},
-            std::pair{SDL_SCANCODE_Z, false}, std::pair{modifier, false}}) {
+      for (const auto& [key, down] : {std::pair{modifier, true}, std::pair{command, true},
+                                      std::pair{command, false}, std::pair{modifier, false}}) {
         SDL_Event event{};
         event.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
         event.key.windowID = window;
@@ -172,6 +171,7 @@ namespace Dot::Editor {
         require(Graphics::guiContexts() == contexts, "Failed opening leaked GUI context");
         WorkspaceConfig configuration;
         configuration.play.session.audio.output.volume = 0;
+        configuration.play.session.pollInterval = 0ms;
         auto source = checked(Workspace::open(project, configuration));
         control = checked(source.controlDirectory());
         auto workspace = std::move(source);
@@ -223,7 +223,7 @@ namespace Dot::Editor {
 
         // Activate GUI Undo through the platform's native command shortcut.
         // 通过平台原生命令快捷键激活 GUI 撤销。
-        undoShortcut(workspace);
+        commandShortcut(workspace, SDL_SCANCODE_Z);
         frame(workspace);
         const auto restored = checked(workspace.captureViewport());
         auto undoState = Json::parse(checked(workspace.snapshot()));
@@ -268,6 +268,43 @@ namespace Dot::Editor {
         auto status = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect\"}")));
         require(status["workspace"]["play"]["captureInput"] == false,
                 "Escape failed to release capture");
+        key(workspace, SDL_SCANCODE_D, false);
+        auto opened = Json::parse(checked(workspace.dispatch(
+            "{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}")));
+        auto file = opened["file"];
+        auto code = file["text"].get<std::string>();
+        const auto speed = code.find("?1.5:");
+        require(speed != std::string::npos, "Acceptance script speed marker");
+        code.replace(speed, 5, "?3:");
+        checked(workspace.dispatch(Json{
+            {"command", "replace-text"},
+            {"buffer", file["buffer"]},
+            {"revision", file["revision"]},
+            {"text", code}}.dump()));
+        commandShortcut(workspace, SDL_SCANCODE_S);
+        auto resources = Json::parse(checked(workspace.dispatch("{\"command\":\"resources\"}")));
+        require(resources["file"]["dirty"] == false, "Native code-page Cmd/Ctrl+S did not save");
+        require(project.files()->readText("scripts/mover.ts").value() == code,
+                "Code save did not persist bytes");
+        checked(workspace.dispatch("{\"command\":\"check-scripts\"}"));
+        const auto afterReload
+            = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect-play\"}")));
+        const auto x
+            = afterReload["scene"]["entities"][1]["transform"]["position"][0].get<double>();
+        checked(workspace.dispatch("{\"command\":\"capture-input\",\"capture\":true}"));
+        frame(workspace);
+        key(workspace, SDL_SCANCODE_D, true);
+
+        for (int tick = 0; tick < 20; ++tick) {
+          frame(workspace);
+        }
+
+        auto reloaded = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect-play\"}")));
+        require(
+            reloaded["scene"]["entities"][1]["transform"]["position"][0].get<double>() > x + 0.8,
+            "Saved source did not hot reload into faster real physics");
+        key(workspace, SDL_SCANCODE_ESCAPE, true);
+        key(workspace, SDL_SCANCODE_ESCAPE, false);
         key(workspace, SDL_SCANCODE_D, false);
         key(workspace, SDL_SCANCODE_F5, true);
         key(workspace, SDL_SCANCODE_F5, false);

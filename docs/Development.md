@@ -1839,3 +1839,52 @@ TextDocument owns a UTF-8 draft and exact disk baseline with local revisions.
   Formatting/whitespace checks pass. Caller-serialized checks/replacement are not
   OS compare-and-swap, hostile-race isolation or crash-durability guarantees. Other
   platforms remain unvalidated locally.
+
+
+### Workspace resource browser and script editing
+
+Added the Resources tab, single-buffer UTF-8 code page, nested Behavior script
+creation, directory creation/import, save/check/discard controls and shared live
+workspace commands. File drafts participate in close confirmation and save-close;
+resources may be edited while Play runs for real TypeScript hot reload.
+
+- macOS Debug and Release/NDEBUG each pass all 731 CTest cases (680 doctest cases,
+  51 executable checks). Four focused workspace cases cover nested-template real
+  compilation, draft/open/check protection and identities rejecting old-buffer
+  writes, scene snapshot preservation, file conflict/save-close repair, actual
+  saved OBJ changes invalidating cached geometry and changing GPU pixels, binary
+  import/source preservation, SDK read-only protection and strict command fields.
+- Extended native workspace acceptance opens the actual code page, modifies the
+  shared text buffer, receives native Cmd/Ctrl+S through SDL/ImGui and verifies
+  exact persisted source. The running native audio/physics game hot reloads that
+  source and its real rigid body moves faster from captured D input. It still
+  verifies authoring isolation, GPU pixel change/restoration and stop/generation
+  lifetime. Existing GPU/audio/project/script cases pass. Manual mouse/visual
+  review remains unavailable from the previously observed locked desktop; no
+  such result is claimed.
+- Resource commands expose actual catalogs and per-open buffer identities/local
+  revisions; creation/import write immediately, draft replacement does not.
+  Existing destinations/SDK writes/stale requests fail. Reopening requires explicit
+  discard when dirty. Save checks disk/metadata conflicts, retains drafts on failure
+  and refreshes the catalog; post-write refresh failures explicitly report committed
+  files. Source checks compile saved data and reject pending drafts rather than
+  labeling old code valid. Prior check messages clear on file changes.
+- Code creation computes relative SDK imports for nested .ts/.mts paths and creates
+  an export named Behavior; declarations/non-script paths are rejected. Source save
+  does not implicitly attach components or claim compilation succeeded. Ctrl/Cmd+S
+  belongs to the visible code page, scene shortcuts are inactive there, and game
+  capture switches back to preview. Scene cache clearing is deferred outside GUI
+  rendering callbacks after resource writes. File drafts and invalid widget edits
+  participate in close/play protection; completed earlier save-close actions are
+  not rolled back if a later save fails.
+- Reviewed service initialization before native resources, descriptor/buffer lifetime,
+  identity/revision and argument validation, SDK protection/import preservation,
+  pending draft guards, compiler diagnostics/generation cleanup, GUI action parity/
+  shortcut/capture behavior, save-close ordering, asset cache/GPU borrow lifetime,
+  formatting/blank-line/private-reference checks and actual native/Release evidence.
+  Release retains caller LLVM libc++/libunwind without LC_RPATH or sanitizer linkage;
+  no environment setting changed. Windows/Linux remain unvalidated locally.
+
+Remaining resource rename/delete, richer code editing, project export, expanded
+rendering, complete acceptance scenes and example game remain subsequent work.
+The full engine goal is still active and has not been marked complete.
