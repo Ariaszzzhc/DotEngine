@@ -77,6 +77,13 @@ export namespace Dot::Platform {
     RightAlt,
     LeftSuper,
     RightSuper,
+    Delete,
+    Insert,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    KeypadEnter,
     Count
   };
 

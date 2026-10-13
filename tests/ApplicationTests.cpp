@@ -22,6 +22,36 @@ import Dot.Platform.Window;
 using namespace Dot::Core;
 using namespace std::chrono_literals;
 
+TEST_CASE("application.close_request_can_be_deferred_and_errors_stop_dispatch") {
+  ApplicationConfig config;
+  config.window = {"Close test", 320, 240, true, true, false};
+  auto application = Application::create(config).value();
+  LoopCallbacks callbacks;
+  unsigned closes = 0;
+  unsigned renders = 0;
+  callbacks.acceptClose = [&]() -> Result<bool> {
+    ++closes;
+    return false;
+  };
+  callbacks.render = [&](const auto&) -> Result<void> {
+    ++renders;
+    return {};
+  };
+  REQUIRE(Dot::Platform::requestQuit());
+  REQUIRE(application.step(0ns, callbacks));
+  CHECK(application.running());
+  CHECK(closes == 1);
+  CHECK(renders == 1);
+  callbacks.acceptClose
+      = []() -> Result<bool> { return fail(ErrorCode::External, "close handler failed"); };
+  REQUIRE(Dot::Platform::requestQuit());
+  auto failed = application.step(0ns, callbacks);
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().message == "close handler failed");
+  CHECK_FALSE(application.running());
+  CHECK(renders == 1);
+}
+
 namespace {
   auto testConfig(bool pause = false) -> ApplicationConfig {
     ApplicationConfig config;

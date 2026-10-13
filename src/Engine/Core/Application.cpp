@@ -96,7 +96,16 @@ namespace Dot::Core {
         if (std::holds_alternative<Platform::Quit>(event.data)
             || (event.windowId == m_impl->window.id()
                 && std::holds_alternative<Platform::Close>(event.data))) {
-          stop();
+          auto accepted = callbacks.acceptClose ? callbacks.acceptClose() : Result<bool>{true};
+
+          if (!accepted) {
+            stop();
+            return std::unexpected(accepted.error());
+          }
+
+          if (*accepted) {
+            stop();
+          }
         }
 
         if (event.windowId == m_impl->window.id()) {

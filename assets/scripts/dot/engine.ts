@@ -25,7 +25,7 @@ export const keys = Object.freeze([
   'Space', 'Left', 'Right', 'Up', 'Down', 'F1', 'F2', 'F3',
   'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11',
   'F12', 'LeftControl', 'RightControl', 'LeftShift', 'RightShift', 'LeftAlt', 'RightAlt', 'LeftSuper',
-  'RightSuper'
+  'RightSuper', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'KeypadEnter'
 ] as const);
 
 export type Key = typeof keys[number];

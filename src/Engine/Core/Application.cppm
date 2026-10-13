@@ -42,6 +42,11 @@ export namespace Dot::Core {
      * Failure/stop prevents all later frame callbacks. 事件处理后、固定/逐帧更新前每帧
      * 调用一次，含暂停帧；在此发布输入，视图仅在本次调用有效，失败/停止阻止后续帧回调。 */
     std::function<Result<void>(const Platform::InputState&)> prepareFrame;
+    /** Return false to defer a native quit/close request, e.g. for an unsaved
+     * document dialog. Failure stops the loop; absent handler accepts closure.
+     * 对原生退出/关闭请求返回 false 以延后，例如未保存文档对话框；失败停止循环，
+     * 未提供处理器时接受关闭。 */
+    std::function<Result<bool>()> acceptClose;
   };
 
   /**

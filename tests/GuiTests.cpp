@@ -331,3 +331,29 @@ TEST_CASE("graphics.gui_pending_input_budget_is_explicit_and_recovers_after_fram
   REQUIRE(gpu.renderGui(rect, 96, 96));
   REQUIRE(gpu.guiEvent(text));
 }
+
+TEST_CASE("graphics.gui_navigation_keys_reach_exact_widget_keys") {
+  auto gpu = renderer();
+  REQUIRE(gpu.enableGui());
+  constexpr std::array mapping{std::pair{Dot::Platform::Key::Delete, ImGuiKey_Delete},
+                               std::pair{Dot::Platform::Key::Insert, ImGuiKey_Insert},
+                               std::pair{Dot::Platform::Key::Home, ImGuiKey_Home},
+                               std::pair{Dot::Platform::Key::End, ImGuiKey_End},
+                               std::pair{Dot::Platform::Key::PageUp, ImGuiKey_PageUp},
+                               std::pair{Dot::Platform::Key::PageDown, ImGuiKey_PageDown},
+                               std::pair{Dot::Platform::Key::KeypadEnter, ImGuiKey_KeypadEnter}};
+
+  for (const auto& [native, gui] : mapping) {
+    REQUIRE(gpu.guiEvent({0, 0, Dot::Platform::KeyChanged{native, true, false}}));
+  }
+
+  REQUIRE(gpu.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        for (const auto& [native, gui] : mapping) {
+          CHECK(ImGui::IsKeyDown(gui));
+        }
+
+        return {};
+      },
+      96, 96));
+}

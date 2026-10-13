@@ -613,7 +613,8 @@ NotFound through invoke; an entirely empty host registry exposes no dot:host mod
 
 The SDK exports frozen `keys` and `mouseButtons` name arrays, matching every
 supported native enum except Unknown/Count. Key names include A..Z, Digit0..9,
-Space/Enter/navigation keys, F1..F12 and left/right modifiers; mouse names are
+Space/Enter, arrows, Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter, F1..F12
+and left/right modifiers; mouse names are
 Left/Middle/Right/Back/Forward. Unsupported names, numbers, case changes and invalid
 argument shapes fail explicitly. Native callback arguments are bounded to 4096
 bytes/depth 8. Reads do not consume edges, motion, scroll or text. Fixed updates

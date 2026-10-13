@@ -1,6 +1,7 @@
 #include <SDL3/SDL.h>
 #include <doctest/doctest.h>
 
+#include <array>
 #include <expected>
 #include <optional>
 #include <string>
@@ -143,6 +144,40 @@ TEST_CASE("window.partial_initialization_is_cleaned_up") {
 TEST_CASE("platform.events_require_initialization") {
   CHECK_FALSE(pollEvents().has_value());
   CHECK_FALSE(requestQuit().has_value());
+}
+
+TEST_CASE("platform.editor_navigation_scancodes_preserve_press_release") {
+  auto window = Window::create(hiddenWindow()).value();
+  REQUIRE(pollEvents());
+  constexpr std::array mapping{std::pair{SDL_SCANCODE_DELETE, Key::Delete},
+                               std::pair{SDL_SCANCODE_INSERT, Key::Insert},
+                               std::pair{SDL_SCANCODE_HOME, Key::Home},
+                               std::pair{SDL_SCANCODE_END, Key::End},
+                               std::pair{SDL_SCANCODE_PAGEUP, Key::PageUp},
+                               std::pair{SDL_SCANCODE_PAGEDOWN, Key::PageDown},
+                               std::pair{SDL_SCANCODE_KP_ENTER, Key::KeypadEnter}};
+
+  for (const auto& [code, expected] : mapping) {
+    for (auto down : {true, false}) {
+      SDL_Event native{};
+      native.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+      native.key.windowID = window.id();
+      native.key.scancode = code;
+      native.key.down = down;
+      REQUIRE(SDL_PushEvent(&native));
+      auto events = pollEvents().value();
+      bool found = false;
+
+      for (const auto& event : events) {
+        if (const auto* key = std::get_if<KeyChanged>(&event.data)) {
+          found = found
+                  || (key->key == expected && key->down == down && event.windowId == window.id());
+        }
+      }
+
+      CHECK(found);
+    }
+  }
 }
 
 TEST_CASE("platform.translate_native_events") {

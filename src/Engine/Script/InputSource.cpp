@@ -96,7 +96,14 @@ namespace Dot::Script {
                                   std::pair{"LeftAlt", Key::LeftAlt},
                                   std::pair{"RightAlt", Key::RightAlt},
                                   std::pair{"LeftSuper", Key::LeftSuper},
-                                  std::pair{"RightSuper", Key::RightSuper}};
+                                  std::pair{"RightSuper", Key::RightSuper},
+                                  std::pair{"Delete", Key::Delete},
+                                  std::pair{"Insert", Key::Insert},
+                                  std::pair{"Home", Key::Home},
+                                  std::pair{"End", Key::End},
+                                  std::pair{"PageUp", Key::PageUp},
+                                  std::pair{"PageDown", Key::PageDown},
+                                  std::pair{"KeypadEnter", Key::KeypadEnter}};
 
     constexpr std::array buttonNames{
         std::pair{"Left", MouseButton::Left}, std::pair{"Middle", MouseButton::Middle},

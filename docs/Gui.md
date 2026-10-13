@@ -77,9 +77,9 @@ frame processing. A paste may therefore exceed the remaining pending budget even
 when it fits the per-event byte limit.
 Focus loss clears tracked modifiers. ImGui preserves native macOS Cmd/Ctrl shortcut
 semantics. Pointer units are native logical pixels. Native SDL polling, cursors,
-clipboard and IME placement remain in the official platform backend. Core's
-current key vocabulary is used; further navigation key coverage remains editor
-input work before the graphical editor is complete.
+clipboard and IME placement remain in the official platform backend. Core's key
+vocabulary includes Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter, with exact
+SDL, GUI and script SDK mappings.
 
 `DotEditor --gui-test <sdk-root> <existing-parent>` creates an owned temporary
 project and real native window. Tab/space events travel through SDL, Platform and

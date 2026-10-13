@@ -1603,3 +1603,20 @@ This enables the editor frontend; the complete project editor remains subsequent
 Remaining editor navigation keys/Unicode font packaging, graphical editor frontend/
 export tooling, expanded rendering, complete acceptance scenes and example game
 remain to be implemented.
+
+
+### Editor navigation input and deferred close
+
+Appended Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter without renumbering
+existing keys, with exact SDL, native input, GUI and TypeScript SDK mappings.
+Application close/quit can now be deferred by an expected<bool> handler; absent
+handlers retain normal closure and handler failures stop later frame callbacks.
+
+- Five focused cases pass on macOS Debug and Release/NDEBUG: native scancode
+  press/release, host edges, real compiled TypeScript names/readback, exact GUI
+  key states and deferred close/failure dispatch. Existing input/application
+  acceptance cases also pass. The final workspace working tree passes all 708
+  CTest cases in each configuration (657 doctest cases and 51 executable checks).
+- Reviewed preserved key values, complete constexpr host coverage, SDK/native
+  agreement, close ownership/event ordering and expected failure propagation.
+  Formatting/whitespace checks pass. Other platforms remain unvalidated locally.

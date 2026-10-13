@@ -204,6 +204,31 @@ export function missing(): string {
   CHECK(noHost->call(other, "missing").value().value() == "\"NotFound\"");
 }
 
+TEST_CASE("input_sdk_editor_navigation_names_typecheck_and_read_native_edges") {
+  Project project;
+  project.write(R"ts(
+import {input} from './dot/engine.js';
+import type {Key} from './dot/engine.js';
+const navigation: readonly Key[] = ['Delete','Insert','Home','End','PageUp','PageDown','KeypadEnter'];
+export function run(): string[] { return navigation.filter(key => input.key(key).pressed); }
+)ts");
+  auto program = project.compile();
+  auto publisher = input();
+  InputState native;
+
+  for (auto key : {Key::Delete, Key::Insert, Key::Home, Key::End, Key::PageUp, Key::PageDown,
+                   Key::KeypadEnter}) {
+    REQUIRE(native.consume({0, 0, KeyChanged{key, true, false}}));
+  }
+
+  REQUIRE(publisher.publish(native));
+  auto vm = Runtime::create(program.files().value(), {}, publisher.bindings().value()).value();
+  auto module = vm.loadModule("actor.js").value();
+  auto result = vm.call(module, "run").value().value();
+  CHECK(Json::parse(result)
+        == Json::array({"Delete", "Insert", "Home", "End", "PageUp", "PageDown", "KeypadEnter"}));
+}
+
 TEST_CASE("input_sdk_lifecycle_reads_share_edges_across_fixed_steps_and_use_next_published_frame") {
   Project project;
   project.write(actor());

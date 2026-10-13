@@ -65,6 +65,39 @@ TEST_CASE("input_host_before_publication_is_unavailable_and_methods_are_observat
   }
 }
 
+TEST_CASE("input_host_editor_navigation_keys_publish_exact_native_edges") {
+  auto input = source();
+  auto services = bindings(input);
+  InputState native;
+  const std::vector mapping{std::pair{"Delete", Key::Delete},
+                            std::pair{"Insert", Key::Insert},
+                            std::pair{"Home", Key::Home},
+                            std::pair{"End", Key::End},
+                            std::pair{"PageUp", Key::PageUp},
+                            std::pair{"PageDown", Key::PageDown},
+                            std::pair{"KeypadEnter", Key::KeypadEnter}};
+
+  for (const auto& [name, key] : mapping) {
+    REQUIRE(native.consume({0, 0, KeyChanged{key, true, false}}));
+  }
+
+  REQUIRE(input.publish(native));
+
+  for (const auto& [name, key] : mapping) {
+    const auto value = read(services, "input.key", Json::array({name}));
+    CHECK(value["down"] == true);
+    CHECK(value["pressed"] == true);
+    CHECK(value["released"] == false);
+    REQUIRE(native.consume({0, 0, KeyChanged{key, false, false}}));
+  }
+
+  REQUIRE(input.publish(native));
+
+  for (const auto& [name, key] : mapping) {
+    CHECK(read(services, "input.key", Json::array({name}))["released"] == true);
+  }
+}
+
 TEST_CASE("input_host_published_points_text_buttons_and_owned_snapshot_are_real_native_state") {
   InputState native(7);
   REQUIRE(native.consume({7, 0, KeyChanged{Key::A, true, false}}));

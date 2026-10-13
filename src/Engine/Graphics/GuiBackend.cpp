@@ -135,6 +135,20 @@ namespace Dot::Graphics::Detail {
           return {SDL_SCANCODE_LGUI, ImGuiKey_LeftSuper};
         case Key::RightSuper:
           return {SDL_SCANCODE_RGUI, ImGuiKey_RightSuper};
+        case Key::Delete:
+          return {SDL_SCANCODE_DELETE, ImGuiKey_Delete};
+        case Key::Insert:
+          return {SDL_SCANCODE_INSERT, ImGuiKey_Insert};
+        case Key::Home:
+          return {SDL_SCANCODE_HOME, ImGuiKey_Home};
+        case Key::End:
+          return {SDL_SCANCODE_END, ImGuiKey_End};
+        case Key::PageUp:
+          return {SDL_SCANCODE_PAGEUP, ImGuiKey_PageUp};
+        case Key::PageDown:
+          return {SDL_SCANCODE_PAGEDOWN, ImGuiKey_PageDown};
+        case Key::KeypadEnter:
+          return {SDL_SCANCODE_KP_ENTER, ImGuiKey_KeypadEnter};
         default:
           return {SDL_SCANCODE_UNKNOWN, ImGuiKey_None};
       }

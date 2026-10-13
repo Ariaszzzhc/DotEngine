@@ -62,6 +62,20 @@ namespace Dot::Platform {
           return Key::LeftSuper;
         case SDL_SCANCODE_RGUI:
           return Key::RightSuper;
+        case SDL_SCANCODE_DELETE:
+          return Key::Delete;
+        case SDL_SCANCODE_INSERT:
+          return Key::Insert;
+        case SDL_SCANCODE_HOME:
+          return Key::Home;
+        case SDL_SCANCODE_END:
+          return Key::End;
+        case SDL_SCANCODE_PAGEUP:
+          return Key::PageUp;
+        case SDL_SCANCODE_PAGEDOWN:
+          return Key::PageDown;
+        case SDL_SCANCODE_KP_ENTER:
+          return Key::KeypadEnter;
         default:
           return Key::Unknown;
       }
