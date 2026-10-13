@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Prism Relay | Enter start | WASD/arrows | P pause | R restart",
+  "startScene": "scenes/main.dotscene",
+  "scriptsDirectory": "scripts",
+  "window": {
+    "width": 1280,
+    "height": 800
+  },
+  "fixedHz": 60,
+  "hotReload": true
+}

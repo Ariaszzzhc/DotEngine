@@ -132,3 +132,8 @@ Additional tests cover malformed/mismatched kits, file sizes, extra files,
 symlinks/Finder metadata, executable permissions, moved owners, manifest changes,
 no overwrite, source preservation, failure after copying native files and GUI/CLI
 parity. Local validation is arm64 macOS; Windows/Linux remain unvalidated.
+
+
+The [Prism Relay example](Examples.md) is a complete ordinary project that can be
+edited, played and exported through these operations. Runtime window titles follow
+native scene names, allowing script-authored progress/status through the scene API.

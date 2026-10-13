@@ -2038,3 +2038,52 @@ implicitly saving or changing authoring revision/dirty state.
 - Standalone directory export is implemented. Native installers/release signing,
   fuller rendering/editor tools, comprehensive component/API acceptance scenes
   and a playable example game remain subsequent work. The overall goal is active.
+
+
+### Playable Prism Relay example
+
+Added an ordinary authored 3D project with 40 native entities, original crystal OBJ
+and synthesized PCM feedback assets, an attached player controller, eight visual
+crystal animations and bounded pure round rules. The game provides start, normalized
+WASD/arrow movement, eight pickups, three health points, timed hazard immunity,
+75-second deadline, pause, win/lose and complete restart. Native components retain
+scene, mesh, physics and audio responsibilities. Runtime titles follow scene names
+through the existing native window API, with unchanged-title writes skipped.
+
+- arm64 macOS Debug and Release/NDEBUG full suites pass 755/755 (703 doctest cases,
+  52 executable checks). Debug took 58.13 seconds, Release 23.12 seconds. After final
+  TypeScript formatting and additional configuration/outer-wall boundary assertions,
+  all six affected cases were rebuilt and pass in both configurations (9.55/3.46
+  seconds respectively). Engine/runtime implementation bodies were unchanged by
+  those final source-format and test-only edits.
+- Focused rules cases verify ready/start/pause, collection deduplication, health/
+  deadline defeat, victory, reset, owned snapshots, failed checkpoint restoration,
+  invalid ticks/targets and rejected speed/time/health configuration with a reusable
+  VM. Native Jolt gameplay completes the eight-crystal route, restores all pickups
+  and player pose, and stops against the authored outer wall. Other cases verify
+  hazard damage/immunity/pause/defeat and actual mixed PCM, plus migration of all
+  nine running components without changing scene identity or collected progress.
+- An initial hazard case exposed sleeping contact behavior: repeated stay events
+  do not continue indefinitely. The player now retains begin/stay/sleep contacts
+  until native end events, preserves that set through reload, and clears it on
+  restart. The corrected damage case passes; no substitute geometric pickup test
+  replaces the real physics events.
+- Native acceptance consumes actual SDL key events, presents the real window,
+  checks player motion/collection and changed GPU pixels, opens a real muted audio
+  endpoint and explicitly shuts down scripts/services. It exports the sample,
+  relocates it, deletes authoring data and launches the delivered player from a
+  different working directory. Actual 192x144 GPU readback was inspected; generated
+  preview data stays in build output. No manual mouse/desktop review is claimed.
+- Reviewed native versus script responsibilities, authored hierarchy/body scales,
+  timer/phase/ownership invariants, contact lifetime across sleep/end/reset/reload,
+  source authoring preservation, metadata/resource validity, stable window/renderer
+  borrows, expected title/backend errors, exclusive export and platform assumptions.
+  C++/TypeScript formatting and whitespace/private-reference checks pass. Strict
+  type-only/direct-module/standard-comparison imports were corrected before passing
+  builds; the configured LLVM environment remains unchanged. Windows/Linux are
+  implemented through existing native modules but unvalidated locally.
+- Builds generate the complete example plus current SDK under build/<preset>/examples.
+  That output is refreshed from the source template; users must copy it before
+  persistent authoring edits. The sample is playable and exportable, but dedicated
+  exhaustive component/API scenes, further editor usability and distribution work
+  remain subsequent stages. The full goal remains active.

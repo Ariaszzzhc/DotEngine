@@ -212,3 +212,22 @@ target_compile_definitions(DotExportTests PRIVATE
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
 add_dependencies(DotExportTests DotRuntimeKit)
 doctest_discover_tests(DotExportTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_executable(DotExampleTests main.cpp ExampleTests.cpp)
+target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotExampleTests PRIVATE
+    DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
+add_dependencies(DotExampleTests DotExamples)
+doctest_discover_tests(DotExampleTests PROPERTIES TIMEOUT 60 LABELS "unit")
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/example_acceptance")
+add_executable(DotExampleNativeTests main.cpp ExampleNativeTests.cpp)
+target_link_libraries(DotExampleNativeTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
+target_compile_definitions(DotExampleNativeTests PRIVATE
+    DOT_EXAMPLE_CAPTURE_ROOT="${CMAKE_CURRENT_BINARY_DIR}/example_acceptance"
+    DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
+    DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit")
+add_dependencies(DotExampleNativeTests DotExamples DotRuntimeKit)
+doctest_discover_tests(DotExampleNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)

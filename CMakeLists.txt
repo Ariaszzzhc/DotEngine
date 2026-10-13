@@ -205,6 +205,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(DotGame PRIVATE "LINKER:--disable-new-dtags")
 endif()
 include(cmake/RuntimeKit.cmake)
+include(cmake/Examples.cmake)
 
 add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp src/Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)

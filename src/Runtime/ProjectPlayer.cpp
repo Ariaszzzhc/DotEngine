@@ -108,6 +108,7 @@ namespace Dot::Runtime {
 
       std::optional<std::string> lastReloadError;
       std::size_t presentations = 0;
+      auto lastTitle = description->name;
       bool delayed = false;
       const auto dispatch
           = [&](Core::Result<Script::LiveScriptReport> report) -> Core::Result<void> {
@@ -171,6 +172,22 @@ namespace Dot::Runtime {
       callbacks.render = [&](const Core::FrameState& frame) -> Core::Result<void> {
         if (frame.dropped.count() > 0) {
           std::println(stderr, "Project fixed updates dropped {} ns", frame.dropped.count());
+        }
+
+        auto name = (*scene)->name();
+
+        if (!name) {
+          return std::unexpected(name.error());
+        }
+
+        if (*name != lastTitle) {
+          auto changed = application->window().setTitle(*name);
+
+          if (!changed) {
+            return changed;
+          }
+
+          lastTitle = std::move(*name);
         }
 
         return sceneRenderer->present(**scene).transform([&](auto result) {
