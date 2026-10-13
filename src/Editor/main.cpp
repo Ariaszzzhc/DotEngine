@@ -25,6 +25,7 @@ import Dot.Project.GamePackage;
 import Dot.Project.GameExport;
 import Dot.Editor.Document;
 import Dot.Editor.Workspace;
+import Dot.Editor.Home;
 import Dot.Core.Text;
 import Dot.World.SceneFiles;
 import Dot.Script.Compiler;
@@ -160,12 +161,93 @@ namespace {
                     {}});
     }
   }
+
+  auto home(std::size_t frames) -> int {
+    auto opened = Dot::Editor::Home::open();
+
+    if (!opened) {
+      return error(opened.error());
+    }
+
+    auto selector = std::move(*opened);
+    std::println("{}", Json{{"ok", true},
+                            {"kind", "project-home"},
+                            {"control", utf(selector.controlDirectory().value())}}
+                           .dump());
+    std::fflush(stdout);
+    auto run = selector.run(frames);
+
+    if (!run) {
+      return error(run.error());
+    }
+
+    auto selected = selector.selection();
+
+    if (!selected) {
+      return error(selected.error());
+    }
+
+    auto released = selector.releaseWindow();
+
+    if (!released) {
+      return error(released.error());
+    }
+
+    if (!selected->has_value()) {
+      return 0;
+    }
+
+    auto workspace = Dot::Editor::Workspace::open(**selected);
+
+    if (!workspace) {
+      return error({workspace.error().code,
+                    "Project is ready at " + utf((**selected).files()->root())
+                        + "; opening workspace failed: " + workspace.error().message,
+                    {}});
+    }
+
+    std::println("{}", Json{{"ok", true},
+                            {"kind", "workspace"},
+                            {"control", utf(workspace->controlDirectory().value())}}
+                           .dump());
+    std::fflush(stdout);
+    auto shown = workspace->run(frames);
+    return shown ? 0 : error(shown.error());
+  }
+
 }  // namespace
 
 /** Commands expose shared project operations for automation clients.
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 1 || ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "home")) {
+      std::size_t frames = 0;
+
+      if (argc == 3) {
+        const std::string_view value(argv[2]);
+        const auto count = std::from_chars(value.data(), value.data() + value.size(), frames);
+
+        if (value.empty() || count.ec != std::errc{} || count.ptr != value.data() + value.size()) {
+          return error({Dot::Core::ErrorCode::InvalidArgument, "Invalid home frame budget", {}});
+        }
+      }
+
+      return home(frames);
+    }
+
+    if (argc == 4 && std::string_view(argv[1]) == "project-action") {
+      auto resources = Dot::Core::FileSystem::open(path(argv[2]));
+      auto request = read(path(argv[3]), 1024 * 1024);
+
+      if (!resources || !request) {
+        return error(resources ? request.error() : resources.error());
+      }
+
+      auto project = Dot::Editor::performProjectAction(*resources, *request);
+      return project ? inspect(*project) : error(project.error());
+    }
+
     if ((argc == 6 && std::string_view(argv[1]) == "export-data")
         || (argc == 7 && std::string_view(argv[1]) == "export")) {
       auto project = Dot::Project::Project::open(path(argv[2]));
@@ -358,7 +440,8 @@ auto main(int argc, char** argv) -> int {
     }
 
     return error({Dot::Core::ErrorCode::InvalidArgument,
-                  "Usage: DotEditor export <root> <parent> <folder> <compiler> <kit> | export-data "
+                  "Usage: DotEditor [home [frames]] | project-action <resources> <request-file> | "
+                  "export <root> <parent> <folder> <compiler> <kit> | export-data "
                   "<root> <parent> <folder> <compiler> | open <root> "
                   "[frames] | send <control> <id> <request-file> | "
                   "--workspace-test <sdk> <parent> | create <parent> <folder> <name> <sdk> | "

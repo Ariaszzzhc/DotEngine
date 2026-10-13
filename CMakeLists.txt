@@ -81,6 +81,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/Resources.cpp
     src/Engine/Editor/Play.cpp
     src/Engine/Editor/Workspace.cpp
+    src/Engine/Editor/Home.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -156,6 +157,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/Resources.cppm
         src/Engine/Editor/Play.cppm
         src/Engine/Editor/Workspace.cppm
+        src/Engine/Editor/Home.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
@@ -214,6 +216,9 @@ target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohma
 add_dependencies(DotEditor DotRuntimeKit)
 add_custom_command(TARGET DotEditor POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/scripts" "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/examples/PrismRelay" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/PrismRelay"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_TYPESCRIPT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native/LICENSE.txt"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"

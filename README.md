@@ -20,12 +20,30 @@ build/debug/bin/DotRuntime --self-test
 The `release` configure, build, and test presets provide the optimized configuration.
 Executables use the `.exe` suffix on Windows.
 
+## Start the editor
+
+```sh
+build/debug/bin/DotEditor
+```
+
+Choose an existing project folder or create a new project from Camera and cube,
+Prism Relay, or Feature Lab. Creation validates the new project before publishing
+and preserves existing destinations. The native workspace provides scene editing,
+resource/script authoring, Play/hot reload and standalone native game export.
+
+See [project home and automation](docs/ProjectHome.md), [editor workflow](docs/Editor.md),
+[playable example](docs/Examples.md), [export](docs/Export.md) and
+[acceptance coverage](docs/Acceptance.md). Local validation is arm64 macOS;
+Windows/Linux implementation support is not a claim of local validation.
+
 ## Current state
 
 The core is a static library using C++ modules, with diagnostics, error results,
 fixed-step timing, and memory statistics. The runtime currently exercises these
 foundations, scoped events, and atomic project file access. Interfaces and
-implementation units are separate. The graphical runtime and editor are under development.
+implementation units are separate. The native editor opens a project home by default,
+with validated starter/game/laboratory creation, project editing, Play and native export.
+Further release/distribution refinement remains under development.
 
 SDL3 windowing, input, and the application loop are available. Run
 `build/debug/bin/DotRuntime --window-smoke` in a desktop session for a short native

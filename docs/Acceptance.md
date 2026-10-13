@@ -66,6 +66,7 @@ replace those suites or claim completion merely because a name appears in JSON.
 
 The CTest cases above are actual configured targets; their implementations and
 failure/lifetime tests remain the authoritative evidence. Planned features are
-listed separately in the development log. GUI creation/launch ergonomics and
-release signing/installer workflows remain further work, and no manual desktop,
-other-host or exhaustive driver coverage is claimed here.
+listed separately in the development log. The native project home additionally
+covers validated creation/open and mailbox handoff. Release signing/installer
+workflows and further editor refinement remain work; no manual desktop, other-host
+or exhaustive driver coverage is claimed here.

@@ -2154,3 +2154,36 @@ a separate private owner, so ordinary template paths cannot be deleted as scratc
   Formatting/whitespace/private-reference checks pass. Input changes require caller
   serialization; gameplay hooks, hostile races and crash durability are not promised.
   Windows/Linux code remains unvalidated locally. The LLVM environment is unchanged.
+
+
+### Native project home and automation handoff
+
+DotEditor now starts a native project home with no arguments. It opens an existing
+project or creates the starter, Prism Relay and Feature Lab through shared strict
+project actions. The packaged resources include the current SDK, compiler, font and
+source templates. Selection releases GUI/video before opening the editor workspace,
+while retaining the home response owner for the workspace lifetime.
+
+- arm64 macOS Debug and Release/NDEBUG each pass 766/766 CTest cases (713 doctest
+  cases, 53 executable checks). Seven focused template/home/CLI/startup checks pass.
+  Final full suites took 66.19/31.33 seconds. Native home tests render its GUI,
+  select a real game through the mailbox, read retained responses, release GUI
+  contexts, enter/render the workspace and run Play/Stop. All three project choices
+  compile and validate; real CLI arguments, no overwrite, malformed requests and
+  invalid budgets before native setup are covered.
+- Tests cover main-thread/dimension requirements, worker rejection, moves and GUI
+  lifetime, failed open retaining the home, session selection rejecting new submits,
+  and response-write failure after actual committed creation. Such failures remain
+  terminal across dispatch/step/run, retain explicit partial-effect context and do
+  not replay requests. The created project survives. An early failure test incorrectly
+  used an already-existing response directory, which was treated as completed; the
+  test now blocks the response parent to exercise the actual write failure. Existing
+  non-regular response entries are rejected explicitly.
+- Reviewed source-preserving project actions, SDK/compiler/template resolution,
+  shared GUI/CLI/live commands, strict fields/UTF-8/paths, exact ownership handoff,
+  event subscription/renderer/window order, thread/reentry RAII, bounded request
+  processing and error persistence. Formatting and whitespace checks pass. Direct
+  module/standard-type imports were corrected before passing builds. No environment
+  settings changed; Windows/Linux remain unvalidated locally and no manual desktop/
+  mouse result is claimed. Further editor/distribution refinement remains work;
+  the overall engine goal stays active.

@@ -63,3 +63,7 @@ acceptance scenes are separate work; this game is not evidence of full API cover
 
 The [Feature Lab acceptance project](Acceptance.md) separately inventories and
 executes the complete current runtime SDK against native components and services.
+
+
+The [project home](ProjectHome.md) can create a writable Prism Relay copy with the
+current SDK directly from its packaged template; manual copying is optional.

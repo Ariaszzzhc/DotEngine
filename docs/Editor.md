@@ -407,3 +407,10 @@ It requires stopped Play, the current revision and no pending inspector/file
 drafts. See [game data export](Export.md) for the format, CLI, limits and ownership.
 Native export includes the player and runtime libraries; data-only export remains
 available through the checkbox.
+
+
+## Starting and creating projects
+
+DotEditor now opens a [native project home](ProjectHome.md) by default, with open
+and validated creation from the starter project, Prism Relay and Feature Lab.
+The GUI, direct JSON command and live mailbox share the same project operations.

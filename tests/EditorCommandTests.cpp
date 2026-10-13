@@ -370,3 +370,28 @@ TEST_CASE("editor_commands_export_native_game_with_packaged_runtime") {
           false);
   CHECK_FALSE(std::filesystem::exists(directory.root / "bad-kit"));
 }
+
+TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
+  Directory directory;
+  auto files = directory.files();
+  auto resources = std::filesystem::path(DOT_EDITOR_EXECUTABLE).parent_path() / "resources";
+  auto request = Json{{"command", "create"},
+                      {"parent", utf(directory.root)},
+                      {"folder", "from-home"},
+                      {"name", "Home project"},
+                      {"template", "prism"}};
+  REQUIRE(files.writeTextAtomic("request.json", request.dump()));
+  auto result = command(directory, {"project-action", utf(resources), "request.json"});
+  CHECK(result["project"]["name"] == "Home project");
+  CHECK(result["scene"]["entities"].size() == 40);
+  command(directory, {"project-action", utf(resources), "request.json"}, false);
+
+  for (const auto* budget : {"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {
+    auto invalid = Dot::Core::runProcess({DOT_EDITOR_EXECUTABLE, {"home", budget}, directory.root});
+    REQUIRE(invalid);
+    CHECK(invalid->exitCode == 1);
+    auto error = Json::parse(invalid->standardOutput);
+    CHECK(error["error"]["code"] == "InvalidArgument");
+    CHECK(error["error"]["message"].get<std::string>().find("frame budget") != std::string::npos);
+  }
+}

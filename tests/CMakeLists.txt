@@ -258,3 +258,12 @@ target_compile_definitions(DotTemplateTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotTemplateTests DotExamples)
 doctest_discover_tests(DotTemplateTests PROPERTIES TIMEOUT 30 LABELS "unit")
+
+add_executable(DotHomeTests main.cpp HomeTests.cpp)
+target_link_libraries(DotHomeTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_compile_definitions(DotHomeTests PRIVATE DOT_EDITOR_RESOURCES="$<TARGET_FILE_DIR:DotEditor>/resources")
+add_dependencies(DotHomeTests DotEditor)
+doctest_discover_tests(DotHomeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+
+add_test(NAME editor.home_smoke COMMAND DotEditor home 3)
+set_tests_properties(editor.home_smoke PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
