@@ -2,6 +2,7 @@ module;
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
+#include <imgui.h>
 #include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
@@ -10,6 +11,7 @@ module;
 #include <cstring>
 #include <expected>
 #include <format>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -22,6 +24,9 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.Platform.Window;
 import Dot.Platform.System;
+import Dot.Platform.Events;
+
+#include "GuiBackend.hpp"
 
 namespace Dot::Graphics {
   namespace {
@@ -108,6 +113,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       std::atomic<std::uint64_t> meshes{};
       std::atomic<std::uint64_t> vertexBytes{};
       std::atomic<std::uint64_t> indexBytes{};
+      std::atomic<std::uint64_t> targets{};
+      std::atomic<std::uint64_t> targetBytes{};
       std::atomic<bool> failed{};
       std::mutex mutex;
       std::string failure;
@@ -244,6 +251,59 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     return m_impl->info;
   }
 
+  struct RenderTarget::Impl {
+    std::thread::id thread{std::this_thread::get_id()};
+    std::shared_ptr<Diagnostics> owner;
+    wgpu::Texture color;
+    wgpu::TextureView view;
+    wgpu::Texture depth;
+    wgpu::TextureView depthView;
+    TargetInfo info{};
+    std::uint64_t bytes{};
+    bool tracked{};
+    bool faulted{};
+
+    ~Impl() {
+      if (tracked) {
+        owner->targets.fetch_sub(1);
+        owner->targetBytes.fetch_sub(bytes);
+      }
+    }
+  };
+
+  RenderTarget::RenderTarget() noexcept = default;
+
+  RenderTarget::RenderTarget(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  RenderTarget::RenderTarget(const RenderTarget&) noexcept = default;
+
+  auto RenderTarget::operator=(const RenderTarget&) noexcept -> RenderTarget& = default;
+
+  RenderTarget::RenderTarget(RenderTarget&&) noexcept = default;
+
+  auto RenderTarget::operator=(RenderTarget&&) noexcept -> RenderTarget& = default;
+
+  RenderTarget::~RenderTarget() = default;
+
+  auto RenderTarget::info() const -> Core::Result<TargetInfo> {
+    if (!m_impl || !m_impl->owner->alive.load()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Render target has no live rendering device");
+    }
+
+    if (m_impl->thread != std::this_thread::get_id()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Render target query requires its creating thread");
+    }
+
+    if (m_impl->faulted || m_impl->owner->failed.load()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Render target or device faulted");
+    }
+
+    return m_impl->info;
+  }
+
   struct Renderer::Impl {
     std::thread::id thread{std::this_thread::get_id()};
     Platform::Window* window{};
@@ -264,8 +324,12 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     wgpu::RenderPipeline offscreenPipeline;
     wgpu::RenderPipeline surfacePipeline;
     wgpu::Buffer uniform;
+    std::unique_ptr<Detail::GuiBackend> gui;
+    std::vector<RenderTarget> guiTargets;
 
     ~Impl() {
+      guiTargets.clear();
+      gui.reset();
       diagnostics->alive.store(false);
 
       if (surface) {
@@ -285,13 +349,17 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       }
     }
 
-    auto check() const -> Core::Result<void> {
+    auto check(bool allowGui = false) const -> Core::Result<void> {
       if (thread != std::this_thread::get_id()) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Renderer operations require its creating thread");
       }
 
       std::scoped_lock lock(diagnostics->mutex);
+
+      if (!allowGui && gui && gui->building()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Renderer cannot reenter a GUI callback");
+      }
 
       if (diagnostics->failed.load()) {
         return Core::fail(Core::ErrorCode::Unavailable, diagnostics->failure.empty()
@@ -422,19 +490,26 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
     template <typename F>
     auto encodePass(const wgpu::Texture& target, std::uint32_t width, std::uint32_t height,
-                    Math::Vec4 clear, F&& draw) -> wgpu::CommandEncoder {
+                    Math::Vec4 clear, F&& draw, wgpu::TextureView depthView = {})
+        -> wgpu::CommandEncoder {
       wgpu::TextureDescriptor depthDescriptor;
       depthDescriptor.size = {width, height, 1};
       depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
       depthDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
-      auto depth = device.CreateTexture(&depthDescriptor);
+      wgpu::Texture depth;
+
+      if (!depthView) {
+        depth = device.CreateTexture(&depthDescriptor);
+        depthView = depth.CreateView();
+      }
+
       wgpu::RenderPassColorAttachment color;
       color.view = target.CreateView();
       color.loadOp = wgpu::LoadOp::Clear;
       color.storeOp = wgpu::StoreOp::Store;
       color.clearValue = {clear.x, clear.y, clear.z, clear.w};
       wgpu::RenderPassDepthStencilAttachment depthAttachment;
-      depthAttachment.view = depth.CreateView();
+      depthAttachment.view = depthView;
       depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
       depthAttachment.depthStoreOp = wgpu::StoreOp::Discard;
       depthAttachment.depthClearValue = 1;
@@ -519,40 +594,44 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
     auto encodeMeshes(const wgpu::Texture& target, const wgpu::RenderPipeline& renderPipeline,
                       std::span<const PreparedDraw> draws, std::uint32_t width,
-                      std::uint32_t height, Math::Vec4 clear) -> wgpu::CommandEncoder {
-      return encodePass(target, width, height, clear, [&](const wgpu::RenderPassEncoder& pass) {
-        for (const auto& draw : draws) {
-          /** Queue writes precede submission, so a shared uniform would overwrite
-           * earlier draws. The command buffer retains each independent buffer.
-           * 队列写入先于提交，共用 uniform 会覆盖较早对象的数据。
-           * 命令缓冲区会保留每个独立缓冲区的引用。
-           */
-          wgpu::BufferDescriptor descriptor;
-          descriptor.size = sizeof(UniformData);
-          descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-          auto drawUniform = device.CreateBuffer(&descriptor);
-          queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
-          wgpu::BindGroupEntry entry;
-          entry.binding = 0;
-          entry.buffer = drawUniform;
-          entry.size = sizeof(UniformData);
-          wgpu::BindGroupDescriptor groupDescriptor;
-          groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
-          groupDescriptor.entryCount = 1;
-          groupDescriptor.entries = &entry;
-          auto group = device.CreateBindGroup(&groupDescriptor);
-          pass.SetPipeline(renderPipeline);
-          pass.SetBindGroup(0, group);
-          pass.SetVertexBuffer(0, draw.mesh->vertices);
+                      std::uint32_t height, Math::Vec4 clear, wgpu::TextureView depthView = {})
+        -> wgpu::CommandEncoder {
+      return encodePass(
+          target, width, height, clear,
+          [&](const wgpu::RenderPassEncoder& pass) {
+            for (const auto& draw : draws) {
+              /** Queue writes precede submission, so a shared uniform would overwrite
+               * earlier draws. The command buffer retains each independent buffer.
+               * 队列写入先于提交，共用 uniform 会覆盖较早对象的数据。
+               * 命令缓冲区会保留每个独立缓冲区的引用。
+               */
+              wgpu::BufferDescriptor descriptor;
+              descriptor.size = sizeof(UniformData);
+              descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+              auto drawUniform = device.CreateBuffer(&descriptor);
+              queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
+              wgpu::BindGroupEntry entry;
+              entry.binding = 0;
+              entry.buffer = drawUniform;
+              entry.size = sizeof(UniformData);
+              wgpu::BindGroupDescriptor groupDescriptor;
+              groupDescriptor.layout = renderPipeline.GetBindGroupLayout(0);
+              groupDescriptor.entryCount = 1;
+              groupDescriptor.entries = &entry;
+              auto group = device.CreateBindGroup(&groupDescriptor);
+              pass.SetPipeline(renderPipeline);
+              pass.SetBindGroup(0, group);
+              pass.SetVertexBuffer(0, draw.mesh->vertices);
 
-          if (draw.mesh->info.indices != 0) {
-            pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
-            pass.DrawIndexed(draw.mesh->info.indices);
-          } else {
-            pass.Draw(draw.mesh->info.vertices);
-          }
-        }
-      });
+              if (draw.mesh->info.indices != 0) {
+                pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
+                pass.DrawIndexed(draw.mesh->info.indices);
+              } else {
+                pass.Draw(draw.mesh->info.vertices);
+              }
+            }
+          },
+          depthView);
     }
 
     auto configureSurface(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
@@ -577,7 +656,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     }
 
     template <typename F>
-    auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget)
+    auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget,
+                  wgpu::Texture existing = {},
+                  wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm)
         -> Core::Result<Image> {
       const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
 
@@ -589,9 +670,9 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       ErrorScope scope(instance, device);
       wgpu::TextureDescriptor descriptor;
       descriptor.size = {width, height, 1};
-      descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+      descriptor.format = format;
       descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
-      auto texture = device.CreateTexture(&descriptor);
+      auto texture = existing ? std::move(existing) : device.CreateTexture(&descriptor);
       auto encoder = encodeTarget(texture, width, height);
       const auto rowBytes = width * 4;
       const auto paddedRowBytes = (rowBytes + 255U) & ~255U;
@@ -654,7 +735,31 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       }
 
       buffer.Unmap();
+
+      if (format == wgpu::TextureFormat::BGRA8Unorm
+          || format == wgpu::TextureFormat::BGRA8UnormSrgb) {
+        for (std::size_t offset = 0; offset < image.pixels.size(); offset += 4) {
+          std::swap(image.pixels[offset], image.pixels[offset + 2]);
+        }
+      }
+
       return image;
+    }
+
+    auto encodeGui(const wgpu::Texture& target) -> wgpu::CommandEncoder {
+      wgpu::RenderPassColorAttachment color;
+      color.view = target.CreateView();
+      color.loadOp = wgpu::LoadOp::Clear;
+      color.storeOp = wgpu::StoreOp::Store;
+      color.clearValue = {0.04, 0.04, 0.04, 1};
+      wgpu::RenderPassDescriptor descriptor;
+      descriptor.colorAttachmentCount = 1;
+      descriptor.colorAttachments = &color;
+      auto encoder = device.CreateCommandEncoder();
+      auto pass = encoder.BeginRenderPass(&descriptor);
+      gui->encode(pass.Get());
+      pass.End();
+      return encoder;
     }
 
     template <typename F>
@@ -958,7 +1063,397 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
     }
 
     const auto& stats = *m_impl->diagnostics;
-    return ResourceStats{stats.meshes.load(), stats.vertexBytes.load(), stats.indexBytes.load()};
+    return ResourceStats{stats.meshes.load(), stats.vertexBytes.load(), stats.indexBytes.load(),
+                         stats.targets.load(), stats.targetBytes.load()};
+  }
+
+  auto Renderer::createTarget(std::uint32_t width, std::uint32_t height)
+      -> Core::Result<RenderTarget> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto maximum = std::min(maxReadbackDimension, m_impl->info.maxTextureDimension);
+
+    if (width == 0 || height == 0 || width > maximum || height > maximum) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Render target dimensions must be 1..4096 within device limits");
+    }
+
+    try {
+      const auto bytes = static_cast<std::uint64_t>(width) * height * 8;
+
+      if (m_impl->diagnostics->targets.load() >= 128
+          || m_impl->diagnostics->targetBytes.load() + bytes > 256 * 1024 * 1024) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Renderer target count/byte budget exhausted");
+      }
+
+      auto target = std::make_shared<RenderTarget::Impl>();
+      target->owner = m_impl->diagnostics;
+      target->info = {width, height, 0};
+      target->bytes = bytes;
+      ErrorScope scope(m_impl->instance, m_impl->device);
+      wgpu::TextureDescriptor descriptor;
+      descriptor.size = {width, height, 1};
+      descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding
+                         | wgpu::TextureUsage::CopySrc;
+      target->color = m_impl->device.CreateTexture(&descriptor);
+      target->view = target->color.CreateView();
+      descriptor.format = wgpu::TextureFormat::Depth24Plus;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+      target->depth = m_impl->device.CreateTexture(&descriptor);
+      target->depthView = target->depth.CreateView();
+      checked = scope.finish();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      if (!target->color || !target->view || !target->depth || !target->depthView) {
+        return Core::fail(Core::ErrorCode::External, "GPU render target allocation failed");
+      }
+
+      target->owner->targets.fetch_add(1);
+      target->owner->targetBytes.fetch_add(target->bytes);
+      target->tracked = true;
+      return RenderTarget(std::move(target));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Create render target: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::renderMeshesInto(RenderTarget& target, std::span<const MeshDraw> draws,
+                                  const Math::Mat4& viewProjection, Math::Vec4 clear)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!target.m_impl || target.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Render target belongs to another renderer or is empty");
+    }
+
+    auto info = target.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    if (info->frames == std::numeric_limits<std::uint64_t>::max() - 1) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Render target frame index exhausted");
+    }
+
+    auto prepared = m_impl->prepare(draws, viewProjection, clear);
+
+    if (!prepared) {
+      return std::unexpected(prepared.error());
+    }
+
+    ErrorScope scope(m_impl->instance, m_impl->device);
+    auto encoder = m_impl->encodeMeshes(target.m_impl->color, m_impl->offscreenPipeline, *prepared,
+                                        info->width, info->height, clear, target.m_impl->depthView);
+    auto commands = encoder.Finish();
+    m_impl->queue.Submit(1, &commands);
+    checked = scope.finish();
+
+    if (!checked) {
+      target.m_impl->faulted = true;
+      return checked;
+    }
+
+    ++target.m_impl->info.frames;
+    return {};
+  }
+
+  auto Renderer::readTarget(const RenderTarget& target) -> Core::Result<Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!target.m_impl || target.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Render target belongs to another renderer or is empty");
+    }
+
+    auto info = target.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    if (info->frames == 0) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Render target has no completed frame");
+    }
+
+    return m_impl->readback(
+        info->width, info->height,
+        [&](const auto&, auto, auto) { return m_impl->device.CreateCommandEncoder(); },
+        target.m_impl->color);
+  }
+
+  auto Renderer::enableGui(const GuiConfig& config) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!Platform::isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "GUI contexts require the process main thread");
+    }
+
+    if (m_impl->gui) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer GUI is already enabled");
+    }
+
+    const auto format = m_impl->surface ? m_impl->surfaceFormat : wgpu::TextureFormat::RGBA8Unorm;
+
+    if (format != wgpu::TextureFormat::RGBA8Unorm && format != wgpu::TextureFormat::BGRA8Unorm
+        && format != wgpu::TextureFormat::RGBA8UnormSrgb
+        && format != wgpu::TextureFormat::BGRA8UnormSrgb) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "GUI requires an RGBA8/BGRA8 rendering surface");
+    }
+
+    ErrorScope scope(m_impl->instance, m_impl->device);
+    auto gui = Detail::GuiBackend::create(
+        m_impl->device.Get(), static_cast<WGPUTextureFormat>(format),
+        m_impl->window ? static_cast<SDL_Window*>(m_impl->window->nativeHandle()) : nullptr,
+        config);
+    checked = scope.finish();
+
+    if (!gui) {
+      return std::unexpected(gui.error());
+    }
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->gui = std::move(*gui);
+    return {};
+  }
+
+  auto Renderer::closeGui() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    if (m_impl->thread != std::this_thread::get_id() || (m_impl->gui && m_impl->gui->building())) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "GUI shutdown requires owner thread without reentry");
+    }
+
+    m_impl->guiTargets.clear();
+    m_impl->gui.reset();
+    return {};
+  }
+
+  auto Renderer::guiEvent(const Platform::Event& event) -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->gui) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer GUI is not enabled");
+    }
+
+    return m_impl->gui->event(event);
+  }
+
+  auto Renderer::guiStats() const -> Core::Result<GuiStats> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->gui ? m_impl->gui->stats() : GuiStats{};
+  }
+
+  auto Renderer::guiImage(const RenderTarget& target, float width, float height)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!m_impl->gui || !m_impl->gui->building()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "GUI image requires an active GUI callback");
+    }
+
+    if (!target.m_impl || target.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "GUI image target belongs to another renderer or is empty");
+    }
+
+    auto info = target.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    if (info->frames == 0) {
+      return Core::fail(Core::ErrorCode::InvalidState, "GUI image target has no completed frame");
+    }
+
+    m_impl->guiTargets.push_back(target);
+    return m_impl->gui->image(target.m_impl->view.Get(), width, height);
+  }
+
+  auto Renderer::renderGui(const GuiDraw& draw, std::uint32_t width, std::uint32_t height,
+                           double seconds, float scale) -> Core::Result<Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto maximum = std::min(maxReadbackDimension, m_impl->info.maxTextureDimension);
+
+    if (!m_impl->gui || width == 0 || height == 0 || width > maximum || height > maximum) {
+      return Core::fail(
+          m_impl->gui ? Core::ErrorCode::InvalidArgument : Core::ErrorCode::InvalidState,
+          "GUI rendering requires an enabled context and dimensions within 1..4096/device limits");
+    }
+
+    m_impl->guiTargets.clear();
+
+    try {
+      ErrorScope scope(m_impl->instance, m_impl->device);
+      auto built = m_impl->gui->build(draw, width, height, seconds, scale, scale);
+      checked = scope.finish();
+
+      if (!built || !checked) {
+        m_impl->guiTargets.clear();
+        return std::unexpected(built ? checked.error() : built.error());
+      }
+
+      const auto format = m_impl->surface ? m_impl->surfaceFormat : wgpu::TextureFormat::RGBA8Unorm;
+      auto image = m_impl->readback(
+          width, height,
+          [&](const auto& texture, auto, auto) { return m_impl->encodeGui(texture); }, {}, format);
+      m_impl->guiTargets.clear();
+
+      if (image) {
+        m_impl->gui->submitted();
+      }
+
+      return image;
+    } catch (const std::exception& error) {
+      m_impl->guiTargets.clear();
+      return Core::fail(Core::ErrorCode::External, "Render GUI: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::presentGui(const GuiDraw& draw, double seconds) -> Core::Result<PresentResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->gui || !m_impl->surface) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "GUI presentation requires an enabled context and surface");
+    }
+
+    auto pixels = m_impl->window->pixelSize();
+    auto logical = m_impl->window->size();
+
+    if (!pixels || !logical) {
+      return std::unexpected(pixels ? logical.error() : pixels.error());
+    }
+
+    if (pixels->width <= 0 || pixels->height <= 0 || logical->width <= 0 || logical->height <= 0) {
+      return PresentResult::Deferred;
+    }
+
+    const auto width = static_cast<std::uint32_t>(pixels->width);
+    const auto height = static_cast<std::uint32_t>(pixels->height);
+
+    if (width > m_impl->info.maxTextureDimension || height > m_impl->info.maxTextureDimension) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "GUI surface exceeds texture limits");
+    }
+
+    m_impl->guiTargets.clear();
+
+    try {
+      ErrorScope scope(m_impl->instance, m_impl->device);
+      auto built = m_impl->gui->build(
+          draw, width, height, seconds,
+          static_cast<float>(pixels->width) / static_cast<float>(logical->width),
+          static_cast<float>(pixels->height) / static_cast<float>(logical->height));
+      checked = scope.finish();
+
+      if (!built || !checked) {
+        m_impl->guiTargets.clear();
+        return std::unexpected(built ? checked.error() : built.error());
+      }
+
+      auto presented = m_impl->presentFrame(
+          [&](const auto& texture, auto, auto) { return m_impl->encodeGui(texture); });
+      m_impl->guiTargets.clear();
+
+      if (presented && *presented == PresentResult::Presented) {
+        m_impl->gui->submitted();
+      }
+
+      return presented;
+    } catch (const std::exception& error) {
+      m_impl->guiTargets.clear();
+      return Core::fail(Core::ErrorCode::External, "Present GUI: " + std::string(error.what()));
+    }
   }
 
   auto Renderer::adapterInfo() const -> Core::Result<AdapterInfo> {

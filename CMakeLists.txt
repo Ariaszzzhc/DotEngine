@@ -76,6 +76,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/Input.cpp
     src/Engine/Math/Math.cpp
     src/Engine/Graphics/Renderer.cpp
+    src/Engine/Graphics/GuiBackend.cpp
     src/Engine/Graphics/SceneRenderer.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Mesh.cpp
@@ -175,7 +176,7 @@ add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src
     src/Runtime/AuthoringAcceptance.cpp src/Runtime/InputAcceptance.cpp src/Runtime/PhysicsScriptAcceptance.cpp src/Runtime/AudioScriptAcceptance.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
-add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp)
+add_executable(DotEditor src/Editor/main.cpp src/Editor/ProjectAcceptance.cpp src/Editor/DocumentAcceptance.cpp src/Editor/GuiAcceptance.cpp)
 target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 
 if(BUILD_TESTING)

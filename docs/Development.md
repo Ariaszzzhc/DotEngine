@@ -1550,3 +1550,56 @@ the intended Metal/D3D12/Vulkan backend feature selection.
 - Reviewed feature/dependency propagation, fixed baseline/source recipe reuse,
   engine-private vendor linkage and editor frontend linkage. Windows/Linux features
   are represented in code/manifests but remain uncompiled/unexecuted locally.
+
+### Persistent GPU previews and native GUI rendering
+
+Added shared persistent color/depth targets, direct scene-to-target rendering and
+an isolated native GUI layer using the official SDL3/WebGPU and FreeType backends.
+This enables the editor frontend; the complete project editor remains subsequent work.
+
+- macOS Debug and Release each pass all 695 CTest cases (645 doctest cases and
+  fifty executable checks). Eleven focused GPU cases verify actual target pixels/
+  readback equivalence, repeated drawing into shared targets, invalid-input frame
+  retention, count-budget exhaustion/retry, cross-device/thread/move/destruction
+  rules, actual GUI colors/DPI and direct GPU image sampling, retaining an image
+  whose caller releases it inside the callback, restoring foreign GUI contexts,
+  repeated initialization/close and context counts, callback failures/standard/
+  nonstandard exceptions/unbalanced stacks and subsequent recovery, renderer
+  reentry rejection, real button and UTF-8 text input, native Cmd/Ctrl/focus rules,
+  invalid/missing fonts, geometry/delta/size budgets and pending input saturation/
+  frame-processing recovery. The separate platform case covers pre-init main-thread
+  detection. Existing GPU/audio/application/script/project checks also pass.
+- RenderTarget owns reusable RGBA8/depth textures with shared content and scoped
+  device identity. SceneRenderer::renderInto performs no CPU readback/upload;
+  guiImage directly samples that view. Dimensions are 1..4096/device limits;
+  per-renderer targets cap at 128/256 MiB logical color+depth bytes. New targets
+  have no readable frame, invalid draws retain prior content and drawing submission
+  errors fault the target. Logical ownership counters include shared targets once;
+  driver/queued GPU allocations are separate. Readback handles row padding and
+  BGRA-to-RGBA conversion, retaining the public top-to-bottom RGBA contract.
+- GUI ownership is restricted to the process main thread. Context switches restore
+  prior context even after failure; private backends are destroyed before the device.
+  Explicit fonts are bounded/read/FreeType-validated without fallback. Callbacks
+  execute widgets within the owned context, cannot reenter renderer operations,
+  and may display targets retained through submission. ImGui recovery diagnostics
+  become expected errors, including unbalanced stacks, without claiming repaired
+  frames succeeded. Widget/native side effects are not rolled back. Geometry,
+  delta/DPI/image sizes, text transport and pending input are bounded; shutdown is
+  explicit/idempotent and no ini/log/detached viewport is created implicitly.
+- `DotEditor --gui-test <sdk> <parent>` creates an owned temporary project and real
+  Cocoa window, receives Tab/space through SDL/Platform/Application, activates an
+  actual ImGui button, edits Document and renders changed GPU preview pixels using
+  one reused target. It verifies Metal surface presentation and context release.
+  It is a GUI-layer acceptance, not the complete graphical editor product.
+- Reviewed native device/target/GUI/font ownership, partial initialization cleanup,
+  typed input/scaling/modifier/focus handling, context restoration and reentry,
+  callback diagnostics/recovery, target prevalidation/fault/lifetime/counters,
+  persistent depth reuse, color format/readback behavior and real native interaction.
+  Formatting/whitespace checks pass; module interfaces and implementations remain
+  separate, and vendor headers stay private. Release uses NDEBUG and caller LLVM
+  libc++/libunwind without LC_RPATH, sanitizers or environment changes. Windows/Linux
+  common implementations remain uncompiled/unexecuted locally.
+
+Remaining editor navigation keys/Unicode font packaging, graphical editor frontend/
+export tooling, expanded rendering, complete acceptance scenes and example game
+remain to be implemented.

@@ -21,6 +21,7 @@ import Dot.World.SceneFiles;
 import Dot.Script.Compiler;
 
 namespace Dot::Editor {
+  auto testGui(const std::filesystem::path& sdk, const std::filesystem::path& parent) -> int;
   auto testDocument(const std::filesystem::path& sdk, const std::filesystem::path& parent,
                     bool render) -> int;
   auto testProject(const std::filesystem::path& compiler, const std::filesystem::path& sdk,
@@ -155,6 +156,10 @@ namespace {
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 4 && std::string_view(argv[1]) == "--gui-test") {
+      return Dot::Editor::testGui(path(argv[2]), path(argv[3]));
+    }
+
     if (argc == 4 && std::string_view(argv[1]) == "document") {
       return document(path(argv[2]), path(argv[3]));
     }
@@ -253,6 +258,7 @@ auto main(int argc, char** argv) -> int {
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "
                   "check <root> <compiler> | document <root> <requests-json-file> | "
                   "--document[-render]-test <sdk> <parent> | "
+                  "--gui-test <sdk> <parent> | "
                   "--project[-render]-test <compiler> <sdk> <parent>",
                   {}});
   } catch (const std::exception& value) {

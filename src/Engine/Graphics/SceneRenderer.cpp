@@ -332,6 +332,40 @@ namespace Dot::Graphics {
     return m_impl->renderer->presentMeshes(frame->draws, frame->camera, clear);
   }
 
+  auto SceneRenderer::renderInto(const World::Scene& scene, RenderTarget& target, Math::Vec4 clear,
+                                 std::optional<World::EntityId> camera) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    checked = validateClear(clear);
+
+    if (!checked) {
+      return checked;
+    }
+
+    auto info = target.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    auto frame = m_impl->frame(
+        scene, static_cast<float>(info->width) / static_cast<float>(info->height), camera);
+
+    if (!frame) {
+      return std::unexpected(frame.error());
+    }
+
+    return m_impl->renderer->renderMeshesInto(target, frame->draws, frame->camera, clear);
+  }
+
   auto SceneRenderer::stats() const -> Core::Result<SceneRenderStats> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");

@@ -124,3 +124,8 @@ GPU pixels and exact restoration of the initial/edited frames on undo/redo.
 These acceptances test the authoring model and renderer, without claiming a
 graphical editor window. Local verification is on macOS; Windows/Linux common
 code remains uncompiled/unexecuted locally.
+
+The native [GUI rendering layer](Gui.md) adds persistent GPU previews, isolated
+ImGui/SDL3/WebGPU contexts and an actual window/widget/document acceptance. This
+enables the graphical editor frontend; it does not yet provide the complete
+project editing window.

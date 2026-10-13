@@ -53,6 +53,12 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto present(const World::Scene& scene, Math::Vec4 clear = {0, 0, 0, 1},
                                std::optional<World::EntityId> camera = std::nullopt)
         -> Core::Result<PresentResult>;
+    /** Render directly into a persistent GPU target without CPU readback.
+     * 直接绘制到持久 GPU 目标，不进行 CPU 读回。 */
+    [[nodiscard]] auto renderInto(const World::Scene& scene, RenderTarget& target,
+                                  Math::Vec4 clear = {0, 0, 0, 1},
+                                  std::optional<World::EntityId> camera = std::nullopt)
+        -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<SceneRenderStats>;
     [[nodiscard]] auto warnings() const -> Core::Result<std::vector<std::string>>;
     [[nodiscard]] auto clearCache() -> Core::Result<void>;
