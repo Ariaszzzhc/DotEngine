@@ -2187,3 +2187,20 @@ while retaining the home response owner for the workspace lifetime.
   settings changed; Windows/Linux remain unvalidated locally and no manual desktop/
   mouse result is claimed. Further editor/distribution refinement remains work;
   the overall engine goal stays active.
+
+
+### Deterministic synthetic native key holds
+
+The initial full home working-tree suite passed 765/766: Prism Relay native input
+acceptance moved only 0.25 units because actual SDL focus events released its
+synthetic held key while switching native windows. The acceptance helpers now
+queue focus gained followed by the intended key state before each driven frame,
+matching the established workspace acceptance approach. Runtime focus-loss/input
+release behavior is unchanged. Both Prism Relay and Feature Lab continue consuming
+real SDL events and checking native movement/GPU/audio rather than substituting
+an input service.
+
+Reviewed that the correction is limited to synthetic test setup and retains actual
+window events, body motion, gameplay, pixel and audio assertions. Final Debug and
+Release/NDEBUG full suites both pass 766/766; formatting/whitespace checks pass.
+No Windows/Linux or manual desktop result is claimed.

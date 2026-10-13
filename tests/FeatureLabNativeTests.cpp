@@ -95,6 +95,10 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
       });
     };
     auto key = [&](SDL_Scancode code, bool down) {
+      SDL_Event focus{};
+      focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+      focus.window.windowID = application.window().id();
+      REQUIRE(SDL_PushEvent(&focus));
       SDL_Event event{};
       event.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
       event.key.windowID = application.window().id();
@@ -105,6 +109,7 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     key(SDL_SCANCODE_D, true);
 
     for (int frame = 0; frame < 30; ++frame) {
+      key(SDL_SCANCODE_D, true);
       auto advanced = application.step(std::chrono::nanoseconds{16'666'667}, callbacks);
       REQUIRE_MESSAGE(advanced, (advanced ? "" : advanced.error().message));
     }

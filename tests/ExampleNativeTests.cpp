@@ -97,6 +97,10 @@ TEST_CASE("prism.native_window_gpu_input_audio_and_exported_player") {
       });
     };
     auto key = [&](SDL_Scancode code, bool down) {
+      SDL_Event focus{};
+      focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+      focus.window.windowID = application.window().id();
+      REQUIRE(SDL_PushEvent(&focus));
       SDL_Event event{};
       event.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
       event.key.windowID = application.window().id();
@@ -110,6 +114,7 @@ TEST_CASE("prism.native_window_gpu_input_audio_and_exported_player") {
     key(SDL_SCANCODE_D, true);
 
     for (int frame = 0; frame < 45; ++frame) {
+      key(SDL_SCANCODE_D, true);
       auto advanced = application.step(std::chrono::nanoseconds{16'666'667}, callbacks);
       REQUIRE_MESSAGE(advanced, (advanced ? "" : advanced.error().message));
     }
