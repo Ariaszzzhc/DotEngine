@@ -1711,3 +1711,30 @@ preparation and cleanup; normal project runtime still loads its startup scene.
 - Reviewed validated fresh scope/explicit ownership, shared preparation ordering,
   expected failure propagation, no persistence and partial backend/realm cleanup.
   Formatting/whitespace checks pass. Windows/Linux remain unvalidated locally.
+
+
+### Independent editor game timing and lifecycle
+
+Added Dot.Editor.Play with separate interface/implementation. PlaySession clones/
+starts GameSession, owns independent project-rate fixed timing and exposes actual
+reports/read-only runtime scene; it has no window or document dependency.
+
+- Five focused Play cases pass on macOS Debug and Release/NDEBUG: unsaved scene
+  isolation with real input-driven physics and stop hooks, 1..64 update-budget/
+  negative/zero/maximum-duration timing bounds and dropped catch-up time, invalid
+  input preserving frame/timing state, hot reload failure retaining old code and
+  successful source recovery, ordinary component reports versus terminal realm
+  timeout, moves/source destruction/worker rejection and repeated/failed creation
+  releasing generations. The native workspace acceptance consumes this service
+  with real audio, physics, input and GPU presentation. The final workspace working
+  tree passes all 720 CTest cases in each configuration.
+- Variable script/audio update runs once after fixed steps and caps delta at one
+  second. Counters describe attempted frames and completed fixed steps; reports
+  retain current-frame lifecycle/reload failures rather than claiming script
+  success from dispatch success. Stop closes services even after faults and retains
+  the final scene; destruction releases resources without substituting stop hooks.
+  No pause/single-step control is implemented by this stage.
+- Reviewed initialization/partial failure cleanup, independent timing/remainder/
+  catch-up bounds, input publication before effects, partial-update accounting,
+  report ownership, reentry/thread/move rules and explicit stop/resource lifetime.
+  Formatting/whitespace checks pass; other platforms remain unvalidated locally.
