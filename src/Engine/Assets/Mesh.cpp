@@ -8,7 +8,9 @@ module;
 #include <expected>
 #include <format>
 #include <limits>
+#include <map>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 #include "../Serialization/Json.hpp"
@@ -53,10 +55,9 @@ namespace Dot::Assets {
     auto decodeJson(std::string_view source) -> Core::Result<MeshAsset> {
       auto root = Serialization::Detail::parseJson(source);
 
-      if (!root.is_object() || root.size() != 3 || !root.contains("version")
-          || !root.contains("vertices") || !root.contains("indices")
-          || !root["version"].is_number_integer() || root["version"] != 1) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh version or fields");
+      if (!root.is_object() || root.size() != 2 || !root.contains("vertices")
+          || !root.contains("indices")) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh fields");
       }
 
       const auto& vertices = root["vertices"];
@@ -72,8 +73,9 @@ namespace Dot::Assets {
       asset.data.indices.reserve(indices.size());
 
       for (const auto& vertex : vertices) {
-        if (!vertex.is_object() || vertex.size() != 2 || !vertex.contains("position")
-            || !vertex.contains("color")) {
+        if (!vertex.is_object() || vertex.size() != 4 || !vertex.contains("position")
+            || !vertex.contains("color") || !vertex.contains("normal")
+            || !vertex.contains("texCoord")) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh vertex fields");
         }
 
@@ -88,8 +90,20 @@ namespace Dot::Assets {
           return std::unexpected(color.error());
         }
 
-        asset.data.vertices.push_back({{(*position)[0], (*position)[1], (*position)[2]},
-                                       {(*color)[0], (*color)[1], (*color)[2], (*color)[3]}});
+        Graphics::Vertex decoded{{(*position)[0], (*position)[1], (*position)[2]},
+                                 {(*color)[0], (*color)[1], (*color)[2], (*color)[3]}};
+
+        auto normal = components<3>(vertex["normal"]);
+        auto uv = components<2>(vertex["texCoord"]);
+
+        if (!normal || !uv) {
+          return std::unexpected(!normal ? normal.error() : uv.error());
+        }
+
+        decoded.normal = {(*normal)[0], (*normal)[1], (*normal)[2]};
+        decoded.texCoord = {(*uv)[0], (*uv)[1]};
+
+        asset.data.vertices.push_back(decoded);
       }
 
       for (const auto& index : indices) {
@@ -195,6 +209,8 @@ namespace Dot::Assets {
                               std::format("Invalid OBJ vector on line {}", lineNumber));
           }
 
+          std::array<float, 3> vector{};
+
           for (std::size_t index = 1; index < fields.size(); ++index) {
             auto value = objNumber(fields[index]);
 
@@ -202,9 +218,31 @@ namespace Dot::Assets {
               return std::unexpected(value.error());
             }
 
+            if (index <= 3) {
+              vector[index - 1] = *value;
+            }
+
+            if (command == "v" && count == 6 && index >= 4 && (*value < 0 || *value > 1)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "OBJ vertex colors must be in [0,1]");
+            }
+
+            if (command == "vt" && count == 3 && index == 3 && *value != 0) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "OBJ volumetric texture coordinates are unsupported");
+            }
+
             if (command == "v" && count == 4 && index == 4 && *value != 1) {
               return Core::fail(Core::ErrorCode::Unavailable,
                                 "Weighted OBJ positions are unsupported");
+            }
+          }
+
+          if (command == "vn") {
+            auto normal = Math::normalized(Math::Vec3{vector[0], vector[1], vector[2]});
+
+            if (!normal) {
+              return Core::fail(normal.error().code, "OBJ normal: " + normal.error().message);
             }
           }
 
@@ -311,11 +349,6 @@ namespace Dot::Assets {
             += "OBJ object/group names and smoothing groups are not retained by colored meshes.\n";
       }
 
-      if (!attributes.normals.empty() || !attributes.texcoords.empty()) {
-        asset.warnings
-            += "OBJ normals and texture coordinates are not retained by colored meshes.\n";
-      }
-
       asset.data.vertices.reserve(count);
 
       for (std::size_t vertex = 0; vertex < count; ++vertex) {
@@ -326,6 +359,10 @@ namespace Dot::Assets {
              {attributes.colors[offset], attributes.colors[offset + 1],
               attributes.colors[offset + 2], 1}});
       }
+
+      auto positions = std::move(asset.data.vertices);
+      asset.data.vertices.clear();
+      std::map<std::tuple<int, int, int>, std::uint32_t> corners;
 
       for (const auto& shape : reader.GetShapes()) {
         if (!shape.lines.indices.empty() || !shape.points.indices.empty()) {
@@ -349,7 +386,44 @@ namespace Dot::Assets {
                               "OBJ attribute index exceeds its array");
           }
 
-          asset.data.indices.push_back(static_cast<std::uint32_t>(index.vertex_index));
+          std::uint32_t mapped{};
+          const auto key = std::tuple{index.vertex_index, index.normal_index, index.texcoord_index};
+          const auto existing = corners.find(key);
+
+          if (existing != corners.end()) {
+            mapped = existing->second;
+          } else {
+            if (asset.data.vertices.size() >= 1'000'000) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "OBJ surface seams exceed one million vertices");
+            }
+
+            auto vertex = positions[static_cast<std::size_t>(index.vertex_index)];
+
+            if (index.normal_index >= 0) {
+              const auto offset = static_cast<std::size_t>(index.normal_index) * 3;
+              auto normal = Math::normalized(Math::Vec3{attributes.normals[offset],
+                                                        attributes.normals[offset + 1],
+                                                        attributes.normals[offset + 2]});
+
+              if (!normal) {
+                return Core::fail(normal.error().code, "OBJ normal: " + normal.error().message);
+              }
+
+              vertex.normal = *normal;
+            }
+
+            if (index.texcoord_index >= 0) {
+              const auto offset = static_cast<std::size_t>(index.texcoord_index) * 2;
+              vertex.texCoord = {attributes.texcoords[offset], attributes.texcoords[offset + 1]};
+            }
+
+            mapped = static_cast<std::uint32_t>(asset.data.vertices.size());
+            corners.emplace(key, mapped);
+            asset.data.vertices.push_back(vertex);
+          }
+
+          asset.data.indices.push_back(mapped);
         }
       }
 
@@ -425,10 +499,12 @@ namespace Dot::Assets {
     for (const auto& vertex : mesh.vertices) {
       vertices.push_back(
           {{"position", {vertex.position.x, vertex.position.y, vertex.position.z}},
-           {"color", {vertex.color.x, vertex.color.y, vertex.color.z, vertex.color.w}}});
+           {"color", {vertex.color.x, vertex.color.y, vertex.color.z, vertex.color.w}},
+           {"normal", {vertex.normal.x, vertex.normal.y, vertex.normal.z}},
+           {"texCoord", {vertex.texCoord.x, vertex.texCoord.y}}});
     }
 
-    Json root{{"version", 1}, {"vertices", std::move(vertices)}, {"indices", mesh.indices}};
+    Json root{{"vertices", std::move(vertices)}, {"indices", mesh.indices}};
     auto encoded = root.dump(2) + '\n';
 
     if (encoded.size() > maxFileBytes) {

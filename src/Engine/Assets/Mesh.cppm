@@ -18,13 +18,14 @@ export namespace Dot::Assets {
     std::string warnings;
   };
 
-  /** Decode at most 64 MiB. DotMesh is a strict versioned JSON document. OBJ
-   * imports geometry and vertex colors; materials and free-form geometry are
-   * rejected. Normal/UV/group loss is reported in warnings. All shapes merge into
-   * one colored mesh. No referenced files load.
-   * 解码最多 64 MiB；DotMesh 使用严格的带版本 JSON 格式。
-   * OBJ 导入几何与顶点颜色，拒绝材质和自由曲面；丢弃法线/UV/分组时报告警告。
-   * 所有形状合并为一个彩色网格。
+  /** Decode at most 64 MiB. DotMesh is a strict JSON document. OBJ
+   * imports geometry, colors, authored normals and 2D UVs, splitting attribute
+   * seams. Normals are normalized; zero authored normals fail. Missing normals
+   * remain explicitly absent. Group metadata loss is reported; materials,
+   * volumetric UVs and free-form geometry are rejected. No referenced files load.
+   * 解码最多 64 MiB；DotMesh 使用严格 JSON 格式。
+   * OBJ 导入几何、颜色、作者法线及二维 UV，拆分属性接缝；法线归一化，零作者法线
+   * 失败，缺失法线明确保留为缺失。分组元数据丢失报告警告，拒绝材质、体积 UV 和自由曲面。
    * 不加载引用的外部文件。
    */
   [[nodiscard]] auto decodeMesh(std::string_view source, MeshFormat format)

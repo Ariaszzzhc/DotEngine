@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <cmath>
 #include <expected>
+#include <string>
 
 module Dot.Graphics.Geometry;
 
@@ -26,12 +27,18 @@ namespace Dot::Graphics {
 
     for (const auto& vertex : mesh.vertices) {
       const auto color = vertex.color;
+      const auto normalLength
+          = std::hypot(static_cast<double>(vertex.normal.x), static_cast<double>(vertex.normal.y),
+                       static_cast<double>(vertex.normal.z));
 
       if (!Math::isFinite(vertex.position) || !Math::isFinite(color) || color.x < 0 || color.x > 1
-          || color.y < 0 || color.y > 1 || color.z < 0 || color.z > 1 || color.w < 0
-          || color.w > 1) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Mesh requires finite positions and colors in [0,1]");
+          || color.y < 0 || color.y > 1 || color.z < 0 || color.z > 1 || color.w < 0 || color.w > 1
+          || !Math::isFinite(vertex.normal)
+          || (normalLength != 0 && std::abs(normalLength - 1) > 1e-4)
+          || !std::isfinite(vertex.texCoord.x) || !std::isfinite(vertex.texCoord.y)) {
+        return Core::fail(
+            Core::ErrorCode::InvalidArgument,
+            "Mesh requires finite positions/UVs, colors in [0,1] and unit/absent normals");
       }
     }
 
@@ -63,6 +70,61 @@ namespace Dot::Graphics {
     }
 
     return bounds;
+  }
+
+  auto withFlatNormals(const MeshData& mesh) -> Core::Result<MeshData> {
+    auto checked = validateMesh(mesh);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto count = mesh.indices.empty() ? mesh.vertices.size() : mesh.indices.size();
+
+    if (count > 1'000'000) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Flat-normal expansion exceeds one million vertices");
+    }
+
+    MeshData result;
+    result.vertices.reserve(count);
+    const auto vertex = [&](std::size_t index) -> const Vertex& {
+      return mesh.vertices[mesh.indices.empty() ? index : mesh.indices[index]];
+    };
+
+    for (std::size_t face = 0; face < count; face += 3) {
+      const auto& a = vertex(face);
+      const auto& b = vertex(face + 1);
+      const auto& c = vertex(face + 2);
+      const std::array<double, 3> first{static_cast<double>(b.position.x) - a.position.x,
+                                        static_cast<double>(b.position.y) - a.position.y,
+                                        static_cast<double>(b.position.z) - a.position.z};
+      const std::array<double, 3> second{static_cast<double>(c.position.x) - a.position.x,
+                                         static_cast<double>(c.position.y) - a.position.y,
+                                         static_cast<double>(c.position.z) - a.position.z};
+      const std::array cross{first[1] * second[2] - first[2] * second[1],
+                             first[2] * second[0] - first[0] * second[2],
+                             first[0] * second[1] - first[1] * second[0]};
+      const auto length = std::hypot(cross[0], cross[1], cross[2]);
+
+      if (!std::isfinite(length) || length == 0) {
+        return Core::fail(
+            Core::ErrorCode::InvalidArgument,
+            "Cannot generate a normal for degenerate triangle " + std::to_string(face / 3));
+      }
+
+      const Math::Vec3 normal{static_cast<float>(cross[0] / length),
+                              static_cast<float>(cross[1] / length),
+                              static_cast<float>(cross[2] / length)};
+
+      for (const auto* source : {&a, &b, &c}) {
+        auto output = *source;
+        output.normal = normal;
+        result.vertices.push_back(output);
+      }
+    }
+
+    return result;
   }
 
   auto cube(Math::Vec3 size) -> Core::Result<MeshData> {

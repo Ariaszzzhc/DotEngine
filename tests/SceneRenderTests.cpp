@@ -213,8 +213,8 @@ TEST_CASE("scene_render.file_import_warnings_and_explicit_cache_reload") {
   Directory directory;
   auto files = Dot::Core::FileSystem::open(directory.root);
   REQUIRE(files);
-  REQUIRE(files->writeTextAtomic("triangle.obj",
-                                 "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n"));
+  REQUIRE(files->writeTextAtomic(
+      "triangle.obj", "o triangle\nv -1 -1 0\nv 1 -1 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n"));
   auto renderer = Renderer::create();
   REQUIRE(renderer);
   auto service = SceneRenderer::create(*renderer, *files);

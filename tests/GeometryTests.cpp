@@ -5,6 +5,7 @@
 #include <limits>
 
 import Dot.Graphics.Geometry;
+import Dot.Core.Result;
 import Dot.Math;
 
 using namespace Dot::Graphics;
@@ -117,4 +118,66 @@ TEST_CASE("geometry.primitive_dimensions_validate_extremes") {
   auto large = cube({std::numeric_limits<float>::max(), 1, 1});
   REQUIRE(large);
   CHECK(validateMesh(*large));
+}
+
+TEST_CASE("geometry.flat_normals_preserve_winding_surface_attributes_and_source") {
+  auto source = cube({2, 4, 6}).value();
+  source.vertices[0].texCoord = {-2, 3};
+  source.vertices[0].color = {0.2F, 0.4F, 0.6F, 1};
+  auto result = withFlatNormals(source);
+  REQUIRE(result);
+  CHECK(result->indices.empty());
+  REQUIRE(result->vertices.size() == 36);
+  CHECK(validateMesh(*result));
+
+  for (std::size_t face = 0; face < result->vertices.size(); face += 3) {
+    const auto normal = result->vertices[face].normal;
+    CHECK(Dot::Math::length(normal) == doctest::Approx(1));
+    CHECK(Dot::Math::dot(normal, result->vertices[face].position) > 0);
+    CHECK(result->vertices[face + 1].normal == normal);
+    CHECK(result->vertices[face + 2].normal == normal);
+  }
+
+  CHECK(result->vertices[0].texCoord == source.vertices[0].texCoord);
+  CHECK(result->vertices[0].color == source.vertices[0].color);
+  CHECK(source.vertices[0].normal == Dot::Math::Vec3{});
+  CHECK(source.vertices.size() == 8);
+}
+
+TEST_CASE("geometry.flat_normals_handle_extreme_scales_and_reject_degenerate_expansion") {
+  for (const float scale :
+       {std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max()}) {
+    MeshData source;
+    source.vertices = {{{0, 0, 0}}, {{scale, 0, 0}}, {{0, scale, 0}}};
+    auto result = withFlatNormals(source);
+    REQUIRE(result);
+    CHECK(result->vertices[0].normal == Dot::Math::Vec3{0, 0, 1});
+  }
+
+  MeshData degenerate;
+  degenerate.vertices = {{{0, 0, 0}}, {{1, 0, 0}}, {{2, 0, 0}}};
+  CHECK_FALSE(withFlatNormals(degenerate));
+  CHECK(degenerate.vertices[0].normal == Dot::Math::Vec3{});
+  auto over = quad().value();
+  over.indices.resize(1'000'002, 0);
+  auto rejected = withFlatNormals(over);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(over.vertices.size() == 4);
+}
+
+TEST_CASE("geometry.surface_attributes_require_finite_uvs_and_unit_or_absent_normals") {
+  auto mesh = quad().value();
+  mesh.vertices[0].texCoord = {-2, 3};
+  mesh.vertices[0].normal = {0, 0, 1};
+  CHECK(validateMesh(mesh));
+  mesh.vertices[0].normal = {0, 0, 2};
+  CHECK_FALSE(validateMesh(mesh));
+  mesh.vertices[0].normal = {0, 0, std::numeric_limits<float>::denorm_min()};
+  CHECK_FALSE(validateMesh(mesh));
+  mesh.vertices[0].normal = {0, 0, std::numeric_limits<float>::infinity()};
+  CHECK_FALSE(validateMesh(mesh));
+  mesh.vertices[0].normal = {};
+  mesh.vertices[0].texCoord.x = std::numeric_limits<float>::quiet_NaN();
+  CHECK_FALSE(validateMesh(mesh));
 }

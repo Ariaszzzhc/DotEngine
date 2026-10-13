@@ -11,6 +11,7 @@ import Dot.Assets.Mesh;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Graphics.Geometry;
+import Dot.Math;
 
 namespace {
   namespace Fs = std::filesystem;
@@ -63,7 +64,55 @@ TEST_CASE("assets.mesh_json_round_trip_preserves_vertices_indices_and_colors") {
   for (std::size_t index = 0; index < mesh->vertices.size(); ++index) {
     CHECK(decoded->data.vertices[index].position == mesh->vertices[index].position);
     CHECK(decoded->data.vertices[index].color == mesh->vertices[index].color);
+    CHECK(decoded->data.vertices[index].normal == mesh->vertices[index].normal);
+    CHECK(decoded->data.vertices[index].texCoord == mesh->vertices[index].texCoord);
   }
+}
+
+TEST_CASE("assets.surface_format_preserves_required_normal_and_uv_attributes") {
+  auto mesh = Dot::Graphics::quad().value();
+  mesh.vertices[0].normal = {0, 0, 1};
+  mesh.vertices[0].texCoord = {-2.5F, 3};
+  auto encoded = encodeMesh(mesh).value();
+  auto json = Json::parse(encoded);
+  CHECK_FALSE(json.contains("version"));
+  auto decoded = decodeMesh(encoded, MeshFormat::DotMesh);
+  REQUIRE(decoded);
+  CHECK(decoded->data.vertices[0].normal == mesh.vertices[0].normal);
+  CHECK(decoded->data.vertices[0].texCoord == mesh.vertices[0].texCoord);
+
+  for (const auto* field : {"normal", "texCoord"}) {
+    auto incomplete = json;
+    incomplete["vertices"][0].erase(field);
+    CHECK_FALSE(decodeMesh(incomplete.dump(), MeshFormat::DotMesh));
+  }
+
+  auto invalid = json;
+  invalid["vertices"][0]["normal"] = {0, 0, 2};
+  CHECK_FALSE(decodeMesh(invalid.dump(), MeshFormat::DotMesh));
+  invalid = json;
+  invalid["vertices"][0]["texCoord"] = {0, 1, 2};
+  CHECK_FALSE(decodeMesh(invalid.dump(), MeshFormat::DotMesh));
+}
+
+TEST_CASE("assets.obj_splits_hard_normal_and_uv_seams_without_losing_authored_values") {
+  const auto source
+      = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt -2 3\nvt 1 1\n"
+        "vn 0 0 2\nvn 0 2 0\nf 1/1/1 2/1/1 3/1/1\nf 1/2/2 3/1/2 2/1/2\n";
+  auto result = decodeMesh(source, MeshFormat::Obj);
+  REQUIRE(result);
+  REQUIRE(result->data.vertices.size() == 6);
+  CHECK(result->warnings.empty());
+  CHECK(result->data.vertices[0].position == result->data.vertices[3].position);
+  CHECK(result->data.vertices[0].normal == Dot::Math::Vec3{0, 0, 1});
+  CHECK(result->data.vertices[3].normal == Dot::Math::Vec3{0, 1, 0});
+  CHECK(result->data.vertices[0].texCoord == Dot::Math::Vec2{-2, 3});
+  CHECK(result->data.vertices[3].texCoord == Dot::Math::Vec2{1, 1});
+  auto zero
+      = decodeMesh("v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 0\nf 1//1 2//1 3//1\n", MeshFormat::Obj);
+  CHECK_FALSE(zero);
+  CHECK_FALSE(decodeMesh("vt 0 0 2\n" + std::string(triangleObj), MeshFormat::Obj));
+  CHECK_FALSE(decodeMesh("v 0 0 0\nv 1 0 0\nv 0 1 0\n", MeshFormat::Obj));
 }
 
 TEST_CASE("assets.mesh_json_preserves_extreme_finite_positions") {
@@ -79,18 +128,12 @@ TEST_CASE("assets.mesh_json_preserves_extreme_finite_positions") {
   CHECK(decoded->data.vertices[1].position.y == mesh->vertices[1].position.y);
 }
 
-TEST_CASE("assets.mesh_json_rejects_bad_versions_types_and_fields") {
+TEST_CASE("assets.mesh_json_rejects_unknown_metadata_types_and_fields") {
   auto mesh = Dot::Graphics::quad();
   REQUIRE(mesh);
   auto encoded = encodeMesh(*mesh);
   REQUIRE(encoded);
   auto source = Json::parse(*encoded);
-
-  for (auto version : {Json(2), Json(1.0), Json("1"), Json(true)}) {
-    auto invalid = source;
-    invalid["version"] = version;
-    CHECK_FALSE(decodeMesh(invalid.dump(), MeshFormat::DotMesh));
-  }
 
   auto invalid = source;
   invalid["extra"] = 1;
@@ -131,8 +174,7 @@ TEST_CASE("assets.mesh_json_rejects_bad_indices_and_topology") {
 }
 
 TEST_CASE("assets.mesh_json_rejects_duplicates_and_excessive_nesting") {
-  auto duplicate
-      = decodeMesh(R"({"version":1,"version":1,"vertices":[],"indices":[]})", MeshFormat::DotMesh);
+  auto duplicate = decodeMesh(R"({"vertices":[],"vertices":[],"indices":[]})", MeshFormat::DotMesh);
   REQUIRE_FALSE(duplicate);
   CHECK(duplicate.error().message.find("Duplicate") != std::string::npos);
   auto deep = decodeMesh(std::string(70, '[') + "0" + std::string(70, ']'), MeshFormat::DotMesh);
@@ -162,11 +204,13 @@ TEST_CASE("assets.obj_vertex_colors_and_optional_weight") {
   CHECK_FALSE(decodeMesh("v 0 0 0 2\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", MeshFormat::Obj));
 }
 
-TEST_CASE("assets.obj_attribute_loss_is_explicit_and_bad_references_fail") {
+TEST_CASE("assets.obj_surface_attributes_are_retained_and_bad_references_fail") {
   const std::string prefix = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvn 0 0 1\n";
   auto mesh = decodeMesh(prefix + "f 1/1/1 2/1/1 3/1/1\n", MeshFormat::Obj);
   REQUIRE(mesh);
-  CHECK_FALSE(mesh->warnings.empty());
+  CHECK(mesh->warnings.empty());
+  CHECK(mesh->data.vertices[0].normal == Dot::Math::Vec3{0, 0, 1});
+  CHECK(mesh->data.vertices[0].texCoord == Dot::Math::Vec2{0, 0});
   CHECK(decodeMesh(prefix + "f 1//1 2//1 3//1\n", MeshFormat::Obj));
   CHECK_FALSE(decodeMesh(prefix + "f 1/2/1 2/1/1 3/1/1\n", MeshFormat::Obj));
   CHECK_FALSE(decodeMesh(prefix + "f 1/1/2 2/1/1 3/1/1\n", MeshFormat::Obj));

@@ -252,7 +252,7 @@ namespace Dot::Editor {
         key(workspace, SDL_SCANCODE_D, true);
 
         for (int tick = 0; tick < 20; ++tick) {
-          frame(workspace);
+          key(workspace, SDL_SCANCODE_D, true);
         }
 
         play = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect-play\"}")));
@@ -296,7 +296,7 @@ namespace Dot::Editor {
         key(workspace, SDL_SCANCODE_D, true);
 
         for (int tick = 0; tick < 20; ++tick) {
-          frame(workspace);
+          key(workspace, SDL_SCANCODE_D, true);
         }
 
         auto reloaded = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect-play\"}")));

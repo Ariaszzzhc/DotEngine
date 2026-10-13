@@ -8,6 +8,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <expected>
 #include <format>
@@ -72,8 +73,16 @@ struct Output { @builtin(position) position: vec4f, @location(0) color: vec4f }
       }
 
       for (const auto& vertex : vertices) {
-        if (!Math::isFinite(vertex.position) || !colorValid(vertex.color)) {
-          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid vertex position or color");
+        const auto normalLength
+            = std::hypot(static_cast<double>(vertex.normal.x), static_cast<double>(vertex.normal.y),
+                         static_cast<double>(vertex.normal.z));
+
+        if (!Math::isFinite(vertex.position) || !colorValid(vertex.color)
+            || !Math::isFinite(vertex.normal)
+            || (normalLength != 0 && std::abs(normalLength - 1) > 1e-4)
+            || !std::isfinite(vertex.texCoord.x) || !std::isfinite(vertex.texCoord.y)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid vertex position, color, normal or UV");
         }
       }
 

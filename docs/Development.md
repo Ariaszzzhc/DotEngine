@@ -2377,3 +2377,56 @@ Planned next: Feature Lab remains a separate editable capability-showcase projec
 Prism Relay's requested realistic science-fiction presentation and game-quality
 upgrade requires further rendering/content/interaction work; that upgrade is not
 claimed as implemented by this acceptance-code refactor.
+
+
+### Surface geometry foundation
+
+Replaced the current DotMesh structure directly: its root contains only vertices
+and indices, and every vertex requires position, color, normal and texCoord.
+There is no format number, old-format loader or compatibility dispatch. The engine
+is unpublished; callers, generated fixtures and documentation use the same current
+structure. No tracked DotMesh asset files required migration.
+
+Vertex payloads retain unit/explicitly absent normals and finite UVs, including
+coordinates outside the unit square. OBJ import remaps face-corner position/normal/UV
+tuples to preserve hard-normal and texture seams, normalizes authored normals,
+rejects zero normals and volumetric texture coordinates, and reports only metadata
+it actually discards. Position-only OBJ input without faces now fails instead of
+being interpreted as an implicit triangle. Existing unsupported materials/free-form
+geometry and resource bounds remain explicit failures.
+
+Added independently owned flat-normal generation with winding-derived normals,
+colors/UV preservation, double intermediates for extreme finite coordinates,
+degenerate-face errors and expansion bounds checked before allocation. Direct GPU
+input and mesh uploads enforce the surface-attribute contract. The native surface
+acceptance persists/reloads attributes and renders a CPU-derived normal-color
+visualization, checking pixels and complete vertex allocation size. The current
+shader still reads position/color: this does not establish normal-based lighting
+or texture sampling. Materials, lighting, shadows, production editor tools and
+the requested game-quality upgrade remain planned in the capability roadmap.
+
+The first full Debug run passed 773/775: an obsolete test expected normal-loss
+warnings, and the workspace reload acceptance lost its synthetic held-key motion.
+The warning fixture now tests actual object metadata loss. The acceptance driver
+reasserts its intended SDL focus/key state per movement tick, consistent with the
+existing native game drivers; product focus handling is unchanged. No assertions
+or warning policy were disabled.
+
+Review covered strict field validation, seam identity, normal/UV finite ranges,
+triangle winding, source ownership, expansion limits, GPU payload layout and
+resource recovery after rejected inputs. The caller toolchain environment remains
+unchanged. Local validation is arm64 macOS; Windows/Linux results are not claimed.
+
+- Final Debug and Release/NDEBUG pass 775/775 CTest cases (721 doctest,
+  54 executable checks), taking 77.96 and 35.90 seconds. Focused geometry,
+  asset, warning/cache, workspace and native surface checks also passed. Tests cover
+  malformed/missing attributes, seam preservation, non-unit/tiny/non-finite normals,
+  tiling/non-finite UVs, extreme scales, source ownership, degenerate faces, limits
+  and rejected GPU input without resource allocation/device poisoning.
+- All 216 C/C++ files pass clang-format; diff whitespace and private/reference
+  checks pass. Acceptance code remains under BUILD_TESTING-gated tests/acceptance.
+- Refreshed latest macOS ZIP: 263 entries, 43,082,684 bytes; CRC and absence of
+  acceptance binaries/private data pass. Staged application and all 16 native
+  signatures/relative-system loader references pass. Full suites retain relocated
+  editor/example/export coverage. Active build caches and the private untracked
+  document are preserved. No publication or new release version is claimed.

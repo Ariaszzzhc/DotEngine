@@ -56,6 +56,11 @@ On macOS, double-click `DotEngine.app`. Complete projects in the archive's
 
 ## Current state
 
+The [capability roadmap](docs/EngineRoadmap.md) records the required large-3D-game
+and mature-editor end state. Current rendering/editor foundations do not yet meet
+that target; materials, texture sampling, authored lighting/shadows and editor
+production tools are still being implemented in tested stages.
+
 The static C++26 module library provides native scenes, WebGPU rendering, physics,
 audio and entity-attached TypeScript scripts. Interfaces and implementation units
 are separate. The editor includes validated project creation, scene/resource/script

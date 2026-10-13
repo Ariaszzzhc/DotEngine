@@ -1,8 +1,9 @@
-# DotEngine 0.1 delivery evidence
+# DotEngine development evidence
 
-DotEngine provides a complete authoring-to-native-game workflow for its current
-simple 3D feature set. The following links connect delivered behavior to runnable
-acceptance evidence, rather than treating a passing unit-test count as the product.
+DotEngine currently provides an authoring-to-native-game foundation. It does not
+yet satisfy the large-3D-game, material/light/shadow or mature-editor target in the
+[capability roadmap](EngineRoadmap.md). The following links record existing behavior
+and its evidence; passing these tests does not establish missing product capabilities.
 
 | Delivered capability | Implementation and verification |
 | --- | --- |
@@ -22,13 +23,13 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 769/769 CTest cases
-(716 doctest cases and 53 executable checks), taking 77.58 and 35.23 seconds.
-All 215 C/C++ files pass formatting checks. The current 263-entry native zip
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 775/775 CTest cases
+(721 doctest cases and 54 executable checks), taking 77.96 and 35.90 seconds.
+All 216 C/C++ files pass formatting checks. The current 263-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete
-source/package examples open and compile with their versioned SDKs.
+source/package examples open and compile with their included SDK snapshots.
 
 All former acceptance dispatch/implementations are now development-only targets
 under `tests/acceptance`, compiled only with `BUILD_TESTING=ON`. An actual OFF build
@@ -42,7 +43,8 @@ Only arm64 macOS has been built and run locally; no Windows/Linux result is clai
 The caller's LLVM/compiler/linker environment is preserved.
 
 The current renderer draws colored meshes with cameras and depth; asset import is
-bounded OBJ/dotmesh. The editor uses component inspectors and one active source
+bounded OBJ/dotmesh retaining authored normals and UVs. Surface attributes are
+persisted and uploaded; the current shader still reads only position and color. The editor uses component inspectors and one active source
 buffer. These are the delivered feature boundaries, not promises of material/lighting
 systems or a general IDE. Runtime-member coverage is not exhaustive driver/device
 or argument-permutation coverage. macOS copies are ad-hoc signed and locally tested;

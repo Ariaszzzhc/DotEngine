@@ -84,6 +84,8 @@ set_tests_properties(runtime.self_test runtime.version PROPERTIES TIMEOUT 15 LAB
 add_test(NAME runtime.invalid_argument COMMAND DotRuntime --invalid)
 set_tests_properties(runtime.invalid_argument PROPERTIES WILL_FAIL TRUE TIMEOUT 15)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+add_test(NAME runtime.surface_mesh COMMAND DotRuntimeAcceptance --surface-mesh-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
+set_tests_properties(runtime.surface_mesh PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.files COMMAND DotRuntimeAcceptance --file-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.files PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.window COMMAND DotRuntimeAcceptance --window-smoke)

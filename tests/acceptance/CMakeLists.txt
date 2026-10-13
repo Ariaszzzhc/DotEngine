@@ -17,6 +17,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/ReloadAcceptance.cpp
     Runtime/SceneAudioAcceptance.cpp
     Runtime/ScriptAcceptance.cpp
+    Runtime/SurfaceMeshAcceptance.cpp
     "${PROJECT_SOURCE_DIR}/src/Runtime/ProjectPlayer.cpp")
 target_link_libraries(DotRuntimeAcceptance PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
