@@ -48,6 +48,20 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "debug-unit",
+      "configurePreset": "debug",
+      "targets": [
+        "DotUnitTests"
+      ]
+    },
+    {
+      "name": "release-unit",
+      "configurePreset": "release",
+      "targets": [
+        "DotUnitTests"
+      ]
     }
   ],
   "testPresets": [
@@ -71,6 +85,112 @@
       "execution": {
         "noTestsAction": "error",
         "jobs": 4
+      }
+    },
+    {
+      "name": "debug-unit",
+      "inherits": "debug",
+      "displayName": "Debug unit",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      }
+    },
+    {
+      "name": "debug-integration",
+      "inherits": "debug",
+      "displayName": "Debug integration",
+      "filter": {
+        "include": {
+          "label": "^integration$"
+        },
+        "exclude": {
+          "label": "^(gpu|native|audio-native)$"
+        }
+      }
+    },
+    {
+      "name": "debug-gpu",
+      "inherits": "debug",
+      "displayName": "Debug gpu",
+      "filter": {
+        "include": {
+          "label": "^offscreen$"
+        }
+      }
+    },
+    {
+      "name": "debug-acceptance",
+      "inherits": "debug",
+      "displayName": "Debug acceptance",
+      "filter": {
+        "include": {
+          "label": "^acceptance$"
+        }
+      }
+    },
+    {
+      "name": "debug-native",
+      "inherits": "debug",
+      "displayName": "Debug native",
+      "filter": {
+        "include": {
+          "label": "^native$"
+        }
+      }
+    },
+    {
+      "name": "release-unit",
+      "inherits": "release",
+      "displayName": "Release unit",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      }
+    },
+    {
+      "name": "release-integration",
+      "inherits": "release",
+      "displayName": "Release integration",
+      "filter": {
+        "include": {
+          "label": "^integration$"
+        },
+        "exclude": {
+          "label": "^(gpu|native|audio-native)$"
+        }
+      }
+    },
+    {
+      "name": "release-gpu",
+      "inherits": "release",
+      "displayName": "Release gpu",
+      "filter": {
+        "include": {
+          "label": "^offscreen$"
+        }
+      }
+    },
+    {
+      "name": "release-acceptance",
+      "inherits": "release",
+      "displayName": "Release acceptance",
+      "filter": {
+        "include": {
+          "label": "^acceptance$"
+        }
+      }
+    },
+    {
+      "name": "release-native",
+      "inherits": "release",
+      "displayName": "Release native",
+      "filter": {
+        "include": {
+          "label": "^native$"
+        }
       }
     }
   ]

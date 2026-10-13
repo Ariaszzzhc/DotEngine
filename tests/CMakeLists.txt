@@ -1,48 +1,76 @@
 add_subdirectory(acceptance)
 
 find_package(doctest CONFIG REQUIRED)
-add_executable(DotProcessFixture ProcessFixture.cpp)
-target_link_libraries(DotProcessFixture PRIVATE DotBuildOptions nlohmann_json::nlohmann_json)
-add_executable(DotTests
+include(doctest)
+
+# Set list-valued labels after discovery; doctest flattens PROPERTIES lists.
+# 在发现用例后设置列表标签；doctest 会展平 PROPERTIES 中的列表值。
+set(dot_test_labels "${CMAKE_CURRENT_BINARY_DIR}/DotTestLabels.cmake")
+file(WRITE "${dot_test_labels}" "")
+function(dotDiscoverTests target)
+    cmake_parse_arguments(PARSE_ARGV 1 dot "" "LABELS" "PROPERTIES")
+    doctest_discover_tests(${target} PROPERTIES ${dot_PROPERTIES})
+    file(APPEND "${dot_test_labels}"
+        "if(DEFINED ${target}_TESTS)\n"
+        "    set_tests_properties(\${${target}_TESTS} PROPERTIES LABELS \"${dot_LABELS}\")\n"
+        "endif()\n")
+endfunction()
+
+# Pure CPU behavior: no video driver, GPU, audio device, filesystem or compiler.
+# 纯 CPU 行为：不初始化视频、GPU、音频设备、文件系统或编译器。
+add_executable(DotUnitTests
     main.cpp
     CoreTests.cpp
     TextTests.cpp
     PathTests.cpp
     EventTests.cpp
-    FileTests.cpp
-    StagedDirectoryTests.cpp
-    ProjectTests.cpp
-    DocumentTests.cpp
-    ResourceTests.cpp
     InputTests.cpp
-    InputHostTests.cpp
-    PhysicsHostTests.cpp
-    AudioHostTests.cpp
-    PlatformTests.cpp
-    ApplicationTests.cpp
     MathTests.cpp
     GeometryTests.cpp
-    AssetTests.cpp
-    ImageTests.cpp
     PostProcessTests.cpp
     LightingTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
+    BodyTests.cpp
+    MixerTests.cpp
+    FrameQueueTests.cpp
+    SpatialTests.cpp
+    VoiceBatchTests.cpp
+)
+target_link_libraries(DotUnitTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+dotDiscoverTests(DotUnitTests LABELS "unit" PROPERTIES TIMEOUT 15)
+
+# Native event translation and loop integration use SDL's dummy display.
+# 原生事件转换与循环集成使用 SDL dummy 显示，不创建桌面窗口。
+add_executable(DotPlatformTests main.cpp PlatformTests.cpp ApplicationTests.cpp)
+target_link_libraries(DotPlatformTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
+dotDiscoverTests(DotPlatformTests LABELS "integration;platform" PROPERTIES TIMEOUT 15
+    ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+
+add_executable(DotProcessFixture ProcessFixture.cpp)
+target_link_libraries(DotProcessFixture PRIVATE DotBuildOptions nlohmann_json::nlohmann_json)
+add_executable(DotTests
+    main.cpp
+    FileTests.cpp
+    StagedDirectoryTests.cpp
+    ProjectTests.cpp
+    DocumentTests.cpp
+    ResourceTests.cpp
+    InputHostTests.cpp
+    PhysicsHostTests.cpp
+    AudioHostTests.cpp
+    AssetTests.cpp
+    ImageTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp
     ContactTests.cpp
     SceneContactTests.cpp
     ScenePhysicsTests.cpp
-    BodyTests.cpp
     RigidBodyTests.cpp
     AudioTests.cpp
-    MixerTests.cpp
-    FrameQueueTests.cpp
-    SpatialTests.cpp
     SceneAudioTests.cpp
-    VoiceBatchTests.cpp
     SceneAudioBindingTests.cpp
     ScriptRuntimeTests.cpp
     HostTests.cpp
@@ -53,14 +81,13 @@ add_executable(DotTests
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotTests PRIVATE DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-include(doctest)
-doctest_discover_tests(DotTests PROPERTIES TIMEOUT 15 LABELS "unit" ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+dotDiscoverTests(DotTests LABELS "integration" PROPERTIES TIMEOUT 15)
 
 add_executable(DotProcessTests main.cpp ProcessTests.cpp)
 target_link_libraries(DotProcessTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotProcessTests PRIVATE DOT_PROCESS_FIXTURE="$<TARGET_FILE:DotProcessFixture>")
 add_dependencies(DotProcessTests DotProcessFixture)
-doctest_discover_tests(DotProcessTests PROPERTIES TIMEOUT 15 LABELS "unit")
+dotDiscoverTests(DotProcessTests LABELS "integration;process" PROPERTIES TIMEOUT 15)
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
@@ -72,11 +99,11 @@ target_compile_definitions(DotCompilerTests PRIVATE
     DOT_COMPILER_FIXTURE="$<TARGET_FILE:DotCompilerFixture>"
     DOT_PROCESS_FIXTURE="$<TARGET_FILE:DotProcessFixture>")
 add_dependencies(DotCompilerTests DotCompilerFixture DotProcessFixture)
-doctest_discover_tests(DotCompilerTests PROPERTIES TIMEOUT 30 LABELS "unit")
+dotDiscoverTests(DotCompilerTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp SceneAudioNativeTests.cpp)
 target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
-doctest_discover_tests(DotAudioTests PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
+dotDiscoverTests(DotAudioTests LABELS "integration;audio-native" PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
 add_test(NAME runtime.audio_output COMMAND DotRuntimeAcceptance --audio-output-test)
 set_tests_properties(runtime.audio_output PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.audio_playback COMMAND DotRuntimeAcceptance --audio-playback-test)
@@ -163,7 +190,12 @@ set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "accepta
 
 add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp HdrTests.cpp PbrTests.cpp SceneRenderTests.cpp GuiTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
-doctest_discover_tests(DotGraphicsTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotGraphicsTests LABELS "integration;gpu;offscreen" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+add_executable(DotNativeGraphicsTests main.cpp NativeSurfaceTests.cpp)
+target_link_libraries(DotNativeGraphicsTests PRIVATE DotEngine doctest::doctest)
+dotDiscoverTests(DotNativeGraphicsTests LABELS "integration;gpu;native" PROPERTIES TIMEOUT 60
+    RUN_SERIAL TRUE)
+
 add_test(NAME runtime.gpu COMMAND DotRuntimeAcceptance --gpu-test)
 set_tests_properties(runtime.gpu PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
 add_test(NAME runtime.mesh COMMAND DotRuntimeAcceptance --mesh-test)
@@ -203,7 +235,7 @@ target_compile_definitions(DotEditorTests PRIVATE
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotEditorTests DotEditor DotRuntime DotGame)
-doctest_discover_tests(DotEditorTests PROPERTIES TIMEOUT 30 LABELS "unit")
+dotDiscoverTests(DotEditorTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_test(NAME editor.workspace COMMAND DotEditorAcceptance --workspace-test "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.workspace PROPERTIES TIMEOUT 60 LABELS "gpu;native" RUN_SERIAL TRUE)
@@ -214,7 +246,7 @@ target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
-doctest_discover_tests(DotWorkspaceTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotWorkspaceTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 add_test(NAME runtime.exported_game COMMAND DotRuntimeAcceptance --game-player-test "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_SOURCE_DIR}/assets/scripts" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(runtime.exported_game PROPERTIES TIMEOUT 60 LABELS "native;gpu;audio-native" RUN_SERIAL TRUE)
@@ -229,7 +261,7 @@ target_compile_definitions(DotExportTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts")
 add_dependencies(DotExportTests DotRuntimeKit DotRuntimeAcceptance)
-doctest_discover_tests(DotExportTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotExportTests LABELS "acceptance;process;compiler;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 add_executable(DotExampleTests main.cpp ExampleTests.cpp)
 target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
@@ -240,7 +272,7 @@ target_compile_definitions(DotExampleTests PRIVATE
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotExampleTests DotExamples)
-doctest_discover_tests(DotExampleTests PROPERTIES TIMEOUT 60 LABELS "unit")
+dotDiscoverTests(DotExampleTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/example_acceptance")
 add_executable(DotExampleNativeTests main.cpp ExampleNativeTests.cpp)
@@ -251,7 +283,7 @@ target_compile_definitions(DotExampleNativeTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit")
 add_dependencies(DotExampleNativeTests DotExamples DotRuntimeKit)
-doctest_discover_tests(DotExampleNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotExampleNativeTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 add_executable(DotFeatureLabTests main.cpp FeatureLabTests.cpp)
 target_link_libraries(DotFeatureLabTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
@@ -259,7 +291,7 @@ target_compile_definitions(DotFeatureLabTests PRIVATE
     DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotFeatureLabTests DotFeatureLab)
-doctest_discover_tests(DotFeatureLabTests PROPERTIES TIMEOUT 60 LABELS "unit")
+dotDiscoverTests(DotFeatureLabTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
 
 add_executable(DotFeatureLabNativeTests main.cpp FeatureLabNativeTests.cpp)
 target_link_libraries(DotFeatureLabNativeTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
@@ -269,7 +301,7 @@ target_compile_definitions(DotFeatureLabNativeTests PRIVATE
     DOT_RUNTIME_KIT="$<TARGET_FILE_DIR:DotGame>/resources/runtime-kit"
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
 add_dependencies(DotFeatureLabNativeTests DotFeatureLab DotRuntimeKit DotEditor)
-doctest_discover_tests(DotFeatureLabNativeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotFeatureLabNativeTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 add_executable(DotTemplateTests main.cpp TemplateTests.cpp)
 target_link_libraries(DotTemplateTests PRIVATE DotEngine doctest::doctest)
@@ -278,20 +310,29 @@ target_compile_definitions(DotTemplateTests PRIVATE
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotTemplateTests DotExamples)
-doctest_discover_tests(DotTemplateTests PROPERTIES TIMEOUT 30 LABELS "unit")
+dotDiscoverTests(DotTemplateTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotHomeTests main.cpp HomeTests.cpp)
 target_link_libraries(DotHomeTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotHomeTests PRIVATE DOT_EDITOR_RESOURCES="$<TARGET_FILE_DIR:DotEditor>/resources")
 add_dependencies(DotHomeTests DotEditor)
-doctest_discover_tests(DotHomeTests PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotHomeTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
 add_test(NAME editor.home_smoke COMMAND DotEditor home 3)
-set_tests_properties(editor.home_smoke PROPERTIES TIMEOUT 60 LABELS "gpu" RUN_SERIAL TRUE)
+set_tests_properties(editor.home_smoke PROPERTIES TIMEOUT 60 LABELS "gpu;native" RUN_SERIAL TRUE)
 
 add_executable(DotEditorDistributionTests main.cpp EditorDistributionTests.cpp)
 target_link_libraries(DotEditorDistributionTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotEditorDistributionTests PRIVATE
     DOT_EDITOR_DISTRIBUTION="${CMAKE_BINARY_DIR}/distribution/DotEngine")
 add_dependencies(DotEditorDistributionTests DotEditorDistribution)
-doctest_discover_tests(DotEditorDistributionTests PROPERTIES TIMEOUT 120 LABELS "gpu" RUN_SERIAL TRUE)
+dotDiscoverTests(DotEditorDistributionTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
+
+# Executable workflow checks are acceptance cases, independent of device labels.
+# 可执行程序流程检查统一为验收用例，设备标签独立保留。
+get_property(dot_acceptance_tests DIRECTORY PROPERTY TESTS)
+foreach(dot_test IN LISTS dot_acceptance_tests)
+    set_property(TEST "${dot_test}" APPEND PROPERTY LABELS "acceptance")
+endforeach()
+
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${dot_test_labels}")

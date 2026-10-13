@@ -1,6 +1,9 @@
 # Acceptance coverage
 
-Run `ctest --preset debug` and `ctest --preset release` after building both presets.
+Daily CPU unit checks use `ctest --preset debug-unit` after building `debug-unit`.
+[Test layers](Testing.md) distinguish pure unit, integration, offscreen GPU and
+native/acceptance workflows. Run the complete `ctest --preset debug` and
+`ctest --preset release` suites after building both configurations before delivery.
 Release enables NDEBUG; behavioral checks use doctest/CTest rather than assertions.
 Native GPU/audio checks are serialized where required. Only arm64 macOS is locally
 validated; Windows/Linux implementation support is not cross-platform evidence.

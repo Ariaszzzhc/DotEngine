@@ -12,9 +12,8 @@ including `CPPFLAGS`. No machine-specific toolchain paths are stored in the proj
 ```sh
 git submodule update --init --recursive
 cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
-build/debug/bin/DotRuntimeAcceptance --self-test
+cmake --build --preset debug-unit
+ctest --preset debug-unit
 ```
 
 Acceptance implementations live in `tests/acceptance`. `DotRuntimeAcceptance` and
@@ -22,12 +21,21 @@ Acceptance implementations live in `tests/acceptance`. `DotRuntimeAcceptance` an
 in editor/game distributions. Product executables retain playback and authoring/
 automation commands. Use `-DBUILD_TESTING=OFF` when configuring a product-only build.
 
-The `release` configure, build, and test presets provide the optimized configuration.
+The unit preset builds/runs pure CPU behavior without opening windows or requiring
+GPU/audio devices or the TypeScript compiler. After a full build, use
+`debug-integration` for CPU/files/compiler/platform integration (SDL dummy display),
+`debug-gpu` for offscreen GPU pixels, or `debug-native` for actual desktop-window
+checks. `debug-acceptance` selects executable/editor/game workflows. The unfiltered
+`debug` test preset remains the complete pre-commit suite, including device checks.
+See [test layers](docs/Testing.md) for commands and environment requirements.
+
+The `release` configure, build, and matching test presets provide the optimized configuration.
 Executables use the `.exe` suffix on Windows.
 
 ## Start the editor
 
 ```sh
+cmake --build --preset debug
 build/debug/bin/DotEditor
 ```
 

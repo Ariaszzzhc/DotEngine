@@ -27,8 +27,11 @@ limitations at the time of each entry. Local tests run with both Debug and optim
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
 Latest arm64 macOS Debug and Release/NDEBUG suites each pass 812/812 CTest cases
-(755 doctest cases and 57 executable checks), taking 107.26 and 37.48 seconds.
-All 236 C/C++ files pass formatting checks. The current 267-entry native zip
+(755 doctest cases and 57 executable checks), taking 101.72 and 37.60 seconds.
+The [test layers](Testing.md) separate 182 pure CPU unit cases from files/compiler/
+platform integration, 59 offscreen GPU cases and native/acceptance workflows.
+Unit-only Debug/Release runs pass with deliberately invalid SDL device drivers.
+All 237 C/C++ files pass formatting checks. The current 267-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete

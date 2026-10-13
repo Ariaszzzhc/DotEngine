@@ -2621,3 +2621,49 @@ platform-neutral Dawn paths. Caller toolchain settings remain unchanged.
   pass. Staged app and all 16 native signatures/relative-system loader references
   pass. Build caches and the untracked private document remain preserved.
   Windows/Linux are implemented but not locally validated.
+
+
+### Separate unit, integration and native checks
+
+Audited the previously broad "unit" label against actual dependencies. Compiler,
+filesystem, project, VM/physics and complete editor/game workflows are integration
+or acceptance checks; opening desktop windows is not needed for CPU unit behavior.
+Godot's test setup uses mock display/dummy audio services for scene/UI checks, while
+Epic documents lightweight module tests separately from editor/PIE/screenshot
+automation. Epic private-repository reads via the connected GitHub account returned
+404; the Unreal comparison uses Epic's official testing documentation, not a claimed
+private-source review. See Testing.md for primary references and local commands.
+
+Split pure CPU cases into DotUnitTests and SDL dummy event/loop cases into
+DotPlatformTests. Moved three real native surface cases from GraphicsTests.cpp
+into NativeSurfaceTests.cpp, leaving actual offscreen pixel/material cases without
+a Window/Application dependency. File/compiler/project tests are no longer labeled
+unit; editor/game/distribution workflows have acceptance/native labels. All 812
+existing CTest names and assertion bodies remain present. BUILD_TESTING and product
+executables/packaging remain unchanged. Matching Debug/Release unit build and
+unit/integration/offscreen-GPU/native/acceptance test presets allow focused iteration;
+unfiltered Debug/Release remain complete delivery checks.
+
+An initial label-list change exposed doctest's flattening of PROPERTIES values,
+which also misplaced the dummy-display environment property: the partial-init SDL
+case failed because it unexpectedly used a real display. Fixed registration to
+apply list-valued labels after discovery through CTest's TEST_INCLUDE_FILES. The
+actual inventory now verifies every device label, RUN_SERIAL flag and dummy
+environment, rather than assuming the CMake spelling reached CTest unchanged.
+The failing assertion was preserved.
+
+Inventory comparison preserves all 812 identities (755 doctest, 57 executable).
+Selections contain 182 CPU unit, 456 device-free integration, 59 offscreen GPU,
+39 native and 85 acceptance cases; native/acceptance/device labels intentionally
+overlap. Unit runs with deliberately invalid SDL video/audio drivers pass 182/182
+in Debug (1.15 seconds) and Release/NDEBUG (0.45 seconds). Final corrected Debug
+full suite passes 812/812 in 101.72 seconds. Reviewed dependencies, unchanged
+assertions/lifetime cycles, dummy/native separation, preserved errors/thread
+constraints, filter exclusions and generated labels/serialization.
+
+Final corrected Release/NDEBUG full suite passes 812/812 in 37.60 seconds.
+All 237 C/C++ files pass clang-format; diff whitespace/private-reference checks
+pass. Latest native archive remains 267 entries / 43,165,492 bytes, with CRC and
+private/test/Finder exclusions verified; staged application signatures are verified
+by archive preparation. Active caches, latest package and the private untracked
+document remain preserved. Validation is arm64 macOS only.
