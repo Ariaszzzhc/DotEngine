@@ -336,31 +336,31 @@ TEST_CASE("scene_render.native_scene_presentation_and_surface_size") {
   CHECK(presented >= 4);
 }
 
-TEST_CASE("scene_render.visible_draw_limit_and_clear_validation_precede_upload") {
+TEST_CASE("scene_render.full_scene_instance_capacity_and_clear_validation") {
   auto renderer
-      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
-  REQUIRE(renderer);
-  auto service = SceneRenderer::create(*renderer);
-  REQUIRE(service);
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
+  auto service = SceneRenderer::create(renderer).value();
   auto scene = makeScene();
 
-  for (int index = 0; index < 4097; ++index) {
-    auto entity = scene.createEntity();
-    REQUIRE(entity);
-    REQUIRE(scene.setMeshRenderer(*entity, MeshRenderer{}));
+  for (int index = 0; index < 9999; ++index) {
+    auto entity = scene.createEntity().value();
+    REQUIRE(scene.setMeshRenderer(entity, MeshRenderer{}));
   }
 
-  auto result = service->render(scene, 10, 10);
-  REQUIRE_FALSE(result);
-  CHECK(result.error().code == Dot::Core::ErrorCode::Unavailable);
-  CHECK(service->stats()->meshes == 0);
-  CHECK(renderer->resourceStats()->meshes == 0);
+  auto result = service.render(scene, 10, 10);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(service.stats()->meshes == 1);
+  CHECK(renderer.visibilityStats()->mesh->inputInstances == 9999);
+  CHECK(renderer.visibilityStats()->mesh->visibleInstances == 9999);
+  CHECK(renderer.visibilityStats()->mesh->colorDraws == 1);
+  REQUIRE(service.clearCache());
+  CHECK(renderer.resourceStats()->meshes == 0);
   auto minimal = makeScene();
-  const auto entity = addQuad(minimal, 0, {1, 0, 0, 1});
-  static_cast<void>(entity);
-  CHECK_FALSE(service->render(minimal, 10, 10, {2, 0, 0, 1}));
-  CHECK(service->stats()->meshes == 0);
-  CHECK(renderer->resourceStats()->meshes == 0);
+  addQuad(minimal, 0, {1, 0, 0, 1});
+  CHECK_FALSE(service.render(minimal, 10, 10, {2, 0, 0, 1}));
+  CHECK(service.stats()->meshes == 0);
+  CHECK(renderer.resourceStats()->meshes == 0);
 }
 
 TEST_CASE("scene_render.deserialized_scene_preserves_actual_gpu_pixels") {
@@ -431,9 +431,9 @@ TEST_CASE("scene_render.frustum_reduces_dense_scene_submissions_and_camera_chang
   REQUIRE(image);
   const auto report = renderer.visibilityStats().value();
   REQUIRE(report.mesh);
-  CHECK(report.mesh->inputDraws == 513);
-  CHECK(report.mesh->visibleDraws == 1);
-  CHECK(report.mesh->culledDraws == 512);
+  CHECK(report.mesh->inputInstances == 513);
+  CHECK(report.mesh->visibleInstances == 1);
+  CHECK(report.mesh->culledInstances == 512);
   CHECK(drawing.stats()->meshes == 1);
   const auto pixel0 = pixel(*image, 32, 32);
   CHECK(pixel0[0] > 200);
@@ -443,7 +443,7 @@ TEST_CASE("scene_render.frustum_reduces_dense_scene_submissions_and_camera_chang
   view.orthographicHeight = 0.8F;
   auto moved = drawing.render(scene, 65, 65, {0, 0, 0, 1}, view);
   REQUIRE(moved);
-  CHECK(renderer.visibilityStats()->mesh->visibleDraws == 1);
+  CHECK(renderer.visibilityStats()->mesh->visibleInstances == 1);
   const auto pixel1 = pixel(*moved, 32, 32);
   CHECK(pixel1[1] > 200);
   CHECK(static_cast<int>(pixel1[1]) > static_cast<int>(pixel1[0]) + 100);

@@ -28,6 +28,7 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.Graphics.View;
 import Dot.Graphics.Frustum;
+import Dot.Graphics.DrawBatches;
 import Dot.Platform.Window;
 import Dot.Platform.System;
 import Dot.Platform.Events;
@@ -124,7 +125,7 @@ namespace Dot::Graphics {
       std::string error;
     };
 
-    struct UniformData {
+    struct InstanceData {
       Math::Mat4 transform;
       Math::Vec4 tint{1, 1, 1, 1};
       Math::Vec4 emissive{};
@@ -134,12 +135,12 @@ namespace Dot::Graphics {
       Math::Vec4 flags{0, 0, 0, 1};
     };
 
-    static_assert(sizeof(UniformData) == 256);
-    static_assert(offsetof(UniformData, tint) == 64);
-    static_assert(offsetof(UniformData, emissive) == 80);
-    static_assert(offsetof(UniformData, model) == 96);
-    static_assert(offsetof(UniformData, normalMatrix) == 160);
-    static_assert(offsetof(UniformData, material) == 224);
+    static_assert(sizeof(InstanceData) == 256);
+    static_assert(offsetof(InstanceData, tint) == 64);
+    static_assert(offsetof(InstanceData, emissive) == 80);
+    static_assert(offsetof(InstanceData, model) == 96);
+    static_assert(offsetof(InstanceData, normalMatrix) == 160);
+    static_assert(offsetof(InstanceData, material) == 224);
 
     struct LightData {
       Math::Vec4 directionKind;
@@ -535,6 +536,7 @@ namespace Dot::Graphics {
     bool guiFrameActive{};
     VisibilityStats visibility;
     MeshFrameStats pendingVisibility;
+    std::uint64_t maxInstanceBufferBytes{};
 
     struct GuiFrameScope {
       Impl& owner;
@@ -1296,7 +1298,7 @@ namespace Dot::Graphics {
       std::array<wgpu::BindGroupEntry, 9> entries{};
       entries[0].binding = 0;
       entries[0].buffer = buffer;
-      entries[0].size = sizeof(UniformData);
+      entries[0].size = buffer.GetSize();
 
       for (std::size_t index = 0; index < textures.size(); ++index) {
         entries[index * 2 + 1].binding = static_cast<std::uint32_t>(index * 2 + 1);
@@ -1372,7 +1374,7 @@ namespace Dot::Graphics {
               bufferDescriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
               auto buffer = device.CreateBuffer(&bufferDescriptor);
               queue.WriteBuffer(buffer, 0, vertices.data(), vertices.size_bytes());
-              const UniformData data{transform};
+              const InstanceData data{transform};
               queue.WriteBuffer(uniform, 0, &data, sizeof(data));
               auto group = bindMaterial(renderPipeline, uniform);
               pass.SetPipeline(renderPipeline);
@@ -1389,7 +1391,7 @@ namespace Dot::Graphics {
 
     struct PreparedDraw {
       std::shared_ptr<Mesh::Impl> mesh;
-      UniformData uniform;
+      InstanceData uniform;
       std::array<std::shared_ptr<Texture::Impl>, 4> textures;
       bool castsShadow;
       bool visible;
@@ -1397,7 +1399,7 @@ namespace Dot::Graphics {
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
                  Math::Vec4 clear) -> Core::Result<std::vector<PreparedDraw>> {
-      if (draws.size() > 4096 || !Math::isFinite(viewProjection) || !radianceValid(clear)) {
+      if (draws.size() > 10000 || !Math::isFinite(viewProjection) || !radianceValid(clear)) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid mesh draw count, camera, or clear color");
       }
@@ -1597,6 +1599,73 @@ namespace Dot::Graphics {
       return prepared;
     }
 
+    enum class BatchPass { Surface, Geometry, Shadow };
+
+    auto batches(std::span<const PreparedDraw> draws, BatchPass pass = BatchPass::Surface)
+        -> Core::Result<DrawBatches> {
+      std::vector<BatchItem> items;
+      items.reserve(draws.size());
+
+      for (const auto& draw : draws) {
+        BatchItem item{reinterpret_cast<std::uintptr_t>(draw.mesh.get()),
+                       {},
+                       pass == BatchPass::Shadow ? draw.castsShadow : draw.visible};
+
+        if (pass == BatchPass::Surface) {
+          for (std::size_t index = 0; index < draw.textures.size(); ++index) {
+            item.textures[index] = reinterpret_cast<std::uintptr_t>(draw.textures[index].get());
+          }
+        }
+
+        items.push_back(item);
+      }
+
+      return buildDrawBatches(items);
+    }
+
+    auto instanceBuffer(const void* data, std::size_t bytes) -> Core::Result<wgpu::Buffer> {
+      if (!bytes || bytes > maxInstanceBufferBytes) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Instance storage exceeds device binding limits");
+      }
+
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = bytes;
+      descriptor.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+
+      if (!buffer) {
+        return Core::fail(Core::ErrorCode::External, "Allocate instance storage failed");
+      }
+
+      queue.WriteBuffer(buffer, 0, data, bytes);
+      return buffer;
+    }
+
+    auto surfaceBuffer(std::span<const PreparedDraw> draws, const DrawBatches& plan)
+        -> Core::Result<wgpu::Buffer> {
+      std::vector<InstanceData> data;
+      data.reserve(plan.indices.size());
+
+      for (const auto index : plan.indices) {
+        data.push_back(draws[index].uniform);
+      }
+
+      return instanceBuffer(data.data(), data.size() * sizeof(InstanceData));
+    }
+
+    static auto emitInstances(const wgpu::RenderPassEncoder& pass, const Mesh::Impl& mesh,
+                              const DrawBatch& batch) -> void {
+      pass.SetVertexBuffer(0, mesh.vertices);
+
+      if (mesh.info.indices) {
+        pass.SetIndexBuffer(mesh.indices, wgpu::IndexFormat::Uint32);
+        pass.DrawIndexed(mesh.info.indices, batch.count, 0, 0, batch.first);
+      } else {
+        pass.Draw(mesh.info.vertices, batch.count, 0, batch.first);
+      }
+    }
+
     struct ShadowData {
       std::array<Math::Mat4, 4> matrices;
       std::array<float, 4> splits;
@@ -1660,25 +1729,38 @@ namespace Dot::Graphics {
 
     auto encodeShadows(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
                        const ShadowCascades& fit) -> Core::Result<void> {
+      auto plan = batches(draws, BatchPass::Shadow);
+
+      if (!plan) {
+        return std::unexpected(plan.error());
+      }
+
       std::vector<Math::Mat4> matrices;
-      matrices.reserve(draws.size() * fit.count);
+      matrices.reserve(plan->indices.size() * fit.count);
 
       for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
-        for (const auto& draw : draws) {
-          if (!draw.castsShadow) {
-            matrices.emplace_back();
-            continue;
-          }
-
-          auto matrix = Math::multiply(fit.matrices[cascade], draw.uniform.model);
+        for (const auto index : plan->indices) {
+          auto matrix = Math::multiply(fit.matrices[cascade], draws[index].uniform.model);
 
           if (!matrix) {
             return Core::fail(matrix.error().code,
-                              "Shadow caster matrix: " + matrix.error().message);
+                              "Shadow instance matrix: " + matrix.error().message);
           }
 
           matrices.push_back(*matrix);
         }
+      }
+
+      wgpu::Buffer storage;
+
+      if (!matrices.empty()) {
+        auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(Math::Mat4));
+
+        if (!buffer) {
+          return std::unexpected(buffer.error());
+        }
+
+        storage = *buffer;
       }
 
       for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
@@ -1697,36 +1779,22 @@ namespace Dot::Graphics {
         auto pass = encoder.BeginRenderPass(&descriptor);
         pass.SetPipeline(shadowDepthPipeline);
 
-        for (std::size_t index = 0; index < draws.size(); ++index) {
-          const auto& draw = draws[index];
-
-          if (!draw.castsShadow) {
-            continue;
-          }
-
-          const auto& matrix = matrices[cascade * draws.size() + index];
-          wgpu::BufferDescriptor bufferDescriptor;
-          bufferDescriptor.size = sizeof(matrix);
-          bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-          auto buffer = device.CreateBuffer(&bufferDescriptor);
-          queue.WriteBuffer(buffer, 0, &matrix, sizeof(matrix));
+        if (storage) {
           wgpu::BindGroupEntry entry;
-          entry.buffer = buffer;
-          entry.size = sizeof(matrix);
+          entry.buffer = storage;
+          entry.size = storage.GetSize();
           wgpu::BindGroupDescriptor group;
           group.layout = shadowDepthPipeline.GetBindGroupLayout(0);
           group.entryCount = 1;
           group.entries = &entry;
           pass.SetBindGroup(0, device.CreateBindGroup(&group));
-          pass.SetVertexBuffer(0, draw.mesh->vertices);
+        }
 
-          if (draw.mesh->info.indices) {
-            pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
-            pass.DrawIndexed(draw.mesh->info.indices);
-          } else {
-            pass.Draw(draw.mesh->info.vertices);
-          }
-
+        for (auto batch : plan->batches) {
+          const auto& mesh = *draws[plan->indices[batch.first]].mesh;
+          batch.first += cascade * static_cast<std::uint32_t>(plan->indices.size());
+          emitInstances(pass, mesh, batch);
+          pendingVisibility.shadowInstances += batch.count;
           ++pendingVisibility.shadowDraws;
         }
 
@@ -1813,7 +1881,8 @@ namespace Dot::Graphics {
     }
 
     auto encodeOcclusion(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
-                         const OcclusionCamera& camera) -> Core::Result<void> {
+                         const OcclusionCamera& camera, const wgpu::Buffer& storage)
+        -> Core::Result<void> {
       wgpu::RenderPassColorAttachment normal;
       normal.view = occlusionTextures[1].CreateView();
       normal.loadOp = wgpu::LoadOp::Clear;
@@ -1833,33 +1902,27 @@ namespace Dot::Graphics {
       pass.SetPipeline(geometryPipeline);
       pass.SetBindGroup(1, bindLighting(geometryPipeline));
 
-      for (const auto& draw : draws) {
-        if (!draw.visible) {
-          continue;
-        }
+      auto plan = batches(draws, BatchPass::Geometry);
 
-        wgpu::BufferDescriptor bufferDescriptor;
-        bufferDescriptor.size = sizeof(UniformData);
-        bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-        auto buffer = device.CreateBuffer(&bufferDescriptor);
-        queue.WriteBuffer(buffer, 0, &draw.uniform, sizeof(draw.uniform));
+      if (!plan) {
+        pass.End();
+        return std::unexpected(plan.error());
+      }
+
+      if (storage) {
         wgpu::BindGroupEntry entry;
-        entry.buffer = buffer;
-        entry.size = sizeof(draw.uniform);
+        entry.buffer = storage;
+        entry.size = storage.GetSize();
         wgpu::BindGroupDescriptor group;
         group.layout = geometryPipeline.GetBindGroupLayout(0);
         group.entryCount = 1;
         group.entries = &entry;
         pass.SetBindGroup(0, device.CreateBindGroup(&group));
-        pass.SetVertexBuffer(0, draw.mesh->vertices);
+      }
 
-        if (draw.mesh->info.indices) {
-          pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
-          pass.DrawIndexed(draw.mesh->info.indices);
-        } else {
-          pass.Draw(draw.mesh->info.vertices);
-        }
-
+      for (const auto& batch : plan->batches) {
+        emitInstances(pass, *draws[plan->indices[batch.first]].mesh, batch);
+        pendingVisibility.occlusionInstances += batch.count;
         ++pendingVisibility.occlusionDraws;
       }
 
@@ -1915,7 +1978,26 @@ namespace Dot::Graphics {
                       Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
       occlusionPending = false;
-      pendingVisibility = {draws.size(), 0, 0, 0, 0};
+      auto plan = batches(draws);
+
+      if (!plan) {
+        return std::unexpected(plan.error());
+      }
+
+      pendingVisibility = {};
+      pendingVisibility.inputInstances = draws.size();
+      pendingVisibility.culledInstances = draws.size() - plan->indices.size();
+      wgpu::Buffer storage;
+
+      if (!plan->indices.empty()) {
+        auto buffer = surfaceBuffer(draws, *plan);
+
+        if (!buffer) {
+          return std::unexpected(buffer.error());
+        }
+
+        storage = *buffer;
+      }
 
       if (!hdr) {
         auto ready = ensureFrame(width, height);
@@ -2040,7 +2122,7 @@ namespace Dot::Graphics {
           shadowEncoder = device.CreateCommandEncoder();
         }
 
-        checked = encodeOcclusion(shadowEncoder, draws, *camera);
+        checked = encodeOcclusion(shadowEncoder, draws, *camera, storage);
 
         if (!checked) {
           return std::unexpected(checked.error());
@@ -2070,35 +2152,14 @@ namespace Dot::Graphics {
             auto lights = bindLighting(renderPipeline);
             pass.SetBindGroup(1, lights);
 
-            for (const auto& draw : draws) {
-              if (!draw.visible) {
-                ++pendingVisibility.culledDraws;
-                continue;
-              }
-
-              /** Queue writes precede submission, so a shared uniform would overwrite
-               * earlier draws. The command buffer retains each independent buffer.
-               * 队列写入先于提交，共用 uniform 会覆盖较早对象的数据。
-               * 命令缓冲区会保留每个独立缓冲区的引用。
-               */
-              wgpu::BufferDescriptor descriptor;
-              descriptor.size = sizeof(UniformData);
-              descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-              auto drawUniform = device.CreateBuffer(&descriptor);
-              queue.WriteBuffer(drawUniform, 0, &draw.uniform, sizeof(draw.uniform));
-              auto group = bindMaterial(renderPipeline, drawUniform, draw.textures);
+            for (const auto& batch : plan->batches) {
+              const auto& draw = draws[plan->indices[batch.first]];
+              auto group = bindMaterial(renderPipeline, storage, draw.textures);
               pass.SetPipeline(renderPipeline);
               pass.SetBindGroup(0, group);
-              pass.SetVertexBuffer(0, draw.mesh->vertices);
-
-              if (draw.mesh->info.indices != 0) {
-                pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
-                pass.DrawIndexed(draw.mesh->info.indices);
-              } else {
-                pass.Draw(draw.mesh->info.vertices);
-              }
-
-              ++pendingVisibility.visibleDraws;
+              emitInstances(pass, *draw.mesh, batch);
+              pendingVisibility.visibleInstances += batch.count;
+              ++pendingVisibility.colorDraws;
             }
           },
           depthView, shadowEncoder);
@@ -2520,12 +2581,14 @@ namespace Dot::Graphics {
     }
 
     impl->info.maxTextureDimension = limits.maxTextureDimension2D;
+    impl->maxInstanceBufferBytes
+        = std::min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
     ErrorScope scope(impl->instance, impl->device);
     impl->scenePipeline = impl->pipeline(wgpu::TextureFormat::RGBA16Float);
     impl->postPipeline = impl->postPipelineFor(wgpu::TextureFormat::RGBA8Unorm);
     wgpu::BufferDescriptor uniformDescriptor;
-    uniformDescriptor.size = sizeof(UniformData);
-    uniformDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    uniformDescriptor.size = sizeof(InstanceData);
+    uniformDescriptor.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
     impl->uniform = impl->device.CreateBuffer(&uniformDescriptor);
 
     wgpu::TextureDescriptor whiteDescriptor;
@@ -4024,7 +4087,35 @@ namespace Dot::Graphics {
     };
 
     static_assert(sizeof(PickData) == 96);
-    PickFrameStats pickStats{draws.size(), 0, 0};
+    auto plan = m_impl->batches(*prepared, Impl::BatchPass::Geometry);
+
+    if (!plan) {
+      return std::unexpected(plan.error());
+    }
+
+    std::vector<PickData> data;
+    data.reserve(plan->indices.size());
+
+    for (const auto index : plan->indices) {
+      const auto& draw = (*prepared)[index];
+      data.push_back({draw.uniform.transform, draw.uniform.flags, {index + 1, 0, 0, 0}});
+    }
+
+    wgpu::Buffer storage;
+
+    if (!data.empty()) {
+      auto buffer = m_impl->instanceBuffer(data.data(), data.size() * sizeof(PickData));
+
+      if (!buffer) {
+        return std::unexpected(buffer.error());
+      }
+
+      storage = *buffer;
+    }
+
+    PickFrameStats pickStats{};
+    pickStats.inputInstances = draws.size();
+    pickStats.culledInstances = draws.size() - plan->indices.size();
     auto image = m_impl->readback(
         1, 1,
         [&](const wgpu::Texture& target, auto, auto) -> Core::Result<wgpu::CommandEncoder> {
@@ -4038,40 +4129,21 @@ namespace Dot::Graphics {
               [&](const wgpu::RenderPassEncoder& pass) {
                 pass.SetPipeline(m_impl->pickingPipeline);
 
-                for (std::size_t index = 0; index < prepared->size(); ++index) {
-                  const auto& draw = (*prepared)[index];
-
-                  if (!draw.visible) {
-                    ++pickStats.culledDraws;
-                    continue;
-                  }
-
-                  const PickData data{draw.uniform.transform,
-                                      draw.uniform.flags,
-                                      {static_cast<std::uint32_t>(index + 1), 0, 0, 0}};
-                  wgpu::BufferDescriptor descriptor;
-                  descriptor.size = sizeof(data);
-                  descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-                  auto buffer = m_impl->device.CreateBuffer(&descriptor);
-                  m_impl->queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+                if (storage) {
                   wgpu::BindGroupEntry entry;
-                  entry.buffer = buffer;
-                  entry.size = sizeof(data);
+                  entry.buffer = storage;
+                  entry.size = storage.GetSize();
                   wgpu::BindGroupDescriptor group;
                   group.layout = m_impl->pickingPipeline.GetBindGroupLayout(0);
                   group.entryCount = 1;
                   group.entries = &entry;
                   pass.SetBindGroup(0, m_impl->device.CreateBindGroup(&group));
-                  pass.SetVertexBuffer(0, draw.mesh->vertices);
+                }
 
-                  if (draw.mesh->info.indices) {
-                    pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
-                    pass.DrawIndexed(draw.mesh->info.indices);
-                  } else {
-                    pass.Draw(draw.mesh->info.vertices);
-                  }
-
-                  ++pickStats.candidateDraws;
+                for (const auto& batch : plan->batches) {
+                  Impl::emitInstances(pass, *(*prepared)[plan->indices[batch.first]].mesh, batch);
+                  pickStats.candidateInstances += batch.count;
+                  ++pickStats.draws;
                 }
               },
               depth.CreateView());

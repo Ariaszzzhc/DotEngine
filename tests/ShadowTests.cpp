@@ -53,7 +53,7 @@ TEST_CASE("shadows.cpu_settings_frustum_bounds_and_work_are_explicit") {
   CHECK_FALSE(fitDirectionalShadows(horizon, {}, {0, -1, 0}, {}));
   const std::array invalid{Bounds{{1, 0, 0}, {-1, 1, 1}}};
   CHECK_FALSE(fitDirectionalShadows(camera(), {0, 0, 5}, {0, -1, 0}, {}, invalid));
-  const std::vector<Bounds> excess(4097);
+  const std::vector<Bounds> excess(10001);
   CHECK_FALSE(fitDirectionalShadows(camera(), {0, 0, 5}, {0, -1, 0}, {}, excess));
   settings = {};
   settings.distance = 0.1F;

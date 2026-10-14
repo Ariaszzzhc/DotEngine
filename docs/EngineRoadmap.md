@@ -94,3 +94,10 @@ counts and dense-scene/camera-change cases verify reduced submissions. This rema
 linear preparation and a 4096-draw input bound; spatial acceleration, instancing,
 streaming and large-scene production remain unfinished, alongside richer editor
 production tools and the realistic polished Prism Relay game.
+
+Stable instanced runs now share one compact surface upload across main/SSAO passes,
+retain per-object parameters and original pick IDs, and batch per-cascade shadows.
+The input/CPU caster bound matches the 10000-entity scene capacity; counters distinguish
+instances from actual GPU commands. CPU scene traversal remains linear; spatial
+indexing, streaming, production import/animation/editor tools and the polished
+realistic Prism Relay game remain unfinished.

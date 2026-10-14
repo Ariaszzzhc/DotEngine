@@ -351,7 +351,7 @@ TEST_CASE("graphics.invalid_mesh_draws_are_transactional") {
   draws[0].transform.data[0] = std::numeric_limits<float>::infinity();
   CHECK_FALSE(renderer->renderMeshes(draws, {}, 8, 8));
   draws[0].transform = {};
-  std::vector<MeshDraw> tooMany(4097, draws[0]);
+  std::vector<MeshDraw> tooMany(10001, draws[0]);
   CHECK_FALSE(renderer->renderMeshes(tooMany, {}, 8, 8));
   CHECK_FALSE(renderer->renderMeshes(draws, {}, 0, 8));
   CHECK_FALSE(renderer->presentMeshes(draws, {}));

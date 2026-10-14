@@ -39,10 +39,10 @@ TEST_CASE("visibility.gpu_dense_offscreen_frame_skips_draws_preserves_pixels_and
   CHECK((result.pixels == baseline.pixels));
   const auto report = renderer.visibilityStats().value();
   REQUIRE(report.mesh);
-  CHECK(report.mesh->inputDraws == 1024);
-  CHECK(report.mesh->visibleDraws == 1);
-  CHECK(report.mesh->culledDraws == 1023);
-  CHECK(report.mesh->shadowDraws == 0);
+  CHECK(report.mesh->inputInstances == 1024);
+  CHECK(report.mesh->visibleInstances == 1);
+  CHECK(report.mesh->culledInstances == 1023);
+  CHECK(report.mesh->shadowInstances == 0);
   const auto frames = target.info()->frames;
   draws.back().tint.x = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(renderer.renderMeshesInto(target, draws, camera()));
@@ -71,13 +71,13 @@ TEST_CASE("visibility.gpu_pixel_crop_keeps_original_draw_indices_and_independent
   CHECK(*picked == 2);
   auto report = renderer.visibilityStats().value();
   REQUIRE(report.pick);
-  CHECK(report.pick->inputDraws == 3);
-  CHECK(report.pick->candidateDraws == 1);
-  CHECK(report.pick->culledDraws == 2);
+  CHECK(report.pick->inputInstances == 3);
+  CHECK(report.pick->candidateInstances == 1);
+  CHECK(report.pick->culledInstances == 2);
   CHECK(report.mesh == meshReport);
   CHECK_FALSE(renderer.pickMeshes(draws, camera(), 0, 65, {0.5F, 0.5F}));
   CHECK(renderer.visibilityStats().value() == report);
   CHECK_FALSE(renderer.pickMeshes(draws, camera(), 65, 65, {0.99F, 0.99F}).value());
-  CHECK(renderer.visibilityStats()->pick->candidateDraws == 0);
+  CHECK(renderer.visibilityStats()->pick->candidateInstances == 0);
   CHECK(renderer.visibilityStats()->mesh == meshReport);
 }

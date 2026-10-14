@@ -165,3 +165,13 @@ Archive regression creates root/nested Finder metadata alongside normal payload,
 empty directories, an executable and a relative symlink where permitted. It checks
 actual ZIP extraction/permissions, source preservation and rejection of unsafe
 staging paths without altering the previous archive. This runs only in BUILD_TESTING.
+
+DrawBatchTests checks stable consecutive runs, skipped entries, binding identity,
+owned indices and full/invalid boundaries. InstancingGpuTests compares varying PBR
+attributes, reflection and SSAO against independent same-geometry resources that
+prevent batching; texture/equal-depth cases verify run isolation and original pick
+IDs. Shadow fixtures compare four-cascade instanced results against independent
+resource references. Full-scene acceptance now renders 9999 meshes plus its camera
+in one color command while keeping invalid-clear and cache-lifetime checks. Native
+viewport acceptance includes two visible shared meshes and one culled mesh, requiring
+one color command and unchanged authoring/Undo/export behavior.

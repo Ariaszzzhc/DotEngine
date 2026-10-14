@@ -3635,3 +3635,79 @@ macOS is validated. CPU preparation remains linear, still bounded to 4096 inputs
 spatial indexing, instancing, streaming, occlusion culling, per-cascade caster pruning,
 production editor tools and polished realistic Prism Relay remain unfinished. The
 full engine/editor/game objective remains active.
+
+
+## 2026-10-14 — Stable GPU mesh instancing
+
+Added Dot.Graphics.DrawBatches as an owned pure-value planning module with separate
+interface/implementation. Compatible consecutive mesh/texture identity tokens merge
+while disabled inputs are skipped and enabled source order is preserved. Scalar
+material/transform data stays per-instance. The plan owns compact original indices
+and run offsets; zero mesh tokens (including disabled) and more than 10000 inputs
+fail. Initially missing explicit span/array headers caused module compilation errors;
+fixed them. The stable-run selection passed before GPU consumers. The boundary case's
+initial name had an underscore rather than the intended category dot; corrected the
+name so both CPU cases are included in final focused/full runs.
+新增独立拥有的稳定相邻批次规划，不重排启用输入，实例标量独立保留；明确验证
+身份与 10000 项边界，不引入旧路径兼容代码。
+
+Replaced private single-object surface/geometry/picking/shadow shader data with bounded
+read-only storage arrays. Vertex instance_index addresses compact data; flat fragment
+indices retain varying PBR/emission/sidedness/reflection policies. Pixel picking stores
+the original integer input index, not an instance-renumbered or float identity.
+Surface runs share mesh/four texture bindings; SSAO/shadow/picking runs share geometry.
+Main and SSAO reuse one ordered attribute upload; all shadow matrices are stored per
+cascade with the correct base instance. Actual device maxStorageBufferBindingSize/
+maxBufferSize bounds are checked before allocation. Command buffers retain referenced
+GPU buffers/groups; full malformed/foreign input validation precedes planning.
+真实实例缓冲保存所有属性与整数身份；主/SSAO 共用上传，阴影按级联索引矩阵，
+分配前按设备限制校验，不吞掉画外或非首实例的无效输入。
+
+SceneRenderer/Renderer/CPU caster fitting limits now match the 10000-entity scene
+capacity. A primary camera consumes one entity. Updated invalid bound tests to 10001
+and replaced the old valid-4097 rejection case with actual 9999-mesh rendering, one
+color command, mesh-cache sharing/release and retained invalid-clear-before-upload
+checks. Per-pass statistics now distinguish instance quantities and actual draw
+commands, publishing after success only. Renderer queries/moves/failures, culling
+and original entity mapping retain coverage. Rendering panel labels both quantities.
+No additional dependency, installed headers, toolchain override or sanitizer was used.
+
+Initial real GPU smoke: 10/10 (10.22s), including primitive rendering, shadows and
+picking. New PBR instance/reference case varies surface model, base color, emission,
+metallic/roughness, reflection and nonuniform transforms with real IBL/SSAO. Sixteen
+instances submit one color and one SSAO command, byte-identical to 16 independent
+same-geometry resources preventing merging. Texture binding/equal-depth cases keep
+source order and pick ID 0. Four-cascade three-instance shadow case matches HDR
+reference while reducing 12 commands to 8. Native viewport acceptance uses two visible
+shared cubes plus one culled cube, requiring one color command. Test compilation
+initially referenced nonexistent uploadImage; corrected to the actual uploadTexture
+API. Final focused checks: 16/16, 12.91s.
+
+Full Debug CTest: 922/922, 184.64s. Full Release/NDEBUG: 922/922, 40.17s, run
+sequentially after both builds completed. During final review found an old interface
+comment still claiming 4096/uniform data; corrected only contract text to the verified
+10000/storage-backed implementation, rebuilt both presets, then focused Debug
+16/16, 13.00s. Inventory is 859 doctest identities plus 63 executable/script checks;
+overlapping labels: 208 unit, 98 offscreen, 56 native, 106 acceptance. All 285 C/C++
+files pass clang-format/whitespace; 15 standalone WGSL files pass indentation/line/
+whitespace rules and real Dawn pipeline validation. Reviewed source ordering, scalar
+attribute layout/offsets, original IDs, texture ownership, per-pass selection, device
+limits, temporary GPU resource retention, complete failures and publication invariants.
+
+Refreshed archive via metadata-filtered owned snapshot. ZIP: 259 entries, 47,143,881
+bytes. CRC/executable permissions/exclusions, exact font/license/two HDRI copies and
+all 228 file/link payload equality checks pass. All 13 regular Mach-O files and
+3 relative symlinks pass strict signatures/relative-system loader/rpath inspection;
+deep strict app verification passes. Opened bundled Feature Lab and read actual
+control-interface statistics: 7 visible/input instances, 4 color draws; 7 SSAO
+instances, 4 SSAO draws; 28 cascade instances, 16 shadow draws; ready=true, dirty=false.
+Requested Rendering pane. Additional native screenshot inspection was blocked because
+macOS was locked; no screenshot/visual result is claimed for this stage. Native input/
+acceptance tests already passed, and actual application commands remained usable.
+Closed owned window with discard=false, terminal exit zero and control-stage removal
+verified. Removed owned UI requests and pass-edit helper, retaining caches, latest
+archive, verification evidence and supplied reference artwork. Private design source
+remains untracked. Only arm64 macOS was built/run. Grouping is consecutive and CPU
+preparation remains linear; spatial acceleration, streaming, production import/
+animation/editor tools and realistic polished Prism Relay remain unfinished. The full
+engine/editor/game objective remains active.

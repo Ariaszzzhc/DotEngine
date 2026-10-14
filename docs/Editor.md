@@ -694,3 +694,8 @@ The report is null before a successful mesh call, remains unchanged after failur
 and describes the last submission while view.ready independently marks freshness.
 Counts reflect conservative GPU draw submissions rather than visible-pixel estimates
 or measured frame rate. Picking keeps its own report and never overwrites mesh data.
+
+Mesh submission inspection now adds `colorDraws`, `shadowDraws` and `occlusionDraws`
+for actual GPU commands, distinct from `input`/`visible`/`culled`/`shadow`/`occlusion`
+instance quantities. Rendering labels the two rows explicitly. Per-instance variation
+is preserved after batching and does not change scene/Inspector authoring contracts.

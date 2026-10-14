@@ -167,3 +167,29 @@ with SSAO draws dropping to zero and conservative shadow draws remaining 28; sce
 data stays unmodified. Only arm64 macOS is validated. Preparation remains linear
 with a 4096-input limit; indexing, instancing, streaming and polished game production
 remain unfinished.
+
+
+Stable consecutive instancing now batches compatible mesh/texture runs while preserving
+per-instance transform/tint/emission/PBR/backface attributes and original integer pick
+IDs. Main/SSAO share one compact storage upload; shadow cascades use indexed matrix
+storage. Full validation/culling remains and scene/renderer/caster inputs accept
+10000 instances. Counters explicitly distinguish instances from actual GPU commands.
+
+A 16-instance varying-material case matches independent-resource reference pixels
+with one color/SSAO command each. Four-cascade shadows match reference HDR pixels
+while reducing 12 commands to 8. A complete 10000-entity scene (9999 meshes + camera)
+uses one color command. Full Debug: 922/922 (184.64s); Release/NDEBUG: 922/922 (40.17s).
+After contract-comment rebuilding, focused Debug passes 16/16 (13.00s). Inventory:
+859 doctest plus 63 executable/script checks; overlapping labels: 208 unit, 98
+offscreen, 56 native, 106 acceptance. All 285 C/C++ and 15 standalone WGSL files
+pass established formatting checks; real pipeline creation is verified.
+
+Latest ZIP: 259 entries, 47,143,881 bytes; CRC/permissions, exact font/license/HDRI,
+all 228 source file/link payloads, strict signatures and portable loader/rpath checks
+pass (13 regular Mach-O files and 3 relative links). The bundled Feature Lab reports
+7 visible instances -> 4 color/SSAO commands and 28 cascade instances -> 16 shadow
+commands, ready=true/dirty=false. Additional screenshot review was unavailable because
+macOS was locked; native acceptance and actual control-interface checks passed.
+Preparation remains linear and grouping consecutive. Spatial indexing, streaming,
+production import/animation/editor tools and realistic polished Prism Relay remain
+unimplemented. Only arm64 macOS was validated.

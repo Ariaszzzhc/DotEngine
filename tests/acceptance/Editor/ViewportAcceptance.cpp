@@ -47,6 +47,9 @@ namespace Dot::Editor {
     const auto outside = checked(scene.createEntity("Outside view"));
     require(scene.setMeshRenderer(outside, World::MeshRenderer{}).has_value(), "Add outside mesh");
     require(scene.setTransform(outside, {{1000, 0, 0}}).has_value(), "Place outside mesh");
+    const auto peer = checked(scene.createEntity("Instanced peer"));
+    require(scene.setMeshRenderer(peer, World::MeshRenderer{}).has_value(), "Add visible instance");
+    require(scene.setTransform(peer, {{1.5F, 0, 0}}).has_value(), "Place visible instance");
     require(project.saveStartup(scene).has_value(), "Save camera-free project");
     auto workspace = checked(Workspace::open(project));
     const auto inspect
@@ -72,9 +75,10 @@ namespace Dot::Editor {
     frame();
     frame();
     const auto before = checked(workspace.captureViewport());
-    require(inspect()["workspace"]["view"]["draws"]["input"] == 2
-                && inspect()["workspace"]["view"]["draws"]["visible"] == 1
-                && inspect()["workspace"]["view"]["draws"]["culled"] == 1,
+    require(inspect()["workspace"]["view"]["draws"]["input"] == 3
+                && inspect()["workspace"]["view"]["draws"]["visible"] == 2
+                && inspect()["workspace"]["view"]["draws"]["culled"] == 1
+                && inspect()["workspace"]["view"]["draws"]["colorDraws"] == 1,
             "Native viewport must expose actual mesh submission statistics");
 
     for (const auto* theme : {"light", "dark"}) {

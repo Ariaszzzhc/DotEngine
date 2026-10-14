@@ -1681,11 +1681,10 @@ namespace Dot::Editor {
         draws = errorJson(stats.error());
       } else if (stats->mesh) {
         const auto& frame = *stats->mesh;
-        draws = {{"input", frame.inputDraws},
-                 {"visible", frame.visibleDraws},
-                 {"culled", frame.culledDraws},
-                 {"shadow", frame.shadowDraws},
-                 {"occlusion", frame.occlusionDraws}};
+        draws = {{"input", frame.inputInstances},         {"visible", frame.visibleInstances},
+                 {"culled", frame.culledInstances},       {"shadow", frame.shadowInstances},
+                 {"occlusion", frame.occlusionInstances}, {"colorDraws", frame.colorDraws},
+                 {"shadowDraws", frame.shadowDraws},      {"occlusionDraws", frame.occlusionDraws}};
       }
 
       return {
@@ -2321,10 +2320,12 @@ namespace Dot::Editor {
         ImGui::TextWrapped("Draw statistics: %s", stats.error().message.c_str());
       } else if (stats->mesh) {
         const auto& frame = *stats->mesh;
-        ImGui::TextWrapped("Last mesh submission: %zu visible / %zu input, %zu culled",
-                           frame.visibleDraws, frame.inputDraws, frame.culledDraws);
-        ImGui::TextWrapped("Mesh draws: shadows %zu, SSAO depth %zu", frame.shadowDraws,
-                           frame.occlusionDraws);
+        ImGui::TextWrapped("Last mesh instances: %zu visible / %zu input, %zu culled",
+                           frame.visibleInstances, frame.inputInstances, frame.culledInstances);
+        ImGui::TextWrapped("Mesh instances: shadows %zu, SSAO depth %zu", frame.shadowInstances,
+                           frame.occlusionInstances);
+        ImGui::TextWrapped("GPU draws: color %zu, shadows %zu, SSAO %zu", frame.colorDraws,
+                           frame.shadowDraws, frame.occlusionDraws);
       } else {
         ImGui::TextUnformatted("No successful mesh submission yet.");
       }

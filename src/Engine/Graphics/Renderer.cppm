@@ -60,24 +60,28 @@ export namespace Dot::Graphics {
     std::uint64_t occlusionBytes{};
   };
 
-  /** Mesh submissions only, excluding sky/fullscreen/GUI passes. Published after
-   * successful submission/validation; failures retain the previous report. Shadow
-   * count includes each cascade draw, independently of camera visibility.
-   * 仅统计网格提交，不含天空/全屏/GUI；成功提交与校验后发布，失败保留旧报告。
-   * 阴影按每级实际绘制计数，独立于相机可见性。 */
+  /** Instance quantities and actual GPU mesh draw commands, excluding sky/fullscreen/
+   * GUI passes. Shadow quantities include every cascade. Publish after successful
+   * submission/validation; failures retain the previous report.
+   * 区分实例数量与实际 GPU 网格绘制命令，不含天空/全屏/GUI；阴影计入所有级联，
+   * 成功提交/校验后发布，失败保留旧报告。 */
   struct MeshFrameStats {
-    std::size_t inputDraws{};
-    std::size_t visibleDraws{};
-    std::size_t culledDraws{};
+    std::size_t inputInstances{};
+    std::size_t visibleInstances{};
+    std::size_t culledInstances{};
+    std::size_t shadowInstances{};
+    std::size_t occlusionInstances{};
+    std::size_t colorDraws{};
     std::size_t shadowDraws{};
     std::size_t occlusionDraws{};
     auto operator==(const MeshFrameStats&) const -> bool = default;
   };
 
   struct PickFrameStats {
-    std::size_t inputDraws{};
-    std::size_t candidateDraws{};
-    std::size_t culledDraws{};
+    std::size_t inputInstances{};
+    std::size_t candidateInstances{};
+    std::size_t draws{};
+    std::size_t culledInstances{};
     auto operator==(const PickFrameStats&) const -> bool = default;
   };
 
@@ -486,11 +490,11 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto present(std::span<const Vertex> vertices, const Math::Mat4& transform,
                                Math::Vec4 clear = {0, 0, 0, 1}) -> Core::Result<PresentResult>;
 
-    /** Render at most 4096 draws using this device's meshes. The view-projection
-     * matrix is multiplied by each draw's world transform; all inputs are checked
-     * before submission. Each draw has independent uniform data.
-     * 使用本设备的网格绘制最多 4096 个对象；视图投影矩阵乘各对象的世界变换。
-     * 提交前校验全部输入，每个绘制对象拥有独立的 uniform 数据。
+    /** Render at most 10000 instances using this device's meshes. View-projection
+     * multiplies each world transform; validate all inputs before stable batching.
+     * Compatible runs retain independent storage-backed instance attributes.
+     * 使用本设备的网格绘制最多 10000 个实例；视图投影乘各世界变换，稳定合批前完整
+     * 校验输入，兼容批次保留独立的存储缓冲实例属性。
      */
     [[nodiscard]] auto renderMeshes(std::span<const MeshDraw> draws,
                                     const Math::Mat4& viewProjection, std::uint32_t width,

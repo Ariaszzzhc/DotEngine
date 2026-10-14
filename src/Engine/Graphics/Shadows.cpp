@@ -50,7 +50,7 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    if (!bounded(camera) || casters.size() > 4096) {
+    if (!bounded(camera) || casters.size() > 10000) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid shadow camera/caster count");
     }
 

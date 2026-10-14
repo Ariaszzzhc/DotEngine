@@ -1,4 +1,4 @@
-struct Camera {
+struct InstanceData {
   transform: mat4x4f,
   tint: vec4f,
   emissive: vec4f,
@@ -13,13 +13,14 @@ struct View {
   counts: vec4f
 }
 
-@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(0) var<storage, read> instances: array<InstanceData>;
 @group(1) @binding(0) var<uniform> view: View;
 
 struct Output {
   @builtin(position) position: vec4f,
   @location(0) worldPosition: vec3f,
-  @location(1) normal: vec3f
+  @location(1) normal: vec3f,
+  @location(2) @interpolate(flat) instance: u32
 }
 
 fn unit(value: vec3f) -> vec3f {
@@ -34,8 +35,11 @@ fn unit(value: vec3f) -> vec3f {
 }
 
 @vertex
-fn vertexMain(@location(0) position: vec3f, @location(3) normal: vec3f) -> Output {
+fn vertexMain(@location(0) position: vec3f, @location(3) normal: vec3f,
+  @builtin(instance_index) instance: u32) -> Output {
+  let camera = instances[instance];
   var output: Output;
+  output.instance = instance;
   output.position = camera.transform * vec4f(position, 1.0);
   output.worldPosition = (camera.model * vec4f(position, 1.0)).xyz;
   output.normal = (camera.normalMatrix * vec4f(normal, 0.0)).xyz;
@@ -47,6 +51,7 @@ fn vertexMain(@location(0) position: vec3f, @location(3) normal: vec3f) -> Outpu
  * 几何引导数据匹配不透明覆盖；AO 使用平滑几何法线，不将平面法线贴图细节误判为遮挡。 */
 @fragment
 fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
+  let camera = instances[input.instance];
   let geometric = unit(cross(dpdx(input.worldPosition), dpdy(input.worldPosition)));
   let front = frontFacing == (camera.flags.w > 0.0);
 

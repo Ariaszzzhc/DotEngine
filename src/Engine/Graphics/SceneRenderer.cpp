@@ -592,8 +592,9 @@ namespace Dot::Graphics {
           }
         }
 
-        if (drawCount > 4096) {
-          return Core::fail(Core::ErrorCode::Unavailable, "Visible scene exceeds 4096 mesh draws");
+        if (drawCount > 10000) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Visible scene exceeds 10000 mesh instances");
         }
 
         for (auto iterator = cache.begin(); iterator != cache.end();) {

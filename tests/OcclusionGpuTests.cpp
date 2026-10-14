@@ -230,7 +230,7 @@ TEST_CASE("visibility.gpu_ssao_depth_skips_offscreen_meshes_and_matches_visible_
   CHECK((fixture.renderer.readTarget(fixture.target)->pixels == baseline.pixels));
   const auto report = fixture.renderer.visibilityStats().value();
   REQUIRE(report.mesh);
-  CHECK(report.mesh->visibleDraws == 1);
-  CHECK(report.mesh->culledDraws == 1);
-  CHECK(report.mesh->occlusionDraws == 1);
+  CHECK(report.mesh->visibleInstances == 1);
+  CHECK(report.mesh->culledInstances == 1);
+  CHECK(report.mesh->occlusionInstances == 1);
 }

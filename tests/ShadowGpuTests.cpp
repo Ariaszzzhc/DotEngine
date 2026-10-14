@@ -167,14 +167,36 @@ TEST_CASE("visibility.gpu_off_camera_caster_still_shadows_visible_receiver") {
   const auto shadowed = fixture.render();
   auto report = fixture.renderer.visibilityStats().value();
   REQUIRE(report.mesh);
-  CHECK(report.mesh->inputDraws == 2);
-  CHECK(report.mesh->visibleDraws == 1);
-  CHECK(report.mesh->culledDraws == 1);
-  CHECK(report.mesh->shadowDraws == 2);
+  CHECK(report.mesh->inputInstances == 2);
+  CHECK(report.mesh->visibleInstances == 1);
+  CHECK(report.mesh->culledInstances == 1);
+  CHECK(report.mesh->shadowInstances == 2);
   const auto dark = fixture.red(shadowed, {0, 0, 0});
   fixture.draws[1].castsShadow = false;
   const auto lit = fixture.render();
   CHECK(fixture.red(lit, {0, 0, 0}) > dark + 0.3F);
-  CHECK(fixture.renderer.visibilityStats()->mesh->shadowDraws == 1);
-  CHECK(fixture.renderer.visibilityStats()->mesh->visibleDraws == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowInstances == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->visibleInstances == 1);
+}
+
+TEST_CASE("instancing.gpu_shadow_cascade_batches_match_independent_resource_reference") {
+  Fixture fixture;
+  fixture.lights.lights[0].shadows->cascades = 4;
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  std::array<MeshDraw, 3> draws{{fixture.draws[0], fixture.draws[1], fixture.draws[1]}};
+  draws[1].transform = Dot::Math::compose({-1, 1, 0}).value();
+  draws[2].transform = Dot::Math::compose({1, 1, 0}).value();
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  const auto batched = fixture.renderer.readHdrTarget(fixture.target).value();
+  const auto report = fixture.renderer.visibilityStats().value();
+  REQUIRE(report.mesh);
+  CHECK(report.mesh->visibleInstances == 3);
+  CHECK(report.mesh->colorDraws == 2);
+  CHECK(report.mesh->shadowInstances == 12);
+  CHECK(report.mesh->shadowDraws == 8);
+  auto copy = fixture.renderer.upload(cube({0.5F, 0.5F, 0.5F}).value()).value();
+  draws[2].mesh = &copy;
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowDraws == 12);
+  CHECK((fixture.renderer.readHdrTarget(fixture.target)->pixels == batched.pixels));
 }

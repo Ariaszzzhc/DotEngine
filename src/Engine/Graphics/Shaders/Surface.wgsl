@@ -2,7 +2,7 @@
  * Schlick Fresnel and energy-split Lambert diffuse; all calculations are linear.
  * 金属度/粗糙度微表面着色使用 GGX、相关 Smith 可见性、Schlick 菲涅耳与能量分配的
  * Lambert 漫反射；所有计算在线性空间进行。 */
-struct Camera {
+struct InstanceData {
   transform: mat4x4f,
   tint: vec4f,
   emissive: vec4f,
@@ -25,7 +25,7 @@ struct Lighting {
   lights: array<Light, 64>
 }
 
-@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(0) var<storage, read> instances: array<InstanceData>;
 @group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
 @group(0) @binding(2) var baseColorSampler: sampler;
 @group(0) @binding(3) var metallicRoughnessTexture: texture_2d<f32>;
@@ -41,7 +41,8 @@ struct Output {
   @location(0) color: vec4f,
   @location(1) uv: vec2f,
   @location(2) worldPosition: vec3f,
-  @location(3) normal: vec3f
+  @location(3) normal: vec3f,
+  @location(4) @interpolate(flat) instance: u32
 }
 
 fn unit(value: vec3f) -> vec3f {
@@ -57,8 +58,11 @@ fn unit(value: vec3f) -> vec3f {
 
 @vertex
 fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
-  @location(2) uv: vec2f, @location(3) normal: vec3f) -> Output {
+  @location(2) uv: vec2f, @location(3) normal: vec3f,
+  @builtin(instance_index) instance: u32) -> Output {
+  let camera = instances[instance];
   var output: Output;
+  output.instance = instance;
   output.position = camera.transform * vec4f(position, 1.0);
   output.color = color * camera.tint;
   output.uv = uv;
@@ -93,6 +97,7 @@ fn brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metallic: f32, roughness: f32
 @fragment
 fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
   -> @location(0) vec4f {
+  let camera = instances[input.instance];
   let base = input.color * textureSample(baseColorTexture, baseColorSampler, input.uv);
   let mr = textureSample(metallicRoughnessTexture, metallicRoughnessSampler, input.uv);
   let encodedNormal = textureSample(normalTexture, normalSampler, input.uv).xyz;

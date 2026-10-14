@@ -424,7 +424,7 @@ and GPU draw culling/instancing remain planned. Immediate unlit vertex rendering
 is independent of mesh shadow rendering.
 
 `Dot.Graphics.Shadows` validates work on CPU and fits a finite camera frustum with
-at most 4096 world caster AABBs. Practical logarithmic/uniform splits cover the
+at most 10000 world caster AABBs. Practical logarithmic/uniform splits cover the
 configured camera depth, up to four cascades. Square sphere fits and light-space
 texel snapping stabilize the XY projection; cascades overlap ten percent and the
 fragment shader blends the overlap. Caster bounds overlapping the footprint extend
@@ -552,8 +552,7 @@ Non-finite/reversed bounds and invalid/degenerate cameras fail with context.
 反射/错切/投影模型不被假包围盒替代。false 确定在外，true 为保守候选。
 
 Renderer validates every submitted mesh/material/texture/transform before pruning.
-Main HDR color and SSAO geometry/depth passes skip outside candidates before per-draw
-uniform/bind allocations. Shadow fitting and cascade draws retain off-camera casters,
+Main HDR color and SSAO geometry/depth passes skip outside candidates before compact instance uploads and draw emission. Shadow fitting and cascade draws retain off-camera casters,
 which can still affect visible receivers. Picking prunes against the actual cropped
 1x1 pixel frustum and preserves original draw IDs, so entity selection does not shift
 when earlier draws are excluded. The same renderer path serves standalone games,
@@ -565,9 +564,41 @@ scene previews, deferred GUI viewports and native surfaces.
 calls. Null means no successful call yet. Counts are taken from the actual encoding
 loops and published after successful submission/validation; errors and Deferred
 presentation preserve prior reports. Mesh counts exclude sky/fullscreen/GUI passes;
-shadow draws count each cascade submission. `visibleDraws` counts conservative main
-pass candidates actually submitted, not guaranteed rasterized objects. Rendering
+instance quantities count every cascade; GPU draw counts are reported separately.
+`visibleInstances` counts conservative submitted candidates, not guaranteed rasterized objects. Rendering
 panel and `workspace.view.draws` expose these real counters without invented FPS.
-This remains linear CPU preparation with a 4096-draw input bound. Spatial indexing,
-instancing, streaming, occlusion culling and per-cascade caster pruning remain
-unimplemented; camera clipping alone does not establish large-game scalability.
+This remains linear CPU preparation with a 10000-instance input bound. Spatial indexing,
+streaming, occlusion culling and per-cascade caster pruning remain unimplemented; camera clipping alone does not establish large-game scalability.
+
+
+## Instanced mesh submission / 网格实例化提交
+
+`Dot.Graphics.DrawBatches` owns a stable compact source-index list and consecutive
+compatible runs. Disabled entries are skipped; enabled entries are never reordered.
+Surface runs share mesh/texture identities while all transforms, tints, emission,
+PBR parameters, sidedness and reflection policies remain instance attributes. SSAO,
+shadow and picking runs need shared geometry only. This preserves opaque equal-depth
+source ordering and integer picking identity. No compatibility rendering path exists.
+稳定相邻批次跳过禁用项但不重排启用项；主表面共享网格/纹理绑定，变换、颜色及
+PBR/背面策略均保留实例数据。几何、阴影、拾取按共享网格合批，整数身份不改变。
+
+Scene instance records use bounded read-only storage buffers (256 bytes per surface
+record, 96 for picking, 64 for a shadow transform). Shaders index with instance_index
+and pass a flat integer to fragments; the compact record still stores the original
+source ID for picking. Main/SSAO share one ordered attribute upload. Shadows store
+per-cascade matrices and issue instanced runs with the proper base instance. Buffer
+sizes are checked against actual device binding/buffer limits before allocation.
+Submitted command buffers retain GPU resources; failed calls preserve prior reports.
+
+Mesh inputs and CPU shadow fitting now accept up to 10000 instances, matching scene
+entity capacity (a primary camera consumes one entity). Validation, camera clipping,
+asset budgets and transform bounds remain. Renderer statistics explicitly distinguish
+input/visible/culled/caster instances from actual color/shadow/SSAO/picking draw
+commands. The editor displays both quantities; no frame-rate claim is inferred.
+输入/阴影拟合上限为 10000，完整校验和资源预算保持；统计区分实例数量与真实 GPU
+绘制命令，不把合批数量冒充 FPS。
+
+Batching remains consecutive and CPU preparation linear. Spatial acceleration,
+streaming, GPU-driven visibility, transparency sorting, animation and production
+content still require dedicated implementation; instancing alone does not establish
+large-game readiness.
