@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "EnvironmentFixture.hpp"
 #include "SceneAudioFixture.hpp"
 
 import Dot.Core.Files;
@@ -193,4 +194,31 @@ TEST_CASE("game_package_persists_physical_authoring_and_rejects_missing_material
   auto saved = package.scene().value();
   CHECK(saved.entities()->at(1).material->asset == "assets/metal.dotmaterial");
   CHECK(saved.entities()->back().light->intensity == 4);
+}
+
+TEST_CASE("game_package.environment_hdr_survives_relocation_and_invalid_sources_block_publish") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.project.files().value()));
+  auto scene = fixture.project.loadStartup().value();
+  const Dot::World::Environment expected{"assets/studio.hdr", 2, -45, false, {16, 4, 16, 16, 32}};
+  REQUIRE(scene.setEnvironment(expected));
+  auto published = GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                        fixture.directory.files(), "environment-game");
+  REQUIRE_MESSAGE(published, (published ? "" : published.error().message));
+  const auto original = fixture.project.files()->readBytes("assets/studio.hdr").value();
+  const auto moved = fixture.directory.files().root() / "moved-environment-game";
+  std::filesystem::rename(published->root(), moved);
+  auto package = GamePackage::open(Dot::Core::FileSystem::open(moved).value()).value();
+  CHECK(package.scene()->environment().value() == expected);
+  CHECK(package.files()->readBytes("assets/studio.hdr").value() == original);
+  REQUIRE(fixture.project.files()->writeTextAtomic("assets/studio.hdr", "invalid HDR"));
+  auto rejected = GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                       fixture.directory.files(), "bad-environment-game");
+  CHECK_FALSE(rejected);
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.files().root() / "bad-environment-game"));
+  auto settings = expected;
+  settings.asset = "assets/missing.hdr";
+  REQUIRE(scene.setEnvironment(settings));
+  CHECK_FALSE(GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                   fixture.directory.files(), "missing-environment-game"));
 }

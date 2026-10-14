@@ -8,24 +8,36 @@ module;
 module Dot.Graphics.Environment;
 
 namespace Dot::Graphics {
+  auto validateEnvironmentConfig(const EnvironmentConfig& config) -> Core::Result<void> {
+    const auto size = [](std::uint32_t value, std::uint32_t minimum, std::uint32_t maximum) {
+      return value >= minimum && value <= maximum && std::has_single_bit(value);
+    };
+
+    if (!size(config.radianceSize, 16, 512) || !size(config.specularSize, 16, 512)
+        || !size(config.diffuseSize, 4, 128) || !size(config.brdfSize, 16, 256)
+        || config.samples < 32 || config.samples > 1024) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid environment processing bounds");
+    }
+
+    return {};
+  }
+
   auto validateEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
       -> Core::Result<EnvironmentInfo> {
-    auto valid = validateImage(panorama);
+    auto valid = validateEnvironmentConfig(config);
 
     if (!valid) {
       return std::unexpected(valid.error());
     }
 
-    const auto size = [](std::uint32_t value, std::uint32_t minimum, std::uint32_t maximum) {
-      return value >= minimum && value <= maximum && std::has_single_bit(value);
-    };
+    valid = validateImage(panorama);
 
-    if (panorama.width != panorama.height * 2 || panorama.height < 2
-        || !size(config.radianceSize, 16, 512) || !size(config.specularSize, 16, 512)
-        || !size(config.diffuseSize, 4, 128) || !size(config.brdfSize, 16, 256)
-        || config.samples < 32 || config.samples > 1024) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Invalid HDR panorama/environment bounds");
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    if (panorama.width != panorama.height * 2 || panorama.height < 2) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid HDR panorama dimensions");
     }
 
     for (std::size_t index = 0; index < panorama.pixels.size(); ++index) {

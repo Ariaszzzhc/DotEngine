@@ -190,6 +190,9 @@ export namespace Dot::Graphics {
     auto operator=(EnvironmentMap&&) noexcept -> EnvironmentMap&;
     ~EnvironmentMap();
     [[nodiscard]] auto info() const -> Core::Result<EnvironmentInfo>;
+    /** Compare shared resource identity without querying a device.
+     * 不查询设备，仅比较共享资源身份。 */
+    auto operator==(const EnvironmentMap&) const noexcept -> bool = default;
 
   private:
     friend class Renderer;

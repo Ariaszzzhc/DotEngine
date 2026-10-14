@@ -119,6 +119,128 @@ namespace Dot::Graphics {
     std::unordered_map<std::string, MaterialEntry> materials;
     std::unordered_map<std::string, TextureEntry> textures;
 
+    struct EnvironmentEntry {
+      std::string asset;
+      EnvironmentConfig processing;
+      EnvironmentMap map;
+      std::uint64_t bytes;
+    };
+
+    std::optional<EnvironmentEntry> environment;
+
+    /** Detach only our binding; another scene renderer may now own the active map.
+     * 仅解绑本服务的资源；另一个场景渲染器可能已接管当前环境。 */
+    auto detachEnvironment() -> Core::Result<void> {
+      if (!environment) {
+        return {};
+      }
+
+      auto current = renderer->environment();
+
+      if (!current) {
+        return std::unexpected(current.error());
+      }
+
+      if (*current && (**current).map == environment->map) {
+        return renderer->setEnvironment(std::nullopt);
+      }
+
+      return {};
+    }
+
+    ~Impl() {
+      /** Device failure may prevent unbinding; renderer teardown releases its
+       * retained binding. Destruction itself must not throw.
+       * 设备故障可能阻止解绑；渲染器销毁会释放其绑定，析构本身不得抛异常。 */
+      try {
+        static_cast<void>(detachEnvironment());
+      } catch (...) {
+      }
+    }
+
+    auto bindEnvironment(const World::Scene& scene) -> Core::Result<void> {
+      auto source = scene.environment();
+
+      if (!source) {
+        return std::unexpected(source.error());
+      }
+
+      if (!*source) {
+        auto cleared = renderer->setEnvironment(std::nullopt);
+
+        if (!cleared) {
+          return cleared;
+        }
+
+        if (environment) {
+          bytes -= environment->bytes;
+          environment.reset();
+        }
+
+        return {};
+      }
+
+      const auto& description = **source;
+      std::optional<EnvironmentEntry> pending;
+
+      if (!environment || environment->asset != description.asset
+          || environment->processing != description.processing) {
+        if (!assets) {
+          return Core::fail(Core::ErrorCode::NotFound, "Scene environment requires an asset root");
+        }
+
+        const auto path = std::filesystem::path(
+            std::u8string(description.asset.begin(), description.asset.end()));
+        auto image = Assets::loadHdrImage(*assets, path);
+
+        if (!image) {
+          return Core::fail(image.error().code, "Scene environment " + description.asset + ": "
+                                                    + image.error().message);
+        }
+
+        auto info = validateEnvironment(*image, description.processing);
+
+        if (!info) {
+          return Core::fail(info.error().code,
+                            "Scene environment " + description.asset + ": " + info.error().message);
+        }
+
+        if (info->bytes > budget - bytes) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Scene environment cache budget exceeded");
+        }
+
+        auto baked = renderer->bakeEnvironment(*image, description.processing);
+
+        if (!baked) {
+          return Core::fail(baked.error().code, "Bake scene environment " + description.asset + ": "
+                                                    + baked.error().message);
+        }
+
+        pending = EnvironmentEntry{description.asset, description.processing, std::move(*baked),
+                                   info->bytes};
+      }
+
+      const auto& map = pending ? pending->map : environment->map;
+      auto bound = renderer->setEnvironment(EnvironmentLighting{
+          map, description.intensity, description.rotationDegrees, description.background});
+
+      if (!bound) {
+        return bound;
+      }
+
+      if (pending) {
+        if (environment) {
+          bytes -= environment->bytes;
+        }
+
+        bytes += pending->bytes;
+        environment = std::move(pending);
+      }
+
+      return {};
+    }
+
     auto check() const -> Core::Result<void> {
       auto info = renderer->adapterInfo();
 
@@ -499,7 +621,13 @@ namespace Dot::Graphics {
               {&frame.meshes.back(), *world, entity.mesh->tint, std::move(material)});
         }
 
-        auto changed = renderer->setLighting(*lights);
+        auto changed = bindEnvironment(scene);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        changed = renderer->setLighting(*lights);
 
         if (!changed) {
           return std::unexpected(changed.error());
@@ -666,8 +794,13 @@ namespace Dot::Graphics {
       textureBytes += entry.bytes;
     }
 
-    return SceneRenderStats{m_impl->cache.size(), m_impl->bytes, m_impl->materials.size(),
-                            m_impl->textures.size(), textureBytes};
+    return SceneRenderStats{m_impl->cache.size(),
+                            m_impl->bytes,
+                            m_impl->materials.size(),
+                            m_impl->textures.size(),
+                            textureBytes,
+                            m_impl->environment ? 1U : 0U,
+                            m_impl->environment ? m_impl->environment->bytes : 0U};
   }
 
   auto SceneRenderer::warnings() const -> Core::Result<std::vector<std::string>> {
@@ -704,6 +837,13 @@ namespace Dot::Graphics {
       return checked;
     }
 
+    checked = m_impl->detachEnvironment();
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->environment.reset();
     m_impl->materials.clear();
     m_impl->textures.clear();
     m_impl->cache.clear();

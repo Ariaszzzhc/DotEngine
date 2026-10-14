@@ -10,6 +10,8 @@
 #include <thread>
 #include <utility>
 
+#include "EnvironmentFixture.hpp"
+
 import Dot.Core.Files;
 import Dot.Assets.Material;
 import Dot.Core.Result;
@@ -748,4 +750,57 @@ TEST_CASE("workspace.actual_compiler_diagnostics_map_to_openable_project_files_a
   REQUIRE(workspace.dispatch("{\"command\":\"check-scripts\"}"));
   status = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
   CHECK(status["scripts"]["diagnostics"].empty());
+}
+
+TEST_CASE("workspace.environment_drafts_revision_apply_reset_save_play_and_reopen") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.project.files().value()));
+  auto workspace = fixture.open();
+  REQUIRE(workspace.dispatch("{\"command\":\"show-pane\",\"pane\":\"environment\"}"));
+
+  for (int frame = 0; frame < 2; ++frame) {
+    auto rendered = workspace.step(std::chrono::milliseconds{16});
+    REQUIRE_MESSAGE(rendered, (rendered ? "" : rendered.error().message));
+  }
+  CHECK(Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value())["workspace"]["pane"]
+        == "environment");
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"show-pane\",\"pane\":\"missing\"}"));
+  Json value{{"asset", "assets/studio.hdr"}, {"intensity", 2.0},   {"rotationDegrees", 45.0},
+             {"background", true},           {"radianceSize", 16}, {"diffuseSize", 4},
+             {"specularSize", 16},           {"brdfSize", 16},     {"samples", 32}};
+  auto staged = command(workspace, {{"command", "stage-environment"}, {"value", value}});
+  CHECK(staged["workspace"]["pendingEnvironment"] == true);
+  CHECK(staged["scene"]["environment"].is_null());
+  CHECK(staged["workspace"]["environmentDraft"] == value);
+  auto closing = workspace.dispatch("{\"command\":\"close\",\"discard\":false}");
+  REQUIRE(closing);
+  CHECK(Json::parse(*closing)["confirmation"] == true);
+  command(workspace, {{"command", "cancel-close"}});
+  const auto current = snapshot(workspace)["revision"];
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "save"}, {"revision", current}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "play"}, {"revision", current}}.dump()));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "stage-environment"}, {"revision", "0"}, {"value", value}}.dump()));
+  auto reset = command(workspace, {{"command", "reset-environment"}});
+  CHECK(reset["workspace"]["pendingEnvironment"] == false);
+  command(workspace, {{"command", "stage-environment"}, {"value", value}});
+  auto applied = command(workspace, {{"command", "apply-environment"}});
+  CHECK(applied["scene"]["environment"] == value);
+  CHECK(applied["workspace"]["pendingEnvironment"] == false);
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  command(workspace, {{"command", "undo"}});
+  CHECK(snapshot(workspace)["scene"]["environment"].is_null());
+  command(workspace, {{"command", "redo"}});
+  command(workspace, {{"command", "save"}});
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  command(workspace, {{"command", "stop-play"}});
+  CHECK(snapshot(workspace)["scene"]["environment"] == value);
+  value["intensity"] = 3.0;
+  command(workspace, {{"command", "stage-environment"}, {"value", value}});
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
+  command(workspace, {{"command", "save-close"}});
+  auto reopened = fixture.open();
+  CHECK(snapshot(reopened)["scene"]["environment"] == value);
+  REQUIRE(reopened.dispatch("{\"command\":\"close\",\"discard\":false}"));
 }

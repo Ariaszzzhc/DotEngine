@@ -259,6 +259,11 @@ namespace Dot::Editor {
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
     std::string m_importSource;
+    std::string m_environmentRevision;
+    Json m_environmentDraft;
+    Json m_environmentOriginal;
+    std::string m_requestedPane;
+    std::string m_pane{"scene"};
     bool m_assetRefresh{};
     std::string m_checkMessage;
     std::string m_exportParent;
@@ -499,7 +504,8 @@ namespace Dot::Editor {
     }
 
     auto startPlay() -> Core::Result<void> {
-      if (playing() || pendingInspector() || pendingText() || !m_application->running()) {
+      if (playing() || pendingInspector() || pendingEnvironment() || pendingText()
+          || !m_application->running()) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Play requires no pending inspector/file edits or active game");
       }
@@ -567,6 +573,37 @@ namespace Dot::Editor {
       return status;
     }
 
+    auto pendingEnvironment() const -> bool {
+      return m_environmentDraft != m_environmentOriginal;
+    }
+
+    auto applyEnvironment() -> Core::Result<void> {
+      if (!pendingEnvironment()) {
+        return {};
+      }
+
+      if (pendingInspector()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Apply or reset inspector changes before environment changes");
+      }
+
+      if (m_environmentRevision != std::to_string(m_document->stats()->revision)) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Environment draft has a stale revision");
+      }
+
+      auto applied = m_document->apply(
+          Json::array({{{"op", "environment"}, {"value", m_environmentDraft}}}).dump(),
+          m_document->stats()->revision);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      m_environmentOriginal = m_environmentDraft;
+      m_environmentRevision.clear();
+      return refresh();
+    }
+
     auto pendingInspector() const -> bool {
       return m_edit != m_original || m_propertiesInvalid;
     }
@@ -606,7 +643,7 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "revision", "parent", "folder"});
 
         if (Codec::id(parsed["revision"]) != m_document->stats().value().revision || playing()
-            || pendingInspector() || pendingText()) {
+            || pendingInspector() || pendingEnvironment() || pendingText()) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Export requires current revision, stopped Play and no pending inspector/file edits");
@@ -914,7 +951,13 @@ namespace Dot::Editor {
           return std::unexpected(stopped.error());
         }
 
-        auto applied = applyInspector();
+        auto applied = applyEnvironment();
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
+        applied = applyInspector();
 
         if (!applied) {
           return std::unexpected(applied.error());
@@ -985,9 +1028,74 @@ namespace Dot::Editor {
                        : std::unexpected(encoded.error());
       }
 
-      if (playing() && command != "inspect" && command != "close") {
+      if (playing() && command != "inspect" && command != "close" && command != "show-pane") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Stop Play before changing the authoring document");
+      }
+
+      if (command == "show-pane") {
+        Codec::requireFields(parsed, {"command", "pane"});
+        const auto pane = parsed["pane"].get<std::string>();
+
+        if (pane != "scene" && pane != "environment" && pane != "resources") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
+        }
+
+        m_requestedPane = pane;
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "stage-environment") {
+        Codec::requireFields(parsed, {"command", "revision", "value"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Environment staging requires the current revision and clean inspector");
+        }
+
+        if (!parsed["value"].is_object()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Environment draft requires an object");
+        }
+
+        auto tentative = m_snapshot["scene"];
+        tentative["environment"] = parsed["value"];
+        auto stagedScene = World::decodeScene(tentative.dump());
+
+        if (!stagedScene) {
+          return std::unexpected(stagedScene.error());
+        }
+
+        if (!pendingEnvironment()) {
+          m_environmentOriginal = m_snapshot["scene"]["environment"];
+        }
+
+        m_environmentDraft = parsed["value"];
+        m_environmentRevision = std::to_string(m_document->stats()->revision);
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "apply-environment" || command == "reset-environment") {
+        Codec::requireFields(parsed, {"command", "revision"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Environment request has a stale revision");
+        }
+
+        if (command == "apply-environment") {
+          auto applied = applyEnvironment();
+
+          if (!applied) {
+            return std::unexpected(applied.error());
+          }
+        } else {
+          m_environmentDraft = m_environmentOriginal;
+          m_environmentRevision.clear();
+        }
+
+        return execute("{\"command\":\"inspect\"}");
       }
 
       if (command == "apply-inspector" || command == "reset-inspector") {
@@ -1017,7 +1125,9 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "discard"});
         const bool discard = parsed["discard"].get<bool>();
 
-        if ((m_document->stats()->dirty || pendingInspector() || pendingText()) && !discard) {
+        if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
+             || pendingText())
+            && !discard) {
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
@@ -1035,10 +1145,11 @@ namespace Dot::Editor {
             .dump();
       }
 
-      if (!m_applying && pendingInspector()
+      if (!m_applying && (pendingInspector() || pendingEnvironment())
           && parsed.value("command", std::string{}) != "inspect") {
-        return Core::fail(Core::ErrorCode::InvalidState,
-                          "Apply or reset pending inspector changes before another operation");
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Apply or reset pending inspector/environment changes before another operation");
       }
 
       auto result = m_document->dispatch(request);
@@ -1052,6 +1163,10 @@ namespace Dot::Editor {
       if (result && command == "inspect") {
         auto response = Codec::parseJson(*result);
         response["workspace"] = {{"pendingInspector", pendingInspector()},
+                                 {"pendingEnvironment", pendingEnvironment()},
+                                 {"environmentDraft", m_environmentDraft},
+                                 {"pane", m_pane},
+                                 {"requestedPane", m_requestedPane},
                                  {"pendingClose", m_pendingClose},
                                  {"running", m_application->running()},
                                  {"inspector", m_edit},
@@ -1485,6 +1600,105 @@ namespace Dot::Editor {
       return result.has_value();
     }
 
+    auto environmentPanel() -> void {
+      const auto revision = std::to_string(m_document->stats()->revision);
+
+      if (m_environmentRevision != revision && !pendingEnvironment()) {
+        m_environmentDraft = m_snapshot["scene"]["environment"];
+
+        if (m_environmentDraft.is_null()) {
+          m_environmentDraft
+              = {{"asset", ""},         {"intensity", 1.0F},   {"rotationDegrees", 0.0F},
+                 {"background", true},  {"radianceSize", 256}, {"diffuseSize", 32},
+                 {"specularSize", 128}, {"brdfSize", 128},     {"samples", 256}};
+        }
+
+        m_environmentOriginal = m_environmentDraft;
+        m_environmentRevision = revision;
+      }
+
+      ImGui::BeginDisabled(playing() || pendingInspector());
+      ImGui::TextWrapped("Scene HDR environment");
+      auto asset = m_environmentDraft["asset"].get<std::string>();
+
+      if (ImGui::InputText("HDRI", &asset)) {
+        m_environmentDraft["asset"] = asset;
+      }
+
+      ImGui::BeginDisabled(!m_selectedResource.ends_with(".hdr"));
+
+      if (ImGui::Button("Use selected HDRI")) {
+        m_environmentDraft["asset"] = m_selectedResource;
+      }
+
+      ImGui::EndDisabled();
+      auto intensity = m_environmentDraft["intensity"].get<float>();
+      auto rotation = m_environmentDraft["rotationDegrees"].get<float>();
+      auto background = m_environmentDraft["background"].get<bool>();
+
+      if (ImGui::InputFloat("Intensity", &intensity, 0.1F, 1.0F)) {
+        m_environmentDraft["intensity"] = intensity;
+      }
+
+      if (ImGui::SliderFloat("Yaw", &rotation, -360, 360, "%.1f deg")) {
+        m_environmentDraft["rotationDegrees"] = rotation;
+      }
+
+      if (ImGui::Checkbox("Sky background", &background)) {
+        m_environmentDraft["background"] = background;
+      }
+
+      const std::array<const char*, 3> names{"Preview", "Balanced", "High"};
+      const std::array<std::array<int, 5>, 3> quality{
+          {{64, 16, 64, 64, 128}, {256, 32, 128, 128, 256}, {512, 64, 256, 256, 1024}}};
+      const std::array<const char*, 5> keys{"radianceSize", "diffuseSize", "specularSize",
+                                            "brdfSize", "samples"};
+      const char* selected = "Custom";
+
+      for (std::size_t index = 0; index < quality.size(); ++index) {
+        bool matches = true;
+
+        for (std::size_t field = 0; field < keys.size(); ++field) {
+          matches = matches && m_environmentDraft[keys[field]] == quality[index][field];
+        }
+
+        if (matches) {
+          selected = names[index];
+        }
+      }
+
+      if (ImGui::BeginCombo("Quality", selected)) {
+        for (std::size_t index = 0; index < quality.size(); ++index) {
+          if (ImGui::Selectable(names[index], selected == names[index])) {
+            for (std::size_t field = 0; field < keys.size(); ++field) {
+              m_environmentDraft[keys[field]] = quality[index][field];
+            }
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      if (ImGui::Button("Apply environment")) {
+        action({{"command", "apply-environment"}});
+      }
+
+      if (ImGui::Button("Reset draft")) {
+        action({{"command", "reset-environment"}});
+      }
+
+      ImGui::BeginDisabled(pendingEnvironment());
+
+      if (ImGui::Button("Remove environment")) {
+        edit(Json::array({{{"op", "environment"}, {"value", nullptr}}}));
+      }
+
+      ImGui::EndDisabled();
+      ImGui::TextWrapped(
+          "Save the scene to retain these settings. Higher quality increases processing time.");
+      ImGui::EndDisabled();
+    }
+
     auto resourcesPanel() -> void {
       if (ImGui::Button("Refresh files")) {
         fileAction({{"command", "resources"}});
@@ -1639,7 +1853,8 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      ImGui::BeginDisabled(!playing() && (pendingInspector() || pendingText()));
+      ImGui::BeginDisabled(!playing()
+                           && (pendingInspector() || pendingEnvironment() || pendingText()));
 
       if (ImGui::Button(playing() ? "Stop" : "Play")
           || ImGui::Shortcut(ImGuiKey_F5, ImGuiInputFlags_RouteGlobal)) {
@@ -1681,7 +1896,14 @@ namespace Dot::Editor {
       ImGui::BeginChild("Scene", {220, available.y}, ImGuiChildFlags_Borders);
 
       if (ImGui::BeginTabBar("Project panes")) {
-        if (ImGui::BeginTabItem("Scene")) {
+        if (ImGui::BeginTabItem("Scene", nullptr,
+                                m_requestedPane == "scene" ? ImGuiTabItemFlags_SetSelected : 0)) {
+          m_pane = "scene";
+
+          if (m_requestedPane == "scene") {
+            m_requestedPane.clear();
+          }
+
           auto entities = m_snapshot["scene"]["entities"];
           ImGui::BeginDisabled(playing());
           tree(entities, nullptr);
@@ -1689,7 +1911,28 @@ namespace Dot::Editor {
           ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Resources")) {
+        if (ImGui::BeginTabItem(
+                "Environment", nullptr,
+                m_requestedPane == "environment" ? ImGuiTabItemFlags_SetSelected : 0)) {
+          m_pane = "environment";
+
+          if (m_requestedPane == "environment") {
+            m_requestedPane.clear();
+          }
+
+          environmentPanel();
+          ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem(
+                "Resources", nullptr,
+                m_requestedPane == "resources" ? ImGuiTabItemFlags_SetSelected : 0)) {
+          m_pane = "resources";
+
+          if (m_requestedPane == "resources") {
+            m_requestedPane.clear();
+          }
+
           resourcesPanel();
           ImGui::EndTabItem();
         }
@@ -1738,7 +1981,9 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("Inspector");
       ImGui::Separator();
       ImGui::BeginDisabled(playing());
+      ImGui::BeginDisabled(pendingEnvironment());
       inspector();
+      ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::EndChild();
 
@@ -1755,7 +2000,8 @@ namespace Dot::Editor {
         ImGui::Checkbox("Data package only", &m_exportDataOnly);
         ImGui::InputText("Existing parent directory", &m_exportParent);
         ImGui::InputText("New folder", &m_exportFolder);
-        ImGui::BeginDisabled(playing() || pendingInspector() || pendingText());
+        ImGui::BeginDisabled(playing() || pendingInspector() || pendingEnvironment()
+                             || pendingText());
 
         if (ImGui::Button("Export")) {
           auto request = Json{{"command", m_exportDataOnly ? "export-data" : "export"},
@@ -1828,7 +2074,8 @@ namespace Dot::Editor {
     auto callbacks() -> Core::LoopCallbacks {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
-        m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingText();
+        m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
+                         || pendingText();
 
         if (!m_pendingClose) {
           auto stopped = stopPlay();

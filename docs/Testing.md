@@ -42,9 +42,9 @@ resize, event dispatch, presentation and destruction. Unit tests must not create
 window just to inspect pure data. Separate CPU validation and pixel checks from
 native presentation. Repeated creation/destruction specifically verifies lifetime;
 do not share one global fixture if that would hide leaks or initialization failures.
-The current selections contain 189 unit, 471 device-free integration, 72 offscreen
-GPU, 43 native and 91 acceptance cases. Counts overlap through native/acceptance
-labels; all 852 CTest identities are covered; existing subsystem coverage is retained.
+The current selections contain 190 unit, 475 device-free integration, 73 offscreen
+GPU, 44 native and 92 acceptance cases. Counts overlap through native/acceptance
+labels; all 859 CTest identities are covered; existing subsystem coverage is retained.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
 
@@ -64,3 +64,9 @@ performs date/time API assertions, while
 defines a separate low-level test target. The connected GitHub app's earlier 404
 was an access-path limitation, not evidence that the human account lacked access.
 No Unreal source is copied into the engine.
+
+Finish concurrent Debug/Release compilation before running full CTest configurations,
+then run configurations sequentially. Integration tests intentionally enforce real
+wall-clock script/process budgets; competing compiler work can obscure their results.
+Investigate exact failures and verify them under the intended execution conditions;
+do not inflate production budgets or weaken assertions to accommodate build load.

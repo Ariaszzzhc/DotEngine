@@ -443,3 +443,32 @@ TEST_CASE("document_material_and_light_components_share_history_save_and_agent_v
   CHECK(saved.entities()->at(1).material->asset == "assets/steel.dotmaterial");
   CHECK(saved.entities()->at(1).light->kind == Dot::World::LightKind::Point);
 }
+
+TEST_CASE("document.environment_edits_undo_redo_atomic_failure_save_and_reopen") {
+  Fixture fixture;
+  auto document = fixture.document();
+  Json settings{{"asset", "assets/studio.hdr"}, {"intensity", 2.0},   {"rotationDegrees", 45},
+                {"background", false},          {"radianceSize", 16}, {"diffuseSize", 4},
+                {"specularSize", 16},           {"brdfSize", 16},     {"samples", 32}};
+  const auto operations = Json::array({{{"op", "environment"}, {"value", settings}}});
+  edit(document, operations);
+  CHECK(state(document)["scene"]["environment"] == settings);
+  const auto changed = revision(document);
+  auto bad = settings;
+  bad["intensity"] = -1;
+  CHECK_FALSE(document.apply(Json::array({{{"op", "scene-name"}, {"name", "Must rollback"}},
+                                          {{"op", "environment"}, {"value", bad}}})
+                                 .dump(),
+                             changed));
+  CHECK(revision(document) == changed);
+  CHECK(state(document)["scene"]["environment"] == settings);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["environment"].is_null());
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"]["environment"] == settings);
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(state(reopened)["scene"]["environment"] == settings);
+  edit(reopened, Json::array({{{"op", "environment"}, {"value", nullptr}}}));
+  CHECK(state(reopened)["scene"]["environment"].is_null());
+}

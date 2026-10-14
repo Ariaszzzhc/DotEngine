@@ -349,3 +349,40 @@ TEST_CASE("scene_files_material_and_light_roundtrip_and_strict_component_rejecti
   json["entities"][0]["material"]["asset"] = "../escape.dotmaterial";
   CHECK_FALSE(decodeScene(json.dump()));
 }
+
+TEST_CASE("scene_file.environment_roundtrip_strict_fields_numbers_and_absence") {
+  auto scene = makeScene();
+  const Dot::World::Environment expected{
+      "assets/studio.hdr", 1.5F, -90, false, {64, 16, 64, 64, 128}};
+  REQUIRE(scene.setEnvironment(expected));
+  const auto encoded = Dot::World::encodeScene(scene).value();
+  auto decoded = Dot::World::decodeScene(encoded).value();
+  CHECK(decoded.environment().value() == expected);
+  CHECK(Dot::World::encodeScene(decoded).value() == encoded);
+  const auto canonical = Json::parse(encoded);
+
+  for (const auto& replacement : {Json(-1), Json(1025), Json(32.5), Json("32"), Json(true),
+                                  Json(std::numeric_limits<std::uint64_t>::max())}) {
+    auto bad = canonical;
+    bad["environment"]["samples"] = replacement;
+    CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  }
+
+  auto bad = canonical;
+  bad["environment"]["unknown"] = true;
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  bad = canonical;
+  bad["environment"].erase("asset");
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  bad = canonical;
+  bad["environment"]["background"] = 1;
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  bad = canonical;
+  bad["environment"]["asset"] = "../outside.hdr";
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  auto absent = canonical;
+  absent["environment"] = nullptr;
+  CHECK_FALSE(Dot::World::decodeScene(absent.dump())->environment().value());
+  absent.erase("environment");
+  CHECK_FALSE(Dot::World::decodeScene(absent.dump())->environment().value());
+}

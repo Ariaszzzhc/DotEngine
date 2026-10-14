@@ -311,9 +311,9 @@ fetches no assets/API. Unit tests check bounds/face axes; offscreen tests check
 constant energy, all faces/mips, independent linear-field diffuse moments,
 roughness blur, BRDF's smooth/rough limits, actual HDRI, budget/failure/lifetime.
 
-Preprocessing and renderer PBR/sky consumption are implemented. Persistent
-environment settings, HDRI asset caching and editor/Play/export authoring integration
-remain the next consumer stage. No editable IBL scene is claimed yet.
+Preprocessing and renderer PBR/sky consumption are implemented. Persistent scene environments, bounded HDRI asset caching and editor/Play/export
+authoring now consume this subsystem. Async import/disk bake caching and streaming
+remain planned.
 
 ## Built-in WGSL sources
 
@@ -363,10 +363,11 @@ Persistent targets, readback meshes and native mesh presentation share this path
 Immediate unlit vertex rendering is independent of environment mesh rendering.
 
 SceneRenderer already forwards its scene camera pose/projection to this renderer
-path. A native GPU test verifies an explicitly bound environment lights decoded
-scene material resources without direct lights; scene cache clearing preserves
-the independently owned environment. The scene file does not yet persist an HDRI
-reference or settings, and the editor does not yet offer environment authoring.
+path. Native GPU tests verify saved environment settings light decoded scene material
+resources without direct lights, reuse/reload bakes and release owned cache maps
+without detaching another service's binding. Scene files persist HDRI references/
+settings and the editor exposes the configuration through its Environment pane
+and transaction commands.
 
 The offscreen environment acceptance also renders `environment-lighting.ppm`: six
 actual HDRI-lit spheres with no direct lights (copper above, blue dielectric below;
@@ -374,4 +375,40 @@ roughness .06/.3/.8 left to right), plus sky, HDR readback and GPU ACES output.
 Independent constant-energy tests check diffuse and the analytical rough-metal
 limit, intensity/unbinding/unlit behavior; directional fields check perspective
 rays, yaw, orthographic sky and geometry depth. This evidence establishes the
-renderer consumer, while production scene authoring remains pending.
+renderer consumer; saved scene authoring and its integration are described below.
+
+## Saved scene environments
+
+A scene's optional root `environment` owns a portable project-relative `.hdr`
+reference, linear intensity [0,64], Y-axis rotation [-360,360], background flag and
+processing dimensions/sample count. Null/absence means no environment. All settings
+are validated on the CPU before publication; strict serialization rejects unknown
+fields, wrong types and unbounded/nonintegral work values. Resource existence,
+opaque 2:1 panorama validity and residency are checked by their actual consumers.
+
+SceneRenderer treats the current scene as authoritative: no environment clears a
+previous scene binding. It lazily loads the actual HDR panorama and bakes a shared
+map within its existing cache budget. Intensity/yaw/background changes reuse the
+map; asset or processing changes bake a new map. Transactional replacement needs
+the old and new maps to fit the cache peak; a failure retains the previous GPU
+binding and rendered target. `stats()` includes environment count/logical bytes.
+Replacing source bytes at the same path requires `clearCache`, as with other
+immutable assets. Cache clearing/destruction detach only this service's bound map
+(by shared resource identity), preserving another service's later binding. Device
+failure may defer a retained renderer binding's release until renderer teardown.
+
+The editor Environment pane edits HDRI, intensity, yaw, sky background and preview/
+balanced/high quality presets; custom saved processing values are retained until a
+preset is explicitly selected. Drafts require Apply or Reset and participate in
+save/Play/export/close protection; save-close commits them through the document
+transaction before saving. Undo/redo, reopening and Play's isolated scene copy all
+retain the same configuration. Asset import/save refreshes the shared scene cache.
+Export validates actual referenced HDR pixels and processing contracts before
+publishing; copied HDR bytes and scene references survive relocation. No online
+asset fetch or absolute authoring path is required by the exported player.
+
+Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
+scene/project/template so editor, Play and native exports show the same environment.
+Its existing native standalone acceptance validates that delivery path. This
+provides authored IBL; soft shadows, SSAO, async baking/streaming and advanced
+lighting/editor tools remain part of the active capability roadmap.

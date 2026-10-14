@@ -12,8 +12,8 @@ and its evidence; passing these tests does not establish missing product capabil
 | Create/open projects and edit games | [Project home](ProjectHome.md) creates three validated templates; [workspace](Editor.md) edits native scene/hierarchy/components, resources and TypeScript, with undo/redo and conflict-aware saves |
 | Surface image/texture resources | [Rendering](Rendering.md): bounded PNG/JPEG/Radiance import, explicit color spaces, shared GPU textures/samplers/mips and unlit material base-color sampling; native pixel/lifetime checks |
 | Direct physical rendering | Metallic/roughness GGX, normal/emissive/data texture slots, directional/point/spot lights and perspective/orthographic view rays; saved material/light components, shared preview/Play/export, basic inspector/agent authoring and actual gallery/pixel/lifetime checks; dedicated material tooling remains planned |
-| Environment preprocessing foundation | Real HDR panorama GPU conversion, diffuse convolution, GGX reflection mips, correlated-Smith BRDF LUT, shared residency/lifetime and actual Poly Haven input; surface/sky/authoring IBL consumption remains planned |
-| HDRI renderer consumption | Explicit shared binding, single-scattering split-sum PBR, mapped normals, roughness reflections, yaw/intensity, camera sky, shared HDR/depth, scene-camera integration and actual HDRI-lit gallery; persistent environment authoring/cache/Play/export integration remains planned |
+| Environment preprocessing foundation | Real HDR panorama GPU conversion, diffuse convolution, GGX reflection mips, correlated-Smith BRDF LUT, shared residency/lifetime and actual Poly Haven input; authored IBL consumption is implemented; async bake/cache/streaming remains planned |
+| HDRI renderer consumption | Explicit shared binding, single-scattering split-sum PBR, mapped normals, roughness reflections, yaw/intensity, camera sky, shared HDR/depth, scene-camera integration and actual HDRI-lit gallery; scene persistence, bounded HDRI caches, editor drafts/undo/Play/export and offline Feature Lab delivery now consume IBL; async baking/streaming remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
@@ -30,15 +30,14 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 852/852 CTest cases
-(793 doctest cases and 59 executable checks), taking 136.25 and 37.66 seconds.
-The [test layers](Testing.md) separate 189 pure CPU unit cases from files/compiler/
-platform integration, 72 offscreen GPU cases and native/acceptance workflows.
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 859/859 CTest cases
+(800 doctest cases and 59 executable checks), taking 139.71 and 39.22 seconds.
+The [test layers](Testing.md) separate 190 pure CPU unit cases from files/compiler/
+platform integration, 73 offscreen GPU cases and native/acceptance workflows.
 The earlier 184-case unit selection passed with deliberately invalid SDL drivers;
-the current 189-case selection adds pure URI/diagnostic and environment checks.
-The final zero-view-ray change also passes all 72 Debug offscreen cases in 36.50
-seconds. All 253 engine/application/test C/C++ files pass formatting checks; the six WGSL
-sources are maintained separately with consistent indentation, spacing and blocks. The current 257-entry native zip
+the current 190-case selection adds pure URI/diagnostic and environment checks.
+All 254 engine/application/test C/C++ files pass formatting checks; the six WGSL
+sources are maintained separately with consistent indentation, spacing and blocks. The current 259-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete

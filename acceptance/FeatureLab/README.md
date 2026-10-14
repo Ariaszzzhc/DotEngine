@@ -34,3 +34,16 @@ cases and command-line acceptance cases provide the broader limits, lifetime,
 thread, format, device and error-path coverage described in docs/Acceptance.md.
 Local validation is arm64 macOS; Windows/Linux implementations are not locally
 validated. No JavaScript scene/rendering/physics substitute is used.
+
+## HDR environment
+
+The saved scene uses Studio Small 09 HDRI for material illumination and the sky.
+Environment settings can be edited in the editor's Environment pane, undone/redone
+and saved; preview, Play and exported games consume the same scene configuration.
+Intensity/yaw/background edits reuse the baked map. Changing quality or HDRI bakes
+a new map; editing source bytes at the same path requires the existing asset reload
+action. The demo keeps its HDRI local so copied projects and exports work offline.
+
+`assets/studio_small_09_1k.hdr` is the unmodified [Studio Small 09](https://polyhaven.com/a/studio_small_09)
+1K panorama by Sergej Majboroda, shared under [CC0](https://polyhaven.com/license).
+SHA256: `e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45`.

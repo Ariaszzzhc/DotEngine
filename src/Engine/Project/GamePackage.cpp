@@ -292,6 +292,29 @@ namespace Dot::Project {
         return std::unexpected(validationScene.error());
       }
 
+      auto environment = validationScene->environment();
+
+      if (!environment) {
+        return std::unexpected(environment.error());
+      }
+
+      if (*environment) {
+        const auto& settings = **environment;
+        auto image = Assets::loadHdrImage(checked->files().value(), path(settings.asset));
+
+        if (!image) {
+          return Core::fail(image.error().code,
+                            "Export environment " + settings.asset + ": " + image.error().message);
+        }
+
+        auto valid = Graphics::validateEnvironment(*image, settings.processing);
+
+        if (!valid) {
+          return Core::fail(valid.error().code,
+                            "Export environment " + settings.asset + ": " + valid.error().message);
+        }
+      }
+
       std::unordered_set<std::string> meshes;
       std::unordered_map<std::string, Assets::MaterialDescription> materials;
       std::unordered_map<std::string, Graphics::MeshSurface> surfaces;

@@ -460,3 +460,44 @@ mapping. This stage provides basic inspectors and resource/agent authoring; dedi
 material panels, visual light tools and the requested mature editor layout remain
 in development. External source editing and the engine script namespace are
 implemented; the remaining editor layout/tooling stays part of the roadmap.
+
+## Scene environments
+
+Use the Environment tab to choose a project-relative HDRI (or use the selected
+`.hdr` resource), adjust intensity/yaw/background and choose a processing quality.
+Apply commits one undoable scene transaction; Reset discards the pending draft.
+Save preserves the settings. Pending drafts protect Save/Play/export/close, and
+Save and close applies the draft before saving. Environment and entity-inspector
+drafts cannot be silently committed over one another. Preview, Play and exported
+players use the authored scene environment through the shared renderer/cache.
+
+Agent operations use the same document transaction:
+
+```json
+{
+  "command": "edit",
+  "revision": "1",
+  "operations": [{
+    "op": "environment",
+    "value": {
+      "asset": "assets/studio.hdr",
+      "intensity": 1,
+      "rotationDegrees": 0,
+      "background": true,
+      "radianceSize": 256,
+      "diffuseSize": 32,
+      "specularSize": 128,
+      "brdfSize": 128,
+      "samples": 256
+    }
+  }]
+}
+```
+
+A null value removes the environment. Live workspaces also accept `stage-environment`
+with revision/value, followed by `apply-environment` or `reset-environment` with
+revision. `inspect` reports pendingEnvironment/environmentDraft. `show-pane` with
+pane `scene`, `environment` or `resources` controls graphical navigation without a
+scene edit/revision. Resource failures appear with their paths; no substitute HDRI
+is supplied. Higher quality increases first-bake work; background import/bake jobs
+and advanced environment controls are still planned.

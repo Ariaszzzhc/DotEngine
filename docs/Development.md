@@ -2994,3 +2994,61 @@ editor interaction/scalability and the realistic game remain required by the ful
 active goal. No copied engine sources, compatibility wrappers or new dependency
 were introduced in this stage; build caches/latest package and the private document
 remain intact.
+
+## 2026-10-14 — Authored HDRI environments
+
+Added scene-owned HDRI references/settings with CPU-only portable-path, bounded
+processing and finite intensity/yaw validation. Strict scene serialization retains
+the environment independently of entities. Document environment operations share
+atomic validation, revisions, undo/redo and saving. Play copies the configuration
+without sharing mutable authoring state. SceneRenderer loads real local HDR bytes
+and owns one shared bake within the existing residency budget. Intensity/yaw/sky
+edits reuse it; resource/quality changes replace it transactionally within old-plus-
+new peak capacity. Failure retains the bound map/frame with resource context.
+No-environment scenes clear stale bindings. Cache clearing/destruction compare
+resource identity to preserve another service's newer binding. Asset reload bakes
+changed bytes at the same path. Export validates actual HDR pixels/work before
+publishing and retains local references/bytes across relocation. Feature Lab now
+includes its offline Studio Small 09 HDRI and saved scene settings in templates.
+
+Added an Environment pane with Apply/Reset, selected HDRI, intensity/yaw/background
+and explicit quality presets; custom saved work settings remain until selection.
+Drafts protect Save/Play/export/close and participate in save-close. Agent staging,
+apply/reset and pane navigation accompany document edits. Native panel rendering
+caught a missing EndDisabled; fixed it with GUI validation enabled. Focused checks
+also caught the document operation's early allowlist, missing fixture parents and
+incorrect test helper usage (close revisions and document-only snapshot metadata).
+Corrected implementation/API usage while retaining strict boundaries. Tests cover
+CPU/codec failures, transactions, cache/reload/quality/budget/symlinks/lifetimes,
+Play isolation, workspace drafting/reopening and package relocation.
+
+Opened the signed application and visually inspected the HDRI Feature Lab and
+Environment pane. Navigation used the supported agent command because native UI
+automation did not activate the custom-drawn tabs; no manual mouse-apply result is
+claimed. Closed only verification windows/control stages before full regression.
+The first Debug run passed 857/859; two unchanged Prism gameplay tests hit script
+wall-clock deadlines while the Release compiler was concurrently active. Scheduling
+contention is the working hypothesis; sequential full reruns follow, with no script
+budget or assertions relaxed. A documentation write accidentally replaced this
+log with the delivery summary; restored the full committed history before adding
+this entry. Async bake/import/disk caches, shadows, SSAO, advanced editor tooling
+and the realistic game remain required by the original active goal.
+
+Final sequential verification: Debug 859/859 in 139.71 seconds, Release/NDEBUG
+859/859 in 39.22 seconds, including unchanged script deadline checks and actual
+Feature Lab native workspace/standalone export. Both previously timed-out gameplay
+cases pass without changing budgets. Finish concurrent compilation before full
+CTest runs to avoid competing with wall-clock integration limits. Registered
+coverage is 190 unit, 475 device-free integration, 73 offscreen, 44 native and 92
+acceptance (overlapping labels); 800 doctest cases plus 59 executable checks.
+All 254 engine/application/test C/C++ files pass clang-format; six WGSL sources
+retain line/whitespace checks. Reviewed schema boundaries, atomic edits, renderer
+ownership/detachment, cache accounting/error recovery and export path validation.
+
+The refreshed native ZIP has 259 entries, 45,871,767 bytes. CRC/executable modes,
+exact HDRI hashes in project/template copies, scene references and private/test/
+control-stage/Finder/SDK-copy/WGSL-source exclusions pass. Deep strict application
+signatures and all 16 Mach-O signatures/relative-system library references pass.
+Only arm64 macOS was validated. Removed only owned manual request files; verification
+windows/control stages are closed, while build caches/latest package and the private
+untracked document remain intact. Full large-game/editor requirements remain active.

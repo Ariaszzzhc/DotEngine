@@ -556,5 +556,16 @@
         ]
       }
     }
-  ]
+  ],
+  "environment": {
+    "asset": "assets/studio_small_09_1k.hdr",
+    "intensity": 1.0,
+    "rotationDegrees": 0.0,
+    "background": true,
+    "radianceSize": 128,
+    "diffuseSize": 32,
+    "specularSize": 128,
+    "brdfSize": 128,
+    "samples": 512
+  }
 }

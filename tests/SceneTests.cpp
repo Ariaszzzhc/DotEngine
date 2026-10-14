@@ -411,3 +411,48 @@ TEST_CASE("scene.independent_scenes_can_be_created_concurrently") {
   CHECK(identities.front() != 0);
   CHECK(std::adjacent_find(identities.begin(), identities.end()) == identities.end());
 }
+
+TEST_CASE("scene.environment_cpu_validation_is_transactional_thread_and_lifetime_bound") {
+  auto scene = Scene::create().value();
+  CHECK_FALSE(scene.environment().value());
+  Environment valid{"assets/studio.hdr", 2, 90, false, {16, 4, 16, 16, 32}};
+  REQUIRE(scene.setEnvironment(valid));
+  CHECK(scene.environment().value() == valid);
+  auto invalid = valid;
+
+  for (const auto* path :
+       {"", "../studio.hdr", "/studio.hdr", "assets/studio.png", "assets\\studio.hdr"}) {
+    invalid.asset = path;
+    CHECK_FALSE(scene.setEnvironment(invalid));
+    CHECK(scene.environment().value() == valid);
+  }
+
+  invalid = valid;
+  invalid.intensity = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid.intensity = -1;
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid.intensity = 65;
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid = valid;
+  invalid.rotationDegrees = 361;
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid.rotationDegrees = std::numeric_limits<float>::quiet_NaN();
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid = valid;
+  invalid.processing.diffuseSize = 3;
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  invalid.processing = {16, 4, 16, 16, 1025};
+  CHECK_FALSE(scene.setEnvironment(invalid));
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !scene.environment() && !scene.setEnvironment(std::nullopt); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.environment());
+  CHECK_FALSE(scene.setEnvironment(valid));
+  CHECK(moved.environment().value() == valid);
+  REQUIRE(moved.setEnvironment(std::nullopt));
+  CHECK_FALSE(moved.environment().value());
+}

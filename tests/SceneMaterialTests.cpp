@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "EnvironmentFixture.hpp"
+
 import Dot.Assets.Material;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
@@ -213,19 +215,13 @@ TEST_CASE("scene_material_light_limit_and_camera_override_are_validated_before_s
   CHECK_FALSE(device.lighting()->viewDirection);
 }
 
-TEST_CASE(
-    "scene_material.bound_environment_uses_scene_camera_and_saved_pbr_without_direct_lights") {
+TEST_CASE("scene_material.saved_environment_uses_scene_camera_cached_hdr_and_materials") {
   Fixture fixture;
   REQUIRE(fixture.scene.setLight(fixture.light, std::nullopt));
+  REQUIRE(DotTest::Environment::write(fixture.files));
+  const Dot::World::Environment source{"assets/studio.hdr", 1, 0, true, {16, 4, 16, 128, 512}};
+  REQUIRE(fixture.scene.setEnvironment(source));
   auto device = renderer();
-  Dot::Graphics::HdrImage panorama{8, 4, std::vector<float>(8 * 4 * 4, 1)};
-
-  for (std::size_t pixel = 0; pixel < panorama.pixels.size(); pixel += 4) {
-    panorama.pixels[pixel] = 2;
-  }
-
-  auto map = device.bakeEnvironment(panorama, {16, 4, 16, 128, 512}).value();
-  REQUIRE(device.setEnvironment(Dot::Graphics::EnvironmentLighting{map}));
   auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
   auto target = device.createTarget(3, 3).value();
   auto loaded = Dot::World::decodeScene(Dot::World::encodeScene(fixture.scene).value()).value();
@@ -237,12 +233,90 @@ TEST_CASE(
   const auto pixels = device.readHdrTarget(target).value();
   CHECK(red(pixels) == doctest::Approx(expected).epsilon(0.015));
   CHECK(red(pixels, 0, 0) == 2);
+  CHECK(drawing.stats()->environments == 1);
+  CHECK(drawing.stats()->environmentBytes == device.environment()->value().map.info()->bytes);
+  auto map = device.environment()->value().map;
+  REQUIRE(DotTest::Environment::write(fixture.files, "assets/studio.hdr", 131));
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(device.environment()->value().map == map);
+  CHECK(red(device.readHdrTarget(target).value()) == doctest::Approx(expected).epsilon(0.015));
+  auto settings = source;
+  settings.intensity = 2;
+  settings.rotationDegrees = 90;
+  REQUIRE(loaded.setEnvironment(settings));
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(device.environment()->value().map == map);
+  CHECK(red(device.readHdrTarget(target).value()) == doctest::Approx(expected * 2).epsilon(0.015));
+  map = {};
   REQUIRE(drawing.clearCache());
+  CHECK(device.resourceStats()->environments == 0);
+  CHECK_FALSE(device.environment().value());
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(red(device.readHdrTarget(target).value()) == doctest::Approx(expected * 4).epsilon(0.015));
+  auto previous = device.environment()->value().map;
+  settings.processing.samples = 128;
+  REQUIRE(loaded.setEnvironment(settings));
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK_FALSE(device.environment()->value().map == previous);
+  CHECK(device.resourceStats()->environments == 2);
+  previous = {};
   CHECK(device.resourceStats()->environments == 1);
-  REQUIRE(device.setEnvironment(std::nullopt));
-  CHECK(device.readHdrTarget(target)->pixels == pixels.pixels);
+  REQUIRE(loaded.setEnvironment(std::nullopt));
   REQUIRE(drawing.renderInto(loaded, target));
   CHECK(red(device.readHdrTarget(target).value()) == 0);
+  CHECK(drawing.stats()->environments == 0);
+  CHECK(device.resourceStats()->environments == 0);
+}
+
+TEST_CASE("scene_material.environment_failures_preserve_frame_binding_and_cache_budget") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.files));
+  const Dot::World::Environment source{"assets/studio.hdr", 1, 0, true, {16, 4, 16, 16, 32}};
+  REQUIRE(fixture.scene.setEnvironment(source));
+  auto device = renderer();
+  auto target = device.createTarget(3, 3).value();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files, 60000).value();
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  const auto image = device.readHdrTarget(target)->pixels;
+  auto map = device.environment()->value().map;
+  const auto frames = target.info()->frames;
+  auto bad = source;
+  bad.asset = "assets/missing.hdr";
+  REQUIRE(fixture.scene.setEnvironment(bad));
+  auto result = drawing.renderInto(fixture.scene, target);
+  REQUIRE_FALSE(result);
+  CHECK(result.error().message.find("missing.hdr") != std::string::npos);
+  CHECK(target.info()->frames == frames);
+  CHECK(device.readHdrTarget(target)->pixels == image);
+  CHECK(device.environment()->value().map == map);
+  CHECK(drawing.stats()->environments == 1);
+  REQUIRE(DotTest::Environment::write(fixture.files, "assets/other.hdr"));
+  bad.asset = "assets/other.hdr";
+  REQUIRE(fixture.scene.setEnvironment(bad));
+  CHECK_FALSE(drawing.renderInto(fixture.scene, target));
+  CHECK(device.environment()->value().map == map);
+  CHECK(device.resourceStats()->environments == 1);
+  REQUIRE(fixture.files.writeTextAtomic("assets/other.hdr", "broken HDR"));
+  CHECK_FALSE(drawing.renderInto(fixture.scene, target));
+  std::filesystem::create_symlink("studio.hdr", fixture.files.root() / "assets/symlink.hdr");
+  bad.asset = "assets/symlink.hdr";
+  REQUIRE(fixture.scene.setEnvironment(bad));
+  CHECK_FALSE(drawing.renderInto(fixture.scene, target));
+  REQUIRE(fixture.scene.setEnvironment(source));
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  auto noRoot = Dot::Graphics::SceneRenderer::create(device).value();
+  CHECK_FALSE(noRoot.renderInto(fixture.scene, target));
+  CHECK(device.environment()->value().map == map);
+  auto other = device
+                   .bakeEnvironment(Dot::Graphics::HdrImage{4, 2, std::vector<float>(32, 1)},
+                                    {16, 4, 16, 16, 32})
+                   .value();
+  REQUIRE(device.setEnvironment(Dot::Graphics::EnvironmentLighting{other}));
   map = {};
+  REQUIRE(drawing.clearCache());
+  CHECK(device.environment()->value().map == other);
+  CHECK(device.resourceStats()->environments == 1);
+  REQUIRE(device.setEnvironment(std::nullopt));
+  other = {};
   CHECK(device.resourceStats()->environments == 0);
 }

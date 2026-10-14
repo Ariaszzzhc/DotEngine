@@ -37,8 +37,9 @@ HDR environment GPU preprocessing is implemented and verified independently:
 radiance cubes, diffuse convolution, GGX reflection mips and BRDF integration with
 real Poly Haven input. Renderer PBR split-sum sampling and camera sky now consume
 these resources, with a visually checked lit material gallery and scene-camera
-tests. The HDRI IBL row remains open until persistent authoring, asset caching and
-editor/Play/export integration are implemented.
+tests. Scene-owned HDRI settings, shared asset caching and editor/Play/export
+authoring now consume those resources. Background baking/disk caches, advanced
+lighting controls and scene-production scalability remain planned.
 
 Development order follows dependencies: surface geometry and resource ownership,
 texture/material rendering, authored light/shadow services and editor integration,

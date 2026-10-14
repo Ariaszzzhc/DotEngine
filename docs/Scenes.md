@@ -6,7 +6,8 @@ Saving atomically replaces the destination and requires an existing parent.
 Decoding builds an independent scene, preserving entity values while assigning a
 fresh scene identity. Existing live scenes and their handles remain independent.
 
-The root requires exactly `version` (integer 1), `name`, and `entities`. Every
+The root requires `version` (integer 1), `name`, and `entities`, and allows optional
+`environment` (null/absent means no environment). Unknown fields are rejected. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
 `rigidBody`, `audioSource`, `audioListener`, `script`, `material`, and `light` are optional and may be null.
 Unknown or duplicate fields are rejected.
@@ -125,3 +126,14 @@ older version-1 documents. See `Scripting.md` for compiled lifecycle binding.
   "enabled": true
 }
 ```
+
+## Scene environment
+
+A non-null root `environment` requires `asset`, `intensity`, `rotationDegrees`,
+`background`, `radianceSize`, `diffuseSize`, `specularSize`, `brdfSize` and `samples`.
+The asset is a portable project-relative `.hdr` path; intensity is finite [0,64],
+yaw finite [-360,360], and background is boolean. Work values are integers: powers
+of two for radiance/specular 16..512, diffuse 4..128, BRDF 16..256; samples 32..1024.
+World/codec validation needs no device or filesystem. Actual opaque 2:1 HDR pixels,
+source accessibility and GPU/cache budgets are validated by render/export consumers.
+See [environment authoring](Editor.md) and [rendering contracts](Rendering.md).

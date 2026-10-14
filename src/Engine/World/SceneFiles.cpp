@@ -242,7 +242,7 @@ namespace Dot::World {
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
-      Codec::requireFields(root, {"version", "name", "entities"});
+      Codec::requireFields(root, {"version", "name", "entities"}, {"environment"});
 
       if (!root["version"].is_number_integer() || root["version"] != 1
           || !root["entities"].is_array() || root["entities"].size() > 10000) {
@@ -319,6 +319,32 @@ namespace Dot::World {
 
       if (!scene) {
         return std::unexpected(scene.error());
+      }
+
+      if (root.contains("environment") && !root["environment"].is_null()) {
+        const auto& value = root["environment"];
+        Codec::requireFields(value,
+                             {"asset", "intensity", "rotationDegrees", "background", "radianceSize",
+                              "diffuseSize", "specularSize", "brdfSize", "samples"});
+        const auto dimension = [&](const char* key) -> std::uint32_t {
+          if (!value[key].is_number_integer() || value[key] < 0 || value[key] > 1024) {
+            throw std::invalid_argument("Environment processing values require bounded integers");
+          }
+
+          return value[key].get<std::uint32_t>();
+        };
+        Environment environment{
+            value["asset"].get<std::string>(),
+            Codec::number(value["intensity"]),
+            Codec::number(value["rotationDegrees"]),
+            value["background"].get<bool>(),
+            {dimension("radianceSize"), dimension("diffuseSize"), dimension("specularSize"),
+             dimension("brdfSize"), dimension("samples")}};
+        auto changed = scene->setEnvironment(std::move(environment));
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
       }
 
       std::unordered_map<std::uint64_t, EntityId> handles;
@@ -531,8 +557,33 @@ namespace Dot::World {
                           : Json(nullptr)}});
     }
 
-    auto encoded
-        = Json{{"version", 1}, {"name", *name}, {"entities", std::move(records)}}.dump(2) + '\n';
+    auto environment = scene.environment();
+
+    if (!environment) {
+      return std::unexpected(environment.error());
+    }
+
+    Json environmentJson = nullptr;
+
+    if (*environment) {
+      const auto& e = **environment;
+      environmentJson = {{"asset", e.asset},
+                         {"intensity", e.intensity},
+                         {"rotationDegrees", e.rotationDegrees},
+                         {"background", e.background},
+                         {"radianceSize", e.processing.radianceSize},
+                         {"diffuseSize", e.processing.diffuseSize},
+                         {"specularSize", e.processing.specularSize},
+                         {"brdfSize", e.processing.brdfSize},
+                         {"samples", e.processing.samples}};
+    }
+
+    auto encoded = Json{{"version", 1},
+                        {"name", *name},
+                        {"entities", std::move(records)},
+                        {"environment", std::move(environmentJson)}}
+                       .dump(2)
+                   + '\n';
 
     if (encoded.size() > maxFileBytes) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Encoded scene exceeds 64 MiB");

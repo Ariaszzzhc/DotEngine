@@ -85,6 +85,12 @@ namespace Dot::Editor {
         return {};
       }
 
+      if (op == "environment") {
+        Codec::requireFields(command, {"op", "value"});
+        scene["environment"] = command["value"];
+        return {};
+      }
+
       if (op == "remove") {
         Codec::requireFields(command, {"op", "entity"});
       } else if (op == "name") {

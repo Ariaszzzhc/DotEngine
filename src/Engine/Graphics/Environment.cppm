@@ -22,6 +22,7 @@ export namespace Dot::Graphics {
     std::uint32_t specularSize{128};
     std::uint32_t brdfSize{128};
     std::uint32_t samples{256};
+    auto operator==(const EnvironmentConfig&) const -> bool = default;
   };
 
   struct EnvironmentInfo {
@@ -30,6 +31,11 @@ export namespace Dot::Graphics {
     std::uint32_t specularLevels;
     std::uint64_t bytes;
   };
+
+  /** Validate processing work/dimensions without an image or device.
+   * 不依赖图像或设备，校验处理工作量及尺寸。 */
+  [[nodiscard]] auto validateEnvironmentConfig(const EnvironmentConfig& config)
+      -> Core::Result<void>;
 
   /** Opaque linear 2:1 latitude-longitude panorama, top row +Y, center -Z,
    * longitude increasing toward +X. RGB must fit finite RGBA16F outputs. No

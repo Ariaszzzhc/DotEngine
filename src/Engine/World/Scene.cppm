@@ -15,6 +15,7 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Graphics.Lighting;
+export import Dot.Graphics.Environment;
 export import Dot.Audio.Source;
 export import Dot.Script.Source;
 
@@ -65,6 +66,19 @@ export namespace Dot::World {
    * 项目根材质资源绑定；未绑定时明确使用网格的无光照染色，绑定须为可移植 .dotmaterial 路径。 */
   struct MaterialBinding {
     std::string asset;
+  };
+
+  /** Scene-owned project-relative opaque .hdr panorama and GPU processing quality.
+   * Linear intensity [0,64], yaw degrees [-360,360]; absent means no environment.
+   * 场景拥有项目相对路径的不透明 .hdr 全景及 GPU 处理质量；线性强度 [0,64]，
+   * Y 轴角度 [-360,360]；缺省明确表示无环境。 */
+  struct Environment {
+    std::string asset;
+    float intensity{1};
+    float rotationDegrees{};
+    bool background{true};
+    Graphics::EnvironmentConfig processing{};
+    auto operator==(const Environment&) const -> bool = default;
   };
 
   using LightKind = Graphics::LightKind;
@@ -150,6 +164,10 @@ export namespace Dot::World {
     [[nodiscard]] auto id() const noexcept -> std::uint64_t;
     [[nodiscard]] auto name() const -> Core::Result<std::string>;
     [[nodiscard]] auto rename(std::string_view name) -> Core::Result<void>;
+    /** CPU-only transactional validation; resource existence is checked by consumers.
+     * 仅 CPU 的事务式校验；消费者另行检查资源是否存在。 */
+    [[nodiscard]] auto setEnvironment(std::optional<Environment> environment) -> Core::Result<void>;
+    [[nodiscard]] auto environment() const -> Core::Result<std::optional<Environment>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
     [[nodiscard]] auto createEntity(std::string_view name = "Entity") -> Core::Result<EntityId>;
     /** Import a monotonic ID: it must be >= the next available value and below

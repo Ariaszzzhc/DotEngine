@@ -7,6 +7,7 @@
 #include <thread>
 #include <utility>
 
+#include "EnvironmentFixture.hpp"
 #include "SceneAudioFixture.hpp"
 
 import Dot.Core.Files;
@@ -219,4 +220,18 @@ TEST_CASE("play.moves_source_lifetime_workers_and_failed_open_release_generation
   CHECK_FALSE(
       PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config()));
   CHECK(Dot::Script::compilerGenerations() == generations);
+}
+
+TEST_CASE("play.scene_environment_is_copied_and_isolated_from_authoring_changes") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.project.files().value()));
+  auto authoring = fixture.project.loadStartup().value();
+  const Dot::World::Environment expected{"assets/studio.hdr", 2, 90, true, {16, 4, 16, 16, 32}};
+  REQUIRE(authoring.setEnvironment(expected));
+  auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  CHECK(play.scene().value()->environment().value() == expected);
+  REQUIRE(authoring.setEnvironment(std::nullopt));
+  CHECK(play.scene().value()->environment().value() == expected);
+  CHECK_FALSE(authoring.environment().value());
 }

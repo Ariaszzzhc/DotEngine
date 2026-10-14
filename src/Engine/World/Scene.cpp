@@ -150,6 +150,7 @@ namespace Dot::World {
     std::uint64_t nextEntity{1};
     std::string name;
     entt::registry registry;
+    std::optional<Environment> environment;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
     mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
 
@@ -405,6 +406,51 @@ namespace Dot::World {
 
     m_impl->name = name;
     return {};
+  }
+
+  auto Scene::setEnvironment(std::optional<Environment> environment) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (environment) {
+      if (!Core::isPortableRelativePath(environment->asset) || !environment->asset.ends_with(".hdr")
+          || !std::isfinite(environment->intensity) || environment->intensity < 0
+          || environment->intensity > 64 || !std::isfinite(environment->rotationDegrees)
+          || std::abs(environment->rotationDegrees) > 360) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid scene environment path/settings");
+      }
+
+      checked = Graphics::validateEnvironmentConfig(environment->processing);
+
+      if (!checked) {
+        return checked;
+      }
+    }
+
+    m_impl->environment = std::move(environment);
+    return {};
+  }
+
+  auto Scene::environment() const -> Core::Result<std::optional<Environment>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->environment;
   }
 
   auto Scene::entityCount() const -> Core::Result<std::size_t> {
