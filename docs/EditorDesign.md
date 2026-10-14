@@ -51,11 +51,16 @@ Inter 提供西文字形并由上游整合 CJK，一份可缩放字体支持一�
 系统安装字体。[Upstream / 上游](https://github.com/be5invis/Sarasa-Gothic#what-are-the-names).
 
 Layout and theme currently live for the workspace session. Persisted per-user
-profiles, rotation/scale gizmos, thumbnails and further production tools remain planned.
+profiles, plane/uniform-scale tools, thumbnails and further production tools remain planned.
 The concepts and this contract do not establish a mature editor or polished game.
 布局与主题当前在工作区会话内保留；用户配置持久化、变换 gizmo、缩略图及更多
 生产工具仍待实现。效果图和本约定均不表示成熟编辑器或高质量游戏已经完成。
 
 World/local Move handles now project actual selected transforms onto the live Scene
 view. Their real draft/commit/cancel/Undo behavior is authoritative; concept artwork
-does not substitute for later rotation/scale, plane or multi-selection tools.
+does not substitute for later plane, uniform-scale or multi-selection tools.
+
+Move/Rotate/Scale now expose genuine projected XYZ axes, affine-frame rotation rings
+and scale endpoints. Dragging highlights the active axis and uses the actual draft
+scene; cancellation and one-step Undo restore data and pixels. Mode-dependent snap
+controls show meters, degrees or ratio units.

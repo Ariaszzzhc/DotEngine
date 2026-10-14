@@ -143,3 +143,11 @@ WorkspaceMoveTests checks real changed/restored scene pixels, unpublished draft 
 stale-ready invalidation, save/Undo/Redo and native pointer release/Escape/focus loss.
 `DotEditorAcceptance --viewport-test <existing-parent>` now includes a full live
 move-preview/commit/Undo workflow in addition to camera-independent selection.
+
+Rotation/scale coverage adds continuous shortest-arc angle unwrapping, affine-frame
+reflection/stretch, perspective/orthographic sampling and parallel/pivot/singular
+boundaries. Transactions verify pivot and local TRS preservation, world-shear rejection
+and positive scale limits. Native tests hit actual ring segments/scale endpoints,
+preview real changed pixels, release a transaction and Undo once. Agent tests assert
+exact degrees, factors and movement across frames so native pointer input cannot
+silently overwrite commands. Viewport acceptance runs all three transform modes.

@@ -122,3 +122,22 @@ permissions, signatures and portable loader/rpath references (13 regular Mach-O 
 and 3 relative library symlinks). Inspected actual XYZ overlay in bundled Feature Lab
 and closed without discarding authored changes; the source project is unchanged.
 Only macOS was validated. Large-game and mature-editor completion remains unproven.
+
+
+Selected entities now support translation, rotation rings and axis scale endpoints
+with world/local coordinates and explicit meter/degree/factor snapping. Rotation
+uses the actual affine operation frame, including reflected/nonuniform parents;
+world operations that require shear fail instead of overwriting approximate TRS.
+All modes share disposable preview, one commit, cancel and Undo/Redo. Exact agent
+values now remain isolated from native pointer motion across frames.
+
+This stage passes 909/909 CTest cases in Debug (172.22s) and Release/NDEBUG (41.16s)
+on arm64 macOS. Focused checks pass 12/12 (6.79s). Inventory: 847 doctest identities
+plus 62 executable checks; overlapping labels: 204 unit, 90 offscreen, 56 native,
+106 acceptance. All 277 C/C++ files pass formatting/whitespace checks; 15 standalone
+WGSL sources are unchanged. Refreshed ZIP: 259 entries, 47,120,689 bytes; strict
+signatures, portable loader/rpath references, CRC/permissions and exact font/license/
+HDRI copies pass. Native Feature Lab shows real rotation rings and scale endpoints;
+the inspected source project remains unchanged. Plane/uniform-scale handles,
+multi-selection, scalable production scenes and polished realistic game content
+remain unfinished. Windows/Linux have not been validated locally.

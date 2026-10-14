@@ -143,21 +143,18 @@ namespace Dot::Editor {
           if (ImGui::Checkbox(title.c_str(), &current)) {
             value = current;
           }
-
         } else if (value.is_number_integer()) {
           std::int64_t current = value.get<std::int64_t>();
 
           if (ImGui::InputScalar(title.c_str(), ImGuiDataType_S64, &current)) {
             value = current;
           }
-
         } else if (value.is_number()) {
           double current = value.get<double>();
 
           if (ImGui::InputDouble(title.c_str(), &current, 0, 0, "%.6g")) {
             value = current;
           }
-
         } else if (value.is_string()) {
           std::string current = value.get<std::string>();
           const char* options = nullptr;
@@ -191,11 +188,9 @@ namespace Dot::Editor {
                              static_cast<int>(values.size()))) {
               value = values.at(static_cast<std::size_t>(selected));
             }
-
           } else if (ImGui::InputText(title.c_str(), &current)) {
             value = current;
           }
-
         } else if (value.is_array() && !value.empty() && value.size() <= 4
                    && std::ranges::all_of(
                        value, [](const auto& element) { return element.is_number(); })) {
@@ -211,7 +206,6 @@ namespace Dot::Editor {
               value[index] = numbers[index];
             }
           }
-
         } else if (value.is_object()) {
           if (ImGui::TreeNode(title.c_str())) {
             fields(value, depth + 1);
@@ -259,7 +253,6 @@ namespace Dot::Editor {
       return encoded ? Core::Result<Json>{Codec::parseJson(*encoded)["entities"][0]}
                      : std::unexpected(encoded.error());
     }
-
   }  // namespace
 
   struct Workspace::Impl {
@@ -283,16 +276,21 @@ namespace Dot::Editor {
     Json m_occlusionOriginal;
     std::string m_requestedPane;
     std::string m_pane{"scene"};
-    bool m_moveTool{};
-    bool m_localMove{};
-    float m_moveSnap{};
+    enum class Tool { Select, Move, Rotate, Scale };
+    Tool m_tool{Tool::Select};
+    bool m_localTool{};
+    float m_toolSnap{};
     std::optional<TransformGesture> m_transform;
     std::optional<AxisDrag> m_axisDrag;
+    std::optional<RotationDrag> m_rotationDrag;
+    Math::Mat4 m_rotationFrame;
+    float m_handleLength{};
+    float m_transformValue{};
     Math::Mat4 m_transformStart;
     int m_transformAxis{};
     bool m_pointerTransform{};
     std::string m_transformError;
-    Json m_moveGeometry = Json::array();
+    Json m_toolGeometry = Json::array();
     bool m_lightTheme{};
     bool m_resetLayout{true};
     std::uint64_t m_layoutGeneration{};
@@ -367,7 +365,6 @@ namespace Dot::Editor {
             }
           }
         }
-
       } catch (const std::exception& error) {
         std::fprintf(stderr, "Workspace play cleanup: %s\n", error.what());
       } catch (...) {
@@ -732,16 +729,23 @@ namespace Dot::Editor {
         const auto space = parsed["space"].get<std::string>();
         const auto snap = Codec::number(parsed["snap"]);
 
-        if ((tool != "select" && tool != "move") || (space != "local" && space != "world")
-            || snap < 0 || snap > 1000 || playing()) {
+        if ((tool != "select" && tool != "move" && tool != "rotate" && tool != "scale")
+            || (space != "local" && space != "world") || snap < 0
+            || snap > (tool == "rotate"  ? 360
+                       : tool == "scale" ? 10
+                                         : 1000)
+            || playing()) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Invalid transform tool configuration");
         }
 
-        m_moveTool = tool == "move";
-        m_localMove = space == "local";
-        m_moveSnap = snap;
-        m_moveGeometry = Json::array();
+        m_tool = tool == "move"     ? Tool::Move
+                 : tool == "rotate" ? Tool::Rotate
+                 : tool == "scale"  ? Tool::Scale
+                                    : Tool::Select;
+        m_localTool = space == "local";
+        m_toolSnap = snap;
+        m_toolGeometry = Json::array();
         return execute("{\"command\":\"inspect\"}");
       }
 
@@ -1028,7 +1032,6 @@ namespace Dot::Editor {
           if (!saved) {
             return std::unexpected(saved.error());
           }
-
         } else {
           const bool discard = parsed.at("discard").get<bool>();
 
@@ -1398,7 +1401,6 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
-
         } else {
           m_environmentDraft = m_environmentOriginal;
           m_environmentRevision.clear();
@@ -1446,7 +1448,6 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
-
         } else {
           m_occlusionDraft = m_occlusionOriginal;
           m_occlusionRevision.clear();
@@ -1469,7 +1470,6 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
-
         } else {
           m_edit = m_original;
           m_editRevision = 0;
@@ -1491,6 +1491,7 @@ namespace Dot::Editor {
           m_pendingClose = false;
           m_transform.reset();
           m_axisDrag.reset();
+          m_rotationDrag.reset();
           auto stopped = stopPlay();
           m_application->stop();
 
@@ -2041,7 +2042,6 @@ namespace Dot::Editor {
               m_propertiesInvalid = false;
             }
           }
-
         } else if (ImGui::CollapsingHeader(title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
           if (std::string_view(component) == "script") {
             auto description = m_edit[component];
@@ -2059,7 +2059,6 @@ namespace Dot::Editor {
                 if (!m_propertiesInvalid) {
                   m_edit[component]["properties"] = std::move(properties);
                 }
-
               } catch (const std::exception&) {
                 m_propertiesInvalid = true;
               }
@@ -2068,7 +2067,6 @@ namespace Dot::Editor {
             if (m_propertiesInvalid) {
               ImGui::TextWrapped("Properties must be a valid JSON object with unique fields.");
             }
-
           } else {
             fields(m_edit[component]);
           }
@@ -2511,7 +2509,6 @@ namespace Dot::Editor {
               fileAction({{"command", "open-external"}, {"path", name}});
             }
           }
-
         } else {
           ImGui::TextWrapped("%s%s", entry["type"] == "directory" ? "[dir] " : "[asset] ",
                              name.c_str());
@@ -2519,24 +2516,55 @@ namespace Dot::Editor {
       }
     }
 
-    auto toolStatus() const -> Json {
-      return {{"mode", m_moveTool ? "move" : "select"},
-              {"space", m_localMove ? "local" : "world"},
-              {"snap", m_moveSnap},
-              {"active", m_transform.has_value()},
-              {"entity", m_transform ? Json(std::to_string(m_transform->entity())) : Json(nullptr)},
-              {"error", m_transformError},
-              {"handles", m_moveGeometry}};
+    auto toolName() const -> const char* {
+      return m_tool == Tool::Move     ? "move"
+             : m_tool == Tool::Rotate ? "rotate"
+             : m_tool == Tool::Scale  ? "scale"
+                                      : "select";
     }
 
-    auto moveBasis(int axis) const -> Core::Result<Math::Vec3> {
+    auto operationFrame() const -> Core::Result<Math::Mat4> {
+      auto scene = m_document->scene();
+      const auto selected = m_document->stats()->selected;
+
+      if (!scene || !selected) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Transform frame requires selection");
+      }
+
+      return transformFrame(**scene, *selected, m_localTool);
+    }
+
+    auto handleLength(const Graphics::View& view, Math::Vec3 pivot) const -> float {
+      const float height
+          = view.orthographic
+                ? view.orthographicHeight
+                : static_cast<float>(2 * Math::length(pivot - view.position)
+                                     * std::tan(view.verticalFovDegrees * 3.14159265 / 360));
+      return std::max(0.001F, height * 75 / m_viewHeight);
+    }
+
+    auto toolStatus() const -> Json {
+      return {{"mode", toolName()},
+              {"snapUnit", m_tool == Tool::Rotate  ? "degrees"
+                           : m_tool == Tool::Scale ? "ratio"
+                                                   : "meters"},
+              {"space", m_localTool ? "local" : "world"},
+              {"snap", m_toolSnap},
+              {"active", m_transform.has_value()},
+              {"value", m_transform ? Json(m_transformValue) : Json(nullptr)},
+              {"entity", m_transform ? Json(std::to_string(m_transform->entity())) : Json(nullptr)},
+              {"error", m_transformError},
+              {"handles", m_toolGeometry}};
+    }
+
+    auto toolBasis(int axis) const -> Core::Result<Math::Vec3> {
       if (axis < 0 || axis > 2 || !m_document->stats()->selected) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Move axis/selection is invalid");
       }
 
       Math::Vec3 value{axis == 0 ? 1.F : 0.F, axis == 1 ? 1.F : 0.F, axis == 2 ? 1.F : 0.F};
 
-      if (m_localMove) {
+      if (m_localTool) {
         auto world = selectedWorld();
         auto transformed
             = world ? Math::transformVector(*world, value) : std::unexpected(world.error());
@@ -2555,22 +2583,24 @@ namespace Dot::Editor {
       const auto selected = m_document->stats()->selected;
 
       if (!scene || !selected) {
-        return Core::fail(Core::ErrorCode::InvalidState, "Move tool requires a selected entity");
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Transform tool requires a selected entity");
       }
 
       return (*scene)->worldTransform(*selected);
     }
 
     auto beginTransform(int axis, Math::Vec2 uv, std::uint64_t revision) -> Core::Result<void> {
-      if (!m_moveTool || !m_editorView || playing() || m_transform || !m_viewVisible
+      if (m_tool == Tool::Select || !m_editorView || playing() || m_transform || !m_viewVisible
           || !viewStatus()["ready"].get<bool>() || pendingInspector() || pendingEnvironment()
           || pendingOcclusion() || pendingText() || m_pendingClose || m_flying || m_orbiting
           || m_panning) {
-        return Core::fail(Core::ErrorCode::InvalidState, "Move tool is not ready for a gesture");
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Transform tool is not ready for a gesture");
       }
 
       auto world = selectedWorld();
-      auto axisDirection = moveBasis(axis);
+      auto axisDirection = toolBasis(axis);
       auto view = m_editorCamera.view();
       auto projection = view ? Graphics::viewProjection(*view, m_viewWidth / m_viewHeight)
                              : std::unexpected(view.error());
@@ -2581,11 +2611,33 @@ namespace Dot::Editor {
                                                 : projection.error());
       }
 
-      auto drag = AxisDrag::begin(*projection, {world->data[12], world->data[13], world->data[14]},
-                                  *axisDirection, uv);
+      std::optional<AxisDrag> axisDrag;
+      std::optional<RotationDrag> rotationDrag;
+      Math::Mat4 frame;
 
-      if (!drag) {
-        return std::unexpected(drag.error());
+      if (m_tool == Tool::Rotate) {
+        auto basis = operationFrame();
+
+        if (!basis) {
+          return std::unexpected(basis.error());
+        }
+
+        frame = *basis;
+        auto drag = RotationDrag::begin(*projection, frame, axis, uv);
+
+        if (!drag) {
+          return std::unexpected(drag.error());
+        }
+
+        rotationDrag.emplace(*drag);
+      } else {
+        auto drag = AxisDrag::begin(
+            *projection, {world->data[12], world->data[13], world->data[14]}, *axisDirection, uv);
+        if (!drag) {
+          return std::unexpected(drag.error());
+        }
+
+        axisDrag.emplace(*drag);
       }
 
       auto gesture
@@ -2599,28 +2651,80 @@ namespace Dot::Editor {
       m_previewReady = false;
       m_transformStart = *world;
       m_transform.emplace(std::move(*gesture));
-      m_axisDrag.emplace(*drag);
+      m_axisDrag = std::move(axisDrag);
+      m_rotationDrag = std::move(rotationDrag);
+      m_rotationFrame = frame;
+      m_handleLength = handleLength(*view, {world->data[12], world->data[13], world->data[14]});
       m_transformAxis = axis;
+      m_transformValue = m_tool == Tool::Scale ? 1.F : 0.F;
       m_transformError.clear();
       return {};
     }
 
     auto updateTransform(Math::Vec2 uv) -> Core::Result<void> {
-      if (!m_transform || !m_axisDrag) {
+      if (!m_transform || (!m_axisDrag && !m_rotationDrag)) {
         return Core::fail(Core::ErrorCode::InvalidState, "There is no active transform gesture");
       }
 
-      auto delta = m_axisDrag->delta(uv, m_moveSnap);
+      Core::Result<void> applied;
 
-      if (!delta) {
-        return std::unexpected(delta.error());
+      if (m_tool == Tool::Rotate) {
+        auto angle = m_rotationDrag->degrees(uv, m_toolSnap);
+
+        if (!angle) {
+          return std::unexpected(angle.error());
+        }
+
+        applied = m_transform->rotate(m_transformAxis, *angle, m_localTool);
+
+        if (applied) {
+          m_transformValue = *angle;
+        }
+      } else {
+        auto delta = m_axisDrag->delta(uv, m_tool == Tool::Move ? m_toolSnap : 0);
+
+        if (!delta) {
+          return std::unexpected(delta.error());
+        }
+
+        if (m_tool == Tool::Scale) {
+          const auto amount = Math::length(*delta);
+          auto direction = toolBasis(m_transformAxis);
+
+          if (!direction) {
+            return std::unexpected(direction.error());
+          }
+
+          float factor = 1
+                         + static_cast<float>(amount * (Math::dot(*delta, *direction) < 0 ? -1 : 1))
+                               / m_handleLength;
+
+          if (m_toolSnap > 0) {
+            factor = 1 + std::round((factor - 1) / m_toolSnap) * m_toolSnap;
+          }
+
+          applied = m_transform->scale(m_transformAxis, factor, m_localTool);
+
+          if (applied) {
+            m_transformValue = factor;
+          }
+        } else {
+          auto world = m_transformStart;
+          world.data[12] += delta->x;
+          world.data[13] += delta->y;
+          world.data[14] += delta->z;
+          applied = m_transform->update(world);
+
+          if (applied) {
+            auto direction = toolBasis(m_transformAxis);
+
+            if (direction) {
+              m_transformValue = static_cast<float>(Math::dot(*delta, *direction));
+            }
+          }
+        }
       }
 
-      auto world = m_transformStart;
-      world.data[12] += delta->x;
-      world.data[13] += delta->y;
-      world.data[14] += delta->z;
-      auto applied = m_transform->update(world);
       m_transformError = applied ? "" : applied.error().message;
 
       if (applied) {
@@ -2646,6 +2750,7 @@ namespace Dot::Editor {
 
       m_transform.reset();
       m_axisDrag.reset();
+      m_rotationDrag.reset();
       m_pointerTransform = false;
       m_transformError.clear();
       m_previewReady = false;
@@ -2657,10 +2762,10 @@ namespace Dot::Editor {
      * after layout in the same frame. Clip-behind/parallel axes are omitted.
      * 绘制真实世界轴投影，命中使用相同线段；拖动仅更改预览克隆，布局后同帧 GPU
      * 渲染。裁面后方及平行轴不显示，不伪造可用手柄。 */
-    auto drawMoveTool() -> void {
-      m_moveGeometry = Json::array();
+    auto drawTransformTool() -> void {
+      m_toolGeometry = Json::array();
 
-      if (!m_moveTool || !m_editorView || playing() || !m_document->stats()->selected) {
+      if (m_tool == Tool::Select || !m_editorView || playing() || !m_document->stats()->selected) {
         return;
       }
 
@@ -2694,20 +2799,74 @@ namespace Dot::Editor {
         return;
       }
 
-      const float height
-          = view->orthographic
-                ? view->orthographicHeight
-                : static_cast<float>(2 * Math::length(pivot - view->position)
-                                     * std::tan(view->verticalFovDegrees * 3.14159265 / 360));
-      const float length = std::max(0.001F, height * 75 / m_viewHeight);
+      const float length = handleLength(*view, pivot);
       constexpr std::array colors{IM_COL32(237, 89, 91, 255), IM_COL32(95, 205, 115, 255),
                                   IM_COL32(92, 150, 250, 255)};
       auto* draw = ImGui::GetWindowDrawList();
       draw->PushClipRect(m_viewOrigin,
                          {m_viewOrigin.x + m_viewWidth, m_viewOrigin.y + m_viewHeight}, true);
 
+      if (m_tool == Tool::Rotate) {
+        auto frame = m_transform ? Core::Result<Math::Mat4>(m_rotationFrame) : operationFrame();
+
+        if (!frame) {
+          m_transformError = frame.error().message;
+          draw->PopClipRect();
+          return;
+        }
+
+        float stretch = 0;
+
+        for (int column = 0; column < 3; ++column) {
+          const auto i = static_cast<std::size_t>(column) * 4;
+          stretch = std::max(
+              stretch, static_cast<float>(
+                           Math::length({frame->data[i], frame->data[i + 1], frame->data[i + 2]})));
+        }
+
+        const float radius = length / std::max(stretch, 0.001F);
+
+        for (int axis = 0; axis < 3; ++axis) {
+          const auto color = m_transform && m_transformAxis == axis
+                                 ? IM_COL32(255, 210, 75, 255)
+                                 : colors[static_cast<std::size_t>(axis)];
+
+          for (int segment = 0; segment < 64; ++segment) {
+            const auto point = [&](int sample) -> std::optional<Math::Vec2> {
+              float local[3]{};
+              const float angle = static_cast<float>(sample) * 6.2831853F / 64;
+              local[(axis + 1) % 3] = std::cos(angle) * radius;
+              local[(axis + 2) % 3] = std::sin(angle) * radius;
+              auto worldPoint = Math::transformPoint(*frame, {local[0], local[1], local[2]});
+              return worldPoint ? project(*worldPoint) : std::nullopt;
+            };
+            auto first = point(segment);
+            auto second = point(segment + 1);
+
+            if (!first || !second
+                || std::hypot(first->x - second->x, first->y - second->y) < 0.01F) {
+              continue;
+            }
+
+            const Math::Vec2 uv{((first->x + second->x) * 0.5F - m_viewOrigin.x) / m_viewWidth,
+                                ((first->y + second->y) * 0.5F - m_viewOrigin.y) / m_viewHeight};
+
+            if (!RotationDrag::begin(*projection, *frame, axis, uv)) {
+              continue;
+            }
+
+            draw->AddLine({first->x, first->y}, {second->x, second->y}, color, 2.5F);
+            m_toolGeometry.push_back(
+                {{"axis", axis}, {"start", {first->x, first->y}}, {"end", {second->x, second->y}}});
+          }
+        }
+
+        draw->PopClipRect();
+        return;
+      }
+
       for (int axis = 0; axis < 3; ++axis) {
-        auto direction = moveBasis(axis);
+        auto direction = toolBasis(axis);
         auto endpoint = direction ? project(pivot + *direction * length) : std::nullopt;
 
         if (!endpoint) {
@@ -2728,12 +2887,19 @@ namespace Dot::Editor {
                                ? IM_COL32(255, 210, 75, 255)
                                : colors[static_cast<std::size_t>(axis)];
         draw->AddLine({center->x, center->y}, {endpoint->x, endpoint->y}, color, 3);
-        draw->AddCircleFilled({endpoint->x, endpoint->y}, 5, color);
+
+        if (m_tool == Tool::Scale) {
+          draw->AddRectFilled({endpoint->x - 5, endpoint->y - 5},
+                              {endpoint->x + 5, endpoint->y + 5}, color);
+        } else {
+          draw->AddCircleFilled({endpoint->x, endpoint->y}, 5, color);
+        }
+
         draw->AddText({endpoint->x + 6, endpoint->y - 7}, color,
                       axis == 0   ? "X"
                       : axis == 1 ? "Y"
                                   : "Z");
-        m_moveGeometry.push_back({{"axis", axis},
+        m_toolGeometry.push_back({{"axis", axis},
                                   {"start", {center->x, center->y}},
                                   {"end", {endpoint->x, endpoint->y}}});
       }
@@ -2741,17 +2907,18 @@ namespace Dot::Editor {
       draw->PopClipRect();
     }
 
-    auto hitMoveTool(Platform::Point pointer) const -> std::optional<int> {
+    auto hitTransformTool(Platform::Point pointer) const -> std::optional<int> {
       std::optional<int> result;
       float nearest = 9;
 
-      for (const auto& handle : m_moveGeometry) {
+      for (const auto& handle : m_toolGeometry) {
         const float x = handle["start"][0].get<float>();
         const float y = handle["start"][1].get<float>();
         const float dx = handle["end"][0].get<float>() - x;
         const float dy = handle["end"][1].get<float>() - y;
-        const float t = std::clamp(
-            ((pointer.x - x) * dx + (pointer.y - y) * dy) / (dx * dx + dy * dy), 0.15F, 1.F);
+        const float t
+            = std::clamp(((pointer.x - x) * dx + (pointer.y - y) * dy) / (dx * dx + dy * dy),
+                         m_tool == Tool::Rotate ? 0.F : 0.15F, 1.F);
         const float distance = std::hypot(pointer.x - x - t * dx, pointer.y - y - t * dy);
 
         if (distance < nearest) {
@@ -2797,36 +2964,44 @@ namespace Dot::Editor {
       if (m_editorView) {
         ImGui::BeginDisabled(m_transform.has_value());
 
-        if (ImGui::RadioButton("Select", !m_moveTool)) {
-          sessionAction({{"command", "set-tool"},
-                         {"tool", "select"},
-                         {"space", m_localMove ? "local" : "world"},
-                         {"snap", m_moveSnap}});
+        for (const auto& [name, mode] :
+             {std::pair{"Select", Tool::Select}, std::pair{"Move", Tool::Move},
+              std::pair{"Rotate", Tool::Rotate}, std::pair{"Scale", Tool::Scale}}) {
+          if (ImGui::RadioButton(name, m_tool == mode)) {
+            sessionAction({{"command", "set-tool"},
+                           {"tool", mode == Tool::Move     ? "move"
+                                    : mode == Tool::Rotate ? "rotate"
+                                    : mode == Tool::Scale  ? "scale"
+                                                           : "select"},
+                           {"space", m_localTool ? "local" : "world"},
+                           {"snap", mode == Tool::Rotate  ? 15.F
+                                    : mode == Tool::Scale ? 0.1F
+                                                          : 0.5F}});
+          }
+
+          ImGui::SameLine();
         }
 
-        ImGui::SameLine();
-
-        if (ImGui::RadioButton("Move", m_moveTool)) {
-          sessionAction({{"command", "set-tool"},
-                         {"tool", "move"},
-                         {"space", m_localMove ? "local" : "world"},
-                         {"snap", m_moveSnap}});
-        }
-
-        ImGui::SameLine();
-        bool local = m_localMove;
+        ImGui::NewLine();
+        bool local = m_localTool;
         ImGui::SetNextItemWidth(75);
-        float snap = m_moveSnap;
+        float snap = m_toolSnap;
         bool toolChanged = ImGui::Checkbox("Local", &local);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(65);
-        toolChanged = ImGui::DragFloat("Snap (m)", &snap, 0.1F, 0, 1000, "%.2f",
-                                       ImGuiSliderFlags_AlwaysClamp)
+        toolChanged = ImGui::DragFloat(m_tool == Tool::Rotate  ? "Snap (deg)"
+                                       : m_tool == Tool::Scale ? "Snap (ratio)"
+                                                               : "Snap (m)",
+                                       &snap, m_tool == Tool::Rotate ? 1.F : 0.1F, 0,
+                                       m_tool == Tool::Rotate  ? 360.F
+                                       : m_tool == Tool::Scale ? 10.F
+                                                               : 1000.F,
+                                       "%.2f", ImGuiSliderFlags_AlwaysClamp)
                       || toolChanged;
 
         if (toolChanged) {
           sessionAction({{"command", "set-tool"},
-                         {"tool", m_moveTool ? "move" : "select"},
+                         {"tool", toolName()},
                          {"space", local ? "local" : "world"},
                          {"snap", snap}});
         }
@@ -2855,6 +3030,10 @@ namespace Dot::Editor {
       if (m_transform) {
         if (input.key(Platform::Key::Escape).pressed || m_pendingClose || !m_viewVisible) {
           static_cast<void>(finishTransform(false));
+          return;
+        }
+
+        if (!m_pointerTransform) {
           return;
         }
 
@@ -2903,8 +3082,8 @@ namespace Dot::Editor {
       const bool alt
           = input.key(Platform::Key::LeftAlt).down || input.key(Platform::Key::RightAlt).down;
 
-      if (hovered && left.pressed && !alt && m_moveTool && m_editorView) {
-        auto hit = hitMoveTool(pointer);
+      if (hovered && left.pressed && !alt && m_tool != Tool::Select && m_editorView) {
+        auto hit = hitTransformTool(pointer);
 
         if (hit) {
           auto began = beginTransform(*hit,
@@ -3462,7 +3641,7 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
-        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 4});
+        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 5});
         ImGui::BeginDisabled(m_transform.has_value());
         viewportControls();
         ImGui::EndDisabled();
@@ -3494,7 +3673,7 @@ namespace Dot::Editor {
           return image;
         }
 
-        drawMoveTool();
+        drawTransformTool();
       }
 
       ImGui::End();
@@ -4051,7 +4230,6 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Workspace request ID already has different content");
         }
-
       } else {
         std::size_t entries = 0;
 
@@ -4076,5 +4254,4 @@ namespace Dot::Editor {
                         "Submit workspace request: " + std::string(error.what()));
     }
   }
-
 }  // namespace Dot::Editor

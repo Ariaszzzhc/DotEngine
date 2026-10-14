@@ -640,10 +640,11 @@ current physical dimensions, with explicit absence for recoverable scene failure
 GUI build-time renderer reentry remains forbidden. This keeps initialization, docking,
 resize, undo and Play/Stop pixels consistent with the displayed widget.
 
-## Move manipulator / 移动操纵器
+## Transform manipulators / 变换操纵器
 
-Scene view offers Select/Move, world/local axes and a snap distance in meters (zero
-is continuous). Select an entity and drag a colored axis; the live GPU preview uses
+Scene view offers Select/Move/Rotate/Scale with world/local coordinates. Move snaps
+in meters, Rotate in degrees and Scale in factor increments; zero is continuous.
+Select an entity and drag an axis, rotation ring or scale endpoint; the live GPU preview uses
 a disposable scene clone. Release commits one history entry; Escape or focus loss
 cancels. The Inspector/document stays unchanged during dragging. Undo/Redo restores
 both authored data and actual scene pixels. Local axes include the selected hierarchy's
@@ -673,5 +674,16 @@ consume pointer release. Closing asks about the pending draft before discarding 
 `workspace.tool` reports configuration, active entity, errors and actual projected
 handle segments. `workspace.view.source` distinguishes document/transform/Play previews;
 changed/begun/cancelled drafts invalidate readiness until GPU drawing completes.
-Current GUI handles perform translation. Rotation/scale handles, plane movement,
-multi-selection and richer snapping remain unfinished.
+Rotation rays intersect the operation frame's canonical plane, unwrapping by the
+shortest arc between samples (up to 100 turns). Local rotation uses parent-world *
+local T*R without entity scale; the rendered ring and inverse-ray sampling use the
+same affine frame, including parent stretch/reflection. Local rotation preserves
+original position and scale; local scale preserves position and rotation. World
+operations preserve the world pivot and reject unrepresentable parent-local shear.
+Scale factors are .001..1000, preserving existing reflection without crossing zero.
+Snap limits: meters 0..1000, degrees 0..360, factor increments 0..10.
+`workspace.tool.value` reports the last successfully applied axis distance/angle/factor
+while active, and null otherwise. Agent input is isolated from incidental native
+mouse motion; both sources use the same preview/commit implementation.
+Plane movement, uniform-scale handles, multi-selection and richer snapping remain
+unimplemented. These tools do not establish mature-editor or large-game completion.

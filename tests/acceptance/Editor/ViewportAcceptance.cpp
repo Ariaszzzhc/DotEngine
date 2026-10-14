@@ -69,6 +69,7 @@ namespace Dot::Editor {
     frame();
     frame();
     const auto before = checked(workspace.captureViewport());
+
     for (const auto* theme : {"light", "dark"}) {
       checked(workspace.dispatch(Json{{"command", "set-theme"}, {"theme", theme}}.dump()));
       frame();
@@ -145,6 +146,34 @@ namespace Dot::Editor {
     require(inspect()["scene"] == gestureStart["scene"]
                 && checked(workspace.captureViewport()).pixels == gesturePixels.pixels,
             "Move undo must restore actual scene and pixels");
+
+    for (const auto* tool : {"rotate", "scale"}) {
+      const bool rotation = std::string_view(tool) == "rotate";
+      checked(workspace.dispatch(Json{{"command", "set-tool"},
+                                      {"tool", tool},
+                                      {"space", "local"},
+                                      {"snap", rotation ? 15.F : 0.1F}}
+                                     .dump()));
+      frame();
+      const auto baseline = inspect();
+      const auto pixels = checked(workspace.captureViewport());
+      command({{"command", "begin-transform"},
+               {"axis", rotation ? 2 : 0},
+               {"uv", {rotation ? 0.7 : 0.5, 0.5}}});
+      command({{"command", "update-transform"}, {"uv", {0.65, rotation ? 0.35 : 0.5}}});
+      frame();
+      require(inspect()["scene"] == baseline["scene"]
+                  && checked(workspace.captureViewport()).pixels != pixels.pixels,
+              "Rotation/scale preview must show real changes without editing the document");
+      command({{"command", "finish-transform"}, {"commit", true}});
+      frame();
+      command({{"command", "undo"}});
+      frame();
+      require(inspect()["scene"] == baseline["scene"]
+                  && checked(workspace.captureViewport()).pixels == pixels.pixels,
+              "One undo must restore rotation/scale data and pixels");
+    }
+
     command({{"command", "save"}});
     require(Json::parse(checked(World::encodeScene(checked(project.loadStartup()))))
                 == original["scene"],
@@ -152,6 +181,7 @@ namespace Dot::Editor {
     checked(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
     std::println(
         "Editor viewport acceptance passed: navigation, selection, camera isolation, transactional "
+        "move/rotate/scale "
         "movement");
     return 0;
   }

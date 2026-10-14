@@ -3474,3 +3474,77 @@ reference artwork. Private design source remains untracked. Only arm64 macOS is
 validated. Rotation/scale and plane handles, multi-selection, persisted profiles,
 thumbnails, large-scene scalability and realistic polished Prism Relay remain
 unimplemented; the full engine/editor/game objective remains active.
+
+
+## 2026-10-14 — Rotation rings and axis scale handles
+
+Extended Dot.Editor.TransformTool with RotationDrag, affine transformFrame and
+absolute rotate/scale gesture operations. Rotation projects rays into an affine
+operation frame and intersects a canonical plane; samples unwrap by shortest arcs
+and snap the accumulated degree value, bounded to 100 turns. Invalid/non-affine/
+singular frames, center samples, parallel rays, out-of-clip planes and invalid snap
+fail without advancing the sampler. Local frame is parent-world * local T*R, excluding
+entity scale and retaining parent stretch/reflection. Local rotation preserves original
+position/scale; local scale preserves position/rotation. World operations preserve
+the world pivot and reject parent-local shear. Positive factors .001..1000 retain
+existing reflections without crossing singular zero. No compatibility path or new
+third-party dependency was added.
+新增旋转射线与仿射操作框架，按最短弧连续展开角度；局部操作保留原位姿中的其他
+分量，世界操作严格拒绝无法表示的父局部错切，不以近似结果覆盖场景数据。
+
+The Scene toolbar now offers Select/Move/Rotate/Scale with world/local controls and
+mode-dependent meter/degree/ratio snap units. Genuine projected colored rings and
+square scale endpoints use their rendered segments for hit-testing. Parallel/clipped
+ring segments are omitted. All modes consume the same owned preview/commit/cancel
+transaction and post-layout GPU rendering phase; native release commits once, Escape/
+focus loss cancels and Undo restores actual data/pixels. The agent uses the same
+revision-checked commands; tool.value reports the last successfully applied distance,
+angle or factor while active, null otherwise. Kept interfaces/implementation separate
+and external source editing unchanged.
+界面、原生输入与代理共用真实事务；旋转环和缩放端点直接编辑场景克隆，提交、取消
+和撤销保持一致，吸附单位明确且不伪造状态或新渲染能力。
+
+Three new foundation cases passed 3/3 (0.24s) before UI consumers were added: affine
+rotation-ray unwrapping/reflection, oblique perspective sampling and local/world
+rotation/scale boundaries. Two native/GPU workspace identities and expanded runnable
+viewport acceptance cover exact angles/factors, changed/restored pixels, single Undo,
+world-shear rejection and ring/endpoint hit-testing. Existing Move, ownership, stale
+revision, no-op, cancellation and focus coverage remains. Added a non-symmetric
+30-degree quaternion check to distinguish sampling from matrix errors.
+
+Initial focused verification failed two new assertions. The native history test
+incorrectly expected total history growth after Undo despite redo-branch replacement;
+corrected the fixture expectation while retaining one-step data/pixel Undo. Rotation
+probes exposed a real prior move-stage defect: intended agent/native input isolation
+was not actually enforced in viewportInput. Incidental native UV (0,0) overwrote an
+agent's approximately 30-degree sample with 150 degrees. Added the missing source
+guard, removed temporary probes and strengthened exact agent angle/factor/meter
+assertions before and after frames. The deterministic 45-degree test accounts for
+viewport aspect. Final focused suite passes 12/12, 6.79s. This fixes actual command
+semantics rather than weakening pixel or scene coverage.
+定向检查发现代理手势被原生鼠标覆盖的真实缺陷，补充输入来源保护与精确数值断言；
+另外修正了 Undo 后 redo 分支替换的测试预期，保留单步撤销与像素还原要求。
+
+Full Debug CTest: 909/909, 172.22s. Full Release/NDEBUG: 909/909, 41.16s, executed
+sequentially after both builds completed. Inventory is 847 doctest identities plus
+62 executable checks, with overlapping labels: 204 unit, 90 offscreen, 56 native,
+106 acceptance. All 277 C/C++ files pass clang-format/whitespace checks. Fifteen
+standalone WGSL sources are unchanged and real pipeline validation remains covered.
+Reviewed module direction, lifetime/thread/move/reentry/conflict boundaries, affine
+frame conventions, snapping/limits, strict commands and native/agent source routing.
+No sanitizer, environment override or toolchain workaround was used.
+
+The first archive audit caught a 6,148-byte Finder .DS_Store at the generated
+distribution root, yielding 260 entries. Removed that temporary metadata, strengthened
+the audit exclusion and rebuilt the archive. Final ZIP: 259 entries, 47,120,689 bytes.
+CRC, executable permissions/exclusions and exact font/license/two HDRI copies pass;
+all 13 regular Mach-O files and 3 relative symlinks pass strict signatures and relative/
+system loader/rpath checks; deep strict app verification passes. Opened the bundled
+Feature Lab, selected real Dynamic entity and visually inspected rotation rings, scale
+endpoints and explicit units. Closed with discard=false; terminal exit zero, owned
+control-stage removal and unchanged source project verified. Removed owned UI request
+files, retaining build caches, audit/log evidence, latest ZIP and supplied reference
+artwork. Private design source remains untracked. Only arm64 macOS is validated.
+Plane/uniform-scale tools, multi-selection, persisted profiles, thumbnails, scalable
+production scenes and polished realistic Prism Relay remain unfinished; the full
+engine/editor/game goal remains active.

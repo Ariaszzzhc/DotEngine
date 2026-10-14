@@ -80,3 +80,10 @@ preview scene and one release-time history transaction. Meter snapping, cancella
 stale/conflict boundaries and real native/GPU workflows have dedicated coverage.
 Rotation/scale and plane handles, multi-selection, persisted user profiles, thumbnails,
 large-scene scalability and realistic polished game production remain unfinished.
+
+Rotation rings and axis scale handles now share the translation gesture transaction,
+with degrees/factor snap units, real affine parent frames and strict world-to-local
+TRS failure handling. Exact agent samples and native ring/endpoint interactions are
+covered. Plane/uniform-scale handles, multi-selection, persisted user profiles, asset
+thumbnails, scalable production scenes and realistic polished Prism Relay remain
+unimplemented. The full engine/editor/game objective remains active.

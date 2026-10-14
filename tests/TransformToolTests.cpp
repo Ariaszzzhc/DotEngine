@@ -61,6 +61,7 @@ TEST_CASE("editor.transform_gesture_owned_preview_one_commit_undo_redo_cancel_an
     world.data[12] += 4;
     REQUIRE(cancel.update(world));
   }
+
   CHECK(f.document.snapshot().value() == afterRedo);
 }
 
@@ -121,4 +122,59 @@ TEST_CASE("editor.transform_gesture_noop_return_to_origin_has_no_history_entry")
   REQUIRE(result);
   CHECK_FALSE(result->changed);
   CHECK(f.document.snapshot().value() == before);
+}
+
+TEST_CASE("editor.transform_gesture_rotation_scaling_pivot_local_parent_and_shear_boundaries") {
+  using namespace Dot;
+  Fixture f;
+  REQUIRE(f.document.apply(
+      Json::array({{{"op", "create"}, {"name", "Parent"}},
+                   {{"op", "transform"},
+                    {"entity", "3"},
+                    {"value",
+                     {{"position", {2, 1, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {-2, 3, 4}}}}},
+                   {{"op", "transform"},
+                    {"entity", "2"},
+                    {"value",
+                     {{"position", {1, 2, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {-1, 2, 1}}}}},
+                   {{"op", "parent"}, {"entity", "2"}, {"parent", "3"}}})
+          .dump(),
+      f.document.stats()->revision));
+  const auto original = f.document.snapshot().value();
+  auto gesture
+      = Editor::TransformGesture::begin(f.document, f.document.stats()->revision, 2).value();
+  const auto start = gesture.world().value();
+  REQUIRE(gesture.rotate(2, 30, true));
+  const auto initialDraft = gesture.scene().value();
+  CHECK(initialDraft->entity(initialDraft->findEntity(2).value())->transform.rotation.z
+        == doctest::Approx(0.258819F));
+  REQUIRE(gesture.rotate(2, 90, true));
+  CHECK(gesture.world()->data[12] == start.data[12]);
+  CHECK(gesture.world()->data[13] == start.data[13]);
+  CHECK(f.document.snapshot().value() == original);
+  auto draft = gesture.scene().value();
+  auto child = draft->entity(draft->findEntity(2).value()).value();
+  CHECK(child.transform.scale.x == -1);
+  CHECK(child.transform.scale.y == 2);
+  CHECK(Math::eulerDegrees(child.transform.rotation)->z == doctest::Approx(90));
+  REQUIRE(gesture.scale(0, 2, true));
+  child = draft->entity(draft->findEntity(2).value()).value();
+  CHECK(child.transform.scale.x == -2);
+  CHECK(child.transform.rotation.w == 1);
+  REQUIRE(gesture.rotate(2, 0, true));
+  CHECK(gesture.world().value() == start);
+  CHECK_FALSE(gesture.rotate(2, 45, false));
+  CHECK(gesture.world().value() == start);
+  CHECK_FALSE(gesture.scale(0, 0, true));
+  CHECK_FALSE(gesture.scale(0, -1, true));
+  CHECK_FALSE(gesture.rotate(3, 10, true));
+  auto frame = Editor::transformFrame(*draft, draft->findEntity(2).value(), true).value();
+  CHECK(frame.data[0] == -2);
+  CHECK(frame.data[5] == 3);
+  CHECK(frame.data[12] == start.data[12]);
+  REQUIRE(gesture.scale(1, 1.5F, false));
+  CHECK(gesture.world()->data[12] == start.data[12]);
+  REQUIRE(gesture.commit(f.document));
+  CHECK(f.document.stats()->historyEntries
+        == Json::parse(original)["historyEntries"].get<int>() + 1);
 }
