@@ -468,7 +468,8 @@ namespace Dot::Graphics {
                                  .intensity = source.intensity,
                                  .range = source.range,
                                  .innerConeDegrees = source.innerConeDegrees,
-                                 .outerConeDegrees = source.outerConeDegrees});
+                                 .outerConeDegrees = source.outerConeDegrees,
+                                 .shadows = source.shadows});
       }
 
       return validatedLighting(result);
@@ -617,8 +618,9 @@ namespace Dot::Graphics {
           }
 
           frame.meshes.push_back(found->second.mesh);
-          frame.draws.push_back(
-              {&frame.meshes.back(), *world, entity.mesh->tint, std::move(material)});
+          frame.draws.push_back({&frame.meshes.back(), *world, entity.mesh->tint,
+                                 std::move(material), entity.mesh->castsShadow,
+                                 entity.mesh->receivesShadow});
         }
 
         auto changed = bindEnvironment(scene);

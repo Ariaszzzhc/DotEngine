@@ -137,3 +137,10 @@ of two for radiance/specular 16..512, diffuse 4..128, BRDF 16..256; samples 32..
 World/codec validation needs no device or filesystem. Actual opaque 2:1 HDR pixels,
 source accessibility and GPU/cache budgets are validated by render/export consumers.
 See [environment authoring](Editor.md) and [rendering contracts](Rendering.md).
+
+Lights optionally own `shadows`: null/absence disables it; an object requires
+resolution/cascades/distance/splitLambda/depthBias/slopeBias/normalBias/filterRadius.
+Only directional shadow requests are supported; invalid types/work fail scene
+validation. Meshes optionally store boolean castsShadow/receivesShadow (default
+true). Encoding writes these fields explicitly. [Shadow contracts](Rendering.md)
+describe bounds, finite frustums and the frame's single directional-source limit.

@@ -14,6 +14,7 @@ module Dot.World.SceneFiles;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.World.Scene;
+import Dot.Graphics.Shadows;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Audio.Source;
@@ -66,8 +67,10 @@ namespace Dot::World {
     }
 
     auto light(const Json& value) -> Light {
-      Codec::requireFields(value, {"kind", "color", "intensity", "range", "innerConeDegrees",
-                                   "outerConeDegrees", "enabled"});
+      Codec::requireFields(value,
+                           {"kind", "color", "intensity", "range", "innerConeDegrees",
+                            "outerConeDegrees", "enabled"},
+                           {"shadows"});
       Light result;
       const auto kind = value["kind"].get<std::string>();
 
@@ -87,11 +90,33 @@ namespace Dot::World {
       result.innerConeDegrees = Codec::number(value["innerConeDegrees"]);
       result.outerConeDegrees = Codec::number(value["outerConeDegrees"]);
       result.enabled = value["enabled"].get<bool>();
+
+      if (value.contains("shadows") && !value["shadows"].is_null()) {
+        const auto& settings = value["shadows"];
+        Codec::requireFields(settings, {"resolution", "cascades", "distance", "splitLambda",
+                                        "depthBias", "slopeBias", "normalBias", "filterRadius"});
+        const auto integer = [&](const char* key) -> std::uint32_t {
+          if (!settings[key].is_number_integer() || settings[key] < 0 || settings[key] > 4096) {
+            throw std::invalid_argument("Shadow work values require bounded integers");
+          }
+
+          return settings[key].get<std::uint32_t>();
+        };
+        result.shadows = Graphics::ShadowSettings{integer("resolution"),
+                                                  integer("cascades"),
+                                                  Codec::number(settings["distance"]),
+                                                  Codec::number(settings["splitLambda"]),
+                                                  Codec::number(settings["depthBias"]),
+                                                  Codec::number(settings["slopeBias"]),
+                                                  Codec::number(settings["normalBias"]),
+                                                  Codec::number(settings["filterRadius"])};
+      }
       return result;
     }
 
     auto mesh(const Json& value) -> MeshRenderer {
-      Codec::requireFields(value, {"kind", "asset", "tint", "visible"});
+      Codec::requireFields(value, {"kind", "asset", "tint", "visible"},
+                           {"castsShadow", "receivesShadow"});
       MeshRenderer result;
       const auto kind = value["kind"].get<std::string>();
 
@@ -108,6 +133,8 @@ namespace Dot::World {
       result.asset = value["asset"].get<std::string>();
       result.tint = vector4(value["tint"]);
       result.visible = value["visible"].get<bool>();
+      result.castsShadow = value.value("castsShadow", true);
+      result.receivesShadow = value.value("receivesShadow", true);
       return result;
     }
 
@@ -475,13 +502,24 @@ namespace Dot::World {
       const auto kind = value.kind == LightKind::Directional ? "directional"
                         : value.kind == LightKind::Point     ? "point"
                                                              : "spot";
+      Json shadows = nullptr;
+
+      if (value.shadows) {
+        const auto& settings = *value.shadows;
+        shadows = {{"resolution", settings.resolution}, {"cascades", settings.cascades},
+                   {"distance", settings.distance},     {"splitLambda", settings.splitLambda},
+                   {"depthBias", settings.depthBias},   {"slopeBias", settings.slopeBias},
+                   {"normalBias", settings.normalBias}, {"filterRadius", settings.filterRadius}};
+      }
+
       return {{"kind", kind},
               {"color", {value.color.x, value.color.y, value.color.z}},
               {"intensity", value.intensity},
               {"range", value.range},
               {"innerConeDegrees", value.innerConeDegrees},
               {"outerConeDegrees", value.outerConeDegrees},
-              {"enabled", value.enabled}};
+              {"enabled", value.enabled},
+              {"shadows", std::move(shadows)}};
     }
 
     auto meshJson(const MeshRenderer& value) -> Json {
@@ -491,6 +529,8 @@ namespace Dot::World {
       return {{"kind", kind},
               {"asset", value.asset},
               {"visible", value.visible},
+              {"castsShadow", value.castsShadow},
+              {"receivesShadow", value.receivesShadow},
               {"tint", {value.tint.x, value.tint.y, value.tint.z, value.tint.w}}};
     }
 

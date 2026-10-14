@@ -47,3 +47,8 @@ action. The demo keeps its HDRI local so copied projects and exports work offlin
 `assets/studio_small_09_1k.hdr` is the unmodified [Studio Small 09](https://polyhaven.com/a/studio_small_09)
 1K panorama by Sergej Majboroda, shared under [CC0](https://polyhaven.com/license).
 SHA256: `e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45`.
+
+The camera's directional headlight explicitly requests four 512-pixel shadow
+cascades over 50 m with comparison filtering. Light/mesh inspectors can edit saved
+shadow quality and casting/receiving. This demonstrates authored directional
+shadows; point/spot casting and advanced shadow tooling remain planned.

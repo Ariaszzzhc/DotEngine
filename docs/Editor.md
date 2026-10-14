@@ -501,3 +501,14 @@ pane `scene`, `environment` or `resources` controls graphical navigation without
 scene edit/revision. Resource failures appear with their paths; no substitute HDRI
 is supplied. Higher quality increases first-bake work; background import/bake jobs
 and advanced environment controls are still planned.
+
+## Directional shadows
+
+The Light inspector's Cast directional shadows control enables saved cascade
+settings. Expand shadows to choose resolution/count/coverage/splitting/bias and
+filter radius; the integer controls preserve the strict work types. Point/spot
+shadow requests are rejected. Mesh inspectors expose independent casting and
+receiving flags. Apply/undo/save, agent component edits, Play and exported players
+share the scene configuration. One enabled directional shadow source is supported
+per frame; additional sources report a contextual error rather than losing shadows.
+Advanced light gizmos, projection previews and point/spot shadows remain planned.

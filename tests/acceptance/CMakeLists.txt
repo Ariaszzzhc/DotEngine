@@ -10,6 +10,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/HostAcceptance.cpp
     Runtime/HdrAcceptance.cpp
     Runtime/EnvironmentAcceptance.cpp
+    Runtime/ShadowAcceptance.cpp
     Runtime/InputAcceptance.cpp
     Runtime/MaterialAcceptance.cpp
     Runtime/InstanceAcceptance.cpp

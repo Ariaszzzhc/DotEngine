@@ -14,6 +14,7 @@ import Dot.World.Scene;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Math;
+import Dot.Graphics.Shadows;
 
 namespace {
   using namespace Dot::World;
@@ -385,4 +386,40 @@ TEST_CASE("scene_file.environment_roundtrip_strict_fields_numbers_and_absence") 
   CHECK_FALSE(Dot::World::decodeScene(absent.dump())->environment().value());
   absent.erase("environment");
   CHECK_FALSE(Dot::World::decodeScene(absent.dump())->environment().value());
+}
+
+TEST_CASE("scene_file.shadow_quality_and_mesh_cast_receive_flags_roundtrip_strictly") {
+  auto scene = makeScene();
+  auto light = scene.createEntity("Sun").value();
+  Dot::World::Light source;
+  source.shadows = Dot::Graphics::ShadowSettings{};
+  REQUIRE(scene.setLight(light, source));
+  auto mesh = scene.findEntity(20).value();
+  auto rendering = scene.entity(mesh)->mesh.value();
+  rendering.castsShadow = false;
+  rendering.receivesShadow = false;
+  REQUIRE(scene.setMeshRenderer(mesh, rendering));
+  const auto encoded = Dot::World::encodeScene(scene).value();
+  auto decoded = Dot::World::decodeScene(encoded).value();
+  CHECK(decoded.entity(decoded.findEntity(light.value).value())->light->shadows == source.shadows);
+  CHECK_FALSE(decoded.entity(decoded.findEntity(20).value())->mesh->castsShadow);
+  CHECK_FALSE(decoded.entity(decoded.findEntity(20).value())->mesh->receivesShadow);
+  CHECK(Dot::World::encodeScene(decoded).value() == encoded);
+  const auto canonical = Json::parse(encoded);
+
+  for (const auto& value : {Json(-1), Json(129), Json(128.5), Json("128"), Json(true)}) {
+    auto bad = canonical;
+    bad["entities"].back()["light"]["shadows"]["resolution"] = value;
+    CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  }
+
+  auto bad = canonical;
+  bad["entities"].back()["light"]["kind"] = "point";
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  bad = canonical;
+  bad["entities"].back()["light"]["shadows"]["unknown"] = 1;
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
+  bad = canonical;
+  bad["entities"][1]["mesh"]["castsShadow"] = 1;
+  CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
 }

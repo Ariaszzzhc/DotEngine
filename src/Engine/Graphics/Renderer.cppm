@@ -51,6 +51,9 @@ export namespace Dot::Graphics {
     std::uint64_t frameBytes{};
     std::uint64_t environments{};
     std::uint64_t environmentBytes{};
+    /** Renderer working depth maps, four bytes per texel, at most 64 MiB.
+     * 渲染器工作深度图每纹素四字节，最多 64 MiB。 */
+    std::uint64_t shadowBytes{};
   };
 
   struct TargetInfo {
@@ -251,6 +254,12 @@ export namespace Dot::Graphics {
     Math::Mat4 transform{};
     Math::Vec4 tint{1, 1, 1, 1};
     Material material{};
+    /** Requested shadows require finite affine caster transforms, including unlit
+     * geometry. Receiving attenuates only the selected direct light, preserving IBL/emission.
+     * 请求阴影时投影体（包括无光照几何）须有有限仿射变换；接收仅衰减指定直接光，保留
+     * 环境光及自发光。 */
+    bool castsShadow{true};
+    bool receivesShadow{true};
   };
 
   /** Texture residency budget, checked before upload/mip allocation. Bounds are
@@ -325,9 +334,10 @@ export namespace Dot::Graphics {
 
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;
-     * no-direct-light frames retain emission and explicitly bound IBL. Shadows are pending.
+     * no-direct-light frames retain emission and explicitly bound IBL. Directional
+     * shadows are explicit; point/spot shadows remain planned.
      * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
-     * 无直接光帧保留自发光及显式绑定的 IBL，阴影尚待实现。 */
+     * 无直接光帧保留自发光及显式绑定的 IBL；方向光阴影须显式请求，点光/聚光阴影待实现。 */
     [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
     [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 

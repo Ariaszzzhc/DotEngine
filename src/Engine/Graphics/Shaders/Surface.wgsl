@@ -122,6 +122,8 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
     n = -n;
   }
 
+  let shadowNormal = n;
+
   if (camera.flags.y != 0.0) {
     let det = duv1.x * duv2.y - duv1.y * duv2.x;
     let tangent = (dp1 * duv2.y - dp2 * duv1.y) / det;
@@ -158,8 +160,15 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
       }
     }
 
+    var visibility = 1.0;
+
+    if (camera.material.w != 0.0) {
+      visibility = lightVisibility(index, input.worldPosition, shadowNormal,
+        max(dot(shadowNormal, l), 0.0), dp1, dp2);
+    }
+
     radiance += brdf(n, v, l, base.xyz, metallic, roughness)
-      * light.colorIntensity.xyz * light.colorIntensity.w * attenuation;
+      * light.colorIntensity.xyz * light.colorIntensity.w * attenuation * visibility;
   }
 
   return vec4f(clamp(radiance, vec3f(0.0), vec3f(65504.0)), base.a);

@@ -7,6 +7,7 @@ export module Dot.Graphics.Lighting;
 
 import Dot.Core.Result;
 import Dot.Math;
+export import Dot.Graphics.Shadows;
 
 export namespace Dot::Graphics {
   enum class LightKind { Directional, Point, Spot };
@@ -30,6 +31,9 @@ export namespace Dot::Graphics {
     float range{10};
     float innerConeDegrees{20};
     float outerConeDegrees{30};
+    /** Optional single directional shadow source per frame; point/spot requests fail.
+     * 每帧可选一盏方向光投影；点光/聚光请求明确失败。 */
+    std::optional<ShadowSettings> shadows{};
   };
 
   /** Owned frame lighting, at most 64 lights. Camera/light positions are finite

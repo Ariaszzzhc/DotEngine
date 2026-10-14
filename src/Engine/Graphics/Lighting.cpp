@@ -35,7 +35,21 @@ namespace Dot::Graphics {
         result.viewDirection = *direction;
       }
 
+      std::size_t shadowSources{};
+
       for (auto& light : result.lights) {
+        if (light.shadows) {
+          if (light.kind != LightKind::Directional || ++shadowSources > 1) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Shadows require one directional source per frame");
+          }
+
+          auto checked = validateShadowSettings(*light.shadows);
+
+          if (!checked) {
+            return std::unexpected(checked.error());
+          }
+        }
         if ((light.kind != LightKind::Directional && light.kind != LightKind::Point
              && light.kind != LightKind::Spot)
             || !positionValid(light.position) || !Math::isFinite(light.direction)

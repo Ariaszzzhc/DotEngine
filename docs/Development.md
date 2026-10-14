@@ -3052,3 +3052,58 @@ signatures and all 16 Mach-O signatures/relative-system library references pass.
 Only arm64 macOS was validated. Removed only owned manual request files; verification
 windows/control stages are closed, while build caches/latest package and the private
 untracked document remain intact. Full large-game/editor requirements remain active.
+
+## 2026-10-14 — Cascaded directional soft shadows
+
+Built and tested the CPU shadow contract before GPU consumers: bounded work,
+finite camera/light/caster validation, practical logarithmic/uniform splits,
+sphere-square footprints, texel-aligned XY, overlap and off-camera caster depth
+coverage. Three pure cases passed before rendering implementation. Added actual
+Depth32Float caster passes, independent per-draw/cascade uniforms, checked working
+map allocation/reuse/release and single-command-buffer ordering before HDR shading.
+Shader variants apply sixteen-tap/hardware comparison PCF to one explicit directional
+source, blend cascade overlaps and preserve other lights, IBL and emission.
+Caster/receiver controls are independent; matrices are checked before depth passes.
+
+Initial GPU compilation rejected WGSL's reserved meta identifier; renamed it.
+Native pixel tests then exposed self-shadowing on the tilted receiver because
+comparison references ignored the plane slope. Derived gradients from world
+position derivatives outside nonuniform flow, corrected each tap's reference and
+included the full bilinear neighbor footprint. Retained the self-casting floor
+and its unoccluded-energy assertions. Separated wide-softness measurement from
+four-cascade coverage; the wide kernel physically produces partial illumination
+inside small shadows. Camera-height cases verify each cascade and off-camera
+casters. Geometric normals drive bias independently of normal-map perturbation.
+Three GPU cases pass for moving occlusion, cast/receive flags, measured softness,
+map resizing/release, cascades, light isolation, IBL/emission and input retention.
+
+Saved light quality and mesh flags share scene codec/document/inspector/Play/export.
+Added explicit directional-shadow enabling and integer work widgets. Unsupported
+point/spot or multiple directional requests fail. Feature Lab's authored camera
+headlight requests four 512-pixel cascades, alongside its real local HDRI. A saved
+scene GPU test verifies light pose, encoded quality and caster toggles. Strict codec
+checks reject wrong types/work; document checks include failure rollback, undo/redo
+and save/reopen. Expanded Light storage required an existing range loop to borrow
+its test values. Full Debug found only the old canonical light expectation missing
+shadows:null; the added roundtrip then exposed double fixture decimals versus the
+engine's float32 storage. Corrected expected schema/types and kept full comparisons.
+
+The BUILD_TESTING-only --shadow-test driver writes hard/soft/disabled GPU ACES
+images and checks HDR differences/map release. Visually inspected the hard and
+soft 960x540 renders after lossless conversion: matching caster geometry and softer
+shadow edges on the ground. Ten focused cases passed in 5.73 seconds. Final Debug
+passes 869/869 in 141.65 seconds; Release/NDEBUG passes 869/869 in 37.34 seconds.
+Registered layers: 194 unit, 476 device-free integration, 78 offscreen, 44 native,
+93 acceptance (overlap); 809 doctest and 60 executable checks. All 259 C/C++ files
+and nine standalone WGSL files pass formatting/indent/line/whitespace checks.
+Reviewed fit precision, ownership, shader layouts, receiver bias, error scopes,
+pre-submission matrix failures and saved-scene consumers before commit.
+
+Refreshed ZIP: 259 entries, 45,927,437 bytes. CRC/executable modes, authored
+Feature Lab shadows/HDRI and private/test/control-stage/Finder/SDK-copy/WGSL-source
+exclusions pass. Deep strict application signatures and all 16 Mach-O signatures/
+relative-system references pass. Only arm64 macOS is validated. Retained build
+caches/latest package and the private untracked document. Fixed-radius PCF is not
+contact-hardening PCSS; point/spot/alpha-mask shadows, temporal filtering, pooling/
+culling/instancing, SSAO, mature editor/scalability and realistic game work remain
+required by the full active goal. No compatibility loader or new dependency added.

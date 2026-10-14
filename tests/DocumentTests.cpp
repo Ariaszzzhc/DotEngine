@@ -424,6 +424,7 @@ TEST_CASE("document_material_and_light_components_share_history_save_and_agent_v
   Json material{{"asset", "assets/steel.dotmaterial"}};
   Json light{{"kind", "point"},        {"color", {1, 0.5, 0.25}}, {"intensity", 25}, {"range", 12},
              {"innerConeDegrees", 20}, {"outerConeDegrees", 30},  {"enabled", true}};
+  light["shadows"] = nullptr;
   const auto operations = Json::array(
       {{{"op", "component"}, {"entity", "2"}, {"component", "material"}, {"value", material}},
        {{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", light}}});
@@ -442,6 +443,28 @@ TEST_CASE("document_material_and_light_components_share_history_save_and_agent_v
   auto saved = fixture.project().loadStartup().value();
   CHECK(saved.entities()->at(1).material->asset == "assets/steel.dotmaterial");
   CHECK(saved.entities()->at(1).light->kind == Dot::World::LightKind::Point);
+  auto shadowed = light;
+  shadowed["shadows"]
+      = {{"resolution", 256},    {"cascades", 2},       {"distance", 30},      {"splitLambda", 0.5},
+         {"depthBias", 0.0002F}, {"slopeBias", 0.001F}, {"normalBias", 0.01F}, {"filterRadius", 3}};
+  const auto current = document.snapshot().value();
+  CHECK_FALSE(document.apply(
+      Json::array(
+          {{{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", shadowed}}})
+          .dump(),
+      revision(document)));
+  CHECK(document.snapshot().value() == current);
+  shadowed["kind"] = "directional";
+  edit(document,
+       Json::array(
+           {{{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", shadowed}}}));
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["light"] == light);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["light"] == shadowed);
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(state(reopened)["scene"]["entities"][1]["light"] == shadowed);
 }
 
 TEST_CASE("document.environment_edits_undo_redo_atomic_failure_save_and_reopen") {

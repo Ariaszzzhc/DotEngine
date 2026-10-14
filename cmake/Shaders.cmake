@@ -15,6 +15,9 @@ add_custom_command(
         "${dot_shader_source}/SurfaceDirect.wgsl"
         "${dot_shader_source}/SurfaceEnvironment.wgsl"
         "${dot_shader_source}/Sky.wgsl"
+        "${dot_shader_source}/ShadowDepth.wgsl"
+        "${dot_shader_source}/VisibilityDirect.wgsl"
+        "${dot_shader_source}/VisibilityShadows.wgsl"
         "${PROJECT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     VERBATIM)
 add_custom_target(DotShaders DEPENDS "${dot_shader_generated}/BuiltinShaders.hpp")

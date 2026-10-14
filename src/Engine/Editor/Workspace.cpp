@@ -140,6 +140,12 @@ namespace Dot::Editor {
           if (ImGui::Checkbox(title.c_str(), &current)) {
             value = current;
           }
+        } else if (value.is_number_integer()) {
+          std::int64_t current = value.get<std::int64_t>();
+
+          if (ImGui::InputScalar(title.c_str(), ImGuiDataType_S64, &current)) {
+            value = current;
+          }
         } else if (value.is_number()) {
           double current = value.get<double>();
 
@@ -1438,6 +1444,22 @@ namespace Dot::Editor {
         if (m_edit[component].is_null()) {
           if (ImGui::Button(("Add " + title).c_str())) {
             m_edit[component] = m_presets[component];
+
+            if (std::string_view(component) == "light") {
+              auto& light = m_edit[component];
+              bool shadows = light.contains("shadows") && !light["shadows"].is_null();
+              ImGui::BeginDisabled(light["kind"] != "directional" && !shadows);
+
+              if (ImGui::Checkbox("Cast directional shadows", &shadows)) {
+                light["shadows"] = shadows ? Json{{"resolution", 1024},   {"cascades", 4},
+                                                  {"distance", 100.0F},   {"splitLambda", 0.65F},
+                                                  {"depthBias", 0.0002F}, {"slopeBias", 0.001F},
+                                                  {"normalBias", 0.01F},  {"filterRadius", 2.0F}}
+                                           : Json(nullptr);
+              }
+
+              ImGui::EndDisabled();
+            }
 
             if (std::string_view(component) == "script") {
               m_propertiesText = m_edit[component]["properties"].dump(2);

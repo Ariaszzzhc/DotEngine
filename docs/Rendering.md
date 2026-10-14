@@ -35,9 +35,8 @@ object tint and the material factor. No texture selects a constant white texel;
 an explicitly invalid texture is an error. SurfaceModel selects unlit or
 metallic/roughness shading through the same current HDR pipeline.
 The material also has finite nonnegative linear emissive radiance in [0,65503]
-per RGB channel, added before exposure; alpha is unaffected. Transparency blending,
-image-based lighting and shadows are not delivered here; direct physical material
-slots and lighting are described below.
+per RGB channel, added before exposure; alpha is unaffected. Transparency blending remains planned; direct physical materials, HDRI lighting
+and explicit directional shadows are described below.
 
 Run the development-only native acceptance with:
 
@@ -162,7 +161,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, IBL, soft shadows, SSAO, glTF import,
+the requested project/game visual upgrades, point/spot shadows, SSAO, glTF import,
 author tangents and large-scene performance remain incomplete; the gallery does
 not establish those capabilities.
 
@@ -410,5 +409,66 @@ asset fetch or absolute authoring path is required by the exported player.
 Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
 Its existing native standalone acceptance validates that delivery path. This
-provides authored IBL; soft shadows, SSAO, async baking/streaming and advanced
+provides authored IBL; directional shadows are described below, while SSAO,
+point/spot shadows, async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
+
+## Cascaded directional soft shadows
+
+`Light::shadows` explicitly requests one directional shadow source per frame. Null
+means no shadow map; point/spot requests or multiple requested directional sources
+fail validation. This first shadow subsystem covers opaque static mesh geometry;
+point/spot projections, alpha-mask casting, contact-hardening PCSS, temporal filtering
+and GPU draw culling/instancing remain planned. Immediate unlit vertex rendering
+is independent of mesh shadow rendering.
+
+`Dot.Graphics.Shadows` validates work on CPU and fits a finite camera frustum with
+at most 4096 world caster AABBs. Practical logarithmic/uniform splits cover the
+configured camera depth, up to four cascades. Square sphere fits and light-space
+texel snapping stabilize the XY projection; cascades overlap ten percent and the
+fragment shader blends the overlap. Caster bounds overlapping the footprint extend
+the depth interval even when outside the camera view. Singular/infinite/horizon
+frustums, invalid work, non-affine/out-of-bounds casters or unrepresentable draw
+matrices fail before submission, preserving the previous target frame.
+
+Defaults: resolution 1024, four cascades, distance 100 m, splitLambda .65, normalized
+depthBias .0002/slopeBias .001, normalBias .01 m and filterRadius 2 texels. Resolution
+is power-of-two 128..2048, cascades 1..4, distance .1..10000 (must exceed camera near),
+splitLambda [0,1], depth/slope biases [0,.02], normalBias [0,.2] and radius [0,8].
+A fixed-radius sixteen-tap PCF kernel plus bilinear depth comparisons produces soft
+edges; radius zero uses one hardware comparison sample. World-space softness grows
+with cascade texel size; this is not a physical contact-hardening area-light model.
+
+Receiver-plane gradients come from world-position derivatives computed before
+nonuniform fragment control flow. Each tap's reference depth follows the receiving
+plane; bias includes the full bilinear neighbor footprint. Geometric normals drive
+normal/slope offsets independently of normal-map perturbation. This avoids the
+self-shadowed sloping floor found by the initial native tests. Only the selected
+direct light is attenuated; IBL, emission and other lights retain their contributions.
+MeshDraw castsShadow/receivesShadow are independent and default true.
+
+The renderer caches validated shader variants and Depth32Float array storage;
+independent caster uniforms prevent queue-write aliasing. Caster passes precede the
+HDR scene in one command buffer. Map dimensions are reused, reallocated on change
+and released when no source requests shadows. resourceStats.shadowBytes records
+working texels at four bytes each, at most 64 MiB of logical current map storage;
+replacement/in-flight driver allocations can overlap. These are working buffers,
+separate from asset texture/cache budgets. Per-draw/cascade uniforms and current
+CPU submission need pooling/culling/instancing for populated-scene scalability.
+
+Saved scene lights retain the strict shadows object with all eight settings; mesh
+components retain castsShadow/receivesShadow. The inspector can enable directional
+shadows and edit the nested settings; integral work controls retain integer JSON.
+Document transactions/undo/saving, preview, Play and export use the same scene path.
+Feature Lab's saved directional headlight now requests cascades.
+
+```sh
+build/debug/bin/DotRuntimeAcceptance --shadow-test /existing/output-directory
+```
+
+The development-only offscreen driver renders hard/soft/disabled comparisons into
+shadow-hard.ppm, shadow-soft.ppm and shadow-none.ppm, verifies actual HDR differences
+and releases working maps. CPU tests cover fits/splits/texel stability/occluders;
+GPU tests check moving shadows, casting/receiving, measured penumbrae, all four
+cascades including off-camera casters, resource resize/release, other lights, IBL/
+emission and input failure retention. Saved-scene and document tests verify authoring.

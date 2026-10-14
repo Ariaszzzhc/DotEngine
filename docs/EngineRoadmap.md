@@ -47,3 +47,10 @@ then content-production/scalability/game polish. Script namespace/resolution and
 external-editor work are separate cohesive changes. Every stage needs runnable
 acceptance and failure/boundary/lifetime checks before consumers rely on it.
 Only arm64 macOS is locally validated; Windows/Linux implementation remains required.
+
+Directional cascaded depth shadows now render through saved lights and mesh
+casting/receiving controls, with stabilized fits, filtered comparisons, overlap
+blending, receiver-plane bias correction and actual pixel/lifetime evidence.
+Lighting/shadows remain open for point/spot maps, contact-hardening, advanced
+authoring and submission/scalability work. SSAO and the other listed requirements
+remain pending; this stage does not establish large-game or mature-editor completion.

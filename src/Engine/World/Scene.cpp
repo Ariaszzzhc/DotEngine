@@ -939,7 +939,8 @@ namespace Dot::World {
                       .intensity = light->intensity,
                       .range = light->range,
                       .innerConeDegrees = light->innerConeDegrees,
-                      .outerConeDegrees = light->outerConeDegrees}};
+                      .outerConeDegrees = light->outerConeDegrees,
+                      .shadows = light->shadows}};
     auto checked = Graphics::validatedLighting(source);
 
     if (!checked) {

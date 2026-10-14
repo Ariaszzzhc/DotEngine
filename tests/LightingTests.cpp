@@ -39,7 +39,7 @@ TEST_CASE("lighting.malformed_counts_positions_rays_and_properties_fail") {
   CHECK_FALSE(validatedLighting(source));
   source.viewPosition = {};
 
-  for (const auto invalid :
+  for (const auto& invalid :
        {Light{.kind = static_cast<LightKind>(99)}, Light{.direction = {}},
         Light{.position = {0, 1'000'001, 0}}, Light{.color = {-1, 1, 1}}, Light{.intensity = -1},
         Light{.intensity = 1'000'001}, Light{.range = 0},
@@ -54,4 +54,24 @@ TEST_CASE("lighting.malformed_counts_positions_rays_and_properties_fail") {
   source.lights[0] = {};
   source.lights[0].direction.x = std::numeric_limits<float>::infinity();
   CHECK_FALSE(validatedLighting(source));
+}
+
+TEST_CASE("lighting.shadow_source_type_count_and_settings_validate_transactionally") {
+  Lighting lighting;
+  Light light;
+  light.shadows = ShadowSettings{};
+  lighting.lights = {light};
+  REQUIRE(validatedLighting(lighting));
+  lighting.lights[0].kind = LightKind::Spot;
+  CHECK_FALSE(validatedLighting(lighting));
+  lighting.lights[0].kind = LightKind::Point;
+  CHECK_FALSE(validatedLighting(lighting));
+  lighting.lights[0] = light;
+  lighting.lights.push_back(light);
+  CHECK_FALSE(validatedLighting(lighting));
+  lighting.lights.pop_back();
+  lighting.lights[0].shadows->resolution = 129;
+  CHECK_FALSE(validatedLighting(lighting));
+  lighting.lights[0].shadows.reset();
+  CHECK(validatedLighting(lighting));
 }

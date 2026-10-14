@@ -46,7 +46,17 @@
         "range": 10,
         "innerConeDegrees": 20,
         "outerConeDegrees": 30,
-        "enabled": true
+        "enabled": true,
+        "shadows": {
+          "resolution": 512,
+          "cascades": 4,
+          "distance": 50,
+          "splitLambda": 0.65,
+          "depthBias": 0.0002,
+          "slopeBias": 0.001,
+          "normalBias": 0.01,
+          "filterRadius": 2
+        }
       }
     },
     {

@@ -59,6 +59,8 @@ export namespace Dot::World {
     std::string asset;
     Math::Vec4 tint{1, 1, 1, 1};
     bool visible{true};
+    bool castsShadow{true};
+    bool receivesShadow{true};
   };
 
   /** Project-root material asset binding; absent binding deliberately uses the
@@ -97,6 +99,7 @@ export namespace Dot::World {
     float innerConeDegrees{20};
     float outerConeDegrees{30};
     bool enabled{true};
+    std::optional<Graphics::ShadowSettings> shadows{};
   };
 
   struct TransformUpdate {

@@ -489,6 +489,13 @@ namespace Dot::Graphics {
     wgpu::RenderPipeline scenePipeline;
     wgpu::RenderPipeline environmentPipeline;
     wgpu::RenderPipeline skyPipeline;
+    wgpu::RenderPipeline shadowScenePipeline;
+    wgpu::RenderPipeline shadowEnvironmentPipeline;
+    wgpu::RenderPipeline shadowDepthPipeline;
+    wgpu::Texture shadowTexture;
+    std::uint32_t shadowResolution{};
+    std::uint32_t shadowLayers{};
+    std::uint64_t shadowBytes{};
     std::optional<EnvironmentLighting> environment;
     wgpu::RenderPipeline postPipeline;
     wgpu::RenderPipeline surfacePostPipeline;
@@ -624,12 +631,15 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false)
-        -> wgpu::RenderPipeline {
+    auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false,
+                  bool withShadows = false) -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
-      const auto shaderCode = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
-                                                          : Detail::surfaceDirectShader)
-                              + "\n" + Detail::surfaceShader;
+      const auto shaderCode
+          = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
+                                        : Detail::surfaceDirectShader)
+            + "\n"
+            + (withShadows ? Detail::visibilityShadowsShader : Detail::visibilityDirectShader)
+            + "\n" + Detail::surfaceShader;
       source.code = shaderCode.c_str();
       wgpu::ShaderModuleDescriptor shaderDescriptor;
       shaderDescriptor.nextInChain = &source;
@@ -693,6 +703,96 @@ namespace Dot::Graphics {
       descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
       descriptor.fragment = &fragment;
       return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto shadowSource() const -> std::optional<std::size_t> {
+      for (std::size_t index = 0; index < config.lighting.lights.size(); ++index) {
+        if (config.lighting.lights[index].shadows) {
+          return index;
+        }
+      }
+
+      return std::nullopt;
+    }
+
+    auto ensureShadowPipelines() -> Core::Result<void> {
+      if (shadowDepthPipeline) {
+        return {};
+      }
+
+      ErrorScope scope(instance, device);
+      auto direct = pipeline(wgpu::TextureFormat::RGBA16Float, false, true);
+      auto environmentSurface = pipeline(wgpu::TextureFormat::RGBA16Float, true, true);
+      wgpu::ShaderSourceWGSL source;
+      source.code = Detail::shadowDepthShader;
+      wgpu::ShaderModuleDescriptor module;
+      module.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&module);
+      wgpu::VertexAttribute attribute;
+      attribute.format = wgpu::VertexFormat::Float32x3;
+      attribute.offset = offsetof(Vertex, position);
+      wgpu::VertexBufferLayout layout;
+      layout.arrayStride = sizeof(Vertex);
+      layout.attributeCount = 1;
+      layout.attributes = &attribute;
+      wgpu::DepthStencilState depth;
+      depth.format = wgpu::TextureFormat::Depth32Float;
+      depth.depthWriteEnabled = true;
+      depth.depthCompare = wgpu::CompareFunction::Less;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.vertex.bufferCount = 1;
+      descriptor.vertex.buffers = &layout;
+      descriptor.depthStencil = &depth;
+      auto depthPipeline = device.CreateRenderPipeline(&descriptor);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (!direct || !environmentSurface || !depthPipeline) {
+        return Core::fail(Core::ErrorCode::External, "Create shadow pipelines failed");
+      }
+
+      shadowScenePipeline = std::move(direct);
+      shadowEnvironmentPipeline = std::move(environmentSurface);
+      shadowDepthPipeline = std::move(depthPipeline);
+      return {};
+    }
+
+    auto ensureShadowMaps(const ShadowSettings& settings) -> Core::Result<void> {
+      if (shadowResolution == settings.resolution && shadowLayers == settings.cascades) {
+        return {};
+      }
+
+      if (settings.resolution > info.maxTextureDimension) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Shadow resolution exceeds device limits");
+      }
+
+      ErrorScope scope(instance, device);
+      wgpu::TextureDescriptor descriptor;
+      descriptor.size = {settings.resolution, settings.resolution, settings.cascades};
+      descriptor.format = wgpu::TextureFormat::Depth32Float;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+      auto texture = device.CreateTexture(&descriptor);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (!texture) {
+        return Core::fail(Core::ErrorCode::External, "Allocate shadow depth maps failed");
+      }
+
+      shadowTexture = std::move(texture);
+      shadowResolution = settings.resolution;
+      shadowLayers = settings.cascades;
+      shadowBytes
+          = static_cast<std::uint64_t>(shadowResolution) * shadowResolution * shadowLayers * 4;
+      return {};
     }
 
     auto skyPipelineFor() -> wgpu::RenderPipeline {
@@ -872,8 +972,8 @@ namespace Dot::Graphics {
 
     template <typename F>
     auto encodePass(const wgpu::Texture& target, std::uint32_t width, std::uint32_t height,
-                    Math::Vec4 clear, F&& draw, wgpu::TextureView depthView = {})
-        -> wgpu::CommandEncoder {
+                    Math::Vec4 clear, F&& draw, wgpu::TextureView depthView = {},
+                    wgpu::CommandEncoder encoder = {}) -> wgpu::CommandEncoder {
       wgpu::TextureDescriptor depthDescriptor;
       depthDescriptor.size = {width, height, 1};
       depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
@@ -899,7 +999,9 @@ namespace Dot::Graphics {
       descriptor.colorAttachmentCount = 1;
       descriptor.colorAttachments = &color;
       descriptor.depthStencilAttachment = &depthAttachment;
-      auto encoder = device.CreateCommandEncoder();
+      if (!encoder) {
+        encoder = device.CreateCommandEncoder();
+      }
       auto pass = encoder.BeginRenderPass(&descriptor);
 
       draw(pass);
@@ -1008,6 +1110,7 @@ namespace Dot::Graphics {
       std::shared_ptr<Mesh::Impl> mesh;
       UniformData uniform;
       std::array<std::shared_ptr<Texture::Impl>, 4> textures;
+      bool castsShadow;
     };
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -1187,14 +1290,189 @@ namespace Dot::Graphics {
               {emissive.x, emissive.y, emissive.z, 0},
               draw.transform,
               normalMatrix,
-              {material.metallic, material.roughness, material.normalScale, 0},
+              {material.metallic, material.roughness, material.normalScale,
+               draw.receivesShadow ? 1.0F : 0.0F},
               {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
                material.normalTexture ? 1.0F : 0.0F, material.doubleSided ? 1.0F : 0.0F,
                orientation}},
-             std::move(textures)});
+             std::move(textures),
+             draw.castsShadow});
       }
 
       return prepared;
+    }
+
+    struct ShadowData {
+      std::array<Math::Mat4, 4> matrices;
+      std::array<float, 4> splits;
+      Math::Vec4 origin;
+      Math::Vec4 forward;
+      Math::Vec4 bias;
+      Math::Vec4 meta;
+    };
+
+    static_assert(sizeof(ShadowData) == 336);
+
+    auto fitShadows(std::span<const PreparedDraw> draws, const Math::Mat4& camera,
+                    std::size_t source) -> Core::Result<ShadowCascades> {
+      std::vector<Bounds> casters;
+      casters.reserve(draws.size());
+
+      for (const auto& draw : draws) {
+        if (!draw.castsShadow) {
+          continue;
+        }
+
+        const auto& matrix = draw.uniform.model;
+        const auto& m = matrix.data;
+
+        if (!Math::isFinite(matrix) || m[3] != 0 || m[7] != 0 || m[11] != 0 || m[15] != 1
+            || !Math::inverse(matrix)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Shadow caster requires finite affine transform");
+        }
+
+        Bounds bounds{{1e6F, 1e6F, 1e6F}, {-1e6F, -1e6F, -1e6F}};
+        const auto& local = draw.mesh->bounds;
+
+        for (int index = 0; index < 8; ++index) {
+          auto point
+              = Math::transformPoint(matrix, {index & 1 ? local.maximum.x : local.minimum.x,
+                                              index & 2 ? local.maximum.y : local.minimum.y,
+                                              index & 4 ? local.maximum.z : local.minimum.z});
+
+          if (!point || std::abs(point->x) > 1e6 || std::abs(point->y) > 1e6
+              || std::abs(point->z) > 1e6) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Shadow caster exceeds world bounds");
+          }
+
+          bounds.minimum
+              = {std::min(bounds.minimum.x, point->x), std::min(bounds.minimum.y, point->y),
+                 std::min(bounds.minimum.z, point->z)};
+          bounds.maximum
+              = {std::max(bounds.maximum.x, point->x), std::max(bounds.maximum.y, point->y),
+                 std::max(bounds.maximum.z, point->z)};
+        }
+
+        casters.push_back(bounds);
+      }
+
+      const auto& light = config.lighting.lights[source];
+      return fitDirectionalShadows(camera, config.lighting.viewPosition, light.direction,
+                                   *light.shadows, casters);
+    }
+
+    auto encodeShadows(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
+                       const ShadowCascades& fit) -> Core::Result<void> {
+      std::vector<Math::Mat4> matrices;
+      matrices.reserve(draws.size() * fit.count);
+
+      for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
+        for (const auto& draw : draws) {
+          if (!draw.castsShadow) {
+            matrices.emplace_back();
+            continue;
+          }
+
+          auto matrix = Math::multiply(fit.matrices[cascade], draw.uniform.model);
+
+          if (!matrix) {
+            return Core::fail(matrix.error().code,
+                              "Shadow caster matrix: " + matrix.error().message);
+          }
+
+          matrices.push_back(*matrix);
+        }
+      }
+
+      for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
+        wgpu::TextureViewDescriptor view;
+        view.dimension = wgpu::TextureViewDimension::e2D;
+        view.baseArrayLayer = cascade;
+        view.arrayLayerCount = 1;
+        view.aspect = wgpu::TextureAspect::DepthOnly;
+        wgpu::RenderPassDepthStencilAttachment depth;
+        depth.view = shadowTexture.CreateView(&view);
+        depth.depthLoadOp = wgpu::LoadOp::Clear;
+        depth.depthStoreOp = wgpu::StoreOp::Store;
+        depth.depthClearValue = 1;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.depthStencilAttachment = &depth;
+        auto pass = encoder.BeginRenderPass(&descriptor);
+        pass.SetPipeline(shadowDepthPipeline);
+
+        for (std::size_t index = 0; index < draws.size(); ++index) {
+          const auto& draw = draws[index];
+
+          if (!draw.castsShadow) {
+            continue;
+          }
+
+          const auto& matrix = matrices[cascade * draws.size() + index];
+          wgpu::BufferDescriptor bufferDescriptor;
+          bufferDescriptor.size = sizeof(matrix);
+          bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+          auto buffer = device.CreateBuffer(&bufferDescriptor);
+          queue.WriteBuffer(buffer, 0, &matrix, sizeof(matrix));
+          wgpu::BindGroupEntry entry;
+          entry.buffer = buffer;
+          entry.size = sizeof(matrix);
+          wgpu::BindGroupDescriptor group;
+          group.layout = shadowDepthPipeline.GetBindGroupLayout(0);
+          group.entryCount = 1;
+          group.entries = &entry;
+          pass.SetBindGroup(0, device.CreateBindGroup(&group));
+          pass.SetVertexBuffer(0, draw.mesh->vertices);
+
+          if (draw.mesh->info.indices) {
+            pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
+            pass.DrawIndexed(draw.mesh->info.indices);
+          } else {
+            pass.Draw(draw.mesh->info.vertices);
+          }
+        }
+
+        pass.End();
+      }
+
+      return {};
+    }
+
+    auto bindShadows(const wgpu::RenderPipeline& pipeline, const ShadowCascades& fit,
+                     std::size_t source) -> wgpu::BindGroup {
+      const auto& settings = *config.lighting.lights[source].shadows;
+      const ShadowData data{
+          fit.matrices,
+          fit.splits,
+          {fit.origin.x, fit.origin.y, fit.origin.z, fit.nearDepth},
+          {fit.forward.x, fit.forward.y, fit.forward.z, 0},
+          {settings.depthBias, settings.slopeBias, settings.filterRadius, settings.normalBias},
+          {static_cast<float>(source), static_cast<float>(settings.resolution),
+           static_cast<float>(fit.count), 0}};
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = sizeof(data);
+      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      wgpu::SamplerDescriptor sampler;
+      sampler.compare = wgpu::CompareFunction::LessEqual;
+      sampler.minFilter = sampler.magFilter = wgpu::FilterMode::Linear;
+      wgpu::TextureViewDescriptor view;
+      view.dimension = wgpu::TextureViewDimension::e2DArray;
+      view.aspect = wgpu::TextureAspect::DepthOnly;
+      std::array<wgpu::BindGroupEntry, 3> entries{};
+      entries[0].buffer = buffer;
+      entries[0].size = sizeof(data);
+      entries[1].binding = 1;
+      entries[1].textureView = shadowTexture.CreateView(&view);
+      entries[2].binding = 2;
+      entries[2].sampler = device.CreateSampler(&sampler);
+      wgpu::BindGroupDescriptor group;
+      group.layout = pipeline.GetBindGroupLayout(3);
+      group.entryCount = entries.size();
+      group.entries = entries.data();
+      return device.CreateBindGroup(&group);
     }
 
     auto encodeMeshes(const wgpu::Texture& target, std::span<const PreparedDraw> draws,
@@ -1263,7 +1541,41 @@ namespace Dot::Graphics {
         }
       }
 
-      const auto& renderPipeline = environment ? environmentPipeline : scenePipeline;
+      const auto source = shadowSource();
+      std::optional<ShadowCascades> fit;
+      wgpu::CommandEncoder shadowEncoder;
+
+      if (source) {
+        auto matrices = fitShadows(draws, viewProjection, *source);
+
+        if (!matrices) {
+          return std::unexpected(matrices.error());
+        }
+
+        auto checked = ensureShadowPipelines();
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        checked = ensureShadowMaps(*config.lighting.lights[*source].shadows);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        fit = *matrices;
+        shadowEncoder = device.CreateCommandEncoder();
+        checked = encodeShadows(shadowEncoder, draws, *fit);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+      }
+
+      const auto& renderPipeline
+          = source ? (environment ? shadowEnvironmentPipeline : shadowScenePipeline)
+                   : (environment ? environmentPipeline : scenePipeline);
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
@@ -1273,6 +1585,10 @@ namespace Dot::Graphics {
 
             if (environment) {
               pass.SetBindGroup(2, bindEnvironment(renderPipeline));
+            }
+
+            if (fit) {
+              pass.SetBindGroup(3, bindShadows(renderPipeline, *fit, *source));
             }
 
             auto lights = bindLighting(renderPipeline);
@@ -1302,7 +1618,7 @@ namespace Dot::Graphics {
               }
             }
           },
-          depthView);
+          depthView, shadowEncoder);
       encodePost(encoder, hdr, target);
       return encoder;
     }
@@ -2035,7 +2351,8 @@ namespace Dot::Graphics {
                          stats.textureBytes.load(),
                          static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12,
                          stats.environments.load(),
-                         stats.environmentBytes.load()};
+                         stats.environmentBytes.load(),
+                         m_impl->shadowBytes};
   }
 
   auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
@@ -2415,6 +2732,14 @@ namespace Dot::Graphics {
     }
 
     m_impl->config.lighting = std::move(*validated);
+
+    if (!m_impl->shadowSource()) {
+      m_impl->shadowTexture = nullptr;
+      m_impl->shadowResolution = 0;
+      m_impl->shadowLayers = 0;
+      m_impl->shadowBytes = 0;
+    }
+
     return {};
   }
 
