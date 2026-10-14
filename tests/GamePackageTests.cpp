@@ -202,6 +202,8 @@ TEST_CASE("game_package.environment_hdr_survives_relocation_and_invalid_sources_
   auto scene = fixture.project.loadStartup().value();
   const Dot::World::Environment expected{"assets/studio.hdr", 2, -45, false, {16, 4, 16, 16, 32}};
   REQUIRE(scene.setEnvironment(expected));
+  const Dot::Graphics::OcclusionSettings occlusion{0.75F, 0.025F, 2, 16, 8, 4};
+  REQUIRE(scene.setOcclusion(occlusion));
   auto published = GamePackage::publish(fixture.project, scene, fixture.compiler(),
                                         fixture.directory.files(), "environment-game");
   REQUIRE_MESSAGE(published, (published ? "" : published.error().message));
@@ -210,6 +212,7 @@ TEST_CASE("game_package.environment_hdr_survives_relocation_and_invalid_sources_
   std::filesystem::rename(published->root(), moved);
   auto package = GamePackage::open(Dot::Core::FileSystem::open(moved).value()).value();
   CHECK(package.scene()->environment().value() == expected);
+  CHECK(package.scene()->occlusion().value() == occlusion);
   CHECK(package.files()->readBytes("assets/studio.hdr").value() == original);
   REQUIRE(fixture.project.files()->writeTextAtomic("assets/studio.hdr", "invalid HDR"));
   auto rejected = GamePackage::publish(fixture.project, scene, fixture.compiler(),

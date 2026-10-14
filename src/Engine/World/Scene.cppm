@@ -16,6 +16,7 @@ import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Graphics.Lighting;
 export import Dot.Graphics.Environment;
+export import Dot.Graphics.Occlusion;
 export import Dot.Audio.Source;
 export import Dot.Script.Source;
 
@@ -171,6 +172,12 @@ export namespace Dot::World {
      * 仅 CPU 的事务式校验；消费者另行检查资源是否存在。 */
     [[nodiscard]] auto setEnvironment(std::optional<Environment> environment) -> Core::Result<void>;
     [[nodiscard]] auto environment() const -> Core::Result<std::optional<Environment>>;
+    /** Saved optional geometric AO; CPU-only validation, null disables it.
+     * 保存可选几何 AO；仅 CPU 校验，空值关闭效果。 */
+    [[nodiscard]] auto setOcclusion(std::optional<Graphics::OcclusionSettings> settings)
+        -> Core::Result<void>;
+    [[nodiscard]] auto occlusion() const
+        -> Core::Result<std::optional<Graphics::OcclusionSettings>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
     [[nodiscard]] auto createEntity(std::string_view name = "Entity") -> Core::Result<EntityId>;
     /** Import a monotonic ID: it must be >= the next available value and below

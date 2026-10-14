@@ -344,6 +344,10 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto setOcclusion(std::optional<OcclusionSettings> settings)
         -> Core::Result<void>;
     [[nodiscard]] auto occlusion() const -> Core::Result<std::optional<OcclusionSettings>>;
+    /** Binding generation advances on every successful set, including equal values.
+     * A scoped scene consumer uses it to avoid detaching a later owner's request.
+     * 每次成功设置（包括同值）递增绑定代次，场景消费者据此避免解绑后来所有者的请求。 */
+    [[nodiscard]] auto occlusionRevision() const -> Core::Result<std::uint64_t>;
     /** Diagnostic grayscale visibility of the last committed AO mesh frame;
      * requires the owner thread/device and performs no implicit AO computation.
      * 诊断读取最近已提交 AO 网格帧的灰度可见性，限所有者线程/设备，不隐式生成 AO。 */

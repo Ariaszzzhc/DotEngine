@@ -423,3 +423,46 @@ TEST_CASE("scene_file.shadow_quality_and_mesh_cast_receive_flags_roundtrip_stric
   bad["entities"][1]["mesh"]["castsShadow"] = 1;
   CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
 }
+
+TEST_CASE("scene_file.occlusion_roundtrip_strict_integer_ranges_and_absence") {
+  auto scene = makeScene();
+  const Dot::Graphics::OcclusionSettings expected{0.75F, 0.025F, 2, 16, 8, 4};
+  REQUIRE(scene.setOcclusion(expected));
+  const auto source = Json::parse(encodeScene(scene).value());
+  CHECK(decodeScene(source.dump())->occlusion().value() == expected);
+
+  for (const auto& replacement : {Json(-1), Json(8.5), Json("8"), Json(32), Json(true)}) {
+    auto invalid = source;
+    invalid["occlusion"]["directions"] = replacement;
+    CHECK_FALSE(decodeScene(invalid.dump()));
+  }
+
+  for (const auto& key : {"radius", "bias", "strength"}) {
+    auto invalid = source;
+    invalid["occlusion"][key] = -1;
+    CHECK_FALSE(decodeScene(invalid.dump()));
+    invalid["occlusion"][key] = "number";
+    CHECK_FALSE(decodeScene(invalid.dump()));
+  }
+
+  auto invalid = source;
+  invalid["occlusion"]["steps"] = 1;
+  CHECK_FALSE(decodeScene(invalid.dump()));
+  invalid = source;
+  invalid["occlusion"]["filterRadius"] = 5;
+  CHECK_FALSE(decodeScene(invalid.dump()));
+  invalid = source;
+  invalid["occlusion"]["unknown"] = true;
+  CHECK_FALSE(decodeScene(invalid.dump()));
+  invalid = source;
+  invalid["occlusion"].erase("radius");
+  CHECK_FALSE(decodeScene(invalid.dump()));
+  invalid = source;
+  invalid["occlusion"] = Json::array();
+  CHECK_FALSE(decodeScene(invalid.dump()));
+  auto absent = source;
+  absent["occlusion"] = nullptr;
+  CHECK_FALSE(decodeScene(absent.dump())->occlusion().value());
+  absent.erase("occlusion");
+  CHECK_FALSE(decodeScene(absent.dump())->occlusion().value());
+}

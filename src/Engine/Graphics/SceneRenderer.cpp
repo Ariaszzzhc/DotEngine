@@ -127,6 +127,7 @@ namespace Dot::Graphics {
     };
 
     std::optional<EnvironmentEntry> environment;
+    std::optional<std::uint64_t> occlusionRevision;
 
     /** Detach only our binding; another scene renderer may now own the active map.
      * 仅解绑本服务的资源；另一个场景渲染器可能已接管当前环境。 */
@@ -148,12 +149,38 @@ namespace Dot::Graphics {
       return {};
     }
 
+    /** Compare generations, not equal settings: another owner may bind the same value.
+     * 比较代次而非设置值，因为另一个所有者可能绑定完全相同的配置。 */
+    auto detachOcclusion() -> Core::Result<void> {
+      if (!occlusionRevision) {
+        return {};
+      }
+
+      auto current = renderer->occlusionRevision();
+
+      if (!current) {
+        return std::unexpected(current.error());
+      }
+
+      if (*current == *occlusionRevision) {
+        auto detached = renderer->setOcclusion(std::nullopt);
+
+        if (!detached) {
+          return detached;
+        }
+      }
+
+      occlusionRevision.reset();
+      return {};
+    }
+
     ~Impl() {
       /** Device failure may prevent unbinding; renderer teardown releases its
        * retained binding. Destruction itself must not throw.
        * 设备故障可能阻止解绑；渲染器销毁会释放其绑定，析构本身不得抛异常。 */
       try {
         static_cast<void>(detachEnvironment());
+        static_cast<void>(detachOcclusion());
       } catch (...) {
       }
     }
@@ -635,6 +662,26 @@ namespace Dot::Graphics {
           return std::unexpected(changed.error());
         }
 
+        auto occlusion = scene.occlusion();
+
+        if (!occlusion) {
+          return std::unexpected(occlusion.error());
+        }
+
+        changed = renderer->setOcclusion(*occlusion);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        auto revision = renderer->occlusionRevision();
+
+        if (!revision) {
+          return std::unexpected(revision.error());
+        }
+
+        occlusionRevision = *revision;
+
         return Core::Result<Frame>{std::move(frame)};
       } catch (const std::exception& error) {
         return Core::fail(Core::ErrorCode::External,
@@ -840,6 +887,12 @@ namespace Dot::Graphics {
     }
 
     checked = m_impl->detachEnvironment();
+
+    if (!checked) {
+      return checked;
+    }
+
+    checked = m_impl->detachOcclusion();
 
     if (!checked) {
       return checked;

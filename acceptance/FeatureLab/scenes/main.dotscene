@@ -577,5 +577,13 @@
     "specularSize": 128,
     "brdfSize": 128,
     "samples": 512
+  },
+  "occlusion": {
+    "radius": 0.5,
+    "bias": 0.02,
+    "strength": 1,
+    "directions": 8,
+    "steps": 4,
+    "filterRadius": 2
   }
 }

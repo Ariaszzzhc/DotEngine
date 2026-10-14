@@ -161,7 +161,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, point/spot shadows, authored SSAO, glTF import,
+the requested project/game visual upgrades, point/spot shadows, temporal AO, glTF import,
 author tangents and large-scene performance remain incomplete; the gallery does
 not establish those capabilities.
 
@@ -410,7 +410,7 @@ Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
 Its existing native standalone acceptance validates that delivery path. This
 provides authored IBL; directional shadows and the renderer SSAO foundation are
-described below, while saved SSAO settings,
+described below, while temporal AO,
 point/spot shadows, async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
 
@@ -504,13 +504,16 @@ Input validation failures preserve settings, target frame counts and prior image
 build/debug/bin/DotRuntimeAcceptance --occlusion-test /existing/output-directory
 ```
 
-The BUILD_TESTING-only driver renders IBL, cascaded shadows and AO together, writes
+The BUILD_TESTING-only driver saves and reopens an ordinary scene with material/mesh/HDR assets, renders IBL, cascaded shadows and AO together, and writes
 occlusion-enabled.ppm, occlusion-disabled.ppm and occlusion-visibility.ppm, checks
 actual HDR attenuation and releases AO storage. Focused CPU/GPU tests cover finite
 reconstruction, bounds, flat planes, contact/lifted objects, normal maps, background,
 orthographic camera motion, diffuse-only composition, invalid inputs, thread
-ownership and resizing/release. Authoring saved scene settings and editor controls
-are the next layer; they are not implemented by this renderer foundation. Temporal
+ownership and resizing/release. Saved optional scene settings and the editor Rendering pane now share strict codec,
+document transactions/undo, preview, isolated Play and relocated game export.
+SceneRenderer makes scene settings authoritative and tracks binding generations;
+clearCache/destruction detach only its own request, even when another consumer
+binds equal settings. AO working storage belongs to Renderer, outside asset budgets. Temporal
 reprojection, offscreen geometry, thickness-aware multi-layer depth, bent normals
 and scalable geometry submission remain planned. Source WGSL is independently
 maintained under src/Engine/Graphics/Shaders with two-space indentation, spacing,

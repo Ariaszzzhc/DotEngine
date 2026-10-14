@@ -364,3 +364,78 @@ TEST_CASE("scene_material.saved_directional_shadows_and_caster_flags_change_real
   REQUIRE(drawing.renderInto(scene, target));
   CHECK(red(device.readHdrTarget(target).value(), 80, 64) > 0.4F);
 }
+
+TEST_CASE("scene_material.saved_occlusion_changes_real_hdr_and_clears_only_owned_bindings") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.files));
+  REQUIRE(fixture.scene.setEnvironment(
+      Dot::World::Environment{"assets/studio.hdr", 1, 0, false, {16, 4, 16, 16, 32}}));
+  REQUIRE(fixture.scene.setCamera(
+      fixture.camera,
+      Dot::World::Camera{
+          .verticalFovDegrees = 50, .nearPlane = 0.1F, .farPlane = 30, .primary = true}));
+  REQUIRE(fixture.scene.setLight(fixture.light, Dot::World::Light{.enabled = false}));
+  REQUIRE(fixture.scene.setTransform(
+      fixture.camera, {{0, 3, 5}, Dot::Math::rotationEulerDegrees({-30, 0, 0}).value()}));
+  REQUIRE(fixture.scene.setMeshRenderer(
+      fixture.mesh, Dot::World::MeshRenderer{.kind = Dot::World::MeshKind::Quad, .asset = {}}));
+  REQUIRE(fixture.scene.setTransform(
+      fixture.mesh, {{}, Dot::Math::rotationEulerDegrees({-90, 0, 0}).value(), {8, 8, 1}}));
+  auto object = fixture.scene.createEntity("AO occluder").value();
+  REQUIRE(fixture.scene.setMeshRenderer(object, Dot::World::MeshRenderer{}));
+  REQUIRE(fixture.scene.setMaterial(object, Dot::World::MaterialBinding{"surface.dotmaterial"}));
+  REQUIRE(fixture.scene.setTransform(object, {{0, 0.5F, 0}}));
+  auto device = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  auto target = device.createTarget(129, 129).value();
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  const auto before = device.readHdrTarget(target).value();
+  const Dot::Graphics::OcclusionSettings settings{0.75F, 0.025F, 2, 16, 8, 4};
+  REQUIRE(fixture.scene.setOcclusion(settings));
+  auto loaded = Dot::World::decodeScene(Dot::World::encodeScene(fixture.scene).value()).value();
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(device.occlusion().value() == settings);
+  const auto visibility = device.readOcclusion().value();
+  CHECK(*std::min_element(visibility.pixels.begin(), visibility.pixels.end()) < 235);
+  const auto after = device.readHdrTarget(target).value();
+  float difference{};
+
+  for (std::size_t index = 0; index < before.pixels.size(); index += 4) {
+    difference = std::max(difference, before.pixels[index] - after.pixels[index]);
+    CHECK(after.pixels[index] <= before.pixels[index] + 0.001F);
+  }
+
+  CHECK(difference > 0.03F);
+  REQUIRE(loaded.setOcclusion(std::nullopt));
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK_FALSE(device.occlusion().value());
+  CHECK(device.resourceStats()->occlusionBytes == 0);
+  CHECK_FALSE(device.readOcclusion());
+  REQUIRE(loaded.setOcclusion(settings));
+  REQUIRE(drawing.renderInto(loaded, target));
+  auto other = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  REQUIRE(other.renderInto(loaded, target));
+  const auto owner = device.occlusionRevision().value();
+  REQUIRE(drawing.clearCache());
+  CHECK(device.occlusionRevision().value() == owner);
+  CHECK(device.occlusion().value() == settings);
+  CHECK(device.resourceStats()->occlusionBytes > 0);
+  REQUIRE(other.clearCache());
+  CHECK_FALSE(device.occlusion().value());
+  CHECK(device.resourceStats()->occlusionBytes == 0);
+  REQUIRE(drawing.renderInto(loaded, target));
+  REQUIRE(device.setOcclusion(settings));
+  const auto external = device.occlusionRevision().value();
+  REQUIRE(drawing.clearCache());
+  CHECK(device.occlusionRevision().value() == external);
+  CHECK(device.occlusion().value() == settings);
+
+  {
+    auto scoped = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+    REQUIRE(scoped.renderInto(loaded, target));
+    CHECK(device.resourceStats()->occlusionBytes > 0);
+  }
+
+  CHECK_FALSE(device.occlusion().value());
+  CHECK(device.resourceStats()->occlusionBytes == 0);
+}

@@ -152,13 +152,15 @@ TEST_CASE("occlusion.gpu_resize_disable_transaction_thread_and_failure_retention
   CHECK(fixture.renderer.resourceStats()->occlusionBytes == 129 * 129 * 24);
   auto bad = OcclusionSettings{};
   bad.radius = std::numeric_limits<float>::quiet_NaN();
+  const auto revision = fixture.renderer.occlusionRevision().value();
   CHECK_FALSE(fixture.renderer.setOcclusion(bad));
+  CHECK(fixture.renderer.occlusionRevision().value() == revision);
   CHECK(fixture.renderer.occlusion()->value() == OcclusionSettings{});
   CHECK(fixture.renderer.readOcclusion()->pixels == image.pixels);
   bool rejected{};
   std::thread worker([&] {
     rejected = !fixture.renderer.occlusion() && !fixture.renderer.setOcclusion(std::nullopt)
-               && !fixture.renderer.readOcclusion();
+               && !fixture.renderer.readOcclusion() && !fixture.renderer.occlusionRevision();
   });
   worker.join();
   CHECK(rejected);

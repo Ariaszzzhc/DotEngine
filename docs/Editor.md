@@ -497,7 +497,7 @@ Agent operations use the same document transaction:
 A null value removes the environment. Live workspaces also accept `stage-environment`
 with revision/value, followed by `apply-environment` or `reset-environment` with
 revision. `inspect` reports pendingEnvironment/environmentDraft. `show-pane` with
-pane `scene`, `environment` or `resources` controls graphical navigation without a
+pane `scene`, `environment`, `rendering` or `resources` controls graphical navigation without a
 scene edit/revision. Resource failures appear with their paths; no substitute HDRI
 is supplied. Higher quality increases first-bake work; background import/bake jobs
 and advanced environment controls are still planned.
@@ -512,3 +512,42 @@ receiving flags. Apply/undo/save, agent component edits, Play and exported playe
 share the scene configuration. One enabled directional shadow source is supported
 per frame; additional sources report a contextual error rather than losing shadows.
 Advanced light gizmos, projection previews and point/spot shadows remain planned.
+
+## Saved ambient occlusion
+
+The Rendering pane enables geometric SSAO and edits its radius/surface bias in
+meters, strength and Low/Balanced/High search/filter quality. Low uses 4 directions,
+2 steps and 1 filter pixel; Balanced 8/4/2; High 16/8/4. Quality preserves radius,
+bias and strength. AO shades diffuse HDR environment light; it leaves direct light,
+specular, emission and unlit colors unchanged. Add an HDRI through Environment to
+light diffuse surfaces. Normal maps alone do not create geometric occlusion.
+
+Apply rendering commits one undoable scene transaction; Reset AO draft discards
+unapplied edits. Save, Play, export, undo/redo and other mutations reject pending
+AO drafts. Native close prompts and Save and close applies the draft before saving;
+Discard leaves the saved scene untouched. Environment, inspector and AO drafts are
+exclusive. Reopened scenes, Play's isolated copy and relocated exported players
+use the same saved settings; Feature Lab includes an authored configuration.
+
+```json
+{
+  "command": "stage-occlusion",
+  "revision": "1",
+  "value": {
+    "radius": 0.5,
+    "bias": 0.02,
+    "strength": 1,
+    "directions": 8,
+    "steps": 4,
+    "filterRadius": 2
+  }
+}
+```
+
+`apply-occlusion` and `reset-occlusion` require the current revision. Stage accepts
+null to disable AO. `inspect` exposes pendingOcclusion/occlusionDraft, and
+`show-pane` accepts rendering without a revision. The direct document `edit`
+operation is `{ "op": "occlusion", "value": ... }` with the same settings/null
+and validation. Work values must be integers; unknown fields and unsupported
+ranges fail before history or drafts change. AO is optional scene data. Temporal reprojection, multi-layer/offscreen geometry and
+populated-scene quality/cost work remain planned.

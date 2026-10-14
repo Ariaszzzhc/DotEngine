@@ -86,5 +86,8 @@ or exhaustive driver coverage is claimed here.
 
 OcclusionTests supplies three pure CPU cases; OcclusionGpuTests supplies four real
 offscreen cases. runtime.occlusion writes actual enabled/disabled/visibility images
-from a combined IBL/cascaded-shadow scene. These validate the explicit Renderer API;
-saved scene/editor AO controls and temporal/scalable rendering remain planned.
+from a combined IBL/cascaded-shadow scene. These validate the explicit Renderer API. Scene/codec/document/workspace cases now
+cover saved settings, transaction rollback/undo, native controls and draft guards.
+Scene-material pixel checks verify actual saved HDR attenuation and shared binding
+ownership; Play, relocated packages and Feature Lab native checks retain settings
+and render real AO. Temporal/scalable rendering remains planned.

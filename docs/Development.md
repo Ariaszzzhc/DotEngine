@@ -3194,3 +3194,68 @@ audit scripts after verification. Saved scene/editor AO controls, temporal quali
 multi-layer/offscreen geometry, performance/scalability and realistic-game/mature-
 editor work remain required by the full active goal. This foundation does not
 claim those consumers or completion of large-game rendering.
+
+
+### 2026-10-14 — Saved scene and editor ambient occlusion
+
+Added optional scene-owned OcclusionSettings with CPU/thread/move validation;
+strict scene JSON retains radius/bias/strength and integral directions/steps/filter
+radius, with null/absence meaning disabled. Unknown/missing fields, wrong types and
+unsupported ranges fail. Document occlusion operations share atomic decode/history,
+undo/redo and save/reopen. No new schema version or alternate loader was added.
+Play's scene copy remains isolated from authoring edits; relocated data packages
+retain the exact configuration alongside their real HDR source.
+
+SceneRenderer binds current scene AO settings for each prepared mesh frame. A
+successful renderer setting request advances a checked binding generation, including
+same-valued requests. Cache clearing and scoped destruction compare ownership by
+generation, preserving another scene or a manual caller's equal settings. Disabling
+releases AO working storage; it is renderer-owned, outside asset cache budgets.
+The saved-scene GPU case measures actual HDR attenuation, diagnostic visibility,
+disable/release, shared equal-value ownership, manual rebind and scoped destruction.
+Failed setting requests preserve the generation; worker getters/setters reject access.
+
+The Rendering pane enables AO, edits world radius/bias/strength and selects Low
+4/2/1, Balanced 8/4/2 or High 16/8/4 directions/steps/filter quality. Controls fit
+full-width below their labels; scrolling project tabs keep the selected pane readable.
+Apply/Reset share the stage-occlusion/apply-occlusion/reset-occlusion transaction.
+Inspect exposes draft status; show-pane accepts rendering. AO, environment and
+inspector drafts cannot overwrite one another. Pending AO blocks unrelated edits,
+Save/Play/export, protects native close, and Save and close commits before saving.
+Discard leaves disk unchanged. Play/export errors now describe all scene drafts.
+
+Feature Lab's ordinary project, template and exported native player now retain
+balanced AO with the local Poly Haven HDRI and cascaded shadows. Native acceptance
+reads actual AO pixels/dimensions/storage, draws both cameras and presents gameplay,
+exercises workspace Play isolation, relocates an export, deletes authoring data and
+starts the shipped player. The runtime AO driver now writes mesh/material/HDR assets,
+saves/reopens the ordinary scene per mode and renders it through SceneRenderer;
+enabled/disabled/visibility images still verify actual HDR attenuation and release.
+Inspected the saved-scene 960x540 render after lossless PNG conversion. Opened the
+current macOS app package with Feature Lab, navigated through its supported agent
+show-pane operation and inspected Rendering controls/units/quality plus real preview
+with native UI screenshots. Closed that owned verification window/control stage;
+no manual mouse Apply result is claimed.
+
+Added six identities: one pure scene case, codec/document device-free cases, one
+saved-scene GPU case and two native workspace cases. Expanded existing GPU binding,
+Play, relocated package and Feature Lab native assertions. Eighteen selected checks
+including native laboratory and saved-scene driver pass in 29.60 seconds. Complete
+Debug passes 883/883 in 163.10 seconds; Release/NDEBUG 883/883 in 34.00 seconds.
+The final wording-only rebuild also passes both AO workspace cases in 3.08 seconds.
+Inventory is 822 doctest plus 61 executable checks; 198 unit, 478 device-free
+integration, 84 offscreen, 46 native and 96 acceptance cases (overlap). All 264
+C/C++ files and fourteen WGSL sources pass the established formatting checks.
+Reviewed module direction, optional schema boundaries, atomic draft/history rules,
+thread/generation ownership, teardown, working-resource accounting and real consumer
+coverage before committing.
+
+Refreshed ZIP: 259 entries, 45,970,044 bytes. Source project/template AO and HDRI,
+CRC/executable modes, private/test/control-stage/Finder/SDK-copy/WGSL-source exclusions
+and exact HDRI hash pass. Deep strict application signature and all sixteen Mach-O
+signatures/relative-system loader references pass. Only arm64 macOS is validated;
+Windows/Linux implementation is not claimed tested. Removed owned UI request/audit
+scripts; retained build caches/latest archive and private untracked document.
+Temporal AO, offscreen/multi-layer geometry and populated-scene quality/cost remain
+planned. The larger goal still requires scalable 3D submission/assets, mature editor
+navigation/picking/gizmos/docking and the realistic polished Prism Relay game.

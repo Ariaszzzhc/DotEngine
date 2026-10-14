@@ -268,6 +268,9 @@ namespace Dot::Editor {
     std::string m_environmentRevision;
     Json m_environmentDraft;
     Json m_environmentOriginal;
+    std::string m_occlusionRevision;
+    Json m_occlusionDraft;
+    Json m_occlusionOriginal;
     std::string m_requestedPane;
     std::string m_pane{"scene"};
     bool m_assetRefresh{};
@@ -510,10 +513,10 @@ namespace Dot::Editor {
     }
 
     auto startPlay() -> Core::Result<void> {
-      if (playing() || pendingInspector() || pendingEnvironment() || pendingText()
-          || !m_application->running()) {
+      if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
+          || pendingText() || !m_application->running()) {
         return Core::fail(Core::ErrorCode::InvalidState,
-                          "Play requires no pending inspector/file edits or active game");
+                          "Play requires no pending scene/file edits or active game");
       }
 
       auto tool = compiler();
@@ -588,9 +591,9 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (pendingInspector()) {
+      if (pendingInspector() || pendingOcclusion()) {
         return Core::fail(Core::ErrorCode::InvalidState,
-                          "Apply or reset inspector changes before environment changes");
+                          "Apply or reset inspector/AO changes before environment changes");
       }
 
       if (m_environmentRevision != std::to_string(m_document->stats()->revision)) {
@@ -607,6 +610,37 @@ namespace Dot::Editor {
 
       m_environmentOriginal = m_environmentDraft;
       m_environmentRevision.clear();
+      return refresh();
+    }
+
+    auto pendingOcclusion() const -> bool {
+      return m_occlusionDraft != m_occlusionOriginal;
+    }
+
+    auto applyOcclusion() -> Core::Result<void> {
+      if (!pendingOcclusion()) {
+        return {};
+      }
+
+      if (pendingInspector() || pendingEnvironment()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Apply or reset inspector/environment changes before AO changes");
+      }
+
+      if (m_occlusionRevision != std::to_string(m_document->stats()->revision)) {
+        return Core::fail(Core::ErrorCode::InvalidState, "AO draft has a stale revision");
+      }
+
+      auto applied = m_document->apply(
+          Json::array({{{"op", "occlusion"}, {"value", m_occlusionDraft}}}).dump(),
+          m_document->stats()->revision);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      m_occlusionOriginal = m_occlusionDraft;
+      m_occlusionRevision.clear();
       return refresh();
     }
 
@@ -649,10 +683,10 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "revision", "parent", "folder"});
 
         if (Codec::id(parsed["revision"]) != m_document->stats().value().revision || playing()
-            || pendingInspector() || pendingEnvironment() || pendingText()) {
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
-              "Export requires current revision, stopped Play and no pending inspector/file edits");
+              "Export requires current revision, stopped Play and no pending scene/file edits");
         }
 
         const auto parentText = parsed.at("parent").get<std::string>();
@@ -963,6 +997,12 @@ namespace Dot::Editor {
           return std::unexpected(applied.error());
         }
 
+        applied = applyOcclusion();
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
         applied = applyInspector();
 
         if (!applied) {
@@ -1043,7 +1083,8 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "pane"});
         const auto pane = parsed["pane"].get<std::string>();
 
-        if (pane != "scene" && pane != "environment" && pane != "resources") {
+        if (pane != "scene" && pane != "environment" && pane != "rendering"
+            && pane != "resources") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -1054,10 +1095,11 @@ namespace Dot::Editor {
       if (command == "stage-environment") {
         Codec::requireFields(parsed, {"command", "revision", "value"});
 
-        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()) {
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()
+            || pendingOcclusion()) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
-              "Environment staging requires the current revision and clean inspector");
+              "Environment staging requires the current revision and clean inspector/AO drafts");
         }
 
         if (!parsed["value"].is_object()) {
@@ -1104,6 +1146,53 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "stage-occlusion") {
+        Codec::requireFields(parsed, {"command", "revision", "value"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()
+            || pendingEnvironment()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "AO staging requires the current revision and clean other drafts");
+        }
+
+        auto tentative = m_snapshot["scene"];
+        tentative["occlusion"] = parsed["value"];
+        auto stagedScene = World::decodeScene(tentative.dump());
+
+        if (!stagedScene) {
+          return std::unexpected(stagedScene.error());
+        }
+
+        if (!pendingOcclusion()) {
+          m_occlusionOriginal = m_snapshot["scene"]["occlusion"];
+        }
+
+        m_occlusionDraft = parsed["value"];
+        m_occlusionRevision = std::to_string(m_document->stats()->revision);
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "apply-occlusion" || command == "reset-occlusion") {
+        Codec::requireFields(parsed, {"command", "revision"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState, "AO request has a stale revision");
+        }
+
+        if (command == "apply-occlusion") {
+          auto applied = applyOcclusion();
+
+          if (!applied) {
+            return std::unexpected(applied.error());
+          }
+        } else {
+          m_occlusionDraft = m_occlusionOriginal;
+          m_occlusionRevision.clear();
+        }
+
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (command == "apply-inspector" || command == "reset-inspector") {
         Codec::requireFields(parsed, {"command", "revision"});
 
@@ -1132,7 +1221,7 @@ namespace Dot::Editor {
         const bool discard = parsed["discard"].get<bool>();
 
         if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
-             || pendingText())
+             || pendingOcclusion() || pendingText())
             && !discard) {
           m_pendingClose = true;
         } else {
@@ -1151,11 +1240,11 @@ namespace Dot::Editor {
             .dump();
       }
 
-      if (!m_applying && (pendingInspector() || pendingEnvironment())
+      if (!m_applying && (pendingInspector() || pendingEnvironment() || pendingOcclusion())
           && parsed.value("command", std::string{}) != "inspect") {
         return Core::fail(
             Core::ErrorCode::InvalidState,
-            "Apply or reset pending inspector/environment changes before another operation");
+            "Apply or reset pending inspector/environment/AO changes before another operation");
       }
 
       auto result = m_document->dispatch(request);
@@ -1171,6 +1260,8 @@ namespace Dot::Editor {
         response["workspace"] = {{"pendingInspector", pendingInspector()},
                                  {"pendingEnvironment", pendingEnvironment()},
                                  {"environmentDraft", m_environmentDraft},
+                                 {"pendingOcclusion", pendingOcclusion()},
+                                 {"occlusionDraft", m_occlusionDraft},
                                  {"pane", m_pane},
                                  {"requestedPane", m_requestedPane},
                                  {"pendingClose", m_pendingClose},
@@ -1639,7 +1730,7 @@ namespace Dot::Editor {
         m_environmentRevision = revision;
       }
 
-      ImGui::BeginDisabled(playing() || pendingInspector());
+      ImGui::BeginDisabled(playing() || pendingInspector() || pendingOcclusion());
       ImGui::TextWrapped("Scene HDR environment");
       auto asset = m_environmentDraft["asset"].get<std::string>();
 
@@ -1718,6 +1809,97 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
       ImGui::TextWrapped(
           "Save the scene to retain these settings. Higher quality increases processing time.");
+      ImGui::EndDisabled();
+    }
+
+    /** Native controls and agent requests share the saved document transaction.
+     * 原生控件与 agent 请求共用可保存的文档事务，未应用草稿不会悄悄丢失。 */
+    auto renderingPanel() -> void {
+      const auto revision = std::to_string(m_document->stats()->revision);
+
+      if (m_occlusionRevision != revision && !pendingOcclusion()) {
+        m_occlusionDraft = m_snapshot["scene"]["occlusion"];
+        m_occlusionOriginal = m_occlusionDraft;
+        m_occlusionRevision = revision;
+      }
+
+      ImGui::BeginDisabled(playing() || pendingInspector() || pendingEnvironment());
+      ImGui::TextWrapped("Ambient occlusion");
+      bool enabled = !m_occlusionDraft.is_null();
+      const Json defaults{{"radius", 0.5F},  {"bias", 0.02F}, {"strength", 1.0F},
+                          {"directions", 8}, {"steps", 4},    {"filterRadius", 2}};
+
+      if (ImGui::Checkbox("Enable SSAO", &enabled)) {
+        m_occlusionDraft = enabled ? defaults : Json(nullptr);
+      }
+
+      ImGui::BeginDisabled(!enabled);
+      auto value = enabled ? m_occlusionDraft : defaults;
+      auto radius = value["radius"].get<float>();
+      auto bias = value["bias"].get<float>();
+      auto strength = value["strength"].get<float>();
+
+      ImGui::TextUnformatted("Radius");
+      ImGui::SetNextItemWidth(-1.F);
+
+      if (ImGui::SliderFloat("##Radius", &radius, 0.05F, 5.0F, "%.2f m")) {
+        m_occlusionDraft["radius"] = radius;
+      }
+
+      ImGui::TextUnformatted("Surface bias");
+      ImGui::SetNextItemWidth(-1.F);
+
+      if (ImGui::SliderFloat("##Surface bias", &bias, 0.0F, 0.2F, "%.3f m")) {
+        m_occlusionDraft["bias"] = bias;
+      }
+
+      ImGui::TextUnformatted("Strength");
+      ImGui::SetNextItemWidth(-1.F);
+
+      if (ImGui::SliderFloat("##Strength", &strength, 0.0F, 4.0F)) {
+        m_occlusionDraft["strength"] = strength;
+      }
+
+      const std::array<const char*, 3> names{"Low", "Balanced", "High"};
+      const std::array<std::array<int, 3>, 3> quality{{{4, 2, 1}, {8, 4, 2}, {16, 8, 4}}};
+      const std::array<const char*, 3> keys{"directions", "steps", "filterRadius"};
+      const char* selected = "Custom";
+
+      for (std::size_t index = 0; index < quality.size(); ++index) {
+        if (value[keys[0]] == quality[index][0] && value[keys[1]] == quality[index][1]
+            && value[keys[2]] == quality[index][2]) {
+          selected = names[index];
+        }
+      }
+
+      ImGui::TextUnformatted("AO quality");
+      ImGui::SetNextItemWidth(-1.F);
+
+      if (ImGui::BeginCombo("##AO quality", selected)) {
+        for (std::size_t index = 0; index < quality.size(); ++index) {
+          if (ImGui::Selectable(names[index], selected == names[index])) {
+            for (std::size_t field = 0; field < keys.size(); ++field) {
+              m_occlusionDraft[keys[field]] = quality[index][field];
+            }
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      ImGui::EndDisabled();
+
+      if (ImGui::Button("Apply rendering")) {
+        action({{"command", "apply-occlusion"}});
+      }
+
+      if (ImGui::Button("Reset AO draft")) {
+        action({{"command", "reset-occlusion"}});
+      }
+
+      ImGui::TextWrapped("AO shades diffuse HDR environment light. Add an HDRI in Environment.");
+      ImGui::TextWrapped(
+          "Apply and save the scene to retain these settings in Play and exported games.");
       ImGui::EndDisabled();
     }
 
@@ -1875,8 +2057,9 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      ImGui::BeginDisabled(!playing()
-                           && (pendingInspector() || pendingEnvironment() || pendingText()));
+      ImGui::BeginDisabled(
+          !playing()
+          && (pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()));
 
       if (ImGui::Button(playing() ? "Stop" : "Play")
           || ImGui::Shortcut(ImGuiKey_F5, ImGuiInputFlags_RouteGlobal)) {
@@ -1917,7 +2100,7 @@ namespace Dot::Editor {
       const auto available = ImGui::GetContentRegionAvail();
       ImGui::BeginChild("Scene", {220, available.y}, ImGuiChildFlags_Borders);
 
-      if (ImGui::BeginTabBar("Project panes")) {
+      if (ImGui::BeginTabBar("Project panes", ImGuiTabBarFlags_FittingPolicyScroll)) {
         if (ImGui::BeginTabItem("Scene", nullptr,
                                 m_requestedPane == "scene" ? ImGuiTabItemFlags_SetSelected : 0)) {
           m_pane = "scene";
@@ -1943,6 +2126,19 @@ namespace Dot::Editor {
           }
 
           environmentPanel();
+          ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem(
+                "Rendering", nullptr,
+                m_requestedPane == "rendering" ? ImGuiTabItemFlags_SetSelected : 0)) {
+          m_pane = "rendering";
+
+          if (m_requestedPane == "rendering") {
+            m_requestedPane.clear();
+          }
+
+          renderingPanel();
           ImGui::EndTabItem();
         }
 
@@ -2003,7 +2199,7 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("Inspector");
       ImGui::Separator();
       ImGui::BeginDisabled(playing());
-      ImGui::BeginDisabled(pendingEnvironment());
+      ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
       inspector();
       ImGui::EndDisabled();
       ImGui::EndDisabled();
@@ -2023,7 +2219,7 @@ namespace Dot::Editor {
         ImGui::InputText("Existing parent directory", &m_exportParent);
         ImGui::InputText("New folder", &m_exportFolder);
         ImGui::BeginDisabled(playing() || pendingInspector() || pendingEnvironment()
-                             || pendingText());
+                             || pendingOcclusion() || pendingText());
 
         if (ImGui::Button("Export")) {
           auto request = Json{{"command", m_exportDataOnly ? "export-data" : "export"},
@@ -2097,7 +2293,7 @@ namespace Dot::Editor {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
         m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
-                         || pendingText();
+                         || pendingOcclusion() || pendingText();
 
         if (!m_pendingClose) {
           auto stopped = stopPlay();

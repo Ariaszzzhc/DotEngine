@@ -269,7 +269,7 @@ namespace Dot::World {
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
-      Codec::requireFields(root, {"version", "name", "entities"}, {"environment"});
+      Codec::requireFields(root, {"version", "name", "entities"}, {"environment", "occlusion"});
 
       if (!root["version"].is_number_integer() || root["version"] != 1
           || !root["entities"].is_array() || root["entities"].size() > 10000) {
@@ -368,6 +368,27 @@ namespace Dot::World {
             {dimension("radianceSize"), dimension("diffuseSize"), dimension("specularSize"),
              dimension("brdfSize"), dimension("samples")}};
         auto changed = scene->setEnvironment(std::move(environment));
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+      }
+
+      if (root.contains("occlusion") && !root["occlusion"].is_null()) {
+        const auto& value = root["occlusion"];
+        Codec::requireFields(value,
+                             {"radius", "bias", "strength", "directions", "steps", "filterRadius"});
+        const auto integer = [&](const char* key) -> std::uint32_t {
+          if (!value[key].is_number_integer() || value[key] < 0 || value[key] > 16) {
+            throw std::invalid_argument("Occlusion work values require bounded integers");
+          }
+
+          return value[key].get<std::uint32_t>();
+        };
+        auto changed = scene->setOcclusion(Graphics::OcclusionSettings{
+            Codec::number(value["radius"]), Codec::number(value["bias"]),
+            Codec::number(value["strength"]), integer("directions"), integer("steps"),
+            integer("filterRadius")});
 
         if (!changed) {
           return std::unexpected(changed.error());
@@ -618,10 +639,26 @@ namespace Dot::World {
                          {"samples", e.processing.samples}};
     }
 
+    auto occlusion = scene.occlusion();
+
+    if (!occlusion) {
+      return std::unexpected(occlusion.error());
+    }
+
+    Json occlusionJson = nullptr;
+
+    if (*occlusion) {
+      const auto& settings = **occlusion;
+      occlusionJson = {{"radius", settings.radius},     {"bias", settings.bias},
+                       {"strength", settings.strength}, {"directions", settings.directions},
+                       {"steps", settings.steps},       {"filterRadius", settings.filterRadius}};
+    }
+
     auto encoded = Json{{"version", 1},
                         {"name", *name},
                         {"entities", std::move(records)},
-                        {"environment", std::move(environmentJson)}}
+                        {"environment", std::move(environmentJson)},
+                        {"occlusion", std::move(occlusionJson)}}
                        .dump(2)
                    + '\n';
 

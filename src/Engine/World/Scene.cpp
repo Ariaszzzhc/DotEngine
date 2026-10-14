@@ -151,6 +151,7 @@ namespace Dot::World {
     std::string name;
     entt::registry registry;
     std::optional<Environment> environment;
+    std::optional<Graphics::OcclusionSettings> occlusion;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
     mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
 
@@ -451,6 +452,40 @@ namespace Dot::World {
     }
 
     return m_impl->environment;
+  }
+
+  auto Scene::setOcclusion(std::optional<Graphics::OcclusionSettings> settings)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (settings) {
+      checked = Graphics::validateOcclusion(*settings);
+
+      if (!checked) {
+        return checked;
+      }
+    }
+
+    m_impl->occlusion = settings;
+    return {};
+  }
+
+  auto Scene::occlusion() const -> Core::Result<std::optional<Graphics::OcclusionSettings>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<std::optional<Graphics::OcclusionSettings>>(m_impl->occlusion)
+                   : std::unexpected(checked.error());
   }
 
   auto Scene::entityCount() const -> Core::Result<std::size_t> {

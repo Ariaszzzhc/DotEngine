@@ -495,3 +495,29 @@ TEST_CASE("document.environment_edits_undo_redo_atomic_failure_save_and_reopen")
   edit(reopened, Json::array({{{"op", "environment"}, {"value", nullptr}}}));
   CHECK(state(reopened)["scene"]["environment"].is_null());
 }
+
+TEST_CASE("document.occlusion_edits_are_atomic_undoable_and_saved") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const Json settings{{"radius", 0.75F},  {"bias", 0.025F}, {"strength", 2.0F},
+                      {"directions", 16}, {"steps", 8},     {"filterRadius", 4}};
+  edit(document, Json::array({{{"op", "occlusion"}, {"value", settings}}}));
+  CHECK(state(document)["scene"]["occlusion"] == settings);
+  const auto changed = revision(document);
+  auto bad = settings;
+  bad["steps"] = 2.5;
+  CHECK_FALSE(document.apply(Json::array({{{"op", "scene-name"}, {"name", "No commit"}},
+                                          {{"op", "occlusion"}, {"value", bad}}})
+                                 .dump(),
+                             changed));
+  CHECK(revision(document) == changed);
+  CHECK(state(document)["scene"]["occlusion"] == settings);
+  REQUIRE(document.undo(changed));
+  CHECK(state(document)["scene"]["occlusion"].is_null());
+  REQUIRE(document.redo(revision(document)));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(state(reopened)["scene"]["occlusion"] == settings);
+  edit(reopened, Json::array({{{"op", "occlusion"}, {"value", nullptr}}}));
+  CHECK(state(reopened)["scene"]["occlusion"].is_null());
+}

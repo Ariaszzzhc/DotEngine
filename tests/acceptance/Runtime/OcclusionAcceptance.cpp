@@ -9,15 +9,23 @@
 #include <utility>
 #include <vector>
 
+#include "../../EnvironmentFixture.hpp"
+
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Graphics.Renderer;
+import Dot.Graphics.SceneRenderer;
+import Dot.World.Scene;
+import Dot.World.SceneFiles;
+import Dot.Assets.Mesh;
+import Dot.Assets.Material;
 import Dot.Math;
 
 namespace Dot::Runtime {
-  /** Render actual geometric SSAO with IBL and cascaded shadows; save enabled,
+  /** Save and reopen a scene with real geometric SSAO, IBL and cascaded shadows; save enabled,
    * disabled and diagnostic visibility images and verify HDR attenuation/release.
-   * 真实绘制几何 SSAO、IBL 与级联阴影；保存启用、关闭及可见性诊断图，验证 HDR 衰减与释放。 */
+   * 保存并重开场景，真实绘制几何 SSAO、IBL 与级联阴影；保存启用、关闭及可见性诊断图，验证 HDR
+   * 衰减与释放。 */
   auto testOcclusion(const std::filesystem::path& output) -> int {
     auto files = Core::FileSystem::open(output);
     auto renderer = Graphics::Renderer::create();
@@ -37,79 +45,98 @@ namespace Dot::Runtime {
       }
     }
 
-    auto floor = renderer->upload(floorData);
-    auto cube = renderer->upload(cubeData);
-    auto sphere = renderer->upload(sphereData);
-    auto target = renderer->createTarget(960, 540);
+    const auto checked = [&](Core::Result<void> result) -> bool {
+      if (!result) {
+        std::println(stderr, "{}", result.error().message);
+      }
 
-    if (!floor || !cube || !sphere || !target) {
-      std::println(stderr, "Occlusion gallery resource creation failed");
+      return result.has_value();
+    };
+
+    if (!checked(files->createDirectories("assets"))
+        || !checked(Assets::saveMesh(*files, "assets/floor.dotmesh", floorData))
+        || !checked(Assets::saveMesh(*files, "assets/cube.dotmesh", cubeData))
+        || !checked(Assets::saveMesh(*files, "assets/sphere.dotmesh", sphereData))
+        || !checked(DotTest::Environment::write(*files))) {
       return 1;
     }
 
-    const Math::Vec3 position{6, 5, 9};
-    const auto camera = Math::multiply(Math::perspective(42, 16.0F / 9.0F, 0.1F, 60).value(),
-                                       Math::lookAt(position, {}).value())
-                            .value();
-    Graphics::Lighting lighting;
-    lighting.viewPosition = position;
+    const std::array<Math::Vec4, 3> colors{
+        {{0.6F, 0.6F, 0.6F, 1}, {0.65F, 0.12F, 0.04F, 1}, {0.08F, 0.24F, 0.6F, 1}}};
+    const std::array<const char*, 3> materials{
+        "assets/floor.dotmaterial", "assets/cube.dotmaterial", "assets/sphere.dotmaterial"};
+    const std::array<const char*, 3> meshes{"assets/floor.dotmesh", "assets/cube.dotmesh",
+                                            "assets/sphere.dotmesh"};
+    auto scene = World::Scene::create("Saved occlusion gallery").value();
+    auto camera = scene.createEntity("Camera").value();
+    auto light = scene.createEntity("Sun").value();
     Graphics::ShadowSettings shadow;
     shadow.resolution = 512;
     shadow.distance = 40;
+
+    if (!checked(scene.setCamera(
+            camera,
+            World::Camera{
+                .verticalFovDegrees = 42, .nearPlane = 0.1F, .farPlane = 60, .primary = true}))
+        || !checked(scene.setTransform(
+            camera, {{6, 5, 9}, Math::rotationEulerDegrees({-24.8F, 33.69F, 0}).value()}))
+        || !checked(scene.setLight(light, World::Light{.intensity = 2, .shadows = shadow}))
+        || !checked(
+            scene.setTransform(light, {{}, Math::rotationEulerDegrees({-55, -30, 0}).value()}))
+        || !checked(scene.setEnvironment(
+            World::Environment{"assets/studio.hdr", 1, 0, true, {16, 4, 16, 16, 32}}))) {
+      return 1;
+    }
+
+    const std::array<World::Transform, 3> transforms{
+        {{{}, Math::rotationEulerDegrees({-90, 0, 0}).value()},
+         {{-1.3F, 0.75F, 0}, {}, {1.5F, 1.5F, 1.5F}},
+         {{1.2F, 0.7F, 0}}}};
+
+    for (std::size_t index = 0; index < colors.size(); ++index) {
+      Assets::MaterialDescription material;
+      material.baseColor = colors[index];
+      material.roughness = index == 0 ? 1.0F : 0.3F;
+      auto entity = scene.createEntity(meshes[index]).value();
+
+      if (!checked(Assets::saveMaterial(*files, materials[index], material))
+          || !checked(scene.setMeshRenderer(
+              entity, World::MeshRenderer{.kind = World::MeshKind::Asset, .asset = meshes[index]}))
+          || !checked(scene.setMaterial(entity, World::MaterialBinding{materials[index]}))
+          || !checked(scene.setTransform(entity, transforms[index]))) {
+        return 1;
+      }
+    }
+
+    auto target = renderer->createTarget(960, 540);
+    auto drawing = Graphics::SceneRenderer::create(*renderer, *files);
+
+    if (!target || !drawing) {
+      std::println(stderr, "Saved occlusion gallery target/renderer creation failed");
+      return 1;
+    }
+
     Graphics::OcclusionSettings settings;
     settings.radius = 0.8F;
     settings.directions = 16;
     settings.steps = 8;
-    lighting.lights = {{.direction = {0.6F, -1, 0.35F}, .intensity = 2, .shadows = shadow}};
-    Graphics::Material surface;
-    surface.model = Graphics::SurfaceModel::MetallicRoughness;
-    surface.baseColor = {0.6F, 0.6F, 0.6F, 1};
-    surface.roughness = 1;
-    std::array<Graphics::MeshDraw, 3> draws{};
-    draws[0] = {&*floor,
-                Math::compose({}, Math::rotationEulerDegrees({-90, 0, 0}).value()).value(),
-                {1, 1, 1, 1},
-                surface};
-    draws[1] = {&*cube,
-                Math::compose({-1.3F, 0.75F, 0}, {}, {1.5F, 1.5F, 1.5F}).value(),
-                {1, 1, 1, 1},
-                surface};
-    draws[1].material.baseColor = {0.65F, 0.12F, 0.04F, 1};
-    draws[1].material.roughness = 0.3F;
-    draws[2] = {&*sphere, Math::compose({1.2F, 0.7F, 0}).value(), {1, 1, 1, 1}, surface};
-    draws[2].material.baseColor = {0.08F, 0.24F, 0.6F, 1};
-    draws[2].material.roughness = 0.2F;
-    auto environment = renderer->bakeEnvironment(
-        Graphics::HdrImage{4, 2, std::vector<float>(32, 1)}, {16, 4, 16, 16, 32});
-
-    if (!environment
-        || !renderer->setEnvironment({Graphics::EnvironmentLighting{*environment, 1, 0, true}})) {
-      std::println(stderr, "Occlusion gallery environment creation failed");
-      return 1;
-    }
-
     std::array<Graphics::HdrImage, 2> linear;
     const std::array names{"occlusion-enabled.ppm", "occlusion-disabled.ppm"};
 
     for (std::size_t mode = 0; mode < names.size(); ++mode) {
-      auto configured = renderer->setOcclusion(mode == 0 ? std::optional(settings) : std::nullopt);
-
-      if (!configured) {
-        std::println(stderr, "{}", configured.error().message);
+      if (!checked(scene.setOcclusion(mode == 0 ? std::optional(settings) : std::nullopt))
+          || !checked(World::saveScene(*files, "gallery.dotscene", scene))) {
         return 1;
       }
 
-      auto updated = renderer->setLighting(lighting);
+      auto loaded = World::loadScene(*files, "gallery.dotscene");
 
-      if (!updated) {
-        std::println(stderr, "{}", updated.error().message);
+      if (!loaded) {
+        std::println(stderr, "{}", loaded.error().message);
         return 1;
       }
 
-      auto rendered = renderer->renderMeshesInto(*target, draws, camera);
-
-      if (!rendered) {
-        std::println(stderr, "{}", rendered.error().message);
+      if (!checked(drawing->renderInto(*loaded, *target))) {
         return 1;
       }
 

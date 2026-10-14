@@ -804,3 +804,105 @@ TEST_CASE("workspace.environment_drafts_revision_apply_reset_save_play_and_reope
   CHECK(snapshot(reopened)["scene"]["environment"] == value);
   REQUIRE(reopened.dispatch("{\"command\":\"close\",\"discard\":false}"));
 }
+
+TEST_CASE("workspace.occlusion_drafts_revision_apply_reset_save_play_export_and_reopen") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.project.files().value()));
+  auto workspace = fixture.open();
+  REQUIRE(workspace.dispatch("{\"command\":\"show-pane\",\"pane\":\"rendering\"}"));
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  CHECK(Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value())["workspace"]["pane"]
+        == "rendering");
+  Json value{{"radius", 0.75F},  {"bias", 0.025F}, {"strength", 2.0F},
+             {"directions", 16}, {"steps", 8},     {"filterRadius", 4}};
+  auto staged = command(workspace, {{"command", "stage-occlusion"}, {"value", value}});
+  CHECK(staged["workspace"]["pendingOcclusion"] == true);
+  CHECK(staged["scene"]["occlusion"].is_null());
+  CHECK(staged["workspace"]["occlusionDraft"] == value);
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  const auto current = snapshot(workspace)["revision"];
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "save"}, {"revision", current}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "play"}, {"revision", current}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{{"command", "export-data"},
+                                      {"revision", current},
+                                      {"parent", fixture.storage.files()->root().string()},
+                                      {"folder", "blocked"}}
+                                     .dump()));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "stage-occlusion"}, {"revision", "0"}, {"value", value}}.dump()));
+  auto bad = value;
+  bad["steps"] = 9;
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "stage-occlusion"}, {"revision", current}, {"value", bad}}.dump()));
+  CHECK(Json::parse(
+            workspace.dispatch("{\"command\":\"inspect\"}").value())["workspace"]["occlusionDraft"]
+        == value);
+  auto closing = workspace.dispatch("{\"command\":\"close\",\"discard\":false}");
+  REQUIRE(closing);
+  CHECK(Json::parse(*closing)["confirmation"] == true);
+  command(workspace, {{"command", "cancel-close"}});
+  CHECK(command(workspace, {{"command", "reset-occlusion"}})["workspace"]["pendingOcclusion"]
+        == false);
+  command(workspace, {{"command", "stage-occlusion"}, {"value", value}});
+  auto applied = command(workspace, {{"command", "apply-occlusion"}});
+  CHECK(applied["scene"]["occlusion"] == value);
+  CHECK(applied["workspace"]["pendingOcclusion"] == false);
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  command(workspace, {{"command", "undo"}});
+  CHECK(snapshot(workspace)["scene"]["occlusion"].is_null());
+  command(workspace, {{"command", "redo"}});
+  command(workspace, {{"command", "save"}});
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "stage-occlusion"},
+      {"revision", snapshot(workspace)["revision"]},
+      {"value", nullptr}}.dump()));
+  command(workspace, {{"command", "stop-play"}});
+  CHECK(snapshot(workspace)["scene"]["occlusion"] == value);
+  value["strength"] = 3.0F;
+  command(workspace, {{"command", "stage-occlusion"}, {"value", value}});
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
+  command(workspace, {{"command", "save-close"}});
+  auto reopened = fixture.open();
+  CHECK(snapshot(reopened)["scene"]["occlusion"] == value);
+  command(reopened, {{"command", "stage-occlusion"}, {"value", nullptr}});
+  CHECK(command(reopened, {{"command", "apply-occlusion"}})["scene"]["occlusion"].is_null());
+  REQUIRE(reopened.dispatch("{\"command\":\"close\",\"discard\":true}"));
+}
+
+TEST_CASE("workspace.occlusion_and_environment_drafts_are_exclusive_and_discard_preserves_disk") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.project.files().value()));
+  auto workspace = fixture.open();
+  const Json environment{
+      {"asset", "assets/studio.hdr"}, {"intensity", 1.0F},  {"rotationDegrees", 0.0F},
+      {"background", true},           {"radianceSize", 16}, {"diffuseSize", 4},
+      {"specularSize", 16},           {"brdfSize", 16},     {"samples", 32}};
+  const Json occlusion{{"radius", 0.5F},  {"bias", 0.02F}, {"strength", 1.0F},
+                       {"directions", 8}, {"steps", 4},    {"filterRadius", 2}};
+  command(workspace, {{"command", "stage-environment"}, {"value", environment}});
+  auto current = snapshot(workspace)["revision"];
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "stage-occlusion"}, {"revision", current}, {"value", occlusion}}.dump()));
+  command(workspace, {{"command", "reset-environment"}});
+  command(workspace, {{"command", "stage-occlusion"}, {"value", occlusion}});
+  current = snapshot(workspace)["revision"];
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "stage-environment"},
+      {"revision", current},
+      {"value", environment}}.dump()));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "edit"},
+           {"revision", current},
+           {"operations", Json::array({{{"op", "scene-name"}, {"name", "Blocked"}}})}}
+          .dump()));
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
+  REQUIRE(workspace.step(std::chrono::milliseconds{16}));
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
+  auto reopened = fixture.open();
+  CHECK(snapshot(reopened)["scene"]["occlusion"].is_null());
+  CHECK(snapshot(reopened)["scene"]["environment"].is_null());
+  REQUIRE(reopened.dispatch("{\"command\":\"close\",\"discard\":false}"));
+}

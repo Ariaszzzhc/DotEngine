@@ -31,12 +31,15 @@ export namespace Dot::Graphics {
    * materials and 4096 textures. Immutable assets reload explicitly via clearCache.
    * Scene light poses and camera view rays come from current world transforms.
    * Scene-owned HDR environments share the cache budget; replacement peak must fit
-   * both maps. clearCache drops only this service's environment binding.
+   * both maps. Saved SSAO settings are authoritative per frame; clearCache/destruction
+   * detach only this service's environment/occlusion bindings. AO working textures
+   * belong to the renderer and are separate from asset cache budgets.
    * Borrows a renderer that must stay at the same address and outlive this service.
    * Operations/destruction require the renderer's creating thread.
    * 拥有有界共享网格/材质/贴图缓存及可选资产根目录描述；字节预算覆盖逻辑 GPU 数据，
    * 最多 4096 材质/4096 贴图，缓存不可变资源由 clearCache 显式重载；光源位姿/视线取世界变换。
-   * 场景 HDR 环境共用缓存预算，替换峰值须容纳两张环境；clearCache 仅解绑本服务的环境。
+   * 场景 HDR 环境共用缓存预算，替换峰值须容纳两张环境；保存的 SSAO 每帧生效；
+   * 清缓存/销毁仅解绑本服务的环境/AO。AO 工作纹理归渲染器，与资产缓存预算分离。
    * 借用渲染器，须保持其地址且更晚销毁。
    * 操作及销毁须在渲染器的创建线程进行。
    */

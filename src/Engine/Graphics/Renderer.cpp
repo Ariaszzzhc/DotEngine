@@ -503,6 +503,7 @@ namespace Dot::Graphics {
     std::uint32_t occlusionWidth{};
     std::uint32_t occlusionHeight{};
     std::uint64_t occlusionStorageBytes{};
+    std::uint64_t occlusionRevision{};
     bool occlusionReady{};
     bool occlusionPending{};
     std::uint32_t shadowResolution{};
@@ -3062,7 +3063,12 @@ namespace Dot::Graphics {
       }
     }
 
+    if (m_impl->occlusionRevision == std::numeric_limits<std::uint64_t>::max()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Occlusion binding generations exhausted");
+    }
+
     m_impl->occlusion = settings;
+    ++m_impl->occlusionRevision;
 
     if (!settings) {
       m_impl->occlusionTextures = {};
@@ -3081,6 +3087,16 @@ namespace Dot::Graphics {
 
     auto checked = m_impl->check();
     return checked ? Core::Result<std::optional<OcclusionSettings>>(m_impl->occlusion)
+                   : std::unexpected(checked.error());
+  }
+
+  auto Renderer::occlusionRevision() const -> Core::Result<std::uint64_t> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<std::uint64_t>(m_impl->occlusionRevision)
                    : std::unexpected(checked.error());
   }
 

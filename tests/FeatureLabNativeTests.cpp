@@ -75,6 +75,13 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     REQUIRE_FALSE(started->realmFaulted);
     auto scene = session.scene().value();
     auto before = sceneRenderer.render(*scene, 192, 144).value();
+    REQUIRE(scene->occlusion().value());
+    CHECK(renderer.occlusion().value() == scene->occlusion().value());
+    auto occlusion = renderer.readOcclusion();
+    REQUIRE(occlusion);
+    CHECK(occlusion->width == 192);
+    CHECK(occlusion->height == 144);
+    CHECK(renderer.resourceStats()->occlusionBytes == 192 * 144 * 24);
     CHECK(sceneRenderer.stats()->materials == 2);
     CHECK(sceneRenderer.stats()->textures == 1);
     CHECK(renderer.lighting()->lights.size() == 1);

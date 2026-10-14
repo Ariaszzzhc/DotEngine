@@ -228,10 +228,15 @@ TEST_CASE("play.scene_environment_is_copied_and_isolated_from_authoring_changes"
   auto authoring = fixture.project.loadStartup().value();
   const Dot::World::Environment expected{"assets/studio.hdr", 2, 90, true, {16, 4, 16, 16, 32}};
   REQUIRE(authoring.setEnvironment(expected));
+  const Dot::Graphics::OcclusionSettings occlusion{0.75F, 0.025F, 2, 16, 8, 4};
+  REQUIRE(authoring.setOcclusion(occlusion));
   auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
                   .value();
   CHECK(play.scene().value()->environment().value() == expected);
   REQUIRE(authoring.setEnvironment(std::nullopt));
+  REQUIRE(authoring.setOcclusion(std::nullopt));
   CHECK(play.scene().value()->environment().value() == expected);
   CHECK_FALSE(authoring.environment().value());
+  CHECK(play.scene().value()->occlusion().value() == occlusion);
+  CHECK_FALSE(authoring.occlusion().value());
 }

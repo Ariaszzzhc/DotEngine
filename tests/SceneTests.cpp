@@ -456,3 +456,24 @@ TEST_CASE("scene.environment_cpu_validation_is_transactional_thread_and_lifetime
   REQUIRE(moved.setEnvironment(std::nullopt));
   CHECK_FALSE(moved.environment().value());
 }
+
+TEST_CASE("scene.occlusion_configuration_validates_retains_and_obeys_thread_move_lifetime") {
+  auto scene = Scene::create("AO scene").value();
+  CHECK_FALSE(scene.occlusion().value());
+  Dot::Graphics::OcclusionSettings expected{0.75F, 0.025F, 2, 16, 8, 4};
+  REQUIRE(scene.setOcclusion(expected));
+  auto invalid = expected;
+  invalid.radius = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(scene.setOcclusion(invalid));
+  CHECK(scene.occlusion()->value() == expected);
+  bool rejected{};
+  std::thread worker([&] { rejected = !scene.occlusion() && !scene.setOcclusion(std::nullopt); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.occlusion());
+  CHECK_FALSE(scene.setOcclusion(std::nullopt));
+  CHECK(moved.occlusion()->value() == expected);
+  REQUIRE(moved.setOcclusion(std::nullopt));
+  CHECK_FALSE(moved.occlusion().value());
+}

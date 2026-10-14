@@ -52,3 +52,10 @@ The camera's directional headlight explicitly requests four 512-pixel shadow
 cascades over 50 m with comparison filtering. Light/mesh inspectors can edit saved
 shadow quality and casting/receiving. This demonstrates authored directional
 shadows; point/spot casting and advanced shadow tooling remain planned.
+
+The saved scene also enables geometric SSAO with its local HDR environment and
+directional shadows. Editor Rendering controls retain radius, bias, strength and
+search/filter quality; preview, Play and relocated exports use the saved scene.
+Native checks read the actual AO visibility and working storage rather than merely
+checking the settings object. This is a capability laboratory, not production-game
+art or a populated-scene performance benchmark.
