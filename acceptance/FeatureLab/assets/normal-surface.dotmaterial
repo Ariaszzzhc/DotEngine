@@ -30,5 +30,7 @@
   },
   "emissiveTexture": null,
   "occlusionStrength": 1,
-  "occlusionTexture": null
+  "occlusionTexture": null,
+  "alphaMode": "opaque",
+  "alphaCutoff": 0.5
 }

@@ -64,7 +64,7 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
     CHECK(result->loadStartup()->entityCount().value()
           == (std::string_view(choice) == "blank"   ? 2
               : std::string_view(choice) == "prism" ? 40
-                                                    : 13));
+                                                    : 15));
     CHECK_FALSE(Editor::performProjectAction(resources, request.dump()));
     auto bytes = result->files()->root().generic_u8string();
     REQUIRE(Editor::performProjectAction(

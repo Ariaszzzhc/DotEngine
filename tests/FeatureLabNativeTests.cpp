@@ -82,9 +82,11 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     CHECK(occlusion->width == 192);
     CHECK(occlusion->height == 144);
     CHECK(renderer.resourceStats()->occlusionBytes == 192 * 144 * 24);
-    CHECK(sceneRenderer.stats()->materials == 2);
-    CHECK(sceneRenderer.stats()->textures == 1);
+    CHECK(sceneRenderer.stats()->materials == 4);
+    CHECK(sceneRenderer.stats()->textures == 2);
     CHECK(renderer.lighting()->lights.size() == 1);
+    CHECK(renderer.visibilityStats()->mesh->blendedInstances == 1);
+    CHECK(renderer.visibilityStats()->mesh->solidInstances == 8);
     auto entitiesBefore = scene->entities().value();
     auto orthographic = std::ranges::find(entitiesBefore, "Orthographic", &World::EntityInfo::name);
     REQUIRE(orthographic != entitiesBefore.end());

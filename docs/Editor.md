@@ -563,11 +563,11 @@ Focus adjusts clip planes for larger bounds. Editor state is never written to th
 scene or its undo history. Play temporarily uses the game camera and Stop restores
 the editor view. An empty scene is editable without inventing a game camera.
 
-Left-click selection rasterizes the actual opaque mesh at the displayed pixel with
+Left-click selection rasterizes covered mesh fragments at the displayed pixel with
 integer draw identifiers, depth testing and the same physical backface policy as
 the surface pass. Full entity IDs remain on the CPU, including values above 2^53.
 Background clicks clear selection. This is synchronous single-pixel GPU readback;
-marquee selection, transparent picking, manipulators and asynchronous readback are
+marquee selection, advanced manipulators and asynchronous readback are
 not implemented. Drafts and stale scene/view revisions reject selection rather than
 picking an image that no longer describes the document. Native drag ownership starts
 inside the viewport and ends on release, Escape or focus loss.
@@ -730,3 +730,10 @@ current authoring revision. A failed catalog refresh after publication explicitl
 reports that the bundle was committed. Existing destinations are never overwritten.
 Native `.gltf`, `.dotmesh` and `.dotscene` text resources can open in the external
 editor; internal text transport remains only an automation buffer.
+
+
+Material coverage is persisted in `.dotmaterial` alphaMode (`opaque`, `mask`, `blend`)
+and alphaCutoff fields. Imports retain glTF alpha semantics; referenced files open in
+the external editor. Rendering and `workspace.view.draws` show actual `solid`, `blended`,
+`solidDraws` and `blendedDraws` values from the completed GPU pass. Feature Lab includes
+Glass and textured Cutout entities using the actual engine policies.

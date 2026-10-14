@@ -21,6 +21,7 @@ export import Dot.Graphics.PostProcess;
 export import Dot.Graphics.Lighting;
 export import Dot.Graphics.Environment;
 export import Dot.Graphics.Occlusion;
+export import Dot.Graphics.RenderQueue;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -87,6 +88,10 @@ export namespace Dot::Graphics {
     std::size_t shadowInstances{};
     std::size_t occlusionInstances{};
     std::size_t colorDraws{};
+    std::size_t solidInstances{};
+    std::size_t blendedInstances{};
+    std::size_t solidDraws{};
+    std::size_t blendedDraws{};
     std::size_t shadowDraws{};
     std::size_t occlusionDraws{};
     SpatialStats spatial;
@@ -283,10 +288,10 @@ export namespace Dot::Graphics {
    * base-color texture. Absence means a constant white texel; an explicitly empty
    * or foreign texture fails. Unlit and metallic/roughness surfaces share the same
    * HDR pipeline. Physical data textures require linear encoding. Owns texture
-   * slots by shared value; alpha is retained without transparency blending.
+   * slots by shared value; coverage is explicit Opaque/Mask/Blend.
    * 线性基础颜色因子乘顶点颜色、对象染色及基础颜色纹理；缺省表示常量白纹素，
    * 显式空纹理或跨设备纹理失败。无光照和金属度/粗糙度表面使用同一 HDR 管线，
-   * 物理数据纹理要求线性编码；通过共享值拥有纹理槽，保留 alpha，尚无透明混合。 */
+   * 物理数据纹理要求线性编码；通过共享值拥有纹理槽，使用明确的不透明/裁剪/混合覆盖策略。 */
   struct Material {
     Math::Vec4 baseColor{1, 1, 1, 1};
     std::optional<Texture> baseColorTexture;
@@ -310,6 +315,13 @@ export namespace Dot::Graphics {
     std::optional<Texture> normalTexture{};
     std::optional<Texture> emissiveTexture{};
     std::optional<Texture> occlusionTexture{};
+    /** Explicit coverage: Opaque ignores alpha, Mask tests factor*vertex*tint*texture
+     * against cutoff, Blend composites sorted HDR without depth writes. Blend is
+     * excluded from shadow/SSAO geometry; zero-alpha fragments do not pick.
+     * 明确覆盖：不透明忽略 alpha，裁剪比较综合 alpha 与阈值，混合排序后 HDR 合成不写深度。
+     * 混合不参与阴影/SSAO 几何，零透明度片元不参与拾取。 */
+    AlphaMode alphaMode{AlphaMode::Opaque};
+    float alphaCutoff{0.5F};
   };
 
   /** Borrows a mesh for one call; transform maps local vertices into world space.
@@ -521,10 +533,10 @@ export namespace Dot::Graphics {
                                     const Math::Mat4& viewProjection, std::uint32_t width,
                                     std::uint32_t height, Math::Vec4 clear = {0, 0, 0, 1})
         -> Core::Result<Image>;
-    /** Visible opaque draw at top-left UV [0,1), with the same depth/backface policy.
+    /** Nearest covered draw at top-left UV [0,1), with the same depth/backface policy.
      * A cropped 1x1 integer pass/readback leaves HDR/targets/AO images unchanged.
      * No hit is an empty optional, not an error; indices refer to the input span.
-     * 左上 UV [0,1) 处可见不透明绘制，沿用深度/背面规则；1x1 整数 pass/读回不改变 HDR、
+     * 左上 UV [0,1) 处最近覆盖片元的绘制，沿用深度/背面规则；1x1 整数 pass/读回不改变 HDR、
      * 目标或 AO 图像。未命中为空 optional，序号对应输入 span。 */
     [[nodiscard]] auto pickMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
                                   std::uint32_t width, std::uint32_t height, Math::Vec2 uv)

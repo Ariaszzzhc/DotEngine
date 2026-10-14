@@ -508,12 +508,6 @@ namespace Dot::Assets {
                 "Model decoded image budget exceeded");
         pixelBytes += decoded.pixels.size();
 
-        // Opaque glTF ignores alpha; RGB is preserved without color conversion.
-        // 不透明 glTF 忽略 alpha，RGB 无色彩转换保留。
-        for (std::size_t alpha = 3; alpha < decoded.pixels.size(); alpha += 4) {
-          decoded.pixels[alpha] = 255;
-        }
-
         result.images.push_back({take(encodeImage(decoded))});
       }
 
@@ -562,8 +556,11 @@ namespace Dot::Assets {
 
         if (i < data->materials_count) {
           const auto& sourceMaterial = data->materials[i];
-          require(sourceMaterial.alpha_mode == cgltf_alpha_mode_opaque,
-                  "Transparent/masked material import is unsupported");
+          m.alphaMode
+              = sourceMaterial.alpha_mode == cgltf_alpha_mode_mask    ? Graphics::AlphaMode::Mask
+                : sourceMaterial.alpha_mode == cgltf_alpha_mode_blend ? Graphics::AlphaMode::Blend
+                                                                      : Graphics::AlphaMode::Opaque;
+          m.alphaCutoff = sourceMaterial.alpha_cutoff;
           const auto& pbr = sourceMaterial.pbr_metallic_roughness;
           for (const auto factor : sourceMaterial.pbr_metallic_roughness.base_color_factor) {
             require(std::isfinite(factor) && factor >= 0 && factor <= 1,
@@ -576,8 +573,8 @@ namespace Dot::Assets {
 
           m.model = sourceMaterial.unlit ? Graphics::SurfaceModel::Unlit
                                          : Graphics::SurfaceModel::MetallicRoughness;
-          m.baseColor
-              = {pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], 1};
+          m.baseColor = {pbr.base_color_factor[0], pbr.base_color_factor[1],
+                         pbr.base_color_factor[2], pbr.base_color_factor[3]};
           m.metallic = pbr.metallic_factor;
           m.roughness = pbr.roughness_factor;
           const auto strength = sourceMaterial.has_emissive_strength
@@ -705,7 +702,7 @@ namespace Dot::Assets {
                 require(type == cgltf_type_vec3 || type == cgltf_type_vec4,
                         "Invalid color dimensions");
                 require(type != cgltf_type_vec4 || (f[3] >= 0 && f[3] <= 1), "Invalid COLOR alpha");
-                v.color = {f[0], f[1], f[2], 1};
+                v.color = {f[0], f[1], f[2], type == cgltf_type_vec4 ? f[3] : 1};
               }
             }
           }

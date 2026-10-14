@@ -153,3 +153,23 @@ TEST_CASE("material.files_are_atomic_rooted_and_preserve_previous_on_failure") {
   CHECK_FALSE(loadMaterial(files, "linked.dotmaterial"));
   CHECK_FALSE(saveMaterial(files, "linked.dotmaterial", {}));
 }
+
+TEST_CASE("material.coverage_roundtrip_and_strict_invalid_mode_cutoff_boundaries") {
+  MaterialDescription material;
+  material.alphaMode = Dot::Graphics::AlphaMode::Mask;
+  material.alphaCutoff = 1.5F;
+  auto encoded = encodeMaterial(material).value();
+  auto decoded = decodeMaterial(encoded).value();
+  CHECK(decoded.alphaMode == material.alphaMode);
+  CHECK(decoded.alphaCutoff == 1.5F);
+  material.alphaMode = Dot::Graphics::AlphaMode::Blend;
+  CHECK(decodeMaterial(encodeMaterial(material).value())->alphaMode == material.alphaMode);
+  material.alphaCutoff = -1;
+  CHECK_FALSE(validateMaterial(material));
+  auto missing = nlohmann::json::parse(encoded);
+  missing.erase("alphaMode");
+  CHECK_FALSE(decodeMaterial(missing.dump()));
+  auto invalid = nlohmann::json::parse(encoded);
+  invalid["alphaMode"] = "BAD";
+  CHECK_FALSE(decodeMaterial(invalid.dump()));
+}

@@ -127,3 +127,10 @@ now affects indirect light only. Animation/skin/morph/compression/transparent ma
 additional UV/filter modes, asynchronous import, production asset streaming and
 realistic polished Prism Relay remain unfinished. This does not prove general-purpose
 large-game production readiness or mature editor completion.
+
+
+Material Opaque/Mask/Blend now spans native persistence, static model import, actual
+HDR composition/depth, masked shadow/AO guides and integer picking. Transparent
+instances use stable object-depth sorting; Feature Lab demonstrates actual alpha
+assets and rendering counters. OIT/refraction/transparent shadow lighting, animation,
+streaming and realistic polished Prism Relay remain unfinished.

@@ -246,3 +246,20 @@ C/C++ and 15 WGSL files pass established formatting/pipeline checks. Latest ZIP:
 font/license/HDRI, CRC/modes, strict signatures and portable loader/rpath checks pass
 (13 regular Mach-O files, 3 relative links). No extra screenshot review. Only arm64
 macOS validated. Full engine/editor/game objective remains active.
+
+
+Material coverage now spans native persistence, static glTF/GLB import, actual HDR
+composition/depth, masked shadow/SSAO guides and original-identity integer picking.
+Feature Lab ships real Glass and textured Cutout demonstrations and exposes actual
+solid/blended pass counters. Sarasa UI SC Regular (Inter Western glyphs) and its OFL
+license remain bundled. Object-center transparency sorting is approximate; no
+refraction, OIT or transparent-shadow completion is claimed.
+
+Final Debug: 947/947 (197.14s); Release/NDEBUG: 947/947 (48.41s), after both builds.
+Native Feature Lab editor/Play/export acceptance and added coverage pixel tests pass.
+All 300 C/C++ and 16 WGSL files pass established formatting/pipeline checks. Latest
+ZIP: 269 entries, 47,353,213 bytes, 238 source-matching file/link payloads. Alpha
+assets, cgltf notices, exact font/license/HDRI, CRC/modes/exclusions, strict signatures
+and portable loader/rpath checks pass (13 regular Mach-O files, 3 relative links).
+No extra screenshot review. Only arm64 macOS validated. The full engine/editor/game
+objective remains active; realistic polished Prism Relay is not complete.

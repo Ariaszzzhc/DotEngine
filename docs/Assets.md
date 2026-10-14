@@ -75,13 +75,13 @@ references reuse generated primitive assets. Default scene (otherwise first) is
 selected unless the caller supplies a scene index. Mesh/material/image names, extras/unused UV/color channels
 are reported as unpersisted metadata.
 
-Opaque metallic/roughness materials preserve base, packed MR, normal, emission and
+Metallic/roughness materials preserve base, packed MR, normal, emission and
 baked occlusion textures, their factors, sidedness and supported sampler settings.
 Color slots are sRGB, data slots linear. PNG/JPEG are losslessly canonicalized to
-RGBA8 PNG after decoding; opaque alpha is ignored as required, while RGB is preserved
+RGBA8 PNG after decoding; RGBA is retained and coverage is explicit at rendering
 without implicit gamma conversion. Emissive strength and unlit materials with
 compatible native slots are supported. Animated/skinned/morph content, compressed
-geometry/textures, cameras/lights, nonopaque materials, UV transforms/UV sets other
+geometry/textures, cameras/lights, UV transforms/UV sets other
 than zero and mixed sampler filtering currently return explicit errors. They are
 not imported with missing visual semantics. This is static model authoring, not a
 complete animation/content pipeline.

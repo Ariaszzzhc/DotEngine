@@ -28,7 +28,7 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.Graphics.View;
 import Dot.Graphics.SpatialIndex;
-import Dot.Graphics.DrawBatches;
+import Dot.Graphics.RenderQueue;
 import Dot.Platform.Window;
 import Dot.Platform.System;
 import Dot.Platform.Events;
@@ -128,17 +128,29 @@ namespace Dot::Graphics {
       Math::Vec4 material{0, 0.5F, 1, 0};
       Math::Vec4 flags{0, 0, 0, 1};
       Math::Vec4 occlusion{1, 0, 0, 0};
+      Math::Vec4 alpha{0, .5F, 0, 0};
     };
 
     static_assert(sizeof(Vertex) == 64);
     static_assert(offsetof(Vertex, tangent) == 48);
-    static_assert(sizeof(InstanceData) == 272);
+    static_assert(sizeof(InstanceData) == 288);
     static_assert(offsetof(InstanceData, tint) == 64);
     static_assert(offsetof(InstanceData, emissive) == 80);
     static_assert(offsetof(InstanceData, model) == 96);
     static_assert(offsetof(InstanceData, normalMatrix) == 160);
     static_assert(offsetof(InstanceData, material) == 224);
     static_assert(offsetof(InstanceData, occlusion) == 256);
+    static_assert(offsetof(InstanceData, alpha) == 272);
+
+    struct CoverageData {
+      Math::Mat4 transform;
+      Math::Vec4 tint;
+      Math::Vec4 flags;
+      Math::Vec4 alpha;
+      std::array<std::uint32_t, 4> identifier{};
+    };
+
+    static_assert(sizeof(CoverageData) == 128);
 
     struct LightData {
       Math::Vec4 directionKind;
@@ -489,6 +501,7 @@ namespace Dot::Graphics {
     std::uint32_t surfaceWidth{};
     std::uint32_t surfaceHeight{};
     wgpu::RenderPipeline scenePipeline;
+    std::array<wgpu::RenderPipeline, 8> blendPipelines;
     wgpu::RenderPipeline environmentPipeline;
     wgpu::RenderPipeline skyPipeline;
     wgpu::RenderPipeline shadowScenePipeline;
@@ -730,7 +743,8 @@ namespace Dot::Graphics {
     }
 
     auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false,
-                  bool withShadows = false, bool withOcclusion = false) -> wgpu::RenderPipeline {
+                  bool withShadows = false, bool withOcclusion = false, bool blend = false)
+        -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
       const auto shaderCode
           = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
@@ -739,7 +753,7 @@ namespace Dot::Graphics {
             + (withShadows ? Detail::visibilityShadowsShader : Detail::visibilityDirectShader)
             + "\n"
             + (withOcclusion ? Detail::ambientOcclusionShader : Detail::ambientUnoccludedShader)
-            + "\n" + Detail::surfaceShader;
+            + "\n" + Detail::coverageShader + "\n" + Detail::surfaceShader;
       source.code = shaderCode.c_str();
       wgpu::ShaderModuleDescriptor shaderDescriptor;
       shaderDescriptor.nextInChain = &source;
@@ -766,6 +780,12 @@ namespace Dot::Graphics {
       layout.attributes = attributes.data();
       wgpu::ColorTargetState target;
       target.format = format;
+      wgpu::BlendState blending;
+      blending.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
+      blending.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      blending.alpha.srcFactor = wgpu::BlendFactor::One;
+      blending.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+      target.blend = blend ? &blending : nullptr;
       wgpu::FragmentState fragment;
       fragment.module = shader;
       fragment.entryPoint = "fragmentMain";
@@ -773,7 +793,7 @@ namespace Dot::Graphics {
       fragment.targets = &target;
       wgpu::DepthStencilState depth;
       depth.format = wgpu::TextureFormat::Depth24Plus;
-      depth.depthWriteEnabled = true;
+      depth.depthWriteEnabled = !blend;
       depth.depthCompare = wgpu::CompareFunction::Less;
       wgpu::RenderPipelineDescriptor descriptor;
       descriptor.vertex.module = shader;
@@ -827,17 +847,28 @@ namespace Dot::Graphics {
       auto direct = pipeline(wgpu::TextureFormat::RGBA16Float, false, true);
       auto environmentSurface = pipeline(wgpu::TextureFormat::RGBA16Float, true, true);
       wgpu::ShaderSourceWGSL source;
-      source.code = Detail::shadowDepthShader;
+      const auto shadowCode
+          = std::string(Detail::coverageShader) + "\n" + Detail::shadowDepthShader;
+      source.code = shadowCode.c_str();
       wgpu::ShaderModuleDescriptor module;
       module.nextInChain = &source;
       auto shader = device.CreateShaderModule(&module);
-      wgpu::VertexAttribute attribute;
-      attribute.format = wgpu::VertexFormat::Float32x3;
-      attribute.offset = offsetof(Vertex, position);
+      const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, position),
+                                                        .shaderLocation = 0},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
+                                                        .offset = offsetof(Vertex, color),
+                                                        .shaderLocation = 1},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2,
+                                                        .offset = offsetof(Vertex, texCoord),
+                                                        .shaderLocation = 2}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
-      layout.attributeCount = 1;
-      layout.attributes = &attribute;
+      layout.attributeCount = attributes.size();
+      layout.attributes = attributes.data();
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
       wgpu::DepthStencilState depth;
       depth.format = wgpu::TextureFormat::Depth32Float;
       depth.depthWriteEnabled = true;
@@ -848,6 +879,7 @@ namespace Dot::Graphics {
       descriptor.vertex.bufferCount = 1;
       descriptor.vertex.buffers = &layout;
       descriptor.depthStencil = &depth;
+      descriptor.fragment = &fragment;
       auto depthPipeline = device.CreateRenderPipeline(&descriptor);
       auto checked = scope.finish();
 
@@ -905,17 +937,24 @@ namespace Dot::Graphics {
 
       ErrorScope scope(instance, device);
       wgpu::ShaderSourceWGSL source;
-      source.code = Detail::pickingShader;
+      const auto pickCode = std::string(Detail::coverageShader) + "\n" + Detail::pickingShader;
+      source.code = pickCode.c_str();
       wgpu::ShaderModuleDescriptor shaderDescriptor;
       shaderDescriptor.nextInChain = &source;
       auto shader = device.CreateShaderModule(&shaderDescriptor);
-      wgpu::VertexAttribute attribute{.format = wgpu::VertexFormat::Float32x3,
-                                      .offset = offsetof(Vertex, position),
-                                      .shaderLocation = 0};
+      const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, position),
+                                                        .shaderLocation = 0},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
+                                                        .offset = offsetof(Vertex, color),
+                                                        .shaderLocation = 1},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2,
+                                                        .offset = offsetof(Vertex, texCoord),
+                                                        .shaderLocation = 2}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
-      layout.attributeCount = 1;
-      layout.attributes = &attribute;
+      layout.attributeCount = attributes.size();
+      layout.attributes = attributes.data();
       wgpu::ColorTargetState target;
       target.format = wgpu::TextureFormat::R32Uint;
       wgpu::FragmentState fragment;
@@ -962,13 +1001,20 @@ namespace Dot::Graphics {
         descriptor.nextInChain = &source;
         return device.CreateShaderModule(&descriptor);
       };
-      auto shader = module(Detail::geometryShader);
+      const auto geometryCode = std::string(Detail::coverageShader) + "\n" + Detail::geometryShader;
+      auto shader = module(geometryCode.c_str());
       const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
                                                         .offset = offsetof(Vertex, position),
                                                         .shaderLocation = 0},
                                   wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
                                                         .offset = offsetof(Vertex, normal),
-                                                        .shaderLocation = 3}};
+                                                        .shaderLocation = 3},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
+                                                        .offset = offsetof(Vertex, color),
+                                                        .shaderLocation = 1},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2,
+                                                        .offset = offsetof(Vertex, texCoord),
+                                                        .shaderLocation = 2}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
       layout.attributeCount = attributes.size();
@@ -1296,6 +1342,22 @@ namespace Dot::Graphics {
       return encoder;
     }
 
+    auto bindCoverage(const wgpu::RenderPipeline& pipeline, const wgpu::Buffer& buffer,
+                      const std::shared_ptr<Texture::Impl>& texture) -> wgpu::BindGroup {
+      std::array<wgpu::BindGroupEntry, 3> entries{};
+      entries[0].buffer = buffer;
+      entries[0].size = buffer.GetSize();
+      entries[1].binding = 1;
+      entries[1].textureView = texture ? texture->view : whiteView;
+      entries[2].binding = 2;
+      entries[2].sampler = texture ? texture->sampler : whiteSampler;
+      wgpu::BindGroupDescriptor group;
+      group.layout = pipeline.GetBindGroupLayout(0);
+      group.entryCount = entries.size();
+      group.entries = entries.data();
+      return device.CreateBindGroup(&group);
+    }
+
     auto bindMaterial(const wgpu::RenderPipeline& renderPipeline, const wgpu::Buffer& buffer,
                       const std::array<std::shared_ptr<Texture::Impl>, 5>& textures = {})
         -> wgpu::BindGroup {
@@ -1496,6 +1558,11 @@ namespace Dot::Graphics {
         }
 
         const auto& material = draw.material;
+        auto coverage = validateCoverage(material.alphaMode, material.alphaCutoff);
+
+        if (!coverage) {
+          return std::unexpected(coverage.error());
+        }
 
         if ((material.model != SurfaceModel::Unlit
              && material.model != SurfaceModel::MetallicRoughness)
@@ -1647,9 +1714,10 @@ namespace Dot::Graphics {
               {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
                material.normalTexture ? (draw.mesh->m_impl->hasTangents ? 2.0F : 1.0F) : 0.0F,
                material.doubleSided ? 1.0F : 0.0F, orientation},
-              {material.occlusionStrength, 0, 0, 0}},
+              {material.occlusionStrength, 0, 0, 0},
+              {static_cast<float>(material.alphaMode), material.alphaCutoff, 0, 0}},
              std::move(textures),
-             draw.castsShadow,
+             draw.castsShadow && material.alphaMode != AlphaMode::Blend,
              false});
       }
 
@@ -1726,7 +1794,7 @@ namespace Dot::Graphics {
       return prepared;
     }
 
-    enum class BatchPass { Surface, Geometry, Shadow };
+    enum class BatchPass { Surface, Geometry, Shadow, Picking };
 
     auto batches(std::span<const PreparedDraw> draws, BatchPass pass = BatchPass::Surface)
         -> Core::Result<DrawBatches> {
@@ -1734,9 +1802,16 @@ namespace Dot::Graphics {
       items.reserve(draws.size());
 
       for (const auto& draw : draws) {
-        BatchItem item{reinterpret_cast<std::uintptr_t>(draw.mesh.get()),
-                       {},
-                       pass == BatchPass::Shadow ? draw.castsShadow : draw.visible};
+        BatchItem item{
+            reinterpret_cast<std::uintptr_t>(draw.mesh.get()),
+            {},
+            pass == BatchPass::Shadow
+                ? draw.castsShadow
+                : draw.visible && (pass != BatchPass::Geometry || draw.uniform.alpha.x != 2)};
+
+        item.textures[0] = draw.uniform.alpha.x == 0
+                               ? 0
+                               : reinterpret_cast<std::uintptr_t>(draw.textures[0].get());
 
         if (pass == BatchPass::Surface) {
           for (std::size_t index = 0; index < draw.textures.size(); ++index) {
@@ -1748,6 +1823,64 @@ namespace Dot::Graphics {
       }
 
       return buildDrawBatches(items);
+    }
+
+    /** Clip-center depth orders perspective/orthographic blends. For a center
+     * behind/on the eye horizon use the furthest positive-weight corner; this
+     * remains approximate object sorting, not order-independent transparency.
+     * 裁剪空间中心深度用于透视/正交排序；中心在眼平面后/上时使用最远正权重角点，
+     * 仍是物体排序近似，不是顺序无关透明。 */
+    auto surfaceQueue(std::span<const PreparedDraw> draws) -> Core::Result<RenderQueue> {
+      std::vector<QueueItem> items;
+      items.reserve(draws.size());
+
+      for (const auto& draw : draws) {
+        QueueItem item{{reinterpret_cast<std::uintptr_t>(draw.mesh.get()), {}, draw.visible},
+                       static_cast<AlphaMode>(static_cast<int>(draw.uniform.alpha.x)),
+                       0};
+
+        for (std::size_t i = 0; i < draw.textures.size(); ++i) {
+          item.binding.textures[i] = reinterpret_cast<std::uintptr_t>(draw.textures[i].get());
+        }
+
+        if (draw.visible && item.alpha == AlphaMode::Blend) {
+          const auto& box = draw.mesh->bounds;
+          const auto& m = draw.uniform.transform.data;
+          const double center[4]{(double(box.minimum.x) + box.maximum.x) * .5,
+                                 (double(box.minimum.y) + box.maximum.y) * .5,
+                                 (double(box.minimum.z) + box.maximum.z) * .5, 1};
+          double z{}, w{};
+
+          for (std::size_t j = 0; j < 4; ++j) {
+            z += m[j * 4 + 2] * center[j];
+            w += m[j * 4 + 3] * center[j];
+          }
+
+          if (w > 0) {
+            item.depth = z / w;
+          } else {
+            for (int corner = 0; corner < 8; ++corner) {
+              const double p[4]{corner & 1 ? box.maximum.x : box.minimum.x,
+                                corner & 2 ? box.maximum.y : box.minimum.y,
+                                corner & 4 ? box.maximum.z : box.minimum.z, 1};
+              double depth{}, weight{};
+
+              for (std::size_t j = 0; j < 4; ++j) {
+                depth += m[j * 4 + 2] * p[j];
+                weight += m[j * 4 + 3] * p[j];
+              }
+
+              if (weight > 0) {
+                item.depth = std::max(item.depth, depth / weight);
+              }
+            }
+          }
+        }
+
+        items.push_back(item);
+      }
+
+      return buildRenderQueue(items);
     }
 
     auto instanceBuffer(const void* data, std::size_t bytes) -> Core::Result<wgpu::Buffer> {
@@ -1862,7 +1995,7 @@ namespace Dot::Graphics {
         return std::unexpected(plan.error());
       }
 
-      std::vector<Math::Mat4> matrices;
+      std::vector<CoverageData> matrices;
       matrices.reserve(plan->indices.size() * fit.count);
 
       for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
@@ -1874,14 +2007,15 @@ namespace Dot::Graphics {
                               "Shadow instance matrix: " + matrix.error().message);
           }
 
-          matrices.push_back(*matrix);
+          const auto& data = draws[index].uniform;
+          matrices.push_back({*matrix, data.tint, data.flags, data.alpha, {}});
         }
       }
 
       wgpu::Buffer storage;
 
       if (!matrices.empty()) {
-        auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(Math::Mat4));
+        auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(CoverageData));
 
         if (!buffer) {
           return std::unexpected(buffer.error());
@@ -1906,19 +2040,12 @@ namespace Dot::Graphics {
         auto pass = encoder.BeginRenderPass(&descriptor);
         pass.SetPipeline(shadowDepthPipeline);
 
-        if (storage) {
-          wgpu::BindGroupEntry entry;
-          entry.buffer = storage;
-          entry.size = storage.GetSize();
-          wgpu::BindGroupDescriptor group;
-          group.layout = shadowDepthPipeline.GetBindGroupLayout(0);
-          group.entryCount = 1;
-          group.entries = &entry;
-          pass.SetBindGroup(0, device.CreateBindGroup(&group));
-        }
-
         for (auto batch : plan->batches) {
-          const auto& mesh = *draws[plan->indices[batch.first]].mesh;
+          const auto& draw = draws[plan->indices[batch.first]];
+          const auto& mesh = *draw.mesh;
+          pass.SetBindGroup(0,
+                            bindCoverage(shadowDepthPipeline, storage,
+                                         draw.uniform.alpha.x == 0 ? nullptr : draw.textures[0]));
           batch.first += cascade * static_cast<std::uint32_t>(plan->indices.size());
           emitInstances(pass, mesh, batch);
           pendingVisibility.shadowInstances += batch.count;
@@ -2036,19 +2163,11 @@ namespace Dot::Graphics {
         return std::unexpected(plan.error());
       }
 
-      if (storage) {
-        wgpu::BindGroupEntry entry;
-        entry.buffer = storage;
-        entry.size = storage.GetSize();
-        wgpu::BindGroupDescriptor group;
-        group.layout = geometryPipeline.GetBindGroupLayout(0);
-        group.entryCount = 1;
-        group.entries = &entry;
-        pass.SetBindGroup(0, device.CreateBindGroup(&group));
-      }
-
       for (const auto& batch : plan->batches) {
-        emitInstances(pass, *draws[plan->indices[batch.first]].mesh, batch);
+        const auto& draw = draws[plan->indices[batch.first]];
+        pass.SetBindGroup(0, bindCoverage(geometryPipeline, storage,
+                                          draw.uniform.alpha.x == 0 ? nullptr : draw.textures[0]));
+        emitInstances(pass, *draw.mesh, batch);
         pendingVisibility.occlusionInstances += batch.count;
         ++pendingVisibility.occlusionDraws;
       }
@@ -2105,12 +2224,17 @@ namespace Dot::Graphics {
                       Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
       occlusionPending = false;
-      auto plan = batches(draws);
+      auto sorted = surfaceQueue(draws);
 
-      if (!plan) {
-        return std::unexpected(plan.error());
+      if (!sorted) {
+        return std::unexpected(sorted.error());
       }
 
+      DrawBatches combined = sorted->solid;
+      const auto solidCount = combined.indices.size();
+      combined.indices.insert(combined.indices.end(), sorted->blended.indices.begin(),
+                              sorted->blended.indices.end());
+      auto plan = &combined;
       pendingVisibility = {};
       pendingVisibility.spatial = preparedSpatial;
       pendingVisibility.inputInstances = draws.size();
@@ -2262,6 +2386,20 @@ namespace Dot::Graphics {
                 ? (source ? occlusionShadowEnvironmentPipeline : occlusionEnvironmentPipeline)
                 : (source ? (environment ? shadowEnvironmentPipeline : shadowScenePipeline)
                           : (environment ? environmentPipeline : scenePipeline));
+      wgpu::RenderPipeline blendPipeline;
+
+      if (!sorted->blended.indices.empty()) {
+        const auto index = (environment ? 4U : 0U) + (source ? 2U : 0U) + (occlusion ? 1U : 0U);
+
+        if (!blendPipelines[index]) {
+          blendPipelines[index] = pipeline(wgpu::TextureFormat::RGBA16Float,
+                                           environment.has_value(), source.has_value(),
+                                           occlusion.has_value() && environment.has_value(), true);
+        }
+
+        blendPipeline = blendPipelines[index];
+      }
+
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
@@ -2269,25 +2407,41 @@ namespace Dot::Graphics {
               drawSky(pass, inverse);
             }
 
-            if (environment) {
-              pass.SetBindGroup(2, bindEnvironment(renderPipeline, occlusion.has_value()));
-            }
+            const auto emit = [&](const DrawBatches& batches, const wgpu::RenderPipeline& selected,
+                                  std::uint32_t offset) {
+              pass.SetPipeline(selected);
 
-            if (fit) {
-              pass.SetBindGroup(3, bindShadows(renderPipeline, *fit, *source));
-            }
+              if (environment) {
+                pass.SetBindGroup(2, bindEnvironment(selected, occlusion.has_value()));
+              }
 
-            auto lights = bindLighting(renderPipeline);
-            pass.SetBindGroup(1, lights);
+              if (fit) {
+                pass.SetBindGroup(3, bindShadows(selected, *fit, *source));
+              }
 
-            for (const auto& batch : plan->batches) {
-              const auto& draw = draws[plan->indices[batch.first]];
-              auto group = bindMaterial(renderPipeline, storage, draw.textures);
-              pass.SetPipeline(renderPipeline);
-              pass.SetBindGroup(0, group);
-              emitInstances(pass, *draw.mesh, batch);
-              pendingVisibility.visibleInstances += batch.count;
-              ++pendingVisibility.colorDraws;
+              pass.SetBindGroup(1, bindLighting(selected));
+
+              for (auto batch : batches.batches) {
+                const auto& draw = draws[batches.indices[batch.first]];
+                pass.SetBindGroup(0, bindMaterial(selected, storage, draw.textures));
+                batch.first += offset;
+                emitInstances(pass, *draw.mesh, batch);
+                pendingVisibility.visibleInstances += batch.count;
+                ++pendingVisibility.colorDraws;
+
+                if (selected.Get() == blendPipeline.Get()) {
+                  pendingVisibility.blendedInstances += batch.count;
+                  ++pendingVisibility.blendedDraws;
+                } else {
+                  pendingVisibility.solidInstances += batch.count;
+                  ++pendingVisibility.solidDraws;
+                }
+              }
+            };
+            emit(sorted->solid, renderPipeline, 0);
+
+            if (blendPipeline) {
+              emit(sorted->blended, blendPipeline, static_cast<std::uint32_t>(solidCount));
             }
           },
           depthView, shadowEncoder);
@@ -4209,31 +4363,28 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    struct PickData {
-      Math::Mat4 transform;
-      Math::Vec4 flags;
-      std::array<std::uint32_t, 4> identifier;
-    };
-
-    static_assert(sizeof(PickData) == 96);
-    auto plan = m_impl->batches(*prepared, Impl::BatchPass::Geometry);
+    auto plan = m_impl->batches(*prepared, Impl::BatchPass::Picking);
 
     if (!plan) {
       return std::unexpected(plan.error());
     }
 
-    std::vector<PickData> data;
+    std::vector<CoverageData> data;
     data.reserve(plan->indices.size());
 
     for (const auto index : plan->indices) {
       const auto& draw = (*prepared)[index];
-      data.push_back({draw.uniform.transform, draw.uniform.flags, {index + 1, 0, 0, 0}});
+      data.push_back({draw.uniform.transform,
+                      draw.uniform.tint,
+                      draw.uniform.flags,
+                      draw.uniform.alpha,
+                      {index + 1, 0, 0, 0}});
     }
 
     wgpu::Buffer storage;
 
     if (!data.empty()) {
-      auto buffer = m_impl->instanceBuffer(data.data(), data.size() * sizeof(PickData));
+      auto buffer = m_impl->instanceBuffer(data.data(), data.size() * sizeof(CoverageData));
 
       if (!buffer) {
         return std::unexpected(buffer.error());
@@ -4259,19 +4410,12 @@ namespace Dot::Graphics {
               [&](const wgpu::RenderPassEncoder& pass) {
                 pass.SetPipeline(m_impl->pickingPipeline);
 
-                if (storage) {
-                  wgpu::BindGroupEntry entry;
-                  entry.buffer = storage;
-                  entry.size = storage.GetSize();
-                  wgpu::BindGroupDescriptor group;
-                  group.layout = m_impl->pickingPipeline.GetBindGroupLayout(0);
-                  group.entryCount = 1;
-                  group.entries = &entry;
-                  pass.SetBindGroup(0, m_impl->device.CreateBindGroup(&group));
-                }
-
                 for (const auto& batch : plan->batches) {
-                  Impl::emitInstances(pass, *(*prepared)[plan->indices[batch.first]].mesh, batch);
+                  const auto& draw = (*prepared)[plan->indices[batch.first]];
+                  pass.SetBindGroup(0, m_impl->bindCoverage(
+                                           m_impl->pickingPipeline, storage,
+                                           draw.uniform.alpha.x == 0 ? nullptr : draw.textures[0]));
+                  Impl::emitInstances(pass, *draw.mesh, batch);
                   pickStats.candidateInstances += batch.count;
                   ++pickStats.draws;
                 }

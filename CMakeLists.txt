@@ -137,6 +137,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/View.cpp
     src/Engine/Graphics/Frustum.cpp
     src/Engine/Graphics/DrawBatches.cpp
+    src/Engine/Graphics/RenderQueue.cpp
     src/Engine/Graphics/SpatialIndex.cpp
     src/Engine/Editor/Camera.cpp
     src/Engine/Editor/TransformTool.cpp
@@ -233,6 +234,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/View.cppm
         src/Engine/Graphics/Frustum.cppm
         src/Engine/Graphics/DrawBatches.cppm
+        src/Engine/Graphics/RenderQueue.cppm
         src/Engine/Graphics/SpatialIndex.cppm
         src/Engine/Editor/Camera.cppm
         src/Engine/Editor/TransformTool.cppm

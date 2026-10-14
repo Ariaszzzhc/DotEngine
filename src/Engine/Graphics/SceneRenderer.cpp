@@ -357,6 +357,8 @@ namespace Dot::Graphics {
       result.material.metallic = description->metallic;
       result.material.roughness = description->roughness;
       result.material.normalScale = description->normalScale;
+      result.material.alphaMode = description->alphaMode;
+      result.material.alphaCutoff = description->alphaCutoff;
       result.material.occlusionStrength = description->occlusionStrength;
       result.material.doubleSided = description->doubleSided;
       const std::array sources{&description->baseColorTexture,

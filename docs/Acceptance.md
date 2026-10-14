@@ -210,3 +210,13 @@ through the live workspace protocol, inserts its hierarchy/materials and an auth
 light, checks changed/restored real viewport pixels, one undo/redo, save/reopen and
 normal close. CTest `editor.model_import` is a native acceptance case compiled only
 when BUILD_TESTING is enabled.
+
+
+RenderQueueTests checks stable solid ordering, blended depth/tie ordering, original
+indices, owned results, disabled validation and 10000-input boundaries. AlphaGpuTests
+checks actual Opaque/Mask threshold and texture coverage, sorted straight HDR blending,
+opaque depth occlusion, original pick IDs, zero-alpha rejection, and blend-excluded /
+mask-clipped SSAO geometry. ShadowGpuTests checks texture holes/cutoff and blend's
+no-shadow policy. Model/Material tests retain factor/vertex/texture alpha and mode /
+cutoff through import/current persistence. Existing native Feature Lab editor/Play/
+export coverage now uses real Glass and Cutout assets.

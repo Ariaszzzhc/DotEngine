@@ -51,7 +51,7 @@ namespace Dot::Runtime {
       const auto offset = (16 * 32 + 16) * 4;
 
       if (rendered.pixels[offset] != 0 || rendered.pixels[offset + 1] != 128
-          || rendered.pixels[offset + 2] != 0 || rendered.pixels[offset + 3] != 128
+          || rendered.pixels[offset + 2] != 0 || rendered.pixels[offset + 3] != 255
           || renderer.resourceStats()->textures != 1) {
         std::println(stderr, "Actual material/texture sampling failed");
         return 1;

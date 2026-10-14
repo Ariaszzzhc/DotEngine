@@ -52,11 +52,11 @@ TEST_CASE("texture.gpu_sampling_retains_owned_rgba_top_left_uv_and_material_fact
   CHECK(center(sampled(renderer, *texture, {0.25F, 0.25F}))
         == std::array<std::uint8_t, 4>{255, 0, 0, 255});
   CHECK(center(sampled(renderer, *texture, {0.75F, 0.25F}))
-        == std::array<std::uint8_t, 4>{0, 255, 0, 128});
+        == std::array<std::uint8_t, 4>{0, 255, 0, 255});
   CHECK(center(sampled(renderer, *texture, {0.25F, 0.75F}))
         == std::array<std::uint8_t, 4>{0, 0, 255, 255});
   CHECK(center(sampled(renderer, *texture, {0.75F, 0.75F}, {0.5F, 0.25F, 0.75F, 0.5F}))
-        == std::array<std::uint8_t, 4>{128, 64, 191, 128});
+        == std::array<std::uint8_t, 4>{128, 64, 191, 255});
   CHECK(renderer.resourceStats()->textures == 1);
   CHECK(renderer.resourceStats()->textureBytes == 20);
 }
@@ -70,7 +70,7 @@ TEST_CASE("texture.color_space_linear_filtering_and_address_modes_are_explicit")
   auto srgb = renderer.uploadTexture(gray).value();
   CHECK(center(sampled(renderer, linear, {}))[0] == 128);
   CHECK(center(sampled(renderer, srgb, {}))[0] == 55);
-  CHECK(center(sampled(renderer, srgb, {}))[3] == 128);
+  CHECK(center(sampled(renderer, srgb, {}))[3] == 255);
   Image pair{2, 1, {255, 0, 0, 255, 0, 255, 0, 255}};
 
   for (const auto address :

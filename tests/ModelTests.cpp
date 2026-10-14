@@ -55,13 +55,13 @@ TEST_CASE("model.glb_and_external_gltf_preserve_frames_pbr_images_and_hierarchy"
     CHECK(model.nodes[0].transform.position.x == doctest::Approx(.2));
     CHECK(model.primitives[0].mesh.vertices.size() == 4);
     CHECK(model.primitives[0].mesh.vertices[0].tangent == Math::Vec4{1, 0, 0, -1});
-    CHECK(model.primitives[0].mesh.vertices[0].color.w == 1);
-    CHECK(model.materials[0].baseColor.w == 1);
+    CHECK(model.primitives[0].mesh.vertices[0].color.w == .25F);
+    CHECK(model.materials[0].baseColor.w == doctest::Approx(.2));
     CHECK(model.materials[0].occlusionStrength == doctest::Approx(.8));
     CHECK(model.materials[0].occlusionTexture->path == "assets/model/images/1.png");
     CHECK(model.materials[0].baseColorTexture->sampling.colorSpace == Graphics::ColorSpace::Srgb);
     CHECK(model.materials[0].normalTexture->sampling.colorSpace == Graphics::ColorSpace::Linear);
-    CHECK(Assets::decodeImage(model.images[0].png)->pixels[3] == 255);
+    CHECK(Assets::decodeImage(model.images[0].png)->pixels[3] == 64);
     CHECK(Assets::decodeImage(model.images[0].png)->pixels[0] == 188);
     auto staging = Core::StagedDirectory::create(fixture.files).value();
     REQUIRE(Assets::writeModel(staging.files().value(), model));
@@ -97,7 +97,7 @@ TEST_CASE("model.invalid_ranges_uris_cycles_extensions_and_capacities_fail") {
   bad["nodes"][1]["children"] = {0};
   cases.push_back(bad);
   bad = original;
-  bad["materials"][0]["alphaMode"] = "BLEND";
+  bad["materials"][0]["alphaMode"] = "BAD";
   cases.push_back(bad);
   bad = original;
   bad["extensionsRequired"] = {"UNKNOWN_required"};
@@ -219,4 +219,24 @@ TEST_CASE("model.required_quantization_preserves_normalized_integer_positions") 
   invalid.erase("extensionsUsed");
   REQUIRE(fixture.source().writeTextAtomic("bad.gltf", invalid.dump()));
   CHECK_FALSE(Assets::loadModel(fixture.source(), "bad.gltf", "assets/model"));
+}
+
+TEST_CASE("model.alpha_modes_preserve_factor_vertex_texture_and_cutoff") {
+  Fixture fixture;
+  auto source = Json::parse(fixture.source().readText("surface.gltf").value());
+
+  for (const auto* mode : {"OPAQUE", "MASK", "BLEND"}) {
+    source["materials"][0]["alphaMode"] = mode;
+    source["materials"][0]["alphaCutoff"] = .3;
+    REQUIRE(fixture.source().writeTextAtomic("alpha.gltf", source.dump()));
+    auto model = Assets::loadModel(fixture.source(), "alpha.gltf", "assets/model");
+    REQUIRE(model);
+    CHECK(model->materials[0].alphaMode
+          == (std::string(mode) == "OPAQUE" ? Graphics::AlphaMode::Opaque
+              : std::string(mode) == "MASK" ? Graphics::AlphaMode::Mask
+                                            : Graphics::AlphaMode::Blend));
+    CHECK(model->materials[0].alphaCutoff == doctest::Approx(.3));
+    CHECK(model->primitives[0].mesh.vertices[0].color.w == .25F);
+    CHECK(Assets::decodeImage(model->images[0].png)->pixels[3] == 64);
+  }
 }

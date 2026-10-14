@@ -137,13 +137,18 @@ TEST_CASE("hdr.srgb_texture_decodes_once_and_final_output_encodes_once") {
   auto texture = renderer.uploadTexture(Image{1, 1, {128, 128, 128, 128}}).value();
   auto mesh = renderer.upload(quad({2, 2}).value()).value();
   auto target = renderer.createTarget(16, 16).value();
-  const std::array draws{MeshDraw{&mesh, {}, {1, 1, 1, 1}, Material{{1, 1, 1, 1}, texture}}};
+  std::array draws{MeshDraw{&mesh, {}, {1, 1, 1, 1}, Material{{1, 1, 1, 1}, texture}}};
   REQUIRE(renderer.renderMeshesInto(target, draws, {}));
   const auto raw = rgba(renderer.readHdrTarget(target).value(), 8, 8);
   CHECK(raw[0] == doctest::Approx(0.21586).epsilon(0.002));
-  CHECK(raw[3] == doctest::Approx(128.0 / 255).epsilon(0.002));
+  CHECK(raw[3] == 1);
   CHECK(rgba(renderer.readTarget(target).value(), 8, 8)
-        == std::array<std::uint8_t, 4>{128, 128, 128, 128});
+        == std::array<std::uint8_t, 4>{128, 128, 128, 255});
+  draws[0].material.alphaMode = AlphaMode::Blend;
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}, {0, 0, 0, 0}));
+  const auto blended = rgba(renderer.readHdrTarget(target).value(), 8, 8);
+  CHECK(blended[0] == doctest::Approx(0.21586 * 128 / 255).epsilon(0.002));
+  CHECK(blended[3] == doctest::Approx(128.0 / 255).epsilon(0.002));
 }
 
 TEST_CASE("hdr.settings_and_resources_reject_invalid_owners_and_reuse_working_storage") {

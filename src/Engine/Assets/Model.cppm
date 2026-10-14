@@ -44,13 +44,13 @@ export namespace Dot::Assets {
   };
 
   /** Owned static glTF/GLB import: triangles/strips/fans, sparse/strided data,
-   * opaque PBR PNG/JPEG textures and TRS hierarchy. Select default/first scene
+   * PBR PNG/JPEG textures and TRS hierarchy. Select default/first scene
    * unless an index is supplied. Project-relative generated references use prefix.
    * No implicit IO outside source root: reject traversal, symlinks and remote URIs.
    * At most 64 MiB/file, 128 MiB source bytes, 256 MiB decoded pixels, one million
    * aggregate vertices/three million indices and 10000 generated entities. Parser
    * allocation is bounded separately to 128 MiB. Unsupported visual semantics
-   * fail, rather than dropping animated/compressed/transparent content. Metadata
+   * fail, rather than dropping animated/compressed content. Metadata
    * loss is reported. Source files remain unchanged; output owns all data.
    * 拥有式静态导入，支持三角形/条带/扇形、稀疏/交错数据、不透明 PBR 贴图及 TRS 层级。
    * 默认选择默认/首场景，可指定索引；生成路径使用项目相对前缀。不越过源根读取，拒绝

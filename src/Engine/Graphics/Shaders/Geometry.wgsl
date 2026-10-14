@@ -6,7 +6,8 @@ struct InstanceData {
   normalMatrix: mat4x4f,
   material: vec4f,
   flags: vec4f,
-  occlusion: vec4f
+  occlusion: vec4f,
+  alpha: vec4f
 }
 
 struct View {
@@ -15,13 +16,17 @@ struct View {
 }
 
 @group(0) @binding(0) var<storage, read> instances: array<InstanceData>;
+@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
+@group(0) @binding(2) var baseColorSampler: sampler;
 @group(1) @binding(0) var<uniform> view: View;
 
 struct Output {
   @builtin(position) position: vec4f,
   @location(0) worldPosition: vec3f,
   @location(1) normal: vec3f,
-  @location(2) @interpolate(flat) instance: u32
+  @location(2) @interpolate(flat) instance: u32,
+  @location(3) color: vec4f,
+  @location(4) uv: vec2f
 }
 
 fn unit(value: vec3f) -> vec3f {
@@ -37,10 +42,13 @@ fn unit(value: vec3f) -> vec3f {
 
 @vertex
 fn vertexMain(@location(0) position: vec3f, @location(3) normal: vec3f,
+  @location(1) color: vec4f, @location(2) uv: vec2f,
   @builtin(instance_index) instance: u32) -> Output {
   let camera = instances[instance];
   var output: Output;
   output.instance = instance;
+  output.color = color * camera.tint;
+  output.uv = uv;
   output.position = camera.transform * vec4f(position, 1.0);
   output.worldPosition = (camera.model * vec4f(position, 1.0)).xyz;
   output.normal = (camera.normalMatrix * vec4f(normal, 0.0)).xyz;
@@ -54,6 +62,12 @@ fn vertexMain(@location(0) position: vec3f, @location(3) normal: vec3f,
 fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let camera = instances[input.instance];
   let geometric = unit(cross(dpdx(input.worldPosition), dpdy(input.worldPosition)));
+  let alpha = input.color.a * textureSample(baseColorTexture, baseColorSampler, input.uv).a;
+
+  if (!covered(alpha, camera.alpha)) {
+    discard;
+  }
+
   let front = frontFacing == (camera.flags.w > 0.0);
 
   if (camera.flags.x != 0.0 && !front && camera.flags.z == 0.0) {

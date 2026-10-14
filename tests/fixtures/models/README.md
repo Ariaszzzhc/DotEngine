@@ -4,7 +4,7 @@ Owned deterministic diagnostic geometry, not production art. `surface.glb` embed
 one strided indexed quad, authored normals/tangents/colors, three PNG images and an
 opaque five-slot PBR material in a reflected two-node hierarchy. `surface.gltf` and
 `surface.bin` use the same geometry with external images. Base/vertex alpha varies
-so import must implement opaque alpha semantics without changing RGB.
+so import must retain authored alpha and rendering must apply coverage explicitly.
 
 `sparse.gltf` exercises base64 buffer bytes and sparse positions with absent normals.
 `quantized.gltf` declares required mesh quantization and normalized uint16 positions.

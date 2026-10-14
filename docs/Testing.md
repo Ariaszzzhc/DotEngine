@@ -42,9 +42,9 @@ resize, event dispatch, presentation and destruction. Unit tests must not create
 window just to inspect pure data. Separate CPU validation and pixel checks from
 native presentation. Repeated creation/destruction specifically verifies lifetime;
 do not share one global fixture if that would hide leaks or initialization failures.
-The current inventory contains 211 unit, 621 integration, 103 offscreen GPU,
+The current inventory contains 213 unit, 627 integration, 107 offscreen GPU,
 57 native and 107 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 939 CTest identities are covered; existing subsystem
+native integration cases. All 947 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.

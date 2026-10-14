@@ -3939,3 +3939,68 @@ Animated/skinned/morph/compressed content, camera/light import, nonopaque materi
 additional UV/texture transforms/mixed filtering, richer metadata, asynchronous imports,
 streaming/production editor tools and realistic polished Prism Relay remain unfinished.
 The complete engine/editor/game objective remains active.
+
+
+## Material alpha coverage / 材质透明度覆盖 (2026-10-14)
+
+Implemented a separate CPU RenderQueue module interface/implementation before its
+renderer consumers. It validates bounded inputs, retains owned original IDs and
+solid source order, and stably orders blended instances back to front. Current
+material persistence explicitly requires alphaMode/alphaCutoff; static glTF/GLB
+imports preserve factor, vertex and texture alpha for Opaque/Mask/Blend. Authored
+alpha is retained even for opaque materials; rendering applies their coverage policy.
+There is one current schema and no old-format compatibility branch.
+
+Actual mesh rendering uses 288-byte surface instances and 128-byte picking/shadow
+coverage records. Opaque ignores source alpha; Mask writes depth for survivors;
+Blend composites straight alpha in linear HDR before tone mapping, tests solid
+depth and never writes it. Shared standalone Coverage.wgsl governs color, shadow,
+SSAO guides and picking. Mask texture holes affect all those passes; Blend contributes
+no shadow/SSAO geometry. Integer picking retains original identity after sorting,
+ignores zero-alpha fragments and chooses the nearest surviving fragment. Completed
+frame counters publish actual solid/blended instances and GPU draw quantities.
+
+Feature Lab is still an ordinary editable project. Added actual Glass and textured
+Cutout entities/assets to its scene and shipped templates. Native acceptance verifies
+editor/Play/standalone behavior with 8 solid and 1 blended instances. Editor font
+remains pinned Sarasa UI SC Regular 1.0.42 with Inter Western glyphs and bundled OFL
+license. Reference artwork and the private source document remain untracked.
+
+Verification proceeded from 2/2 CPU queue tests (0.04s) to renderer/material/import
+checks. Initial focused GPU tests exposed a missing group-2 AO binding without an
+HDR environment; fixed the blend pipeline to use the same indirect-light AO policy
+as solid rendering. Coverage texture bindings legitimately split the previous
+geometry-only picking batches; updated the asserted quantity. Focused checks then
+passed 41/41 (16.13s). Native Feature Lab initially exposed outdated material/texture
+quantities; corrected them to actual 4/2 and strengthened solid/blend assertions;
+its final focused native run passed 1/1 (12.18s).
+
+The first full Debug run failed 5/947: three texture/HDR tests and runtime.textures
+asserted the former opaque alpha output, while home creation asserted 13 instead of
+15 Feature Lab entities. Updated these to the explicit opaque policy/new authored
+scene and added a real HDR blend readback asserting that sRGB texture alpha remains
+linear. RGB sampling/ownership/color conversion assertions remain in place. Both
+final builds completed before serial full validation. Final Debug: 947/947, 197.14s.
+Final Release/NDEBUG: 947/947, 48.41s. Inventory: 883 doctest identities plus 64
+executable/script checks. Overlapping labels: unit 213, integration 627, gpu 176,
+offscreen 107, native 57, acceptance 107, compiler 135, platform 27, process 19,
+audio-native 32. All 300 C/C++ files pass clang-format; all 16 standalone WGSL files
+pass established spacing/line checks and real pipeline/pixel validation. Reviewed
+queue ownership/order, input validation, compact storage offsets, pass identities,
+shader coverage/derivatives, error propagation, resource release and platform paths.
+No additional screenshot review was performed.
+
+Refreshed the latest archive through the existing owned metadata-filtered staging.
+ZIP: 269 entries, 47,353,213 bytes; all 238 file/link payloads match signed source.
+Two Glass/Cutout materials, two cutout textures, cgltf notices, exact Sarasa/Inter
+font/license/HDRIs, CRC/executable modes/exclusions, 13 regular Mach-O files/3 relative
+links, strict app signatures and portable loader/rpath checks pass. Owned archive
+staging and implementation-generator scratch are absent; removed the temporary
+format file list. Preserved build caches/latest ZIP/audit evidence and private
+untracked document/artwork. Only arm64 macOS was built/run; Windows/Linux remain
+implemented without local validation.
+
+Object-center depth sorting is approximate for intersecting/large transparent
+geometry. Refraction/OIT, transparent shadows, animation, streaming, mature production
+editor tooling and polished realistic Prism Relay remain unfinished. The full
+engine/editor/game objective remains active.

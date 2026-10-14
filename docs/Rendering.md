@@ -189,7 +189,9 @@ not replaced by sample or missing-resource colors.
   "normalTexture": null,
   "emissiveTexture": null,
   "occlusionStrength": 1,
-  "occlusionTexture": null
+  "occlusionTexture": null,
+  "alphaMode": "opaque",
+  "alphaCutoff": 0.5
 }
 ```
 
@@ -421,9 +423,9 @@ lighting/editor tools remain part of the active capability roadmap.
 
 `Light::shadows` explicitly requests one directional shadow source per frame. Null
 means no shadow map; point/spot requests or multiple requested directional sources
-fail validation. This first shadow subsystem covers opaque static mesh geometry;
-point/spot projections, alpha-mask casting, contact-hardening PCSS, temporal filtering
-and GPU draw culling/instancing remain planned. Immediate unlit vertex rendering
+fail validation. Shadow coverage supports opaque and masked static mesh geometry;
+point/spot projections, contact-hardening PCSS, temporal filtering and GPU-driven
+culling remain planned. CPU batching/instancing is implemented. Immediate unlit vertex rendering
 is independent of mesh shadow rendering.
 
 `Dot.Graphics.Shadows` validates work on CPU and fits a finite camera frustum with
@@ -524,7 +526,7 @@ maintained under src/Engine/Graphics/Shaders with two-space indentation, spacing
 the shipped engine needs no shader source files or filesystem search paths.
 
 
-## Independent views and opaque picking
+## Independent views and coverage-aware picking
 
 `Dot.Graphics.View` validates a scene-independent camera and computes its view
 projection. `SceneView` explicitly chooses primary game camera, scene camera entity
@@ -533,14 +535,14 @@ Mesh world bounds are cached alongside actual mesh assets and transformed throug
 all eight corners; no geometry copies or substitute boxes are used for selection.
 
 `Renderer.pickMeshes` crops the chosen framebuffer pixel center to a 1x1 R32Uint
-color target with Depth24Plus and Less comparison, matching opaque surface depth.
+color target with Depth24Plus and Less comparison, matching covered surface depth.
 Per-draw uniforms retain independent IDs and the physical backface policy. Readback
 returns an optional draw index; SceneRenderer maps it to the full EntityId. Picking
 leaves the visible target, HDR/AO publication and submitted frame counters intact.
 Scratch targets and uniforms are released after readback; lifetime/thread/device
 validation follows normal renderer ownership. It currently reads back synchronously
 and conservatively prunes candidates against the cropped pixel frustum; spatial
-indexing and transparent picking remain planned.
+GPU-driven indexing remains planned; alpha-aware picking is implemented below.
 
 
 ## Conservative camera clipping / 保守相机裁剪
@@ -582,15 +584,15 @@ establish large-game scalability.
 compatible runs. Disabled entries are skipped; enabled entries are never reordered.
 Surface runs share mesh/texture identities while all transforms, tints, emission,
 PBR parameters, sidedness and reflection policies remain instance attributes. SSAO,
-shadow and picking runs need shared geometry only. This preserves opaque equal-depth
+shadow and picking runs need shared geometry plus base texture identity for masks/blends. This preserves opaque equal-depth
 source ordering and integer picking identity. No compatibility rendering path exists.
 稳定相邻批次跳过禁用项但不重排启用项；主表面共享网格/纹理绑定，变换、颜色及
 PBR/背面策略均保留实例数据。几何、阴影、拾取按共享网格合批，整数身份不改变。
 
-Scene instance records use bounded read-only storage buffers (272 bytes per surface
-record, 96 for picking, 64 for a shadow transform). Shaders index with instance_index
+Scene instance records use bounded read-only storage buffers (288 bytes per surface
+record, 128 for picking and shadow coverage). Shaders index with instance_index
 and pass a flat integer to fragments; the compact record still stores the original
-source ID for picking. Main/SSAO share one ordered attribute upload. Shadows store
+source ID for picking. Main/SSAO share one ordered solid attribute upload. Shadows store
 per-cascade matrices and issue instanced runs with the proper base instance. Buffer
 sizes are checked against actual device binding/buffer limits before allocation.
 Submitted command buffers retain GPU resources; failed calls preserve prior reports.
@@ -659,7 +661,32 @@ tangents because its changed normals invalidate the original frame.
 Baked occlusion is a fifth linear texture slot: R encodes visibility, strength
 [0,1] mixes it with one. It multiplies indirect HDR/IBL alongside SSAO; direct lights
 and emission remain unaffected. Renderer, scene cache, current material codec and
-game packaging validate/bind this slot. Instance storage is 272 bytes with occlusion
+game packaging validate/bind this slot. Instance storage is 288 bytes with occlusion
 parameters at offset 256; GPU surface/geometry layouts share that stride. Actual
 texture identities participate in consecutive batching. Existing authoring materials
 use the current complete schema including occlusionStrength/occlusionTexture.
+
+
+## Material alpha coverage
+
+`AlphaMode` explicitly selects Opaque, Mask or Blend. Source alpha is the product
+of vertex color, tint, base-color factor and texture alpha (always linear). Opaque
+ignores it and outputs one; Mask discards below a finite nonnegative cutoff and
+outputs one for survivors; cutoff above one discards everything. Blend performs
+straight-alpha over in linear HDR before tone mapping, tests existing depth and
+never writes depth. Solid source order is stable; blended instance centers sort
+back-to-front with stable source-order ties. Intersecting/large geometry can still
+need subdivision or order-independent techniques; no refraction is implemented.
+
+Surface, SSAO depth/normal guides, shadow depth and integer picking use the same
+WGSL coverage helper. Mask holes do not write depth or cast shadow and do not pick.
+Blend is excluded from shadow/SSAO geometry; zero-alpha fragments do not pick and
+nonzero blended fragments pick the nearest actual triangle. IDs remain original
+source IDs after sorting. Opaque coverage passes ignore texture alpha and retain
+geometry-only grouping; masks/blends group by actual base texture/sampler identity.
+
+Current material persistence includes required alphaMode/alphaCutoff fields. Static
+glTF/GLB import retains texture/vertex/factor alpha and converts all three modes.
+Opaque semantics are applied at rendering, so authored alpha survives later edits.
+Rendering/inspection report solid and blended instance/draw quantities only after
+successful submission. Feature Lab has actual Glass and checker Cutout materials.

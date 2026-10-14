@@ -565,6 +565,80 @@
           1
         ]
       }
+    },
+    {
+      "id": "14",
+      "name": "Glass",
+      "parent": null,
+      "transform": {
+        "position": [
+          -2.2,
+          2.4,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.4,
+          1.4,
+          1.4
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/normal-quad.dotmesh",
+        "tint": [
+          1,
+          0.4,
+          0.8,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/glass.dotmaterial"
+      }
+    },
+    {
+      "id": "15",
+      "name": "Cutout",
+      "parent": null,
+      "transform": {
+        "position": [
+          2.2,
+          2.4,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.4,
+          1.4,
+          1.4
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/normal-quad.dotmesh",
+        "tint": [
+          1,
+          0.4,
+          0.8,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/cutout.dotmaterial"
+      }
     }
   ],
   "environment": {

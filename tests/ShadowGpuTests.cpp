@@ -200,3 +200,20 @@ TEST_CASE("instancing.gpu_shadow_cascade_batches_match_independent_resource_refe
   CHECK(fixture.renderer.visibilityStats()->mesh->shadowDraws == 12);
   CHECK((fixture.renderer.readHdrTarget(fixture.target)->pixels == batched.pixels));
 }
+
+TEST_CASE("shadows.gpu_mask_texture_holes_and_blend_do_not_cast_opaque_shadows") {
+  Fixture fixture;
+  const auto shadow = fixture.render();
+  CHECK(fixture.red(shadow, {1, 0, 0}) < .01F);
+  auto transparent = fixture.renderer.uploadTexture(Image{1, 1, {255, 255, 255, 0}}).value();
+  fixture.draws[1].material.alphaMode = AlphaMode::Mask;
+  fixture.draws[1].material.baseColorTexture = transparent;
+  CHECK(fixture.red(fixture.render(), {1, 0, 0}) > .4F);
+  fixture.draws[1].material.alphaCutoff = 0;
+  CHECK(fixture.red(fixture.render(), {1, 0, 0}) < .01F);
+  fixture.draws[1].material.alphaMode = AlphaMode::Blend;
+  fixture.draws[1].material.baseColorTexture.reset();
+  fixture.draws[1].material.baseColor.w = .5F;
+  CHECK(fixture.red(fixture.render(), {1, 0, 0}) > .4F);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowInstances == 1);
+}

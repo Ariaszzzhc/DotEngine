@@ -10,6 +10,7 @@ add_custom_command(
         "-DOUTPUT=${dot_shader_generated}/BuiltinShaders.hpp"
         -P "${PROJECT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     DEPENDS "${dot_shader_source}/Surface.wgsl"
+        "${dot_shader_source}/Coverage.wgsl"
         "${dot_shader_source}/ToneMapping.wgsl"
         "${dot_shader_source}/Environment.wgsl"
         "${dot_shader_source}/SurfaceDirect.wgsl"

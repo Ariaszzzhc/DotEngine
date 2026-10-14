@@ -146,6 +146,12 @@ namespace Dot::Assets {
   }  // namespace
 
   auto validateMaterial(const MaterialDescription& material) -> Core::Result<void> {
+    auto coverage = Graphics::validateCoverage(material.alphaMode, material.alphaCutoff);
+
+    if (!coverage) {
+      return coverage;
+    }
+
     const auto color = material.baseColor;
     const auto emission = material.emissive;
     const auto unit = [](float value) { return std::isfinite(value) && value >= 0 && value <= 1; };
@@ -194,10 +200,21 @@ namespace Dot::Assets {
     try {
       const auto root = Codec::parseJson(source, 16);
       Codec::requireFields(
-          root, {"model", "baseColor", "emissive", "metallic", "roughness", "normalScale",
-                 "doubleSided", "baseColorTexture", "metallicRoughnessTexture", "normalTexture",
-                 "emissiveTexture", "occlusionTexture", "occlusionStrength"});
+          root,
+          {"model", "baseColor", "emissive", "metallic", "roughness", "normalScale", "doubleSided",
+           "baseColorTexture", "metallicRoughnessTexture", "normalTexture", "emissiveTexture",
+           "occlusionTexture", "occlusionStrength", "alphaMode", "alphaCutoff"});
       MaterialDescription result;
+      const auto alpha = root["alphaMode"].get<std::string>();
+
+      if (alpha != "opaque" && alpha != "mask" && alpha != "blend") {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown alpha mode");
+      }
+
+      result.alphaMode = alpha == "opaque" ? Graphics::AlphaMode::Opaque
+                         : alpha == "mask" ? Graphics::AlphaMode::Mask
+                                           : Graphics::AlphaMode::Blend;
+      result.alphaCutoff = Codec::number(root["alphaCutoff"]);
       const auto model = root["model"].get<std::string>();
 
       if (model != "unlit" && model != "metallicRoughness") {
@@ -239,7 +256,11 @@ namespace Dot::Assets {
     try {
       const auto c = material.baseColor;
       const auto e = material.emissive;
-      Json root{{"model",
+      Json root{{"alphaMode", material.alphaMode == Graphics::AlphaMode::Opaque ? "opaque"
+                              : material.alphaMode == Graphics::AlphaMode::Mask ? "mask"
+                                                                                : "blend"},
+                {"alphaCutoff", material.alphaCutoff},
+                {"model",
                  material.model == Graphics::SurfaceModel::Unlit ? "unlit" : "metallicRoughness"},
                 {"baseColor", {c.x, c.y, c.z, c.w}},
                 {"emissive", {e.x, e.y, e.z}},

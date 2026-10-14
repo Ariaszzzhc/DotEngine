@@ -10,7 +10,8 @@ struct InstanceData {
   normalMatrix: mat4x4f,
   material: vec4f,
   flags: vec4f,
-  occlusion: vec4f
+  occlusion: vec4f,
+  alpha: vec4f
 }
 
 struct Light {
@@ -115,8 +116,14 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
   let duv1 = dpdx(input.uv);
   let duv2 = dpdy(input.uv);
 
+  if (!covered(base.a, camera.alpha)) {
+    discard;
+  }
+
+  let opacity = select(1.0, base.a, camera.alpha.x == 2.0);
+
   if (camera.flags.x == 0.0) {
-    return vec4f(base.xyz + emission, base.a);
+    return vec4f(base.xyz + emission, opacity);
   }
 
   let front = frontFacing == (camera.flags.w > 0.0);
@@ -195,5 +202,5 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
       * light.colorIntensity.xyz * light.colorIntensity.w * attenuation * visibility;
   }
 
-  return vec4f(clamp(radiance, vec3f(0.0), vec3f(65504.0)), base.a);
+  return vec4f(clamp(radiance, vec3f(0.0), vec3f(65504.0)), opacity);
 }

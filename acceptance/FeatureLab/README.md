@@ -59,3 +59,7 @@ search/filter quality; preview, Play and relocated exports use the saved scene.
 Native checks read the actual AO visibility and working storage rather than merely
 checking the settings object. This is a capability laboratory, not production-game
 art or a populated-scene performance benchmark.
+
+Glass demonstrates sorted HDR alpha blending; Cutout uses an actual nearest-filtered
+alpha texture and shared Mask coverage in color, shadows, SSAO and picking. Blend
+materials currently contribute no shadow/SSAO geometry and use object-level sorting.

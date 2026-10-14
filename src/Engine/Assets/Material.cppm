@@ -24,6 +24,8 @@ export namespace Dot::Assets {
    * 拥有的材质编辑描述，不含 GPU 句柄；贴图路径为可移植、项目根相对 PNG/JPEG 路径，
    * 不相对材质文件；颜色槽可用 sRGB，法线/金属度粗糙度数据须在线性空间。 */
   struct MaterialDescription {
+    Graphics::AlphaMode alphaMode{Graphics::AlphaMode::Opaque};
+    float alphaCutoff{0.5F};
     Graphics::SurfaceModel model{Graphics::SurfaceModel::MetallicRoughness};
     Math::Vec4 baseColor{1, 1, 1, 1};
     Math::Vec3 emissive{};

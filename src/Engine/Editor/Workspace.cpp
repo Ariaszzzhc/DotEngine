@@ -1731,6 +1731,10 @@ namespace Dot::Editor {
                  {"shadow", frame.shadowInstances},
                  {"occlusion", frame.occlusionInstances},
                  {"colorDraws", frame.colorDraws},
+                 {"solid", frame.solidInstances},
+                 {"blended", frame.blendedInstances},
+                 {"solidDraws", frame.solidDraws},
+                 {"blendedDraws", frame.blendedDraws},
                  {"shadowDraws", frame.shadowDraws},
                  {"occlusionDraws", frame.occlusionDraws},
                  {"spatial",
@@ -2383,6 +2387,9 @@ namespace Dot::Editor {
                            frame.occlusionInstances);
         ImGui::TextWrapped("GPU draws: color %zu, shadows %zu, SSAO %zu", frame.colorDraws,
                            frame.shadowDraws, frame.occlusionDraws);
+        ImGui::TextWrapped("Solid / blended instances: %zu / %zu; GPU draws: %zu / %zu",
+                           frame.solidInstances, frame.blendedInstances, frame.solidDraws,
+                           frame.blendedDraws);
         ImGui::TextWrapped("Visibility tests: %zu BVH nodes, %zu bounds, %zu exact (%zu unindexed)",
                            frame.spatial.nodeTests, frame.spatial.boundsTests,
                            frame.spatial.exactTests, frame.spatial.unindexedTests);
