@@ -307,3 +307,62 @@ TEST_CASE("pbr.orthographic_views_use_parallel_rays_instead_of_position_dependen
   CHECK(orthographic.pixels[4] == orthographic.pixels[8]);
   CHECK(orthographic.pixels[4] > 1);
 }
+
+TEST_CASE("pbr.authored_tangent_frame_controls_baked_normal_and_survives_reflected_scale") {
+  auto device = renderer();
+  auto data = physicalQuad();
+  Lighting initial;
+  initial.viewPosition = {0, 0, 2};
+  initial.lights = {{.direction = {-0.3F, -0.4F, -0.8660254F}, .intensity = 3}};
+  REQUIRE(device.setLighting(initial));
+  auto map = device
+                 .uploadTexture(Image{1, 1, {210, 160, 225, 255}},
+                                TextureOptions{.colorSpace = ColorSpace::Linear})
+                 .value();
+  auto surface = material();
+  surface.normalTexture = map;
+  auto derived = device.upload(data).value();
+  const auto expected = sample(device, derived, surface);
+
+  for (auto& vertex : data.vertices) {
+    vertex.tangent = {1, 0, 0, -1};
+    vertex.texCoord = {};
+  }
+
+  auto authored = device.upload(data).value();
+  const auto actual = sample(device, authored, surface);
+
+  for (std::size_t channel = 0; channel < 3; ++channel) {
+    CHECK(actual[channel] == doctest::Approx(expected[channel]).epsilon(0.003));
+  }
+
+  const auto transformed = Dot::Math::compose({}, {}, {-0.75F, 1.5F, 1}).value();
+  const auto reflected = sample(device, authored, surface, transformed);
+  const auto reference = sample(device, derived, surface, transformed);
+
+  for (std::size_t channel = 0; channel < 3; ++channel) {
+    CHECK(reflected[channel] == doctest::Approx(reference[channel]).epsilon(0.003));
+  }
+
+  surface.doubleSided = true;
+  const auto back
+      = Dot::Math::compose({0, 0, 0.5F}, Dot::Math::rotationEulerDegrees({0, 180, 0}).value())
+            .value();
+  const auto backAuthored = sample(device, authored, surface, back);
+  const auto backDerived = sample(device, derived, surface, back);
+
+  for (std::size_t channel = 0; channel < 3; ++channel) {
+    CHECK(backAuthored[channel] == doctest::Approx(backDerived[channel]).epsilon(0.003));
+  }
+
+  for (auto& vertex : data.vertices) {
+    vertex.tangent = {0, 1, 0, 1};
+  }
+
+  auto rotated = device.upload(data).value();
+  RendererConfig light;
+  light.lighting.viewPosition = {0, 0, 2};
+  light.lighting.lights = {{.direction = {-0.6F, 0, -0.8F}, .intensity = 3}};
+  REQUIRE(device.setLighting(light.lighting));
+  CHECK(sample(device, authored, surface)[0] > sample(device, rotated, surface)[0] + 0.01F);
+}

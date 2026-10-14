@@ -9,7 +9,7 @@ elsewhere before persistent authoring changes.
 The saved scene contains perspective/orthographic cameras, built-in cube/quad and
 OBJ meshes, hierarchy, static/dynamic/kinematic bodies, sphere/box/capsule shapes,
 a sensor, an audio listener/source and attached/disabled script descriptors.
-Kinematic uses a saved copper PBR material; Quad uses a saved dielectric normal-map
+Kinematic uses a saved copper PBR material; Quad uses an authored-tangent DotMesh and saved dielectric normal-map
 material. The main camera carries a directional headlight. Their native scene
 components and shared resource counters are checked by the GPU/native acceptance;
 material/light runtime script accessors are not yet exposed.

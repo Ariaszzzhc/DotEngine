@@ -212,3 +212,20 @@ dirty=false, normal close/control cleanup verified. No extra screenshot review.
 Only arm64 macOS validated. Preparation remains linear; adaptive indexing,
 streaming, production import/animation/editor tools and polished realistic Prism
 Relay remain unfinished.
+
+
+Authored tangent frames now survive current DotMesh persistence and GPU physical
+shading. Complete/absent/orthogonal/unit/seam contracts fail malformed inputs;
+reflection, nonuniform scaling and double-sided back-face orientation retain actual
+pixel coverage. Feature Lab's saved normal-map panel uses its real authored frame
+asset, exercised by native editor/Play/export workflows. This is a glTF import
+prerequisite; no glTF/GLB importer or animation completion is claimed.
+
+Full Debug: 929/929 (190.96s); subsequent strengthened authored GPU fixture: 1/1
+(0.44s), with no runtime change. Full Release/NDEBUG: 929/929 (43.31s) after that
+fixture rebuild. All 288 C/C++ and 15 WGSL files pass established formatting checks.
+Latest ZIP: 261 entries, 47,174,666 bytes, 230 matching file/link payloads and two
+exact tangent assets. CRC/modes/font/license/HDRI, strict signatures and relative
+loader/rpath checks pass (13 regular Mach-O files, 3 relative links). No extra
+screenshot review. Only arm64 macOS validated; the full engine/editor/game objective
+remains active.

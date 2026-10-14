@@ -42,7 +42,8 @@ struct Output {
   @location(1) uv: vec2f,
   @location(2) worldPosition: vec3f,
   @location(3) normal: vec3f,
-  @location(4) @interpolate(flat) instance: u32
+  @location(4) @interpolate(flat) instance: u32,
+  @location(5) tangent: vec4f
 }
 
 fn unit(value: vec3f) -> vec3f {
@@ -58,7 +59,7 @@ fn unit(value: vec3f) -> vec3f {
 
 @vertex
 fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
-  @location(2) uv: vec2f, @location(3) normal: vec3f,
+  @location(2) uv: vec2f, @location(3) normal: vec3f, @location(4) tangent: vec4f,
   @builtin(instance_index) instance: u32) -> Output {
   let camera = instances[instance];
   var output: Output;
@@ -68,6 +69,8 @@ fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
   output.uv = uv;
   output.worldPosition = (camera.model * vec4f(position, 1.0)).xyz;
   output.normal = (camera.normalMatrix * vec4f(normal, 0.0)).xyz;
+  output.tangent = vec4f((camera.model * vec4f(tangent.xyz, 0.0)).xyz,
+    tangent.w * camera.flags.w);
   return output;
 }
 
@@ -122,20 +125,31 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
   let v = select(unit(lighting.viewPosition.xyz - input.worldPosition), -viewRay,
     dot(viewRay, viewRay) > 0.0);
   var n = unit(input.normal);
+  var normalSide = 1.0;
 
   if (camera.flags.z != 0.0 && dot(n, v) < 0.0) {
     n = -n;
+    normalSide = -1.0;
   }
 
   let shadowNormal = n;
 
   if (camera.flags.y != 0.0) {
-    let det = duv1.x * duv2.y - duv1.y * duv2.x;
-    let tangent = (dp1 * duv2.y - dp2 * duv1.y) / det;
-    let bitangent = (dp2 * duv1.x - dp1 * duv2.x) / det;
-    let t = unit(tangent - n * dot(n, tangent));
-    let crossB = unit(cross(n, t));
-    let b = crossB * select(-1.0, 1.0, dot(crossB, bitangent) >= 0.0);
+    var t: vec3f;
+    var b: vec3f;
+
+    if (camera.flags.y > 1.5) {
+      t = unit(input.tangent.xyz - n * dot(n, input.tangent.xyz));
+      b = unit(cross(n, t)) * input.tangent.w * normalSide;
+    } else {
+      let det = duv1.x * duv2.y - duv1.y * duv2.x;
+      let tangent = (dp1 * duv2.y - dp2 * duv1.y) / det;
+      let bitangent = (dp2 * duv1.x - dp1 * duv2.x) / det;
+      t = unit(tangent - n * dot(n, tangent));
+      let crossB = unit(cross(n, t));
+      b = crossB * select(-1.0, 1.0, dot(crossB, bitangent) >= 0.0);
+    }
+
     let mapped = (encodedNormal * 2.0 - vec3f(1.0))
       * vec3f(camera.material.z, camera.material.z, 1.0);
     n = unit(t * mapped.x + b * mapped.y + n * mapped.z);

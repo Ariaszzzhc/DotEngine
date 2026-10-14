@@ -7,9 +7,12 @@ File extensions are case-insensitive. Source/output size is limited to 64 MiB.
 
 DotMesh requires exactly `vertices` and `indices`. Every vertex requires
 `position` (three finite float-range numbers), `color` (four linear numbers in
-[0,1]), `normal` (a unit three-vector or zero to explicitly denote absence), and
+[0,1]), `normal` (a unit three-vector or zero to explicitly denote absence),
 `texCoord` (two finite floats, including negative/outside-unit coordinates for
-tiling). There is one current structure, with no old-format loader or version
+tiling), and `tangent` (an orthogonal unit XYZ and handedness W=+1/-1, or
+all zero for absence). Tangents must be complete or absent for the whole mesh;
+triangle corners must share handedness, with seams split into separate vertices.
+There is one current structure, with no old-format loader or version
 dispatch. Indices are unsigned 32-bit integers referring to vertices. An empty
 index list selects non-indexed triangle geometry. Mesh validation limits counts
 to one million vertices and three million indices.
@@ -19,9 +22,9 @@ Duplicate fields, unknown fields, and nesting deeper than
 ```json
 {
   "vertices": [
-    {"position": [0, 0, 0], "color": [1, 0, 0, 1], "normal": [0, 0, 1], "texCoord": [0, 0]},
-    {"position": [1, 0, 0], "color": [0, 1, 0, 1], "normal": [0, 0, 1], "texCoord": [1, 0]},
-    {"position": [0, 1, 0], "color": [0, 0, 1, 1], "normal": [0, 0, 1], "texCoord": [0, 1]}
+    {"position": [0, 0, 0], "color": [1, 0, 0, 1], "normal": [0, 0, 1], "texCoord": [0, 0], "tangent": [1, 0, 0, 1]},
+    {"position": [1, 0, 0], "color": [0, 1, 0, 1], "normal": [0, 0, 1], "texCoord": [1, 0], "tangent": [1, 0, 0, 1]},
+    {"position": [0, 1, 0], "color": [0, 0, 1, 1], "normal": [0, 0, 1], "texCoord": [0, 1], "tangent": [1, 0, 0, 1]}
   ],
   "indices": [0, 1, 2]
 }

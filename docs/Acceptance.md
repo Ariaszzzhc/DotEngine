@@ -184,3 +184,12 @@ VisibilityGpuTests verifies dense subtree pruning with unchanged pixels, camera-
 reuse, motion, deletion, original pixel-pick IDs, projective/extreme homogeneous tests,
 and rotated/reflected/sheared/boundary candidates against exact classification.
 Native viewport acceptance requires actual index reuse statistics in inspection.
+
+
+Authored tangent coverage checks orthogonal unit frames, complete/absent attributes,
+handedness seams, malformed/nonfinite frames and flat-normal clearing with unchanged
+source data. DotMesh round trips require/preserve the tangent attribute. Real PBR
+pixel tests compare authored frames with UV-derived references under directional
+lighting, reflection/nonuniform scaling and double-sided back faces; rotating the
+authored frame changes lighting. Feature Lab contains the actual saved frame asset
+used by its existing editor/Play/export native acceptance flows.

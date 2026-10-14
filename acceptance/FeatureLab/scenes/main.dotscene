@@ -474,8 +474,8 @@
         ]
       },
       "mesh": {
-        "kind": "quad",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/normal-quad.dotmesh",
         "tint": [
           1,
           0.4,

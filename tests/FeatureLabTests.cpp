@@ -24,6 +24,8 @@ import Dot.Platform.Events;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Audio.Mixer;
+import Dot.Assets.Mesh;
+import Dot.Graphics.Geometry;
 
 namespace {
   using namespace Dot;
@@ -249,4 +251,21 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   CHECK(after["updates"] == before["updates"].get<int>() + 1);
   report(session.close());
   complete(fixture.project, *session.scene().value());
+}
+
+TEST_CASE("feature_lab.authored_normal_map_asset_preserves_baked_tangent_basis") {
+  Fixture fixture;
+  const auto scene = fixture.project.loadStartup().value();
+  const auto entities = scene.entities().value();
+  const auto entity = std::ranges::find(entities, "Quad", &World::EntityInfo::name);
+  REQUIRE(entity != entities.end());
+  REQUIRE(entity->mesh);
+  CHECK(entity->mesh->kind == World::MeshKind::Asset);
+  auto mesh = Assets::loadMesh(fixture.project.files().value(), entity->mesh->asset);
+  REQUIRE(mesh);
+  CHECK(Graphics::meshSurface(mesh->data)->hasTangents);
+
+  for (const auto& vertex : mesh->data.vertices) {
+    CHECK(vertex.tangent == Math::Vec4{1, 0, 0, -1});
+  }
 }

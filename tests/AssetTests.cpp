@@ -73,6 +73,10 @@ TEST_CASE("assets.surface_format_preserves_required_normal_and_uv_attributes") {
   auto mesh = Dot::Graphics::quad().value();
   mesh.vertices[0].normal = {0, 0, 1};
   mesh.vertices[0].texCoord = {-2.5F, 3};
+
+  for (auto& vertex : mesh.vertices) {
+    vertex.tangent = {1, 0, 0, -1};
+  }
   auto encoded = encodeMesh(mesh).value();
   auto json = Json::parse(encoded);
   CHECK_FALSE(json.contains("version"));
@@ -80,8 +84,9 @@ TEST_CASE("assets.surface_format_preserves_required_normal_and_uv_attributes") {
   REQUIRE(decoded);
   CHECK(decoded->data.vertices[0].normal == mesh.vertices[0].normal);
   CHECK(decoded->data.vertices[0].texCoord == mesh.vertices[0].texCoord);
+  CHECK(decoded->data.vertices[0].tangent == mesh.vertices[0].tangent);
 
-  for (const auto* field : {"normal", "texCoord"}) {
+  for (const auto* field : {"normal", "texCoord", "tangent"}) {
     auto incomplete = json;
     incomplete["vertices"][0].erase(field);
     CHECK_FALSE(decodeMesh(incomplete.dump(), MeshFormat::DotMesh));

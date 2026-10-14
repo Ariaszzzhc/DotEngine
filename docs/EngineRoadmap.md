@@ -110,3 +110,10 @@ complete validation and off-camera shadow behavior retain coverage. CPU traversa
 validation and bound generation remain linear; adaptive tree rebuilding, streaming,
 production import/animation/editor tools and realistic polished Prism Relay remain
 unfinished. Classification counters are not populated-game frame-time evidence.
+
+
+Authored tangent data now survives geometry validation, DotMesh persistence, GPU
+upload and physical shading, including reflected/nonuniform transforms and double-
+sided faces. Feature Lab demonstrates a saved authored normal-map basis. This fills
+one model-import prerequisite; glTF/GLB parsing, materials/hierarchy conversion,
+transactional import, animation and realistic game content are still unfinished.

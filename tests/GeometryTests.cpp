@@ -255,3 +255,34 @@ TEST_CASE("geometry.surface_analysis_shares_normal_map_requirements_without_a_de
   CHECK_FALSE(meshSurface(mesh)->hasNormalMapFrame);
   CHECK_FALSE(meshSurface({}));
 }
+
+TEST_CASE("geometry.authored_tangent_frames_validate_ownership_and_normal_generation") {
+  auto mesh = quad().value();
+
+  for (auto& vertex : mesh.vertices) {
+    vertex.tangent = {1, 0, 0, -1};
+    vertex.texCoord = {};
+  }
+
+  CHECK(validateMesh(mesh));
+  CHECK(meshSurface(mesh)->hasTangents);
+  CHECK(meshSurface(mesh)->hasNormalMapFrame);
+  auto flat = withFlatNormals(mesh).value();
+  CHECK(flat.vertices.front().tangent == Dot::Math::Vec4{});
+  CHECK(mesh.vertices.front().tangent.w == -1);
+
+  for (const auto tangent :
+       {Dot::Math::Vec4{1, 0, 0, 0}, Dot::Math::Vec4{2, 0, 0, 1}, Dot::Math::Vec4{0, 0, 1, 1},
+        Dot::Math::Vec4{1, 0, 0, std::numeric_limits<float>::quiet_NaN()}}) {
+    mesh.vertices.front().tangent = tangent;
+    CHECK_FALSE(validateMesh(mesh));
+  }
+
+  mesh.vertices.front().tangent = {1, 0, 0, 1};
+  CHECK_FALSE(validateMesh(mesh));
+  mesh.vertices.front().tangent = {};
+  CHECK_FALSE(validateMesh(mesh));
+  mesh.vertices.front().tangent = {1, 0, 0, -1};
+  mesh.vertices.front().normal = {};
+  CHECK_FALSE(validateMesh(mesh));
+}

@@ -118,11 +118,12 @@ source B>=128, keeping decoded Z positive through mip/filtering. Occlusion and
 transparency blending are not implemented by this direct-light stage.
 
 Lit meshes require complete unit normals; a requested normal texture also requires
-nondegenerate position/UV triangles, UV magnitudes <=1e6, UV determinant >=1e-12
-in magnitude and relative determinant >1e-6. Missing normals or unusable UVs fail
-before drawing. Normal-map tangent frames derive from world-position/UV screen
-derivatives, including mirrored handedness; stored/imported author tangents are
-not yet supported. World normals use the inverse transpose, direction-preserving
+nondegenerate position triangles and UV magnitudes <=1e6. Without authored tangents,
+UV determinant must be >=1e-12 in magnitude and relative determinant >1e-6.
+Missing normals or an unavailable normal-map frame fail
+before drawing. Normal maps use complete authored tangent frames when present;
+otherwise world-position/UV screen derivatives derive the frame, including mirrored
+handedness. Authored tangents retain their baked basis rather than being replaced. World normals use the inverse transpose, direction-preserving
 rescaling and per-fragment normalization. Lit world transforms must be finite
 invertible affine matrices; inverse-normal coefficients are bounded to 1e12 and
 the infinity-norm condition bound to 1e20. Transformed geometry stays within
@@ -162,7 +163,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
 the requested project/game visual upgrades, point/spot shadows, temporal AO, glTF import,
-author tangents and large-scene performance remain incomplete; the gallery does
+large-scene performance remains incomplete; the gallery does
 not establish those capabilities.
 
 ## Persisted scene materials and lights
@@ -634,3 +635,20 @@ still visit all inputs; this is not a full sublinear scene traversal or streamin
 system. Refit preserves topology, so extensive movement can reduce tree efficiency;
 adaptive rebuilding, separate per-camera caches and GPU-driven visibility remain
 future work. Counters measure classification work, not frame-rate improvement.
+
+
+## Authored tangent frames / 作者切线坐标框架
+
+Vertices and DotMesh retain tangent XYZ and handedness W. Tangents are unit,
+orthogonal to complete normals and W is +1/-1; all-zero denotes absence. A mesh
+requires all or no authored tangents. GPU surface shading transforms tangents with
+the model matrix and normals with inverse transpose, orthogonalizes the interpolated
+frame, and accounts for reflected model handedness. Facing a double-sided normal
+toward the observer preserves the UV bitangent orientation. Derivative reconstruction is
+used only when tangents are absent. Authored frames support constant UVs without a
+division by a degenerate UV determinant; positions must still form nondegenerate
+faces, triangle corners share tangent handedness (split seams), and UV magnitudes
+remain bounded. Flat-normal generation explicitly clears
+tangents because its changed normals invalidate the original frame.
+顶点与资产保留切线及手性；作者坐标框架直接进入 GPU，而缺失时才重建。模型反射
+和非均匀缩放使用正确变换；生成平面法线明确清除失效切线，不声称已完成 glTF 导入。

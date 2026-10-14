@@ -3780,3 +3780,68 @@ implementation is unverified locally. Input validation/world bounds/update compa
 remain linear, and refit retains topology. Adaptive rebuilding, streaming, production
 import/animation/editor tools and realistic polished Prism Relay remain unfinished.
 The full engine/editor/game objective remains active.
+
+
+## 2026-10-14 — Authored normal-map tangent frames
+
+The model-import audit found the vertex contract could not retain author tangents,
+so implemented this rendering prerequisite before glTF consumers. Vertex now owns
+an explicit tangent XYZ/W: unit, orthogonal to a unit normal, W=+1/-1; all-zero means
+absent. Meshes require complete or absent frames and triangle corners share W,
+preventing interpolation across handedness seams. Shared validateVertex keeps immediate
+and mesh-upload boundaries consistent. Geometry analysis permits constant UVs when
+a complete authored frame exists, while retaining geometric/UV magnitude limits.
+Flat-normal generation explicitly clears invalidated tangents and preserves source.
+模型导入审查发现顶点不能保留作者切线，先实现渲染基础；框架明确校验单位、正交、
+手性和完整性，接缝须拆分。作者框架不依赖非退化 UV 导数；生成平面法线清除失效切线。
+
+Replaced the current DotMesh structure with five required vertex fields, including
+losslessly encoded tangent. Missing/unknown/malformed attributes fail; there is no
+old-format/version compatibility branch. OBJ and primitives explicitly retain absent
+tangents where their source supplies none. GPU vertex stride is now 64 bytes, with
+checked tangent offset 48. Surface instance flags choose authored/derived frames;
+instance storage and stable original identities remain. Authored tangent uses model
+transform, normal uses inverse transpose, and the interpolated frame is orthogonalized.
+Model determinant preserves reflection handedness; observer-facing double-sided normals
+preserve UV bitangent orientation. Derivative division executes only for absent frames.
+保存格式干净替换，无旧版兼容。GPU 保留作者框架，并处理非均匀缩放、反射及双面
+背面；仅缺失框架时重建，作者坐标不会被偷偷替换。
+
+Added normal-quad.dotmesh to the ordinary Feature Lab project and bound its existing
+normal-map panel to that actual saved asset. It has four vertices/six indices with
+T=(1,0,0), W=-1, preserving the original UV orientation. Asset loading verifies the
+saved basis; existing native editor/Play/standalone/export acceptance exercises it.
+The showcase and bundled project/template copies retain normal-map material/image,
+scene lights, HDRI, shadows and SSAO. No generated image or fake rendering backend.
+
+First CPU geometry checks: 14/14 (0.11s). Initial focused Debug: 48/48 (17.43s), with
+asset, PBR/visibility/instancing and native viewport coverage. Further review added
+triangle seam validation and double-sided basis handling; focused authored checks:
+5/5 (0.92s). Full Debug: 929/929, 190.96s. Then strengthened only the new GPU fixture
+with significant Y perturbation and diagonal light (the earlier near-zero Y sample
+was weaker evidence for bitangent direction), rebuilt both configurations and passed
+final authored GPU 1/1 (0.44s). Runtime implementation did not change in this fixture
+strengthening. Full Release/NDEBUG after that rebuild: 929/929, 43.31s. Tests compare
+reference HDR pixels under reflection/nonuniform scale/back faces and prove that a
+rotated author basis changes lighting; CPU tests cover nonfinite/unit/orthogonal/
+missing/partial/seam failures, source ownership and flat-normal clearing.
+
+Inventory: 866 doctest identities plus 63 executable/script checks; overlapping labels
+unit 211, integration 612, gpu 169, offscreen 101, native 56, acceptance 106, compiler
+135, platform 27, process 19, audio-native 32. All 288 C/C++ files pass clang-format;
+15 standalone WGSL files pass spacing/line/whitespace checks and real pipeline creation.
+Reviewed attribute layouts/limits, frame completeness/handedness, transform precision,
+double-sided behavior, malformed input failures, RAII/cached asset lifetime, source
+preservation, current schema and platform assumptions. No dependency, compiler/linker
+environment override or sanitizer was introduced. No additional screenshot review.
+
+Refreshed the distribution through the owned metadata-filtered archive snapshot.
+ZIP: 261 entries, 47,174,666 bytes; all 230 file/link payloads match signed source.
+Both saved tangent assets have the exact authored frames. CRC/modes/exclusions,
+Sarasa/Inter font/license, two HDRI copies, strict app/Mach-O signatures and portable
+loader/rpath checks pass (13 regular Mach-O files, 3 relative links). No unpublished
+control/archive stages remain. Preserve caches, latest package, audit logs, private
+untracked design source and reference images. Only arm64 macOS was built/run;
+Windows/Linux implementation remains unverified locally. glTF/GLB parsing, material/
+hierarchy conversion, transactional import, animation, production editor tools and
+realistic polished Prism Relay remain unfinished. The full objective remains active.

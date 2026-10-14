@@ -73,9 +73,9 @@ namespace Dot::Assets {
       asset.data.indices.reserve(indices.size());
 
       for (const auto& vertex : vertices) {
-        if (!vertex.is_object() || vertex.size() != 4 || !vertex.contains("position")
+        if (!vertex.is_object() || vertex.size() != 5 || !vertex.contains("position")
             || !vertex.contains("color") || !vertex.contains("normal")
-            || !vertex.contains("texCoord")) {
+            || !vertex.contains("texCoord") || !vertex.contains("tangent")) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh vertex fields");
         }
 
@@ -95,13 +95,15 @@ namespace Dot::Assets {
 
         auto normal = components<3>(vertex["normal"]);
         auto uv = components<2>(vertex["texCoord"]);
+        auto tangent = components<4>(vertex["tangent"]);
 
-        if (!normal || !uv) {
-          return std::unexpected(!normal ? normal.error() : uv.error());
+        if (!normal || !uv || !tangent) {
+          return std::unexpected(!normal ? normal.error() : !uv ? uv.error() : tangent.error());
         }
 
         decoded.normal = {(*normal)[0], (*normal)[1], (*normal)[2]};
         decoded.texCoord = {(*uv)[0], (*uv)[1]};
+        decoded.tangent = {(*tangent)[0], (*tangent)[1], (*tangent)[2], (*tangent)[3]};
 
         asset.data.vertices.push_back(decoded);
       }
@@ -501,7 +503,8 @@ namespace Dot::Assets {
           {{"position", {vertex.position.x, vertex.position.y, vertex.position.z}},
            {"color", {vertex.color.x, vertex.color.y, vertex.color.z, vertex.color.w}},
            {"normal", {vertex.normal.x, vertex.normal.y, vertex.normal.z}},
-           {"texCoord", {vertex.texCoord.x, vertex.texCoord.y}}});
+           {"texCoord", {vertex.texCoord.x, vertex.texCoord.y}},
+           {"tangent", {vertex.tangent.x, vertex.tangent.y, vertex.tangent.z, vertex.tangent.w}}});
     }
 
     Json root{{"vertices", std::move(vertices)}, {"indices", mesh.indices}};

@@ -89,16 +89,10 @@ namespace Dot::Graphics {
       }
 
       for (const auto& vertex : vertices) {
-        const auto normalLength
-            = std::hypot(static_cast<double>(vertex.normal.x), static_cast<double>(vertex.normal.y),
-                         static_cast<double>(vertex.normal.z));
+        auto valid = validateVertex(vertex);
 
-        if (!Math::isFinite(vertex.position) || !colorValid(vertex.color)
-            || !Math::isFinite(vertex.normal)
-            || (normalLength != 0 && std::abs(normalLength - 1) > 1e-4)
-            || !std::isfinite(vertex.texCoord.x) || !std::isfinite(vertex.texCoord.y)) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Invalid vertex position, color, normal or UV");
+        if (!valid) {
+          return valid;
         }
       }
 
@@ -135,6 +129,8 @@ namespace Dot::Graphics {
       Math::Vec4 flags{0, 0, 0, 1};
     };
 
+    static_assert(sizeof(Vertex) == 64);
+    static_assert(offsetof(Vertex, tangent) == 48);
     static_assert(sizeof(InstanceData) == 256);
     static_assert(offsetof(InstanceData, tint) == 64);
     static_assert(offsetof(InstanceData, emissive) == 80);
@@ -278,6 +274,7 @@ namespace Dot::Graphics {
     Bounds bounds{};
     bool hasNormals{};
     bool hasNormalMapFrame{};
+    bool hasTangents{};
     std::uint64_t vertexBytes{};
     std::uint64_t indexBytes{};
     bool tracked{};
@@ -756,7 +753,10 @@ namespace Dot::Graphics {
                                                         .shaderLocation = 2},
                                   wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
                                                         .offset = offsetof(Vertex, normal),
-                                                        .shaderLocation = 3}};
+                                                        .shaderLocation = 3},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4,
+                                                        .offset = offsetof(Vertex, tangent),
+                                                        .shaderLocation = 4}};
       wgpu::VertexBufferLayout layout;
       layout.arrayStride = sizeof(Vertex);
       layout.stepMode = wgpu::VertexStepMode::Vertex;
@@ -1639,8 +1639,8 @@ namespace Dot::Graphics {
               {material.metallic, material.roughness, material.normalScale,
                draw.receivesShadow ? 1.0F : 0.0F},
               {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
-               material.normalTexture ? 1.0F : 0.0F, material.doubleSided ? 1.0F : 0.0F,
-               orientation}},
+               material.normalTexture ? (draw.mesh->m_impl->hasTangents ? 2.0F : 1.0F) : 0.0F,
+               material.doubleSided ? 1.0F : 0.0F, orientation}},
              std::move(textures),
              draw.castsShadow,
              false});
@@ -2783,6 +2783,7 @@ namespace Dot::Graphics {
     mesh->bounds = surface->bounds;
     mesh->hasNormals = surface->hasNormals;
     mesh->hasNormalMapFrame = surface->hasNormalMapFrame;
+    mesh->hasTangents = surface->hasTangents;
     mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
     mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
     ErrorScope scope(gpu.instance, gpu.device);

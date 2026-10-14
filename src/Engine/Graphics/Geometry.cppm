@@ -18,6 +18,14 @@ export namespace Dot::Graphics {
     /** Finite UV coordinates; values outside [0,1] are retained for tiling.
      * 有限 UV 坐标，保留 [0,1] 之外的值用于平铺。 */
     Math::Vec2 texCoord{};
+    /** Unit author tangent, orthogonal to the normal; W is bitangent handedness
+     * (+1/-1). All-zero explicitly means absent. Meshes require complete or absent
+     * tangents; triangle corners share W to prevent interpolation across a
+     * handedness seam. Absence derives a frame from UV gradients when valid.
+     * 作者单位切线与法线正交，W 为副切线手性（+1/-1）；全零表示缺失。
+     * 网格切线须完整或全部缺失，三角形角点 W 相同以避免跨手性接缝插值。
+     * 缺失时在 UV 梯度有效的情况下重建坐标框架。 */
+    Math::Vec4 tangent{};
   };
 
   /** Triangle-list geometry, indexed when indices are present. Colors are linear
@@ -35,27 +43,32 @@ export namespace Dot::Graphics {
     Math::Vec3 maximum;
   };
 
+  [[nodiscard]] auto validateVertex(const Vertex& vertex) -> Core::Result<void>;
   [[nodiscard]] auto validateMesh(const MeshData& mesh) -> Core::Result<void>;
   [[nodiscard]] auto meshBounds(const MeshData& mesh) -> Core::Result<Bounds>;
 
   struct MeshSurface {
     Bounds bounds;
     bool hasNormals{};
+    bool hasTangents{};
     bool hasNormalMapFrame{};
   };
 
   /** Analyze validated triangles without a device. Normal maps require complete
-   * normals, nondegenerate positions/UVs, UV magnitudes <=1e6, absolute UV area
-   * >=1e-12 and relative area >1e-6. Shares renderer/export surface requirements.
-   * 无设备分析已校验三角面；法线贴图要求完整法线、非退化位置/UV、UV 绝对值 <=1e6，
-   * UV 绝对面积 >=1e-12 且相对面积 >1e-6；渲染器和出包共用表面要求。 */
+   * normals, nondegenerate positions and UV magnitudes <=1e6. Without authored
+   * tangents, require absolute UV area >=1e-12 and relative area >1e-6 for a
+   * derivative frame. Shares renderer/export surface requirements.
+   * 无设备分析已校验三角面；法线贴图要求完整法线、非退化位置及 UV 绝对值 <=1e6。
+   * 无作者切线时，导数坐标框架要求 UV 绝对面积 >=1e-12、相对面积 >1e-6；共用表面要求。 */
   [[nodiscard]] auto meshSurface(const MeshData& mesh) -> Core::Result<MeshSurface>;
 
   /** Produce independently owned, non-indexed triangles with winding-derived
-   * flat normals. Preserve colors/UVs and the source; reject degenerate faces
+   * flat normals. Preserve colors/UVs/source, explicitly clear tangents because
+   * changing normals invalidates their frame; reject degenerate faces
    * and expansion beyond one million vertices before allocating the result.
    * 产生独立拥有的无索引三角形，按绕序计算平面法线；保留颜色/UV 和源数据。
-   * 拒绝退化面，并在结果分配前拒绝超过一百万顶点的展开。 */
+   * 改变法线使原坐标框架失效，因此明确清除切线；拒绝退化面，并在结果分配前拒绝超过一百万顶点的展开。
+   */
   [[nodiscard]] auto withFlatNormals(const MeshData& mesh) -> Core::Result<MeshData>;
   /** Owned UV sphere with radial normals, explicit seam/pole vertices and outward
    * triangles. Radius is finite positive; sectors 3..256, rings 2..128. Reject

@@ -13,6 +13,29 @@ import Dot.Core.Result;
 import Dot.Math;
 
 namespace Dot::Graphics {
+  auto validateVertex(const Vertex& vertex) -> Core::Result<void> {
+    const auto color = vertex.color;
+    const auto normalLength = Math::length(vertex.normal);
+    const Math::Vec3 tangent{vertex.tangent.x, vertex.tangent.y, vertex.tangent.z};
+    const bool present = vertex.tangent != Math::Vec4{};
+
+    if (!Math::isFinite(vertex.position) || !Math::isFinite(color) || color.x < 0 || color.x > 1
+        || color.y < 0 || color.y > 1 || color.z < 0 || color.z > 1 || color.w < 0 || color.w > 1
+        || !Math::isFinite(vertex.normal)
+        || (normalLength != 0 && std::abs(normalLength - 1) > 1e-4)
+        || !std::isfinite(vertex.texCoord.x) || !std::isfinite(vertex.texCoord.y)
+        || !Math::isFinite(vertex.tangent)
+        || (present
+            && (normalLength == 0 || std::abs(Math::length(tangent) - 1) > 1e-4
+                || std::abs(Math::dot(tangent, vertex.normal)) > 1e-4
+                || std::abs(vertex.tangent.w) != 1))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid vertex position/color/normal/UV/orthogonal unit tangent");
+    }
+
+    return {};
+  }
+
   auto validateMesh(const MeshData& mesh) -> Core::Result<void> {
     if (mesh.vertices.empty() || mesh.vertices.size() > 1'000'000
         || mesh.indices.size() > 3'000'000) {
@@ -26,26 +49,39 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Mesh geometry must form triangles");
     }
 
-    for (const auto& vertex : mesh.vertices) {
-      const auto color = vertex.color;
-      const auto normalLength
-          = std::hypot(static_cast<double>(vertex.normal.x), static_cast<double>(vertex.normal.y),
-                       static_cast<double>(vertex.normal.z));
+    const bool tangents = mesh.vertices.front().tangent != Math::Vec4{};
 
-      if (!Math::isFinite(vertex.position) || !Math::isFinite(color) || color.x < 0 || color.x > 1
-          || color.y < 0 || color.y > 1 || color.z < 0 || color.z > 1 || color.w < 0 || color.w > 1
-          || !Math::isFinite(vertex.normal)
-          || (normalLength != 0 && std::abs(normalLength - 1) > 1e-4)
-          || !std::isfinite(vertex.texCoord.x) || !std::isfinite(vertex.texCoord.y)) {
-        return Core::fail(
-            Core::ErrorCode::InvalidArgument,
-            "Mesh requires finite positions/UVs, colors in [0,1] and unit/absent normals");
+    for (const auto& vertex : mesh.vertices) {
+      auto valid = validateVertex(vertex);
+
+      if (!valid) {
+        return valid;
+      }
+
+      if ((vertex.tangent != Math::Vec4{}) != tangents) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Mesh tangents must be complete or entirely absent");
       }
     }
 
     for (auto index : mesh.indices) {
       if (index >= mesh.vertices.size()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Mesh index exceeds its vertex array");
+      }
+    }
+
+    if (tangents) {
+      for (std::size_t face = 0; face < count; face += 3) {
+        const auto vertex = [&](std::size_t corner) -> const Vertex& {
+          return mesh.vertices[mesh.indices.empty() ? face + corner : mesh.indices[face + corner]];
+        };
+
+        if (vertex(0).tangent.w != vertex(1).tangent.w
+            || vertex(0).tangent.w != vertex(2).tangent.w) {
+          return Core::fail(
+              Core::ErrorCode::InvalidArgument,
+              "Triangle tangent handedness crosses a seam at face " + std::to_string(face / 3));
+        }
       }
     }
 
@@ -84,6 +120,7 @@ namespace Dot::Graphics {
     result.bounds = *bounds;
     result.hasNormals = std::ranges::all_of(
         data.vertices, [](const Vertex& vertex) { return vertex.normal != Math::Vec3{}; });
+    result.hasTangents = data.vertices.front().tangent != Math::Vec4{};
     result.hasNormalMapFrame = result.hasNormals;
     const auto count = data.indices.empty() ? data.vertices.size() : data.indices.size();
     const auto corner = [&](std::size_t index) -> const Vertex& {
@@ -110,7 +147,9 @@ namespace Dot::Graphics {
                                    first[2] * second[0] - first[0] * second[2],
                                    first[0] * second[1] - first[1] * second[0]);
       result.hasNormalMapFrame
-          = scale > 0 && std::abs(det) >= 1e-12 && std::abs(det) > scale * 1e-6 && area > 0;
+          = area > 0
+            && (result.hasTangents
+                || (scale > 0 && std::abs(det) >= 1e-12 && std::abs(det) > scale * 1e-6));
 
       for (const auto* vertex : {&a, &b, &c}) {
         result.hasNormalMapFrame = result.hasNormalMapFrame && std::abs(vertex->texCoord.x) <= 1e6
@@ -169,6 +208,7 @@ namespace Dot::Graphics {
       for (const auto* source : {&a, &b, &c}) {
         auto output = *source;
         output.normal = normal;
+        output.tangent = {};
         result.vertices.push_back(output);
       }
     }
