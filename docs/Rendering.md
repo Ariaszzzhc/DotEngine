@@ -162,7 +162,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, point/spot shadows, temporal AO, glTF import,
+the requested project/game visual upgrades, point/spot shadows, temporal AO, full animated glTF import,
 large-scene performance remains incomplete; the gallery does
 not establish those capabilities.
 
@@ -187,7 +187,9 @@ not replaced by sample or missing-resource colors.
   "baseColorTexture": null,
   "metallicRoughnessTexture": null,
   "normalTexture": null,
-  "emissiveTexture": null
+  "emissiveTexture": null,
+  "occlusionStrength": 1,
+  "occlusionTexture": null
 }
 ```
 
@@ -585,7 +587,7 @@ source ordering and integer picking identity. No compatibility rendering path ex
 稳定相邻批次跳过禁用项但不重排启用项；主表面共享网格/纹理绑定，变换、颜色及
 PBR/背面策略均保留实例数据。几何、阴影、拾取按共享网格合批，整数身份不改变。
 
-Scene instance records use bounded read-only storage buffers (256 bytes per surface
+Scene instance records use bounded read-only storage buffers (272 bytes per surface
 record, 96 for picking, 64 for a shadow transform). Shaders index with instance_index
 and pass a flat integer to fragments; the compact record still stores the original
 source ID for picking. Main/SSAO share one ordered attribute upload. Shadows store
@@ -651,4 +653,13 @@ faces, triangle corners share tangent handedness (split seams), and UV magnitude
 remain bounded. Flat-normal generation explicitly clears
 tangents because its changed normals invalidate the original frame.
 顶点与资产保留切线及手性；作者坐标框架直接进入 GPU，而缺失时才重建。模型反射
-和非均匀缩放使用正确变换；生成平面法线明确清除失效切线，不声称已完成 glTF 导入。
+和非均匀缩放使用正确变换；生成平面法线明确清除失效切线，静态 glTF 导入在后续段落说明。
+
+
+Baked occlusion is a fifth linear texture slot: R encodes visibility, strength
+[0,1] mixes it with one. It multiplies indirect HDR/IBL alongside SSAO; direct lights
+and emission remain unaffected. Renderer, scene cache, current material codec and
+game packaging validate/bind this slot. Instance storage is 272 bytes with occlusion
+parameters at offset 256; GPU surface/geometry layouts share that stride. Actual
+texture identities participate in consecutive batching. Existing authoring materials
+use the current complete schema including occlusionStrength/occlusionTexture.

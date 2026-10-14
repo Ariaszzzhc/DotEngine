@@ -127,16 +127,18 @@ namespace Dot::Graphics {
       Math::Mat4 normalMatrix{};
       Math::Vec4 material{0, 0.5F, 1, 0};
       Math::Vec4 flags{0, 0, 0, 1};
+      Math::Vec4 occlusion{1, 0, 0, 0};
     };
 
     static_assert(sizeof(Vertex) == 64);
     static_assert(offsetof(Vertex, tangent) == 48);
-    static_assert(sizeof(InstanceData) == 256);
+    static_assert(sizeof(InstanceData) == 272);
     static_assert(offsetof(InstanceData, tint) == 64);
     static_assert(offsetof(InstanceData, emissive) == 80);
     static_assert(offsetof(InstanceData, model) == 96);
     static_assert(offsetof(InstanceData, normalMatrix) == 160);
     static_assert(offsetof(InstanceData, material) == 224);
+    static_assert(offsetof(InstanceData, occlusion) == 256);
 
     struct LightData {
       Math::Vec4 directionKind;
@@ -1295,9 +1297,9 @@ namespace Dot::Graphics {
     }
 
     auto bindMaterial(const wgpu::RenderPipeline& renderPipeline, const wgpu::Buffer& buffer,
-                      const std::array<std::shared_ptr<Texture::Impl>, 4>& textures = {})
+                      const std::array<std::shared_ptr<Texture::Impl>, 5>& textures = {})
         -> wgpu::BindGroup {
-      std::array<wgpu::BindGroupEntry, 9> entries{};
+      std::array<wgpu::BindGroupEntry, 11> entries{};
       entries[0].binding = 0;
       entries[0].buffer = buffer;
       entries[0].size = buffer.GetSize();
@@ -1448,7 +1450,7 @@ namespace Dot::Graphics {
     struct PreparedDraw {
       std::shared_ptr<Mesh::Impl> mesh;
       InstanceData uniform;
-      std::array<std::shared_ptr<Texture::Impl>, 4> textures;
+      std::array<std::shared_ptr<Texture::Impl>, 5> textures;
       bool castsShadow;
       bool visible;
     };
@@ -1500,27 +1502,31 @@ namespace Dot::Graphics {
             || !std::isfinite(material.metallic) || material.metallic < 0 || material.metallic > 1
             || !std::isfinite(material.roughness) || material.roughness < 0
             || material.roughness > 1 || !std::isfinite(material.normalScale)
-            || material.normalScale < 0 || material.normalScale > 8) {
+            || material.normalScale < 0 || material.normalScale > 8
+            || !std::isfinite(material.occlusionStrength) || material.occlusionStrength < 0
+            || material.occlusionStrength > 1) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Invalid physical material properties");
         }
 
         if (material.model == SurfaceModel::Unlit
-            && (material.metallicRoughnessTexture || material.normalTexture)) {
+            && (material.metallicRoughnessTexture || material.normalTexture
+                || material.occlusionTexture)) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Physical data textures require a physical material");
         }
 
-        std::array<std::shared_ptr<Texture::Impl>, 4> textures{};
+        std::array<std::shared_ptr<Texture::Impl>, 5> textures{};
         const std::array slots{&material.baseColorTexture, &material.metallicRoughnessTexture,
-                               &material.normalTexture, &material.emissiveTexture};
+                               &material.normalTexture, &material.emissiveTexture,
+                               &material.occlusionTexture};
 
         for (std::size_t index = 0; index < slots.size(); ++index) {
           if (*slots[index]) {
             textures[index] = (*slots[index])->m_impl;
 
             if (!textures[index] || textures[index]->owner != diagnostics
-                || ((index == 1 || index == 2)
+                || ((index == 1 || index == 2 || index == 4)
                     && textures[index]->info.options.colorSpace != ColorSpace::Linear)
                 || (index == 2 && !textures[index]->normalEncoding)) {
               return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -1640,7 +1646,8 @@ namespace Dot::Graphics {
                draw.receivesShadow ? 1.0F : 0.0F},
               {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
                material.normalTexture ? (draw.mesh->m_impl->hasTangents ? 2.0F : 1.0F) : 0.0F,
-               material.doubleSided ? 1.0F : 0.0F, orientation}},
+               material.doubleSided ? 1.0F : 0.0F, orientation},
+              {material.occlusionStrength, 0, 0, 0}},
              std::move(textures),
              draw.castsShadow,
              false});

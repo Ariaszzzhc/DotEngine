@@ -9,6 +9,7 @@
 #endif
 
 namespace Dot::Editor {
+  auto testModelImport(const std::filesystem::path& parent) -> int;
   auto testViewport(const std::filesystem::path& parent) -> int;
   auto testWorkspace(const std::filesystem::path& parent) -> int;
   auto testGui(const std::filesystem::path& parent) -> int;
@@ -28,6 +29,10 @@ namespace {
 auto main(int argc, char** argv) -> int {
   try {
     const std::string_view command = argc > 1 ? argv[1] : "";
+
+    if (argc == 3 && command == "--model-import-test") {
+      return Dot::Editor::testModelImport(path(argv[2]));
+    }
 
     if (argc == 3 && command == "--viewport-test") {
       return Dot::Editor::testViewport(path(argv[2]));

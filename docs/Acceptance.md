@@ -193,3 +193,20 @@ pixel tests compare authored frames with UV-derived references under directional
 lighting, reflection/nonuniform scaling and double-sided back faces; rotating the
 authored frame changes lighting. Feature Lab contains the actual saved frame asset
 used by its existing editor/Play/export native acceptance flows.
+
+
+ModelTests checks GLB/internal and glTF/external buffers/images, base64/sparse data,
+normalized quantized positions, frame/material/factor/color-space retention, reflected
+hierarchy, opaque alpha canonicalization, malformed types/ranges/URIs/cycles/extensions,
+unsupported content, publication collision/capacity/thread/symlink boundaries and
+single-history insertion/undo/redo/stale/save. ModelGpuTests compares imported native
+scene HDR pixels with independently built geometry/material/texture references,
+checks picking identities and cache release. Baked-occlusion GPU coverage verifies
+indirect attenuation with direct light/emission retained. PNG encode/decode retains
+owned exact pixels and rejects malformed storage.
+
+`DotEditorAcceptance --model-import-test <existing-parent>` imports the actual GLB
+through the live workspace protocol, inserts its hierarchy/materials and an authored
+light, checks changed/restored real viewport pixels, one undo/redo, save/reopen and
+normal close. CTest `editor.model_import` is a native acceptance case compiled only
+when BUILD_TESTING is enabled.

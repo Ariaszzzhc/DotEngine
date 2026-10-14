@@ -139,3 +139,15 @@ TEST_CASE("image.parallel_decodes_keep_independent_state_and_row_orientation") {
     CHECK(passed);
   }
 }
+
+TEST_CASE("image.png_encoding_is_lossless_owned_and_rejects_invalid_storage") {
+  Dot::Graphics::Image image{2, 1, {1, 2, 3, 4, 5, 6, 7, 255}};
+  auto encoded = Dot::Assets::encodeImage(image);
+  REQUIRE(encoded);
+  auto decoded = Dot::Assets::decodeImage(*encoded);
+  REQUIRE(decoded);
+  CHECK(decoded->pixels == image.pixels);
+  image.pixels.clear();
+  CHECK(Dot::Assets::decodeImage(*encoded)->pixels == decoded->pixels);
+  CHECK_FALSE(Dot::Assets::encodeImage(image));
+}

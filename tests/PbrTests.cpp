@@ -366,3 +366,30 @@ TEST_CASE("pbr.authored_tangent_frame_controls_baked_normal_and_survives_reflect
   REQUIRE(device.setLighting(light.lighting));
   CHECK(sample(device, authored, surface)[0] > sample(device, rotated, surface)[0] + 0.01F);
 }
+
+TEST_CASE("pbr.baked_occlusion_modulates_indirect_light_only_with_strength") {
+  auto device = renderer();
+  auto geometry = device.upload(physicalQuad()).value();
+  HdrImage panorama{8, 4, std::vector<float>(8 * 4 * 4, 1)};
+  auto environment = device.bakeEnvironment(panorama, {16, 4, 16, 16, 128}).value();
+  REQUIRE(device.setEnvironment(EnvironmentLighting{environment, 1, 0, false}));
+  auto value = material();
+  value.emissive = {.2F, .1F, 0};
+  const auto direct = sample(device, geometry, value);
+  auto map
+      = device.uploadTexture(Image{1, 1, {0, 255, 255, 255}}, {.colorSpace = ColorSpace::Linear})
+            .value();
+  value.occlusionTexture = map;
+  const auto occluded = sample(device, geometry, value);
+  CHECK(occluded[0] < direct[0] - .1F);
+  value.occlusionStrength = 0;
+  CHECK(sample(device, geometry, value)[0] == doctest::Approx(direct[0]).epsilon(.003));
+  value.occlusionStrength = 1;
+  REQUIRE(device.setEnvironment(std::nullopt));
+  const auto noEnvironment = sample(device, geometry, value);
+  value.occlusionTexture.reset();
+  CHECK(sample(device, geometry, value)[0] == doctest::Approx(noEnvironment[0]).epsilon(.003));
+  value.occlusionStrength = -1;
+  CHECK_FALSE(
+      device.renderMeshes(std::array{MeshDraw{&geometry, {}, {1, 1, 1, 1}, value}}, {}, 1, 1));
+}

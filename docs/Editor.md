@@ -708,3 +708,25 @@ mesh pass. Camera-only changes reuse bounds/tree topology. These counts exclude
 linear input validation and bounds generation; they are not frame-time or FPS claims.
 渲染面板显示真实空间分类次数，检查接口还报告更新/重建状态；计数不含线性输入
 校验和边界生成，也不表示帧耗时或 FPS。
+
+
+## Model import and instantiation
+
+Assets Actions offers Import glTF / GLB model using the source file and a new
+project `assets/...` folder. After import, select its `model.dotscene` and use Add
+model to scene. Imported hierarchy, transforms, material references and editable
+native files use the actual engine; insertion can be undone/redone once and saved.
+The current scene's camera/environment/lighting remain authoritative.
+
+```json
+{"command":"import-model","source":"/absolute/model.glb","path":"assets/robot"}
+{"command":"edit","revision":"3","operations":[{"op":"instantiate-model","path":"assets/robot/model.dotscene"}]}
+```
+
+Import optionally accepts an unsigned `scene` index 0..1023. It reports source scene,
+mesh/material/image/node counts, generated scene path and metadata warnings. Import
+publishes reusable resources without dirtying the scene; instantiation needs the
+current authoring revision. A failed catalog refresh after publication explicitly
+reports that the bundle was committed. Existing destinations are never overwritten.
+Native `.gltf`, `.dotmesh` and `.dotscene` text resources can open in the external
+editor; internal text transport remains only an automation buffer.

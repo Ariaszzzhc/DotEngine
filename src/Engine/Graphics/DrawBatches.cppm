@@ -12,7 +12,7 @@ import Dot.Core.Result;
 export namespace Dot::Graphics {
   struct BatchItem {
     std::uint64_t mesh;
-    std::array<std::uint64_t, 4> textures{};
+    std::array<std::uint64_t, 5> textures{};
     bool enabled{true};
   };
 

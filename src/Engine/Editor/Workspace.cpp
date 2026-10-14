@@ -917,6 +917,50 @@ namespace Dot::Editor {
             .dump();
       }
 
+      if (command == "import-model") {
+        Codec::requireFields(parsed, {"command", "path", "source"}, {"scene"});
+        const auto name = parsed["path"].get<std::string>();
+        const auto source = parsed["source"].get<std::string>();
+        std::optional<std::uint32_t> scene;
+
+        if (parsed.contains("scene")) {
+          if (!parsed["scene"].is_number_unsigned()
+              || parsed["scene"].get<std::uint64_t>() > 1023) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Model scene index must be 0..1023");
+          }
+
+          scene = parsed["scene"].get<std::uint32_t>();
+        }
+
+        auto result = m_resources->importModel(
+            std::filesystem::path(std::u8string(source.begin(), source.end())), name, scene);
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        m_assetRefresh = true;
+        auto refreshed = catalog();
+
+        if (!refreshed) {
+          return Core::fail(
+              refreshed.error().code,
+              "Model bundle committed; catalog refresh failed: " + refreshed.error().message);
+        }
+
+        m_selectedResource = result->scene;
+        return Json{{"ok", true},
+                    {"scene", result->scene},
+                    {"meshes", result->meshes},
+                    {"materials", result->materials},
+                    {"images", result->images},
+                    {"nodes", result->nodes},
+                    {"sourceScene", result->sourceScene},
+                    {"warnings", result->warnings}}
+            .dump();
+      }
+
       if (command == "create-directory" || command == "create-text" || command == "import-resource"
           || command == "create-script") {
         if (command == "create-directory") {
@@ -2485,6 +2529,18 @@ namespace Dot::Editor {
         if (ImGui::Button("Import to path")) {
           fileAction(
               {{"command", "import-resource"}, {"path", m_newPath}, {"source", m_importSource}});
+        }
+
+        if (ImGui::Button("Import glTF / GLB model")) {
+          auto result = safeExecute(
+              Json{{"command", "import-model"}, {"path", m_newPath}, {"source", m_importSource}}
+                  .dump());
+          m_message = result ? "" : result.error().message;
+        }
+
+        if (m_selectedResource.starts_with("assets/") && m_selectedResource.ends_with(".dotscene")
+            && ImGui::Button("Add model to scene")) {
+          edit({{{"op", "instantiate-model"}, {"path", m_selectedResource}}});
         }
 
         if (ImGui::Button("Check scripts")) {

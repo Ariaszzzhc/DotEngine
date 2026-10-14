@@ -14,6 +14,8 @@ module;
 #include <source_location>
 #include <string>
 
+extern "C" unsigned char* dotEncodePng(const unsigned char*, int, int, int*);
+
 module Dot.Assets.Image;
 
 import Dot.Core.Result;
@@ -97,6 +99,31 @@ namespace Dot::Assets {
       return decoded;
     }
   }  // namespace
+
+  auto encodeImage(const Graphics::Image& image) -> Core::Result<std::vector<std::byte>> {
+    auto valid = Graphics::validateImage(image);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    int size{};
+    std::unique_ptr<unsigned char, decltype(&stbi_image_free)> bytes(
+        dotEncodePng(image.pixels.data(), static_cast<int>(image.width),
+                     static_cast<int>(image.height), &size),
+        &stbi_image_free);
+
+    if (!bytes || size <= 0 || size > static_cast<int>(maxFileBytes)) {
+      return Core::fail(Core::ErrorCode::External, "PNG encoding failed/exceeded byte limit");
+    }
+
+    try {
+      const auto* begin = reinterpret_cast<const std::byte*>(bytes.get());
+      return std::vector<std::byte>(begin, begin + size);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Encode PNG: " + std::string(error.what()));
+    }
+  }
 
   auto decodeImage(std::span<const std::byte> source) -> Core::Result<Graphics::Image> {
     try {

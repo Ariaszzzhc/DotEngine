@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,6 +38,16 @@ export namespace Dot::Editor {
     bool readOnly;
   };
 
+  struct ModelImportReport {
+    std::string scene;
+    std::size_t meshes{};
+    std::size_t materials{};
+    std::size_t images{};
+    std::size_t nodes{};
+    std::uint32_t sourceScene{};
+    std::vector<std::string> warnings;
+  };
+
   class TextDocument;
 
   /** Project-root resource authoring for assets and the configured script tree.
@@ -67,6 +78,15 @@ export namespace Dot::Editor {
      * 从显式普通源文件复制有界字节并保留源，文本目标额外校验 UTF-8/无 NUL，父目录须存在。 */
     [[nodiscard]] auto importFile(const std::filesystem::path& source, std::string_view destination)
         -> Core::Result<void>;
+    /** Convert static glTF/GLB into a new assets directory. Prepare all native
+     * files/scene in owned staging, then publish without replacement; failures
+     * before publication preserve source/project. Existing parent is required.
+     * 将静态模型转换为新的 assets 目录；暂存完整资产/场景后不替换发布。
+     * 发布前失败保留源与项目，要求父目录存在。 */
+    [[nodiscard]] auto importModel(const std::filesystem::path& source,
+                                   std::string_view destination,
+                                   std::optional<std::uint32_t> scene = {})
+        -> Core::Result<ModelImportReport>;
     [[nodiscard]] auto openText(std::string_view path) const -> Core::Result<TextDocument>;
     /** Resolve an existing editable text resource for external opening without
      * loading its content. Reuses metadata/path/readonly checks; malformed source

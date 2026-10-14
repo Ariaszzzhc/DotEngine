@@ -74,6 +74,7 @@ add_executable(DotTests
     AssetTests.cpp
     ImageTests.cpp
     MaterialTests.cpp
+    ModelTests.cpp
     ModuleTests.cpp
     ExternalFileValidationTests.cpp
     SceneFileTests.cpp
@@ -92,6 +93,7 @@ add_executable(DotTests
     ScriptSourceTests.cpp
     SceneHostTests.cpp
 )
+target_compile_definitions(DotTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 dotDiscoverTests(DotTests LABELS "integration" PROPERTIES TIMEOUT 15)
@@ -202,7 +204,8 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
+target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
@@ -375,3 +378,6 @@ add_test(NAME distribution.archive_excludes_finder_metadata
         -P "${CMAKE_CURRENT_SOURCE_DIR}/EditorArchiveTests.cmake")
 set_tests_properties(distribution.archive_excludes_finder_metadata PROPERTIES
     LABELS "integration" TIMEOUT 15)
+
+add_test(NAME editor.model_import COMMAND DotEditorAcceptance --model-import-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(editor.model_import PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native" RUN_SERIAL TRUE)

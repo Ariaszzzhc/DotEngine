@@ -117,3 +117,13 @@ upload and physical shading, including reflected/nonuniform transforms and doubl
 sided faces. Feature Lab demonstrates a saved authored normal-map basis. This fills
 one model-import prerequisite; glTF/GLB parsing, materials/hierarchy conversion,
 transactional import, animation and realistic game content are still unfinished.
+
+
+Static glTF/GLB import now creates native PBR meshes/images/materials and hierarchical
+model scenes through bounded parsing and no-replace asset publication. Editor/agent
+operations instantiate the model with fresh IDs in one undo transaction; real GPU
+pixels and native import/edit/save workflows have acceptance cases. Baked occlusion
+now affects indirect light only. Animation/skin/morph/compression/transparent materials,
+additional UV/filter modes, asynchronous import, production asset streaming and
+realistic polished Prism Relay remain unfinished. This does not prove general-purpose
+large-game production readiness or mature editor completion.

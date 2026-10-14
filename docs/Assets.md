@@ -63,3 +63,42 @@ PNG/JPEG and Radiance RGBE import, explicit color spaces, immutable GPU texture
 ownership, mips, samplers and material base-color sampling are documented in
 [rendering development](Rendering.md). Physical PBR/HDRI/soft-shadow/SSAO/HDR
 rendering remains planned; retaining HDR pixels does not yet provide IBL.
+
+
+## Static glTF/GLB models
+
+`Dot.Assets.Model` imports triangle lists/strips/fans, indexed/nonindexed geometry,
+strided and sparse accessors, normalized attributes and required mesh quantization.
+Normals/tangents/UV0/colors are retained; absent normals are generated flat. Selected
+nodes retain names and decomposable local TRS, including reflection. Shared mesh
+references reuse generated primitive assets. Default scene (otherwise first) is
+selected unless the caller supplies a scene index. Mesh/material/image names, extras/unused UV/color channels
+are reported as unpersisted metadata.
+
+Opaque metallic/roughness materials preserve base, packed MR, normal, emission and
+baked occlusion textures, their factors, sidedness and supported sampler settings.
+Color slots are sRGB, data slots linear. PNG/JPEG are losslessly canonicalized to
+RGBA8 PNG after decoding; opaque alpha is ignored as required, while RGB is preserved
+without implicit gamma conversion. Emissive strength and unlit materials with
+compatible native slots are supported. Animated/skinned/morph content, compressed
+geometry/textures, cameras/lights, nonopaque materials, UV transforms/UV sets other
+than zero and mixed sampler filtering currently return explicit errors. They are
+not imported with missing visual semantics. This is static model authoring, not a
+complete animation/content pipeline.
+
+Source buffers/images can be GLB views, strict base64 data URIs or percent-escaped
+portable paths under the source-file directory. Remote/absolute/traversal/symlink
+references fail. Files are at most 64 MiB; loaded bytes 128 MiB, decoded pixels
+256 MiB, parser allocations 128 MiB, aggregate geometry one million vertices/three
+million indices. At most 10000 generated entities; folder publication also checks
+remaining project catalog capacity. Accessor arithmetic/alignment and sparse index
+ordering are checked before library reads. Callers serialize source/filesystem edits;
+this is not hostile-race isolation or crash-durable publishing.
+
+Importer prepares native `meshes/*.dotmesh`, `materials/*.dotmaterial`, `images/*.png`
+and `model.dotscene` in an owned sibling directory, then publishes without replacing
+an existing destination. Failures before publication preserve source/project and
+remove staging. Asset import and scene insertion are separate operations: insertion
+remaps entity/parent IDs and commits one document history transaction. Undo retains
+the reusable asset directory. Imported physical models need authored scene lighting
+or an HDR environment to be visible; no substitute illumination is persisted.

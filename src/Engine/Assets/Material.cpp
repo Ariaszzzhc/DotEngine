@@ -157,12 +157,13 @@ namespace Dot::Assets {
         || emission.y < 0 || emission.y > 65503 || emission.z < 0 || emission.z > 65503
         || !unit(material.metallic) || !unit(material.roughness)
         || !std::isfinite(material.normalScale) || material.normalScale < 0
-        || material.normalScale > 8) {
+        || material.normalScale > 8 || !unit(material.occlusionStrength)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid material factors/model");
     }
 
     const std::array slots{&material.baseColorTexture, &material.metallicRoughnessTexture,
-                           &material.normalTexture, &material.emissiveTexture};
+                           &material.normalTexture, &material.emissiveTexture,
+                           &material.occlusionTexture};
 
     for (std::size_t index = 0; index < slots.size(); ++index) {
       if (!*slots[index]) {
@@ -173,7 +174,7 @@ namespace Dot::Assets {
       auto checked = Graphics::validateTextureOptions(source.sampling);
 
       if (!checked || !validPath(source.path, false)
-          || ((index == 1 || index == 2)
+          || ((index == 1 || index == 2 || index == 4)
               && (source.sampling.colorSpace != Graphics::ColorSpace::Linear
                   || material.model == Graphics::SurfaceModel::Unlit))) {
         return Core::fail(
@@ -192,9 +193,10 @@ namespace Dot::Assets {
 
     try {
       const auto root = Codec::parseJson(source, 16);
-      Codec::requireFields(root, {"model", "baseColor", "emissive", "metallic", "roughness",
-                                  "normalScale", "doubleSided", "baseColorTexture",
-                                  "metallicRoughnessTexture", "normalTexture", "emissiveTexture"});
+      Codec::requireFields(
+          root, {"model", "baseColor", "emissive", "metallic", "roughness", "normalScale",
+                 "doubleSided", "baseColorTexture", "metallicRoughnessTexture", "normalTexture",
+                 "emissiveTexture", "occlusionTexture", "occlusionStrength"});
       MaterialDescription result;
       const auto model = root["model"].get<std::string>();
 
@@ -211,11 +213,13 @@ namespace Dot::Assets {
       result.metallic = Codec::number(root["metallic"]);
       result.roughness = Codec::number(root["roughness"]);
       result.normalScale = Codec::number(root["normalScale"]);
+      result.occlusionStrength = Codec::number(root["occlusionStrength"]);
       result.doubleSided = root["doubleSided"].get<bool>();
       result.baseColorTexture = texture(root["baseColorTexture"]);
       result.metallicRoughnessTexture = texture(root["metallicRoughnessTexture"]);
       result.normalTexture = texture(root["normalTexture"]);
       result.emissiveTexture = texture(root["emissiveTexture"]);
+      result.occlusionTexture = texture(root["occlusionTexture"]);
       auto checked = validateMaterial(result);
       return checked ? Core::Result<MaterialDescription>{std::move(result)}
                      : std::unexpected(checked.error());
@@ -242,11 +246,13 @@ namespace Dot::Assets {
                 {"metallic", material.metallic},
                 {"roughness", material.roughness},
                 {"normalScale", material.normalScale},
+                {"occlusionStrength", material.occlusionStrength},
                 {"doubleSided", material.doubleSided},
                 {"baseColorTexture", textureJson(material.baseColorTexture)},
                 {"metallicRoughnessTexture", textureJson(material.metallicRoughnessTexture)},
                 {"normalTexture", textureJson(material.normalTexture)},
-                {"emissiveTexture", textureJson(material.emissiveTexture)}};
+                {"emissiveTexture", textureJson(material.emissiveTexture)},
+                {"occlusionTexture", textureJson(material.occlusionTexture)}};
       return root.dump(2) + "\n";
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Encode material: " + std::string(error.what()));

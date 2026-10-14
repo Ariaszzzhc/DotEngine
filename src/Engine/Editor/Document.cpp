@@ -5,6 +5,7 @@ module;
 #include <exception>
 #include <expected>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,8 @@ module Dot.Editor.Document;
 
 import Dot.Core.Result;
 import Dot.Core.Text;
+import Dot.Core.Paths;
+import Dot.Core.Files;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -46,13 +49,65 @@ namespace Dot::Editor {
     }
 
     auto operation(Json& scene, const Json& command, std::uint64_t& next,
-                   std::vector<std::uint64_t>& created) -> Core::Result<void> {
+                   std::vector<std::uint64_t>& created, const Core::FileSystem& files)
+        -> Core::Result<void> {
       if (!command.is_object() || !command.contains("op") || !command["op"].is_string()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Edit operation requires an op string");
       }
 
       const auto op = command["op"].get<std::string>();
       auto& entities = scene["entities"];
+
+      if (op == "instantiate-model") {
+        Codec::requireFields(command, {"op", "path"});
+        const auto path = command["path"].get<std::string>();
+
+        if (!Core::isPortableRelativePath(path) || !path.starts_with("assets/")
+            || !path.ends_with(".dotscene")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Model scene must be a portable assets path");
+        }
+
+        auto model = World::loadScene(
+            files, std::filesystem::path(std::u8string(path.begin(), path.end())));
+
+        if (!model) {
+          return std::unexpected(model.error());
+        }
+
+        auto encoded = World::encodeScene(*model);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        auto source = Codec::parseJson(*encoded);
+        const auto count = source["entities"].size();
+
+        if (count == 0 || count > 10000 - entities.size() || count > exhausted - next) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Model instance exceeds entity/identity capacity");
+        }
+
+        std::map<std::string, std::string> ids;
+
+        for (const auto& entity : source["entities"]) {
+          ids.emplace(entity["id"].get<std::string>(), std::to_string(next));
+          created.push_back(next++);
+        }
+
+        for (auto entity : source["entities"]) {
+          entity["id"] = ids.at(entity["id"].get<std::string>());
+
+          if (!entity["parent"].is_null()) {
+            entity["parent"] = ids.at(entity["parent"].get<std::string>());
+          }
+
+          entities.push_back(std::move(entity));
+        }
+
+        return {};
+      }
 
       if (op == "create") {
         Codec::requireFields(command, {"op", "name"});
@@ -378,7 +433,8 @@ namespace Dot::Editor {
       std::vector<std::uint64_t> created;
 
       for (std::size_t index = 0; index < commands.size(); ++index) {
-        auto result = operation(candidate, commands[index], next, created);
+        auto result = operation(candidate, commands[index], next, created,
+                                m_impl->m_project.files().value());
 
         if (!result) {
           return Core::fail(result.error().code, "Edit operation " + std::to_string(index) + ": "

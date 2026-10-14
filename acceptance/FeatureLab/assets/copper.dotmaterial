@@ -18,5 +18,7 @@
   "baseColorTexture": null,
   "metallicRoughnessTexture": null,
   "normalTexture": null,
-  "emissiveTexture": null
+  "emissiveTexture": null,
+  "occlusionStrength": 1,
+  "occlusionTexture": null
 }

@@ -3845,3 +3845,97 @@ untracked design source and reference images. Only arm64 macOS was built/run;
 Windows/Linux implementation remains unverified locally. glTF/GLB parsing, material/
 hierarchy conversion, transactional import, animation, production editor tools and
 realistic polished Prism Relay remain unfinished. The full objective remains active.
+
+
+## 2026-10-14 — Static glTF/GLB model bundles
+
+Added pinned cgltf 1.15 through the existing vcpkg baseline, with one private static
+C backend and separate Dot.Assets.Model interface/implementation. The loader uses
+owned output and engine-rooted file access, not the library's implicit file loader.
+GLB/internal, glTF/external and strict base64 resources share bounded conversion.
+Triangle lists/strips/fans, sparse/strided accessors, normalized attributes and required
+position quantization are supported. Normals/tangents/UV0/colors and selected node
+TRS/reflection/hierarchy survive native conversion; missing normals become flat.
+Metadata loss is explicitly reported. Default/first or explicit indexed scenes work.
+新增固定解析依赖与独立模块；由引擎控制读取和边界，结果独立拥有数据，支持静态
+网格、访问器与层级转换。保留节点与可渲染属性，元数据损失明确报告。
+
+Added baked occlusion as the fifth linear PBR texture slot with strength [0,1],
+affecting indirect HDR/IBL alongside SSAO while retaining direct light and emission.
+Material codec/scene caches/game packaging/batching bind and validate it. Instance
+storage is 272 bytes, occlusion offset 256, with matching surface/geometry shader
+layouts. Current material files/schema are replaced cleanly, without compatibility
+branches. PNG encoding adds bounded owned lossless output. Imported opaque PNG/JPEG
+images become canonical RGBA8 PNG, retaining decoded RGB without gamma conversion;
+alpha is ignored by opaque semantics. Base/emission use sRGB, MR/normal/occlusion linear.
+五个 PBR 槽贯通渲染/保存/缓存/出包；遮蔽不暗化直接光或自发光，布局有静态断言与
+真实像素验证。不透明导入按格式语义处理 alpha，色彩空间按槽指定。
+
+Loader validates UTF-8/NUL/duplicate JSON, numeric/boolean/index types, extension and
+unsupported-content semantics before relying on parser conversion. Reviewed cgltf's
+numeric conversion behavior and added these boundary guards to prevent malformed
+primitives being treated as zero/defaults. Range/stride/alignment/overflow and sparse
+index ordering are checked before reads. Remote/absolute/traversal/percent-escaped
+traversal/symlink references fail. Limits: 64 MiB/file, 128 MiB loaded bytes/parser
+allocation separately, 256 MiB decoded pixels, aggregate one million vertices/three
+million indices, 10000 generated entities. Singular/cyclic/deep hierarchies fail.
+
+ResourceStore prepares complete native meshes/materials/images/model.dotscene in an
+owned sibling directory, checks remaining project catalog capacity, then publishes
+without replacing any destination. Failures before publication preserve source/project
+and remove staging. Public writer validates prepared capacities, primitive/material/
+image references and native data. Source updates are caller-serialized; no hostile
+race isolation/crash durability is claimed. Existing-directory errors, owner-thread
+checks and external file failures retain context. Catalog refresh after publication
+explicitly reports committed state if it fails.
+
+Native Assets Actions and the shared import-model command expose conversion/report/
+scene selection. Add model to scene uses the same instantiate-model document operation,
+loading the generated native scene and remapping all entity/parent IDs within one
+history transaction. Undo retains reusable assets, preserves the main camera/environment
+and restores pixels; stale/capacity failures preserve authoring. Generated text assets
+can open externally, without an embedded code editor. Native acceptance authored a
+real light; importer does not insert substitute illumination into the project.
+导入资源与实例化分离；完整资产目录原子发布，插入层级统一事务/撤销，保留主场景
+相机和环境。错误不覆盖已有内容，生成资源可外部编辑，不内置代码编辑器。
+
+Foundation material/GPU checks passed 17/17 (9.44s) before the model consumer.
+First parser cases passed 3/3 (0.23s); initial end-to-end focused cases 8/8 (3.53s).
+Initial compilation needed an explicit renderer/files module import, test vector
+header, parenthesized doctest condition and actual edit/remove/workspace inspection
+APIs; fixed those errors. A later guard insertion duplicated a formatted declaration
+and shadowed a local name; corrected before final builds. No environment override or
+sanitizer was introduced. Final focused checks: 10/10 (3.54s), including invalid
+numeric/index inputs, sparse/base64/quantized data, collision/capacity/thread/symlink/
+partial-publication failures and PNG ownership/invalid-storage boundaries.
+
+Imported textured reflected hierarchy produces HDR pixels exactly equal to an
+independently authored native geometry/material/texture reference. GPU picking retains
+actual entity identity and cache clearing releases binding entries. Baked-occlusion
+pixels verify indirect-only attenuation and strength zero. Runnable native editor
+acceptance imports the actual GLB through the workspace command, inserts hierarchy
+and lighting, changes/restores actual viewport pixels, undoes/redoes once and saves/
+reopens. Tests are only built with BUILD_TESTING. Fixtures are owned diagnostic data,
+not production art; no realistic-game readiness claim is inferred from this workflow.
+
+Both final builds completed before serial full runs. Debug: 939/939, 191.67s.
+Release/NDEBUG: 939/939, 48.13s. Inventory: 875 doctest identities plus 64 executable/
+script checks; overlapping labels: unit 211, integration 621, gpu 172, offscreen 103,
+native 57, acceptance 107, compiler 135, platform 27, process 19, audio-native 32.
+All 296 C/C++ (including C backends) and 15 WGSL files pass established formatting;
+real pipeline/pixel validation passes. Reviewed owned parser/buffer lifetimes,
+allocation/range math, input semantics, current codec references/layouts, publication
+and history guarantees, resource cleanup, portable paths and platform assumptions.
+No additional screenshot review was performed.
+
+Archive refreshed through metadata-filtered owned staging. ZIP: 263 entries,
+47,317,150 bytes; all 232 file/link payloads match signed source. Both cgltf notices,
+exact font/license/HDRI/tangent assets, CRC/modes/exclusions, 13 regular Mach-O files/
+3 relative links, strict app signatures and portable loader/rpath checks pass.
+No unpublished distribution/archive stages remain. Removed owned fixture generator
+scratch, preserved caches/latest ZIP/audit evidence/private untracked source/artwork.
+Only arm64 macOS was built/run; Windows/Linux implementation is not locally verified.
+Animated/skinned/morph/compressed content, camera/light import, nonopaque materials,
+additional UV/texture transforms/mixed filtering, richer metadata, asynchronous imports,
+streaming/production editor tools and realistic polished Prism Relay remain unfinished.
+The complete engine/editor/game objective remains active.

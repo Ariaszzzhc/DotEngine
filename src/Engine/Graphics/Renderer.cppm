@@ -297,6 +297,9 @@ export namespace Dot::Graphics {
     float metallic{};
     float roughness{0.5F};
     float normalScale{1};
+    /** Linear R-channel baked occlusion affects indirect light only; strength [0,1].
+     * 线性 R 通道烘焙遮蔽仅影响间接光，强度为 [0,1]。 */
+    float occlusionStrength{1};
     bool doubleSided{};
     /** Linear packed G=roughness, B=metallic data; factors multiply samples.
      * 线性打包数据 G=粗糙度、B=金属度，因子乘采样值。 */
@@ -306,6 +309,7 @@ export namespace Dot::Graphics {
      * 线性切线空间 RGB 法线，源 B>=128（正 Z），要求位置/UV 三角面非退化。 */
     std::optional<Texture> normalTexture{};
     std::optional<Texture> emissiveTexture{};
+    std::optional<Texture> occlusionTexture{};
   };
 
   /** Borrows a mesh for one call; transform maps local vertices into world space.

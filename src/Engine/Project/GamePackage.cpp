@@ -390,7 +390,8 @@ namespace Dot::Project {
           }
 
           const std::array sources{&material->baseColorTexture, &material->metallicRoughnessTexture,
-                                   &material->normalTexture, &material->emissiveTexture};
+                                   &material->normalTexture, &material->emissiveTexture,
+                                   &material->occlusionTexture};
 
           for (std::size_t index = 0; index < sources.size(); ++index) {
             if (!*sources[index]) {

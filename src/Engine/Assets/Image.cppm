@@ -3,6 +3,7 @@ module;
 #include <cstddef>
 #include <filesystem>
 #include <span>
+#include <vector>
 
 export module Dot.Assets.Image;
 
@@ -18,6 +19,10 @@ export namespace Dot::Assets {
    * RGBA8，不隐式转换色彩；拒绝 16 位 PNG，避免静默降低精度。 */
   [[nodiscard]] auto decodeImage(std::span<const std::byte> source)
       -> Core::Result<Graphics::Image>;
+  /** Lossless bounded RGBA8 PNG encoding, without color conversion.
+   * 无色彩转换的有界 RGBA8 PNG 无损编码。 */
+  [[nodiscard]] auto encodeImage(const Graphics::Image& image)
+      -> Core::Result<std::vector<std::byte>>;
   /** Radiance RGBE only, retaining linear radiance above one. Same file/pixel
    * bounds as LDR; at most 256 MiB of returned float pixels. EXR is not supported.
    * 仅 Radiance RGBE，保留超过一的线性辐射亮度；使用相同文件/像素限制，返回

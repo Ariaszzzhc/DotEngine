@@ -5,7 +5,8 @@ struct InstanceData {
   model: mat4x4f,
   normalMatrix: mat4x4f,
   material: vec4f,
-  flags: vec4f
+  flags: vec4f,
+  occlusion: vec4f
 }
 
 struct View {

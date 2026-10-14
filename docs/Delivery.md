@@ -229,3 +229,20 @@ exact tangent assets. CRC/modes/font/license/HDRI, strict signatures and relativ
 loader/rpath checks pass (13 regular Mach-O files, 3 relative links). No extra
 screenshot review. Only arm64 macOS validated; the full engine/editor/game objective
 remains active.
+
+
+Static glTF/GLB import now publishes reusable native meshes/images/five-slot PBR
+materials and a hierarchical model scene without replacing existing resources.
+Editor and agent instantiate it with fresh parent/entity IDs in one undo transaction;
+real rendered HDR matches an independent native reference. Opaque alpha, tangent
+basis, reflected hierarchy, color spaces and indirect-only baked occlusion retain
+coverage. Animation/transparency/compression and broader production asset tooling
+remain unfinished; diagnostic geometry is not realistic-game content.
+
+Final focused: 10/10 (3.54s). Full Debug: 939/939 (191.67s); Release/NDEBUG: 939/939
+(48.13s). Native import/viewport/undo/redo/save-reopen acceptance passed. All 296
+C/C++ and 15 WGSL files pass established formatting/pipeline checks. Latest ZIP:
+263 entries, 47,317,150 bytes, 232 source-matching file/link payloads; cgltf notices,
+font/license/HDRI, CRC/modes, strict signatures and portable loader/rpath checks pass
+(13 regular Mach-O files, 3 relative links). No extra screenshot review. Only arm64
+macOS validated. Full engine/editor/game objective remains active.

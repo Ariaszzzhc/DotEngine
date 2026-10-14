@@ -30,11 +30,15 @@ export namespace Dot::Assets {
     float metallic{};
     float roughness{0.5F};
     float normalScale{1};
+    /** Linear R-channel baked occlusion affects indirect light only; strength [0,1].
+     * 线性 R 通道烘焙遮蔽仅影响间接光，强度为 [0,1]。 */
+    float occlusionStrength{1};
     bool doubleSided{};
     std::optional<TextureSource> baseColorTexture;
     std::optional<TextureSource> metallicRoughnessTexture;
     std::optional<TextureSource> normalTexture;
     std::optional<TextureSource> emissiveTexture;
+    std::optional<TextureSource> occlusionTexture;
   };
 
   [[nodiscard]] auto validateMaterial(const MaterialDescription& material) -> Core::Result<void>;

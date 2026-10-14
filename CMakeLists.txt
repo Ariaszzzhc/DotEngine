@@ -36,6 +36,7 @@ find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(qjs CONFIG REQUIRED)
@@ -69,7 +70,11 @@ endif()
 add_library(DotImageBackend STATIC src/Engine/Assets/ImageBackend.c)
 target_compile_features(DotImageBackend PRIVATE c_std_11)
 target_include_directories(DotImageBackend SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+add_library(DotModelBackend STATIC src/Engine/Assets/ModelBackend.c)
+target_compile_features(DotModelBackend PRIVATE c_std_11)
+target_include_directories(DotModelBackend SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 add_library(DotEngine STATIC)
+target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Core/Clock.cpp
@@ -107,6 +112,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Assets/Image.cpp
     src/Engine/Assets/Material.cpp
     src/Engine/Assets/Mesh.cpp
+    src/Engine/Assets/Model.cpp
     src/Engine/World/Scene.cpp
     src/Engine/World/SceneFiles.cpp
     src/Engine/Physics/World.cpp
@@ -150,7 +156,7 @@ target_link_libraries(DotEngine PRIVATE imgui::imgui)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
-target_link_libraries(DotEngine PRIVATE DotAudioBackend DotImageBackend)
+target_link_libraries(DotEngine PRIVATE DotAudioBackend DotImageBackend DotModelBackend)
 target_include_directories(DotEngine SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 target_link_libraries(DotEngine PRIVATE qjs)
 target_include_directories(DotEngine SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
@@ -196,6 +202,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Assets/Image.cppm
         src/Engine/Assets/Material.cppm
         src/Engine/Assets/Mesh.cppm
+        src/Engine/Assets/Model.cppm
         src/Engine/World/Scene.cppm
         src/Engine/World/SceneFiles.cppm
         src/Engine/Physics/World.cppm

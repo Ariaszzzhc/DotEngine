@@ -357,13 +357,15 @@ namespace Dot::Graphics {
       result.material.metallic = description->metallic;
       result.material.roughness = description->roughness;
       result.material.normalScale = description->normalScale;
+      result.material.occlusionStrength = description->occlusionStrength;
       result.material.doubleSided = description->doubleSided;
       const std::array sources{&description->baseColorTexture,
                                &description->metallicRoughnessTexture, &description->normalTexture,
-                               &description->emissiveTexture};
+                               &description->emissiveTexture, &description->occlusionTexture};
       const std::array slots{&result.material.baseColorTexture,
                              &result.material.metallicRoughnessTexture,
-                             &result.material.normalTexture, &result.material.emissiveTexture};
+                             &result.material.normalTexture, &result.material.emissiveTexture,
+                             &result.material.occlusionTexture};
       std::unordered_map<std::string, TextureEntry> pending;
       std::uint64_t pendingBytes{};
 

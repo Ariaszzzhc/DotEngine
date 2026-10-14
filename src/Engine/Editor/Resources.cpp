@@ -17,6 +17,8 @@ module;
 module Dot.Editor.Resources;
 
 import Dot.Core.Files;
+import Dot.Core.StagedDirectory;
+import Dot.Assets.Model;
 import Dot.Core.Paths;
 import Dot.Core.Text;
 
@@ -59,7 +61,8 @@ namespace Dot::Editor {
       const auto extension = path(value).extension();
       return extension == ".ts" || extension == ".mts" || extension == ".json" || extension == ".md"
              || extension == ".txt" || extension == ".obj" || extension == ".wgsl"
-             || extension == ".dotmaterial";
+             || extension == ".dotmaterial" || extension == ".dotmesh" || extension == ".dotscene"
+             || extension == ".gltf";
     }
 
     auto validText(std::string_view text, std::size_t limit) -> Core::Result<void> {
@@ -423,6 +426,107 @@ namespace Dot::Editor {
       return m_impl->m_files.writeTextAtomic(path(name), text);
     } catch (const std::exception& error) {
       return external("Create resource text", error);
+    }
+  }
+
+  auto ResourceStore::importModel(const Fs::path& source, std::string_view destination,
+                                  std::optional<std::uint32_t> scene)
+      -> Core::Result<ModelImportReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Resource store was moved");
+    }
+
+    try {
+      auto target = m_impl->resolve(destination, true, true);
+
+      if (!target) {
+        return std::unexpected(target.error());
+      }
+
+      if (!destination.starts_with("assets/") || Fs::exists(*target)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Model destination must be a new assets directory");
+      }
+
+      const auto sourceText = utf(source);
+
+      if (sourceText.empty() || !Core::isValidUtf8(sourceText)
+          || sourceText.find('\0') != std::string::npos) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid model source path");
+      }
+
+      const auto absolute = Fs::absolute(source);
+      auto current = absolute.root_path();
+
+      for (const auto& component : absolute.relative_path()) {
+        current /= component;
+
+        if (Fs::is_symlink(Fs::symlink_status(current))) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Model source cannot contain symlinks");
+        }
+      }
+
+      auto input = Core::FileSystem::open(absolute.parent_path());
+
+      if (!input) {
+        return std::unexpected(input.error());
+      }
+
+      auto model = Assets::loadModel(*input, absolute.filename(), destination, scene);
+
+      if (!model) {
+        return std::unexpected(model.error());
+      }
+
+      auto entries = list();
+
+      if (!entries) {
+        return std::unexpected(entries.error());
+      }
+
+      const auto added
+          = model->primitives.size() + model->materials.size() + model->images.size() + 5;
+
+      if (added > m_impl->m_limits.entries - entries->size()) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Model bundle exceeds resource catalog capacity");
+      }
+
+      auto parent = Core::FileSystem::open(target->parent_path());
+
+      if (!parent) {
+        return std::unexpected(parent.error());
+      }
+
+      auto staging = Core::StagedDirectory::create(*parent);
+
+      if (!staging) {
+        return std::unexpected(staging.error());
+      }
+
+      auto prepared = Assets::writeModel(staging->files().value(), *model);
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      ModelImportReport report{std::string(destination) + "/model.dotscene",
+                               model->primitives.size(),
+                               model->materials.size(),
+                               model->images.size(),
+                               model->nodes.size(),
+                               model->scene,
+                               std::move(model->warnings)};
+      auto published = staging->publish(target->filename());
+
+      if (!published) {
+        return std::unexpected(published.error());
+      }
+
+      return report;
+    } catch (const std::exception& error) {
+      return external("Import model resource", error);
     }
   }
 

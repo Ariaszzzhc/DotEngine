@@ -9,7 +9,8 @@ struct InstanceData {
   model: mat4x4f,
   normalMatrix: mat4x4f,
   material: vec4f,
-  flags: vec4f
+  flags: vec4f,
+  occlusion: vec4f
 }
 
 struct Light {
@@ -34,6 +35,8 @@ struct Lighting {
 @group(0) @binding(6) var normalSampler: sampler;
 @group(0) @binding(7) var emissiveTexture: texture_2d<f32>;
 @group(0) @binding(8) var emissiveSampler: sampler;
+@group(0) @binding(9) var occlusionTexture: texture_2d<f32>;
+@group(0) @binding(10) var occlusionSampler: sampler;
 @group(1) @binding(0) var<uniform> lighting: Lighting;
 
 struct Output {
@@ -103,6 +106,7 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
   let camera = instances[input.instance];
   let base = input.color * textureSample(baseColorTexture, baseColorSampler, input.uv);
   let mr = textureSample(metallicRoughnessTexture, metallicRoughnessSampler, input.uv);
+  let occlusion = textureSample(occlusionTexture, occlusionSampler, input.uv).r;
   let encodedNormal = textureSample(normalTexture, normalSampler, input.uv).xyz;
   let emission = camera.emissive.xyz
     * textureSample(emissiveTexture, emissiveSampler, input.uv).xyz;
@@ -158,7 +162,7 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
   let metallic = clamp(camera.material.x * mr.b, 0.0, 1.0);
   let roughness = clamp(camera.material.y * mr.g, 0.045, 1.0);
   var radiance = emission + environmentRadiance(n, v, base.xyz, metallic, roughness,
-    ambientVisibility(vec2i(input.position.xy)));
+    ambientVisibility(vec2i(input.position.xy)) * mix(1.0, occlusion, camera.occlusion.x));
 
   for (var index = 0u; index < u32(lighting.counts.x); index++) {
     let light = lighting.lights[index];
