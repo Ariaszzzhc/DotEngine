@@ -3107,3 +3107,29 @@ caches/latest package and the private untracked document. Fixed-radius PCF is no
 contact-hardening PCSS; point/spot/alpha-mask shadows, temporal filtering, pooling/
 culling/instancing, SSAO, mature editor/scalability and realistic game work remain
 required by the full active goal. No compatibility loader or new dependency added.
+
+
+### 2026-10-14 — Native audio failure cleanup
+
+Complete renderer-stage verification exposed the existing Output preparation test:
+Debug and Release both retained three allocations/240 bytes after a 256-byte
+backend budget failed. An isolated rerun reproduced it. LLDB allocation stacks
+identified CoreAudio stream descriptions retained when the following sample-rate
+query could not allocate; device post-initialization then allocated a converter
+before fixed-callback storage failed. miniaudio's uninitialized-state guard skipped
+normal device teardown, leaving the tracked-device table/converter behind.
+
+Added a pinned miniaudio 0.11.25 overlay using the original upstream source checksum.
+The patch frees descriptions on sample-rate failure and marks ownership after the
+backend creates the device, allowing ordinary teardown on subsequent failures.
+No allocator sweep, budget increase or relaxed assertions. Expanded native failed
+preparation budgets from 1/16/256 to 1/16/256/512/1024. Reviewed partial ownership,
+backend teardown/worker state, callback lifetimes and the source/patch pin.
+
+The actual macOS failure test now passes three consecutive runs in 0.27 seconds,
+with counters restored to zero. The combined working tree's full Debug suite passes
+877/877 in 153.52 seconds; final dependency-comment rebuild then passes all 114
+selected audio/occlusion cases in 13.08 seconds. The same combined working tree
+passes Release/NDEBUG 877/877 in 36.29 seconds, including all 32 audio-native cases. Only arm64 macOS is validated; supported
+Windows/Linux branches are not claimed tested. The overlay changes no dependency
+version beyond its local port revision.

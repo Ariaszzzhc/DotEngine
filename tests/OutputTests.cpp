@@ -154,7 +154,7 @@ TEST_CASE("audio.output_invalid_samples_clear_and_volume_preserve_queue") {
 TEST_CASE("audio.output_failed_context_or_device_preparation_releases_native_allocations") {
   const auto before = Output::backendMemory();
 
-  for (std::uint64_t budget : std::array<std::uint64_t, 3>{1, 16, 256}) {
+  for (std::uint64_t budget : std::array<std::uint64_t, 5>{1, 16, 256, 512, 1024}) {
     auto limited = config();
     limited.backendBytes = budget;
     CHECK_FALSE(Output::create(limited));
