@@ -33,6 +33,11 @@ two rows. External source editing is now implemented through default-app opening
 project diagnostics, retained agent drafts/hot reload and removal of the embedded
 code page. Material/light scripting accessors and the other listed work remain.
 
+HDR environment GPU preprocessing is implemented and verified independently:
+radiance cubes, diffuse convolution, GGX reflection mips and BRDF integration with
+real Poly Haven input. The HDRI IBL row remains open until surface/background
+rendering and persistent authoring/preview/Play/export consume these resources.
+
 Development order follows dependencies: surface geometry and resource ownership,
 texture/material rendering, authored light/shadow services and editor integration,
 then content-production/scalability/game polish. Script namespace/resolution and

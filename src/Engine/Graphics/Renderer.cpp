@@ -8,6 +8,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <expected>
@@ -15,6 +16,7 @@ module;
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -28,9 +30,8 @@ import Dot.Platform.Window;
 import Dot.Platform.System;
 import Dot.Platform.Events;
 
+#include "BuiltinShaders.hpp"
 #include "GuiBackend.hpp"
-#include "SurfaceShader.hpp"
-#include "ToneMapping.hpp"
 
 namespace Dot::Graphics {
   namespace {
@@ -173,6 +174,8 @@ namespace Dot::Graphics {
       std::atomic<std::uint64_t> targetBytes{};
       std::atomic<std::uint64_t> textures{};
       std::atomic<std::uint64_t> textureBytes{};
+      std::atomic<std::uint64_t> environments{};
+      std::atomic<std::uint64_t> environmentBytes{};
       std::atomic<bool> failed{};
       std::mutex mutex;
       std::string failure;
@@ -364,6 +367,54 @@ namespace Dot::Graphics {
     }
 
     return m_impl->info;
+  }
+
+  struct EnvironmentMap::Impl {
+    std::thread::id thread{std::this_thread::get_id()};
+    std::shared_ptr<Diagnostics> owner;
+    std::array<wgpu::Texture, 4> textures;
+    std::array<wgpu::TextureView, 4> views;
+    wgpu::Sampler sampler;
+    EnvironmentInfo description{};
+    bool tracked{};
+
+    ~Impl() {
+      if (tracked) {
+        owner->environments.fetch_sub(1);
+        owner->environmentBytes.fetch_sub(description.bytes);
+      }
+    }
+  };
+
+  EnvironmentMap::EnvironmentMap() noexcept = default;
+
+  EnvironmentMap::EnvironmentMap(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  EnvironmentMap::EnvironmentMap(const EnvironmentMap&) noexcept = default;
+
+  auto EnvironmentMap::operator=(const EnvironmentMap&) noexcept -> EnvironmentMap& = default;
+
+  EnvironmentMap::EnvironmentMap(EnvironmentMap&&) noexcept = default;
+
+  auto EnvironmentMap::operator=(EnvironmentMap&&) noexcept -> EnvironmentMap& = default;
+
+  EnvironmentMap::~EnvironmentMap() = default;
+
+  auto EnvironmentMap::info() const -> Core::Result<EnvironmentInfo> {
+    if (!m_impl || !m_impl->owner->alive.load()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Environment has no live rendering device");
+    }
+
+    if (m_impl->thread != std::this_thread::get_id()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Environment query requires owner thread");
+    }
+
+    if (m_impl->owner->failed.load()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Environment rendering device failed");
+    }
+
+    return m_impl->description;
   }
 
   struct Texture::Impl {
@@ -1118,8 +1169,8 @@ namespace Dot::Graphics {
     template <typename Readback = Image, typename F>
     auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget,
                   wgpu::Texture existing = {},
-                  wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm)
-        -> Core::Result<Readback> {
+                  wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm,
+                  std::uint32_t layer = 0, std::uint32_t mip = 0) -> Core::Result<Readback> {
       const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
 
       if (width == 0 || height == 0 || width > maximum || height > maximum) {
@@ -1150,6 +1201,8 @@ namespace Dot::Graphics {
       auto buffer = device.CreateBuffer(&bufferDescriptor);
       wgpu::TexelCopyTextureInfo source;
       source.texture = texture;
+      source.origin.z = layer;
+      source.mipLevel = mip;
       wgpu::TexelCopyBufferInfo destination;
       destination.buffer = buffer;
       destination.layout.bytesPerRow = paddedRowBytes;
@@ -1666,7 +1719,9 @@ namespace Dot::Graphics {
     } while (true);
 
     if (m_impl->diagnostics->textures.load() >= m_impl->config.maxTextures
-        || m_impl->diagnostics->textureBytes.load() + bytes > m_impl->config.maxTextureBytes) {
+        || m_impl->diagnostics->textureBytes.load() + m_impl->diagnostics->environmentBytes.load()
+                   + bytes
+               > m_impl->config.maxTextureBytes) {
       return Core::fail(Core::ErrorCode::Unavailable,
                         "Renderer texture count/byte budget exhausted");
     }
@@ -1816,7 +1871,304 @@ namespace Dot::Graphics {
                          stats.targetBytes.load(),
                          stats.textures.load(),
                          stats.textureBytes.load(),
-                         static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12};
+                         static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12,
+                         stats.environments.load(),
+                         stats.environmentBytes.load()};
+  }
+
+  auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
+      -> Core::Result<EnvironmentMap> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto description = validateEnvironment(panorama, config);
+
+    if (!description) {
+      return std::unexpected(description.error());
+    }
+
+    if (panorama.width > m_impl->info.maxTextureDimension) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "HDR panorama exceeds GPU dimensions");
+    }
+
+    std::uint64_t sourceBytes{};
+    auto width = panorama.width;
+    auto height = panorama.height;
+    std::uint32_t sourceLevels{};
+
+    do {
+      sourceBytes += static_cast<std::uint64_t>(width) * height * 16;
+      ++sourceLevels;
+      width /= 2;
+      height = std::max(1U, height / 2);
+    } while (width);
+
+    const auto& counters = *m_impl->diagnostics;
+
+    if (counters.environments.load() >= 32
+        || counters.environmentBytes.load() + counters.textureBytes.load() + sourceBytes
+                   + description->bytes
+               > m_impl->config.maxTextureBytes) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Environment processing/residency budget exceeded");
+    }
+
+    try {
+      auto& gpu = *m_impl;
+      ErrorScope scope(gpu.instance, gpu.device);
+      auto map = std::make_shared<EnvironmentMap::Impl>();
+      map->owner = gpu.diagnostics;
+      map->description = *description;
+      wgpu::TextureDescriptor inputDescriptor;
+      inputDescriptor.size = {panorama.width, panorama.height, 1};
+      inputDescriptor.mipLevelCount = sourceLevels;
+      inputDescriptor.format = wgpu::TextureFormat::RGBA32Float;
+      inputDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+      auto input = gpu.device.CreateTexture(&inputDescriptor);
+      auto inputView = input.CreateView();
+      const HdrImage* image = &panorama;
+      std::optional<HdrImage> owned;
+
+      for (std::uint32_t level = 0; level < sourceLevels; ++level) {
+        wgpu::TexelCopyTextureInfo destination;
+        destination.texture = input;
+        destination.mipLevel = level;
+        wgpu::TexelCopyBufferLayout layout;
+        layout.bytesPerRow = image->width * 16;
+        layout.rowsPerImage = image->height;
+        const wgpu::Extent3D extent{image->width, image->height, 1};
+        gpu.queue.WriteTexture(&destination, image->pixels.data(),
+                               image->pixels.size() * sizeof(float), &layout, &extent);
+
+        if (level + 1 == sourceLevels) {
+          break;
+        }
+
+        HdrImage next{std::max(1U, image->width / 2), std::max(1U, image->height / 2), {}};
+        next.pixels.resize(static_cast<std::size_t>(next.width) * next.height * 4);
+
+        for (std::uint32_t y = 0; y < next.height; ++y) {
+          for (std::uint32_t x = 0; x < next.width; ++x) {
+            const auto beginX = x * image->width / next.width;
+            const auto endX = (x + 1) * image->width / next.width;
+            const auto beginY = y * image->height / next.height;
+            const auto endY = (y + 1) * image->height / next.height;
+            std::array<double, 3> sum{};
+            double weight{};
+
+            for (auto sy = beginY; sy < endY; ++sy) {
+              const auto solidAngle
+                  = std::sin((static_cast<double>(sy) + 0.5) * 3.141592653589793 / image->height);
+
+              for (auto sx = beginX; sx < endX; ++sx) {
+                const auto offset = (static_cast<std::size_t>(sy) * image->width + sx) * 4;
+
+                for (std::size_t channel = 0; channel < 3; ++channel) {
+                  sum[channel] += image->pixels[offset + channel] * solidAngle;
+                }
+
+                weight += solidAngle;
+              }
+            }
+
+            const auto offset = (static_cast<std::size_t>(y) * next.width + x) * 4;
+
+            for (std::size_t channel = 0; channel < 3; ++channel) {
+              next.pixels[offset + channel] = static_cast<float>(sum[channel] / weight);
+            }
+
+            next.pixels[offset + 3] = 1;
+          }
+        }
+
+        owned = std::move(next);
+        image = &*owned;
+      }
+
+      std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
+      entries[0].binding = 0;
+      entries[0].visibility = wgpu::ShaderStage::Compute;
+      entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+      entries[0].buffer.minBindingSize = 32;
+      entries[1].binding = 1;
+      entries[1].visibility = wgpu::ShaderStage::Compute;
+      entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+      entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+      entries[2].binding = 2;
+      entries[2].visibility = wgpu::ShaderStage::Compute;
+      entries[2].storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+      entries[2].storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+      entries[2].storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
+      wgpu::BindGroupLayoutDescriptor layoutDescriptor;
+      layoutDescriptor.entryCount = entries.size();
+      layoutDescriptor.entries = entries.data();
+      auto layout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
+      wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor;
+      pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+      pipelineLayoutDescriptor.bindGroupLayouts = &layout;
+      auto pipelineLayout = gpu.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
+      wgpu::ShaderSourceWGSL shaderSource;
+      shaderSource.code = Detail::environmentShader;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &shaderSource;
+      auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
+      wgpu::ComputePipelineDescriptor pipelineDescriptor;
+      pipelineDescriptor.layout = pipelineLayout;
+      pipelineDescriptor.compute.module = shader;
+      pipelineDescriptor.compute.entryPoint = "bake";
+      auto pipeline = gpu.device.CreateComputePipeline(&pipelineDescriptor);
+      const std::array sizes{config.radianceSize, config.diffuseSize, config.specularSize,
+                             config.brdfSize};
+      const std::array levels{description->radianceLevels, 1U, description->specularLevels, 1U};
+      auto encoder = gpu.device.CreateCommandEncoder();
+      std::vector<wgpu::Buffer> parameters;
+
+      for (std::uint32_t kind = 0; kind < 4; ++kind) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {sizes[kind], sizes[kind], kind == 3 ? 1U : 6U};
+        descriptor.mipLevelCount = levels[kind];
+        descriptor.format = wgpu::TextureFormat::RGBA16Float;
+        descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding
+                           | wgpu::TextureUsage::CopySrc;
+        map->textures[kind] = gpu.device.CreateTexture(&descriptor);
+        wgpu::TextureViewDescriptor view;
+        view.dimension
+            = kind == 3 ? wgpu::TextureViewDimension::e2D : wgpu::TextureViewDimension::Cube;
+        map->views[kind] = map->textures[kind].CreateView(&view);
+
+        for (std::uint32_t level = 0; level < levels[kind]; ++level) {
+          const auto side = std::max(1U, sizes[kind] >> level);
+
+          struct Params {
+            std::uint32_t kind, side, samples, sourceLevels;
+            float roughness;
+            std::array<float, 3> padding{};
+          };
+
+          static_assert(sizeof(Params) == 32);
+          const Params params{
+              kind, side, config.samples, sourceLevels,
+              kind == 2 ? static_cast<float>(level) / static_cast<float>(levels[kind] - 1) : 0};
+          wgpu::BufferDescriptor buffer;
+          buffer.size = sizeof(params);
+          buffer.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+          parameters.push_back(gpu.device.CreateBuffer(&buffer));
+          gpu.queue.WriteBuffer(parameters.back(), 0, &params, sizeof(params));
+          view = {};
+          view.dimension = wgpu::TextureViewDimension::e2DArray;
+          view.baseMipLevel = level;
+          view.mipLevelCount = 1;
+          auto destination = map->textures[kind].CreateView(&view);
+          std::array<wgpu::BindGroupEntry, 3> bindings{};
+          bindings[0].binding = 0;
+          bindings[0].buffer = parameters.back();
+          bindings[0].size = sizeof(params);
+          bindings[1].binding = 1;
+          bindings[1].textureView = inputView;
+          bindings[2].binding = 2;
+          bindings[2].textureView = destination;
+          wgpu::BindGroupDescriptor groupDescriptor;
+          groupDescriptor.layout = layout;
+          groupDescriptor.entryCount = bindings.size();
+          groupDescriptor.entries = bindings.data();
+          auto group = gpu.device.CreateBindGroup(&groupDescriptor);
+          auto pass = encoder.BeginComputePass();
+          pass.SetPipeline(pipeline);
+          pass.SetBindGroup(0, group);
+          pass.DispatchWorkgroups((side + 7) / 8, (side + 7) / 8, kind == 3 ? 1 : 6);
+          pass.End();
+        }
+      }
+
+      wgpu::SamplerDescriptor sampler;
+      sampler.magFilter = sampler.minFilter = wgpu::FilterMode::Linear;
+      sampler.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+      map->sampler = gpu.device.CreateSampler(&sampler);
+      auto commands = encoder.Finish();
+      gpu.queue.Submit(1, &commands);
+      checked = scope.finish();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      auto pending = std::make_shared<Pending<bool>>();
+      pending->keepAlive = gpu.diagnostics;
+      pending->error = "Environment GPU completion failed";
+      auto future = gpu.queue.OnSubmittedWorkDone(
+          wgpu::CallbackMode::WaitAnyOnly,
+          [pending](wgpu::QueueWorkDoneStatus status, wgpu::StringView message) noexcept {
+            pending->value = status == wgpu::QueueWorkDoneStatus::Success;
+
+            if (!pending->value) {
+              describeFailure(pending->error, "Environment GPU completion",
+                              static_cast<unsigned>(status), message);
+            }
+          });
+      checked = wait(gpu.instance, future, "Environment preprocessing");
+
+      if (!checked || !pending->value) {
+        gpu.diagnostics->failed.store(true);
+        return checked ? Core::fail(Core::ErrorCode::Unavailable, pending->error)
+                       : std::unexpected(checked.error());
+      }
+
+      input.Destroy();
+      map->tracked = true;
+      map->owner->environments.fetch_add(1);
+      map->owner->environmentBytes.fetch_add(description->bytes);
+      return EnvironmentMap(std::move(map));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Bake HDR environment: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::readEnvironment(const EnvironmentMap& map, EnvironmentSurface surface,
+                                 std::uint32_t face, std::uint32_t level)
+      -> Core::Result<HdrImage> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto info = map.info();
+    const auto kind = static_cast<std::uint32_t>(surface);
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    if (map.m_impl->owner != m_impl->diagnostics || kind >= 4) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid/foreign environment readback");
+    }
+
+    const auto& c = info->config;
+    const std::array sizes{c.radianceSize, c.diffuseSize, c.specularSize, c.brdfSize};
+    const std::array levels{info->radianceLevels, 1U, info->specularLevels, 1U};
+
+    if (level >= levels[kind] || face >= (kind == 3 ? 1U : 6U)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid environment face/mip");
+    }
+
+    const auto side = std::max(1U, sizes[kind] >> level);
+    return m_impl->readback<HdrImage>(
+        side, side,
+        [&](const wgpu::Texture&, std::uint32_t, std::uint32_t)
+            -> Core::Result<wgpu::CommandEncoder> { return m_impl->device.CreateCommandEncoder(); },
+        map.m_impl->textures[kind], wgpu::TextureFormat::RGBA16Float, face, level);
   }
 
   auto Renderer::setLighting(const Lighting& lighting) -> Core::Result<void> {

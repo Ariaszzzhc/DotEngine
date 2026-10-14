@@ -31,6 +31,7 @@ add_executable(DotUnitTests
     GeometryTests.cpp
     PostProcessTests.cpp
     LightingTests.cpp
+    EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
@@ -193,8 +194,9 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
+target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 dotDiscoverTests(DotGraphicsTests LABELS "integration;gpu;offscreen" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_executable(DotNativeGraphicsTests main.cpp NativeSurfaceTests.cpp)
@@ -338,3 +340,9 @@ foreach(dot_test IN LISTS dot_acceptance_tests)
 endforeach()
 
 set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${dot_test_labels}")
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/environment_acceptance")
+add_test(NAME runtime.environment COMMAND DotRuntimeAcceptance --environment-test
+    "${CMAKE_SOURCE_DIR}/assets/environments/studio_small_09_1k.hdr"
+    "${CMAKE_CURRENT_BINARY_DIR}/environment_acceptance")
+set_tests_properties(runtime.environment PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)

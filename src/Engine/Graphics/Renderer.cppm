@@ -19,6 +19,7 @@ export import Dot.Graphics.Geometry;
 export import Dot.Graphics.Image;
 export import Dot.Graphics.PostProcess;
 export import Dot.Graphics.Lighting;
+export import Dot.Graphics.Environment;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -48,6 +49,8 @@ export namespace Dot::Graphics {
     /** Reused renderer working HDR/depth storage, twelve logical bytes per pixel.
      * 渲染器复用的 HDR/深度工作存储，每像素十二逻辑字节。 */
     std::uint64_t frameBytes{};
+    std::uint64_t environments{};
+    std::uint64_t environmentBytes{};
   };
 
   struct TargetInfo {
@@ -171,6 +174,30 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  /** Immutable GPU radiance/diffuse/specular cube maps and correlated-Smith GGX
+   * split-sum BRDF LUT. Diffuse stores irradiance/pi; specular levels map linear
+   * perceptual roughness 0..1. Shared copies count once; queries require the owner
+   * thread/live device, quiescent destruction may outlive it.
+   * 不可变 GPU 辐射/漫反射/镜面立方体及相关 Smith GGX 分离积分 BRDF LUT；漫反射
+   * 存辐照度/pi，镜面 mip 对应线性感知粗糙度 0..1。共享副本只计一次，查询限所有者
+   * 线程和存活设备，静止销毁可晚于设备。 */
+  class EnvironmentMap {
+  public:
+    EnvironmentMap() noexcept;
+    EnvironmentMap(const EnvironmentMap&) noexcept;
+    auto operator=(const EnvironmentMap&) noexcept -> EnvironmentMap&;
+    EnvironmentMap(EnvironmentMap&&) noexcept;
+    auto operator=(EnvironmentMap&&) noexcept -> EnvironmentMap&;
+    ~EnvironmentMap();
+    [[nodiscard]] auto info() const -> Core::Result<EnvironmentInfo>;
+
+  private:
+    friend class Renderer;
+    struct Impl;
+    explicit EnvironmentMap(std::shared_ptr<Impl> impl) noexcept;
+    std::shared_ptr<Impl> m_impl;
+  };
+
   enum class SurfaceModel { Unlit, MetallicRoughness };
 
   /** Linear base-color factor multiplied by vertex color, object tint and sampled
@@ -256,6 +283,21 @@ export namespace Dot::Graphics {
      * A coherent snapshot requires resource destruction to be quiescent.
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
     [[nodiscard]] auto resourceStats() const -> Core::Result<ResourceStats>;
+    /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
+     * output residency and temporary RGBA32F source/mips share maxTextureBytes
+     * with ordinary textures. Failure publishes no partial resource.
+     * 在 GPU 预处理真实 HDR 全景，最多 32 个环境；输出与临时 RGBA32F 源/mip 及普通
+     * 纹理共用 maxTextureBytes 预算，失败不发布部分资源。 */
+    [[nodiscard]] auto bakeEnvironment(const HdrImage& panorama,
+                                       const EnvironmentConfig& config = {})
+        -> Core::Result<EnvironmentMap>;
+    /** Diagnostic float readback of one face/mip; BRDF requires face/mip zero.
+     * Missing/foreign/expired maps fail; no implicit GPU generation during reads.
+     * 诊断性浮点读回一个面/mip；BRDF 仅允许面/mip 零；缺失、跨设备或过期地图失败，
+     * 读取时不隐式生成 GPU 数据。 */
+    [[nodiscard]] auto readEnvironment(const EnvironmentMap& map, EnvironmentSurface surface,
+                                       std::uint32_t face = 0, std::uint32_t level = 0)
+        -> Core::Result<HdrImage>;
 
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;

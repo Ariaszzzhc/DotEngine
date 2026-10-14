@@ -2874,3 +2874,68 @@ caches/latest ZIP and the private untracked document. Windows/Linux implementati
 uses SDL's platform launch support; neither was validated locally. Remaining PBR
 lighting/shadows/IBL/SSAO, mature editor tooling and realistic game/scalability work
 are still required by the active goal.
+
+
+## 2026-10-14 — HDR environment preprocessing
+
+Added the bounded CPU environment contract/face convention before GPU consumers:
+opaque linear 2:1 HDR panoramas, power-of-two dimensions, sample/work limits, exact
+logical byte accounting and native WebGPU face axes. Renderer now owns immutable
+shared environment maps with radiance cubes, cosine-weighted diffuse irradiance/pi,
+GGX reflection mips and correlated-Smith split-sum BRDF integration. Source mip
+averages use latitude solid angles; manual float32 interpolation avoids optional
+filtering features and uses sampling-footprint LOD. Uniform data is independent for
+every dispatched face/mip. Error scopes, actual queue completion and source release
+precede publication. Shared output and temporary source storage share the texture
+budget; failure does not publish partial maps, and timeout faults further device
+operations. Shared copies count once and release correctly after renderer shutdown.
+
+Compiled the single GPU shader and tested before planned material/scene consumers.
+Explicitly cast the C++ bit_width result and imported the CPU image module after
+compilation caught narrowing/module visibility. Float readback exposed NaN at the
++Y pole of the one-texel mip: atan2(0,0) had no defined longitude. Guarding the pole
+fixed it without weakening pixel validity/energy assertions. Native tests cover
+constant HDR energy on every cube face/mip, independent linear-field moments and
+roughness attenuation, analytical BRDF limits, bounds/budget/foreign/thread/shared
+and post-device lifetimes, plus actual Poly Haven HDR processing. Focused checks
+pass 7/7 in 5.06 seconds, including the new runnable offscreen acceptance driver.
+
+Downloaded Studio Small 09 1K from Poly Haven's official asset endpoint, verified
+its official byte count/MD5 and recorded SHA256/author/CC0/source links. Stored the
+unmodified 1,615,248-byte asset locally; no runtime API client or online dependency.
+The acceptance driver writes a diagnostic Reinhard/sRGB cube cross from actual GPU
+float pixels; visually inspected after lossless PPM-to-PNG conversion. It shows the
+studio roof, walls/floor and softbox highlights with the expected adjacent faces.
+This evidence establishes preprocessing, not a lit game/editor scene or full IBL.
+Surface/background sampling, saved environment authoring and editor/Play/export
+integration remain the next dependency layer. Shadows/SSAO and large-game/editor
+quality work remain required by the original active goal.
+
+Separated all three built-in shaders into independently authored WGSL files after
+review exposed formatting omissions inside C++ raw strings. Expanded compact
+structs/cases/statements, restored two-space indentation/operator spacing, bounded
+lines to 100 characters and separated functions/control blocks without padding
+block interiors. Preserved the ACES attribution/notice. Comparing comment-stripped,
+whitespace-normalized code with the original shader strings passed for all three;
+no shader expressions or GPU bindings changed during extraction. CMake generates
+a private embedding header with explicit dependencies and delimiter validation;
+a subsequent source edit regenerated it and rebuilt only the renderer implementation
+within the engine. Product executables and the archive need no WGSL source paths.
+
+Reviewed the environment boundary, storage accounting, shader layouts, ownership,
+error scopes, GPU completion/readback and test-only acceptance wiring. All 253
+engine/application/test C/C++ files pass clang-format; all three WGSL files pass
+two-space indentation, 100-character line and trailing-whitespace checks. Debug
+passes 848/848 in 131.60 seconds; Release/NDEBUG verification follows below.
+The seven added cases are two pure CPU, four real offscreen GPU and one runnable
+offscreen acceptance case; existing coverage remains. Only arm64 macOS was tested.
+
+Release/NDEBUG passes 848/848 in 35.32 seconds. Refreshed the native editor ZIP:
+257 entries, 43,455,260 bytes; CRC, executable modes, complete project manifests,
+and private/test/Finder/copied-SDK/WGSL-source exclusions pass. The application
+passes deep strict signature checks; all 16 Mach-O entries pass strict signatures
+and relative/system library-reference checks. Removed only this stage's owned
+temporary extraction/format/package-audit/download-metadata files; retained build
+caches, latest native archive and local HDRI. Surface IBL, sky and persistent
+authoring consumers remain pending, as do soft shadows, SSAO and mature editor/game
+capabilities. No Windows/Linux validation or full IBL delivery is claimed.

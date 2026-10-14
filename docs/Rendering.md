@@ -259,3 +259,73 @@ the following are verification requirements, not descriptions of current feature
 Each stage must reach runtime, persistent viewport and authoring/agent paths before
 claiming an editable production feature. Planned rendering cannot be presented as
 implemented just because resource or unit tests pass.
+
+
+## GPU environment preprocessing foundation
+
+`Dot.Graphics.Environment` validates opaque linear 2:1 latitude-longitude HDR
+panoramas and bounded power-of-two processing dimensions. Top is +Y, center -Z,
+longitude grows toward +X. Cube faces use native WebGPU +X,-X,+Y,-Y,+Z,-Z ordering.
+RGBA16F outputs require finite radiance no larger than 65504; unsupported radiance
+is an explicit error, with no exposure/clamping substituted during preprocessing.
+
+`Renderer::bakeEnvironment` uploads float32 source/mips and computes immutable GPU
+radiance cubes, cosine-sampled diffuse irradiance/pi, GGX importance-prefiltered
+specular mips and a correlated-Smith split-sum BRDF LUT. Source mips use latitude
+solid-angle weighting; GPU source reads interpolate linear radiance, wrap longitude
+and clamp latitude without optional float32-filtering features. Footprint-selected
+source LOD reduces undersampled highlights. Roughness zero samples the source;
+other specular mips correspond to linear perceptual roughness 0..1. Numerical pole
+handling defines an otherwise undefined longitude and avoids atan2(0,0).
+The physical integration follows the [Filament IBL derivation](https://google.github.io/filament/Filament.html),
+with independently implemented shader code and analytic energy/moment tests.
+
+Defaults are radiance 256, diffuse 32, specular 128, BRDF 128, 256 samples. Radiance/
+specular allow 16..512; diffuse 4..128; BRDF 16..256; dimensions are powers of two,
+samples 32..1024. At most 32 live environment maps are permitted. Output residency
+and temporary RGBA32F source/mips share maxTextureBytes with ordinary textures;
+bytes are logical texels, not driver allocation. Each dispatch owns separate
+parameter data. Device error scopes and bounded GPU completion precede publication
+and temporary source release; incomplete timed-out work faults the device for
+future operations. Preprocessing is synchronous and CPU source-mip work is bounded
+by image dimensions, not a hard wall-clock guarantee. Background import/disk bake
+caching and streaming are still planned.
+
+EnvironmentMap copies share all four GPU textures/sampler and count once in
+resourceStats.environments/environmentBytes. Info/read operations require the
+creating thread/live device. Foreign, absent, expired, invalid face/mip maps fail;
+quiescent destruction can outlive the renderer. readEnvironment returns actual
+floating-point device pixels with no implicit convolution or display conversion.
+
+```sh
+build/debug/bin/DotRuntimeAcceptance --environment-test \
+  /absolute/DotEngine/assets/environments/studio_small_09_1k.hdr \
+  /existing/output-directory
+```
+
+This development-only driver verifies real preprocessing, HDR retention, BRDF
+readback/shared release and writes a diagnostic Reinhard/sRGB cube cross. It opens
+no desktop window. Input is the unmodified CC0 [Studio Small 09](https://polyhaven.com/a/studio_small_09)
+resource with source/author/hash recorded in assets/environments/README.md. Runtime
+fetches no assets/API. Unit tests check bounds/face axes; offscreen tests check
+constant energy, all faces/mips, independent linear-field diffuse moments,
+roughness blur, BRDF's smooth/rough limits, actual HDRI, budget/failure/lifetime.
+
+This is an implemented preprocessing subsystem. PBR shader sampling, camera sky
+background, saved environment settings, cache invalidation/editor/Play/export
+integration remain the next consumer stage. No editable IBL scene is claimed yet.
+
+## Built-in WGSL sources
+
+The renderer's material, tone-mapping and environment shaders live in separate
+`src/Engine/Graphics/Shaders/*.wgsl` files. Use two-space indentation, spaces around
+operators, one statement per line, a 100-character line limit, and blank lines
+between functions/types/control blocks, without padding block interiors.
+C++ clang-format does not format WGSL; these files are reviewed separately.
+
+CMake embeds the exact source into a generated private `BuiltinShaders.hpp` before
+compiling the engine. Each WGSL file is an explicit build dependency: editing it
+regenerates the header and recompiles the renderer implementation. Runtime/editor
+executables and relocated distributions require no shader source files. Dawn
+compiles the actual embedded WGSL on the native device; GPU tests verify the
+material, HDR/tone-mapping and environment pipelines.
