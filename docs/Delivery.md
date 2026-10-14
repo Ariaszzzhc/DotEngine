@@ -14,6 +14,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | Direct physical rendering | Metallic/roughness GGX, normal/emissive/data texture slots, directional/point/spot lights and perspective/orthographic view rays; saved material/light components, shared preview/Play/export, basic inspector/agent authoring and actual gallery/pixel/lifetime checks; dedicated material tooling remains planned |
 | Environment preprocessing foundation | Real HDR panorama GPU conversion, diffuse convolution, GGX reflection mips, correlated-Smith BRDF LUT, shared residency/lifetime and actual Poly Haven input; authored IBL consumption is implemented; async bake/cache/streaming remains planned |
 | HDRI renderer consumption | Explicit shared binding, single-scattering split-sum PBR, mapped normals, roughness reflections, yaw/intensity, camera sky, shared HDR/depth, scene-camera integration and actual HDRI-lit gallery; scene persistence, bounded HDRI caches, editor drafts/undo/Play/export and offline Feature Lab delivery now consume IBL; async baking/streaming remains planned |
+| Geometric SSAO foundation | Explicit renderer settings, depth/world-normal guides, bounded radial search and bilateral filtering, IBL-diffuse composition, actual grayscale/HDR checks and working-map release; saved scene/editor controls, temporal quality and scalability remain planned |
 | Directional soft shadows | Saved optional single directional source, stabilized 1..4 cascades, real depth passes, sixteen-tap/hardware PCF, receiver-plane correction, mesh cast/receive, overlap blending, inspector/agent/Play/export and actual hard/soft/disabled images; point/spot/contact-hardening/scalability remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
@@ -31,13 +32,13 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 869/869 CTest cases
-(809 doctest cases and 60 executable checks), taking 141.65 and 37.34 seconds.
-The [test layers](Testing.md) separate 194 pure CPU unit cases from files/compiler/
-platform integration, 78 offscreen GPU cases and native/acceptance workflows.
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 877/877 CTest cases
+(816 doctest cases and 61 executable checks), taking 153.52 and 36.29 seconds.
+The [test layers](Testing.md) separate 197 pure CPU unit cases from files/compiler/
+platform integration, 83 offscreen GPU cases and native/acceptance workflows.
 The earlier 184-case unit selection passed with deliberately invalid SDL drivers;
-the current 194-case selection adds pure URI/diagnostic environment and shadow checks.
-All 259 engine/application/test C/C++ files pass formatting checks; the nine WGSL
+the current 197-case selection adds pure URI/diagnostic environment, shadow and occlusion checks.
+All 264 engine/application/test C/C++ files pass formatting checks; the fourteen WGSL
 sources are maintained separately with consistent indentation, spacing and blocks. The current 259-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application

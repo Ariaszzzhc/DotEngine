@@ -493,6 +493,18 @@ namespace Dot::Graphics {
     wgpu::RenderPipeline shadowEnvironmentPipeline;
     wgpu::RenderPipeline shadowDepthPipeline;
     wgpu::Texture shadowTexture;
+    std::optional<OcclusionSettings> occlusion;
+    std::array<wgpu::Texture, 4> occlusionTextures;
+    wgpu::RenderPipeline geometryPipeline;
+    wgpu::ComputePipeline occlusionPipeline;
+    wgpu::ComputePipeline occlusionFilterPipeline;
+    wgpu::RenderPipeline occlusionEnvironmentPipeline;
+    wgpu::RenderPipeline occlusionShadowEnvironmentPipeline;
+    std::uint32_t occlusionWidth{};
+    std::uint32_t occlusionHeight{};
+    std::uint64_t occlusionStorageBytes{};
+    bool occlusionReady{};
+    bool occlusionPending{};
     std::uint32_t shadowResolution{};
     std::uint32_t shadowLayers{};
     std::uint64_t shadowBytes{};
@@ -632,13 +644,15 @@ namespace Dot::Graphics {
     }
 
     auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false,
-                  bool withShadows = false) -> wgpu::RenderPipeline {
+                  bool withShadows = false, bool withOcclusion = false) -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
       const auto shaderCode
           = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
                                         : Detail::surfaceDirectShader)
             + "\n"
             + (withShadows ? Detail::visibilityShadowsShader : Detail::visibilityDirectShader)
+            + "\n"
+            + (withOcclusion ? Detail::ambientOcclusionShader : Detail::ambientUnoccludedShader)
             + "\n" + Detail::surfaceShader;
       source.code = shaderCode.c_str();
       wgpu::ShaderModuleDescriptor shaderDescriptor;
@@ -795,6 +809,130 @@ namespace Dot::Graphics {
       return {};
     }
 
+    auto ensureOcclusionPipelines() -> Core::Result<void> {
+      if (geometryPipeline) {
+        return {};
+      }
+
+      ErrorScope scope(instance, device);
+      const auto module = [&](const char* code) {
+        wgpu::ShaderSourceWGSL source;
+        source.code = code;
+        wgpu::ShaderModuleDescriptor descriptor;
+        descriptor.nextInChain = &source;
+        return device.CreateShaderModule(&descriptor);
+      };
+      auto shader = module(Detail::geometryShader);
+      const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, position),
+                                                        .shaderLocation = 0},
+                                  wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
+                                                        .offset = offsetof(Vertex, normal),
+                                                        .shaderLocation = 3}};
+      wgpu::VertexBufferLayout layout;
+      layout.arrayStride = sizeof(Vertex);
+      layout.attributeCount = attributes.size();
+      layout.attributes = attributes.data();
+      wgpu::ColorTargetState target;
+      target.format = wgpu::TextureFormat::RGBA16Float;
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::DepthStencilState depth;
+      depth.format = wgpu::TextureFormat::Depth32Float;
+      depth.depthWriteEnabled = true;
+      depth.depthCompare = wgpu::CompareFunction::Less;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.vertex.bufferCount = 1;
+      descriptor.vertex.buffers = &layout;
+      descriptor.depthStencil = &depth;
+      descriptor.fragment = &fragment;
+      auto geometry = device.CreateRenderPipeline(&descriptor);
+      wgpu::ComputePipelineDescriptor compute;
+      compute.compute.module = module(Detail::occlusionShader);
+      compute.compute.entryPoint = "compute";
+      auto ao = device.CreateComputePipeline(&compute);
+      compute.compute.module = module(Detail::occlusionFilterShader);
+      compute.compute.entryPoint = "filterOcclusion";
+      auto filter = device.CreateComputePipeline(&compute);
+      auto ambient = pipeline(wgpu::TextureFormat::RGBA16Float, true, false, true);
+      auto shadowed = pipeline(wgpu::TextureFormat::RGBA16Float, true, true, true);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (!geometry || !ao || !filter || !ambient || !shadowed) {
+        return Core::fail(Core::ErrorCode::External, "Create occlusion pipelines failed");
+      }
+
+      geometryPipeline = std::move(geometry);
+      occlusionPipeline = std::move(ao);
+      occlusionFilterPipeline = std::move(filter);
+      occlusionEnvironmentPipeline = std::move(ambient);
+      occlusionShadowEnvironmentPipeline = std::move(shadowed);
+      return {};
+    }
+
+    auto ensureOcclusionStorage(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
+      auto size = Graphics::occlusionBytes(width, height);
+
+      if (!size) {
+        return std::unexpected(size.error());
+      }
+
+      if (width == occlusionWidth && height == occlusionHeight) {
+        return {};
+      }
+
+      if (width > info.maxTextureDimension || height > info.maxTextureDimension) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Occlusion dimensions exceed device limits");
+      }
+
+      ErrorScope scope(instance, device);
+      std::array<wgpu::Texture, 4> textures;
+      const std::array formats{wgpu::TextureFormat::Depth32Float, wgpu::TextureFormat::RGBA16Float,
+                               wgpu::TextureFormat::RGBA16Float, wgpu::TextureFormat::RGBA8Unorm};
+
+      for (std::size_t index = 0; index < textures.size(); ++index) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {width, height, 1};
+        descriptor.format = formats[index];
+        descriptor.usage = wgpu::TextureUsage::TextureBinding
+                           | (index < 2 ? wgpu::TextureUsage::RenderAttachment
+                                        : wgpu::TextureUsage::StorageBinding);
+
+        if (index == 3) {
+          descriptor.usage |= wgpu::TextureUsage::CopySrc;
+        }
+
+        textures[index] = device.CreateTexture(&descriptor);
+      }
+
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (std::ranges::any_of(textures, [](const auto& texture) { return !texture; })) {
+        return Core::fail(Core::ErrorCode::External, "Allocate occlusion working maps failed");
+      }
+
+      occlusionTextures = std::move(textures);
+      occlusionWidth = width;
+      occlusionHeight = height;
+      occlusionStorageBytes = *size;
+      occlusionReady = false;
+      return {};
+    }
+
     auto skyPipelineFor() -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
       source.code = Detail::skyShader;
@@ -826,7 +964,8 @@ namespace Dot::Graphics {
               static_cast<float>(environment->map.m_impl->description.specularLevels - 1)};
     }
 
-    auto bindEnvironment(const wgpu::RenderPipeline& renderPipeline) -> wgpu::BindGroup {
+    auto bindEnvironment(const wgpu::RenderPipeline& renderPipeline, bool withOcclusion = false)
+        -> wgpu::BindGroup {
       const auto data = environmentValues();
       wgpu::BufferDescriptor descriptor;
       descriptor.size = sizeof(data);
@@ -834,7 +973,7 @@ namespace Dot::Graphics {
       auto buffer = device.CreateBuffer(&descriptor);
       queue.WriteBuffer(buffer, 0, &data, sizeof(data));
       const auto& map = *environment->map.m_impl;
-      std::array<wgpu::BindGroupEntry, 5> entries{};
+      std::array<wgpu::BindGroupEntry, 6> entries{};
       entries[0].buffer = buffer;
       entries[0].size = sizeof(data);
 
@@ -845,9 +984,14 @@ namespace Dot::Graphics {
 
       entries[4].binding = 4;
       entries[4].sampler = map.sampler;
+      if (withOcclusion) {
+        entries[5].binding = 5;
+        entries[5].textureView = occlusionTextures[3].CreateView();
+      }
+
       wgpu::BindGroupDescriptor group;
       group.layout = renderPipeline.GetBindGroupLayout(2);
-      group.entryCount = entries.size();
+      group.entryCount = withOcclusion ? 6 : 5;
       group.entries = entries.data();
       return device.CreateBindGroup(&group);
     }
@@ -1475,10 +1619,144 @@ namespace Dot::Graphics {
       return device.CreateBindGroup(&group);
     }
 
+    struct OcclusionData {
+      Math::Mat4 viewProjection;
+      Math::Mat4 inverse;
+      Math::Vec4 right;
+      Math::Vec4 up;
+      Math::Vec4 values;
+      std::array<std::uint32_t, 4> work;
+    };
+
+    static_assert(sizeof(OcclusionData) == 192);
+
+    auto validateOcclusionGeometry(std::span<const PreparedDraw> draws) -> Core::Result<void> {
+      for (const auto& draw : draws) {
+        const auto& m = draw.uniform.model.data;
+
+        if (!Math::isFinite(draw.uniform.model) || m[3] != 0 || m[7] != 0 || m[11] != 0
+            || m[15] != 1) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Occlusion geometry requires affine world transforms");
+        }
+
+        const auto& bounds = draw.mesh->bounds;
+
+        for (int corner = 0; corner < 8; ++corner) {
+          auto position = Math::transformPoint(draw.uniform.model,
+                                               {corner & 1 ? bounds.maximum.x : bounds.minimum.x,
+                                                corner & 2 ? bounds.maximum.y : bounds.minimum.y,
+                                                corner & 4 ? bounds.maximum.z : bounds.minimum.z});
+
+          if (!position || std::abs(position->x) > 1e6 || std::abs(position->y) > 1e6
+              || std::abs(position->z) > 1e6) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Occlusion geometry exceeds world bounds");
+          }
+        }
+      }
+
+      return {};
+    }
+
+    auto encodeOcclusion(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
+                         const OcclusionCamera& camera) -> Core::Result<void> {
+      wgpu::RenderPassColorAttachment normal;
+      normal.view = occlusionTextures[1].CreateView();
+      normal.loadOp = wgpu::LoadOp::Clear;
+      normal.storeOp = wgpu::StoreOp::Store;
+      wgpu::TextureViewDescriptor depthView;
+      depthView.aspect = wgpu::TextureAspect::DepthOnly;
+      wgpu::RenderPassDepthStencilAttachment depth;
+      depth.view = occlusionTextures[0].CreateView(&depthView);
+      depth.depthLoadOp = wgpu::LoadOp::Clear;
+      depth.depthStoreOp = wgpu::StoreOp::Store;
+      depth.depthClearValue = 1;
+      wgpu::RenderPassDescriptor descriptor;
+      descriptor.colorAttachmentCount = 1;
+      descriptor.colorAttachments = &normal;
+      descriptor.depthStencilAttachment = &depth;
+      auto pass = encoder.BeginRenderPass(&descriptor);
+      pass.SetPipeline(geometryPipeline);
+      pass.SetBindGroup(1, bindLighting(geometryPipeline));
+
+      for (const auto& draw : draws) {
+        wgpu::BufferDescriptor bufferDescriptor;
+        bufferDescriptor.size = sizeof(UniformData);
+        bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+        auto buffer = device.CreateBuffer(&bufferDescriptor);
+        queue.WriteBuffer(buffer, 0, &draw.uniform, sizeof(draw.uniform));
+        wgpu::BindGroupEntry entry;
+        entry.buffer = buffer;
+        entry.size = sizeof(draw.uniform);
+        wgpu::BindGroupDescriptor group;
+        group.layout = geometryPipeline.GetBindGroupLayout(0);
+        group.entryCount = 1;
+        group.entries = &entry;
+        pass.SetBindGroup(0, device.CreateBindGroup(&group));
+        pass.SetVertexBuffer(0, draw.mesh->vertices);
+
+        if (draw.mesh->info.indices) {
+          pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
+          pass.DrawIndexed(draw.mesh->info.indices);
+        } else {
+          pass.Draw(draw.mesh->info.vertices);
+        }
+      }
+
+      pass.End();
+      const auto& s = *occlusion;
+      const OcclusionData data{camera.viewProjection,
+                               camera.inverse,
+                               {camera.right.x, camera.right.y, camera.right.z, 0},
+                               {camera.up.x, camera.up.y, camera.up.z, 0},
+                               {s.radius, s.bias, s.strength, 0},
+                               {s.directions, s.steps, s.filterRadius, 0}};
+      wgpu::BufferDescriptor bufferDescriptor;
+      bufferDescriptor.size = sizeof(data);
+      bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto uniformData = device.CreateBuffer(&bufferDescriptor);
+      queue.WriteBuffer(uniformData, 0, &data, sizeof(data));
+
+      for (std::uint32_t phase = 0; phase < 2; ++phase) {
+        const auto& pipeline = phase == 0 ? occlusionPipeline : occlusionFilterPipeline;
+        std::array<wgpu::BindGroupEntry, 5> entries{};
+        entries[0].buffer = uniformData;
+        entries[0].size = sizeof(data);
+        entries[1].binding = 1;
+        entries[1].textureView = occlusionTextures[0].CreateView(&depthView);
+        entries[2].binding = 2;
+        entries[2].textureView = occlusionTextures[1].CreateView();
+        entries[3].binding = 3;
+        entries[3].textureView = occlusionTextures[2 + phase].CreateView();
+
+        if (phase == 1) {
+          entries[3].textureView = occlusionTextures[2].CreateView();
+          entries[4].binding = 4;
+          entries[4].textureView = occlusionTextures[3].CreateView();
+        }
+
+        wgpu::BindGroupDescriptor group;
+        group.layout = pipeline.GetBindGroupLayout(0);
+        group.entryCount = phase == 0 ? 4 : 5;
+        group.entries = entries.data();
+        auto compute = encoder.BeginComputePass();
+        compute.SetPipeline(pipeline);
+        compute.SetBindGroup(0, device.CreateBindGroup(&group));
+        compute.DispatchWorkgroups((occlusionWidth + 7) / 8, (occlusionHeight + 7) / 8);
+        compute.End();
+      }
+
+      occlusionPending = true;
+      return {};
+    }
+
     auto encodeMeshes(const wgpu::Texture& target, std::span<const PreparedDraw> draws,
                       const Math::Mat4& viewProjection, std::uint32_t width, std::uint32_t height,
                       Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
+      occlusionPending = false;
+
       if (!hdr) {
         auto ready = ensureFrame(width, height);
 
@@ -1573,9 +1851,47 @@ namespace Dot::Graphics {
         }
       }
 
+      if (occlusion) {
+        auto camera = Graphics::occlusionCamera(viewProjection);
+
+        if (!camera) {
+          return std::unexpected(camera.error());
+        }
+
+        auto checked = validateOcclusionGeometry(draws);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        checked = ensureOcclusionPipelines();
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        checked = ensureOcclusionStorage(width, height);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        if (!shadowEncoder) {
+          shadowEncoder = device.CreateCommandEncoder();
+        }
+
+        checked = encodeOcclusion(shadowEncoder, draws, *camera);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+      }
+
       const auto& renderPipeline
-          = source ? (environment ? shadowEnvironmentPipeline : shadowScenePipeline)
-                   : (environment ? environmentPipeline : scenePipeline);
+          = occlusion && environment
+                ? (source ? occlusionShadowEnvironmentPipeline : occlusionEnvironmentPipeline)
+                : (source ? (environment ? shadowEnvironmentPipeline : shadowScenePipeline)
+                          : (environment ? environmentPipeline : scenePipeline));
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
@@ -1584,7 +1900,7 @@ namespace Dot::Graphics {
             }
 
             if (environment) {
-              pass.SetBindGroup(2, bindEnvironment(renderPipeline));
+              pass.SetBindGroup(2, bindEnvironment(renderPipeline, occlusion.has_value()));
             }
 
             if (fit) {
@@ -1648,7 +1964,8 @@ namespace Dot::Graphics {
     auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget,
                   wgpu::Texture existing = {},
                   wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm,
-                  std::uint32_t layer = 0, std::uint32_t mip = 0) -> Core::Result<Readback> {
+                  std::uint32_t layer = 0, std::uint32_t mip = 0, bool commitOcclusion = false)
+        -> Core::Result<Readback> {
       const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
 
       if (width == 0 || height == 0 || width > maximum || height > maximum) {
@@ -1693,6 +2010,11 @@ namespace Dot::Graphics {
 
       if (!checked) {
         return std::unexpected(checked.error());
+      }
+
+      if (commitOcclusion && occlusionPending) {
+        occlusionReady = true;
+        occlusionPending = false;
       }
 
       auto pending = std::make_shared<Pending<bool>>();
@@ -1792,7 +2114,8 @@ namespace Dot::Graphics {
     }
 
     template <typename F>
-    auto presentFrame(F&& encodeTarget) -> Core::Result<PresentResult> {
+    auto presentFrame(F&& encodeTarget, bool commitOcclusion = false)
+        -> Core::Result<PresentResult> {
       if (!surface) {
         return Core::fail(Core::ErrorCode::InvalidState, "Renderer has no native surface");
       }
@@ -1875,6 +2198,11 @@ namespace Dot::Graphics {
 
       if (!checked) {
         return std::unexpected(checked.error());
+      }
+
+      if (commitOcclusion && occlusionPending) {
+        occlusionReady = true;
+        occlusionPending = false;
       }
 
       return PresentResult::Presented;
@@ -2352,7 +2680,8 @@ namespace Dot::Graphics {
                          static_cast<std::uint64_t>(m_impl->frameWidth) * m_impl->frameHeight * 12,
                          stats.environments.load(),
                          stats.environmentBytes.load(),
-                         m_impl->shadowBytes};
+                         m_impl->shadowBytes,
+                         m_impl->occlusionStorageBytes};
   }
 
   auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
@@ -2714,6 +3043,69 @@ namespace Dot::Graphics {
     return m_impl->environment;
   }
 
+  auto Renderer::setOcclusion(std::optional<OcclusionSettings> settings) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (settings) {
+      checked = validateOcclusion(*settings);
+
+      if (!checked) {
+        return checked;
+      }
+    }
+
+    m_impl->occlusion = settings;
+
+    if (!settings) {
+      m_impl->occlusionTextures = {};
+      m_impl->occlusionStorageBytes = 0;
+      m_impl->occlusionWidth = m_impl->occlusionHeight = 0;
+      m_impl->occlusionReady = m_impl->occlusionPending = false;
+    }
+
+    return {};
+  }
+
+  auto Renderer::occlusion() const -> Core::Result<std::optional<OcclusionSettings>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<std::optional<OcclusionSettings>>(m_impl->occlusion)
+                   : std::unexpected(checked.error());
+  }
+
+  auto Renderer::readOcclusion() -> Core::Result<Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->occlusionReady) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Occlusion has no committed mesh frame");
+    }
+
+    return m_impl->readback(
+        m_impl->occlusionWidth, m_impl->occlusionHeight,
+        [&](const wgpu::Texture&, std::uint32_t, std::uint32_t)
+            -> Core::Result<wgpu::CommandEncoder> { return m_impl->device.CreateCommandEncoder(); },
+        m_impl->occlusionTextures[3]);
+  }
+
   auto Renderer::setLighting(const Lighting& lighting) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
@@ -2908,6 +3300,11 @@ namespace Dot::Graphics {
     if (!checked) {
       target.m_impl->faulted = true;
       return checked;
+    }
+
+    if (m_impl->occlusionPending) {
+      m_impl->occlusionReady = true;
+      m_impl->occlusionPending = false;
     }
 
     ++target.m_impl->info.frames;
@@ -3333,11 +3730,13 @@ namespace Dot::Graphics {
       return std::unexpected(prepared.error());
     }
 
-    return m_impl->readback(width, height,
-                            [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
-                              return m_impl->encodeMeshes(texture, *prepared, viewProjection,
-                                                          targetWidth, targetHeight, clear);
-                            });
+    return m_impl->readback(
+        width, height,
+        [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
+          return m_impl->encodeMeshes(texture, *prepared, viewProjection, targetWidth, targetHeight,
+                                      clear);
+        },
+        {}, wgpu::TextureFormat::RGBA8Unorm, 0, 0, true);
   }
 
   auto Renderer::presentMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -3358,8 +3757,10 @@ namespace Dot::Graphics {
       return std::unexpected(prepared.error());
     }
 
-    return m_impl->presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
-      return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear);
-    });
+    return m_impl->presentFrame(
+        [&](const wgpu::Texture& texture, auto width, auto height) {
+          return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear);
+        },
+        true);
   }
 }  // namespace Dot::Graphics

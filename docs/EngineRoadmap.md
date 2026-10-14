@@ -52,5 +52,7 @@ Directional cascaded depth shadows now render through saved lights and mesh
 casting/receiving controls, with stabilized fits, filtered comparisons, overlap
 blending, receiver-plane bias correction and actual pixel/lifetime evidence.
 Lighting/shadows remain open for point/spot maps, contact-hardening, advanced
-authoring and submission/scalability work. SSAO and the other listed requirements
+authoring and submission/scalability work. The explicit SSAO renderer API now has
+CPU/offscreen/acceptance evidence; saved scene/editor controls, temporal quality and
+populated-scene performance remain planned. The other listed requirements
 remain pending; this stage does not establish large-game or mature-editor completion.

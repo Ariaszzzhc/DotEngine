@@ -20,6 +20,7 @@ export import Dot.Graphics.Image;
 export import Dot.Graphics.PostProcess;
 export import Dot.Graphics.Lighting;
 export import Dot.Graphics.Environment;
+export import Dot.Graphics.Occlusion;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -54,6 +55,9 @@ export namespace Dot::Graphics {
     /** Renderer working depth maps, four bytes per texel, at most 64 MiB.
      * 渲染器工作深度图每纹素四字节，最多 64 MiB。 */
     std::uint64_t shadowBytes{};
+    /** Full-resolution SSAO depth/normal/raw/filtered working storage; logical bytes.
+     * 全分辨率 SSAO 深度/法线/原始及过滤结果的工作存储，记录逻辑字节。 */
+    std::uint64_t occlusionBytes{};
   };
 
   struct TargetInfo {
@@ -331,6 +335,19 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto setEnvironment(std::optional<EnvironmentLighting> environment)
         -> Core::Result<void>;
     [[nodiscard]] auto environment() const -> Core::Result<std::optional<EnvironmentLighting>>;
+
+    /** Optional geometric SSAO for future mesh frames. Null releases working maps.
+     * Only environment diffuse is attenuated; direct/specular/emissive/unlit output
+     * is preserved. Input failures retain settings and the previous committed image.
+     * 为未来网格帧配置可选几何 SSAO；空值释放工作图，仅衰减环境漫反射，保留直接光、
+     * 镜面、自发光和无光照输出；输入失败保留设置及已提交的图像。 */
+    [[nodiscard]] auto setOcclusion(std::optional<OcclusionSettings> settings)
+        -> Core::Result<void>;
+    [[nodiscard]] auto occlusion() const -> Core::Result<std::optional<OcclusionSettings>>;
+    /** Diagnostic grayscale visibility of the last committed AO mesh frame;
+     * requires the owner thread/device and performs no implicit AO computation.
+     * 诊断读取最近已提交 AO 网格帧的灰度可见性，限所有者线程/设备，不隐式生成 AO。 */
+    [[nodiscard]] auto readOcclusion() -> Core::Result<Image>;
 
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;

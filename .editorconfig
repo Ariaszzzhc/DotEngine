@@ -16,3 +16,7 @@ indent_size = 2
 
 [*.{m,mm}]
 indent_size = 2
+
+[*.wgsl]
+indent_size = 2
+max_line_length = 100

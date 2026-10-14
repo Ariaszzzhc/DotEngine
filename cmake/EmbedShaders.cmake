@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.31)
 set(dot_header "#pragma once\n\nnamespace Dot::Graphics::Detail {\n")
 foreach(dot_name IN ITEMS Surface ToneMapping Environment SurfaceDirect SurfaceEnvironment Sky
-    ShadowDepth VisibilityDirect VisibilityShadows)
+    ShadowDepth VisibilityDirect VisibilityShadows Geometry Occlusion OcclusionFilter
+    AmbientOcclusion AmbientUnoccluded)
     file(READ "${INPUT}/${dot_name}.wgsl" dot_source)
     string(FIND "${dot_source}" ")dot_wgsl\"" dot_delimiter)
     if(NOT dot_delimiter EQUAL -1)

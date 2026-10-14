@@ -81,3 +81,10 @@ listed separately in the development log. The native project home additionally
 covers validated creation/open and mailbox handoff. Release signing/installer
 workflows and further editor refinement remain work; no manual desktop, other-host
 or exhaustive driver coverage is claimed here.
+
+## Ambient occlusion renderer foundation
+
+OcclusionTests supplies three pure CPU cases; OcclusionGpuTests supplies four real
+offscreen cases. runtime.occlusion writes actual enabled/disabled/visibility images
+from a combined IBL/cascaded-shadow scene. These validate the explicit Renderer API;
+saved scene/editor AO controls and temporal/scalable rendering remain planned.

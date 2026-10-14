@@ -32,6 +32,7 @@ add_executable(DotUnitTests
     PostProcessTests.cpp
     LightingTests.cpp
     ShadowTests.cpp
+    OcclusionTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
@@ -195,7 +196,7 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp GuiTests.cpp)
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
@@ -352,3 +353,8 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/shadow_acceptance")
 add_test(NAME runtime.shadows COMMAND DotRuntimeAcceptance --shadow-test
     "${CMAKE_CURRENT_BINARY_DIR}/shadow_acceptance")
 set_tests_properties(runtime.shadows PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/occlusion_acceptance")
+add_test(NAME runtime.occlusion COMMAND DotRuntimeAcceptance --occlusion-test
+    "${CMAKE_CURRENT_BINARY_DIR}/occlusion_acceptance")
+set_tests_properties(runtime.occlusion PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)

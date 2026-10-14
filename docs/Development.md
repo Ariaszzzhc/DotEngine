@@ -3133,3 +3133,64 @@ selected audio/occlusion cases in 13.08 seconds. The same combined working tree
 passes Release/NDEBUG 877/877 in 36.29 seconds, including all 32 audio-native cases. Only arm64 macOS is validated; supported
 Windows/Linux branches are not claimed tested. The overlay changes no dependency
 version beyond its local port revision.
+
+
+### 2026-10-14 — Geometric SSAO renderer foundation
+
+Added separate Dot.Graphics.Occlusion interface/implementation with device-free
+settings, finite camera reconstruction and working-budget validation. The renderer
+owns explicit optional settings, lazily checked shader variants and four textures:
+Depth32Float, world-normal RGBA16Float, raw AO RGBA16Float and filtered RGBA8.
+Current storage is 24 logical bytes/pixel with a 256 MiB/4096 dimension bound;
+replacement/in-flight driver storage can overlap. Disable releases working maps;
+readOcclusion reports actual grayscale visibility only after a committed mesh frame.
+Settings/geometry/camera failures retain prior state and target frame counts.
+
+An opaque geometry prepass supplies smooth geometric normals without normal-map
+microdetail. Normal-aware radial horizon searches reconstruct world positions,
+use bounded world distance, deterministic pixel rotations and quadratic near-field
+steps; a world-distance/normal bilateral filter preserves silhouettes/background.
+This is a radial approximation informed by NVIDIA's published SSAO presentation,
+not a claim of full HBAO+/GTAO or temporal filtering. Composition attenuates only
+IBL diffuse before HDR/ACES and preserves direct/specular/emission/unlit output.
+Shadow depth, geometry/AO, HDR and tone mapping share an ordered command encoder.
+Publication is restricted to successful mesh submissions, so a subsequent unrelated
+readback cannot publish an abandoned pending result.
+
+All maintained shaders are independent WGSL source files embedded through explicit
+CMake dependencies into a private generated header; products need no source paths.
+Added WGSL-specific two-space/100-column editor configuration, preventing the prior
+four-space fallback. Retained operator/parameter spacing, one statement per line,
+separated functions/control blocks and unpadded block interiors. Fourteen WGSL
+files pass indentation/line/trailing-whitespace checks; all 264 engine/application/
+test C/C++ files pass clang-format. WGSL syntax is validated by actual Dawn pipeline
+creation; no unsupported claim of an installed automatic WGSL formatter is made.
+
+Three CPU and four actual offscreen GPU cases cover bounds/reconstruction, flat
+surfaces/background, contact/lifted objects, orthographic camera motion, normal-map
+isolation, diffuse-only composition, resize/release, owner-thread errors and input
+retention. The BUILD_TESTING-only --occlusion-test combines IBL, cascaded shadows
+and AO, saves enabled/disabled/visibility images and checks HDR attenuation/storage
+release. Inspected real 960x540 enabled and grayscale renders after lossless PNG
+conversion: contact regions are occluded and background remains clear. Eight
+focused checks pass in 9.05 seconds. GPU compilation first identified the reserved
+filter identifier; renamed its entry point and retained all pixel assertions.
+
+Complete checks initially exposed the audio initialization failure documented in
+the prior entry. After its independent pinned overlay fix, Debug passes 877/877
+in 153.52 seconds and Release/NDEBUG 877/877 in 36.29 seconds. Final dependency
+comment rebuild additionally passes 114 selected Debug audio/occlusion cases in
+13.08 seconds. Inventory: 816 doctest and 61 executable checks; 197 unit, 476
+device-free integration, 83 offscreen, 44 native and 94 acceptance cases (overlap).
+Reviewed CPU bounds, shader bindings/layouts, geometric coverage, thread/device
+ownership, lazy allocation failure, ordered submissions and image publication.
+
+Refreshed macOS ZIP: 259 entries, 45,963,331 bytes; CRC/executable modes, resource/
+private/test/control-stage/Finder/SDK-copy/WGSL-source exclusions and actual HDRI
+hash pass. Deep strict application signature and all 16 Mach-O signatures/relative
+system loader references pass. Only arm64 macOS is validated. Retained caches,
+latest archive and the private untracked document; removed owned patch/debugger/
+audit scripts after verification. Saved scene/editor AO controls, temporal quality,
+multi-layer/offscreen geometry, performance/scalability and realistic-game/mature-
+editor work remain required by the full active goal. This foundation does not
+claim those consumers or completion of large-game rendering.

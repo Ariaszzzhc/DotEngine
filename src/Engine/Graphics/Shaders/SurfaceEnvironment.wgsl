@@ -20,7 +20,8 @@ fn environmentDirection(direction: vec3f) -> vec3f {
     s * direction.x + c * direction.z);
 }
 
-fn environmentRadiance(n: vec3f, v: vec3f, base: vec3f, metallic: f32, roughness: f32) -> vec3f {
+fn environmentRadiance(n: vec3f, v: vec3f, base: vec3f, metallic: f32, roughness: f32,
+  visibility: f32) -> vec3f {
   if (dot(v, v) == 0.0) {
     return vec3f(0.0);
   }
@@ -33,7 +34,7 @@ fn environmentRadiance(n: vec3f, v: vec3f, base: vec3f, metallic: f32, roughness
   let reflection = textureSampleLevel(specularEnvironment, environmentSampler,
     environmentDirection(reflect(-v, n)), roughness * environment.values.w).rgb;
   let brdf = textureSampleLevel(environmentBrdf, environmentSampler, vec2f(nv, roughness), 0.0).rg;
-  let radiance = (vec3f(1.0) - fresnel) * (1.0 - metallic) * base * diffuse
+  let radiance = (vec3f(1.0) - fresnel) * (1.0 - metallic) * base * diffuse * visibility
     + reflection * (f0 * brdf.x + vec3f(brdf.y));
   return radiance * environment.values.x;
 }

@@ -127,6 +127,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Script/Modules.cpp
     src/Engine/Graphics/Environment.cpp
     src/Engine/Graphics/Shadows.cpp
+    src/Engine/Graphics/Occlusion.cpp
     src/Engine/Platform/ExternalFiles.cpp
     src/Engine/Editor/ScriptDiagnostics.cpp
     src/Engine/Script/SceneHost.cpp
@@ -215,6 +216,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/Modules.cppm
         src/Engine/Graphics/Environment.cppm
         src/Engine/Graphics/Shadows.cppm
+        src/Engine/Graphics/Occlusion.cppm
         src/Engine/Platform/ExternalFiles.cppm
         src/Engine/Editor/ScriptDiagnostics.cppm
 )

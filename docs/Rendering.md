@@ -161,7 +161,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, point/spot shadows, SSAO, glTF import,
+the requested project/game visual upgrades, point/spot shadows, authored SSAO, glTF import,
 author tangents and large-scene performance remain incomplete; the gallery does
 not establish those capabilities.
 
@@ -409,7 +409,8 @@ asset fetch or absolute authoring path is required by the exported player.
 Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
 Its existing native standalone acceptance validates that delivery path. This
-provides authored IBL; directional shadows are described below, while SSAO,
+provides authored IBL; directional shadows and the renderer SSAO foundation are
+described below, while saved SSAO settings,
 point/spot shadows, async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
 
@@ -472,3 +473,46 @@ and releases working maps. CPU tests cover fits/splits/texel stability/occluders
 GPU tests check moving shadows, casting/receiving, measured penumbrae, all four
 cascades including off-camera casters, resource resize/release, other lights, IBL/
 emission and input failure retention. Saved-scene and document tests verify authoring.
+
+## Geometric ambient occlusion foundation
+
+Renderer::setOcclusion enables full-resolution geometric SSAO for future mesh
+frames. An explicit geometry pass records Depth32Float and world normals; bounded
+radial horizon searches reconstruct positions from actual device depth. Quadratic
+steps and a deterministic pixel rotation sample the near field. A bilateral filter
+uses world distance and normal agreement to preserve silhouettes/background.
+The normal-aware horizon approach is informed by [NVIDIA's SSAO presentation](https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/SSAO11.pdf);
+this implementation is a radial approximation, not a full HBAO+/GTAO implementation.
+
+Occlusion attenuates only diffuse environment lighting before HDR tone mapping.
+Direct lights, environment specular, emission and unlit colors retain their values.
+AO geometric guides omit normal-map microdetail, which must not invent occluders
+on a flat plane. Perspective and orthographic projections use the same world radius.
+Background and offscreen samples contribute no fabricated occlusion.
+
+Settings bound radius to .05..5 meters, bias to 0..0.2 meters, strength to 0..4,
+directions to 4/8/16, steps to 2..8 and bilateral radius to 0..4 pixels. The default
+is .5/.02/1, eight directions, four steps and two filter pixels. Four working
+textures use 24 logical bytes/pixel, at most 256 MiB, with dimensions up to 4096;
+3840x2160 fits while 4096x4096 does not. Reallocation/in-flight driver memory can
+overlap; resourceStats.occlusionBytes describes the current working texture set.
+Null settings release the textures. readOcclusion returns the grayscale visibility
+of the last committed mesh frame and fails before a frame or after disabling.
+Input validation failures preserve settings, target frame counts and prior images.
+
+```sh
+build/debug/bin/DotRuntimeAcceptance --occlusion-test /existing/output-directory
+```
+
+The BUILD_TESTING-only driver renders IBL, cascaded shadows and AO together, writes
+occlusion-enabled.ppm, occlusion-disabled.ppm and occlusion-visibility.ppm, checks
+actual HDR attenuation and releases AO storage. Focused CPU/GPU tests cover finite
+reconstruction, bounds, flat planes, contact/lifted objects, normal maps, background,
+orthographic camera motion, diffuse-only composition, invalid inputs, thread
+ownership and resizing/release. Authoring saved scene settings and editor controls
+are the next layer; they are not implemented by this renderer foundation. Temporal
+reprojection, offscreen geometry, thickness-aware multi-layer depth, bent normals
+and scalable geometry submission remain planned. Source WGSL is independently
+maintained under src/Engine/Graphics/Shaders with two-space indentation, spacing,
+100-column lines and separated functions/control blocks. CMake embeds it privately;
+the shipped engine needs no shader source files or filesystem search paths.
