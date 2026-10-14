@@ -519,3 +519,22 @@ and scalable geometry submission remain planned. Source WGSL is independently
 maintained under src/Engine/Graphics/Shaders with two-space indentation, spacing,
 100-column lines and separated functions/control blocks. CMake embeds it privately;
 the shipped engine needs no shader source files or filesystem search paths.
+
+
+## Independent views and opaque picking
+
+`Dot.Graphics.View` validates a scene-independent camera and computes its view
+projection. `SceneView` explicitly chooses primary game camera, scene camera entity
+or independent pose/lens. Lighting, sky, shadows and AO use the chosen camera.
+Mesh world bounds are cached alongside actual mesh assets and transformed through
+all eight corners; no geometry copies or substitute boxes are used for selection.
+
+`Renderer.pickMeshes` crops the chosen framebuffer pixel center to a 1x1 R32Uint
+color target with Depth24Plus and Less comparison, matching opaque surface depth.
+Per-draw uniforms retain independent IDs and the physical backface policy. Readback
+returns an optional draw index; SceneRenderer maps it to the full EntityId. Picking
+leaves the visible target, HDR/AO publication and submitted frame counters intact.
+Scratch targets and uniforms are released after readback; lifetime/thread/device
+validation follows normal renderer ownership. It currently reads back synchronously
+and submits the visible opaque draw list; acceleration and transparent picking
+remain planned.

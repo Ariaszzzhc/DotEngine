@@ -34,11 +34,11 @@ Release/NDEBUG; acceptance includes real services rather than mocked success.
 
 Latest arm64 macOS Debug and Release/NDEBUG suites each pass 883/883 CTest cases
 (822 doctest cases and 61 executable checks), taking 163.10 and 34.00 seconds.
-The [test layers](Testing.md) separate 198 pure CPU unit cases from files/compiler/
-platform integration, 84 offscreen GPU cases and native/acceptance workflows.
+The [test layers](Testing.md) separate 201 pure CPU unit cases from files/compiler/
+platform integration, 87 offscreen GPU cases and native/acceptance workflows.
 The earlier 184-case unit selection passed with deliberately invalid SDL drivers;
-the current 198-case selection adds pure URI/diagnostic environment, shadow and occlusion checks.
-All 264 engine/application/test C/C++ files pass formatting checks; the fourteen WGSL
+the current 201-case selection adds pure URI/diagnostic environment, shadow and occlusion checks.
+All 271 engine/application/test C/C++ files pass formatting checks; the fourteen WGSL
 sources are maintained separately with consistent indentation, spacing and blocks. The current 259-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
@@ -66,3 +66,20 @@ component inspectors, external source opening and bounded agent file drafts. The
 systems or a general IDE. Runtime-member coverage is not exhaustive driver/device
 or argument-permutation coverage. macOS copies are ad-hoc signed and locally tested;
 release identity signing/notarization and installer publication have not been performed.
+
+
+Independent editor view/navigation, actual opaque GPU picking and transformed mesh
+framing now consume the same scene rendering path without persisting editor cameras
+to game scenes. This stage passes 893/893 CTest cases in Debug (165.13s) and
+Release/NDEBUG (37.69s) on arm64 macOS. Inventory is 831 doctest identities plus
+62 executable checks, including 201 unit, 87 offscreen, 50 native and 100 acceptance
+labels (overlapping). All 271 C/C++ files and 15 standalone WGSL files pass the
+established formatting checks.
+
+The refreshed macOS ZIP contains 259 entries and 46,013,826 bytes. CRC, executable
+modes, exclusions, project/template AO and exact HDRI hashes pass; all 13 regular
+Mach-O files and 3 relative library symlinks pass strict signatures and loader/rpath
+checks. The actual bundled editor opens Feature Lab and changes real viewport pixels
+when framing an entity. Reference-guided theme/layout work, gizmos, scalable scene
+production and realistic Prism Relay polish remain planned. Windows/Linux have not
+been validated locally.

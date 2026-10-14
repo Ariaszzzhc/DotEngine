@@ -91,3 +91,24 @@ cover saved settings, transaction rollback/undo, native controls and draft guard
 Scene-material pixel checks verify actual saved HDR attenuation and shared binding
 ownership; Play, relocated packages and Feature Lab native checks retain settings
 and render real AO. Temporal/scalable rendering remains planned.
+
+
+## Independent editor viewport
+
+Three ViewTests cases exercise CPU pose/lens validation, framebuffer pixel-center
+projection, transformed mesh bounds and navigation/focus transactions. Two
+PickingGpuTests cases exercise actual opaque coverage/depth/backface/mirror policies,
+background hits, view-target preservation, thread boundaries and moved ownership.
+SceneRenderTests adds independent views without scene cameras, full-size entity IDs
+and hierarchical/mirrored bounds. Three workspace cases cover commands, drafts and
+render revision guards plus real SDL mouse/keyboard/release/focus-loss navigation.
+The existing missing-camera case now verifies independent Editor availability and
+explicit Game failure/undo recovery.
+
+`editor.viewport` runs `DotEditorAcceptance --viewport-test <existing-parent>` against
+a saved camera-free ordinary project. It draws actual preview pixels, selects a
+visible cube, clears selection on background, frames/orbits, checks immutable scene/
+history, reports missing Game camera and saves without inserting an editor camera.
+The driver and dispatcher compile only with BUILD_TESTING. These checks establish
+opaque single-click selection and navigation; gizmos/docking and polished content
+remain subsequent work.

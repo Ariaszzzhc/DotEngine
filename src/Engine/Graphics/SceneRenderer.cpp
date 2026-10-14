@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -9,6 +10,7 @@ module;
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 
 module Dot.Graphics.SceneRenderer;
 
@@ -82,6 +84,7 @@ namespace Dot::Graphics {
       Mesh mesh;
       std::uint64_t bytes;
       std::string warning;
+      Bounds bounds;
     };
 
     struct TextureEntry {
@@ -99,6 +102,7 @@ namespace Dot::Graphics {
       Math::Mat4 camera;
       std::vector<Mesh> meshes;
       std::vector<MeshDraw> draws;
+      std::vector<World::EntityId> entities;
 
       Frame() = default;
 
@@ -326,7 +330,13 @@ namespace Dot::Graphics {
         return std::unexpected(uploaded.error());
       }
 
-      return Entry{std::move(*uploaded), resourceBytes, std::move(warning)};
+      auto bounds = meshBounds(data);
+
+      if (!bounds) {
+        return std::unexpected(bounds.error());
+      }
+
+      return Entry{std::move(*uploaded), resourceBytes, std::move(warning), *bounds};
     }
 
     auto loadMaterial(std::string_view path) -> Core::Result<MaterialEntry> {
@@ -437,32 +447,54 @@ namespace Dot::Graphics {
       return result;
     }
 
-    auto lighting(const World::Scene& scene, World::EntityId camera,
-                  const std::vector<World::EntityInfo>& entities) -> Core::Result<Lighting> {
-      auto world = scene.worldTransform(camera);
-      auto cameraInfo = scene.entity(camera);
-
-      if (!world || !cameraInfo) {
-        return std::unexpected(!world ? world.error() : cameraInfo.error());
-      }
-
-      auto position = Math::transformPoint(*world, {});
-
-      if (!position) {
-        return std::unexpected(position.error());
-      }
-
+    auto lighting(const World::Scene& scene, std::optional<World::EntityId> camera,
+                  const View* custom, const std::vector<World::EntityInfo>& entities)
+        -> Core::Result<Lighting> {
       Lighting result;
-      result.viewPosition = *position;
 
-      if (cameraInfo->camera->projection == World::Projection::Orthographic) {
-        auto direction = Math::transformVector(*world, {0, 0, -1});
+      if (custom) {
+        result.viewPosition = custom->position;
 
-        if (!direction) {
-          return std::unexpected(direction.error());
+        if (custom->orthographic) {
+          auto world = Math::compose({}, custom->rotation);
+
+          if (!world) {
+            return std::unexpected(world.error());
+          }
+
+          auto direction = Math::transformVector(*world, {0, 0, -1});
+
+          if (!direction) {
+            return std::unexpected(direction.error());
+          }
+
+          result.viewDirection = *direction;
+        }
+      } else {
+        auto world = scene.worldTransform(*camera);
+        auto info = scene.entity(*camera);
+
+        if (!world || !info) {
+          return std::unexpected(!world ? world.error() : info.error());
         }
 
-        result.viewDirection = *direction;
+        auto position = Math::transformPoint(*world, {});
+
+        if (!position) {
+          return std::unexpected(position.error());
+        }
+
+        result.viewPosition = *position;
+
+        if (info->camera->projection == World::Projection::Orthographic) {
+          auto direction = Math::transformVector(*world, {0, 0, -1});
+
+          if (!direction) {
+            return std::unexpected(direction.error());
+          }
+
+          result.viewDirection = *direction;
+        }
       }
 
       for (const auto& entity : entities) {
@@ -502,27 +534,38 @@ namespace Dot::Graphics {
       return validatedLighting(result);
     }
 
-    auto frame(const World::Scene& scene, float aspect, std::optional<World::EntityId> camera)
+    auto frame(const World::Scene& scene, float aspect, const SceneView& camera)
         -> Core::Result<Frame> {
       try {
-        auto selected = camera ? Core::Result<World::EntityId>{*camera} : scene.primaryCamera();
+        const auto* custom = std::get_if<View>(&camera);
+        std::optional<World::EntityId> selected;
+        Core::Result<Math::Mat4> view = Math::Mat4{};
 
-        if (!selected) {
-          return std::unexpected(selected.error());
+        if (custom) {
+          view = Graphics::viewProjection(*custom, aspect);
+        } else {
+          auto entity = std::get_if<World::EntityId>(&camera);
+          auto resolved = entity ? Core::Result<World::EntityId>(*entity) : scene.primaryCamera();
+
+          if (!resolved) {
+            return std::unexpected(resolved.error());
+          }
+
+          selected = *resolved;
+          view = scene.viewProjection(*selected, aspect);
         }
-
-        auto view = scene.viewProjection(*selected, aspect);
-        auto entities = scene.entities();
 
         if (!view) {
           return std::unexpected(view.error());
         }
 
+        auto entities = scene.entities();
+
         if (!entities) {
           return std::unexpected(entities.error());
         }
 
-        auto lights = lighting(scene, *selected, *entities);
+        auto lights = lighting(scene, selected, custom, *entities);
 
         if (!lights) {
           return std::unexpected(lights.error());
@@ -644,6 +687,7 @@ namespace Dot::Graphics {
             material = cached->second.material;
           }
 
+          frame.entities.push_back(entity.id);
           frame.meshes.push_back(found->second.mesh);
           frame.draws.push_back({&frame.meshes.back(), *world, entity.mesh->tint,
                                  std::move(material), entity.mesh->castsShadow,
@@ -720,8 +764,7 @@ namespace Dot::Graphics {
   }
 
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
-                             Math::Vec4 clear, std::optional<World::EntityId> camera)
-      -> Core::Result<Image> {
+                             Math::Vec4 clear, SceneView camera) -> Core::Result<Image> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -753,8 +796,7 @@ namespace Dot::Graphics {
     return m_impl->renderer->renderMeshes(frame->draws, frame->camera, width, height, clear);
   }
 
-  auto SceneRenderer::present(const World::Scene& scene, Math::Vec4 clear,
-                              std::optional<World::EntityId> camera)
+  auto SceneRenderer::present(const World::Scene& scene, Math::Vec4 clear, SceneView camera)
       -> Core::Result<PresentResult> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
@@ -793,7 +835,7 @@ namespace Dot::Graphics {
   }
 
   auto SceneRenderer::renderInto(const World::Scene& scene, RenderTarget& target, Math::Vec4 clear,
-                                 std::optional<World::EntityId> camera) -> Core::Result<void> {
+                                 SceneView camera) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -824,6 +866,89 @@ namespace Dot::Graphics {
     }
 
     return m_impl->renderer->renderMeshesInto(target, frame->draws, frame->camera, clear);
+  }
+
+  auto SceneRenderer::pick(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
+                           Math::Vec2 uv, SceneView view)
+      -> Core::Result<std::optional<World::EntityId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!width || !height || width > 4096 || height > 4096 || !std::isfinite(uv.x)
+        || !std::isfinite(uv.y) || uv.x < 0 || uv.x >= 1 || uv.y < 0 || uv.y >= 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene picking viewport/UV");
+    }
+
+    auto frame = m_impl->frame(scene, static_cast<float>(width) / static_cast<float>(height), view);
+
+    if (!frame) {
+      return std::unexpected(frame.error());
+    }
+
+    auto selected = m_impl->renderer->pickMeshes(frame->draws, frame->camera, width, height, uv);
+
+    if (!selected) {
+      return std::unexpected(selected.error());
+    }
+
+    return *selected ? std::optional(frame->entities.at(**selected)) : std::nullopt;
+  }
+
+  auto SceneRenderer::bounds(const World::Scene& scene, World::EntityId entity)
+      -> Core::Result<Bounds> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto info = scene.entity(entity);
+    auto transform = scene.worldTransform(entity);
+
+    if (!info || !transform) {
+      return std::unexpected(!info ? info.error() : transform.error());
+    }
+
+    if (!info->mesh) {
+      return transformedBounds({}, *transform);
+    }
+
+    auto resourceKey = key(*info->mesh);
+
+    if (!resourceKey) {
+      return std::unexpected(resourceKey.error());
+    }
+
+    try {
+      auto found = m_impl->cache.find(*resourceKey);
+
+      if (found == m_impl->cache.end()) {
+        auto loaded = m_impl->load(*info->mesh);
+
+        if (!loaded) {
+          return std::unexpected(loaded.error());
+        }
+
+        found = m_impl->cache.emplace(*resourceKey, std::move(*loaded)).first;
+        m_impl->bytes += found->second.bytes;
+      }
+
+      return transformedBounds(found->second.bounds, *transform);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Get scene bounds: " + std::string(error.what()));
+    }
   }
 
   auto SceneRenderer::stats() const -> Core::Result<SceneRenderStats> {

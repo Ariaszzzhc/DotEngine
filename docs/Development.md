@@ -3259,3 +3259,69 @@ scripts; retained build caches/latest archive and private untracked document.
 Temporal AO, offscreen/multi-layer geometry and populated-scene quality/cost remain
 planned. The larger goal still requires scalable 3D submission/assets, mature editor
 navigation/picking/gizmos/docking and the realistic polished Prism Relay game.
+
+
+## 2026-10-14 — independent editor viewport and opaque picking
+
+Implemented Dot.Graphics.View and Dot.Editor.Camera as separate module interfaces
+and implementation units. Validated pose/lens/aspect/world limits; pixel projection
+crops the exact top-left framebuffer pixel center without changing depth/W. Bounds
+transform all eight corners through hierarchy/reflection. Camera flight normalizes
+diagonal motion, orbit/pan/dolly are transactional and focus adjusts the clip range
+for larger scenes. No editor camera entity or history operation is manufactured.
+
+SceneRenderer now takes an explicit SceneView variant (primary game camera, entity
+camera or independent view), feeding that camera to actual lighting/sky/shadow/AO
+consumers. Loaded mesh bounds use the existing cache, without duplicate CPU geometry.
+Renderer opaque picking uses a 1x1 R32Uint/depth pass with independent per-draw integer
+uniforms, the same physical backface policy and synchronous readback. CPU mapping
+retains full scene EntityIds, including values above 2^53. Visible preview targets,
+HDR/AO publication and frame counters survive picking. Background clears selection.
+
+Workspace defaults to independent Editor view; explicit Game mode and Play still
+require actual game cameras. Stop retains the editor rig. Supported set-view,
+navigate-view, focus-view and pick-view commands share native GUI implementation.
+Current revision, displayed view and draft guards prevent selecting stale pixels.
+Native SDL input starts drag ownership inside the viewport and cancels on release,
+Escape or focus loss; game capture retains its prior path. The fixed control region
+preserves viewport size across Play/Stop. Updated the prior missing-camera test to
+prove Editor availability plus Game failure/undo recovery, preserving error coverage.
+
+Added 10 CTest identities: 3 pure CPU, 2 offscreen picking, 1 scene rendering,
+3 native workspace and 1 saved-project executable acceptance. The driver is under
+tests/acceptance and compiled only with BUILD_TESTING; production mains gain no test
+dispatch. Native input includes actual mouse/keyboard/release/focus-loss events.
+The camera-free ordinary-project driver draws/picks/frames/orbits, compares actual
+preview pixels, verifies authoring/history isolation and saves without inserting a
+game camera. Initial driver fixture used an incomplete scene-scoped EntityId;
+corrected it to resolve the actual primary camera. All existing consumer tests remain.
+
+Sandbox native tests initially lacked a macOS display service; repeated them with
+graphical-session access instead of changing SDL drivers or reporting fake success.
+The 31 other focused checks passed in 24.45s; corrected driver passed in 1.86s.
+Complete Debug passes 893/893 in 165.13s; Release/NDEBUG 893/893 in 37.69s.
+No toolchain failure or sanitizer use occurred. Inventory: 831 doctest identities
+plus 62 executable checks; 201 unit, 87 offscreen, 50 native and 100 acceptance labels
+overlap. All 271 C/C++ sources pass clang-format; 15 standalone WGSL sources pass
+indentation/line/whitespace checks and actual Dawn pipeline validation. Reviewed
+module direction, ownership/thread/move checks, error paths, publication invariants,
+projection/depth conventions, native input routing and appropriate test coverage.
+
+Read the supplied dark/light editor references and prompt text. Recorded compact
+hierarchy/Scene-Game/Inspector/assets placement and neutral dark/light palettes in
+EditorDesign.md, explicitly keeping live engine behavior authoritative. The concepts
+are visual inputs, not implemented features or performance evidence. Existing
+workspace layout remains; theme/layout adaptation is the following stage. Opened
+the refreshed native app with Feature Lab and inspected new controls/real preview;
+verified an agent focus operation changed actual pixels while dirty remained false.
+Closed that owned window and verified its control stage was removed.
+
+Refreshed ZIP: 259 entries, 46,013,826 bytes; CRC/executable modes/exclusions, two
+Feature Lab AO scenes and two exact HDRI copies pass. All 13 regular Mach-O files
+and 3 relative signed library symlinks pass strict signature and relative/system
+loader/rpath checks; deep strict app verification passes. Removed owned UI request
+files; retained build caches, latest archive and supplied reference artwork. Private
+untracked design source remains untracked. Only arm64 macOS is validated. Opaque
+picking currently submits visible draws and reads synchronously; acceleration,
+transparent/marquee picking, gizmos, docking/themes, populated-scene production and
+the realistic polished Prism Relay game remain unfinished. The larger goal is active.

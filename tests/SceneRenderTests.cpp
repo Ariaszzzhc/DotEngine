@@ -380,3 +380,39 @@ TEST_CASE("scene_render.deserialized_scene_preserves_actual_gpu_pixels") {
   REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
   CHECK(pixel(*image, 16, 16) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
 }
+
+TEST_CASE(
+    "scene_render.independent_views_pick_exact_entities_and_hierarchical_bounds_without_camera_"
+    "edits") {
+  auto renderer = Renderer::create().value();
+  auto drawing = SceneRenderer::create(renderer).value();
+  auto scene = Dot::World::Scene::create("Editor view").value();
+  auto parent = scene.createEntity("Parent").value();
+  auto mesh = scene.createEntityWithId("Picked mesh", 9007199254740993ULL).value();
+  REQUIRE(scene.setMeshRenderer(mesh, Dot::World::MeshRenderer{}));
+  REQUIRE(scene.setParent(mesh, parent));
+  REQUIRE(scene.setTransform(parent, {{2, 0, 0}}));
+  REQUIRE(scene.setTransform(mesh, {{1, 0, 0}, {}, {-2, 1, 1}}));
+  View view;
+  view.position = {3, 0, 5};
+  view.orthographic = true;
+  view.orthographicHeight = 4;
+  const auto before = Dot::World::encodeScene(scene).value();
+  auto target = renderer.createTarget(101, 73).value();
+  CHECK_FALSE(drawing.renderInto(scene, target));
+  REQUIRE(drawing.renderInto(scene, target, {0, 0, 0, 1}, view));
+  const auto bounds = drawing.bounds(scene, mesh).value();
+  CHECK(bounds.minimum == Dot::Math::Vec3{2, -0.5F, -0.5F});
+  CHECK(bounds.maximum == Dot::Math::Vec3{4, 0.5F, 0.5F});
+  auto hit = drawing.pick(scene, 101, 73, {0.5F, 0.5F}, view);
+  REQUIRE_MESSAGE(hit, (hit ? "" : hit.error().message));
+  CHECK(*hit == mesh);
+  CHECK_FALSE(drawing.pick(scene, 101, 73, {0.99F, 0.99F}, view).value());
+  CHECK(Dot::World::encodeScene(scene).value() == before);
+  REQUIRE(scene.setMeshRenderer(mesh, Dot::World::MeshRenderer{.asset = {}, .visible = false}));
+  CHECK_FALSE(drawing.pick(scene, 101, 73, {0.5F, 0.5F}, view).value());
+  CHECK_FALSE(drawing.pick(scene, 0, 73, {}, view));
+  auto point = drawing.bounds(scene, parent).value();
+  CHECK(point.minimum == Dot::Math::Vec3{2, 0, 0});
+  CHECK(point.maximum == point.minimum);
+}

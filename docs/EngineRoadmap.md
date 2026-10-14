@@ -57,3 +57,11 @@ CPU/offscreen/acceptance evidence, saved scene/editor controls and shared
 preview/Play/export consumption. Temporal quality and populated-scene performance
 remain planned. The other listed requirements
 remain pending; this stage does not establish large-game or mature-editor completion.
+
+
+Independent editor navigation, mesh world-bound framing and opaque GPU picking now
+have CPU, offscreen, native-input and runnable editor acceptance coverage. Gizmos,
+docking/persisted layouts, asset thumbnails and production scene tools remain planned.
+Dark/light editor references guide compact chrome and hierarchy/viewport/inspector/
+asset placement, while implemented engine behavior remains authoritative; see
+[EditorDesign.md](EditorDesign.md).

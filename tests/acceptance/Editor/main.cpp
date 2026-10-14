@@ -9,6 +9,7 @@
 #endif
 
 namespace Dot::Editor {
+  auto testViewport(const std::filesystem::path& parent) -> int;
   auto testWorkspace(const std::filesystem::path& parent) -> int;
   auto testGui(const std::filesystem::path& parent) -> int;
   auto testDocument(const std::filesystem::path& parent, bool render) -> int;
@@ -27,6 +28,10 @@ namespace {
 auto main(int argc, char** argv) -> int {
   try {
     const std::string_view command = argc > 1 ? argv[1] : "";
+
+    if (argc == 3 && command == "--viewport-test") {
+      return Dot::Editor::testViewport(path(argv[2]));
+    }
 
     if (argc == 3 && command == "--workspace-test") {
       return Dot::Editor::testWorkspace(path(argv[2]));

@@ -128,6 +128,8 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Environment.cpp
     src/Engine/Graphics/Shadows.cpp
     src/Engine/Graphics/Occlusion.cpp
+    src/Engine/Graphics/View.cpp
+    src/Engine/Editor/Camera.cpp
     src/Engine/Platform/ExternalFiles.cpp
     src/Engine/Editor/ScriptDiagnostics.cpp
     src/Engine/Script/SceneHost.cpp
@@ -217,6 +219,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Environment.cppm
         src/Engine/Graphics/Shadows.cppm
         src/Engine/Graphics/Occlusion.cppm
+        src/Engine/Graphics/View.cppm
+        src/Engine/Editor/Camera.cppm
         src/Engine/Platform/ExternalFiles.cppm
         src/Engine/Editor/ScriptDiagnostics.cppm
 )

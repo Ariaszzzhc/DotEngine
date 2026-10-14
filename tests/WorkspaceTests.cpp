@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -106,7 +107,7 @@ TEST_CASE("workspace.strict_requests_and_dirty_close_preserve_document") {
   CHECK(saved.entities()->at(1).name == "玩家");
 }
 
-TEST_CASE("workspace.camera_absence_is_visible_and_undo_recovers_preview") {
+TEST_CASE("workspace.camera_absence_keeps_editor_view_and_game_mode_reports_then_recovers") {
   Fixture fixture;
   auto workspace = fixture.open();
   REQUIRE(workspace.step(16ms));
@@ -119,8 +120,14 @@ TEST_CASE("workspace.camera_absence_is_visible_and_undo_recovers_preview") {
                                                    {"component", "camera"},
                                                    {"value", nullptr}}})}});
   REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == before.pixels);
+  REQUIRE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"game\"}"));
+  REQUIRE(workspace.step(16ms));
   CHECK_FALSE(workspace.captureViewport());
   command(workspace, {{"command", "undo"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport());
+  REQUIRE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"editor\"}"));
   REQUIRE(workspace.step(16ms));
   CHECK(workspace.captureViewport()->pixels == before.pixels);
 }
@@ -905,4 +912,216 @@ TEST_CASE("workspace.occlusion_and_environment_drafts_are_exclusive_and_discard_
   CHECK(snapshot(reopened)["scene"]["occlusion"].is_null());
   CHECK(snapshot(reopened)["scene"]["environment"].is_null());
   REQUIRE(reopened.dispatch("{\"command\":\"close\",\"discard\":false}"));
+}
+
+TEST_CASE("workspace.editor_view_navigation_focus_and_gpu_selection_leave_authoring_unchanged") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  const auto original = snapshot(workspace);
+  auto inspect
+      = [&] { return Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value()); };
+  CHECK(inspect()["workspace"]["view"]["mode"] == "editor");
+  Json camera{{"position", {0, 0, 5}},
+              {"pivot", {0, 0, 0}},
+              {"yaw", 0},
+              {"pitch", 0},
+              {"speed", 5},
+              {"orthographic", true},
+              {"orthographicHeight", 4},
+              {"nearPlane", 0.05F},
+              {"farPlane", 10000}};
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "set-view"}, {"mode", "editor"}, {"camera", camera}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "pick-view"},
+      {"revision", original["revision"]},
+      {"uv", {0.5F, 0.5F}}}.dump()));
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  CHECK(inspect()["workspace"]["view"]["ready"] == true);
+  const auto before = workspace.captureViewport().value();
+  auto picked = command(workspace, {{"command", "pick-view"}, {"uv", {0.5F, 0.5F}}});
+  CHECK(picked["selected"] == "2");
+  CHECK(picked["dirty"] == false);
+  REQUIRE(workspace.step(16ms));
+  CHECK(
+      command(workspace, {{"command", "pick-view"}, {"uv", {0.01F, 0.01F}}})["selected"].is_null());
+  const auto revision = snapshot(workspace)["revision"];
+  auto focused = command(workspace, {{"command", "focus-view"}, {"entity", "2"}});
+  CHECK(focused["revision"] == revision);
+  CHECK(focused["workspace"]["view"]["camera"]["pivot"] == Json::array({0, 0, 0}));
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "navigate-view"}, {"action", "turn"}, {"delta", {15, 10}}, {"orbit", true}}
+          .dump()));
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "navigate-view"}, {"action", "pan"}, {"delta", {0.1F, 0}}}.dump()));
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "navigate-view"}, {"action", "dolly"}, {"steps", 1}}.dump()));
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels != before.pixels);
+  CHECK(snapshot(workspace)["scene"] == original["scene"]);
+  CHECK(snapshot(workspace)["revision"] == revision);
+  CHECK(snapshot(workspace)["historyEntries"] == original["historyEntries"]);
+  const auto state = inspect()["workspace"]["view"]["camera"];
+  auto bad = state;
+  bad["nearPlane"] = -1;
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "set-view"}, {"mode", "editor"}, {"camera", bad}}.dump()));
+  CHECK(inspect()["workspace"]["view"]["camera"] == state);
+  REQUIRE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"game\"}"));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "navigate-view"}, {"action", "dolly"}, {"steps", 1}}.dump()));
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"editor\"}"));
+  command(workspace, {{"command", "play"}});
+  CHECK(inspect()["workspace"]["view"]["mode"] == "play");
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"editor\"}"));
+  REQUIRE(workspace.step(16ms));
+  command(workspace, {{"command", "stop-play"}});
+  CHECK(inspect()["workspace"]["view"]["camera"] == state);
+  CHECK(snapshot(workspace)["scene"] == original["scene"]);
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
+}
+
+TEST_CASE("workspace.viewport_picks_guard_drafts_stale_revisions_and_render_epochs") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.step(16ms));
+  const auto original = snapshot(workspace);
+  Json occlusion{{"radius", 0.5F},  {"bias", 0.02F}, {"strength", 1.0F},
+                 {"directions", 8}, {"steps", 4},    {"filterRadius", 2}};
+  command(workspace, {{"command", "stage-occlusion"}, {"value", occlusion}});
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "navigate-view"}, {"action", "turn"}, {"delta", {5, 0}}, {"orbit", false}}
+          .dump()));
+  REQUIRE(workspace.step(16ms));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "pick-view"},
+      {"revision", snapshot(workspace)["revision"]},
+      {"uv", {0.5F, 0.5F}}}.dump()));
+  command(workspace, {{"command", "reset-occlusion"}});
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "pick-view"}, {"revision", "0"}, {"uv", {0.5F, 0.5F}}}.dump()));
+  REQUIRE(workspace.dispatch(Json{
+      {"command", "navigate-view"},
+      {"action", "move"},
+      {"direction", {0, 0, 1}},
+      {"seconds", 0.1F},
+      {"fast", false}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "pick-view"},
+      {"revision", snapshot(workspace)["revision"]},
+      {"uv", {0.5F, 0.5F}}}.dump()));
+  CHECK(snapshot(workspace)["scene"] == original["scene"]);
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
+}
+
+TEST_CASE(
+    "workspace.native_viewport_mouse_keyboard_focus_and_release_route_only_editor_navigation") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  Json camera{{"position", {0, 0, 5}},
+              {"pivot", {0, 0, 0}},
+              {"yaw", 0},
+              {"pitch", 0},
+              {"speed", 5},
+              {"orthographic", true},
+              {"orthographicHeight", 4},
+              {"nearPlane", 0.05F},
+              {"farPlane", 10000}};
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "set-view"}, {"mode", "editor"}, {"camera", camera}}.dump()));
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  auto inspect
+      = [&] { return Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value()); };
+  const auto original = snapshot(workspace)["scene"];
+  const auto viewport = inspect()["workspace"]["view"]["viewport"];
+  const float x = viewport["origin"][0].get<float>() + viewport["size"][0].get<float>() * 0.5F;
+  const float y = viewport["origin"][1].get<float>() + viewport["size"][1].get<float>() * 0.5F;
+  int count{};
+  auto windows = SDL_GetWindows(&count);
+  REQUIRE(windows);
+  REQUIRE(count == 1);
+  const auto window = SDL_GetWindowID(windows[0]);
+  SDL_free(windows);
+  const auto pointer = [&](float px, float py, float dx = 0, float dy = 0) {
+    SDL_Event event{};
+    event.motion.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.windowID = window;
+    event.motion.x = px;
+    event.motion.y = py;
+    event.motion.xrel = dx;
+    event.motion.yrel = dy;
+    REQUIRE(SDL_PushEvent(&event));
+  };
+  const auto button = [&](Uint8 value, bool down) {
+    SDL_Event event{};
+    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.windowID = window;
+    event.button.button = value;
+    event.button.down = down;
+    event.button.x = x;
+    event.button.y = y;
+    REQUIRE(SDL_PushEvent(&event));
+  };
+  const auto key = [&](SDL_Scancode value, bool down) {
+    SDL_Event event{};
+    event.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+    event.key.windowID = window;
+    event.key.scancode = value;
+    event.key.down = down;
+    REQUIRE(SDL_PushEvent(&event));
+  };
+  pointer(x, y);
+  button(SDL_BUTTON_LEFT, true);
+  button(SDL_BUTTON_LEFT, false);
+  REQUIRE(workspace.step(16ms));
+  CHECK(snapshot(workspace)["selected"] == "2");
+  const auto before = inspect()["workspace"]["view"]["camera"]["position"];
+  pointer(x, y);
+  button(SDL_BUTTON_RIGHT, true);
+  key(SDL_SCANCODE_W, true);
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["view"]["camera"]["position"][2].get<float>()
+        < before[2].get<float>());
+  button(SDL_BUTTON_RIGHT, false);
+  key(SDL_SCANCODE_W, false);
+  REQUIRE(workspace.step(16ms));
+  const auto released = inspect()["workspace"]["view"]["camera"];
+  key(SDL_SCANCODE_W, true);
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["view"]["camera"] == released);
+  key(SDL_SCANCODE_W, false);
+  pointer(1, 1);
+  button(SDL_BUTTON_RIGHT, true);
+  key(SDL_SCANCODE_W, true);
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["view"]["camera"] == released);
+  button(SDL_BUTTON_RIGHT, false);
+  key(SDL_SCANCODE_W, false);
+  REQUIRE(workspace.step(16ms));
+  pointer(x, y);
+  button(SDL_BUTTON_RIGHT, true);
+  key(SDL_SCANCODE_W, true);
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["view"]["flying"] == true);
+  const auto held = inspect()["workspace"]["view"]["camera"];
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["view"]["flying"] == false);
+  CHECK(inspect()["workspace"]["view"]["camera"] == held);
+  CHECK(snapshot(workspace)["scene"] == original);
+  CHECK(snapshot(workspace)["dirty"] == false);
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
 }

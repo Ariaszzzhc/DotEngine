@@ -35,5 +35,6 @@ add_executable(DotEditorAcceptance
     Editor/DocumentAcceptance.cpp
     Editor/GuiAcceptance.cpp
     Editor/ProjectAcceptance.cpp
+    Editor/ViewportAcceptance.cpp
     Editor/WorkspaceAcceptance.cpp)
 target_link_libraries(DotEditorAcceptance PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)

@@ -26,6 +26,7 @@ module Dot.Graphics.Renderer;
 
 import Dot.Core.Result;
 import Dot.Math;
+import Dot.Graphics.View;
 import Dot.Platform.Window;
 import Dot.Platform.System;
 import Dot.Platform.Events;
@@ -496,6 +497,7 @@ namespace Dot::Graphics {
     std::optional<OcclusionSettings> occlusion;
     std::array<wgpu::Texture, 4> occlusionTextures;
     wgpu::RenderPipeline geometryPipeline;
+    wgpu::RenderPipeline pickingPipeline;
     wgpu::ComputePipeline occlusionPipeline;
     wgpu::ComputePipeline occlusionFilterPipeline;
     wgpu::RenderPipeline occlusionEnvironmentPipeline;
@@ -807,6 +809,57 @@ namespace Dot::Graphics {
       shadowLayers = settings.cascades;
       shadowBytes
           = static_cast<std::uint64_t>(shadowResolution) * shadowResolution * shadowLayers * 4;
+      return {};
+    }
+
+    auto ensurePickingPipeline() -> Core::Result<void> {
+      if (pickingPipeline) {
+        return {};
+      }
+
+      ErrorScope scope(instance, device);
+      wgpu::ShaderSourceWGSL source;
+      source.code = Detail::pickingShader;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&shaderDescriptor);
+      wgpu::VertexAttribute attribute{.format = wgpu::VertexFormat::Float32x3,
+                                      .offset = offsetof(Vertex, position),
+                                      .shaderLocation = 0};
+      wgpu::VertexBufferLayout layout;
+      layout.arrayStride = sizeof(Vertex);
+      layout.attributeCount = 1;
+      layout.attributes = &attribute;
+      wgpu::ColorTargetState target;
+      target.format = wgpu::TextureFormat::R32Uint;
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::DepthStencilState depth;
+      depth.format = wgpu::TextureFormat::Depth24Plus;
+      depth.depthWriteEnabled = true;
+      depth.depthCompare = wgpu::CompareFunction::Less;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.vertex.bufferCount = 1;
+      descriptor.vertex.buffers = &layout;
+      descriptor.depthStencil = &depth;
+      descriptor.fragment = &fragment;
+      auto pipeline = device.CreateRenderPipeline(&descriptor);
+      auto checked = scope.finish();
+
+      if (!checked) {
+        return checked;
+      }
+
+      if (!pipeline) {
+        return Core::fail(Core::ErrorCode::External, "Create integer picking pipeline failed");
+      }
+
+      pickingPipeline = std::move(pipeline);
       return {};
     }
 
@@ -3753,6 +3806,103 @@ namespace Dot::Graphics {
                                       clear);
         },
         {}, wgpu::TextureFormat::RGBA8Unorm, 0, 0, true);
+  }
+
+  auto Renderer::pickMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
+                            std::uint32_t width, std::uint32_t height, Math::Vec2 uv)
+      -> Core::Result<std::optional<std::size_t>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto projected = pixelProjection(viewProjection, width, height, uv);
+
+    if (!projected) {
+      return std::unexpected(projected.error());
+    }
+
+    auto prepared = m_impl->prepare(draws, *projected, {0, 0, 0, 0});
+
+    if (!prepared) {
+      return std::unexpected(prepared.error());
+    }
+
+    checked = m_impl->ensurePickingPipeline();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    struct PickData {
+      Math::Mat4 transform;
+      Math::Vec4 flags;
+      std::array<std::uint32_t, 4> identifier;
+    };
+
+    static_assert(sizeof(PickData) == 96);
+    auto image = m_impl->readback(
+        1, 1,
+        [&](const wgpu::Texture& target, auto, auto) -> Core::Result<wgpu::CommandEncoder> {
+          wgpu::TextureDescriptor depthDescriptor;
+          depthDescriptor.size = {1, 1, 1};
+          depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
+          depthDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
+          auto depth = m_impl->device.CreateTexture(&depthDescriptor);
+          return m_impl->encodePass(
+              target, 1, 1, {0, 0, 0, 0},
+              [&](const wgpu::RenderPassEncoder& pass) {
+                pass.SetPipeline(m_impl->pickingPipeline);
+
+                for (std::size_t index = 0; index < prepared->size(); ++index) {
+                  const auto& draw = (*prepared)[index];
+                  const PickData data{draw.uniform.transform,
+                                      draw.uniform.flags,
+                                      {static_cast<std::uint32_t>(index + 1), 0, 0, 0}};
+                  wgpu::BufferDescriptor descriptor;
+                  descriptor.size = sizeof(data);
+                  descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+                  auto buffer = m_impl->device.CreateBuffer(&descriptor);
+                  m_impl->queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+                  wgpu::BindGroupEntry entry;
+                  entry.buffer = buffer;
+                  entry.size = sizeof(data);
+                  wgpu::BindGroupDescriptor group;
+                  group.layout = m_impl->pickingPipeline.GetBindGroupLayout(0);
+                  group.entryCount = 1;
+                  group.entries = &entry;
+                  pass.SetBindGroup(0, m_impl->device.CreateBindGroup(&group));
+                  pass.SetVertexBuffer(0, draw.mesh->vertices);
+
+                  if (draw.mesh->info.indices) {
+                    pass.SetIndexBuffer(draw.mesh->indices, wgpu::IndexFormat::Uint32);
+                    pass.DrawIndexed(draw.mesh->info.indices);
+                  } else {
+                    pass.Draw(draw.mesh->info.vertices);
+                  }
+                }
+              },
+              depth.CreateView());
+        },
+        {}, wgpu::TextureFormat::R32Uint);
+
+    if (!image) {
+      return std::unexpected(image.error());
+    }
+
+    std::uint32_t identifier{};
+    std::memcpy(&identifier, image->pixels.data(), sizeof(identifier));
+
+    if (identifier > draws.size()) {
+      return Core::fail(Core::ErrorCode::External, "Integer picking returned an unknown draw");
+    }
+
+    return identifier ? std::optional<std::size_t>(identifier - 1) : std::nullopt;
   }
 
   auto Renderer::presentMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,

@@ -154,9 +154,10 @@ The toolbar provides Save, Undo, Redo, New entity and Delete; Cmd+S/Cmd+Z/
 Cmd+Shift+Z are used on macOS, Ctrl equivalents on Windows/Linux. Delete is guarded
 while text input is active. Native close/quit checks document dirtiness, pending inspector changes and
 resource file drafts, opening Save and close / Discard / Cancel confirmation.
-The viewport renders the actual game primary camera into a reusable GPU target;
-missing camera/assets display errors and can be recovered by editing/undo. Native
-renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
+The viewport defaults to an independent editor camera in a reusable GPU target.
+Editor navigation never adds a camera to the game scene. Explicit Game view and
+Play use the actual game primary camera; missing camera/assets display errors and
+can be recovered by editing/undo. Native renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
 resource authoring and external source opening are provided through Resources. Export
 publishes standalone native games or data packages through the shared command below.
 
@@ -551,3 +552,43 @@ operation is `{ "op": "occlusion", "value": ... }` with the same settings/null
 and validation. Work values must be integers; unknown fields and unsupported
 ranges fail before history or drafts change. AO is optional scene data. Temporal reprojection, multi-layer/offscreen geometry and
 populated-scene quality/cost work remain planned.
+
+
+## Independent scene navigation and selection
+
+The session-owned editor view provides perspective/orthographic browsing, RMB plus
+WASD/QE flight (Shift accelerates), Alt+LMB orbit, MMB pan, wheel dolly and F to
+frame the selected entity. Frame scene unions current visible mesh bounds, including
+parent transforms and reflection; nonmesh entities focus on their world position.
+Focus adjusts clip planes for larger bounds. Editor state is never written to the
+scene or its undo history. Play temporarily uses the game camera and Stop restores
+the editor view. An empty scene is editable without inventing a game camera.
+
+Left-click selection rasterizes the actual opaque mesh at the displayed pixel with
+integer draw identifiers, depth testing and the same physical backface policy as
+the surface pass. Full entity IDs remain on the CPU, including values above 2^53.
+Background clicks clear selection. This is synchronous single-pixel GPU readback;
+marquee selection, transparent picking, manipulators and asynchronous readback are
+not implemented. Drafts and stale scene/view revisions reject selection rather than
+picking an image that no longer describes the document. Native drag ownership starts
+inside the viewport and ends on release, Escape or focus loss.
+
+Agent commands share these implementations:
+
+- `set-view`: `mode` is `editor` or `game`. Optional editor `camera` contains
+  `position`, `pivot`, `yaw`, `pitch`, `speed`, `orthographic`,
+  `orthographicHeight`, `nearPlane`, `farPlane`; degrees and meters are explicit.
+- `navigate-view`: `action` is `turn` (`delta`, `orbit`), `move` (`direction`,
+  `seconds`, `fast`), `pan` (`delta`) or `dolly` (`steps`).
+- `focus-view`: current `revision`, `entity` as a decimal string or null to frame
+  all visible meshes.
+- `pick-view`: current `revision`, top-left normalized `uv` in [0,1). A successful
+  preview of the same view/document is required first.
+
+`inspect.workspace.view` reports mode, readiness, fly ownership, logical viewport
+rectangle and session camera. Scene selection changes metadata revisions but does
+not dirty the scene. The native acceptance entry is
+`DotEditorAcceptance --viewport-test <existing-parent>`, built only with BUILD_TESTING.
+
+The visual direction is recorded in [EditorDesign.md](EditorDesign.md). Its reference
+art is a design input; the scene and controls must always reflect engine state.

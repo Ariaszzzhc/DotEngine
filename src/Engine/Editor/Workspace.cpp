@@ -39,6 +39,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
 import Dot.Editor.Document;
+import Dot.Editor.Camera;
 import Dot.Project;
 import Dot.Project.GamePackage;
 import Dot.Project.GameExport;
@@ -308,6 +309,14 @@ namespace Dot::Editor {
     bool m_applying{};
     std::optional<Core::Error> m_mailboxFault;
     std::optional<Core::Error> m_actionError;
+    Camera m_editorCamera;
+    bool m_editorView{true};
+    bool m_flying{};
+    bool m_orbiting{};
+    bool m_panning{};
+    bool m_viewBlocked{};
+    std::optional<Graphics::SceneView> m_renderedView;
+    std::string m_renderedRevision;
     float m_viewWidth{640};
     float m_viewHeight{480};
     std::optional<Core::Error> m_inputError;
@@ -1069,6 +1078,7 @@ namespace Dot::Editor {
         auto encoded = World::encodeScene(*m_play->scene().value());
         return encoded ? Core::Result<std::string>{Json{{"ok", true},
                                                         {"play", playStatus()},
+                                                        {"view", viewStatus()},
                                                         {"scene", Codec::parseJson(*encoded)}}
                                                        .dump()}
                        : std::unexpected(encoded.error());
@@ -1077,6 +1087,84 @@ namespace Dot::Editor {
       if (playing() && command != "inspect" && command != "close" && command != "show-pane") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Stop Play before changing the authoring document");
+      }
+
+      if (command == "set-view") {
+        Codec::requireFields(parsed, {"command", "mode"}, {"camera"});
+        const auto mode = parsed["mode"].get<std::string>();
+
+        if (mode != "editor" && mode != "game") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown viewport mode");
+        }
+
+        if (parsed.contains("camera")) {
+          if (mode != "editor") {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Game camera edits use scene transactions");
+          }
+
+          const auto& value = parsed["camera"];
+          Codec::requireFields(value, {"position", "pivot", "yaw", "pitch", "speed", "orthographic",
+                                       "orthographicHeight", "nearPlane", "farPlane"});
+          const auto position = Codec::numbers<3>(value["position"]);
+          const auto pivot = Codec::numbers<3>(value["pivot"]);
+          auto applied = m_editorCamera.setState({{position[0], position[1], position[2]},
+                                                  {pivot[0], pivot[1], pivot[2]},
+                                                  Codec::number(value["yaw"]),
+                                                  Codec::number(value["pitch"]),
+                                                  Codec::number(value["speed"]),
+                                                  value["orthographic"].get<bool>(),
+                                                  Codec::number(value["orthographicHeight"]),
+                                                  Codec::number(value["nearPlane"]),
+                                                  Codec::number(value["farPlane"])});
+
+          if (!applied) {
+            return std::unexpected(applied.error());
+          }
+        }
+
+        m_editorView = mode == "editor";
+        m_flying = m_orbiting = m_panning = false;
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "navigate-view") {
+        auto applied = navigateView(parsed);
+        return applied ? execute("{\"command\":\"inspect\"}") : std::unexpected(applied.error());
+      }
+
+      if (command == "focus-view" || command == "pick-view") {
+        Codec::requireFields(parsed,
+                             {"command", "revision", command == "focus-view" ? "entity" : "uv"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Viewport request has a stale document revision");
+        }
+
+        Core::Result<void> applied;
+
+        if (command == "focus-view") {
+          std::optional<World::EntityId> entity;
+
+          if (!parsed["entity"].is_null()) {
+            auto scene = m_document->scene().value();
+            auto found = scene->findEntity(Codec::id(parsed["entity"]));
+
+            if (!found) {
+              return std::unexpected(found.error());
+            }
+
+            entity = *found;
+          }
+
+          applied = focusView(entity);
+        } else {
+          const auto uv = Codec::numbers<2>(parsed["uv"]);
+          applied = pickView({uv[0], uv[1]});
+        }
+
+        return applied ? execute("{\"command\":\"inspect\"}") : std::unexpected(applied.error());
       }
 
       if (command == "show-pane") {
@@ -1270,6 +1358,7 @@ namespace Dot::Editor {
                                  {"propertiesText", m_propertiesText},
                                  {"propertiesInvalid", m_propertiesInvalid},
                                  {"play", playStatus()},
+                                 {"view", viewStatus()},
                                  {"message", m_message},
                                  {"file", textStatus()}};
         return response.dump();
@@ -1375,6 +1464,170 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto currentView() const -> Core::Result<Graphics::SceneView> {
+      if (playing() || !m_editorView) {
+        return Graphics::SceneView{};
+      }
+
+      auto view = m_editorCamera.view();
+      return view ? Core::Result<Graphics::SceneView>(*view) : std::unexpected(view.error());
+    }
+
+    auto viewStatus() const -> Json {
+      const auto state = m_editorCamera.state();
+      auto current = currentView();
+      const bool ready = current && m_previewReady && m_renderedView && *current == *m_renderedView
+                         && m_renderedRevision == std::to_string(m_document->stats()->revision)
+                         && !m_assetRefresh;
+      return {
+          {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
+          {"ready", ready},
+          {"flying", m_flying},
+          {"viewport",
+           {{"origin", {m_viewOrigin.x, m_viewOrigin.y}}, {"size", {m_viewWidth, m_viewHeight}}}},
+          {"camera",
+           {{"position", {state.position.x, state.position.y, state.position.z}},
+            {"pivot", {state.pivot.x, state.pivot.y, state.pivot.z}},
+            {"yaw", state.yaw},
+            {"pitch", state.pitch},
+            {"speed", state.speed},
+            {"orthographic", state.orthographic},
+            {"orthographicHeight", state.orthographicHeight},
+            {"nearPlane", state.nearPlane},
+            {"farPlane", state.farPlane}}}};
+    }
+
+    auto navigateView(const Json& request) -> Core::Result<void> {
+      if (!m_editorView || playing()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Navigation requires the editor view");
+      }
+
+      const auto action = request.at("action").get<std::string>();
+
+      if (action == "turn") {
+        Codec::requireFields(request, {"command", "action", "delta", "orbit"});
+        const auto delta = Codec::numbers<2>(request["delta"]);
+        return m_editorCamera.turn({delta[0], delta[1]}, request["orbit"].get<bool>());
+      }
+
+      if (action == "move") {
+        Codec::requireFields(request, {"command", "action", "direction", "seconds", "fast"});
+        const auto direction = Codec::numbers<3>(request["direction"]);
+        return m_editorCamera.move({direction[0], direction[1], direction[2]},
+                                   Codec::number(request["seconds"]), request["fast"].get<bool>());
+      }
+
+      if (action == "pan") {
+        Codec::requireFields(request, {"command", "action", "delta"});
+        const auto delta = Codec::numbers<2>(request["delta"]);
+        return m_editorCamera.pan({delta[0], delta[1]}, m_viewWidth / m_viewHeight);
+      }
+
+      if (action == "dolly") {
+        Codec::requireFields(request, {"command", "action", "steps"});
+        return m_editorCamera.dolly(Codec::number(request["steps"]));
+      }
+
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown editor navigation action");
+    }
+
+    auto focusView(std::optional<World::EntityId> entity) -> Core::Result<void> {
+      auto scene = m_document->scene();
+
+      if (!scene) {
+        return std::unexpected(scene.error());
+      }
+
+      Core::Result<Graphics::Bounds> bounds = Graphics::Bounds{};
+
+      if (entity) {
+        bounds = m_drawing->bounds(**scene, *entity);
+      } else {
+        auto entities = (*scene)->entities();
+
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
+
+        bool first = true;
+
+        for (const auto& info : *entities) {
+          if (!info.mesh || !info.mesh->visible) {
+            continue;
+          }
+
+          auto next = m_drawing->bounds(**scene, info.id);
+
+          if (!next) {
+            return std::unexpected(next.error());
+          }
+
+          if (first) {
+            bounds = *next;
+            first = false;
+          } else {
+            auto& merged = *bounds;
+            merged.minimum = {std::min(merged.minimum.x, next->minimum.x),
+                              std::min(merged.minimum.y, next->minimum.y),
+                              std::min(merged.minimum.z, next->minimum.z)};
+            merged.maximum = {std::max(merged.maximum.x, next->maximum.x),
+                              std::max(merged.maximum.y, next->maximum.y),
+                              std::max(merged.maximum.z, next->maximum.z)};
+          }
+        }
+
+        if (first) {
+          return Core::fail(Core::ErrorCode::NotFound, "Scene has no visible meshes to frame");
+        }
+      }
+
+      if (!bounds) {
+        return std::unexpected(bounds.error());
+      }
+
+      auto focused = m_editorCamera.focus(*bounds, m_viewWidth / m_viewHeight);
+
+      if (focused) {
+        m_editorView = true;
+      }
+
+      return focused;
+    }
+
+    /** A pick must refer to the displayed view/current document, not a stale image.
+     * 选择必须对应已显示视图及当前文档，不能用过期图像悄悄选择新场景。 */
+    auto pickView(Math::Vec2 uv) -> Core::Result<void> {
+      if (pendingInspector() || pendingEnvironment() || pendingOcclusion()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Apply or reset scene drafts before selecting");
+      }
+
+      auto view = currentView();
+
+      if (!view || !m_previewReady || !m_target || !m_renderedView || *view != *m_renderedView
+          || m_renderedRevision != std::to_string(m_document->stats()->revision)
+          || m_assetRefresh) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Render the current view before selecting");
+      }
+
+      auto scene = m_document->scene();
+      auto target = m_target->info();
+
+      if (!scene || !target) {
+        return std::unexpected(!scene ? scene.error() : target.error());
+      }
+
+      auto selected = m_drawing->pick(**scene, target->width, target->height, uv, *m_renderedView);
+
+      if (!selected) {
+        return std::unexpected(selected.error());
+      }
+
+      auto changed = m_document->select(*selected, m_document->stats()->revision);
+      return changed ? refresh() : changed;
+    }
+
     auto preview() -> Core::Result<void> {
       const auto size = m_application->window().pixelSize();
       const auto logical = m_application->window().size();
@@ -1421,7 +1674,18 @@ namespace Dot::Editor {
         return std::unexpected(scene.error());
       }
 
-      auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1});
+      auto view = currentView();
+
+      if (!view) {
+        return std::unexpected(view.error());
+      }
+
+      auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view);
+
+      if (drawn) {
+        m_renderedView = *view;
+        m_renderedRevision = std::to_string(m_document->stats()->revision);
+      }
       m_previewReady = drawn.has_value();
       m_previewError = drawn ? "" : drawn.error().message;
 
@@ -2003,6 +2267,152 @@ namespace Dot::Editor {
       }
     }
 
+    auto viewportControls() -> void {
+      if (playing()) {
+        ImGui::TextUnformatted("Running game preview");
+        m_flying = m_orbiting = m_panning = false;
+        return;
+      }
+
+      ImGui::SetNextItemWidth(std::min(160.F, ImGui::GetContentRegionAvail().x));
+      const char* mode = m_editorView ? "Editor view" : "Game camera";
+
+      if (ImGui::BeginCombo("##viewport-mode", mode)) {
+        for (const auto* value : {"editor", "game"}) {
+          if (ImGui::Selectable(
+                  value, (m_editorView ? std::string_view("editor") : std::string_view("game"))
+                             == value)) {
+            auto result = safeExecute(Json{{"command", "set-view"}, {"mode", value}}.dump());
+            m_message = result ? "" : result.error().message;
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!m_document->stats()->selected);
+
+      if (ImGui::Button("Focus (F)")) {
+        action({{"command", "focus-view"}, {"entity", m_snapshot["selected"]}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+
+      if (ImGui::Button("Frame scene")) {
+        action({{"command", "focus-view"}, {"entity", nullptr}});
+      }
+
+      if (m_editorView) {
+        auto state = m_editorCamera.state();
+        bool changed = ImGui::Checkbox("Orthographic", &state.orthographic);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.F);
+        changed = ImGui::DragFloat("Fly speed", &state.speed, 0.1F, 0.01F, 1000.F, "%.2f m/s",
+                                   ImGuiSliderFlags_AlwaysClamp)
+                  || changed;
+
+        if (changed) {
+          auto applied = m_editorCamera.setState(state);
+          m_message = applied ? "" : applied.error().message;
+        }
+
+        ImGui::TextWrapped("RMB + WASD/QE fly; Shift faster. Alt+LMB orbit; MMB pan; wheel zoom.");
+      }
+    }
+
+    /** Route navigation only from the viewport; it never consumes scene history.
+     * 仅从视口路由导航输入，不消耗场景历史；游戏运行时仍使用游戏输入路径。 */
+    auto viewportInput(const Platform::InputState& input, double seconds) -> void {
+      if (playing()) {
+        return;
+      }
+
+      const auto pointer = input.pointer();
+      const bool hovered = pointer.x >= m_viewOrigin.x && pointer.y >= m_viewOrigin.y
+                           && pointer.x < m_viewOrigin.x + m_viewWidth
+                           && pointer.y < m_viewOrigin.y + m_viewHeight;
+      auto gui = m_renderer->guiStats();
+
+      if (m_viewBlocked || !gui || gui->text || m_pendingClose) {
+        m_flying = m_orbiting = m_panning = false;
+        return;
+      }
+
+      if (hovered && input.key(Platform::Key::F).pressed && m_document->stats()->selected) {
+        action({{"command", "focus-view"}, {"entity", m_snapshot["selected"]}});
+      }
+
+      const auto left = input.button(Platform::MouseButton::Left);
+      const auto right = input.button(Platform::MouseButton::Right);
+      const auto middle = input.button(Platform::MouseButton::Middle);
+      const bool alt
+          = input.key(Platform::Key::LeftAlt).down || input.key(Platform::Key::RightAlt).down;
+
+      if (!m_editorView) {
+        if (hovered && left.pressed) {
+          auto selected = pickView({(pointer.x - m_viewOrigin.x) / m_viewWidth,
+                                    (pointer.y - m_viewOrigin.y) / m_viewHeight});
+          m_message = selected ? "" : selected.error().message;
+        }
+
+        return;
+      }
+
+      if (hovered) {
+        m_flying = m_flying || right.pressed;
+        m_panning = m_panning || middle.pressed;
+        m_orbiting = m_orbiting || (alt && left.pressed);
+      }
+
+      m_flying = m_flying && right.down;
+      m_panning = m_panning && middle.down;
+      m_orbiting = m_orbiting && left.down;
+
+      if (input.key(Platform::Key::Escape).pressed) {
+        m_flying = m_orbiting = m_panning = false;
+      }
+
+      const auto remember = [&](Core::Result<void> result) {
+        if (!result) {
+          m_message = result.error().message;
+        }
+      };
+      const auto delta = input.pointerDelta();
+
+      if (m_flying || m_orbiting) {
+        remember(m_editorCamera.turn({-delta.x * 0.15F, -delta.y * 0.15F}, m_orbiting));
+      }
+
+      if (m_flying) {
+        const auto axis = [&](Platform::Key positive, Platform::Key negative) -> float {
+          return static_cast<float>(input.key(positive).down)
+                 - static_cast<float>(input.key(negative).down);
+        };
+        const bool fast
+            = input.key(Platform::Key::LeftShift).down || input.key(Platform::Key::RightShift).down;
+        remember(m_editorCamera.move(
+            {axis(Platform::Key::D, Platform::Key::A), axis(Platform::Key::E, Platform::Key::Q),
+             axis(Platform::Key::W, Platform::Key::S)},
+            std::min(1.0, seconds), fast));
+      }
+
+      if (m_panning) {
+        remember(m_editorCamera.pan({delta.x / m_viewWidth, delta.y / m_viewHeight},
+                                    m_viewWidth / m_viewHeight));
+      }
+
+      if (hovered && input.wheel().y != 0) {
+        remember(m_editorCamera.dolly(input.wheel().y));
+      }
+
+      if (hovered && left.pressed && !alt && !m_flying) {
+        remember(pickView({(pointer.x - m_viewOrigin.x) / m_viewWidth,
+                           (pointer.y - m_viewOrigin.y) / m_viewHeight}));
+      }
+    }
+
     auto draw() -> Core::Result<void> {
       const auto stats = m_document->stats().value();
       auto* viewport = ImGui::GetMainViewport();
@@ -2163,7 +2573,9 @@ namespace Dot::Editor {
       ImGui::BeginChild("Viewport", {std::max(100.F, available.x - 220 - 340 - 24), available.y},
                         ImGuiChildFlags_Borders);
 
-      ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
+      ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 4});
+      viewportControls();
+      ImGui::EndChild();
 
       if (m_playError) {
         ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
@@ -2188,6 +2600,10 @@ namespace Dot::Editor {
           ImGui::End();
           return image;
         }
+
+        m_viewBlocked = ImGui::IsPopupOpen(
+                            nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)
+                        || ImGui::IsAnyItemActive();
       } else {
         ImGui::TextWrapped(
             "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
@@ -2368,8 +2784,10 @@ namespace Dot::Editor {
           }
 
           m_assetRefresh = false;
+          m_renderedView.reset();
         }
 
+        viewportInput(m_application->input(), std::chrono::duration<double>(frame.elapsed).count());
         auto ready = preview();
 
         if (!ready) {

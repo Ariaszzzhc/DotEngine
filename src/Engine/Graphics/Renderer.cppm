@@ -451,6 +451,14 @@ export namespace Dot::Graphics {
                                     const Math::Mat4& viewProjection, std::uint32_t width,
                                     std::uint32_t height, Math::Vec4 clear = {0, 0, 0, 1})
         -> Core::Result<Image>;
+    /** Visible opaque draw at top-left UV [0,1), with the same depth/backface policy.
+     * A cropped 1x1 integer pass/readback leaves HDR/targets/AO images unchanged.
+     * No hit is an empty optional, not an error; indices refer to the input span.
+     * 左上 UV [0,1) 处可见不透明绘制，沿用深度/背面规则；1x1 整数 pass/读回不改变 HDR、
+     * 目标或 AO 图像。未命中为空 optional，序号对应输入 span。 */
+    [[nodiscard]] auto pickMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
+                                  std::uint32_t width, std::uint32_t height, Math::Vec2 uv)
+        -> Core::Result<std::optional<std::size_t>>;
     /** CPU drawing may execute before a surface frame is deferred/failed.
      * GUI seconds is finite [0,1]; zero uses a 1-microsecond UI delta. Readback
      * scale is finite [0.25,8]; presentation derives native DPI independently.
