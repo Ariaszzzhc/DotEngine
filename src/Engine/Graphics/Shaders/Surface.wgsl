@@ -136,7 +136,7 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
 
   let metallic = clamp(camera.material.x * mr.b, 0.0, 1.0);
   let roughness = clamp(camera.material.y * mr.g, 0.045, 1.0);
-  var radiance = emission;
+  var radiance = emission + environmentRadiance(n, v, base.xyz, metallic, roughness);
 
   for (var index = 0u; index < u32(lighting.counts.x); index++) {
     let light = lighting.lights[index];

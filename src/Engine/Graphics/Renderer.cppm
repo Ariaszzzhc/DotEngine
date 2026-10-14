@@ -200,6 +200,18 @@ export namespace Dot::Graphics {
 
   enum class SurfaceModel { Unlit, MetallicRoughness };
 
+  /** Shared environment for mesh rendering: linear intensity [0,64], yaw degrees
+   * [-360,360]. Background rays use the draw's inverse view-projection and current
+   * Lighting camera pose; orthographic views use their emitted view direction.
+   * 网格渲染共享环境：线性强度 [0,64]，绕 Y 轴角度 [-360,360]；背景视线使用绘制的
+   * 逆视投影及 Lighting 相机位姿，正交相机使用发射视线方向。 */
+  struct EnvironmentLighting {
+    EnvironmentMap map;
+    float intensity{1};
+    float rotationDegrees{};
+    bool background{true};
+  };
+
   /** Linear base-color factor multiplied by vertex color, object tint and sampled
    * base-color texture. Absence means a constant white texel; an explicitly empty
    * or foreign texture fails. Unlit and metallic/roughness surfaces share the same
@@ -299,11 +311,20 @@ export namespace Dot::Graphics {
                                        std::uint32_t face = 0, std::uint32_t level = 0)
         -> Core::Result<HdrImage>;
 
+    /** Transactionally bind owned environment lighting to future mesh frames.
+     * Null clears it; absent/foreign maps and invalid settings fail without replacing
+     * the prior binding. Existing targets retain pixels until explicitly redrawn.
+     * 事务式绑定拥有的环境光至未来网格帧；空值解绑，无效/跨设备环境或设置失败时保留
+     * 原绑定；已有目标的像素保留至显式重绘。 */
+    [[nodiscard]] auto setEnvironment(std::optional<EnvironmentLighting> environment)
+        -> Core::Result<void>;
+    [[nodiscard]] auto environment() const -> Core::Result<std::optional<EnvironmentLighting>>;
+
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;
-     * no-light frames retain emission only. No IBL or shadows are implicit.
+     * no-direct-light frames retain emission and explicitly bound IBL. Shadows are pending.
      * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
-     * 无光帧仅保留自发光，不隐式提供 IBL 或阴影。 */
+     * 无直接光帧保留自发光及显式绑定的 IBL，阴影尚待实现。 */
     [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
     [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 

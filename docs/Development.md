@@ -2939,3 +2939,58 @@ temporary extraction/format/package-audit/download-metadata files; retained buil
 caches, latest native archive and local HDRI. Surface IBL, sky and persistent
 authoring consumers remain pending, as do soft shadows, SSAO and mature editor/game
 capabilities. No Windows/Linux validation or full IBL delivery is claimed.
+
+## 2026-10-14 — HDRI surface lighting and camera sky
+
+Connected the independently tested environment maps to physical mesh rendering:
+shared transactional binding, bounded intensity/yaw, mapped-normal diffuse,
+perceptual-roughness specular LOD and correlated-Smith split-sum BRDF. Environment
+absence uses an explicit direct-only shader variant; no dummy environment asset
+or hidden light is substituted. Unlit draws retain their established behavior.
+Added an HDR fullscreen sky with inverse-view-projection perspective rays and
+orthographic emitted rays, matching panorama rotation, preserved geometry depth
+and the existing post-processing pipeline. Lazy native pipeline creation is checked
+before publishing a new binding. Singular/horizon/on-plane sky input fails before
+render submission and retains target pixels/frame index. Shared snapshots preserve
+map ownership across unbinding. No renderer environment settings were added to
+scene serialization or editor UI yet.
+
+New real GPU tests compare constant diffuse/metal energy against the analytic
+rough correlated-Smith integral, intensity and emission/unlit/unbound behavior;
+verify foreign/missing/nonfinite/range/thread/retained-binding failures and shared
+lifetime; check directional camera/yaw/orthographic/depth/HDR/display behavior.
+A scene test consumes decoded material resources and actual scene-camera poses
+without direct lights, preserving independently owned maps across cache clearing.
+The acceptance driver additionally renders six copper/ceramic spheres under the
+actual local Studio Small 09 HDRI and writes GPU ACES output plus float readback.
+Visually inspected the resulting 960x540 image: distinct studio reflections,
+roughness blur, colored diffuse/highlights and coherent sky. This is renderer
+capability evidence, not an authored large game or mature environment editor.
+
+Initial test compilation required explicit Math import and required draw matrix
+arguments. The first GPU run identified incorrect test expectations: the field's
+negative Z channel is zero, and the test's invalid-settings copy still owned the
+map. Corrected the reference/explicit lifetime rather than changing the renderer
+to satisfy those expectations. Four focused cases then passed in 4.10 seconds.
+Review also guarded a zero camera view ray before cube sampling, matching direct
+BRDF handling; subsequent verification includes that boundary. All WGSL remains
+standalone with two-space blocks, separated statements/functions and bounded lines.
+
+Final verification: Debug full suite 852/852 in 136.25 seconds, followed by all
+72 Debug offscreen cases after the final zero-view-ray guard in 36.50 seconds;
+Release/NDEBUG full suite 852/852 in 37.66 seconds. Registered layers are 189 unit,
+471 device-free integration, 72 offscreen, 43 native and 91 acceptance (overlapping
+labels). All 253 C/C++ files pass clang-format; all six WGSL sources pass indentation,
+line-length and trailing-whitespace checks. Reviewed shared ownership, transactional
+error paths, uniform alignment, variant binding layouts, HDR/depth and camera-ray
+boundaries before commit. The refreshed native ZIP contains 257 entries and
+43,474,864 bytes; CRC, executable modes and source/test/private/Finder/SDK-copy
+exclusions pass. Deep strict application signatures and all 16 Mach-O signatures/
+relative-system library references pass. Only arm64 macOS is validated.
+
+Next dependency layer remains persistent HDRI references/settings, environment
+asset/cache lifetime and editor/Play/export authoring. Soft shadows, SSAO, advanced
+editor interaction/scalability and the realistic game remain required by the full
+active goal. No copied engine sources, compatibility wrappers or new dependency
+were introduced in this stage; build caches/latest package and the private document
+remain intact.

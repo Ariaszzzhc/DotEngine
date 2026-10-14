@@ -4,10 +4,12 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <thread>
 
 import Dot.Graphics.Renderer;
+import Dot.Math;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Assets.Image;
@@ -178,4 +180,179 @@ TEST_CASE("environment.gpu_real_polyhaven_hdr_preserves_radiance_and_integrated_
   CHECK(lut.pixels[offset + 1] < 0.001F);
   map = {};
   CHECK(renderer.resourceStats()->environmentBytes == 0);
+}
+
+TEST_CASE("environment.lighting_constant_hdr_matches_analytic_diffuse_and_rough_metal_energy") {
+  auto renderer = Renderer::create().value();
+  auto map = renderer.bakeEnvironment(constantPanorama(), {16, 4, 16, 128, 512}).value();
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 1, 0, false}));
+  auto mesh = renderer.upload(quad({2, 2}).value()).value();
+  auto target = renderer.createTarget(1, 1).value();
+  Material surface;
+  surface.model = SurfaceModel::MetallicRoughness;
+  surface.baseColor = {0.5F, 0.25F, 0.1F, 1};
+  surface.roughness = 1;
+  std::array draws{MeshDraw{&mesh, {}, {1, 1, 1, 1}, surface}};
+  const std::array<float, 3> energy{2, 1, 0.5F};
+  const std::array<float, 3> base{0.5F, 0.25F, 0.1F};
+  const auto smithIntegral = 1 - std::log(2.0);
+  auto rendered = renderer.renderMeshesInto(target, draws, {});
+  REQUIRE_MESSAGE(rendered, (rendered ? "" : rendered.error().message));
+  auto pixels = renderer.readHdrTarget(target).value();
+
+  for (std::size_t channel = 0; channel < 3; ++channel) {
+    const auto reference = energy[channel] * (base[channel] * 0.96 + 0.04 * smithIntegral);
+    CHECK(pixels.pixels[channel] == doctest::Approx(reference).epsilon(0.015));
+  }
+
+  draws[0].material.metallic = 1;
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}));
+  const auto metal = renderer.readHdrTarget(target).value();
+
+  for (std::size_t channel = 0; channel < 3; ++channel) {
+    CHECK(metal.pixels[channel]
+          == doctest::Approx(energy[channel] * base[channel] * smithIntegral).epsilon(0.03));
+  }
+
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 4, 0, false}));
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}));
+  const auto bright = renderer.readHdrTarget(target).value();
+  CHECK(bright.pixels[0] == doctest::Approx(metal.pixels[0] * 4).epsilon(0.002));
+  CHECK(bright.pixels[0] > 1);
+  REQUIRE(renderer.setEnvironment(std::nullopt));
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}));
+  CHECK(renderer.readHdrTarget(target)->pixels[0] == 0);
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 4, 0, false}));
+  Lighting coincident;
+  coincident.viewPosition = {};
+  REQUIRE(renderer.setLighting(coincident));
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}));
+  CHECK(renderer.readHdrTarget(target)->pixels[0] == 0);
+  REQUIRE(renderer.setLighting(Lighting{}));
+  draws[0].material.model = SurfaceModel::Unlit;
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 4, 0, false}));
+  REQUIRE(renderer.renderMeshesInto(target, draws, {}));
+  CHECK(renderer.readHdrTarget(target)->pixels[0] == doctest::Approx(0.5F));
+}
+
+TEST_CASE("environment.lighting_binding_is_transactional_shared_thread_and_device_bound") {
+  auto renderer = Renderer::create().value();
+  CHECK_FALSE(renderer.environment().value());
+  auto map = renderer.bakeEnvironment(constantPanorama(), small).value();
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 2, 45, false}));
+  CHECK_FALSE(renderer.setEnvironment(EnvironmentLighting{}));
+  auto invalid = EnvironmentLighting{map, -1};
+  CHECK_FALSE(renderer.setEnvironment(invalid));
+  invalid.intensity = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(renderer.setEnvironment(invalid));
+  invalid.intensity = 65;
+  CHECK_FALSE(renderer.setEnvironment(invalid));
+  invalid.intensity = 1;
+  invalid.rotationDegrees = 361;
+  CHECK_FALSE(renderer.setEnvironment(invalid));
+  invalid.rotationDegrees = std::numeric_limits<float>::quiet_NaN();
+  CHECK_FALSE(renderer.setEnvironment(invalid));
+  auto foreign = Renderer::create().value();
+  CHECK_FALSE(foreign.setEnvironment(EnvironmentLighting{map}));
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !renderer.setEnvironment(std::nullopt) && !renderer.environment(); });
+  worker.join();
+  CHECK(rejected);
+  CHECK(renderer.environment()->value().intensity == 2);
+  CHECK(renderer.environment()->value().rotationDegrees == 45);
+  invalid.map = {};
+  auto snapshot = renderer.environment().value();
+  map = {};
+  CHECK(renderer.resourceStats()->environments == 1);
+  REQUIRE(renderer.setEnvironment(std::nullopt));
+  CHECK(renderer.resourceStats()->environments == 1);
+  CHECK(snapshot->map.info());
+  snapshot.reset();
+  CHECK(renderer.resourceStats()->environments == 0);
+}
+
+TEST_CASE("environment.sky_camera_yaw_orthographic_rays_depth_and_hdr_display_are_real") {
+  HdrImage image{128, 64, std::vector<float>(128 * 64 * 4, 1)};
+
+  for (std::uint32_t y = 0; y < image.height; ++y) {
+    for (std::uint32_t x = 0; x < image.width; ++x) {
+      const auto theta = (static_cast<double>(y) + 0.5) * 3.141592653589793 / image.height;
+      const auto phi = ((static_cast<double>(x) + 0.5) / image.width - 0.5) * 6.283185307179586;
+      const auto offset = (static_cast<std::size_t>(y) * image.width + x) * 4;
+      image.pixels[offset] = static_cast<float>(0.5 + 0.5 * std::sin(phi) * std::sin(theta));
+      image.pixels[offset + 1] = static_cast<float>(0.5 + 0.5 * std::cos(theta));
+      image.pixels[offset + 2] = static_cast<float>(0.5 - 0.5 * std::cos(phi) * std::sin(theta));
+    }
+  }
+
+  auto renderer = Renderer::create().value();
+  auto map = renderer.bakeEnvironment(image, {64, 4, 16, 16, 128}).value();
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map}));
+  const auto camera = Dot::Math::multiply(Dot::Math::perspective(60, 1, 0.1F, 100).value(),
+                                          Dot::Math::lookAt({0, 0, 1}, {}).value())
+                          .value();
+  auto target = renderer.createTarget(3, 3).value();
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  auto pixels = renderer.readHdrTarget(target).value();
+  CHECK(pixels.pixels[16] == doctest::Approx(0.5F).epsilon(0.01));
+  CHECK(pixels.pixels[17] == doctest::Approx(0.5F).epsilon(0.01));
+  CHECK(pixels.pixels[18] < 0.001F);
+  const auto center = pixels.pixels[16];
+  CHECK(pixels.pixels[0] < center);
+  CHECK(pixels.pixels[8] > center);
+  CHECK(pixels.pixels[1] > pixels.pixels[25]);
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 1, 90}));
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  pixels = renderer.readHdrTarget(target).value();
+  CHECK(pixels.pixels[16] > 0.99F);
+  CHECK(pixels.pixels[18] == doctest::Approx(0.5F).epsilon(0.01));
+  Lighting lighting;
+  lighting.viewDirection = Dot::Math::Vec3{0, 1, 0};
+  REQUIRE(renderer.setLighting(lighting));
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map}));
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  pixels = renderer.readHdrTarget(target).value();
+
+  for (std::size_t index = 0; index < pixels.pixels.size(); index += 4) {
+    CHECK(pixels.pixels[index + 1] > 0.99F);
+  }
+
+  REQUIRE(renderer.setLighting(Lighting{}));
+  auto mesh = renderer.upload(quad({0.5F, 0.5F}).value()).value();
+  std::array draws{MeshDraw{&mesh, {}, {1, 0, 0, 1}}};
+  REQUIRE(renderer.renderMeshesInto(target, draws, camera));
+  pixels = renderer.readHdrTarget(target).value();
+  CHECK(pixels.pixels[16] == 1);
+  CHECK(pixels.pixels[17] == 0);
+  CHECK(pixels.pixels[18] == 0);
+  CHECK(pixels.pixels[2] < 0.1F);
+  auto constant = renderer.bakeEnvironment(constantPanorama(), small).value();
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{constant, 2}));
+  REQUIRE(renderer.setPostProcess({.toneMap = ToneMap::Reinhard}));
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  pixels = renderer.readHdrTarget(target).value();
+  CHECK(pixels.pixels[16] == 4);
+  const auto display = renderer.readTarget(target).value();
+  const auto srgb = 1.055 * std::pow(0.8, 1.0 / 2.4) - 0.055;
+  CHECK(display.pixels[16] == doctest::Approx(std::lround(srgb * 255)).epsilon(0.005));
+  Dot::Math::Mat4 singular;
+  singular.data.fill(0);
+  const auto frame = target.info()->frames;
+  CHECK_FALSE(renderer.renderMeshesInto(target, {}, singular));
+  CHECK(target.info()->frames == frame);
+  Dot::Math::Mat4 horizon;
+  horizon.data[3] = 2;
+  CHECK_FALSE(renderer.renderMeshesInto(target, {}, horizon));
+  CHECK(target.info()->frames == frame);
+  CHECK(renderer.readHdrTarget(target)->pixels[16] == 4);
+  Lighting onPlane;
+  onPlane.viewPosition = {0, 0, 0.5F};
+  REQUIRE(renderer.setLighting(onPlane));
+  CHECK_FALSE(renderer.renderMeshesInto(target, {}, {}));
+  CHECK(target.info()->frames == frame);
+  REQUIRE(renderer.setLighting(Lighting{}));
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{constant, 1, 0, false}));
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera, {0.25F, 0, 0, 1}));
+  CHECK(renderer.readHdrTarget(target)->pixels[16] == 0.25F);
 }

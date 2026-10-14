@@ -487,6 +487,9 @@ namespace Dot::Graphics {
     std::uint32_t surfaceWidth{};
     std::uint32_t surfaceHeight{};
     wgpu::RenderPipeline scenePipeline;
+    wgpu::RenderPipeline environmentPipeline;
+    wgpu::RenderPipeline skyPipeline;
+    std::optional<EnvironmentLighting> environment;
     wgpu::RenderPipeline postPipeline;
     wgpu::RenderPipeline surfacePostPipeline;
     wgpu::Texture frameHdr;
@@ -621,9 +624,13 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto pipeline(wgpu::TextureFormat format) -> wgpu::RenderPipeline {
+    auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false)
+        -> wgpu::RenderPipeline {
       wgpu::ShaderSourceWGSL source;
-      source.code = Detail::surfaceShader;
+      const auto shaderCode = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
+                                                          : Detail::surfaceDirectShader)
+                              + "\n" + Detail::surfaceShader;
+      source.code = shaderCode.c_str();
       wgpu::ShaderModuleDescriptor shaderDescriptor;
       shaderDescriptor.nextInChain = &source;
       auto shader = device.CreateShaderModule(&shaderDescriptor);
@@ -686,6 +693,102 @@ namespace Dot::Graphics {
       descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
       descriptor.fragment = &fragment;
       return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto skyPipelineFor() -> wgpu::RenderPipeline {
+      wgpu::ShaderSourceWGSL source;
+      source.code = Detail::skyShader;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&shaderDescriptor);
+      wgpu::ColorTargetState target;
+      target.format = wgpu::TextureFormat::RGBA16Float;
+      wgpu::FragmentState fragment;
+      fragment.module = shader;
+      fragment.entryPoint = "fragmentMain";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::DepthStencilState depth;
+      depth.format = wgpu::TextureFormat::Depth24Plus;
+      depth.depthWriteEnabled = false;
+      depth.depthCompare = wgpu::CompareFunction::Always;
+      wgpu::RenderPipelineDescriptor descriptor;
+      descriptor.vertex.module = shader;
+      descriptor.vertex.entryPoint = "vertexMain";
+      descriptor.fragment = &fragment;
+      descriptor.depthStencil = &depth;
+      return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto environmentValues() const -> Math::Vec4 {
+      const auto radians = environment->rotationDegrees * 0.01745329252F;
+      return {environment->intensity, std::cos(radians), std::sin(radians),
+              static_cast<float>(environment->map.m_impl->description.specularLevels - 1)};
+    }
+
+    auto bindEnvironment(const wgpu::RenderPipeline& renderPipeline) -> wgpu::BindGroup {
+      const auto data = environmentValues();
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = sizeof(data);
+      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      const auto& map = *environment->map.m_impl;
+      std::array<wgpu::BindGroupEntry, 5> entries{};
+      entries[0].buffer = buffer;
+      entries[0].size = sizeof(data);
+
+      for (std::uint32_t index = 1; index < 4; ++index) {
+        entries[index].binding = index;
+        entries[index].textureView = map.views[index];
+      }
+
+      entries[4].binding = 4;
+      entries[4].sampler = map.sampler;
+      wgpu::BindGroupDescriptor group;
+      group.layout = renderPipeline.GetBindGroupLayout(2);
+      group.entryCount = entries.size();
+      group.entries = entries.data();
+      return device.CreateBindGroup(&group);
+    }
+
+    auto drawSky(const wgpu::RenderPassEncoder& pass, const Math::Mat4& inverse) -> void {
+      struct SkyData {
+        Math::Mat4 inverse;
+        Math::Vec4 position;
+        Math::Vec4 direction;
+        Math::Vec4 values;
+      };
+
+      static_assert(sizeof(SkyData) == 112);
+      const auto position = config.lighting.viewPosition;
+      SkyData data{inverse, {position.x, position.y, position.z, 0}, {}, environmentValues()};
+
+      if (config.lighting.viewDirection) {
+        const auto direction = *config.lighting.viewDirection;
+        data.direction = {direction.x, direction.y, direction.z, 1};
+      }
+
+      wgpu::BufferDescriptor descriptor;
+      descriptor.size = sizeof(data);
+      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      auto buffer = device.CreateBuffer(&descriptor);
+      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      const auto& map = *environment->map.m_impl;
+      std::array<wgpu::BindGroupEntry, 3> entries{};
+      entries[0].buffer = buffer;
+      entries[0].size = sizeof(data);
+      entries[1].binding = 1;
+      entries[1].textureView = map.views[0];
+      entries[2].binding = 2;
+      entries[2].sampler = map.sampler;
+      wgpu::BindGroupDescriptor group;
+      group.layout = skyPipeline.GetBindGroupLayout(0);
+      group.entryCount = entries.size();
+      group.entries = entries.data();
+      pass.SetPipeline(skyPipeline);
+      pass.SetBindGroup(0, device.CreateBindGroup(&group));
+      pass.Draw(3);
     }
 
     auto ensureFrame(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
@@ -1095,8 +1198,8 @@ namespace Dot::Graphics {
     }
 
     auto encodeMeshes(const wgpu::Texture& target, std::span<const PreparedDraw> draws,
-                      std::uint32_t width, std::uint32_t height, Math::Vec4 clear,
-                      wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
+                      const Math::Mat4& viewProjection, std::uint32_t width, std::uint32_t height,
+                      Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
       if (!hdr) {
         auto ready = ensureFrame(width, height);
@@ -1109,10 +1212,69 @@ namespace Dot::Graphics {
         depthView = frameDepth.CreateView();
       }
 
-      const auto& renderPipeline = scenePipeline;
+      Math::Mat4 inverse;
+
+      if (environment && environment->background) {
+        auto result = Math::inverse(viewProjection);
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        inverse = *result;
+
+        if (!config.lighting.viewDirection) {
+          const auto& m = viewProjection.data;
+          const auto p = config.lighting.viewPosition;
+          const auto z = static_cast<double>(m[2]) * p.x + static_cast<double>(m[6]) * p.y
+                         + static_cast<double>(m[10]) * p.z + m[14];
+          const auto w = static_cast<double>(m[3]) * p.x + static_cast<double>(m[7]) * p.y
+                         + static_cast<double>(m[11]) * p.z + m[15];
+
+          if (std::abs(z - 0.5 * w) <= 0.0000001 * std::max(std::abs(z), std::abs(w))) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Sky camera lies on its ray reconstruction plane");
+          }
+        }
+
+        std::optional<bool> negativeWeight;
+
+        for (const auto x : {-1.0F, 1.0F}) {
+          for (const auto y : {-1.0F, 1.0F}) {
+            const auto& m = inverse.data;
+            const auto weight = static_cast<double>(m[3]) * x + static_cast<double>(m[7]) * y
+                                + static_cast<double>(m[11]) * 0.5 + m[15];
+
+            if (negativeWeight && *negativeWeight != std::signbit(weight)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Sky clip plane crosses a homogeneous horizon");
+            }
+
+            negativeWeight = std::signbit(weight);
+            auto point = Math::transformPoint(inverse, {x, y, 0.5F});
+
+            if (!point
+                || (!config.lighting.viewDirection
+                    && !Math::normalized(*point - config.lighting.viewPosition))) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Sky requires finite, nonzero camera rays");
+            }
+          }
+        }
+      }
+
+      const auto& renderPipeline = environment ? environmentPipeline : scenePipeline;
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
+            if (environment && environment->background) {
+              drawSky(pass, inverse);
+            }
+
+            if (environment) {
+              pass.SetBindGroup(2, bindEnvironment(renderPipeline));
+            }
+
             auto lights = bindLighting(renderPipeline);
             pass.SetBindGroup(1, lights);
 
@@ -2171,6 +2333,70 @@ namespace Dot::Graphics {
         map.m_impl->textures[kind], wgpu::TextureFormat::RGBA16Float, face, level);
   }
 
+  auto Renderer::setEnvironment(std::optional<EnvironmentLighting> environment)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (environment) {
+      auto info = environment->map.info();
+
+      if (!info) {
+        return std::unexpected(info.error());
+      }
+
+      if (environment->map.m_impl->owner != m_impl->diagnostics
+          || !std::isfinite(environment->intensity) || environment->intensity < 0
+          || environment->intensity > 64 || !std::isfinite(environment->rotationDegrees)
+          || std::abs(environment->rotationDegrees) > 360) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid/foreign environment lighting");
+      }
+
+      if (!m_impl->environmentPipeline || !m_impl->skyPipeline) {
+        ErrorScope scope(m_impl->instance, m_impl->device);
+        auto surface = m_impl->pipeline(wgpu::TextureFormat::RGBA16Float, true);
+        auto sky = m_impl->skyPipelineFor();
+        checked = scope.finish();
+
+        if (!checked) {
+          return checked;
+        }
+
+        if (!surface || !sky) {
+          return Core::fail(Core::ErrorCode::External,
+                            "Create environment render pipelines failed");
+        }
+
+        m_impl->environmentPipeline = std::move(surface);
+        m_impl->skyPipeline = std::move(sky);
+      }
+    }
+
+    m_impl->environment = std::move(environment);
+    return {};
+  }
+
+  auto Renderer::environment() const -> Core::Result<std::optional<EnvironmentLighting>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->environment;
+  }
+
   auto Renderer::setLighting(const Lighting& lighting) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
@@ -2342,8 +2568,9 @@ namespace Dot::Graphics {
     }
 
     ErrorScope scope(m_impl->instance, m_impl->device);
-    auto encoder = m_impl->encodeMeshes(target.m_impl->color, *prepared, info->width, info->height,
-                                        clear, target.m_impl->hdr, target.m_impl->depthView);
+    auto encoder
+        = m_impl->encodeMeshes(target.m_impl->color, *prepared, viewProjection, info->width,
+                               info->height, clear, target.m_impl->hdr, target.m_impl->depthView);
 
     if (!encoder) {
       return std::unexpected(encoder.error());
@@ -2781,10 +3008,11 @@ namespace Dot::Graphics {
       return std::unexpected(prepared.error());
     }
 
-    return m_impl->readback(
-        width, height, [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
-          return m_impl->encodeMeshes(texture, *prepared, targetWidth, targetHeight, clear);
-        });
+    return m_impl->readback(width, height,
+                            [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
+                              return m_impl->encodeMeshes(texture, *prepared, viewProjection,
+                                                          targetWidth, targetHeight, clear);
+                            });
   }
 
   auto Renderer::presentMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -2806,7 +3034,7 @@ namespace Dot::Graphics {
     }
 
     return m_impl->presentFrame([&](const wgpu::Texture& texture, auto width, auto height) {
-      return m_impl->encodeMeshes(texture, *prepared, width, height, clear);
+      return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear);
     });
   }
 }  // namespace Dot::Graphics

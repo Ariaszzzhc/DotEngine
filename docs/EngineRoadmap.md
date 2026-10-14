@@ -35,8 +35,10 @@ code page. Material/light scripting accessors and the other listed work remain.
 
 HDR environment GPU preprocessing is implemented and verified independently:
 radiance cubes, diffuse convolution, GGX reflection mips and BRDF integration with
-real Poly Haven input. The HDRI IBL row remains open until surface/background
-rendering and persistent authoring/preview/Play/export consume these resources.
+real Poly Haven input. Renderer PBR split-sum sampling and camera sky now consume
+these resources, with a visually checked lit material gallery and scene-camera
+tests. The HDRI IBL row remains open until persistent authoring, asset caching and
+editor/Play/export integration are implemented.
 
 Development order follows dependencies: surface geometry and resource ownership,
 texture/material rendering, authored light/shadow services and editor integration,

@@ -1,8 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -209,4 +211,38 @@ TEST_CASE("scene_material_light_limit_and_camera_override_are_validated_before_s
   REQUIRE(drawing.renderInto(fixture.scene, target, {}, alternate));
   CHECK(device.lighting()->viewPosition == Dot::Math::Vec3{1, 2, 3});
   CHECK_FALSE(device.lighting()->viewDirection);
+}
+
+TEST_CASE(
+    "scene_material.bound_environment_uses_scene_camera_and_saved_pbr_without_direct_lights") {
+  Fixture fixture;
+  REQUIRE(fixture.scene.setLight(fixture.light, std::nullopt));
+  auto device = renderer();
+  Dot::Graphics::HdrImage panorama{8, 4, std::vector<float>(8 * 4 * 4, 1)};
+
+  for (std::size_t pixel = 0; pixel < panorama.pixels.size(); pixel += 4) {
+    panorama.pixels[pixel] = 2;
+  }
+
+  auto map = device.bakeEnvironment(panorama, {16, 4, 16, 128, 512}).value();
+  REQUIRE(device.setEnvironment(Dot::Graphics::EnvironmentLighting{map}));
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  auto target = device.createTarget(3, 3).value();
+  auto loaded = Dot::World::decodeScene(Dot::World::encodeScene(fixture.scene).value()).value();
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(device.lighting()->viewPosition == Dot::Math::Vec3{0, 0, 2});
+  CHECK(device.lighting()->viewDirection == Dot::Math::Vec3{0, 0, -1});
+  CHECK(device.lighting()->lights.empty());
+  const auto expected = 2 * (0.5 * 0.96 + 0.04 * (1 - std::log(2.0)));
+  const auto pixels = device.readHdrTarget(target).value();
+  CHECK(red(pixels) == doctest::Approx(expected).epsilon(0.015));
+  CHECK(red(pixels, 0, 0) == 2);
+  REQUIRE(drawing.clearCache());
+  CHECK(device.resourceStats()->environments == 1);
+  REQUIRE(device.setEnvironment(std::nullopt));
+  CHECK(device.readHdrTarget(target)->pixels == pixels.pixels);
+  REQUIRE(drawing.renderInto(loaded, target));
+  CHECK(red(device.readHdrTarget(target).value()) == 0);
+  map = {};
+  CHECK(device.resourceStats()->environments == 0);
 }

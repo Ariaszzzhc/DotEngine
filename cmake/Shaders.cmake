@@ -12,6 +12,9 @@ add_custom_command(
     DEPENDS "${dot_shader_source}/Surface.wgsl"
         "${dot_shader_source}/ToneMapping.wgsl"
         "${dot_shader_source}/Environment.wgsl"
+        "${dot_shader_source}/SurfaceDirect.wgsl"
+        "${dot_shader_source}/SurfaceEnvironment.wgsl"
+        "${dot_shader_source}/Sky.wgsl"
         "${PROJECT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     VERBATIM)
 add_custom_target(DotShaders DEPENDS "${dot_shader_generated}/BuiltinShaders.hpp")

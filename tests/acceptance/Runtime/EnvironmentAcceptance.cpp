@@ -10,6 +10,7 @@
 
 import Dot.Core.Files;
 import Dot.Graphics.Renderer;
+import Dot.Math;
 import Dot.Assets.Image;
 
 namespace Dot::Runtime {
@@ -96,6 +97,96 @@ namespace Dot::Runtime {
 
     if (!brdf) {
       std::println(stderr, "{}", brdf.error().message);
+      return 1;
+    }
+
+    const Math::Vec3 cameraPosition{0, 0.25F, 8};
+    Graphics::Lighting lighting;
+    lighting.viewPosition = cameraPosition;
+    auto bound = renderer->setLighting(lighting);
+
+    if (!bound) {
+      std::println(stderr, "{}", bound.error().message);
+      return 1;
+    }
+
+    bound = renderer->setEnvironment(Graphics::EnvironmentLighting{*map});
+
+    if (!bound) {
+      std::println(stderr, "{}", bound.error().message);
+      return 1;
+    }
+
+    auto sphere = renderer->upload(Graphics::sphere(0.8F, 48, 32).value());
+
+    if (!sphere) {
+      std::println(stderr, "{}", sphere.error().message);
+      return 1;
+    }
+
+    const auto projection = Math::multiply(Math::perspective(42, 16.0F / 9.0F, 0.1F, 100).value(),
+                                           Math::lookAt(cameraPosition, {}).value())
+                                .value();
+    std::array<Graphics::MeshDraw, 6> draws{};
+    const std::array<float, 3> roughness{0.06F, 0.3F, 0.8F};
+
+    for (std::size_t index = 0; index < draws.size(); ++index) {
+      auto& draw = draws[index];
+      draw.mesh = &*sphere;
+      draw.transform = Math::compose({static_cast<float>(index % 3) * 2.1F - 2.1F,
+                                      index < 3 ? 1.0F : -1.0F, 0})
+                           .value();
+      draw.material.model = Graphics::SurfaceModel::MetallicRoughness;
+      draw.material.metallic = index < 3 ? 1 : 0;
+      draw.material.roughness = roughness[index % 3];
+      draw.material.baseColor
+          = index < 3 ? Math::Vec4{0.95F, 0.64F, 0.54F, 1} : Math::Vec4{0.08F, 0.24F, 0.4F, 1};
+    }
+
+    auto target = renderer->createTarget(960, 540);
+
+    if (!target) {
+      std::println(stderr, "{}", target.error().message);
+      return 1;
+    }
+
+    auto rendered = renderer->renderMeshesInto(*target, draws, projection);
+
+    if (!rendered) {
+      std::println(stderr, "{}", rendered.error().message);
+      return 1;
+    }
+
+    auto display = renderer->readTarget(*target);
+    auto linear = renderer->readHdrTarget(*target);
+
+    if (!display || !linear) {
+      std::println(stderr, "{}", display ? linear.error().message : display.error().message);
+      return 1;
+    }
+
+    if (*std::max_element(linear->pixels.begin(), linear->pixels.end()) <= 1) {
+      std::println(stderr, "Lit HDR gallery lost its highlights");
+      return 1;
+    }
+
+    std::string gallery = "P6\n960 540\n255\n";
+
+    for (std::size_t index = 0; index < display->pixels.size(); index += 4) {
+      gallery.append(reinterpret_cast<const char*>(display->pixels.data() + index), 3);
+    }
+
+    written = destination->writeTextAtomic("environment-lighting.ppm", gallery);
+
+    if (!written) {
+      std::println(stderr, "{}", written.error().message);
+      return 1;
+    }
+
+    bound = renderer->setEnvironment(std::nullopt);
+
+    if (!bound) {
+      std::println(stderr, "{}", bound.error().message);
       return 1;
     }
 

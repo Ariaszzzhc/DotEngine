@@ -311,9 +311,9 @@ fetches no assets/API. Unit tests check bounds/face axes; offscreen tests check
 constant energy, all faces/mips, independent linear-field diffuse moments,
 roughness blur, BRDF's smooth/rough limits, actual HDRI, budget/failure/lifetime.
 
-This is an implemented preprocessing subsystem. PBR shader sampling, camera sky
-background, saved environment settings, cache invalidation/editor/Play/export
-integration remain the next consumer stage. No editable IBL scene is claimed yet.
+Preprocessing and renderer PBR/sky consumption are implemented. Persistent
+environment settings, HDRI asset caching and editor/Play/export authoring integration
+remain the next consumer stage. No editable IBL scene is claimed yet.
 
 ## Built-in WGSL sources
 
@@ -329,3 +329,49 @@ regenerates the header and recompiles the renderer implementation. Runtime/edito
 executables and relocated distributions require no shader source files. Dawn
 compiles the actual embedded WGSL on the native device; GPU tests verify the
 material, HDR/tone-mapping and environment pipelines.
+
+## HDRI surface lighting and sky
+
+`Renderer::setEnvironment` transactionally retains a shared EnvironmentMap for
+future mesh frames; null clears it. Intensity is linear [0,64], yaw is degrees
+[-360,360]; absent/foreign maps, nonfinite settings and wrong-thread access fail
+without replacing the previous binding. Copies from `environment()` retain the
+map independently. Clearing a binding preserves existing target pixels until
+redrawn. Pipeline creation is checked before publishing the binding.
+
+Physical surfaces sample the cosine-convolved irradiance/pi along their mapped
+world normal and GGX-prefiltered radiance along the reflected camera ray.
+Perceptual roughness selects specular mip LOD; the correlated-Smith LUT supplies
+Schlick split-sum scale/bias. Dielectrics use F0=.04; metals use base color and
+suppress diffuse. Diffuse uses the Schlick energy split, with single-scattering
+GGX specular. This is a split-sum approximation, not path-traced lighting or a
+multiple-scattering compensation model. A zero view ray contributes no reflected
+lighting, consistently with direct-light BRDF handling. Unlit surfaces retain
+their base color/emission; binding no environment supplies no invented light.
+Normal/data/emissive/base textures and direct lights continue to share the same
+physical surface pipeline.
+
+When background is enabled, a fullscreen triangle reconstructs world rays from
+the current draw's inverse view-projection and Lighting camera pose. Orthographic
+cameras use their constant emitted direction. Singular matrices, homogeneous
+horizons or a perspective camera on the reconstruction plane return contextual
+errors and preserve the previous frame. Environment yaw rotates both reflection
+and sky rays into the same panorama space. Sky writes linear HDR color without
+changing depth; geometry drawn afterward occludes it. Intensity, exposure, ACES/
+Reinhard and display encoding apply through the existing shared HDR pipeline.
+Persistent targets, readback meshes and native mesh presentation share this path.
+Immediate unlit vertex rendering is independent of environment mesh rendering.
+
+SceneRenderer already forwards its scene camera pose/projection to this renderer
+path. A native GPU test verifies an explicitly bound environment lights decoded
+scene material resources without direct lights; scene cache clearing preserves
+the independently owned environment. The scene file does not yet persist an HDRI
+reference or settings, and the editor does not yet offer environment authoring.
+
+The offscreen environment acceptance also renders `environment-lighting.ppm`: six
+actual HDRI-lit spheres with no direct lights (copper above, blue dielectric below;
+roughness .06/.3/.8 left to right), plus sky, HDR readback and GPU ACES output.
+Independent constant-energy tests check diffuse and the analytical rough-metal
+limit, intensity/unbinding/unlit behavior; directional fields check perspective
+rays, yaw, orthographic sky and geometry depth. This evidence establishes the
+renderer consumer, while production scene authoring remains pending.

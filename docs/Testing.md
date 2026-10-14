@@ -42,9 +42,9 @@ resize, event dispatch, presentation and destruction. Unit tests must not create
 window just to inspect pure data. Separate CPU validation and pixel checks from
 native presentation. Repeated creation/destruction specifically verifies lifetime;
 do not share one global fixture if that would hide leaks or initialization failures.
-The current selections contain 189 unit, 471 device-free integration, 68 offscreen
+The current selections contain 189 unit, 471 device-free integration, 72 offscreen
 GPU, 43 native and 91 acceptance cases. Counts overlap through native/acceptance
-labels; all 848 CTest identities are covered; existing subsystem coverage is retained.
+labels; all 852 CTest identities are covered; existing subsystem coverage is retained.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
 
