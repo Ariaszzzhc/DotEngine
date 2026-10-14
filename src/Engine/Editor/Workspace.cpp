@@ -2,6 +2,7 @@ module;
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>
@@ -274,6 +275,17 @@ namespace Dot::Editor {
     Json m_occlusionOriginal;
     std::string m_requestedPane;
     std::string m_pane{"scene"};
+    bool m_lightTheme{};
+    bool m_resetLayout{true};
+    std::uint64_t m_layoutGeneration{};
+    Json m_panelGeometry = Json::object();
+    std::optional<Json> m_dockRequest;
+    std::string m_layoutError;
+    std::string m_hierarchyFilter;
+    std::string m_assetFilter;
+    bool m_viewVisible{true};
+    Json m_visibleHierarchy = Json::array();
+    Json m_visibleResources = Json::array();
     bool m_assetRefresh{};
     std::string m_checkMessage;
     std::string m_exportParent;
@@ -1084,6 +1096,76 @@ namespace Dot::Editor {
                        : std::unexpected(encoded.error());
       }
 
+      if (command == "filter-panel") {
+        Codec::requireFields(parsed, {"command", "panel", "query"});
+        const auto panel = parsed["panel"].get<std::string>();
+        const auto query = parsed["query"].get<std::string>();
+
+        if ((panel != "hierarchy" && panel != "resources") || query.size() > 128
+            || query.find('\0') != std::string::npos || !Core::isValidUtf8(query)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid panel search");
+        }
+
+        (panel == "hierarchy" ? m_hierarchyFilter : m_assetFilter) = query;
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "set-theme") {
+        Codec::requireFields(parsed, {"command", "theme"});
+        const auto theme = parsed["theme"].get<std::string>();
+
+        if (theme != "dark" && theme != "light") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown editor theme");
+        }
+
+        m_lightTheme = theme == "light";
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "dock-panel") {
+        Codec::requireFields(parsed, {"command", "panel", "target", "placement", "ratio"});
+        const auto panel = parsed["panel"].get<std::string>();
+        const auto target = parsed["target"].get<std::string>();
+        const auto placement = parsed["placement"].get<std::string>();
+        const auto ratio = Codec::number(parsed["ratio"]);
+
+        if (!m_panelGeometry.contains(panel) || !m_panelGeometry.contains(target) || panel == target
+            || !m_panelGeometry[target]["docked"].get<bool>()
+            || (placement != "tab" && placement != "left" && placement != "right"
+                && placement != "up" && placement != "down")
+            || ratio < 0.1F || ratio > 0.9F) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid docked panel placement");
+        }
+
+        if (m_resetLayout || m_dockRequest
+            || m_layoutGeneration == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Layout operation is pending or exhausted");
+        }
+
+        m_dockRequest = parsed;
+        m_layoutError.clear();
+        auto response = Codec::parseJson(execute("{\"command\":\"inspect\"}").value());
+        response["queued"] = true;
+        return response.dump();
+      }
+
+      if (command == "reset-layout") {
+        Codec::requireFields(parsed, {"command"});
+
+        if (m_dockRequest) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Wait for the queued docking operation");
+        }
+
+        if (m_layoutGeneration == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Layout generation exhausted");
+        }
+
+        m_resetLayout = true;
+        m_layoutError.clear();
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (playing() && command != "inspect" && command != "close" && command != "show-pane") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Stop Play before changing the authoring document");
@@ -1171,8 +1253,8 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "pane"});
         const auto pane = parsed["pane"].get<std::string>();
 
-        if (pane != "scene" && pane != "environment" && pane != "rendering"
-            && pane != "resources") {
+        if (pane != "scene" && pane != "environment" && pane != "rendering" && pane != "resources"
+            && pane != "inspector" && pane != "viewport" && pane != "console") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -1345,22 +1427,31 @@ namespace Dot::Editor {
 
       if (result && command == "inspect") {
         auto response = Codec::parseJson(*result);
-        response["workspace"] = {{"pendingInspector", pendingInspector()},
-                                 {"pendingEnvironment", pendingEnvironment()},
-                                 {"environmentDraft", m_environmentDraft},
-                                 {"pendingOcclusion", pendingOcclusion()},
-                                 {"occlusionDraft", m_occlusionDraft},
-                                 {"pane", m_pane},
-                                 {"requestedPane", m_requestedPane},
-                                 {"pendingClose", m_pendingClose},
-                                 {"running", m_application->running()},
-                                 {"inspector", m_edit},
-                                 {"propertiesText", m_propertiesText},
-                                 {"propertiesInvalid", m_propertiesInvalid},
-                                 {"play", playStatus()},
-                                 {"view", viewStatus()},
-                                 {"message", m_message},
-                                 {"file", textStatus()}};
+        response["workspace"] = {
+            {"pendingInspector", pendingInspector()},
+            {"pendingEnvironment", pendingEnvironment()},
+            {"environmentDraft", m_environmentDraft},
+            {"pendingOcclusion", pendingOcclusion()},
+            {"occlusionDraft", m_occlusionDraft},
+            {"pane", m_pane},
+            {"theme", m_lightTheme ? "light" : "dark"},
+            {"filters", {{"hierarchy", m_hierarchyFilter}, {"resources", m_assetFilter}}},
+            {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
+            {"layout",
+             {{"pending", m_resetLayout || m_dockRequest.has_value()},
+              {"error", m_layoutError},
+              {"generation", std::to_string(m_layoutGeneration)},
+              {"panels", m_panelGeometry}}},
+            {"requestedPane", m_requestedPane},
+            {"pendingClose", m_pendingClose},
+            {"running", m_application->running()},
+            {"inspector", m_edit},
+            {"propertiesText", m_propertiesText},
+            {"propertiesInvalid", m_propertiesInvalid},
+            {"play", playStatus()},
+            {"view", viewStatus()},
+            {"message", m_message},
+            {"file", textStatus()}};
         return response.dump();
       }
 
@@ -1380,6 +1471,12 @@ namespace Dot::Editor {
       m_message.clear();
       m_actionError.reset();
       return true;
+    }
+
+    auto sessionAction(const Json& request) -> bool {
+      auto result = safeExecute(request.dump());
+      m_message = result ? "" : result.error().message;
+      return result.has_value();
     }
 
     auto edit(Json operations) -> bool {
@@ -1476,12 +1573,14 @@ namespace Dot::Editor {
     auto viewStatus() const -> Json {
       const auto state = m_editorCamera.state();
       auto current = currentView();
-      const bool ready = current && m_previewReady && m_renderedView && *current == *m_renderedView
+      const bool ready = current && m_viewVisible && m_previewReady && m_renderedView
+                         && *current == *m_renderedView
                          && m_renderedRevision == std::to_string(m_document->stats()->revision)
                          && !m_assetRefresh;
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
+          {"textInput", m_renderer->guiStats().value().text},
           {"flying", m_flying},
           {"viewport",
            {{"origin", {m_viewOrigin.x, m_viewOrigin.y}}, {"size", {m_viewWidth, m_viewHeight}}}},
@@ -1628,24 +1727,7 @@ namespace Dot::Editor {
       return changed ? refresh() : changed;
     }
 
-    auto preview() -> Core::Result<void> {
-      const auto size = m_application->window().pixelSize();
-      const auto logical = m_application->window().size();
-
-      if (!size || !logical) {
-        return std::unexpected(size ? logical.error() : size.error());
-      }
-
-      if (size->width <= 0 || size->height <= 0 || logical->width <= 0) {
-        return {};
-      }
-
-      const float dpi = static_cast<float>(size->width) / static_cast<float>(logical->width);
-      const float scale = std::min(
-          {dpi, 4096.F / std::max(1.F, m_viewWidth), 4096.F / std::max(1.F, m_viewHeight)});
-      const auto width = static_cast<std::uint32_t>(std::max(1.F, m_viewWidth * scale));
-      const auto height = static_cast<std::uint32_t>(std::max(1.F, m_viewHeight * scale));
-
+    auto preview(std::uint32_t width, std::uint32_t height) -> Core::Result<void> {
       bool resize = !m_target;
 
       if (m_target) {
@@ -1698,6 +1780,32 @@ namespace Dot::Editor {
       return {};
     }
 
+    /** ASCII case-insensitive search; UTF-8 names retain exact byte matching.
+     * ASCII 忽略大小写，UTF-8 名称保持精确匹配；保留匹配子节点的祖先。 */
+    static auto matchesFilter(std::string_view text, std::string_view query) -> bool {
+      const auto folded = [](char value) {
+        return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value;
+      };
+      return std::ranges::search(text, query,
+                                 [&](char a, char b) { return folded(a) == folded(b); })
+                 .size()
+             == query.size();
+    }
+
+    auto matchesHierarchy(const Json& entities, const Json& entity, int depth) const -> bool {
+      if (matchesFilter(entity["name"].get_ref<const std::string&>(), m_hierarchyFilter)) {
+        return true;
+      }
+
+      if (depth >= 256) {
+        return false;
+      }
+
+      return std::ranges::any_of(entities, [&](const auto& child) {
+        return child["parent"] == entity["id"] && matchesHierarchy(entities, child, depth + 1);
+      });
+    }
+
     auto tree(const Json& entities, const Json& parent, int depth = 0) -> void {
       if (depth > 256) {
         return;
@@ -1705,6 +1813,10 @@ namespace Dot::Editor {
 
       for (const auto& entity : entities) {
         if (entity["parent"] != parent) {
+          continue;
+        }
+
+        if (!matchesHierarchy(entities, entity, depth)) {
           continue;
         }
 
@@ -1716,6 +1828,12 @@ namespace Dot::Editor {
         auto flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
         flags |= selected ? ImGuiTreeNodeFlags_Selected : 0;
         flags |= children ? 0 : ImGuiTreeNodeFlags_Leaf;
+        m_visibleHierarchy.push_back(id);
+
+        if (!m_hierarchyFilter.empty() && children) {
+          ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        }
+
         ImGui::PushID(id.c_str());
         const bool open = ImGui::TreeNodeEx("entity", flags, "%s", name.c_str());
 
@@ -2167,89 +2285,117 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
     }
 
+    auto searchField(const char* id, const char* hint, const char* panel,
+                     const std::string& current) -> void {
+      auto text = current;
+
+      if (ImGui::InputTextWithHint(id, hint, &text)) {
+        sessionAction({{"command", "filter-panel"}, {"panel", panel}, {"query", text}});
+      }
+    }
+
     auto resourcesPanel() -> void {
-      if (ImGui::Button("Refresh files")) {
-        fileAction({{"command", "resources"}});
-      }
-
-      if (!m_selectedResource.empty()) {
-        ImGui::TextWrapped("%s", m_selectedResource.c_str());
-
-        if (ImGui::Button("Open externally")) {
-          fileAction({{"command", "open-external"}, {"path", m_selectedResource}});
-        }
-      }
-
-      ImGui::InputText("Path", &m_newPath);
-
-      if (ImGui::Button("New script")) {
-        if (fileAction({{"command", "create-script"}, {"path", m_newPath}})) {
-          fileAction({{"command", "open-external"}, {"path", m_newPath}});
-        }
-      }
-
+      ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+      searchField("##asset-search", "Search project assets", "resources", m_assetFilter);
       ImGui::SameLine();
 
-      if (ImGui::Button("Folder")) {
-        fileAction({{"command", "create-directory"}, {"path", m_newPath}});
+      if (ImGui::Button("Actions")) {
+        ImGui::OpenPopup("Asset actions");
       }
 
-      ImGui::InputText("Import source", &m_importSource);
-
-      if (ImGui::Button("Import to path")) {
-        fileAction(
-            {{"command", "import-resource"}, {"path", m_newPath}, {"source", m_importSource}});
-      }
-
-      if (ImGui::Button("Check scripts")) {
-        fileAction({{"command", "check-scripts"}});
-      }
-
-      if (m_text) {
-        const auto draft = m_text->snapshot().value();
-        ImGui::TextWrapped("Agent buffer: %s%s", draft.path.c_str(),
-                           draft.dirty ? " (unsaved)" : "");
-        ImGui::BeginDisabled(draft.readOnly);
-
-        if (ImGui::Button("Save agent draft")) {
-          fileAction({{"command", "save-text"}});
+      if (ImGui::BeginPopup("Asset actions")) {
+        if (ImGui::Button("Refresh files")) {
+          fileAction({{"command", "resources"}});
         }
 
-        ImGui::EndDisabled();
+        if (!m_selectedResource.empty()) {
+          ImGui::TextWrapped("%s", m_selectedResource.c_str());
+
+          if (ImGui::Button("Open externally")) {
+            fileAction({{"command", "open-external"}, {"path", m_selectedResource}});
+          }
+        }
+
+        ImGui::InputText("Path", &m_newPath);
+
+        if (ImGui::Button("New script")) {
+          if (fileAction({{"command", "create-script"}, {"path", m_newPath}})) {
+            fileAction({{"command", "open-external"}, {"path", m_newPath}});
+          }
+        }
+
         ImGui::SameLine();
 
-        if (ImGui::Button("Close agent buffer")) {
-          fileAction({{"command", "close-text"}, {"discard", false}});
+        if (ImGui::Button("Folder")) {
+          fileAction({{"command", "create-directory"}, {"path", m_newPath}});
         }
 
-        if (draft.dirty && ImGui::Button("Discard agent draft")) {
-          fileAction({{"command", "close-text"}, {"discard", true}});
-        }
-      }
+        ImGui::InputText("Import source", &m_importSource);
 
-      if (!m_checkMessage.empty()) {
-        ImGui::TextWrapped("%s", m_checkMessage.c_str());
-      }
-
-      for (std::size_t index = 0; index < m_scriptDiagnostics.size(); ++index) {
-        const auto item = m_scriptDiagnostics[index];
-        ImGui::PushID(static_cast<int>(index));
-        const auto label
-            = item.path + ':' + std::to_string(item.line) + ':' + std::to_string(item.column);
-
-        if (ImGui::Button(label.c_str())) {
-          fileAction({{"command", "open-external"}, {"path", item.path}});
+        if (ImGui::Button("Import to path")) {
+          fileAction(
+              {{"command", "import-resource"}, {"path", m_newPath}, {"source", m_importSource}});
         }
 
-        ImGui::PopID();
+        if (ImGui::Button("Check scripts")) {
+          fileAction({{"command", "check-scripts"}});
+        }
+
+        if (m_text) {
+          const auto draft = m_text->snapshot().value();
+          ImGui::TextWrapped("Agent buffer: %s%s", draft.path.c_str(),
+                             draft.dirty ? " (unsaved)" : "");
+          ImGui::BeginDisabled(draft.readOnly);
+
+          if (ImGui::Button("Save agent draft")) {
+            fileAction({{"command", "save-text"}});
+          }
+
+          ImGui::EndDisabled();
+          ImGui::SameLine();
+
+          if (ImGui::Button("Close agent buffer")) {
+            fileAction({{"command", "close-text"}, {"discard", false}});
+          }
+
+          if (draft.dirty && ImGui::Button("Discard agent draft")) {
+            fileAction({{"command", "close-text"}, {"discard", true}});
+          }
+        }
+
+        if (!m_checkMessage.empty()) {
+          ImGui::TextWrapped("%s", m_checkMessage.c_str());
+        }
+
+        for (std::size_t index = 0; index < m_scriptDiagnostics.size(); ++index) {
+          const auto item = m_scriptDiagnostics[index];
+          ImGui::PushID(static_cast<int>(index));
+          const auto label
+              = item.path + ':' + std::to_string(item.line) + ':' + std::to_string(item.column);
+
+          if (ImGui::Button(label.c_str())) {
+            fileAction({{"command", "open-external"}, {"path", item.path}});
+          }
+
+          ImGui::PopID();
+        }
+
+        ImGui::EndPopup();
       }
 
       ImGui::TextWrapped("Open text resources in the system default application.");
       ImGui::Separator();
       const auto entries = m_catalog;
+      m_visibleResources = Json::array();
 
       for (const auto& entry : entries) {
         const auto name = entry["path"].get<std::string>();
+
+        if (!matchesFilter(name, m_assetFilter)) {
+          continue;
+        }
+
+        m_visibleResources.push_back(name);
 
         if (entry["type"] == "text") {
           if (ImGui::Selectable(name.c_str(), m_selectedResource == name,
@@ -2274,20 +2420,14 @@ namespace Dot::Editor {
         return;
       }
 
-      ImGui::SetNextItemWidth(std::min(160.F, ImGui::GetContentRegionAvail().x));
-      const char* mode = m_editorView ? "Editor view" : "Game camera";
+      if (ImGui::RadioButton("Scene", m_editorView)) {
+        sessionAction({{"command", "set-view"}, {"mode", "editor"}});
+      }
 
-      if (ImGui::BeginCombo("##viewport-mode", mode)) {
-        for (const auto* value : {"editor", "game"}) {
-          if (ImGui::Selectable(
-                  value, (m_editorView ? std::string_view("editor") : std::string_view("game"))
-                             == value)) {
-            auto result = safeExecute(Json{{"command", "set-view"}, {"mode", value}}.dump());
-            m_message = result ? "" : result.error().message;
-          }
-        }
+      ImGui::SameLine();
 
-        ImGui::EndCombo();
+      if (ImGui::RadioButton("Game", !m_editorView)) {
+        sessionAction({{"command", "set-view"}, {"mode", "game"}});
       }
 
       ImGui::SameLine();
@@ -2325,7 +2465,7 @@ namespace Dot::Editor {
     /** Route navigation only from the viewport; it never consumes scene history.
      * 仅从视口路由导航输入，不消耗场景历史；游戏运行时仍使用游戏输入路径。 */
     auto viewportInput(const Platform::InputState& input, double seconds) -> void {
-      if (playing()) {
+      if (playing() || !m_viewVisible) {
         return;
       }
 
@@ -2413,18 +2553,289 @@ namespace Dot::Editor {
       }
     }
 
+    /** Apply chrome only; scene textures and camera state remain authoritative.
+     * 仅改变界面皮肤，场景纹理与相机状态仍由实际引擎决定。 */
+    auto applyTheme() -> void {
+      auto& style = ImGui::GetStyle();
+      m_lightTheme ? ImGui::StyleColorsLight() : ImGui::StyleColorsDark();
+      style.WindowPadding = {8, 8};
+      style.FramePadding = {8, 4};
+      style.ItemSpacing = {8, 6};
+      style.ItemInnerSpacing = {6, 4};
+      style.WindowRounding = 0;
+      style.ChildRounding = 0;
+      style.FrameRounding = 4;
+      style.PopupRounding = 4;
+      style.TabRounding = 0;
+      style.WindowBorderSize = 1;
+      style.FrameBorderSize = 1;
+      style.WindowMinSize = {120, 100};
+      const auto color = [](unsigned rgb) {
+        return ImVec4{static_cast<float>((rgb >> 16) & 255) / 255,
+                      static_cast<float>((rgb >> 8) & 255) / 255,
+                      static_cast<float>(rgb & 255) / 255, 1};
+      };
+      auto* c = style.Colors;
+      c[ImGuiCol_Text] = color(m_lightTheme ? 0x252A32 : 0xE6E8ED);
+      c[ImGuiCol_TextDisabled] = color(m_lightTheme ? 0x616976 : 0x979DA8);
+      c[ImGuiCol_WindowBg] = color(m_lightTheme ? 0xF5F6F8 : 0x202226);
+      c[ImGuiCol_ChildBg] = c[ImGuiCol_WindowBg];
+      c[ImGuiCol_PopupBg] = c[ImGuiCol_WindowBg];
+      c[ImGuiCol_Border] = color(m_lightTheme ? 0xCDD2DA : 0x373B43);
+      c[ImGuiCol_Separator] = c[ImGuiCol_Border];
+      c[ImGuiCol_FrameBg] = color(m_lightTheme ? 0xFFFFFF : 0x17191D);
+      c[ImGuiCol_FrameBgHovered] = color(m_lightTheme ? 0xEDF0F3 : 0x30353D);
+      c[ImGuiCol_FrameBgActive] = color(m_lightTheme ? 0xDCE8FC : 0x354B6D);
+      c[ImGuiCol_Button] = color(m_lightTheme ? 0xEDF0F3 : 0x282C33);
+      c[ImGuiCol_ButtonHovered] = c[ImGuiCol_FrameBgActive];
+      c[ImGuiCol_ButtonActive] = color(m_lightTheme ? 0xBBD2F9 : 0x415F8D);
+      c[ImGuiCol_Header] = c[ImGuiCol_FrameBgActive];
+      c[ImGuiCol_HeaderHovered] = c[ImGuiCol_ButtonActive];
+      c[ImGuiCol_HeaderActive] = c[ImGuiCol_HeaderHovered];
+      c[ImGuiCol_Tab] = color(m_lightTheme ? 0xEDF0F3 : 0x181A1E);
+      c[ImGuiCol_TabSelected] = c[ImGuiCol_WindowBg];
+      c[ImGuiCol_TabDimmed] = c[ImGuiCol_Tab];
+      c[ImGuiCol_TabDimmedSelected] = c[ImGuiCol_TabSelected];
+      c[ImGuiCol_TabSelectedOverline] = color(m_lightTheme ? 0x356FD6 : 0x6C9EFF);
+      c[ImGuiCol_TabDimmedSelectedOverline] = c[ImGuiCol_TabSelectedOverline];
+      c[ImGuiCol_CheckMark] = c[ImGuiCol_TabSelectedOverline];
+      c[ImGuiCol_SliderGrab] = c[ImGuiCol_CheckMark];
+      c[ImGuiCol_SliderGrabActive] = c[ImGuiCol_CheckMark];
+      c[ImGuiCol_TextSelectedBg] = c[ImGuiCol_Header];
+      c[ImGuiCol_TitleBg] = c[ImGuiCol_Tab];
+      c[ImGuiCol_TitleBgActive] = c[ImGuiCol_TabSelected];
+      c[ImGuiCol_MenuBarBg] = color(m_lightTheme ? 0xE8EBEF : 0x181A1E);
+      c[ImGuiCol_DockingEmptyBg] = c[ImGuiCol_MenuBarBg];
+    }
+
+    auto consolePanel() -> void {
+      bool any = false;
+
+      for (const auto* message : {&m_message, &m_previewError, &m_checkMessage, &m_layoutError}) {
+        if (!message->empty()) {
+          ImGui::TextWrapped("%s", message->c_str());
+          ImGui::Separator();
+          any = true;
+        }
+      }
+
+      for (const auto& diagnostic : m_playDiagnostics) {
+        if (diagnostic.contains("entity") && diagnostic.contains("phase")) {
+          ImGui::TextDisabled("Entity %s / %s",
+                              diagnostic["entity"].get_ref<const std::string&>().c_str(),
+                              diagnostic["phase"].get_ref<const std::string&>().c_str());
+        }
+
+        ImGui::TextWrapped("%s",
+                           diagnostic["error"]["message"].get_ref<const std::string&>().c_str());
+        any = true;
+      }
+
+      for (const auto& item : m_scriptDiagnostics) {
+        const auto label
+            = item.path + ':' + std::to_string(item.line) + ':' + std::to_string(item.column);
+
+        if (ImGui::Button(label.c_str())) {
+          fileAction({{"command", "open-external"}, {"path", item.path}});
+        }
+
+        any = true;
+      }
+
+      if (!any) {
+        ImGui::TextUnformatted("No workspace, Play or compiler diagnostics.");
+      }
+    }
+
+    auto menuBar() -> void {
+      if (!ImGui::BeginMenuBar()) {
+        return;
+      }
+
+      ImGui::TextUnformatted("DotEngine");
+
+      if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("Save scene", nullptr, false, !playing())) {
+          if (applyInspector()) {
+            action({{"command", "save"}});
+          }
+        }
+
+        if (ImGui::MenuItem("Export game")) {
+          m_exportDialog = true;
+        }
+
+        if (ImGui::MenuItem("Close project")) {
+          sessionAction({{"command", "close"}, {"discard", false}});
+        }
+
+        ImGui::EndMenu();
+      }
+
+      if (ImGui::BeginMenu("Edit")) {
+        const auto stats = m_document->stats().value();
+
+        if (ImGui::MenuItem("Undo", nullptr, false, !playing() && stats.canUndo)) {
+          action({{"command", "undo"}});
+        }
+
+        if (ImGui::MenuItem("Redo", nullptr, false, !playing() && stats.canRedo)) {
+          action({{"command", "redo"}});
+        }
+
+        ImGui::EndMenu();
+      }
+
+      if (ImGui::BeginMenu("Build")) {
+        if (ImGui::MenuItem("Export game")) {
+          m_exportDialog = true;
+        }
+
+        ImGui::EndMenu();
+      }
+
+      if (ImGui::BeginMenu("Window")) {
+        for (const auto& [label, pane] :
+             {std::pair{"Hierarchy", "scene"}, std::pair{"Scene", "viewport"},
+              std::pair{"Inspector", "inspector"}, std::pair{"Environment", "environment"},
+              std::pair{"Rendering", "rendering"}, std::pair{"Assets", "resources"},
+              std::pair{"Console", "console"}}) {
+          if (ImGui::MenuItem(label)) {
+            sessionAction({{"command", "show-pane"}, {"pane", pane}});
+          }
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Reset layout")) {
+          sessionAction({{"command", "reset-layout"}});
+        }
+
+        if (ImGui::MenuItem("Dark theme", nullptr, !m_lightTheme)) {
+          sessionAction({{"command", "set-theme"}, {"theme", "dark"}});
+        }
+
+        if (ImGui::MenuItem("Light theme", nullptr, m_lightTheme)) {
+          sessionAction({{"command", "set-theme"}, {"theme", "light"}});
+        }
+
+        ImGui::EndMenu();
+      }
+
+      ImGui::EndMenuBar();
+    }
+
+    /** Docked/floating windows remain owned by this workspace's GUI context.
+     * Record real window geometry after Begin; no concept-art positions are reported.
+     * 停靠/浮动窗口归工作区 GUI 上下文拥有；Begin 后记录实际几何，不报告效果图坐标。 */
+    auto beginPanel(const char* title, const char* key, const char* pane) -> bool {
+      const bool requested = m_requestedPane == pane;
+
+      if (requested) {
+        ImGui::SetNextWindowFocus();
+      }
+
+      auto flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoFocusOnAppearing;
+
+      if (std::string_view(key) == "viewport") {
+        flags |= ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+      }
+
+      const bool visible = ImGui::Begin(title, nullptr, flags);
+      const auto origin = ImGui::GetWindowPos();
+      const auto size = ImGui::GetWindowSize();
+      m_panelGeometry[key]
+          = {{"origin", {origin.x, origin.y}},
+             {"size", {size.x, size.y}},
+             {"visible", visible},
+             {"focused", ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)},
+             {"docked", ImGui::GetWindowDockID() != 0}};
+
+      if (requested && visible) {
+        m_pane = pane;
+        m_requestedPane.clear();
+      }
+
+      return visible;
+    }
+
+    static auto panelTitle(std::string_view panel) -> const char* {
+      if (panel == "hierarchy") {
+        return "Hierarchy";
+      }
+
+      if (panel == "viewport") {
+        return "Scene";
+      }
+
+      if (panel == "inspector") {
+        return "Inspector";
+      }
+
+      if (panel == "environment") {
+        return "Environment";
+      }
+
+      if (panel == "rendering") {
+        return "Rendering";
+      }
+
+      if (panel == "console") {
+        return "Console";
+      }
+
+      return "Assets";
+    }
+
+    /** GUI docking is applied only inside its owning frame; accepted commands
+     * explicitly report queued until the observed geometry/generation changes.
+     * 停靠只在所属 GUI 帧中执行，接受命令后明确排队，直到几何/代次变化才完成。 */
+    auto applyDockRequest(ImGuiID root) -> void {
+      const auto request = std::move(*m_dockRequest);
+      m_dockRequest.reset();
+      const auto panel = request["panel"].get<std::string>();
+      const auto target = request["target"].get<std::string>();
+      auto* window = ImGui::FindWindowByName(panelTitle(target));
+
+      if (!window || !window->DockId || !ImGui::DockBuilderGetNode(window->DockId)) {
+        m_layoutError = "Dock target is no longer in the workspace";
+        m_message = m_layoutError;
+        return;
+      }
+
+      auto node = window->DockId;
+      const auto placement = request["placement"].get<std::string>();
+
+      if (placement != "tab") {
+        const auto direction = placement == "left"    ? ImGuiDir_Left
+                               : placement == "right" ? ImGuiDir_Right
+                               : placement == "up"    ? ImGuiDir_Up
+                                                      : ImGuiDir_Down;
+        node = ImGui::DockBuilderSplitNode(node, direction, Codec::number(request["ratio"]),
+                                           nullptr, nullptr);
+      }
+
+      ImGui::DockBuilderDockWindow(panelTitle(panel), node);
+      ImGui::DockBuilderFinish(root);
+      ++m_layoutGeneration;
+    }
+
     auto draw() -> Core::Result<void> {
+      applyTheme();
       const auto stats = m_document->stats().value();
       auto* viewport = ImGui::GetMainViewport();
       ImGui::SetNextWindowPos(viewport->WorkPos);
       ImGui::SetNextWindowSize(viewport->WorkSize);
       ImGui::Begin("DotEngine", nullptr,
                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
-                       | ImGuiWindowFlags_NoSavedSettings);
+                       | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
+      menuBar();
 
       ImGui::BeginDisabled(playing());
 
-      if ((ImGui::Button("Save") || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S))) && !playing()) {
+      if ((ImGui::Button("Save")
+           || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)))
+          && !playing()) {
         if (applyInspector()) {
           action({{"command", "save"}});
         }
@@ -2433,8 +2844,10 @@ namespace Dot::Editor {
       ImGui::SameLine();
       ImGui::BeginDisabled(!stats.canUndo);
 
-      if ((ImGui::Button("Undo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z)) && stats.canUndo
-          && !playing()) {
+      if ((ImGui::Button("Undo")
+           || (!ImGui::GetIO().WantTextInput
+               && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteAlways)))
+          && stats.canUndo && !playing()) {
         action({{"command", "undo"}});
       }
 
@@ -2442,7 +2855,10 @@ namespace Dot::Editor {
       ImGui::SameLine();
       ImGui::BeginDisabled(!stats.canRedo);
 
-      if ((ImGui::Button("Redo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))
+      if ((ImGui::Button("Redo")
+           || (!ImGui::GetIO().WantTextInput
+               && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z,
+                                  ImGuiInputFlags_RouteAlways)))
           && stats.canRedo && !playing()) {
         action({{"command", "redo"}});
       }
@@ -2500,126 +2916,186 @@ namespace Dot::Editor {
       }
 
       ImGui::SameLine();
-      ImGui::TextUnformatted(m_snapshot["dirty"].get<bool>() ? "Unsaved changes" : "Saved");
+      const bool unsaved = m_snapshot["dirty"].get<bool>() || pendingInspector()
+                           || pendingEnvironment() || pendingOcclusion() || pendingText();
+      ImGui::TextUnformatted(unsaved ? "Unsaved changes" : "Saved");
       ImGui::Separator();
 
-      if (!m_message.empty()) {
-        ImGui::TextWrapped("%s", m_message.c_str());
-      }
-
+      const auto dock = ImGui::GetID("WorkspaceDock");
       const auto available = ImGui::GetContentRegionAvail();
-      ImGui::BeginChild("Scene", {220, available.y}, ImGuiChildFlags_Borders);
+      const bool rebuildingLayout = m_resetLayout;
+      ImGuiID initialViewportDock{};
 
-      if (ImGui::BeginTabBar("Project panes", ImGuiTabBarFlags_FittingPolicyScroll)) {
-        if (ImGui::BeginTabItem("Scene", nullptr,
-                                m_requestedPane == "scene" ? ImGuiTabItemFlags_SetSelected : 0)) {
-          m_pane = "scene";
+      struct InitialDockBounds {
+        ImGuiDockNode* node;
+        ImVec2 position;
+        ImVec2 size;
+      };
 
-          if (m_requestedPane == "scene") {
-            m_requestedPane.clear();
+      std::vector<InitialDockBounds> initialDockBounds;
+
+      if (m_resetLayout) {
+        ImGui::DockBuilderRemoveNode(dock);
+        ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodePos(dock, ImGui::GetCursorScreenPos());
+        ImGui::DockBuilderSetNodeSize(dock, available);
+        auto center = dock;
+        const auto inspector
+            = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22F, nullptr, &center);
+        const auto assets
+            = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.25F, nullptr, &center);
+        const auto hierarchy
+            = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.18F / 0.78F, nullptr, &center);
+        ImGui::DockBuilderDockWindow("Hierarchy", hierarchy);
+        ImGui::DockBuilderDockWindow("Scene", center);
+        ImGui::DockBuilderDockWindow("Inspector", inspector);
+        ImGui::DockBuilderDockWindow("Environment", inspector);
+        ImGui::DockBuilderDockWindow("Rendering", inspector);
+        ImGui::DockBuilderDockWindow("Assets", assets);
+        ImGui::DockBuilderDockWindow("Console", assets);
+        ImGui::DockBuilderFinish(dock);
+        ImGui::DockBuilderGetNode(inspector)->SelectedTabId = ImHashStr("Inspector");
+        ImGui::DockBuilderGetNode(assets)->SelectedTabId = ImHashStr("Assets");
+        ImGui::DockBuilderGetNode(center)->SelectedTabId = ImHashStr("Scene");
+        initialViewportDock = center;
+        const auto rememberBounds = [&](auto&& self, ImGuiDockNode* node) -> void {
+          initialDockBounds.push_back({node, node->Pos, node->Size});
+
+          for (auto* child : node->ChildNodes) {
+            if (child) {
+              self(self, child);
+            }
           }
-
-          auto entities = m_snapshot["scene"]["entities"];
-          ImGui::BeginDisabled(playing());
-          tree(entities, nullptr);
-          ImGui::EndDisabled();
-          ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem(
-                "Environment", nullptr,
-                m_requestedPane == "environment" ? ImGuiTabItemFlags_SetSelected : 0)) {
-          m_pane = "environment";
-
-          if (m_requestedPane == "environment") {
-            m_requestedPane.clear();
-          }
-
-          environmentPanel();
-          ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem(
-                "Rendering", nullptr,
-                m_requestedPane == "rendering" ? ImGuiTabItemFlags_SetSelected : 0)) {
-          m_pane = "rendering";
-
-          if (m_requestedPane == "rendering") {
-            m_requestedPane.clear();
-          }
-
-          renderingPanel();
-          ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem(
-                "Resources", nullptr,
-                m_requestedPane == "resources" ? ImGuiTabItemFlags_SetSelected : 0)) {
-          m_pane = "resources";
-
-          if (m_requestedPane == "resources") {
-            m_requestedPane.clear();
-          }
-
-          resourcesPanel();
-          ImGui::EndTabItem();
-        }
-
-        ImGui::EndTabBar();
+        };
+        rememberBounds(rememberBounds, ImGui::DockBuilderGetNode(dock));
+        m_resetLayout = false;
+        ++m_layoutGeneration;
       }
 
-      ImGui::EndChild();
-      ImGui::SameLine();
-      ImGui::BeginChild("Viewport", {std::max(100.F, available.x - 220 - 340 - 24), available.y},
-                        ImGuiChildFlags_Borders);
-
-      ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 4});
-      viewportControls();
-      ImGui::EndChild();
-
-      if (m_playError) {
-        ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
+      if (m_dockRequest) {
+        applyDockRequest(dock);
       }
 
-      if (!m_playDiagnostics.empty()) {
-        ImGui::TextWrapped(
-            "Play diagnostics: %s",
-            m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
+      ImGui::DockSpace(dock, {0, 0});
+
+      if (rebuildingLayout) {
+        /** Every seeded leaf hosts a real panel begun below this frame. Declare
+         * their presence before first binding so inactive-node fitting does not
+         * expand Scene across the entire root while windows are being created.
+         * 每个初始叶节点本帧都创建真实面板；首次绑定前声明布局存在，避免未激活节点
+         * 适配在创建窗口时把 Scene 扩张至整个根区域。 */
+        const auto activate = [&](auto&& self, ImGuiDockNode* node) -> void {
+          node->IsVisible = true;
+
+          for (auto* child : node->ChildNodes) {
+            if (child) {
+              self(self, child);
+            }
+          }
+        };
+        activate(activate, ImGui::DockBuilderGetNode(dock));
+
+        for (const auto& bounds : initialDockBounds) {
+          bounds.node->Pos = bounds.position;
+          bounds.node->Size = bounds.size;
+          bounds.node->SizeRef = bounds.size;
+        }
       }
 
-      m_viewOrigin = ImGui::GetCursorScreenPos();
-      const auto content = ImGui::GetContentRegionAvail();
-      m_viewWidth = std::max(1.F, content.x);
-      m_viewHeight = std::max(1.F, content.y);
+      ImGui::End();
+      m_panelGeometry = Json::object();
 
-      if (m_previewReady && m_target) {
-        auto image = m_renderer->guiImage(*m_target, m_viewWidth, m_viewHeight);
+      m_visibleHierarchy = Json::array();
+      m_visibleResources = Json::array();
+
+      if (beginPanel("Hierarchy", "hierarchy", "scene")) {
+        ImGui::SetNextItemWidth(-1);
+        searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
+        ImGui::Separator();
+        ImGui::BeginDisabled(playing());
+        tree(m_snapshot["scene"]["entities"], nullptr);
+        ImGui::EndDisabled();
+      }
+
+      ImGui::End();
+
+      if (rebuildingLayout) {
+        ImGui::SetNextWindowDockID(initialViewportDock, ImGuiCond_Always);
+        ImGui::SetNextWindowFocus();
+      }
+
+      m_viewVisible = beginPanel("Scene", "viewport", "viewport");
+
+      if (m_viewVisible) {
+        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 3});
+        viewportControls();
+        ImGui::EndChild();
+
+        m_viewOrigin = ImGui::GetCursorScreenPos();
+        const auto content = ImGui::GetContentRegionAvail();
+        m_viewWidth = std::max(1.F, content.x);
+        m_viewHeight = std::max(1.F, content.y);
+
+        /** Resolve GPU work after GUI layout, keeping renderer reentry protection.
+         * Current pixel dimensions and retained image refer to the same frame.
+         * GUI 布局后解析 GPU 工作，保留重入保护；本帧像素尺寸与保留图像一致。 */
+        auto image = m_renderer->guiViewport(
+            [&](std::uint32_t width,
+                std::uint32_t height) -> Core::Result<std::optional<Graphics::RenderTarget>> {
+              auto ready = preview(width, height);
+
+              if (!ready) {
+                return std::unexpected(ready.error());
+              }
+
+              return m_previewReady ? m_target : std::nullopt;
+            },
+            m_viewWidth, m_viewHeight);
 
         if (!image) {
-          ImGui::EndChild();
           ImGui::End();
           return image;
         }
-
-        m_viewBlocked = ImGui::IsPopupOpen(
-                            nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)
-                        || ImGui::IsAnyItemActive();
-      } else {
-        ImGui::TextWrapped(
-            "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
       }
 
-      ImGui::EndChild();
-      ImGui::SameLine();
-      ImGui::BeginChild("Inspector", {0, available.y}, ImGuiChildFlags_Borders);
-      ImGui::TextUnformatted("Inspector");
-      ImGui::Separator();
-      ImGui::BeginDisabled(playing());
-      ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
-      inspector();
-      ImGui::EndDisabled();
-      ImGui::EndDisabled();
-      ImGui::EndChild();
+      ImGui::End();
+
+      if (beginPanel("Inspector", "inspector", "inspector")) {
+        ImGui::BeginDisabled(playing());
+        ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
+        inspector();
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Environment", "environment", "environment")) {
+        environmentPanel();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Rendering", "rendering", "rendering")) {
+        renderingPanel();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Assets", "resources", "resources")) {
+        resourcesPanel();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Console", "console", "console")) {
+        consolePanel();
+      }
+
+      ImGui::End();
+      ImGui::Begin("DotEngine", nullptr,
+                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
+                       | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
 
       if (m_exportDialog) {
         ImGui::OpenPopup("Export game");
@@ -2701,6 +3177,9 @@ namespace Dot::Editor {
         ImGui::EndPopup();
       }
 
+      m_viewBlocked
+          = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)
+            || ImGui::IsAnyItemActive();
       ImGui::End();
       return {};
     }
@@ -2788,12 +3267,6 @@ namespace Dot::Editor {
         }
 
         viewportInput(m_application->input(), std::chrono::duration<double>(frame.elapsed).count());
-        auto ready = preview();
-
-        if (!ready) {
-          return ready;
-        }
-
         auto shown = m_renderer->presentGui(
             [&] { return draw(); },
             std::min(std::chrono::duration<double>(frame.elapsed).count(), 1.0));
@@ -2887,10 +3360,11 @@ namespace Dot::Editor {
 
       impl->m_renderer.emplace(std::move(*renderer));
       Graphics::GuiConfig gui;
+      gui.fontSize = 15;
       gui.font = config.font;
 
       if (gui.font.empty()) {
-        auto font = impl->resource("NotoSansSC.ttf");
+        auto font = impl->resource("EditorSans.ttf");
 
         if (!font) {
           return std::unexpected(font.error());

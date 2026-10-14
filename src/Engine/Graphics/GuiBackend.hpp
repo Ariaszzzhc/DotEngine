@@ -3,6 +3,12 @@
 /** Private renderer-module declarations; native headers belong to global fragments.
  * 渲染器模块私有声明；原生头文件属于全局片段。 */
 namespace Dot::Graphics::Detail {
+  struct GuiImageSlot {
+    std::size_t index;
+    std::uint32_t width;
+    std::uint32_t height;
+  };
+
   class GuiBackend {
   public:
     [[nodiscard]] static auto create(WGPUDevice device, WGPUTextureFormat format,
@@ -14,6 +20,9 @@ namespace Dot::Graphics::Detail {
                              double seconds, float scaleX, float scaleY) -> Core::Result<void>;
     auto encode(WGPURenderPassEncoder pass) -> void;
     [[nodiscard]] auto image(WGPUTextureView view, float width, float height) -> Core::Result<void>;
+    [[nodiscard]] auto reserveImage(float width, float height, std::uint32_t maximum)
+        -> Core::Result<GuiImageSlot>;
+    [[nodiscard]] auto resolveImage(std::size_t index, WGPUTextureView view) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> GuiStats;
     [[nodiscard]] auto building() const -> bool;
     auto submitted() -> void;

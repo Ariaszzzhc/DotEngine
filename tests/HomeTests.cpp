@@ -113,7 +113,7 @@ TEST_CASE("home.native_mailbox_selects_project_preserves_responses_and_releases_
   CHECK_FALSE(moved.step(std::chrono::milliseconds{16}));
   CHECK_FALSE(moved.dispatch(request.dump()));
   Editor::WorkspaceConfig workspaceConfig;
-  workspaceConfig.font = std::filesystem::path(DOT_EDITOR_RESOURCES) / "NotoSansSC.ttf";
+  workspaceConfig.font = std::filesystem::path(DOT_EDITOR_RESOURCES) / "EditorSans.ttf";
 #ifdef _WIN32
   workspaceConfig.compiler
       = std::filesystem::path(DOT_EDITOR_RESOURCES) / "typescript-native/tsc.exe";

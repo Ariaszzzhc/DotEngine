@@ -1,7 +1,7 @@
 {
   "name": "dot-editor-font",
-  "version-string": "2.004",
-  "description": "Pinned Noto Sans SC font for the DotEngine editor",
-  "homepage": "https://github.com/google/fonts/tree/main/ofl/notosanssc",
+  "version-string": "1.0.42",
+  "description": "Pinned Sarasa UI SC Regular font with Inter Latin glyphs for the DotEngine editor",
+  "homepage": "https://github.com/be5invis/Sarasa-Gothic",
   "license": "OFL-1.1"
 }

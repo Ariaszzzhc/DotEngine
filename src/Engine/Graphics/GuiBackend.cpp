@@ -22,6 +22,7 @@ module;
 #include <system_error>
 #include <utility>
 #include <variant>
+#include <vector>
 
 module Dot.Graphics.Renderer;
 
@@ -183,6 +184,10 @@ namespace Dot::Graphics::Detail {
     bool m_tracked{};
     std::array<bool, static_cast<std::size_t>(Platform::Key::Count)> m_keys{};
     std::string m_font;
+    /** Stable opaque layout tokens; never submitted as GPU texture views.
+     * 所属帧解析为真实视图或移除绘制命令，稳定布局令牌不作为 GPU 视图提交。 */
+    std::array<std::uint8_t, 16> m_imageTags{};
+    std::size_t m_imageCount{};
     std::string m_error;
     bool m_validationError{};
 
@@ -514,6 +519,7 @@ namespace Dot::Graphics::Detail {
 
     try {
       ImGui_ImplWGPU_NewFrame();
+      m_impl->m_imageCount = 0;
 
       if (m_impl->m_platform) {
         ImGui_ImplSDL3_NewFrame();
@@ -600,6 +606,61 @@ namespace Dot::Graphics::Detail {
     }
 
     ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(view)), {width, height});
+    return {};
+  }
+
+  auto GuiBackend::reserveImage(float width, float height, std::uint32_t maximum)
+      -> Core::Result<GuiImageSlot> {
+    if (!m_impl->m_building || !std::isfinite(width) || !std::isfinite(height) || width <= 0
+        || height <= 0 || m_impl->m_imageCount >= 16) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid deferred GUI viewport size/count");
+    }
+
+    const auto scale = ImGui::GetIO().DisplayFramebufferScale;
+    const auto pixelsX = std::ceil(width * scale.x);
+    const auto pixelsY = std::ceil(height * scale.y);
+
+    if (!std::isfinite(pixelsX) || !std::isfinite(pixelsY) || pixelsX < 1 || pixelsY < 1
+        || pixelsX > static_cast<float>(std::min(4096U, maximum))
+        || pixelsY > static_cast<float>(std::min(4096U, maximum))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Deferred GUI viewport exceeds physical pixel limits");
+    }
+
+    const auto index = m_impl->m_imageCount;
+    const auto token
+        = static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(&m_impl->m_imageTags[index]));
+    ImGui::Image(token, {width, height});
+    ++m_impl->m_imageCount;
+    return GuiImageSlot{index, static_cast<std::uint32_t>(pixelsX),
+                        static_cast<std::uint32_t>(pixelsY)};
+  }
+
+  auto GuiBackend::resolveImage(std::size_t index, WGPUTextureView view) -> Core::Result<void> {
+    if (m_impl->m_building || index >= m_impl->m_imageCount) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Invalid deferred GUI viewport resolution");
+    }
+
+    ContextScope context{m_impl->m_context};
+    const auto token
+        = static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(&m_impl->m_imageTags[index]));
+    auto* data = ImGui::GetDrawData();
+
+    for (auto* list : data->CmdLists) {
+      for (int commandIndex = list->CmdBuffer.Size; commandIndex-- > 0;) {
+        auto& command = list->CmdBuffer[commandIndex];
+
+        if (!command.TexRef._TexData && command.TexRef._TexID == token) {
+          if (view) {
+            command.TexRef = static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(view));
+          } else {
+            list->CmdBuffer.erase(list->CmdBuffer.Data + commandIndex);
+          }
+        }
+      }
+    }
+
     return {};
   }
 

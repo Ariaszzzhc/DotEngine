@@ -92,3 +92,37 @@ foreign context restoration and releasing a target inside its image callback.
 
 Local verification uses macOS/Metal. Windows/Linux implementations and dependency
 features are supported in code but remain uncompiled/unexecuted locally.
+
+
+The editor's pinned Sarasa UI SC Regular resource supplies upstream-composed Inter
+Western and CJK glyphs; it does not depend on OS font installation. The GPU font case
+loads the packaged file, deletes its staged source after GUI initialization, moves
+the renderer, resolves actual Latin/Chinese/Japanese/Korean glyphs without fallback
+and draws/readbacks mixed text before closing and checking context lifetime. An empty
+font path still selects the renderer's explicitly documented built-in font; failed
+explicit fonts never silently substitute it.
+
+
+## Current-frame viewport images
+
+`guiViewport(draw,logicalWidth,logicalHeight)` reserves a widget in the active GUI
+layout. After layout completes, renderGui/presentGui synchronously call its
+GuiViewportDraw with current physical dimensions, then encode GUI sampling from
+that completed target. This permits resize/docking without a stale-size image while
+retaining the rule that ordinary GUI construction callbacks cannot reenter rendering.
+The viewport callback may render targets; recursive GUI frames or shutdown are
+rejected. Captures are held only for that frame and are never replayed after failure.
+
+Returned targets must belong to this renderer, have a completed frame and match the
+requested physical dimensions (1..4096/device limits). Ownership is retained through
+GUI encoding/submission. Explicit optional absence omits the image command, and
+errors/throws prevent a fake GUI frame from being published. At most sixteen viewport
+callbacks are accepted per frame; sizes must be positive and finite. Private stable
+layout tokens are resolved or removed before the WGPU backend sees draw commands.
+The immediate guiImage API remains useful for already rendered cached textures.
+
+Offscreen cases verify actual DPI-rounded dimensions and red pixels on the first
+frame and resize, owner/unrendered/wrong-size errors, absence, exceptions, non-replay,
+GUI reentry/close protection, size/count bounds and target release. Native workspace
+acceptance exercises this path through camera-free editing, missing-camera recovery,
+material undo and Play/Stop.

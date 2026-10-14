@@ -135,8 +135,7 @@ DotEditor open <project-root> [frames]
 DotEditor send <control-directory> <request-id> <request-file>
 ```
 
-`open` opens the project startup scene, a native window and the packaged Noto Sans
-SC font. A zero/omitted frame budget runs until closed; a positive budget is useful
+`open` opens the project startup scene, a native window and the packaged Sarasa UI SC Regular font (with Inter Western glyphs). A zero/omitted frame budget runs until closed; a positive budget is useful
 for diagnostics. It prints and flushes one JSON line containing `ok` and an absolute
 `control` path. Window dimensions start at 1280x800 with minimum 800x480.
 
@@ -498,7 +497,7 @@ Agent operations use the same document transaction:
 A null value removes the environment. Live workspaces also accept `stage-environment`
 with revision/value, followed by `apply-environment` or `reset-environment` with
 revision. `inspect` reports pendingEnvironment/environmentDraft. `show-pane` with
-pane `scene`, `environment`, `rendering` or `resources` controls graphical navigation without a
+pane `scene`, `viewport`, `inspector`, `environment`, `rendering`, `resources` or `console` controls graphical navigation without a
 scene edit/revision. Resource failures appear with their paths; no substitute HDRI
 is supplied. Higher quality increases first-bake work; background import/bake jobs
 and advanced environment controls are still planned.
@@ -592,3 +591,51 @@ not dirty the scene. The native acceptance entry is
 
 The visual direction is recorded in [EditorDesign.md](EditorDesign.md). Its reference
 art is a design input; the scene and controls must always reflect engine state.
+
+
+## Docked workspace and themes
+
+Real ImGui docked windows replace fixed child regions: Hierarchy at left, independent
+Scene/Game viewport in the center, Inspector/Environment/Rendering tabs at right and
+Assets/Console below left/center. Tabs and splitters can move, resize and float inside the
+application window. Window focuses each pane and resets the initial 18/60/22 and
+25-percent bottom proportions. No additional native windows or terminal are created
+by docking. File/Edit/Build menus invoke the same existing scene/export operations.
+Assets Actions contains actual resource/import/script-check and agent-buffer actions.
+Hierarchy and asset filters search names/paths, retaining matching hierarchy ancestors;
+ASCII search ignores case, other UTF-8 text matches exactly. Layout/theme are currently
+session state; saving the scene never writes them into game data.
+
+- `set-theme`: `theme` is `dark` or `light`. Palette changes preserve metrics, viewport
+  pixels, camera, selection and document history, including during Play.
+- `filter-panel`: `panel` is `hierarchy` or `resources`; `query` is UTF-8, at most
+  128 bytes, without embedded NUL. GUI search uses this same validation.
+- `reset-layout`: no additional fields. Applied in the next GUI frame; a pending
+  docking command must finish first.
+- `dock-panel`: `panel`/`target` are `hierarchy`, `viewport`, `inspector`, `environment`,
+  `rendering`, `resources` or `console`; target must currently be docked. `placement` is `tab`,
+  `left`, `right`, `up` or `down`, with `ratio` in [0.1,0.9] (unused for tabbing).
+  Returns `queued:true`. `inspect.workspace.layout` reports pending, command generation,
+  error and actual per-panel logical geometry/visibility/focus/docking after the owning frame.
+  A target moved away before execution reports an error instead of false completion.
+
+These commands require no scene revision and remain available with authoring drafts
+or during Play; they do not mutate the scene. `inspect.workspace.theme` and `filters`
+report session state. Sarasa UI SC Regular supplies Inter Western/CJK mixed text from
+one pinned packaged font, rendered at a compact logical size with native DPI handling.
+Gizmos, thumbnails, cross-session profiles and detached native panels remain planned.
+
+
+Console presents actual workspace/viewport errors, Play failure context and compiler
+locations that open externally. Runtime diagnostics remain available after Stop and
+do not shrink the scene image. Unsaved status includes scene, inspector/environment/
+AO and agent text drafts. Editor Undo/Redo poll command shortcuts across docked
+windows while text input retains its local undo. Newly appearing panels do not steal
+requested focus. `inspect.workspace.displayed` reports hierarchy IDs and asset paths
+actually drawn in the last frame; searches expand matching ancestors. View status
+also reports text-input capture for input diagnostics.
+
+Viewport rendering resolves after GUI layout and before GUI submission using the
+current physical dimensions, with explicit absence for recoverable scene failures.
+GUI build-time renderer reentry remains forbidden. This keeps initialization, docking,
+resize, undo and Play/Stop pixels consistent with the displayed widget.

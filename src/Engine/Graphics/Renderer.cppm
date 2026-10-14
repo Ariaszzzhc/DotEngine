@@ -112,6 +112,15 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  /** Runs synchronously after GUI layout, before its GPU submission. Dimensions
+   * are current physical pixels. Return a completed owned target, explicit absence,
+   * or an error; captures live only for this frame. Rendering is allowed here,
+   * GUI reentry, moving or destroying its renderer is not.
+   * 在 GUI 布局后、GPU 提交前同步执行，尺寸为本帧物理像素。返回已绘制的所属目标、
+   * 明确缺席或错误；捕获仅保留本帧。允许渲染，不允许 GUI 重入或移动/销毁渲染器。 */
+  using GuiViewportDraw = std::function<Core::Result<std::optional<RenderTarget>>(
+      std::uint32_t width, std::uint32_t height)>;
+
   /** Immutable GPU mesh with shared ownership. Copies share the uploaded buffers;
    * a mesh can outlive its renderer for destruction, but cannot then be drawn.
    * 共享所有权的不可变 GPU 网格；副本共享已上传缓冲区。
@@ -413,6 +422,11 @@ export namespace Dot::Graphics {
     /** UI image retains the target through submission; size uses logical pixels.
      * UI 图像持有目标至提交结束，尺寸使用逻辑像素。 */
     [[nodiscard]] auto guiImage(const RenderTarget& target, float width, float height)
+        -> Core::Result<void>;
+    /** Reserve an image during layout, resolving it after layout with retained
+     * target ownership. At most sixteen per frame; absent images are omitted.
+     * 布局时预留图像，布局后解析并保留目标所有权。每帧至多十六个，缺席图像不绘制。 */
+    [[nodiscard]] auto guiViewport(const GuiViewportDraw& draw, float width, float height)
         -> Core::Result<void>;
     [[nodiscard]] auto renderGui(const GuiDraw& draw, std::uint32_t width, std::uint32_t height,
                                  double seconds = 1.0 / 60, float scale = 1) -> Core::Result<Image>;

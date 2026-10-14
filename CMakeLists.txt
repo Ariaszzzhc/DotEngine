@@ -27,7 +27,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Dawn CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_file(DOT_EDITOR_FONT NAMES NotoSansSC.ttf
+find_file(DOT_EDITOR_FONT NAMES EditorSans.ttf
     PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
     NO_DEFAULT_PATH REQUIRED)
 find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
@@ -256,8 +256,8 @@ add_custom_target(DotEditorResources
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_TYPESCRIPT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native/LICENSE.txt"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC.ttf"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/NotoSansSC-LICENSE.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/EditorSans.ttf"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/EditorSans-LICENSE.txt"
     VERBATIM)
 add_dependencies(DotEditor DotEditorResources)
 

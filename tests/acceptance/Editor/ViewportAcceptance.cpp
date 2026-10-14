@@ -69,6 +69,34 @@ namespace Dot::Editor {
     frame();
     frame();
     const auto before = checked(workspace.captureViewport());
+    for (const auto* theme : {"light", "dark"}) {
+      checked(workspace.dispatch(Json{{"command", "set-theme"}, {"theme", theme}}.dump()));
+      frame();
+      frame();
+      require(checked(workspace.captureViewport()).pixels == before.pixels,
+              "Chrome themes must preserve actual scene pixels");
+      require(inspect()["scene"] == original["scene"], "Theme must preserve authoring");
+    }
+
+    const auto layout = inspect()["workspace"]["layout"];
+    const auto queued = Json::parse(checked(workspace.dispatch(Json{{"command", "dock-panel"},
+                                                                    {"panel", "inspector"},
+                                                                    {"target", "viewport"},
+                                                                    {"placement", "down"},
+                                                                    {"ratio", 0.3}}
+                                                                   .dump())));
+    require(queued["queued"] == true, "Docking must report queued until its frame");
+    frame();
+    frame();
+    require(inspect()["workspace"]["layout"]["generation"] != layout["generation"],
+            "Docking must complete in the native frame");
+    require(inspect()["workspace"]["layout"]["error"] == "", "Docking must not hide errors");
+    checked(workspace.dispatch("{\"command\":\"reset-layout\"}"));
+    frame();
+    frame();
+    frame();
+    require(checked(workspace.captureViewport()).pixels == before.pixels,
+            "Reset layout must restore the real viewport dimensions and pixels");
     require(command({{"command", "pick-view"}, {"uv", {0.5F, 0.5F}}})["selected"] == "2",
             "GPU pick must identify the visible cube");
     frame();

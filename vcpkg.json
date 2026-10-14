@@ -65,7 +65,7 @@
   ],
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "overrides": [
-    { "name": "dot-editor-font", "version-string": "2.004" },
+    { "name": "dot-editor-font", "version-string": "1.0.42" },
     {
       "name": "imgui",
       "version": "1.92.9",

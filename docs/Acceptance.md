@@ -112,3 +112,23 @@ history, reports missing Game camera and saves without inserting an editor camer
 The driver and dispatcher compile only with BUILD_TESTING. These checks establish
 opaque single-click selection and navigation; gizmos/docking and polished content
 remain subsequent work.
+
+
+## Docked editor, mixed text and GUI viewport phases
+
+WorkspaceLayoutTests covers real initial hierarchy/viewport/inspector/assets geometry,
+deep/light palette changes with unchanged scene pixels, queued docking and reset,
+actual filtered asset paths and case-insensitive hierarchy names, Chinese child
+search with expanded ancestors, 800x480 bounds, malformed commands and Play isolation.
+Existing native shortcut/material/environment/AO/home/laboratory cases retain their
+first-frame, undo, draft, Play/Stop and lifetime coverage. editor.viewport additionally
+checks theme pixel retention, native queued docking and layout reset in a saved
+camera-free project.
+
+GuiTests loads the pinned Sarasa UI SC font from a staged file, deletes the file, moves
+the renderer and reads actual mixed Latin/CJK glyphs and pixels before releasing its
+GUI context. Two viewport-phase cases validate current DPI/resize pixels, retained
+targets, foreign/unrendered/wrong-size failure, explicit absence, exceptions and
+non-replay, GUI reentry/close guards and finite size/sixteen-slot boundaries.
+These are real service/native checks; profiles, gizmos and thumbnail tools remain
+planned rather than inferred from the concept art.

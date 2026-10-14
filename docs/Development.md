@@ -3325,3 +3325,77 @@ untracked design source remains untracked. Only arm64 macOS is validated. Opaque
 picking currently submits visible draws and reads synchronously; acceleration,
 transparent/marquee picking, gizmos, docking/themes, populated-scene production and
 the realistic polished Prism Relay game remain unfinished. The larger goal is active.
+
+
+## 2026-10-14 — Docked editor workspace and mixed-script font
+
+Implemented actual ImGui docking windows for Hierarchy, Scene, Inspector, Environment,
+Rendering, Assets and Console. The initial layout keeps Inspector full height and
+Assets/Console below Hierarchy/Scene. Tabs and splitters can be rearranged within the
+same native window. Dark/light themes, reset-layout, queued docking and bounded UTF-8
+hierarchy/asset filters expose inspected session state without changing scene/history
+or game-camera data. Menus invoke existing document/export/external-source actions;
+Console shows real compiler, Play and viewport diagnostics. No fabricated scene,
+thumbnail, frame-rate or profiler control was introduced.
+实现原生停靠面板、深浅主题、布局重置和有界搜索；界面及代理使用同一实现，
+不改变场景历史或游戏相机，诊断来自真实引擎。源代码继续通过外部应用打开。
+
+Pinned Sarasa UI SC Regular 1.0.42 by immutable archive SHA512 and license revision
+f31c230af7fb4854f40d96560e2616eafdd85926. Its upstream UI family integrates Inter
+Western glyphs with CJK. Installed only the regular face as EditorSans.ttf plus OFL
+license; the application needs no system font installation. The 24,049,996-byte
+packaged font equals the installed/source regular font, SHA256
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+采用更纱 UI SC Regular，西文字形由上游整合 Inter；固定版本、哈希及许可证，
+随包提供一份字体，避免依赖操作系统字体安装。
+
+Added Renderer.guiViewport to reserve an image during GUI layout and render it
+synchronously afterward with current physical pixel dimensions. Normal GUI-build
+GPU reentry remains rejected. Deferred callbacks retain completed same-renderer
+targets through GUI encoding/submission; explicit absence removes the image command,
+errors/throws publish no GUI frame and callbacks are never replayed. Sixteen slots,
+finite dimensions/device limits, target ownership and recursive GUI/close boundaries
+are checked. Private opaque layout tokens are resolved before any GPU submission.
+新增布局后同步渲染阶段，使用本帧实际像素尺寸并保留目标所有权；错误、明确缺席
+和异常均有可观察结果，不以假帧或旧尺寸掩盖失败。
+
+Initial validation exposed focus-dependent Undo, diagnostics shrinking the viewport
+after Stop, image scrollbar width oscillation and inactive docking leaves temporarily
+expanding Scene to the host. Fixed shortcut routing while retaining text-input undo,
+moved diagnostics into Console, disabled Scene scrolling and preserved initialized
+DockBuilder bounds/visible leaves. Explicit window position/size was rejected because
+it implicitly undocked Scene. The final bootstrap is covered by actual geometry and
+first-frame/native pixel checks; existing history/pixel assertions were preserved.
+An initial font test lacked an algorithm include and a new renderer variable shadowed
+an outer name; both were corrected. The first package audit incorrectly expected two
+font copies; actual packaging intentionally contains one font inside the application.
+No toolchain failure or sanitizer use occurred.
+
+Added focused docking/theme/search boundaries and deferred GPU viewport/font lifetime
+tests. Font tests load a staged copy, delete its file, move the renderer and verify
+Western, Chinese, Japanese and Korean glyphs plus actual output pixels. GPU cases
+cover DPI rounding/resize, lifetime release, foreign/unrendered/wrong-size targets,
+absence, callback throws, limits and recovery. Native acceptance checks cover real
+theme/docking/reset pixels and Cmd/Ctrl Undo. Home/Feature Lab first-frame checks remain.
+All acceptance drivers stay under tests/acceptance and BUILD_TESTING.
+
+Final macOS Debug: 898/898 CTest cases, 177.40 seconds. Release/NDEBUG: 898/898,
+42.59 seconds. Inventory: 836 doctest identities plus 62 executable checks; labels
+overlap (201 unit, 90 offscreen, 52 native, 102 acceptance). All 272 C/C++ files pass
+clang-format and git whitespace checks; 15 standalone WGSL sources are unchanged and
+actual pipelines are covered by the suites. Reviewed module direction, ownership,
+GUI phase/reentry guards, contextual failures, bounded session commands, input focus,
+pinned font/resource packaging, platform assumptions and appropriate coverage.
+
+Refreshed macOS ZIP: 259 entries, 47,092,128 bytes. CRC, executable modes/exclusions,
+exact font/license/HDRI copies and two Feature Lab AO scenes pass. All 13 regular
+Mach-O files and 3 relative library symlinks pass strict signatures and relative/system
+loader/rpath checks; deep strict app verification passes. Inspected actual dark/light
+windows and mixed Chinese/English hierarchy text using an unsaved temporary rename,
+then discarded it. Inspected the final bundled default dark workspace and closed
+that owned window with discard=false; source Feature Lab remains unchanged.
+Removed owned research/request scratch files, retaining build caches, latest archive,
+validation evidence and supplied reference artwork. Private design source remains
+untracked. Only arm64 macOS is validated. Persisted layout profiles, gizmos, thumbnails,
+large-scene production and realistic polished Prism Relay remain unfinished; the
+larger engine goal remains active.

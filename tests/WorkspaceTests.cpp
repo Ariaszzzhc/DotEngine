@@ -623,7 +623,10 @@ TEST_CASE("workspace_material_and_light_authoring_preview_play_and_save_share_na
   CHECK(authored["scene"]["entities"][0]["light"]["intensity"] == 4);
   command(workspace, {{"command", "undo"}});
   REQUIRE(workspace.step(16ms));
-  CHECK(workspace.captureViewport()->pixels == before.pixels);
+  const auto restoredImage = workspace.captureViewport().value();
+  CHECK(restoredImage.width == before.width);
+  CHECK(restoredImage.height == before.height);
+  CHECK((restoredImage.pixels == before.pixels));
   command(workspace, {{"command", "redo"}});
   REQUIRE(workspace.step(16ms));
   const auto physical = workspace.captureViewport()->pixels;

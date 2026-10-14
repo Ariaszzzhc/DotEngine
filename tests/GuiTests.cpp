@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <array>
 #include <expected>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -40,6 +42,170 @@ namespace {
     return {};
   }
 }  // namespace
+
+TEST_CASE("graphics.gui_packaged_inter_sarasa_glyphs_own_deleted_font_source_and_survive_move") {
+  const auto before = guiContexts();
+  auto storage = Dot::Core::StagedDirectory::create(
+                     Dot::Core::FileSystem::open(std::filesystem::temp_directory_path()).value())
+                     .value();
+  const auto source = std::filesystem::path(DOT_EDITOR_FONT);
+  auto files = Dot::Core::FileSystem::open(source.parent_path()).value();
+  const auto bytes = files.readBytes(source.filename()).value();
+  REQUIRE(storage.files()->writeAtomic("editor.ttf", bytes));
+  auto gpu = renderer();
+  REQUIRE(gpu.enableGui({.font = storage.files()->root() / "editor.ttf", .fontSize = 15}));
+  REQUIRE(std::filesystem::remove(storage.files()->root() / "editor.ttf"));
+  auto moved = std::move(gpu);
+  const auto text = []() -> Dot::Core::Result<void> {
+    ImGui::GetBackgroundDrawList()->AddText({8, 8}, IM_COL32_WHITE, "Editor Wi 编辑 あ 한");
+    auto* font = ImGui::GetFontBaked();
+
+    for (const auto code : {0x57, 0x69, 0x7F16, 0x8F91, 0x3042, 0xD55C}) {
+      const auto* glyph = font->FindGlyphNoFallback(static_cast<ImWchar>(code));
+      REQUIRE(glyph);
+      CHECK(glyph->Codepoint == code);
+      CHECK(glyph->AdvanceX > 0);
+    }
+
+    return {};
+  };
+  auto image = moved.renderGui(text, 320, 64);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  image = moved.renderGui(text, 320, 64);
+  REQUIRE(image);
+  const auto background = pixel(*image, 0, 0);
+  std::size_t changed{};
+
+  for (unsigned y = 0; y < image->height; ++y) {
+    for (unsigned x = 0; x < image->width; ++x) {
+      changed += pixel(*image, x, y) != background;
+    }
+  }
+
+  CHECK(changed > 32);
+  REQUIRE(moved.closeGui());
+  CHECK(guiContexts() == before);
+}
+
+TEST_CASE("graphics.gui_viewport_resolves_current_dpi_pixels_after_layout_and_retains_targets") {
+  auto gpu = renderer();
+  std::optional<RenderTarget> retained;
+  int calls{};
+  float width = 40.25F;
+  const GuiViewportDraw viewport
+      = [&](std::uint32_t w, std::uint32_t h) -> Dot::Core::Result<std::optional<RenderTarget>> {
+    ++calls;
+    CHECK_FALSE(gpu.closeGui());
+    CHECK_FALSE(gpu.renderGui(rect, 8, 8));
+    auto target = gpu.createTarget(w, h);
+    REQUIRE(target);
+    REQUIRE(gpu.renderMeshesInto(*target, {}, {}, {1, 0, 0, 1}));
+    retained = *target;
+    return retained;
+  };
+  REQUIRE(gpu.enableGui());
+  const GuiDraw draw = [&]() -> Dot::Core::Result<void> {
+    CHECK_FALSE(gpu.createTarget(8, 8));
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({64, 48});
+    ImGui::Begin("Deferred", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground
+                     | ImGuiWindowFlags_NoSavedSettings);
+    auto result = gpu.guiViewport(viewport, width, 24.25F);
+    ImGui::End();
+    return result;
+  };
+  auto image = gpu.renderGui(draw, 128, 96, 1.0 / 60, 2);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(calls == 1);
+  REQUIRE(retained);
+  CHECK(retained->info()->width == 81);
+  CHECK(retained->info()->height == 49);
+  CHECK(pixel(*image, 20, 20) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  width = 30.75F;
+  image = gpu.renderGui(draw, 128, 96, 1.0 / 60, 2);
+  REQUIRE(image);
+  CHECK(calls == 2);
+  CHECK(retained->info()->width == 62);
+  CHECK(gpu.resourceStats()->targets == 1);
+  CHECK(pixel(*image, 20, 20) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  retained.reset();
+  CHECK(gpu.resourceStats()->targets == 0);
+  REQUIRE(gpu.closeGui());
+}
+
+TEST_CASE(
+    "graphics.gui_viewport_absence_failures_and_throw_recover_without_fake_frames_or_replay") {
+  auto gpu = renderer();
+  auto other = renderer();
+  REQUIRE(gpu.enableGui());
+  const auto frame = [&](GuiViewportDraw viewport) {
+    return gpu.renderGui(
+        [&]() -> Dot::Core::Result<void> {
+          ImGui::SetNextWindowPos({0, 0});
+          ImGui::SetNextWindowSize({64, 48});
+          ImGui::Begin("Deferred", nullptr,
+                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground);
+          auto result = gpu.guiViewport(viewport, 24, 24);
+          ImGui::End();
+          return result;
+        },
+        64, 48);
+  };
+  auto foreign = other.createTarget(24, 24).value();
+  REQUIRE(other.renderMeshesInto(foreign, {}, {}));
+  CHECK_FALSE(
+      frame([&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return foreign; }));
+  auto empty = gpu.createTarget(24, 24).value();
+  CHECK_FALSE(
+      frame([&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return empty; }));
+  empty = {};
+  int calls{};
+  auto failed = frame([&](auto w, auto h) -> Dot::Core::Result<std::optional<RenderTarget>> {
+    ++calls;
+    auto target = gpu.createTarget(w, h).value();
+    throw std::runtime_error("viewport draw fixture");
+  });
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().message.find("viewport draw fixture") != std::string::npos);
+  CHECK(calls == 1);
+  CHECK(gpu.guiStats()->frames == 0);
+  CHECK(gpu.resourceStats()->targets == 0);
+  auto absent = frame(
+      [](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return std::nullopt; });
+  REQUIRE_MESSAGE(absent, (absent ? "" : absent.error().message));
+  CHECK(pixel(*absent, 20, 20) == pixel(*absent, 0, 0));
+  CHECK(gpu.guiStats()->frames == 1);
+  auto wrongSize = gpu.createTarget(8, 8).value();
+  REQUIRE(gpu.renderMeshesInto(wrongSize, {}, {}));
+  CHECK_FALSE(frame(
+      [&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return wrongSize; }));
+  wrongSize = {};
+  int omitted{};
+  const GuiViewportDraw none = [&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> {
+    ++omitted;
+    return std::nullopt;
+  };
+  REQUIRE(gpu.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        CHECK_FALSE(gpu.guiViewport({}, 1, 1));
+        CHECK_FALSE(gpu.guiViewport(none, -1, 1));
+        CHECK_FALSE(gpu.guiViewport(none, std::numeric_limits<float>::quiet_NaN(), 1));
+
+        for (int i = 0; i < 16; ++i) {
+          REQUIRE(gpu.guiViewport(none, 1, 1));
+        }
+
+        CHECK_FALSE(gpu.guiViewport(none, 1, 1));
+        return {};
+      },
+      64, 48));
+  CHECK(omitted == 16);
+  CHECK(gpu.resourceStats()->targets == 0);
+  REQUIRE(gpu.renderGui(rect, 64, 48));
+  CHECK(calls == 1);
+  CHECK(gpu.guiStats()->frames == 3);
+}
 
 TEST_CASE("graphics.target_real_frames_reuse_shared_ownership_and_validation_retention") {
   auto gpu = renderer();

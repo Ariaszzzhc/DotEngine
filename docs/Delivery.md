@@ -80,6 +80,26 @@ The refreshed macOS ZIP contains 259 entries and 46,013,826 bytes. CRC, executab
 modes, exclusions, project/template AO and exact HDRI hashes pass; all 13 regular
 Mach-O files and 3 relative library symlinks pass strict signatures and loader/rpath
 checks. The actual bundled editor opens Feature Lab and changes real viewport pixels
-when framing an entity. Reference-guided theme/layout work, gizmos, scalable scene
+when framing an entity. Gizmos, scalable scene
 production and realistic Prism Relay polish remain planned. Windows/Linux have not
 been validated locally.
+
+
+The reference-guided editor now has actual docking panels, neutral dark/light themes,
+bounded hierarchy/asset search and a real diagnostics console. Sarasa UI SC Regular
+1.0.42 integrates upstream Inter Western glyphs; one 24,049,996-byte font and its
+OFL license ship inside the app. No operating-system font installation is required.
+GUI viewport rendering resolves current physical dimensions after layout, retaining
+owned render targets until submission and propagating failures without fake frames.
+
+This stage passes 898/898 CTest cases in Debug (177.40s) and Release/NDEBUG (42.59s)
+on arm64 macOS: 836 doctest identities plus 62 executable checks. Labels overlap:
+201 unit, 90 offscreen, 52 native and 102 acceptance. All 272 C/C++ files pass
+clang-format and whitespace checks; the 15 standalone WGSL sources are unchanged.
+The refreshed ZIP contains 259 entries and 47,092,128 bytes; CRC, executable modes,
+exclusions, exact font/HDRI copies and Feature Lab AO scenes pass. All 13 regular
+Mach-O files, 3 relative library symlinks and the app pass strict signature and
+relative/system loader/rpath checks. The final bundled editor opens real Feature Lab
+and displays the docked workspace. Windows/Linux have not been validated locally.
+Persisted layout profiles, gizmos, asset thumbnails, large-scene production and the
+realistic polished Prism Relay game remain unfinished.

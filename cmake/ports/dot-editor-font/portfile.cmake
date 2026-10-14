@@ -1,14 +1,17 @@
-set(FONT_REVISION a85815a42757630ce188fdad368c2dfc444d4773)
-vcpkg_download_distfile(FONT
-    URLS "https://raw.githubusercontent.com/google/fonts/${FONT_REVISION}/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf"
-    FILENAME "NotoSansSC-${FONT_REVISION}.ttf"
-    SHA512 a55cc1eb24d1e84569dd9a4f94cd0bb63a390895951d03e92d5da1deb2f4ef81a207556e3cdbff12910fa09340290b9c762e97828cc025cb86c49bc8324a5840
+set(FONT_VERSION 1.0.42)
+set(FONT_REVISION f31c230af7fb4854f40d96560e2616eafdd85926)
+vcpkg_download_distfile(FONT_ARCHIVE
+    URLS "https://github.com/be5invis/Sarasa-Gothic/releases/download/v${FONT_VERSION}/SarasaUiSC-TTF-${FONT_VERSION}.7z"
+    FILENAME "SarasaUiSC-TTF-${FONT_VERSION}.7z"
+    SHA512 8032b0ba8e6a58e23cafb3b52da741c42f13a074fe2bc891c81695a8d0dd7404666c7f7a1eecc2c0710fc92155abcf2301b60e44aea0716af03af038cef52bfd
 )
+vcpkg_extract_source_archive(FONT_DIRECTORY ARCHIVE "${FONT_ARCHIVE}" NO_REMOVE_ONE_LEVEL)
 vcpkg_download_distfile(FONT_LICENSE
-    URLS "https://raw.githubusercontent.com/google/fonts/${FONT_REVISION}/ofl/notosanssc/OFL.txt"
-    FILENAME "NotoSansSC-OFL-${FONT_REVISION}.txt"
-    SHA512 056ba1569fb325c0223e9a8769f89f2a8477ff39f978e9c71fc7116219334180d345d7936e69d84333857e32aeaa2f1965abaea46f1df11d5bf0b75af799ef74
+    URLS "https://raw.githubusercontent.com/be5invis/Sarasa-Gothic/${FONT_REVISION}/LICENSE"
+    FILENAME "Sarasa-${FONT_REVISION}-OFL.txt"
+    SHA512 c8de279cacb387b1d884144cc1a8d84187c775ae2d0fc98498174f155824fe1275053f407a7a3ba468496ddb89791c959cc4795c0f73715ebedf9fe95f4a4b58
 )
-file(INSTALL "${FONT}" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME NotoSansSC.ttf)
+file(INSTALL "${FONT_DIRECTORY}/SarasaUiSC-Regular.ttf"
+    DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME EditorSans.ttf)
 vcpkg_install_copyright(FILE_LIST "${FONT_LICENSE}")
 set(VCPKG_POLICY_EMPTY_PACKAGE enabled)

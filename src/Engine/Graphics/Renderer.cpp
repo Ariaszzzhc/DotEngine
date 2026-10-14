@@ -525,6 +525,77 @@ namespace Dot::Graphics {
     std::unique_ptr<Detail::GuiBackend> gui;
     std::vector<RenderTarget> guiTargets;
 
+    struct GuiViewportRequest {
+      Detail::GuiImageSlot slot;
+      GuiViewportDraw draw;
+    };
+
+    std::vector<GuiViewportRequest> guiViewports;
+    bool guiFrameActive{};
+
+    struct GuiFrameScope {
+      Impl& owner;
+
+      explicit GuiFrameScope(Impl& value) : owner(value) {
+        owner.guiFrameActive = true;
+        owner.guiViewports.clear();
+        owner.guiTargets.clear();
+      }
+
+      ~GuiFrameScope() {
+        owner.guiViewports.clear();
+        owner.guiTargets.clear();
+        owner.guiFrameActive = false;
+      }
+    };
+
+    auto resolveGuiViewports() -> Core::Result<void> {
+      auto requests = std::exchange(guiViewports, {});
+
+      for (const auto& request : requests) {
+        auto target = request.draw(request.slot.width, request.slot.height);
+
+        if (!target) {
+          return Core::fail(target.error().code,
+                            "Deferred GUI viewport: " + target.error().message);
+        }
+
+        WGPUTextureView view{};
+
+        if (*target) {
+          auto& resolved = **target;
+
+          if (!resolved.m_impl || resolved.m_impl->owner != diagnostics) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Deferred GUI viewport returned a foreign or empty target");
+          }
+
+          auto targetInfo = resolved.info();
+
+          if (!targetInfo) {
+            return std::unexpected(targetInfo.error());
+          }
+
+          if (!targetInfo->frames || targetInfo->width != request.slot.width
+              || targetInfo->height != request.slot.height) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Deferred GUI viewport must complete its current pixel dimensions");
+          }
+
+          guiTargets.push_back(resolved);
+          view = resolved.m_impl->view.Get();
+        }
+
+        auto resolved = gui->resolveImage(request.slot.index, view);
+
+        if (!resolved) {
+          return resolved;
+        }
+      }
+
+      return {};
+    }
+
     ~Impl() {
       guiTargets.clear();
       gui.reset();
@@ -3501,7 +3572,8 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
 
-    if (m_impl->thread != std::this_thread::get_id() || (m_impl->gui && m_impl->gui->building())) {
+    if (m_impl->thread != std::this_thread::get_id() || m_impl->guiFrameActive
+        || (m_impl->gui && m_impl->gui->building())) {
       return Core::fail(Core::ErrorCode::InvalidState,
                         "GUI shutdown requires owner thread without reentry");
     }
@@ -3578,6 +3650,36 @@ namespace Dot::Graphics {
     return m_impl->gui->image(target.m_impl->view.Get(), width, height);
   }
 
+  auto Renderer::guiViewport(const GuiViewportDraw& draw, float width, float height)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!draw || !m_impl->gui || !m_impl->gui->building() || m_impl->guiViewports.size() >= 16) {
+      return Core::fail(
+          Core::ErrorCode::InvalidState,
+          "Deferred GUI viewports require an active layout and at most sixteen draws");
+    }
+
+    m_impl->guiViewports.push_back({{}, draw});
+    auto slot = m_impl->gui->reserveImage(width, height, m_impl->info.maxTextureDimension);
+
+    if (!slot) {
+      m_impl->guiViewports.pop_back();
+      return std::unexpected(slot.error());
+    }
+
+    m_impl->guiViewports.back().slot = *slot;
+    return {};
+  }
+
   auto Renderer::renderGui(const GuiDraw& draw, std::uint32_t width, std::uint32_t height,
                            double seconds, float scale) -> Core::Result<Image> {
     if (!m_impl) {
@@ -3598,7 +3700,12 @@ namespace Dot::Graphics {
           "GUI rendering requires an enabled context and dimensions within 1..4096/device limits");
     }
 
-    m_impl->guiTargets.clear();
+    if (m_impl->guiFrameActive) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "GUI frames cannot reenter deferred rendering");
+    }
+
+    Impl::GuiFrameScope frame{*m_impl};
 
     try {
       ErrorScope scope(m_impl->instance, m_impl->device);
@@ -3606,8 +3713,13 @@ namespace Dot::Graphics {
       checked = scope.finish();
 
       if (!built || !checked) {
-        m_impl->guiTargets.clear();
         return std::unexpected(built ? checked.error() : built.error());
+      }
+
+      checked = m_impl->resolveGuiViewports();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
       }
 
       const auto format = m_impl->surface ? m_impl->surfaceFormat : wgpu::TextureFormat::RGBA8Unorm;
@@ -3617,7 +3729,6 @@ namespace Dot::Graphics {
             return Core::Result<wgpu::CommandEncoder>(m_impl->encodeGui(texture));
           },
           {}, format);
-      m_impl->guiTargets.clear();
 
       if (image) {
         m_impl->gui->submitted();
@@ -3625,7 +3736,6 @@ namespace Dot::Graphics {
 
       return image;
     } catch (const std::exception& error) {
-      m_impl->guiTargets.clear();
       return Core::fail(Core::ErrorCode::External, "Render GUI: " + std::string(error.what()));
     }
   }
@@ -3664,7 +3774,12 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidArgument, "GUI surface exceeds texture limits");
     }
 
-    m_impl->guiTargets.clear();
+    if (m_impl->guiFrameActive) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "GUI frames cannot reenter deferred rendering");
+    }
+
+    Impl::GuiFrameScope frame{*m_impl};
 
     try {
       ErrorScope scope(m_impl->instance, m_impl->device);
@@ -3675,14 +3790,18 @@ namespace Dot::Graphics {
       checked = scope.finish();
 
       if (!built || !checked) {
-        m_impl->guiTargets.clear();
         return std::unexpected(built ? checked.error() : built.error());
+      }
+
+      checked = m_impl->resolveGuiViewports();
+
+      if (!checked) {
+        return std::unexpected(checked.error());
       }
 
       auto presented = m_impl->presentFrame([&](const auto& texture, auto, auto) {
         return Core::Result<wgpu::CommandEncoder>(m_impl->encodeGui(texture));
       });
-      m_impl->guiTargets.clear();
 
       if (presented && *presented == PresentResult::Presented) {
         m_impl->gui->submitted();
@@ -3690,7 +3809,6 @@ namespace Dot::Graphics {
 
       return presented;
     } catch (const std::exception& error) {
-      m_impl->guiTargets.clear();
       return Core::fail(Core::ErrorCode::External, "Present GUI: " + std::string(error.what()));
     }
   }

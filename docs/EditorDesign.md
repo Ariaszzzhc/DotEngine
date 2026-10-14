@@ -32,9 +32,26 @@ or fixed status value may stand in for a live engine result.
 参考图中的地形/石拱美术、缩略图、变换 gizmo、暂停/步进和 profiler 须先实现并验证；
 性能标签必须来自测量，不得以效果图或固定状态替代实时引擎结果。
 
-At this milestone the current workspace still uses its existing panel layout.
-The navigation/selection foundation is implemented; theme/layout adaptation is
-the subsequent editor stage. Neither the concepts nor this contract establishes
-a mature editor or a polished 3D game.
-本阶段仍使用当前面板布局，导航/选择基础已实现；主题和布局适配是后续编辑器阶段。
-效果图和本约定均不表示成熟编辑器或高质量 3D 游戏已完成。
+The workspace now uses real docked windows with the reference's initial proportions.
+Users can drag tabs/splitters or undock panels inside the native editor window, focus
+them through Window, and reset the layout. Dark/light chrome shares identical metrics
+and never changes scene rendering. Assets/Console tabs show real resources and diagnostics. Assets search and action menus consume the actual
+project catalog; there are no fabricated thumbnails or profiler numbers.
+工作区现已使用真实停靠窗口与参考初始比例，可拖动标签/分隔线、在原生窗口内浮动、
+通过 Window 聚焦与重置布局。深浅皮肤使用相同度量，不改变场景渲染；资源搜索和
+操作菜单读取实际项目目录，不伪造缩略图或 profiler 数值。
+
+The packaged font is Sarasa UI SC Regular 1.0.42, fixed by archive/hash and upstream
+license revision. The UI family uses Inter for Western glyphs and integrates CJK
+glyphs upstream; one scalable font resource provides mixed text with consistent
+metrics. English is proportional, while Chinese/Japanese/Korean glyphs remain
+available. This is the upstream UI composite, not a separately installed system font.
+随包字体为固定归档/哈希及许可证提交的 Sarasa UI SC Regular 1.0.42。UI 字族以
+Inter 提供西文字形并由上游整合 CJK，一份可缩放字体支持一致的混排度量，不依赖
+系统安装字体。[Upstream / 上游](https://github.com/be5invis/Sarasa-Gothic#what-are-the-names).
+
+Layout and theme currently live for the workspace session. Persisted per-user
+profiles, transform gizmos, thumbnails and further production tools remain planned.
+The concepts and this contract do not establish a mature editor or polished game.
+布局与主题当前在工作区会话内保留；用户配置持久化、变换 gizmo、缩略图及更多
+生产工具仍待实现。效果图和本约定均不表示成熟编辑器或高质量游戏已经完成。

@@ -224,7 +224,11 @@ namespace Dot::Editor {
         frame(workspace);
         const auto restored = checked(workspace.captureViewport());
         auto undoState = Json::parse(checked(workspace.snapshot()));
-        require(undoState["dirty"] == false, "GUI Undo failed: " + undoState.dump());
+        require(undoState["dirty"] == false,
+                "GUI Undo failed: "
+                    + Json::parse(checked(
+                        workspace.dispatch("{\"command\":\"inspect\"}")))["workspace"]["view"]
+                          .dump());
         require(before.pixels == restored.pixels, "GUI Undo did not restore scene pixels");
         snapshot = Json::parse(checked(workspace.snapshot()));
         require(snapshot["dirty"] == false, "Undo must restore saved baseline");

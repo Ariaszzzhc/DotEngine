@@ -61,7 +61,16 @@ remain pending; this stage does not establish large-game or mature-editor comple
 
 Independent editor navigation, mesh world-bound framing and opaque GPU picking now
 have CPU, offscreen, native-input and runnable editor acceptance coverage. Gizmos,
-docking/persisted layouts, asset thumbnails and production scene tools remain planned.
+persisted user layouts, asset thumbnails and production scene tools remain planned.
 Dark/light editor references guide compact chrome and hierarchy/viewport/inspector/
 asset placement, while implemented engine behavior remains authoritative; see
 [EditorDesign.md](EditorDesign.md).
+
+
+Reference-guided docked hierarchy, Scene/Game, Inspector/environment/rendering and
+Assets/Console windows now have real theme, search, queued docking and reset controls.
+Pinned Sarasa UI SC Regular provides Inter Western/CJK text. GUI viewport rendering
+resolves after actual layout with owned targets and failure/lifetime checks, preserving
+first-frame/resize/undo/Play behavior. This improves the production workspace; persisted
+profiles, manipulators, thumbnails, populated-scene scalability and realistic game
+content remain unfinished.

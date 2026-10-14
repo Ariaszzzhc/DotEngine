@@ -460,7 +460,7 @@ namespace Dot::Editor {
 
       impl->m_renderer.emplace(std::move(*renderer));
       Graphics::GuiConfig gui;
-      gui.font = impl->m_resources.root() / "NotoSansSC.ttf";
+      gui.font = impl->m_resources.root() / "EditorSans.ttf";
       auto enabled = impl->m_renderer->enableGui(gui);
 
       if (!enabled) {
