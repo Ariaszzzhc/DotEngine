@@ -130,6 +130,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Occlusion.cpp
     src/Engine/Graphics/View.cpp
     src/Engine/Editor/Camera.cpp
+    src/Engine/Editor/TransformTool.cpp
     src/Engine/Platform/ExternalFiles.cpp
     src/Engine/Editor/ScriptDiagnostics.cpp
     src/Engine/Script/SceneHost.cpp
@@ -221,6 +222,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Occlusion.cppm
         src/Engine/Graphics/View.cppm
         src/Engine/Editor/Camera.cppm
+        src/Engine/Editor/TransformTool.cppm
         src/Engine/Platform/ExternalFiles.cppm
         src/Engine/Editor/ScriptDiagnostics.cppm
 )

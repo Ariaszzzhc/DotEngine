@@ -3399,3 +3399,78 @@ validation evidence and supplied reference artwork. Private design source remain
 untracked. Only arm64 macOS is validated. Persisted layout profiles, gizmos, thumbnails,
 large-scene production and realistic polished Prism Relay remain unfinished; the
 larger engine goal remains active.
+
+
+## 2026-10-14 — Transactional viewport translation handles
+
+Implemented Dot.Editor.TransformTool as separate interface/implementation units.
+AxisDrag computes closest world-axis/ray displacement with the engine's right-handed
+[0,1] depth and top-left UV conventions, absolute start sampling and optional meter
+snap. Near-parallel rays, non-finite/invalid UV, singular matrices and unbounded
+deltas are explicit failures. TransformGesture owns an independent decoded preview
+scene. World updates convert through the original parent inverse and strict TRS
+decomposition, rejecting shear/singularity without approximating authoring data.
+Commit checks original document address/scope/revision and adds one undo entry;
+no-op/return-to-start adds none. Moved/stale/foreign/thread-invalid gestures fail;
+cancellation/destruction releases the draft without document edits. No additional
+third-party dependency or environment override was introduced.
+新增独立模块，射线移动使用绝对首样本与米吸附；克隆预览不更改文档，父局部 TRS
+校验拒绝错切与奇异，提交检查文档/范围/版本且只产生一条撤销记录。
+
+Scene view now offers Select/Move, world/local axes and snap controls. Colored XYZ
+segments are projected from actual selected entity transforms; hit-testing uses the
+same observed segments. Behind-camera/clipped and parallel handles are omitted.
+Native pointer gestures capture until release, commit once and cancel on Escape or
+focus loss. Complete press/release in one frame cannot leave capture active. Local
+axes respect hierarchy rotation/reflection; translation still maps correctly through
+nonuniform parent scale. The preview clone renders through the existing post-layout
+GUI viewport phase. Begin/update/finish invalidate stale target readiness until GPU
+drawing completes; view.source explicitly identifies document/transform/Play.
+世界/局部移动手柄来自真实投影并共享命中几何；原生释放提交、Esc/失焦取消，
+预览变化即失效旧目标状态，布局后的同帧渲染重新发布实际就绪状态。
+
+UI and agent share set-tool/begin-transform/update-transform/finish-transform. During
+a gesture, document/view/layout/tool actions are locked; inspect/gesture/close/theme/
+filter operations remain available. Agent gestures persist across frames until finish
+and do not consume incidental native pointer motion. Inspector changes and Play are
+blocked; close includes the pending draft in confirmation and releases it on discard.
+Only translation handles are delivered; no fake rotation/scale, plane or multi-select
+controls appear. The common implementation targets arm64 macOS and x86_64 Windows/Linux.
+
+Foundation Debug tests passed before the workspace consumed the new module. New
+coverage: one pure axis math identity, three document transaction identities and two
+native/GPU workspace identities. The existing runnable viewport acceptance additionally
+exercises live move preview, single commit and pixel-restoring Undo. Tests cover
+perspective/orthographic/snap, parent reflection/shear rejection, stale and foreign
+documents, thread/move ownership, no-op/cancel, actual changed/restored pixels, save/
+Undo/Redo, stale readiness, native release/Escape/focus loss and same-frame click.
+Initial compilation found incorrect filesystem fixture types, a signed color index
+and unparenthesized doctest diagnostic ternaries; corrected them. A cancellation test
+initially compared against a pre-Undo/Redo revision; changed its baseline to the actual
+post-Redo snapshot while retaining full cancellation invariants. The first focused
+workspace/foundation/acceptance run passed 7/7 (4.81s).
+
+Full macOS Debug: 904/904 CTest, 182.62s. Final whitespace/interface-comment rebuild
+then focused Debug: 7/7, 4.57s. Full Release/NDEBUG: 904/904, 45.81s. Inventory is
+842 doctest identities plus 62 executable checks, with overlapping labels: 202 unit,
+90 offscreen, 54 native, 104 acceptance. All 277 C/C++ files pass clang-format and
+git whitespace checks; 15 standalone WGSL sources are unchanged. Reviewed module
+direction, owned preview lifetime, reentry/thread/conflict boundaries, strict input,
+parent transform conventions, capture/focus behavior and relevant test coverage.
+No sanitizer or toolchain workaround was used. Automatic approval twice reported
+an already-exited Debug test as live and rejected a rebuild/Release launch. Rechecked
+completed logs and the process list (no CTest process), then retried successfully.
+Actual builds and native/GPU test suites did not overlap.
+
+Refreshed archive passes CRC/executable permissions, exclusions, exact packaged
+font/license and two HDRI hashes. ZIP: 259 entries, 47,110,227 bytes. All 13 regular
+Mach-O files and 3 relative library symlinks pass strict signatures and relative/
+system loader/rpath inspection; deep strict app verification passes. Opened bundled
+Feature Lab, selected its real Dynamic entity and inspected actual XYZ overlay and
+Inspector; closed with discard=false, terminal exit zero and owned control-stage
+removal. Source project remains unchanged. Removed owned UI requests and exploratory
+probe source files; kept build caches, latest archive, audit/log evidence and private
+reference artwork. Private design source remains untracked. Only arm64 macOS is
+validated. Rotation/scale and plane handles, multi-selection, persisted profiles,
+thumbnails, large-scene scalability and realistic polished Prism Relay remain
+unimplemented; the full engine/editor/game objective remains active.

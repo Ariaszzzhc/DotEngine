@@ -639,3 +639,39 @@ Viewport rendering resolves after GUI layout and before GUI submission using the
 current physical dimensions, with explicit absence for recoverable scene failures.
 GUI build-time renderer reentry remains forbidden. This keeps initialization, docking,
 resize, undo and Play/Stop pixels consistent with the displayed widget.
+
+## Move manipulator / 移动操纵器
+
+Scene view offers Select/Move, world/local axes and a snap distance in meters (zero
+is continuous). Select an entity and drag a colored axis; the live GPU preview uses
+a disposable scene clone. Release commits one history entry; Escape or focus loss
+cancels. The Inspector/document stays unchanged during dragging. Undo/Redo restores
+both authored data and actual scene pixels. Local axes include the selected hierarchy's
+rotation/reflection; world displacement is converted through the parent inverse.
+Unrepresentable parent-local shear or singular matrices fail without substituting an
+approximate transform. Behind-camera and near-parallel axis handles are omitted.
+Scene 视图提供选择/移动、世界/局部坐标轴及米单位吸附（零表示连续）。拖动修改独立
+预览场景，松开后提交一条历史记录；Esc 或失焦取消，拖动期间不更改 Inspector/文档。
+父局部错切或奇异矩阵无损失败，不用近似变换掩盖错误。
+
+The UI and agent use the same gesture implementation:
+
+```json
+{"command":"set-tool","tool":"move","space":"world","snap":0.5}
+{"command":"begin-transform","revision":"3","axis":0,"uv":[0.5,0.5]}
+{"command":"update-transform","revision":"3","uv":[0.7,0.5]}
+{"command":"finish-transform","revision":"3","commit":true}
+```
+
+`axis` is integer 0/1/2 (X/Y/Z); UV is top-left [0,1]. Begin requires a selected
+entity, current rendered Scene view and no pending authoring/text draft or navigation.
+Update is absolute relative to the start sample, avoiding cumulative snapping drift.
+Cancel uses `commit:false`. An active gesture locks other document/view/layout/tool
+operations; inspect, updates, finish, close, theme and filtering remain available.
+Agent gestures stay active across frames until finish; native gestures additionally
+consume pointer release. Closing asks about the pending draft before discarding it.
+`workspace.tool` reports configuration, active entity, errors and actual projected
+handle segments. `workspace.view.source` distinguishes document/transform/Play previews;
+changed/begun/cancelled drafts invalidate readiness until GPU drawing completes.
+Current GUI handles perform translation. Rotation/scale handles, plane movement,
+multi-selection and richer snapping remain unfinished.

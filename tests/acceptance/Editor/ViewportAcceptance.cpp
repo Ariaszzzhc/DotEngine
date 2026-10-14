@@ -120,12 +120,39 @@ namespace Dot::Editor {
     checked(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"editor\"}"));
     frame();
     require(workspace.captureViewport().has_value(), "Editor view must recover independently");
+    checked(workspace.dispatch(
+        Json{{"command", "set-view"}, {"mode", "editor"}, {"camera", camera}}.dump()));
+    command({{"command", "select"}, {"entity", "2"}});
+    checked(workspace.dispatch(
+        "{\"command\":\"set-tool\",\"tool\":\"move\",\"space\":\"world\",\"snap\":0.5}"));
+    frame();
+    const auto gestureStart = inspect();
+    const auto gesturePixels = checked(workspace.captureViewport());
+    command({{"command", "begin-transform"}, {"axis", 0}, {"uv", {0.5, 0.5}}});
+    command({{"command", "update-transform"}, {"uv", {0.7, 0.5}}});
+    frame();
+    require(inspect()["scene"] == gestureStart["scene"]
+                && inspect()["revision"] == gestureStart["revision"],
+            "Move preview must not edit document history");
+    require(checked(workspace.captureViewport()).pixels != gesturePixels.pixels,
+            "Move draft must change actual scene pixels");
+    command({{"command", "finish-transform"}, {"commit", true}});
+    frame();
+    require(inspect()["historyEntries"].get<int>() == gestureStart["historyEntries"].get<int>() + 1,
+            "Move release must commit one history entry");
+    command({{"command", "undo"}});
+    frame();
+    require(inspect()["scene"] == gestureStart["scene"]
+                && checked(workspace.captureViewport()).pixels == gesturePixels.pixels,
+            "Move undo must restore actual scene and pixels");
     command({{"command", "save"}});
     require(Json::parse(checked(World::encodeScene(checked(project.loadStartup()))))
                 == original["scene"],
             "Saving must not serialize an editor camera into the game scene");
     checked(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
-    std::println("Editor viewport acceptance passed: navigation, selection, camera isolation");
+    std::println(
+        "Editor viewport acceptance passed: navigation, selection, camera isolation, transactional "
+        "movement");
     return 0;
   }
 }  // namespace Dot::Editor

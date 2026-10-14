@@ -41,6 +41,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
 import Dot.Editor.Document;
 import Dot.Editor.Camera;
+import Dot.Editor.TransformTool;
 import Dot.Project;
 import Dot.Project.GamePackage;
 import Dot.Project.GameExport;
@@ -142,18 +143,21 @@ namespace Dot::Editor {
           if (ImGui::Checkbox(title.c_str(), &current)) {
             value = current;
           }
+
         } else if (value.is_number_integer()) {
           std::int64_t current = value.get<std::int64_t>();
 
           if (ImGui::InputScalar(title.c_str(), ImGuiDataType_S64, &current)) {
             value = current;
           }
+
         } else if (value.is_number()) {
           double current = value.get<double>();
 
           if (ImGui::InputDouble(title.c_str(), &current, 0, 0, "%.6g")) {
             value = current;
           }
+
         } else if (value.is_string()) {
           std::string current = value.get<std::string>();
           const char* options = nullptr;
@@ -187,9 +191,11 @@ namespace Dot::Editor {
                              static_cast<int>(values.size()))) {
               value = values.at(static_cast<std::size_t>(selected));
             }
+
           } else if (ImGui::InputText(title.c_str(), &current)) {
             value = current;
           }
+
         } else if (value.is_array() && !value.empty() && value.size() <= 4
                    && std::ranges::all_of(
                        value, [](const auto& element) { return element.is_number(); })) {
@@ -205,6 +211,7 @@ namespace Dot::Editor {
               value[index] = numbers[index];
             }
           }
+
         } else if (value.is_object()) {
           if (ImGui::TreeNode(title.c_str())) {
             fields(value, depth + 1);
@@ -252,6 +259,7 @@ namespace Dot::Editor {
       return encoded ? Core::Result<Json>{Codec::parseJson(*encoded)["entities"][0]}
                      : std::unexpected(encoded.error());
     }
+
   }  // namespace
 
   struct Workspace::Impl {
@@ -275,6 +283,16 @@ namespace Dot::Editor {
     Json m_occlusionOriginal;
     std::string m_requestedPane;
     std::string m_pane{"scene"};
+    bool m_moveTool{};
+    bool m_localMove{};
+    float m_moveSnap{};
+    std::optional<TransformGesture> m_transform;
+    std::optional<AxisDrag> m_axisDrag;
+    Math::Mat4 m_transformStart;
+    int m_transformAxis{};
+    bool m_pointerTransform{};
+    std::string m_transformError;
+    Json m_moveGeometry = Json::array();
     bool m_lightTheme{};
     bool m_resetLayout{true};
     std::uint64_t m_layoutGeneration{};
@@ -349,6 +367,7 @@ namespace Dot::Editor {
             }
           }
         }
+
       } catch (const std::exception& error) {
         std::fprintf(stderr, "Workspace play cleanup: %s\n", error.what());
       } catch (...) {
@@ -700,6 +719,76 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (m_transform && command != "inspect" && command != "update-transform"
+          && command != "finish-transform" && command != "close" && command != "set-theme"
+          && command != "filter-panel") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Finish or cancel the transform gesture first");
+      }
+
+      if (command == "set-tool") {
+        Codec::requireFields(parsed, {"command", "tool", "space", "snap"});
+        const auto tool = parsed["tool"].get<std::string>();
+        const auto space = parsed["space"].get<std::string>();
+        const auto snap = Codec::number(parsed["snap"]);
+
+        if ((tool != "select" && tool != "move") || (space != "local" && space != "world")
+            || snap < 0 || snap > 1000 || playing()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid transform tool configuration");
+        }
+
+        m_moveTool = tool == "move";
+        m_localMove = space == "local";
+        m_moveSnap = snap;
+        m_moveGeometry = Json::array();
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "begin-transform" || command == "update-transform"
+          || command == "finish-transform") {
+        if (command == "begin-transform") {
+          Codec::requireFields(parsed, {"command", "revision", "axis", "uv"});
+        } else {
+          Codec::requireFields(
+              parsed, {"command", "revision", command == "update-transform" ? "uv" : "commit"});
+        }
+
+        const auto revision = Codec::id(parsed["revision"]);
+
+        if (revision != m_document->stats()->revision
+            || (m_transform && revision != m_transform->revision())) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Transform request has a stale revision");
+        }
+
+        Core::Result<void> applied;
+
+        if (command == "finish-transform") {
+          applied = finishTransform(parsed["commit"].get<bool>());
+        } else {
+          const auto uv = Codec::numbers<2>(parsed["uv"]);
+
+          if (command == "begin-transform") {
+            if (!parsed["axis"].is_number_integer()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument, "Move axis must be an integer");
+            }
+
+            const auto axis = parsed["axis"].get<std::int64_t>();
+
+            if (axis < 0 || axis > 2) {
+              return Core::fail(Core::ErrorCode::InvalidArgument, "Move axis must be 0..2");
+            }
+
+            applied = beginTransform(static_cast<int>(axis), {uv[0], uv[1]}, revision);
+          } else {
+            applied = updateTransform({uv[0], uv[1]});
+          }
+        }
+
+        return applied ? execute("{\"command\":\"inspect\"}") : std::unexpected(applied.error());
+      }
+
       if (command == "export-data" || command == "export") {
         Codec::requireFields(parsed, {"command", "revision", "parent", "folder"});
 
@@ -939,6 +1028,7 @@ namespace Dot::Editor {
           if (!saved) {
             return std::unexpected(saved.error());
           }
+
         } else {
           const bool discard = parsed.at("discard").get<bool>();
 
@@ -1308,6 +1398,7 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
+
         } else {
           m_environmentDraft = m_environmentOriginal;
           m_environmentRevision.clear();
@@ -1355,6 +1446,7 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
+
         } else {
           m_occlusionDraft = m_occlusionOriginal;
           m_occlusionRevision.clear();
@@ -1377,6 +1469,7 @@ namespace Dot::Editor {
           if (!applied) {
             return std::unexpected(applied.error());
           }
+
         } else {
           m_edit = m_original;
           m_editRevision = 0;
@@ -1391,11 +1484,13 @@ namespace Dot::Editor {
         const bool discard = parsed["discard"].get<bool>();
 
         if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
-             || pendingOcclusion() || pendingText())
+             || pendingOcclusion() || pendingText() || m_transform)
             && !discard) {
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
+          m_transform.reset();
+          m_axisDrag.reset();
           auto stopped = stopPlay();
           m_application->stop();
 
@@ -1435,6 +1530,7 @@ namespace Dot::Editor {
             {"occlusionDraft", m_occlusionDraft},
             {"pane", m_pane},
             {"theme", m_lightTheme ? "light" : "dark"},
+            {"tool", toolStatus()},
             {"filters", {{"hierarchy", m_hierarchyFilter}, {"resources", m_assetFilter}}},
             {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
             {"layout",
@@ -1581,6 +1677,9 @@ namespace Dot::Editor {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
           {"textInput", m_renderer->guiStats().value().text},
+          {"source", playing()     ? "play"
+                     : m_transform ? "transform"
+                                   : "document"},
           {"flying", m_flying},
           {"viewport",
            {{"origin", {m_viewOrigin.x, m_viewOrigin.y}}, {"size", {m_viewWidth, m_viewHeight}}}},
@@ -1750,7 +1849,9 @@ namespace Dot::Editor {
         m_target.emplace(std::move(*created));
       }
 
-      auto scene = playing() ? m_play->scene() : m_document->scene();
+      auto scene = playing()     ? m_play->scene()
+                   : m_transform ? m_transform->scene()
+                                 : m_document->scene();
 
       if (!scene) {
         return std::unexpected(scene.error());
@@ -1768,6 +1869,7 @@ namespace Dot::Editor {
         m_renderedView = *view;
         m_renderedRevision = std::to_string(m_document->stats()->revision);
       }
+
       m_previewReady = drawn.has_value();
       m_previewError = drawn ? "" : drawn.error().message;
 
@@ -1939,6 +2041,7 @@ namespace Dot::Editor {
               m_propertiesInvalid = false;
             }
           }
+
         } else if (ImGui::CollapsingHeader(title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
           if (std::string_view(component) == "script") {
             auto description = m_edit[component];
@@ -1956,6 +2059,7 @@ namespace Dot::Editor {
                 if (!m_propertiesInvalid) {
                   m_edit[component]["properties"] = std::move(properties);
                 }
+
               } catch (const std::exception&) {
                 m_propertiesInvalid = true;
               }
@@ -1964,6 +2068,7 @@ namespace Dot::Editor {
             if (m_propertiesInvalid) {
               ImGui::TextWrapped("Properties must be a valid JSON object with unique fields.");
             }
+
           } else {
             fields(m_edit[component]);
           }
@@ -2406,11 +2511,256 @@ namespace Dot::Editor {
               fileAction({{"command", "open-external"}, {"path", name}});
             }
           }
+
         } else {
           ImGui::TextWrapped("%s%s", entry["type"] == "directory" ? "[dir] " : "[asset] ",
                              name.c_str());
         }
       }
+    }
+
+    auto toolStatus() const -> Json {
+      return {{"mode", m_moveTool ? "move" : "select"},
+              {"space", m_localMove ? "local" : "world"},
+              {"snap", m_moveSnap},
+              {"active", m_transform.has_value()},
+              {"entity", m_transform ? Json(std::to_string(m_transform->entity())) : Json(nullptr)},
+              {"error", m_transformError},
+              {"handles", m_moveGeometry}};
+    }
+
+    auto moveBasis(int axis) const -> Core::Result<Math::Vec3> {
+      if (axis < 0 || axis > 2 || !m_document->stats()->selected) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Move axis/selection is invalid");
+      }
+
+      Math::Vec3 value{axis == 0 ? 1.F : 0.F, axis == 1 ? 1.F : 0.F, axis == 2 ? 1.F : 0.F};
+
+      if (m_localMove) {
+        auto world = selectedWorld();
+        auto transformed
+            = world ? Math::transformVector(*world, value) : std::unexpected(world.error());
+        return transformed ? Math::normalized(*transformed) : std::unexpected(transformed.error());
+      }
+
+      return value;
+    }
+
+    auto selectedWorld() const -> Core::Result<Math::Mat4> {
+      if (m_transform) {
+        return m_transform->world();
+      }
+
+      auto scene = m_document->scene();
+      const auto selected = m_document->stats()->selected;
+
+      if (!scene || !selected) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Move tool requires a selected entity");
+      }
+
+      return (*scene)->worldTransform(*selected);
+    }
+
+    auto beginTransform(int axis, Math::Vec2 uv, std::uint64_t revision) -> Core::Result<void> {
+      if (!m_moveTool || !m_editorView || playing() || m_transform || !m_viewVisible
+          || !viewStatus()["ready"].get<bool>() || pendingInspector() || pendingEnvironment()
+          || pendingOcclusion() || pendingText() || m_pendingClose || m_flying || m_orbiting
+          || m_panning) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Move tool is not ready for a gesture");
+      }
+
+      auto world = selectedWorld();
+      auto axisDirection = moveBasis(axis);
+      auto view = m_editorCamera.view();
+      auto projection = view ? Graphics::viewProjection(*view, m_viewWidth / m_viewHeight)
+                             : std::unexpected(view.error());
+
+      if (!world || !axisDirection || !projection) {
+        return std::unexpected(!world           ? world.error()
+                               : !axisDirection ? axisDirection.error()
+                                                : projection.error());
+      }
+
+      auto drag = AxisDrag::begin(*projection, {world->data[12], world->data[13], world->data[14]},
+                                  *axisDirection, uv);
+
+      if (!drag) {
+        return std::unexpected(drag.error());
+      }
+
+      auto gesture
+          = TransformGesture::begin(*m_document, revision, m_document->stats()->selected->value);
+
+      if (!gesture) {
+        return std::unexpected(gesture.error());
+      }
+
+      m_pointerTransform = false;
+      m_previewReady = false;
+      m_transformStart = *world;
+      m_transform.emplace(std::move(*gesture));
+      m_axisDrag.emplace(*drag);
+      m_transformAxis = axis;
+      m_transformError.clear();
+      return {};
+    }
+
+    auto updateTransform(Math::Vec2 uv) -> Core::Result<void> {
+      if (!m_transform || !m_axisDrag) {
+        return Core::fail(Core::ErrorCode::InvalidState, "There is no active transform gesture");
+      }
+
+      auto delta = m_axisDrag->delta(uv, m_moveSnap);
+
+      if (!delta) {
+        return std::unexpected(delta.error());
+      }
+
+      auto world = m_transformStart;
+      world.data[12] += delta->x;
+      world.data[13] += delta->y;
+      world.data[14] += delta->z;
+      auto applied = m_transform->update(world);
+      m_transformError = applied ? "" : applied.error().message;
+
+      if (applied) {
+        m_previewReady = false;
+      }
+
+      return applied;
+    }
+
+    auto finishTransform(bool commit) -> Core::Result<void> {
+      if (!m_transform) {
+        return Core::fail(Core::ErrorCode::InvalidState, "There is no active transform gesture");
+      }
+
+      if (commit) {
+        auto result = m_transform->commit(*m_document);
+
+        if (!result) {
+          m_transformError = result.error().message;
+          return std::unexpected(result.error());
+        }
+      }
+
+      m_transform.reset();
+      m_axisDrag.reset();
+      m_pointerTransform = false;
+      m_transformError.clear();
+      m_previewReady = false;
+      return refresh();
+    }
+
+    /** Draw real projected world axes; handle picking shares these exact segments.
+     * Only the preview clone changes during a gesture; GPU rendering resolves it
+     * after layout in the same frame. Clip-behind/parallel axes are omitted.
+     * 绘制真实世界轴投影，命中使用相同线段；拖动仅更改预览克隆，布局后同帧 GPU
+     * 渲染。裁面后方及平行轴不显示，不伪造可用手柄。 */
+    auto drawMoveTool() -> void {
+      m_moveGeometry = Json::array();
+
+      if (!m_moveTool || !m_editorView || playing() || !m_document->stats()->selected) {
+        return;
+      }
+
+      auto world = selectedWorld();
+      auto view = m_editorCamera.view();
+      auto projection = view ? Graphics::viewProjection(*view, m_viewWidth / m_viewHeight)
+                             : std::unexpected(view.error());
+
+      if (!world || !view || !projection) {
+        m_transformError = "Cannot project selected transform";
+        return;
+      }
+
+      const Math::Vec3 pivot{world->data[12], world->data[13], world->data[14]};
+      const auto project = [&](Math::Vec3 point) -> std::optional<Math::Vec2> {
+        const auto& a = projection->data;
+        const float w = a[3] * point.x + a[7] * point.y + a[11] * point.z + a[15];
+        auto ndc = Math::transformPoint(*projection, point);
+
+        if (!ndc || w <= 0 || ndc->z < 0 || ndc->z > 1 || std::abs(ndc->x) > 1
+            || std::abs(ndc->y) > 1) {
+          return std::nullopt;
+        }
+
+        return Math::Vec2{m_viewOrigin.x + (ndc->x + 1) * m_viewWidth * 0.5F,
+                          m_viewOrigin.y + (1 - ndc->y) * m_viewHeight * 0.5F};
+      };
+      auto center = project(pivot);
+
+      if (!center) {
+        return;
+      }
+
+      const float height
+          = view->orthographic
+                ? view->orthographicHeight
+                : static_cast<float>(2 * Math::length(pivot - view->position)
+                                     * std::tan(view->verticalFovDegrees * 3.14159265 / 360));
+      const float length = std::max(0.001F, height * 75 / m_viewHeight);
+      constexpr std::array colors{IM_COL32(237, 89, 91, 255), IM_COL32(95, 205, 115, 255),
+                                  IM_COL32(92, 150, 250, 255)};
+      auto* draw = ImGui::GetWindowDrawList();
+      draw->PushClipRect(m_viewOrigin,
+                         {m_viewOrigin.x + m_viewWidth, m_viewOrigin.y + m_viewHeight}, true);
+
+      for (int axis = 0; axis < 3; ++axis) {
+        auto direction = moveBasis(axis);
+        auto endpoint = direction ? project(pivot + *direction * length) : std::nullopt;
+
+        if (!endpoint) {
+          continue;
+        }
+
+        const float dx = endpoint->x - center->x;
+        const float dy = endpoint->y - center->y;
+        const float pixels = std::sqrt(dx * dx + dy * dy);
+        const Math::Vec2 uv{(center->x - m_viewOrigin.x) / m_viewWidth,
+                            (center->y - m_viewOrigin.y) / m_viewHeight};
+
+        if (pixels < 16 || !AxisDrag::begin(*projection, pivot, *direction, uv)) {
+          continue;
+        }
+
+        const auto color = m_transform && m_transformAxis == axis
+                               ? IM_COL32(255, 210, 75, 255)
+                               : colors[static_cast<std::size_t>(axis)];
+        draw->AddLine({center->x, center->y}, {endpoint->x, endpoint->y}, color, 3);
+        draw->AddCircleFilled({endpoint->x, endpoint->y}, 5, color);
+        draw->AddText({endpoint->x + 6, endpoint->y - 7}, color,
+                      axis == 0   ? "X"
+                      : axis == 1 ? "Y"
+                                  : "Z");
+        m_moveGeometry.push_back({{"axis", axis},
+                                  {"start", {center->x, center->y}},
+                                  {"end", {endpoint->x, endpoint->y}}});
+      }
+
+      draw->PopClipRect();
+    }
+
+    auto hitMoveTool(Platform::Point pointer) const -> std::optional<int> {
+      std::optional<int> result;
+      float nearest = 9;
+
+      for (const auto& handle : m_moveGeometry) {
+        const float x = handle["start"][0].get<float>();
+        const float y = handle["start"][1].get<float>();
+        const float dx = handle["end"][0].get<float>() - x;
+        const float dy = handle["end"][1].get<float>() - y;
+        const float t = std::clamp(
+            ((pointer.x - x) * dx + (pointer.y - y) * dy) / (dx * dx + dy * dy), 0.15F, 1.F);
+        const float distance = std::hypot(pointer.x - x - t * dx, pointer.y - y - t * dy);
+
+        if (distance < nearest) {
+          nearest = distance;
+          result = handle["axis"].get<int>();
+        }
+      }
+
+      return result;
     }
 
     auto viewportControls() -> void {
@@ -2445,6 +2795,43 @@ namespace Dot::Editor {
       }
 
       if (m_editorView) {
+        ImGui::BeginDisabled(m_transform.has_value());
+
+        if (ImGui::RadioButton("Select", !m_moveTool)) {
+          sessionAction({{"command", "set-tool"},
+                         {"tool", "select"},
+                         {"space", m_localMove ? "local" : "world"},
+                         {"snap", m_moveSnap}});
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::RadioButton("Move", m_moveTool)) {
+          sessionAction({{"command", "set-tool"},
+                         {"tool", "move"},
+                         {"space", m_localMove ? "local" : "world"},
+                         {"snap", m_moveSnap}});
+        }
+
+        ImGui::SameLine();
+        bool local = m_localMove;
+        ImGui::SetNextItemWidth(75);
+        float snap = m_moveSnap;
+        bool toolChanged = ImGui::Checkbox("Local", &local);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(65);
+        toolChanged = ImGui::DragFloat("Snap (m)", &snap, 0.1F, 0, 1000, "%.2f",
+                                       ImGuiSliderFlags_AlwaysClamp)
+                      || toolChanged;
+
+        if (toolChanged) {
+          sessionAction({{"command", "set-tool"},
+                         {"tool", m_moveTool ? "move" : "select"},
+                         {"space", local ? "local" : "world"},
+                         {"snap", snap}});
+        }
+
+        ImGui::EndDisabled();
         auto state = m_editorCamera.state();
         bool changed = ImGui::Checkbox("Orthographic", &state.orthographic);
         ImGui::SameLine();
@@ -2465,6 +2852,32 @@ namespace Dot::Editor {
     /** Route navigation only from the viewport; it never consumes scene history.
      * 仅从视口路由导航输入，不消耗场景历史；游戏运行时仍使用游戏输入路径。 */
     auto viewportInput(const Platform::InputState& input, double seconds) -> void {
+      if (m_transform) {
+        if (input.key(Platform::Key::Escape).pressed || m_pendingClose || !m_viewVisible) {
+          static_cast<void>(finishTransform(false));
+          return;
+        }
+
+        const auto pointer = input.pointer();
+        auto updated
+            = updateTransform({std::clamp((pointer.x - m_viewOrigin.x) / m_viewWidth, 0.F, 1.F),
+                               std::clamp((pointer.y - m_viewOrigin.y) / m_viewHeight, 0.F, 1.F)});
+
+        if (!updated) {
+          m_transformError = updated.error().message;
+        }
+
+        if (input.button(Platform::MouseButton::Left).released) {
+          auto finished = finishTransform(true);
+
+          if (!finished) {
+            m_transformError = finished.error().message;
+          }
+        }
+
+        return;
+      }
+
       if (playing() || !m_viewVisible) {
         return;
       }
@@ -2489,6 +2902,26 @@ namespace Dot::Editor {
       const auto middle = input.button(Platform::MouseButton::Middle);
       const bool alt
           = input.key(Platform::Key::LeftAlt).down || input.key(Platform::Key::RightAlt).down;
+
+      if (hovered && left.pressed && !alt && m_moveTool && m_editorView) {
+        auto hit = hitMoveTool(pointer);
+
+        if (hit) {
+          auto began = beginTransform(*hit,
+                                      {(pointer.x - m_viewOrigin.x) / m_viewWidth,
+                                       (pointer.y - m_viewOrigin.y) / m_viewHeight},
+                                      m_document->stats()->revision);
+          m_transformError = began ? "" : began.error().message;
+          m_pointerTransform = began.has_value();
+
+          if (began && left.released) {
+            auto finished = finishTransform(true);
+            m_transformError = finished ? "" : finished.error().message;
+          }
+
+          return;
+        }
+      }
 
       if (!m_editorView) {
         if (hovered && left.pressed) {
@@ -2611,7 +3044,8 @@ namespace Dot::Editor {
     auto consolePanel() -> void {
       bool any = false;
 
-      for (const auto* message : {&m_message, &m_previewError, &m_checkMessage, &m_layoutError}) {
+      for (const auto* message :
+           {&m_message, &m_previewError, &m_checkMessage, &m_layoutError, &m_transformError}) {
         if (!message->empty()) {
           ImGui::TextWrapped("%s", message->c_str());
           ImGui::Separator();
@@ -2917,7 +3351,8 @@ namespace Dot::Editor {
 
       ImGui::SameLine();
       const bool unsaved = m_snapshot["dirty"].get<bool>() || pendingInspector()
-                           || pendingEnvironment() || pendingOcclusion() || pendingText();
+                           || pendingEnvironment() || pendingOcclusion() || pendingText()
+                           || m_transform.has_value();
       ImGui::TextUnformatted(unsaved ? "Unsaved changes" : "Saved");
       ImGui::Separator();
 
@@ -3027,8 +3462,10 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
-        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 3});
+        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 4});
+        ImGui::BeginDisabled(m_transform.has_value());
         viewportControls();
+        ImGui::EndDisabled();
         ImGui::EndChild();
 
         m_viewOrigin = ImGui::GetCursorScreenPos();
@@ -3056,12 +3493,14 @@ namespace Dot::Editor {
           ImGui::End();
           return image;
         }
+
+        drawMoveTool();
       }
 
       ImGui::End();
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
-        ImGui::BeginDisabled(playing());
+        ImGui::BeginDisabled(playing() || m_transform.has_value());
         ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
         inspector();
         ImGui::EndDisabled();
@@ -3188,7 +3627,7 @@ namespace Dot::Editor {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
         m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
-                         || pendingOcclusion() || pendingText();
+                         || pendingOcclusion() || pendingText() || m_transform.has_value();
 
         if (!m_pendingClose) {
           auto stopped = stopPlay();
@@ -3421,6 +3860,15 @@ namespace Dot::Editor {
 
       impl->m_events = impl->m_application->events().subscribe([state
                                                                 = impl.get()](const auto& event) {
+        if (state->m_transform && std::holds_alternative<Platform::Focus>(event.data)
+            && !std::get<Platform::Focus>(event.data).focused) {
+          auto cancelled = state->finishTransform(false);
+
+          if (!cancelled) {
+            state->m_transformError = cancelled.error().message;
+          }
+        }
+
         if (state->m_captureInput && std::holds_alternative<Platform::ButtonChanged>(event.data)) {
           const auto pointer = state->m_application->input().pointer();
 
@@ -3603,6 +4051,7 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Workspace request ID already has different content");
         }
+
       } else {
         std::size_t entries = 0;
 
@@ -3627,4 +4076,5 @@ namespace Dot::Editor {
                         "Submit workspace request: " + std::string(error.what()));
     }
   }
+
 }  // namespace Dot::Editor

@@ -126,3 +126,9 @@ frame and resize, owner/unrendered/wrong-size errors, absence, exceptions, non-r
 GUI reentry/close protection, size/count bounds and target release. Native workspace
 acceptance exercises this path through camera-free editing, missing-camera recovery,
 material undo and Play/Stop.
+
+The editor's translation manipulator overlays actual projected axes on the Scene
+image, with hit-testing from those same observed segments. Its draft scene is resolved
+through guiViewport after layout. Capture/readiness is invalidated when the gesture
+changes or ends; an old target never claims to be the current draft. Transform overlays
+are editor chrome and are not serialized or included in game render targets.

@@ -74,3 +74,9 @@ resolves after actual layout with owned targets and failure/lifetime checks, pre
 first-frame/resize/undo/Play behavior. This improves the production workspace; persisted
 profiles, manipulators, thumbnails, populated-scene scalability and realistic game
 content remain unfinished.
+
+World/local translation handles now edit selected entities through a disposable
+preview scene and one release-time history transaction. Meter snapping, cancellation,
+stale/conflict boundaries and real native/GPU workflows have dedicated coverage.
+Rotation/scale and plane handles, multi-selection, persisted user profiles, thumbnails,
+large-scene scalability and realistic polished game production remain unfinished.

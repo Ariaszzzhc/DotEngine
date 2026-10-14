@@ -132,3 +132,14 @@ targets, foreign/unrendered/wrong-size failure, explicit absence, exceptions and
 non-replay, GUI reentry/close guards and finite size/sixteen-slot boundaries.
 These are real service/native checks; profiles, gizmos and thumbnail tools remain
 planned rather than inferred from the concept art.
+
+Move-tool validation separates pure ray/axis math, document-preview transactions and
+native UI/GPU behavior. AxisDragTests covers perspective/orthographic rays, top-left
+UV, absolute sampling/snap and parallel/invalid boundaries without devices. The
+TransformToolTests draft ownership/move/commit/conflict cases run in filesystem
+integration, checking one history entry, parent reflection, rejected shear, stale or
+foreign documents, owner-thread enforcement, no-op recovery and cancellation.
+WorkspaceMoveTests checks real changed/restored scene pixels, unpublished draft data,
+stale-ready invalidation, save/Undo/Redo and native pointer release/Escape/focus loss.
+`DotEditorAcceptance --viewport-test <existing-parent>` now includes a full live
+move-preview/commit/Undo workflow in addition to camera-independent selection.

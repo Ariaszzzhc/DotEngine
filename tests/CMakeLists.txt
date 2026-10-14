@@ -34,6 +34,7 @@ add_executable(DotUnitTests
     ShadowTests.cpp
     OcclusionTests.cpp
     ViewTests.cpp
+    AxisDragTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
@@ -62,6 +63,7 @@ add_executable(DotTests
     StagedDirectoryTests.cpp
     ProjectTests.cpp
     DocumentTests.cpp
+    TransformToolTests.cpp
     ResourceTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
@@ -254,7 +256,7 @@ set_tests_properties(editor.workspace PROPERTIES TIMEOUT 60 LABELS "gpu;native" 
 add_test(NAME editor.viewport COMMAND DotEditorAcceptance --viewport-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.viewport PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native" RUN_SERIAL TRUE)
 
-add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp WorkspaceLayoutTests.cpp)
+add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp WorkspaceLayoutTests.cpp WorkspaceMoveTests.cpp)
 target_link_libraries(DotWorkspaceTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json SDL3::SDL3)
 target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"

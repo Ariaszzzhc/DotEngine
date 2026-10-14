@@ -103,3 +103,22 @@ relative/system loader/rpath checks. The final bundled editor opens real Feature
 and displays the docked workspace. Windows/Linux have not been validated locally.
 Persisted layout profiles, gizmos, asset thumbnails, large-scene production and the
 realistic polished Prism Relay game remain unfinished.
+
+
+Selected entities now have actual world/local translation handles and meter snapping.
+A disposable preview scene renders live movement; release commits one history entry,
+Escape/focus loss cancels, and Undo/Redo restores authored data and real pixels.
+The UI and automation share revision-checked begin/update/finish operations. Changed
+or cancelled drafts invalidate preview readiness until drawing completes. Rotation/scale
+handles, plane movement and multi-selection remain planned.
+
+This stage passes 904/904 Debug CTest cases (182.62s) and 904/904 Release/NDEBUG
+cases (45.81s) on arm64 macOS. After final whitespace/interface-comment rebuilding,
+7/7 focused Debug checks also pass (4.57s). Inventory: 842 doctest identities plus
+62 executable checks; overlapping labels include 202 unit, 90 offscreen, 54 native
+and 104 acceptance. All 277 C/C++ sources pass clang-format and whitespace checks.
+Latest ZIP: 259 entries, 47,110,227 bytes, verified CRC/font/license/HDRI copies,
+permissions, signatures and portable loader/rpath references (13 regular Mach-O files
+and 3 relative library symlinks). Inspected actual XYZ overlay in bundled Feature Lab
+and closed without discarding authored changes; the source project is unchanged.
+Only macOS was validated. Large-game and mature-editor completion remains unproven.
