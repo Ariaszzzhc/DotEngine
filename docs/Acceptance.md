@@ -151,3 +151,17 @@ and positive scale limits. Native tests hit actual ring segments/scale endpoints
 preview real changed pixels, release a transaction and Undo once. Agent tests assert
 exact degrees, factors and movement across frames so native pointer input cannot
 silently overwrite commands. Viewport acceptance runs all three transform modes.
+
+FrustumTests runs device-free clip-plane/contact/reflection/shear/behind-eye/extreme
+checks. VisibilityGpuTests checks 1024 inputs -> 1 encoded main draw with identical
+pixels, rejects malformed off-camera data, retains reports on failure/move and checks
+owner-thread rules. Pixel-cropped picking retains original indices and independent
+mesh reports. Shadow/AO fixtures verify off-camera shadow contribution and unchanged
+visible-only AO pixels. A 513-object scene reuses one mesh cache, submits one color
+draw and recomputes after camera changes. Runnable native viewport acceptance includes
+an outside object and checks actual visible/input/culled statistics.
+
+Archive regression creates root/nested Finder metadata alongside normal payload,
+empty directories, an executable and a relative symlink where permitted. It checks
+actual ZIP extraction/permissions, source preservation and rejection of unsafe
+staging paths without altering the previous archive. This runs only in BUILD_TESTING.

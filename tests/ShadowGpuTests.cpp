@@ -160,3 +160,21 @@ TEST_CASE("shadows.gpu_only_requested_direct_light_is_attenuated_ibl_and_emissio
   CHECK(fixture.target.info()->frames == frames);
   CHECK(fixture.renderer.readHdrTarget(fixture.target)->pixels == before);
 }
+
+TEST_CASE("visibility.gpu_off_camera_caster_still_shadows_visible_receiver") {
+  Fixture fixture;
+  fixture.draws[1].transform = Dot::Math::compose({-5, 5, 0}).value();
+  const auto shadowed = fixture.render();
+  auto report = fixture.renderer.visibilityStats().value();
+  REQUIRE(report.mesh);
+  CHECK(report.mesh->inputDraws == 2);
+  CHECK(report.mesh->visibleDraws == 1);
+  CHECK(report.mesh->culledDraws == 1);
+  CHECK(report.mesh->shadowDraws == 2);
+  const auto dark = fixture.red(shadowed, {0, 0, 0});
+  fixture.draws[1].castsShadow = false;
+  const auto lit = fixture.render();
+  CHECK(fixture.red(lit, {0, 0, 0}) > dark + 0.3F);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowDraws == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->visibleDraws == 1);
+}

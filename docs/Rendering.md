@@ -536,5 +536,38 @@ returns an optional draw index; SceneRenderer maps it to the full EntityId. Pick
 leaves the visible target, HDR/AO publication and submitted frame counters intact.
 Scratch targets and uniforms are released after readback; lifetime/thread/device
 validation follows normal renderer ownership. It currently reads back synchronously
-and submits the visible opaque draw list; acceleration and transparent picking
-remain planned.
+and conservatively prunes candidates against the cropped pixel frustum; spatial
+indexing and transparent picking remain planned.
+
+
+## Conservative camera clipping / 保守相机裁剪
+
+`Dot.Graphics.Frustum` extracts six homogeneous clip planes for right-handed [0,1]
+depth. It tests the eight transformed local AABB corners without dividing by W.
+Reflection, shear and projective models are retained correctly; boundary contact
+and float-roundoff uncertainty stay as candidates. A false result proves an object
+is outside a clip plane; a true result may conservatively include invisible geometry.
+Non-finite/reversed bounds and invalid/degenerate cameras fail with context.
+采用齐次六平面与变换后的局部包围盒角点，不除 W；保留边界接触及浮点误差裕量，
+反射/错切/投影模型不被假包围盒替代。false 确定在外，true 为保守候选。
+
+Renderer validates every submitted mesh/material/texture/transform before pruning.
+Main HDR color and SSAO geometry/depth passes skip outside candidates before per-draw
+uniform/bind allocations. Shadow fitting and cascade draws retain off-camera casters,
+which can still affect visible receivers. Picking prunes against the actual cropped
+1x1 pixel frustum and preserves original draw IDs, so entity selection does not shift
+when earlier draws are excluded. The same renderer path serves standalone games,
+scene previews, deferred GUI viewports and native surfaces.
+输入仍完整校验；主 HDR 与 SSAO 几何阶段在逐绘制资源分配前裁剪，阴影保持画外
+投射体；拾取使用单像素裁剪视锥且保留原始索引，运行时与编辑器共用同一路径。
+
+`Renderer.visibilityStats` independently retains the latest successful mesh and pick
+calls. Null means no successful call yet. Counts are taken from the actual encoding
+loops and published after successful submission/validation; errors and Deferred
+presentation preserve prior reports. Mesh counts exclude sky/fullscreen/GUI passes;
+shadow draws count each cascade submission. `visibleDraws` counts conservative main
+pass candidates actually submitted, not guaranteed rasterized objects. Rendering
+panel and `workspace.view.draws` expose these real counters without invented FPS.
+This remains linear CPU preparation with a 4096-draw input bound. Spatial indexing,
+instancing, streaming, occlusion culling and per-cascade caster pruning remain
+unimplemented; camera clipping alone does not establish large-game scalability.

@@ -87,3 +87,10 @@ TRS failure handling. Exact agent samples and native ring/endpoint interactions 
 covered. Plane/uniform-scale handles, multi-selection, persisted user profiles, asset
 thumbnails, scalable production scenes and realistic polished Prism Relay remain
 unimplemented. The full engine/editor/game objective remains active.
+
+Conservative CPU frustum clipping now skips main/SSAO draw submissions while retaining
+off-camera shadow casters and stable pixel-picking identities. Actual encoding-loop
+counts and dense-scene/camera-change cases verify reduced submissions. This remains
+linear preparation and a 4096-draw input bound; spatial acceleration, instancing,
+streaming and large-scene production remain unfinished, alongside richer editor
+production tools and the realistic polished Prism Relay game.

@@ -1674,9 +1674,24 @@ namespace Dot::Editor {
                          && *current == *m_renderedView
                          && m_renderedRevision == std::to_string(m_document->stats()->revision)
                          && !m_assetRefresh;
+      auto stats = m_renderer->visibilityStats();
+      Json draws = nullptr;
+
+      if (!stats) {
+        draws = errorJson(stats.error());
+      } else if (stats->mesh) {
+        const auto& frame = *stats->mesh;
+        draws = {{"input", frame.inputDraws},
+                 {"visible", frame.visibleDraws},
+                 {"culled", frame.culledDraws},
+                 {"shadow", frame.shadowDraws},
+                 {"occlusion", frame.occlusionDraws}};
+      }
+
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
+          {"draws", std::move(draws)},
           {"textInput", m_renderer->guiStats().value().text},
           {"source", playing()     ? "play"
                      : m_transform ? "transform"
@@ -2300,6 +2315,21 @@ namespace Dot::Editor {
     /** Native controls and agent requests share the saved document transaction.
      * 原生控件与 agent 请求共用可保存的文档事务，未应用草稿不会悄悄丢失。 */
     auto renderingPanel() -> void {
+      auto stats = m_renderer->visibilityStats();
+
+      if (!stats) {
+        ImGui::TextWrapped("Draw statistics: %s", stats.error().message.c_str());
+      } else if (stats->mesh) {
+        const auto& frame = *stats->mesh;
+        ImGui::TextWrapped("Last mesh submission: %zu visible / %zu input, %zu culled",
+                           frame.visibleDraws, frame.inputDraws, frame.culledDraws);
+        ImGui::TextWrapped("Mesh draws: shadows %zu, SSAO depth %zu", frame.shadowDraws,
+                           frame.occlusionDraws);
+      } else {
+        ImGui::TextUnformatted("No successful mesh submission yet.");
+      }
+
+      ImGui::Separator();
       const auto revision = std::to_string(m_document->stats()->revision);
 
       if (m_occlusionRevision != revision && !pendingOcclusion()) {

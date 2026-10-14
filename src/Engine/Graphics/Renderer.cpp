@@ -27,6 +27,7 @@ module Dot.Graphics.Renderer;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Graphics.View;
+import Dot.Graphics.Frustum;
 import Dot.Platform.Window;
 import Dot.Platform.System;
 import Dot.Platform.Events;
@@ -532,6 +533,8 @@ namespace Dot::Graphics {
 
     std::vector<GuiViewportRequest> guiViewports;
     bool guiFrameActive{};
+    VisibilityStats visibility;
+    MeshFrameStats pendingVisibility;
 
     struct GuiFrameScope {
       Impl& owner;
@@ -608,11 +611,15 @@ namespace Dot::Graphics {
 
         surface = nullptr;
       }
+
 #if defined(__APPLE__)
+
       if (metalView) {
         SDL_Metal_DestroyView(metalView);
       }
+
 #endif
+
       if (device) {
         device.Destroy();
       }
@@ -709,7 +716,9 @@ namespace Dot::Graphics {
         descriptor.nextInChain = &source;
         surface = instance.CreateSurface(&descriptor);
       }
+
 #endif
+
       if (!surface) {
         return Core::fail(Core::ErrorCode::External, "Dawn could not create the native surface");
       }
@@ -1109,6 +1118,7 @@ namespace Dot::Graphics {
 
       entries[4].binding = 4;
       entries[4].sampler = map.sampler;
+
       if (withOcclusion) {
         entries[5].binding = 5;
         entries[5].textureView = occlusionTextures[3].CreateView();
@@ -1268,9 +1278,11 @@ namespace Dot::Graphics {
       descriptor.colorAttachmentCount = 1;
       descriptor.colorAttachments = &color;
       descriptor.depthStencilAttachment = &depthAttachment;
+
       if (!encoder) {
         encoder = device.CreateCommandEncoder();
       }
+
       auto pass = encoder.BeginRenderPass(&descriptor);
 
       draw(pass);
@@ -1380,6 +1392,7 @@ namespace Dot::Graphics {
       UniformData uniform;
       std::array<std::shared_ptr<Texture::Impl>, 4> textures;
       bool castsShadow;
+      bool visible;
     };
 
     auto prepare(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -1387,6 +1400,12 @@ namespace Dot::Graphics {
       if (draws.size() > 4096 || !Math::isFinite(viewProjection) || !radianceValid(clear)) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid mesh draw count, camera, or clear color");
+      }
+
+      auto frustum = Frustum::create(viewProjection);
+
+      if (!frustum) {
+        return std::unexpected(frustum.error());
       }
 
       std::vector<PreparedDraw> prepared;
@@ -1550,6 +1569,12 @@ namespace Dot::Graphics {
           return std::unexpected(transform.error());
         }
 
+        auto visible = frustum->intersects(draw.mesh->m_impl->bounds, draw.transform);
+
+        if (!visible) {
+          return std::unexpected(visible.error());
+        }
+
         const auto tint = draw.tint;
         const auto factor = draw.material.baseColor;
         prepared.push_back(
@@ -1565,7 +1590,8 @@ namespace Dot::Graphics {
                material.normalTexture ? 1.0F : 0.0F, material.doubleSided ? 1.0F : 0.0F,
                orientation}},
              std::move(textures),
-             draw.castsShadow});
+             draw.castsShadow,
+             *visible});
       }
 
       return prepared;
@@ -1700,6 +1726,8 @@ namespace Dot::Graphics {
           } else {
             pass.Draw(draw.mesh->info.vertices);
           }
+
+          ++pendingVisibility.shadowDraws;
         }
 
         pass.End();
@@ -1806,6 +1834,10 @@ namespace Dot::Graphics {
       pass.SetBindGroup(1, bindLighting(geometryPipeline));
 
       for (const auto& draw : draws) {
+        if (!draw.visible) {
+          continue;
+        }
+
         wgpu::BufferDescriptor bufferDescriptor;
         bufferDescriptor.size = sizeof(UniformData);
         bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
@@ -1827,6 +1859,8 @@ namespace Dot::Graphics {
         } else {
           pass.Draw(draw.mesh->info.vertices);
         }
+
+        ++pendingVisibility.occlusionDraws;
       }
 
       pass.End();
@@ -1881,6 +1915,7 @@ namespace Dot::Graphics {
                       Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
       occlusionPending = false;
+      pendingVisibility = {draws.size(), 0, 0, 0, 0};
 
       if (!hdr) {
         auto ready = ensureFrame(width, height);
@@ -2036,6 +2071,11 @@ namespace Dot::Graphics {
             pass.SetBindGroup(1, lights);
 
             for (const auto& draw : draws) {
+              if (!draw.visible) {
+                ++pendingVisibility.culledDraws;
+                continue;
+              }
+
               /** Queue writes precede submission, so a shared uniform would overwrite
                * earlier draws. The command buffer retains each independent buffer.
                * 队列写入先于提交，共用 uniform 会覆盖较早对象的数据。
@@ -2057,6 +2097,8 @@ namespace Dot::Graphics {
               } else {
                 pass.Draw(draw.mesh->info.vertices);
               }
+
+              ++pendingVisibility.visibleDraws;
             }
           },
           depthView, shadowEncoder);
@@ -2668,6 +2710,7 @@ namespace Dot::Graphics {
            index += 4) {
         texture->normalEncoding = image.pixels[index] >= 128;
       }
+
       ErrorScope scope(m_impl->instance, m_impl->device);
       wgpu::TextureDescriptor descriptor;
       descriptor.size = {image.width, image.height, 1};
@@ -2781,6 +2824,16 @@ namespace Dot::Graphics {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Upload texture: " + std::string(error.what()));
     }
+  }
+
+  auto Renderer::visibilityStats() const -> Core::Result<VisibilityStats> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+    return checked ? Core::Result<VisibilityStats>(m_impl->visibility)
+                   : std::unexpected(checked.error());
   }
 
   auto Renderer::resourceStats() const -> Core::Result<ResourceStats> {
@@ -3448,6 +3501,7 @@ namespace Dot::Graphics {
     }
 
     ++target.m_impl->info.frames;
+    m_impl->visibility.mesh = m_impl->pendingVisibility;
     return {};
   }
 
@@ -3917,13 +3971,19 @@ namespace Dot::Graphics {
       return std::unexpected(prepared.error());
     }
 
-    return m_impl->readback(
+    auto image = m_impl->readback(
         width, height,
         [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
           return m_impl->encodeMeshes(texture, *prepared, viewProjection, targetWidth, targetHeight,
                                       clear);
         },
         {}, wgpu::TextureFormat::RGBA8Unorm, 0, 0, true);
+
+    if (image) {
+      m_impl->visibility.mesh = m_impl->pendingVisibility;
+    }
+
+    return image;
   }
 
   auto Renderer::pickMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
@@ -3964,6 +4024,7 @@ namespace Dot::Graphics {
     };
 
     static_assert(sizeof(PickData) == 96);
+    PickFrameStats pickStats{draws.size(), 0, 0};
     auto image = m_impl->readback(
         1, 1,
         [&](const wgpu::Texture& target, auto, auto) -> Core::Result<wgpu::CommandEncoder> {
@@ -3979,6 +4040,12 @@ namespace Dot::Graphics {
 
                 for (std::size_t index = 0; index < prepared->size(); ++index) {
                   const auto& draw = (*prepared)[index];
+
+                  if (!draw.visible) {
+                    ++pickStats.culledDraws;
+                    continue;
+                  }
+
                   const PickData data{draw.uniform.transform,
                                       draw.uniform.flags,
                                       {static_cast<std::uint32_t>(index + 1), 0, 0, 0}};
@@ -4003,6 +4070,8 @@ namespace Dot::Graphics {
                   } else {
                     pass.Draw(draw.mesh->info.vertices);
                   }
+
+                  ++pickStats.candidateDraws;
                 }
               },
               depth.CreateView());
@@ -4020,6 +4089,7 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::External, "Integer picking returned an unknown draw");
     }
 
+    m_impl->visibility.pick = pickStats;
     return identifier ? std::optional<std::size_t>(identifier - 1) : std::nullopt;
   }
 
@@ -4041,10 +4111,16 @@ namespace Dot::Graphics {
       return std::unexpected(prepared.error());
     }
 
-    return m_impl->presentFrame(
+    auto presented = m_impl->presentFrame(
         [&](const wgpu::Texture& texture, auto width, auto height) {
           return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear);
         },
         true);
+
+    if (presented && *presented == PresentResult::Presented) {
+      m_impl->visibility.mesh = m_impl->pendingVisibility;
+    }
+
+    return presented;
   }
 }  // namespace Dot::Graphics

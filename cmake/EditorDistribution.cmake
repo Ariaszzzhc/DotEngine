@@ -35,6 +35,10 @@ add_custom_target(DotEditorDistribution
     DEPENDS DotEditor DotRuntime VERBATIM)
 
 add_custom_target(DotEditorArchive
-    COMMAND "${CMAKE_COMMAND}" -E tar cf "DotEngine-${DOT_KIT_PLATFORM}.zip" --format=zip DotEngine
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSOURCE_DIRECTORY=${CMAKE_BINARY_DIR}/distribution/DotEngine"
+        "-DARCHIVE=${CMAKE_BINARY_DIR}/distribution/DotEngine-${DOT_KIT_PLATFORM}.zip"
+        "-DSTAGE_DIRECTORY=${CMAKE_BINARY_DIR}/.dot-editor-archive-stage"
+        -P "${CMAKE_CURRENT_LIST_DIR}/ArchiveEditor.cmake"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/distribution"
     DEPENDS DotEditorDistribution VERBATIM)

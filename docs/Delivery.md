@@ -141,3 +141,29 @@ HDRI copies pass. Native Feature Lab shows real rotation rings and scale endpoin
 the inspected source project remains unchanged. Plane/uniform-scale handles,
 multi-selection, scalable production scenes and polished realistic game content
 remain unfinished. Windows/Linux have not been validated locally.
+
+
+Conservative homogeneous frustum tests now skip main HDR and SSAO geometry draws
+outside the camera while preserving off-camera shadow casters. Pixel-cropped picking
+retains original IDs. Real encoding-loop counts are available through Renderer and
+the editor Rendering panel/agent inspection. A 1024-input case submits one main mesh
+draw with identical pixels; a 513-object scene reuses one mesh and recomputes visibility
+when the camera changes. Input validation remains complete even for culled objects.
+
+The engine/editor suite passes 916/916 Debug (177.18s) and Release/NDEBUG (40.53s),
+plus the subsequently added archive regression 1/1 in both configurations (0.27s /
+0.12s). Focused rendering checks pass 8/8 (5.30s). Final inventory is 917 identities:
+854 doctest plus 63 executable/script checks; overlapping labels: 206 unit, 95
+offscreen, 56 native, 106 acceptance. All 281 C/C++ files pass formatting checks.
+
+Archive generation now snapshots the distribution into an owned directory with
+Finder metadata excluded, retains source contents/permissions/relative symlinks and
+publishes only after archive creation succeeds. Final ZIP: 259 entries, 47,132,050
+bytes. All 228 files/links equal the signed source package payload; CRC/executable
+permissions, exact font/license/HDRI data and strict signatures/portable loader/rpath
+checks pass (13 regular Mach-O files, 3 relative symlinks). Native Feature Lab
+statistics change from 7/7 visible/input to 0/7 when the editor camera faces away,
+with SSAO draws dropping to zero and conservative shadow draws remaining 28; scene
+data stays unmodified. Only arm64 macOS is validated. Preparation remains linear
+with a 4096-input limit; indexing, instancing, streaming and polished game production
+remain unfinished.

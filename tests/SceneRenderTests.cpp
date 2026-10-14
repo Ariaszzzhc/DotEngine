@@ -416,3 +416,36 @@ TEST_CASE(
   CHECK(point.minimum == Dot::Math::Vec3{2, 0, 0});
   CHECK(point.maximum == point.minimum);
 }
+
+TEST_CASE("scene_render.frustum_reduces_dense_scene_submissions_and_camera_changes_recompute") {
+  auto renderer = Renderer::create().value();
+  auto drawing = SceneRenderer::create(renderer).value();
+  auto scene = makeScene();
+  addQuad(scene, 0, {1, 0, 0, 1});
+
+  for (int i = 0; i < 512; ++i) {
+    addQuad(scene, 100 + static_cast<float>(i), {0, 1, 0, 1});
+  }
+
+  auto image = drawing.render(scene, 65, 65);
+  REQUIRE(image);
+  const auto report = renderer.visibilityStats().value();
+  REQUIRE(report.mesh);
+  CHECK(report.mesh->inputDraws == 513);
+  CHECK(report.mesh->visibleDraws == 1);
+  CHECK(report.mesh->culledDraws == 512);
+  CHECK(drawing.stats()->meshes == 1);
+  const auto pixel0 = pixel(*image, 32, 32);
+  CHECK(pixel0[0] > 200);
+  auto view = Dot::Graphics::View{};
+  view.position = {100, 0, 5};
+  view.orthographic = true;
+  view.orthographicHeight = 0.8F;
+  auto moved = drawing.render(scene, 65, 65, {0, 0, 0, 1}, view);
+  REQUIRE(moved);
+  CHECK(renderer.visibilityStats()->mesh->visibleDraws == 1);
+  const auto pixel1 = pixel(*moved, 32, 32);
+  CHECK(pixel1[1] > 200);
+  CHECK(static_cast<int>(pixel1[1]) > static_cast<int>(pixel1[0]) + 100);
+  CHECK(pixel1 != pixel0);
+}

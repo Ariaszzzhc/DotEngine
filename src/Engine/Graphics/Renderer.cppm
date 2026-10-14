@@ -60,6 +60,33 @@ export namespace Dot::Graphics {
     std::uint64_t occlusionBytes{};
   };
 
+  /** Mesh submissions only, excluding sky/fullscreen/GUI passes. Published after
+   * successful submission/validation; failures retain the previous report. Shadow
+   * count includes each cascade draw, independently of camera visibility.
+   * 仅统计网格提交，不含天空/全屏/GUI；成功提交与校验后发布，失败保留旧报告。
+   * 阴影按每级实际绘制计数，独立于相机可见性。 */
+  struct MeshFrameStats {
+    std::size_t inputDraws{};
+    std::size_t visibleDraws{};
+    std::size_t culledDraws{};
+    std::size_t shadowDraws{};
+    std::size_t occlusionDraws{};
+    auto operator==(const MeshFrameStats&) const -> bool = default;
+  };
+
+  struct PickFrameStats {
+    std::size_t inputDraws{};
+    std::size_t candidateDraws{};
+    std::size_t culledDraws{};
+    auto operator==(const PickFrameStats&) const -> bool = default;
+  };
+
+  struct VisibilityStats {
+    std::optional<MeshFrameStats> mesh;
+    std::optional<PickFrameStats> pick;
+    auto operator==(const VisibilityStats&) const -> bool = default;
+  };
+
   struct TargetInfo {
     std::uint32_t width;
     std::uint32_t height;
@@ -320,6 +347,10 @@ export namespace Dot::Graphics {
      * A coherent snapshot requires resource destruction to be quiescent.
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
     [[nodiscard]] auto resourceStats() const -> Core::Result<ResourceStats>;
+    /** Latest successful mesh/pick calls, independently retained; no implicit work.
+     * Owner-thread read-only query is allowed during GUI layout.
+     * 分别保留最近成功网格/拾取调用，不触发隐式工作；GUI 布局时可在所属线程只读查询。 */
+    [[nodiscard]] auto visibilityStats() const -> Core::Result<VisibilityStats>;
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
      * with ordinary textures. Failure publishes no partial resource.

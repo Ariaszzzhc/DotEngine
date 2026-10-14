@@ -3548,3 +3548,90 @@ artwork. Private design source remains untracked. Only arm64 macOS is validated.
 Plane/uniform-scale tools, multi-selection, persisted profiles, thumbnails, scalable
 production scenes and polished realistic Prism Relay remain unfinished; the full
 engine/editor/game goal remains active.
+
+
+## 2026-10-14 — Conservative mesh frustum submission clipping
+
+Added Dot.Graphics.Frustum with separate interface/implementation and a pure value
+lifetime. Six homogeneous planes use right-handed [0,1] depth; transformed local
+AABB corners are tested without W division. Double intermediates and conservative
+float-roundoff margins retain boundary contact, reflection/shear/projective models
+and extreme finite inputs without premature clipping. Invalid cameras/bounds/models
+return contextual errors. Two pure foundation identities passed 2/2 (0.04s) before
+Renderer consumers were added. Initial compilation exposed missing string operator
+header visibility and an unexported Bounds dependency; corrected both explicitly.
+新增独立纯数学模块，按齐次六平面保守裁剪变换后的局部包围盒角点；不除 W，
+保留边界及浮点裕量，输入失败明确返回错误。
+
+Renderer prepares and validates all mesh/material/texture/transform inputs before
+pruning main HDR and SSAO geometry passes. Outside candidates skip per-draw uniform/
+bind allocation and actual mesh emission. Shadow fitting and cascade passes still
+consume off-camera casters, so their shadows on visible surfaces survive. Picking
+tests against the cropped 1x1 pixel frustum while preserving original input indices
+and full SceneRenderer entity identities. Persistent target, readback and native
+surface paths all share this implementation. No culling toggle, compatibility path,
+additional dependency or shader-source change was introduced.
+主 HDR 与 SSAO 阶段共享裁剪，但阴影保留画外投射体；拾取裁剪保留输入索引，
+避免选中错误实体。资源与材质仍完整校验，不吞掉画外无效输入。
+
+VisibilityStats separately retains latest successful mesh/pick calls. Counters
+increment beside actual draw encoding, not predicted flags, and publish only after
+successful submission/validation; failures and Deferred presentation keep previous
+reports. Before the first successful call, report is null. Main candidates may include
+conservative false positives; counts are submissions, not rasterized objects, FPS or
+performance guarantees. Rendering panel and workspace.view.draws expose actual
+visible/input/culled/shadow/SSAO counts. Queries enforce owner thread, allow read-only
+GUI layout observation and survive renderer moves without resource ownership changes.
+统计来自实际绘制编码循环并在成功后发布，失败保留旧报告；界面不伪造 FPS 或
+可见像素数量，阴影按各级真实提交次数计数。
+
+Added five offscreen GPU identities. A 1024-input frame submits one main draw and
+1023 culled draws with pixel equality to visible-only rendering; malformed hidden
+tint is rejected while target/report stay unchanged. Pixel picking keeps original
+index 2 after excluding earlier inputs and independently retains mesh reports.
+An off-camera caster at (-5,5,0) still darkens a visible receiver, with two shadow
+draws and only one main draw. SSAO geometry emits one draw for the visible-only
+image. A 513-object scene shares one uploaded mesh, emits one color draw and updates
+after a camera move. Native viewport acceptance now includes an outside object and
+checks actual counts. Initial focus run passed seven cases and failed a dense-scene
+assertion that pure green should display no red; existing ACES color transformation
+correctly contributes red. Corrected it to green-channel dominance plus pixel change,
+retaining actual scene/camera/counter invariants. Final focused checks: 8/8, 5.30s.
+
+Full engine/editor Debug CTest: 916/916, 177.18s. Release/NDEBUG: 916/916, 40.53s,
+run sequentially after both builds finished. All 281 C/C++ files pass clang-format
+and whitespace checks; 15 standalone WGSL sources are unchanged and actual pipelines
+remain exercised. Reviewed module direction, homogeneous depth/boundary conventions,
+owned prepared handles, complete input validation, pass separation, stable picking
+identity, success-only counter publication and thread/move behavior. No sanitizer
+or toolchain workaround/environment override was used.
+
+Package auditing twice found regenerated Finder .DS_Store at distribution root
+after target recreation; manual unlink did not solve the race. Added ArchiveEditor
+script and routed the archive target through a separate owned filtered snapshot,
+with source/empty-directory/permission/symlink preservation. Staging validates its
+owned name and disjoint paths; the new ZIP is published only after creation succeeds.
+The BUILD_TESTING archive regression additionally rejects source/nested-source staging
+and verifies the existing source/ZIP stay unchanged on failure. Passed separately
+in Debug 1/1 (0.27s) and Release 1/1 (0.12s) after engine suites, without rerunning
+unchanged rendering code. Final inventory: 917 CTest identities = 854 doctest plus
+63 executable/script checks; labels overlap (206 unit, 95 offscreen, 56 native,
+106 acceptance). This is suite-plus-regression evidence, not a claimed 917-case
+combined-run timing.
+发行目录重建后 Finder 会再次写入元数据；改为独立过滤快照并验证权限/链接/空目录
+与失败保护，原目录保持原样，成功后才发布新 ZIP。
+
+Final ZIP audit: 259 entries, 47,132,050 bytes. CRC/executable permissions/exclusions,
+font/license/two HDRI copies and all 228 file/link payload equality checks pass. All
+13 regular Mach-O files and 3 relative library symlinks pass strict signatures and
+relative/system loader/rpath checks; deep strict app verification passes. Opened
+bundled Feature Lab and inspected Rendering panel. Actual counts were 7 visible/7
+input, 28 shadow and 7 SSAO draws; camera yaw 180 changed them to 0 visible/7 input,
+7 culled, 28 shadow and 0 SSAO draws while ready=true and dirty=false. Closed owned
+window with discard=false, terminal exit zero and control-stage removal verified.
+Removed owned UI requests; retained build caches, latest archive, verification logs
+and supplied reference artwork. Private design source remains untracked. Only arm64
+macOS is validated. CPU preparation remains linear, still bounded to 4096 inputs;
+spatial indexing, instancing, streaming, occlusion culling, per-cascade caster pruning,
+production editor tools and polished realistic Prism Relay remain unfinished. The
+full engine/editor/game objective remains active.

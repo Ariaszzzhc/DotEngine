@@ -44,6 +44,9 @@ namespace Dot::Editor {
     auto scene = checked(project.loadStartup());
     require(scene.setCamera(checked(scene.primaryCamera()), std::nullopt).has_value(),
             "Remove game camera");
+    const auto outside = checked(scene.createEntity("Outside view"));
+    require(scene.setMeshRenderer(outside, World::MeshRenderer{}).has_value(), "Add outside mesh");
+    require(scene.setTransform(outside, {{1000, 0, 0}}).has_value(), "Place outside mesh");
     require(project.saveStartup(scene).has_value(), "Save camera-free project");
     auto workspace = checked(Workspace::open(project));
     const auto inspect
@@ -69,6 +72,10 @@ namespace Dot::Editor {
     frame();
     frame();
     const auto before = checked(workspace.captureViewport());
+    require(inspect()["workspace"]["view"]["draws"]["input"] == 2
+                && inspect()["workspace"]["view"]["draws"]["visible"] == 1
+                && inspect()["workspace"]["view"]["draws"]["culled"] == 1,
+            "Native viewport must expose actual mesh submission statistics");
 
     for (const auto* theme : {"light", "dark"}) {
       checked(workspace.dispatch(Json{{"command", "set-theme"}, {"theme", theme}}.dump()));

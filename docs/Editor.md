@@ -687,3 +687,10 @@ while active, and null otherwise. Agent input is isolated from incidental native
 mouse motion; both sources use the same preview/commit implementation.
 Plane movement, uniform-scale handles, multi-selection and richer snapping remain
 unimplemented. These tools do not establish mature-editor or large-game completion.
+
+Rendering displays the last successful mesh submission's input/visible/culled counts
+and shadow/SSAO geometry draws; `workspace.view.draws` exposes the same report.
+The report is null before a successful mesh call, remains unchanged after failure
+and describes the last submission while view.ready independently marks freshness.
+Counts reflect conservative GPU draw submissions rather than visible-pixel estimates
+or measured frame rate. Picking keeps its own report and never overwrites mesh data.

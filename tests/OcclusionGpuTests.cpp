@@ -218,3 +218,19 @@ TEST_CASE("occlusion.gpu_orthographic_camera_motion_and_normal_maps_keep_flat_su
   CHECK(moved.pixels != contact.pixels);
   CHECK(*std::min_element(moved.pixels.begin(), moved.pixels.end()) < 235);
 }
+
+TEST_CASE("visibility.gpu_ssao_depth_skips_offscreen_meshes_and_matches_visible_only_image") {
+  Fixture fixture;
+  REQUIRE(fixture.renderer.setOcclusion(OcclusionSettings{}));
+  fixture.draws[1].transform = Dot::Math::compose({100, 0.5F, 0}).value();
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, std::span(fixture.draws).first(1),
+                                            fixture.camera));
+  const auto baseline = fixture.renderer.readTarget(fixture.target).value();
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, fixture.draws, fixture.camera));
+  CHECK((fixture.renderer.readTarget(fixture.target)->pixels == baseline.pixels));
+  const auto report = fixture.renderer.visibilityStats().value();
+  REQUIRE(report.mesh);
+  CHECK(report.mesh->visibleDraws == 1);
+  CHECK(report.mesh->culledDraws == 1);
+  CHECK(report.mesh->occlusionDraws == 1);
+}
