@@ -35,6 +35,7 @@ add_executable(DotUnitTests
     OcclusionTests.cpp
     ViewTests.cpp
     FrustumTests.cpp
+    SpatialIndexTests.cpp
     DrawBatchTests.cpp
     AxisDragTests.cpp
     EnvironmentTests.cpp

@@ -567,8 +567,10 @@ presentation preserve prior reports. Mesh counts exclude sky/fullscreen/GUI pass
 instance quantities count every cascade; GPU draw counts are reported separately.
 `visibleInstances` counts conservative submitted candidates, not guaranteed rasterized objects. Rendering
 panel and `workspace.view.draws` expose these real counters without invented FPS.
-This remains linear CPU preparation with a 10000-instance input bound. Spatial indexing,
-streaming, occlusion culling and per-cascade caster pruning remain unimplemented; camera clipping alone does not establish large-game scalability.
+Input validation and bounds generation remain linear with a 10000-instance bound.
+BVH spatial classification is described below. Streaming, occlusion culling and
+per-cascade caster pruning remain unimplemented; camera clipping alone does not
+establish large-game scalability.
 
 
 ## Instanced mesh submission / 网格实例化提交
@@ -598,7 +600,37 @@ commands. The editor displays both quantities; no frame-rate claim is inferred.
 输入/阴影拟合上限为 10000，完整校验和资源预算保持；统计区分实例数量与真实 GPU
 绘制命令，不把合批数量冒充 FPS。
 
-Batching remains consecutive and CPU preparation linear. Spatial acceleration,
-streaming, GPU-driven visibility, transparency sorting, animation and production
+Batching remains consecutive and input preparation linear. Streaming, GPU-driven
+visibility, transparency sorting, animation and production
 content still require dedicated implementation; instancing alone does not establish
 large-game readiness.
+
+
+## Spatial visibility index / 空间可见性索引
+
+`Dot.Graphics.SpatialIndex` owns a balanced BVH over at most 10000 finite world
+AABBs. Count changes build a replacement tree; same-count changes refit affected
+branches. Invalid input or allocation failure preserves the prior tree. Queries
+restore original source order, reject outside subtrees and accept strictly inside
+subtrees without individual plane tests. Boundary contact remains intersecting.
+空间索引拥有世界 AABB；数量变化重建，同数量变化重拟合，失败保留旧树。查询
+恢复原始顺序，整棵内部子树免逐对象测试，边界接触保持相交。
+
+Renderer validates every input before classification. Affine corner transforms use
+double intermediates and outward-rounded float bounds. Projective models or bounds
+that cannot be represented conservatively in float use homogeneous tests directly.
+Intersecting BVH candidates retain local-box/model tests, preserving tight rotated
+bounds. Camera changes reuse the tree, and fresh world bounds incorporate movement,
+parent changes and deletion. Picking uses its cropped camera and retains original
+integer source IDs. Shadow casters remain independent of camera visibility.
+完整输入校验先于裁剪；世界边界向外舍入，特殊边界直接齐次测试。视锥边界候选
+仍精确测试，移动/层级/删除反映在新边界；拾取身份与画外阴影投射体保留。
+
+Completed mesh/picking reports include indexed instances, node/bounds/exact tests,
+unindexed tests, changed bounds, refitted nodes and rebuild status. Failures retain
+the previous published report. The Rendering pane and `workspace.view.draws.spatial`
+expose real mesh counters. Validation, world-bound generation and update comparison
+still visit all inputs; this is not a full sublinear scene traversal or streaming
+system. Refit preserves topology, so extensive movement can reduce tree efficiency;
+adaptive rebuilding, separate per-camera caches and GPU-driven visibility remain
+future work. Counters measure classification work, not frame-rate improvement.

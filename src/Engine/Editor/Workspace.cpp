@@ -1681,10 +1681,23 @@ namespace Dot::Editor {
         draws = errorJson(stats.error());
       } else if (stats->mesh) {
         const auto& frame = *stats->mesh;
-        draws = {{"input", frame.inputInstances},         {"visible", frame.visibleInstances},
-                 {"culled", frame.culledInstances},       {"shadow", frame.shadowInstances},
-                 {"occlusion", frame.occlusionInstances}, {"colorDraws", frame.colorDraws},
-                 {"shadowDraws", frame.shadowDraws},      {"occlusionDraws", frame.occlusionDraws}};
+        draws = {{"input", frame.inputInstances},
+                 {"visible", frame.visibleInstances},
+                 {"culled", frame.culledInstances},
+                 {"shadow", frame.shadowInstances},
+                 {"occlusion", frame.occlusionInstances},
+                 {"colorDraws", frame.colorDraws},
+                 {"shadowDraws", frame.shadowDraws},
+                 {"occlusionDraws", frame.occlusionDraws},
+                 {"spatial",
+                  {{"indexed", frame.spatial.indexedInstances},
+                   {"nodes", frame.spatial.nodeTests},
+                   {"bounds", frame.spatial.boundsTests},
+                   {"exact", frame.spatial.exactTests},
+                   {"unindexed", frame.spatial.unindexedTests},
+                   {"changed", frame.spatial.changedBounds},
+                   {"refitted", frame.spatial.refittedNodes},
+                   {"rebuilt", frame.spatial.rebuilt}}}};
       }
 
       return {
@@ -2326,6 +2339,9 @@ namespace Dot::Editor {
                            frame.occlusionInstances);
         ImGui::TextWrapped("GPU draws: color %zu, shadows %zu, SSAO %zu", frame.colorDraws,
                            frame.shadowDraws, frame.occlusionDraws);
+        ImGui::TextWrapped("Visibility tests: %zu BVH nodes, %zu bounds, %zu exact (%zu unindexed)",
+                           frame.spatial.nodeTests, frame.spatial.boundsTests,
+                           frame.spatial.exactTests, frame.spatial.unindexedTests);
       } else {
         ImGui::TextUnformatted("No successful mesh submission yet.");
       }

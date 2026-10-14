@@ -9,6 +9,8 @@ import Dot.Math;
 export import Dot.Graphics.Geometry;
 
 export namespace Dot::Graphics {
+  enum class Containment { Outside, Intersecting, Inside };
+
   /** Conservative six-plane homogeneous clip test for right-handed [0,1] depth.
    * Tests transformed local AABB corners without dividing by W, retaining boundary
    * contact, reflection, shear and projective models. False means definitely outside;
@@ -20,6 +22,12 @@ export namespace Dot::Graphics {
   class Frustum {
   public:
     [[nodiscard]] static auto create(const Math::Mat4& viewProjection) -> Core::Result<Frustum>;
+
+    /** Strict inside requires all corners beyond the roundoff margin; contact
+     * remains intersecting. 严格内部要求所有角点超过误差裕量，接触仍为相交。 */
+    [[nodiscard]] auto classify(const Bounds& local, const Math::Mat4& world = {}) const
+        -> Core::Result<Containment>;
+
     [[nodiscard]] auto intersects(const Bounds& local, const Math::Mat4& world = {}) const
         -> Core::Result<bool>;
 

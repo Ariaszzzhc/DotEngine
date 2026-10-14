@@ -101,3 +101,12 @@ The input/CPU caster bound matches the 10000-entity scene capacity; counters dis
 instances from actual GPU commands. CPU scene traversal remains linear; spatial
 indexing, streaming, production import/animation/editor tools and the polished
 realistic Prism Relay game remain unfinished.
+
+
+BVH spatial classification now reuses camera-independent world bounds, refits
+changed branches and rebuilds on count changes. Dense offscreen inputs prune whole
+subtrees; strictly inside subtrees avoid per-object tests. Stable source identity,
+complete validation and off-camera shadow behavior retain coverage. CPU traversal,
+validation and bound generation remain linear; adaptive tree rebuilding, streaming,
+production import/animation/editor tools and realistic polished Prism Relay remain
+unfinished. Classification counters are not populated-game frame-time evidence.

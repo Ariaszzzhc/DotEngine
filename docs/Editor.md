@@ -699,3 +699,12 @@ Mesh submission inspection now adds `colorDraws`, `shadowDraws` and `occlusionDr
 for actual GPU commands, distinct from `input`/`visible`/`culled`/`shadow`/`occlusion`
 instance quantities. Rendering labels the two rows explicitly. Per-instance variation
 is preserved after batching and does not change scene/Inspector authoring contracts.
+
+
+The Rendering pane also shows actual CPU visibility tests: BVH nodes, world AABBs,
+exact local-box tests and unindexed homogeneous tests. `inspect.workspace.view.draws.spatial`
+includes indexed/changed/refitted quantities and rebuild status for the last successful
+mesh pass. Camera-only changes reuse bounds/tree topology. These counts exclude
+linear input validation and bounds generation; they are not frame-time or FPS claims.
+渲染面板显示真实空间分类次数，检查接口还报告更新/重建状态；计数不含线性输入
+校验和边界生成，也不表示帧耗时或 FPS。

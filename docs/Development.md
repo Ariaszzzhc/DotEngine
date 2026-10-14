@@ -3711,3 +3711,72 @@ remains untracked. Only arm64 macOS was built/run. Grouping is consecutive and C
 preparation remains linear; spatial acceleration, streaming, production import/
 animation/editor tools and realistic polished Prism Relay remain unfinished. The full
 engine/editor/game objective remains active.
+
+
+## 2026-10-14 — Refit BVH mesh visibility
+
+Added Dot.Graphics.SpatialIndex with separate module interface/implementation and
+owned finite world AABBs, bounded to 10000 entries. Count changes build a balanced
+replacement tree; same-count movement refits affected leaf/ancestor branches.
+Validation and allocation precede publication, preserving the old index on failure.
+Queries restore source order and classify outside/intersecting/strictly inside
+subtrees; accepted inside subtrees avoid per-object plane tests. Rebuild statistics
+report zero refitted nodes, distinguishing construction from actual branch refit.
+新增拥有式平衡 BVH，数量变化重建，同数量变化重拟合；校验/分配失败保留旧树。
+查询恢复原始顺序，严格内部子树免逐对象测试，重建与重拟合计数明确区分。
+
+First built the CPU foundation and passed 4/4 spatial-index/frustum checks (0.06s)
+before adding its renderer consumer. Tests compare randomized ordered perspective/
+orthographic/moving/reordered queries with linear classification, owned data/copies,
+unchanged reuse, partial refit, clear, 10000 bounds and invalid update preservation.
+Frustum classification preserves homogeneous reflection/shear/projective/contact/
+float-extreme behavior while making strict-inside classification available.
+
+Renderer still validates every mesh/material/texture/transform before classifying.
+Double-precision affine corner transforms produce outward-rounded float world boxes;
+projective or float-unrepresentable bounds use direct homogeneous tests with explicit
+unindexed counters. Intersecting BVH candidates retain exact local-box/model tests.
+Preparation retains original slots, consecutive batch order, integer picking IDs
+and all off-camera shadow casters. Fresh bounds reflect parent/world changes;
+camera-only changes reuse the index. Published mesh/pick statistics retain the last
+successful report on failures. Rendering and inspection expose real spatial counters.
+渲染输入完整校验，世界边界向外舍入，特殊边界明确直接齐次测试；保留对象顺序、
+拾取身份及画外阴影。统计只在成功提交后发布，编辑器与真实引擎行为一致。
+
+Initial focused Debug checks passed 18/18 (14.50s), including GPU/native acceptance.
+The dense 1024-input/one-visible fixture retains byte-identical pixels with fewer
+than 64 total node/bounds/exact tests. New GPU cases cover camera reuse, one-object
+motion/refit, deletion/rebuild, original pick IDs, projective/extreme unindexed tests,
+and rotated/reflected/sheared/contact cases against homogeneous classification.
+Native viewport acceptance requires actual unchanged-index statistics. Review then
+clarified rebuild/refit counters and reserved bounds/index storage, rebuilt both
+presets, and ran final full tests sequentially after compilation finished.
+
+Final Debug: 926/926, 180.80s. Release/NDEBUG: 926/926, 44.83s. Inventory is 863 doctest
+identities plus 63 executable/script checks; overlapping labels: unit 210, integration
+610, gpu 168, offscreen 100, native 56, acceptance 106, compiler 134, platform 27,
+process 19, audio-native 32. All 288 C/C++ files pass clang-format and whitespace
+checks. WGSL is unchanged; real pipeline and pixel validation passed. Reviewed input
+bounds, publication/allocation guarantees, finite precision, ownership, tree depth,
+source ordering, malformed off-camera inputs, GPU resource lifetime and platform
+assumptions. No dependency/toolchain/sanitizer change was introduced.
+
+Packaged Feature Lab QA initially asserted index reuse on the first cached successful
+submission, which correctly still reported rebuild. Corrected the QA helper to pan
+the real editor camera before checking reuse. Actual final report: 7 indexed/visible
+objects, 1 node test, 0 bounds/exact/unindexed tests, changed/refitted=0, rebuilt=false;
+4 color/SSAO commands, 28 shadow instances and 16 shadow commands. Ready=true and
+dirty=false. Closed the owned application normally (exit zero), verified private
+control cleanup. No additional screenshot review was performed for this stage.
+
+Refreshed the archive through the metadata-filtered owned snapshot. ZIP: 259 entries,
+47,172,615 bytes; all 228 file/link payloads match the signed source tree. CRC,
+executable modes/exclusions, exact Sarasa/Inter font/license and both HDRI copies,
+13 regular Mach-O files/3 relative links, strict signatures, app deep verification
+and portable loader/rpath checks pass. Removed owned app-request/helper scratch,
+retaining caches, latest archive, audit evidence and supplied reference artwork.
+Private design source remains untracked. Only arm64 macOS was built/run; Windows/Linux
+implementation is unverified locally. Input validation/world bounds/update comparison
+remain linear, and refit retains topology. Adaptive rebuilding, streaming, production
+import/animation/editor tools and realistic polished Prism Relay remain unfinished.
+The full engine/editor/game objective remains active.

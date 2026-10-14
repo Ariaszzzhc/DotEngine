@@ -60,6 +60,21 @@ export namespace Dot::Graphics {
     std::uint64_t occlusionBytes{};
   };
 
+  /** CPU visibility work for the completed pass. Input validation and bounds
+   * generation remain linear; counters measure only spatial classification.
+   * 已完成通道的 CPU 可见性工作；输入校验/边界生成仍为线性，计数仅衡量空间分类。 */
+  struct SpatialStats {
+    std::size_t indexedInstances{};
+    std::size_t nodeTests{};
+    std::size_t boundsTests{};
+    std::size_t exactTests{};
+    std::size_t unindexedTests{};
+    std::size_t changedBounds{};
+    std::size_t refittedNodes{};
+    bool rebuilt{};
+    auto operator==(const SpatialStats&) const -> bool = default;
+  };
+
   /** Instance quantities and actual GPU mesh draw commands, excluding sky/fullscreen/
    * GUI passes. Shadow quantities include every cascade. Publish after successful
    * submission/validation; failures retain the previous report.
@@ -74,11 +89,13 @@ export namespace Dot::Graphics {
     std::size_t colorDraws{};
     std::size_t shadowDraws{};
     std::size_t occlusionDraws{};
+    SpatialStats spatial;
     auto operator==(const MeshFrameStats&) const -> bool = default;
   };
 
   struct PickFrameStats {
     std::size_t inputInstances{};
+    SpatialStats spatial;
     std::size_t candidateInstances{};
     std::size_t draws{};
     std::size_t culledInstances{};

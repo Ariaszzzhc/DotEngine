@@ -47,8 +47,8 @@ namespace Dot::Graphics {
     return result;
   }
 
-  auto Frustum::intersects(const Bounds& local, const Math::Mat4& world) const
-      -> Core::Result<bool> {
+  auto Frustum::classify(const Bounds& local, const Math::Mat4& world) const
+      -> Core::Result<Containment> {
     if (!Math::isFinite(local.minimum) || !Math::isFinite(local.maximum) || !Math::isFinite(world)
         || local.minimum.x > local.maximum.x || local.minimum.y > local.maximum.y
         || local.minimum.z > local.maximum.z) {
@@ -71,6 +71,8 @@ namespace Dot::Graphics {
 
     constexpr double roundoff = 8 * std::numeric_limits<float>::epsilon();
 
+    bool inside = true;
+
     for (const auto& plane : m_planes) {
       bool outside = true;
 
@@ -86,15 +88,26 @@ namespace Dot::Graphics {
 
         if (distance >= -roundoff * magnitude) {
           outside = false;
-          break;
+        }
+
+        if (distance < roundoff * magnitude) {
+          inside = false;
         }
       }
 
       if (outside) {
-        return false;
+        return Containment::Outside;
       }
     }
 
-    return true;
+    return inside ? Containment::Inside : Containment::Intersecting;
   }
+
+  auto Frustum::intersects(const Bounds& local, const Math::Mat4& world) const
+      -> Core::Result<bool> {
+    auto result = classify(local, world);
+    return result ? Core::Result<bool>(*result != Containment::Outside)
+                  : std::unexpected(result.error());
+  }
+
 }  // namespace Dot::Graphics

@@ -27,7 +27,7 @@ module Dot.Graphics.Renderer;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Graphics.View;
-import Dot.Graphics.Frustum;
+import Dot.Graphics.SpatialIndex;
 import Dot.Graphics.DrawBatches;
 import Dot.Platform.Window;
 import Dot.Platform.System;
@@ -536,6 +536,8 @@ namespace Dot::Graphics {
     bool guiFrameActive{};
     VisibilityStats visibility;
     MeshFrameStats pendingVisibility;
+    SpatialIndex spatialIndex;
+    SpatialStats preparedSpatial;
     std::uint64_t maxInstanceBufferBytes{};
 
     struct GuiFrameScope {
@@ -1389,6 +1391,60 @@ namespace Dot::Graphics {
       return encoder;
     }
 
+    /** Outward-rounded affine AABB encloses double-precision corner transforms.
+     * Projective/float-unrepresentable bounds use homogeneous tests directly.
+     * 仿射 AABB 向外舍入包围双精度角点；投影或不可用 float 表达的边界直接齐次测试。 */
+    static auto worldBounds(const Bounds& local, const Math::Mat4& world) -> std::optional<Bounds> {
+      const auto& m = world.data;
+
+      if (m[3] != 0 || m[7] != 0 || m[11] != 0 || m[15] != 1) {
+        return std::nullopt;
+      }
+
+      std::array<double, 3> minimum;
+      std::array<double, 3> maximum;
+      minimum.fill(std::numeric_limits<double>::infinity());
+      maximum.fill(-std::numeric_limits<double>::infinity());
+
+      for (std::size_t corner = 0; corner < 8; ++corner) {
+        const double p[4]{corner & 1 ? local.maximum.x : local.minimum.x,
+                          corner & 2 ? local.maximum.y : local.minimum.y,
+                          corner & 4 ? local.maximum.z : local.minimum.z, 1};
+
+        for (std::size_t row = 0; row < 3; ++row) {
+          double value{};
+
+          for (std::size_t column = 0; column < 4; ++column) {
+            value += static_cast<double>(m[column * 4 + row]) * p[column];
+          }
+
+          minimum[row] = std::min(minimum[row], value);
+          maximum[row] = std::max(maximum[row], value);
+        }
+      }
+
+      std::array<float, 3> low;
+      std::array<float, 3> high;
+
+      for (std::size_t i = 0; i < 3; ++i) {
+        if (minimum[i] < -std::numeric_limits<float>::max()
+            || maximum[i] > std::numeric_limits<float>::max()) {
+          return std::nullopt;
+        }
+
+        low[i] = std::nextafter(static_cast<float>(minimum[i]),
+                                -std::numeric_limits<float>::infinity());
+        high[i] = std::nextafter(static_cast<float>(maximum[i]),
+                                 std::numeric_limits<float>::infinity());
+
+        if (!std::isfinite(low[i]) || !std::isfinite(high[i])) {
+          return std::nullopt;
+        }
+      }
+
+      return Bounds{{low[0], low[1], low[2]}, {high[0], high[1], high[2]}};
+    }
+
     struct PreparedDraw {
       std::shared_ptr<Mesh::Impl> mesh;
       InstanceData uniform;
@@ -1571,12 +1627,6 @@ namespace Dot::Graphics {
           return std::unexpected(transform.error());
         }
 
-        auto visible = frustum->intersects(draw.mesh->m_impl->bounds, draw.transform);
-
-        if (!visible) {
-          return std::unexpected(visible.error());
-        }
-
         const auto tint = draw.tint;
         const auto factor = draw.material.baseColor;
         prepared.push_back(
@@ -1593,9 +1643,79 @@ namespace Dot::Graphics {
                orientation}},
              std::move(textures),
              draw.castsShadow,
-             *visible});
+             false});
       }
 
+      std::vector<Bounds> bounds;
+      std::vector<std::size_t> indexed;
+      std::vector<std::size_t> unindexed;
+      bounds.reserve(prepared.size());
+      indexed.reserve(prepared.size());
+
+      for (std::size_t i = 0; i < prepared.size(); ++i) {
+        const auto& draw = prepared[i];
+        const auto box = worldBounds(draw.mesh->bounds, draw.uniform.model);
+
+        if (box) {
+          bounds.push_back(*box);
+          indexed.push_back(i);
+        } else {
+          unindexed.push_back(i);
+        }
+      }
+
+      auto update = spatialIndex.update(bounds);
+
+      if (!update) {
+        return std::unexpected(update.error());
+      }
+
+      auto query = spatialIndex.query(*frustum);
+
+      if (!query) {
+        return std::unexpected(query.error());
+      }
+
+      SpatialStats stats;
+      stats.indexedInstances = indexed.size();
+      stats.nodeTests = query->nodeTests;
+      stats.boundsTests = query->boundsTests;
+      stats.rebuilt = update->rebuilt;
+      stats.changedBounds = update->changedBounds;
+      stats.refittedNodes = update->refittedNodes;
+      const auto exact = [&](std::size_t i) -> Core::Result<void> {
+        ++stats.exactTests;
+        auto& draw = prepared[i];
+        auto hit = frustum->intersects(draw.mesh->bounds, draw.uniform.model);
+
+        if (!hit) {
+          return std::unexpected(hit.error());
+        }
+
+        draw.visible = *hit;
+        return {};
+      };
+
+      for (const auto& hit : query->hits) {
+        const auto i = indexed[hit.index];
+
+        if (hit.inside) {
+          prepared[i].visible = true;
+        } else if (auto result = exact(i); !result) {
+          return std::unexpected(result.error());
+        }
+      }
+
+      for (const auto i : unindexed) {
+        ++stats.unindexedTests;
+        auto result = exact(i);
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+      }
+
+      preparedSpatial = stats;
       return prepared;
     }
 
@@ -1985,6 +2105,7 @@ namespace Dot::Graphics {
       }
 
       pendingVisibility = {};
+      pendingVisibility.spatial = preparedSpatial;
       pendingVisibility.inputInstances = draws.size();
       pendingVisibility.culledInstances = draws.size() - plan->indices.size();
       wgpu::Buffer storage;
@@ -4114,6 +4235,7 @@ namespace Dot::Graphics {
     }
 
     PickFrameStats pickStats{};
+    pickStats.spatial = m_impl->preparedSpatial;
     pickStats.inputInstances = draws.size();
     pickStats.culledInstances = draws.size() - plan->indices.size();
     auto image = m_impl->readback(

@@ -80,6 +80,10 @@ namespace Dot::Editor {
                 && inspect()["workspace"]["view"]["draws"]["culled"] == 1
                 && inspect()["workspace"]["view"]["draws"]["colorDraws"] == 1,
             "Native viewport must expose actual mesh submission statistics");
+    const auto spatial = inspect()["workspace"]["view"]["draws"]["spatial"];
+    require(spatial["indexed"] == 3 && spatial["unindexed"] == 0 && spatial["rebuilt"] == false
+                && spatial["changed"] == 0 && spatial["refitted"] == 0,
+            "Native viewport must reuse the actual spatial index on unchanged frames");
 
     for (const auto* theme : {"light", "dark"}) {
       checked(workspace.dispatch(Json{{"command", "set-theme"}, {"theme", theme}}.dump()));

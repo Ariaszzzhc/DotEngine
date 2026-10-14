@@ -175,3 +175,12 @@ resource references. Full-scene acceptance now renders 9999 meshes plus its came
 in one color command while keeping invalid-clear and cache-lifetime checks. Native
 viewport acceptance includes two visible shared meshes and one culled mesh, requiring
 one color command and unchanged authoring/Undo/export behavior.
+
+
+SpatialIndexTests compares ordered BVH queries against linear classification for
+moving/reordered perspective/orthographic bounds, checks owned data/copies, unchanged
+reuse, partial refit, rebuild/clear, 10000 bounds and invalid update preservation.
+VisibilityGpuTests verifies dense subtree pruning with unchanged pixels, camera-only
+reuse, motion, deletion, original pixel-pick IDs, projective/extreme homogeneous tests,
+and rotated/reflected/sheared/boundary candidates against exact classification.
+Native viewport acceptance requires actual index reuse statistics in inspection.

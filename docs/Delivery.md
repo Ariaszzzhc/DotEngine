@@ -193,3 +193,22 @@ macOS was locked; native acceptance and actual control-interface checks passed.
 Preparation remains linear and grouping consecutive. Spatial indexing, streaming,
 production import/animation/editor tools and realistic polished Prism Relay remain
 unimplemented. Only arm64 macOS was validated.
+
+
+Refit BVH visibility now rejects outside subtrees and accepts strictly inside
+subtrees, retaining exact tests for boundary candidates and explicit homogeneous
+tests for projective/float-unrepresentable bounds. Full input validation, stable
+batch/picking identity and off-camera shadows remain. Camera changes reuse the
+index; motion refits branches, count changes rebuild. Dense 1024-input visibility
+keeps identical pixels with fewer than 64 classification tests; this is not an FPS
+or fully sublinear scene-traversal claim.
+
+Full Debug: 926/926 (180.80s); Release/NDEBUG: 926/926 (44.83s). All 288 C/C++ files
+pass formatting. Latest ZIP: 259 entries, 47,172,615 bytes, 228 matching file/link
+payloads; CRC/modes/font/license/HDRI and strict signatures/loader/rpath checks pass
+(13 regular Mach-O, 3 relative links). Bundled Feature Lab camera movement reuses
+7 indexed objects with one node test and no individual tests/refits; ready=true,
+dirty=false, normal close/control cleanup verified. No extra screenshot review.
+Only arm64 macOS validated. Preparation remains linear; adaptive indexing,
+streaming, production import/animation/editor tools and polished realistic Prism
+Relay remain unfinished.
