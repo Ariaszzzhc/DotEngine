@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -38,8 +39,7 @@ namespace {
           project(Dot::Project::Project::create(storage.files().value(), "project", {}).value()) {
     }
 
-    auto open() -> Workspace {
-      WorkspaceConfig config;
+    auto open(WorkspaceConfig config = {}) -> Workspace {
       config.font = DOT_EDITOR_FONT;
       config.compiler = DOT_TYPESCRIPT_COMPILER;
       config.play.session.audioMode = Dot::Project::SessionAudio::Offline;
@@ -630,4 +630,122 @@ TEST_CASE("workspace_material_and_light_authoring_preview_play_and_save_share_na
   auto saved = fixture.project.loadStartup().value();
   CHECK(saved.entities()->at(1).material->asset == "assets/metal.dotmaterial");
   CHECK(saved.entities()->front().light->intensity == 4);
+}
+
+TEST_CASE("workspace.external_open_uses_validated_source_and_preserves_agent_and_scene_state") {
+  Fixture fixture;
+  const auto original = fixture.project.files()->readText("scripts/mover.ts").value();
+  std::filesystem::path opened;
+  int calls = 0;
+  Workspace* active = nullptr;
+  WorkspaceConfig config;
+  config.openExternal = [&](const std::filesystem::path& path) -> Dot::Core::Result<void> {
+    opened = path;
+    ++calls;
+    CHECK_FALSE(active->dispatch("{\"command\":\"resources\"}"));
+    return {};
+  };
+  auto workspace = fixture.open(config);
+  active = &workspace;
+  const auto before = workspace.snapshot().value();
+  auto result = workspace.dispatch("{\"command\":\"open-external\",\"path\":\"scripts/mover.ts\"}");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  const auto response = Json::parse(*result);
+  CHECK(response["accepted"] == true);
+  CHECK(response["uri"].get<std::string>().starts_with("file:///"));
+  CHECK(opened == fixture.project.files()->root() / "scripts/mover.ts");
+  CHECK(calls == 1);
+  CHECK(fixture.project.files()->readText("scripts/mover.ts").value() == original);
+  CHECK(workspace.snapshot().value() == before);
+  const auto resources = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
+  CHECK(resources["file"].is_null());
+  CHECK(resources["selected"] == "scripts/mover.ts");
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->width > 0);
+}
+
+TEST_CASE("workspace.external_open_failures_and_pending_drafts_never_report_success") {
+  Fixture fixture;
+  int calls = 0;
+  bool throws = false;
+  WorkspaceConfig config;
+  config.openExternal = [&](const std::filesystem::path&) -> Dot::Core::Result<void> {
+    ++calls;
+
+    if (throws) {
+      throw std::runtime_error("Launch service exception");
+    }
+
+    return Dot::Core::fail(Dot::Core::ErrorCode::Unavailable, "No default source application");
+  };
+  auto workspace = fixture.open(config);
+  auto missingHandler
+      = workspace.dispatch("{\"command\":\"open-external\",\"path\":\"scripts/mover.ts\"}");
+  REQUIRE_FALSE(missingHandler);
+  CHECK(missingHandler.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(missingHandler.error().message == "No default source application");
+  CHECK(calls == 1);
+  throws = true;
+  auto exception
+      = workspace.dispatch("{\"command\":\"open-external\",\"path\":\"scripts/mover.ts\"}");
+  REQUIRE_FALSE(exception);
+  CHECK(exception.error().code == Dot::Core::ErrorCode::External);
+  CHECK(exception.error().message.find("Launch service exception") != std::string::npos);
+  CHECK(calls == 2);
+
+  for (const auto* path : {"../escape.ts", "scripts/missing.ts", "project.dotproject", "assets"}) {
+    CHECK_FALSE(workspace.dispatch(Json{{"command", "open-external"}, {"path", path}}.dump()));
+  }
+
+  CHECK(calls == 2);
+  auto file = Json::parse(
+      workspace
+          .dispatch("{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}")
+          .value())["file"];
+  REQUIRE(workspace.dispatch(Json{{"command", "replace-text"},
+                                  {"buffer", file["buffer"]},
+                                  {"revision", file["revision"]},
+                                  {"text", "export const agentDraft=42;"}}
+                                 .dump()));
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"open-external\",\"path\":\"scripts/mover.ts\"}"));
+  CHECK(calls == 2);
+  const auto retained
+      = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value())["file"];
+  CHECK(retained["dirty"] == true);
+  CHECK(retained["text"] == "export const agentDraft=42;");
+  REQUIRE(workspace.dispatch(Json{
+      {"command", "close-text"},
+      {"buffer", retained["buffer"]},
+      {"revision", retained["revision"]},
+      {"discard", true}}.dump()));
+}
+
+TEST_CASE("workspace.actual_compiler_diagnostics_map_to_openable_project_files_and_clear") {
+  Fixture fixture;
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/bad.ts",
+                                                   "export const bad:number='wrong';"));
+  std::filesystem::path opened;
+  WorkspaceConfig config;
+  config.openExternal = [&](const std::filesystem::path& path) -> Dot::Core::Result<void> {
+    opened = path;
+    return {};
+  };
+  auto workspace = fixture.open(config);
+  CHECK_FALSE(workspace.dispatch("{\"command\":\"check-scripts\"}"));
+  auto status = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
+  INFO(status["scripts"].dump());
+  const auto diagnostics = status["scripts"]["diagnostics"];
+  REQUIRE(diagnostics.size() == 1);
+  CHECK(diagnostics[0]["path"] == "scripts/bad.ts");
+  CHECK(diagnostics[0]["line"] == 1);
+  CHECK(diagnostics[0]["column"].get<unsigned>() > 0);
+  CHECK(diagnostics[0]["message"].get<std::string>().find("TS2322") != std::string::npos);
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "open-external"}, {"path", diagnostics[0]["path"]}}.dump()));
+  CHECK(opened == fixture.project.files()->root() / "scripts/bad.ts");
+  REQUIRE(
+      fixture.project.files()->writeTextAtomic("scripts/bad.ts", "export const bad:number=42;"));
+  REQUIRE(workspace.dispatch("{\"command\":\"check-scripts\"}"));
+  status = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value());
+  CHECK(status["scripts"]["diagnostics"].empty());
 }

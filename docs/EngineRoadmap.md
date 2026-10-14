@@ -29,7 +29,9 @@ the `dot:` namespace; project imports use relative paths without extensions.
 The engine script namespace and extensionless project-module contracts are
 implemented with a shared registry/resolver, injected declarations, static linking
 during Check, and actual native reload/export/distribution tests. This closes those
-two rows; material/light scripting accessors and the other listed work remain.
+two rows. External source editing is now implemented through default-app opening,
+project diagnostics, retained agent drafts/hot reload and removal of the embedded
+code page. Material/light scripting accessors and the other listed work remain.
 
 Development order follows dependencies: surface geometry and resource ownership,
 texture/material rendering, authored light/shadow services and editor integration,

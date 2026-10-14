@@ -125,6 +125,8 @@ target_sources(DotEngine PRIVATE
     src/Engine/Script/Runtime.cpp
     src/Engine/Script/Compiler.cpp
     src/Engine/Script/Modules.cpp
+    src/Engine/Platform/ExternalFiles.cpp
+    src/Engine/Editor/ScriptDiagnostics.cpp
     src/Engine/Script/SceneHost.cpp
     src/Engine/Script/InputSource.cpp
     src/Engine/Script/PhysicsSource.cpp
@@ -209,6 +211,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/LiveScripts.cppm
         src/Engine/Script/Compiler.cppm
         src/Engine/Script/Modules.cppm
+        src/Engine/Platform/ExternalFiles.cppm
+        src/Engine/Editor/ScriptDiagnostics.cppm
 )
 
 include(cmake/ScriptModules.cmake)

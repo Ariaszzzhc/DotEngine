@@ -887,7 +887,7 @@ namespace Dot::Script {
       auto diagnostics = process->standardOutput + process->standardError;
 
       if (process->exitCode != 0) {
-        return Core::fail(ErrorCode::External, std::format("TypeScript compile exit {}: {}",
+        return Core::fail(ErrorCode::External, std::format("TypeScript compile exit {}:\n{}",
                                                            process->exitCode, diagnostics));
       }
 

@@ -278,11 +278,18 @@ namespace Dot::Editor {
             {"buffer", file["buffer"]},
             {"revision", file["revision"]},
             {"text", code}}.dump()));
-        commandShortcut(workspace, SDL_SCANCODE_S);
+        auto draft
+            = Json::parse(checked(workspace.dispatch("{\"command\":\"resources\"}")))["file"];
+        checked(workspace.dispatch(Json{
+            {"command", "save-text"}, {"buffer", draft["buffer"]}, {"revision", draft["revision"]}}
+                                       .dump()));
         auto resources = Json::parse(checked(workspace.dispatch("{\"command\":\"resources\"}")));
-        require(resources["file"]["dirty"] == false, "Native code-page Cmd/Ctrl+S did not save");
+        require(resources["file"]["dirty"] == false, "Agent file save did not clear its draft");
         require(project.files()->readText("scripts/mover.ts").value() == code,
                 "Code save did not persist bytes");
+        code += "\n// External source edit.\n";
+        auto externalEdit = project.files()->writeTextAtomic("scripts/mover.ts", code);
+        require(externalEdit.has_value(), externalEdit ? "" : externalEdit.error().message);
         checked(workspace.dispatch("{\"command\":\"check-scripts\"}"));
         const auto afterReload
             = Json::parse(checked(workspace.dispatch("{\"command\":\"inspect-play\"}")));

@@ -3,6 +3,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -25,6 +26,12 @@ export namespace Dot::Editor {
     /** Empty resolves the packaged native runtime kit when exporting.
      * 空路径在导出时查找随附的原生运行时目录。 */
     std::filesystem::path runtimeKit;
+    /** Empty uses the system default file application. Hosts may supply their
+     * own launch service, invoked on the main thread without reentry. Config is
+     * copied; own captures or retain borrowed dependencies for workspace lifetime.
+     * 空值使用系统默认文件应用；宿主可提供启动服务，主线程调用且不可重入。配置被
+     * 复制，须拥有捕获对象或在工作区存活期间保持借用依赖。 */
+    std::function<Core::Result<void>(const std::filesystem::path&)> openExternal;
     PlayConfig play;
     int width{1280};
     int height{800};

@@ -533,6 +533,34 @@ namespace Dot::Editor {
     }
   }
 
+  auto ResourceStore::externalTextPath(std::string_view name) const -> Core::Result<Fs::path> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Resource store was moved");
+    }
+
+    if (!textPath(name)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "External resource must be text");
+    }
+
+    try {
+      auto target = m_impl->resolve(name, true);
+
+      if (!target) {
+        return std::unexpected(target.error());
+      }
+
+      std::error_code error;
+
+      if (!Fs::is_regular_file(*target, error) || error) {
+        return Core::fail(Core::ErrorCode::Io, "External resource must be a regular file");
+      }
+
+      return target;
+    } catch (const std::exception& error) {
+      return external("Resolve external resource", error);
+    }
+  }
+
   TextDocument::TextDocument(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
   }
 

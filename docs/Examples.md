@@ -22,7 +22,7 @@ The build copies `examples/PrismRelay` to
 `build/<preset>/examples/PrismRelay`. That output is generated and refreshed by
 builds. Copy the project to a separate directory before persistent authoring
 changes; editing the source template updates subsequent builds. Open the copied
-project with DotEditor, use Play, edit scripts through the Resources code page,
+project with DotEditor, use Play, open scripts externally through Resources,
 and use [native export](Export.md) to deliver a standalone game.
 
 The repository source projects open directly and import `dot:engine`. Tests compile

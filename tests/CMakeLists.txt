@@ -23,6 +23,8 @@ add_executable(DotUnitTests
     CoreTests.cpp
     TextTests.cpp
     PathTests.cpp
+    ExternalFileTests.cpp
+    ScriptDiagnosticTests.cpp
     EventTests.cpp
     InputTests.cpp
     MathTests.cpp
@@ -64,6 +66,7 @@ add_executable(DotTests
     ImageTests.cpp
     MaterialTests.cpp
     ModuleTests.cpp
+    ExternalFileValidationTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
     PhysicsBatchTests.cpp

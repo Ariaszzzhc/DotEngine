@@ -18,7 +18,7 @@ Open this project folder with DotEditor; its scripts import the engine-owned `do
 The build also supplies `build/<preset>/examples/PrismRelay` without copying engine SDK sources.
 Copy that generated project to a separate
 folder before making persistent edits; it is refreshed from this source template.
-Use Play and the Resources code page to edit scripts while running. Save/reload
+Use Play and open scripts externally through Resources. External saves/reload
 migrates the round checkpoint rather than recreating the native scene.
 Native export includes the player and libraries and requires no editor/compiler
 at playback. See the repository export guide for the CLI and constraints.

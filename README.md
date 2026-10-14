@@ -78,7 +78,9 @@ audio and entity-attached TypeScript scripts. Interfaces and implementation unit
 are separate. The editor includes validated project creation, scene/resource/script
 editing, Play with hot reload, automation and standalone native export. Prism Relay
 is a playable example; Feature Lab exercises every component and runtime SDK member.
-The portable editor archive supports tested local deployment. Release signing,
+Scripts open in the system-associated external editor; saved edits feed Play hot
+reload, and bounded agent file operations remain available. The built-in source
+editor has been removed. The portable editor archive supports tested local deployment. Release signing,
 notarization and installer publication have not been validated.
 
 SDL3 windowing, input, and the application loop are available. Run

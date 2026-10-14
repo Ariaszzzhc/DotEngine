@@ -28,6 +28,8 @@ import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
 import Dot.Editor.Resources;
+import Dot.Editor.ScriptDiagnostics;
+import Dot.Platform.ExternalFiles;
 import Dot.Script.Compiler;
 import Dot.Script.LiveScripts;
 import Dot.Platform.Input;
@@ -253,10 +255,10 @@ namespace Dot::Editor {
     std::optional<TextDocument> m_text;
     std::uint64_t m_buffer{};
     Json m_catalog = Json::array();
-    std::string m_codeDraft;
+    std::string m_selectedResource;
+    std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
     std::string m_importSource;
-    bool m_showCode{};
     bool m_assetRefresh{};
     std::string m_checkMessage;
     std::string m_exportParent;
@@ -425,7 +427,7 @@ namespace Dot::Editor {
       }
 
       const auto file = m_text->snapshot().value();
-      return file.dirty || m_codeDraft != file.text;
+      return file.dirty;
     }
 
     auto textStatus() const -> Json {
@@ -471,16 +473,6 @@ namespace Dot::Editor {
 
       auto file = m_text->snapshot().value();
 
-      if (m_codeDraft != file.text) {
-        auto replaced = m_text->replace(m_codeDraft, file.revision);
-
-        if (!replaced) {
-          return replaced;
-        }
-
-        file = m_text->snapshot().value();
-      }
-
       auto saved = m_text->save(file.revision);
 
       if (!saved) {
@@ -489,6 +481,7 @@ namespace Dot::Editor {
 
       m_assetRefresh = true;
       m_checkMessage.clear();
+      m_scriptDiagnostics.clear();
       auto refreshed = catalog();
       return refreshed
                  ? Core::Result<void>{}
@@ -678,7 +671,59 @@ namespace Dot::Editor {
           return std::unexpected(refreshed.error());
         }
 
-        return Json{{"ok", true}, {"entries", m_catalog}, {"file", textStatus()}}.dump();
+        Json diagnostics = Json::array();
+
+        for (const auto& item : m_scriptDiagnostics) {
+          diagnostics.push_back({{"path", item.path},
+                                 {"line", item.line},
+                                 {"column", item.column},
+                                 {"message", item.message}});
+        }
+
+        return Json{{"ok", true},
+                    {"entries", m_catalog},
+                    {"file", textStatus()},
+                    {"selected", m_selectedResource},
+                    {"scripts", {{"message", m_checkMessage}, {"diagnostics", diagnostics}}}}
+            .dump();
+      }
+
+      if (command == "open-external") {
+        Codec::requireFields(parsed, {"command", "path"});
+
+        if (pendingText()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Save or discard the agent resource draft before external opening");
+        }
+
+        const auto name = parsed.at("path").get<std::string>();
+        auto target = m_resources->externalTextPath(name);
+
+        if (!target) {
+          return std::unexpected(target.error());
+        }
+
+        auto uri = Platform::fileUri(*target);
+
+        if (!uri) {
+          return std::unexpected(uri.error());
+        }
+
+        auto launched = m_config.openExternal ? m_config.openExternal(*target)
+                                              : Platform::openExternalFile(*target);
+
+        if (!launched) {
+          return std::unexpected(launched.error());
+        }
+
+        m_selectedResource = name;
+        captureInput(false);
+        return Json{{"ok", true},
+                    {"kind", "external-file"},
+                    {"path", name},
+                    {"uri", *uri},
+                    {"accepted", true}}
+            .dump();
       }
 
       if (command == "create-directory" || command == "create-text" || command == "import-resource"
@@ -758,13 +803,10 @@ namespace Dot::Editor {
           return std::unexpected(opened.error());
         }
 
-        auto draft = opened->snapshot().value().text;
         m_text.emplace(std::move(*opened));
-        m_codeDraft.swap(draft);
         m_checkMessage.clear();
+        m_scriptDiagnostics.clear();
         ++m_buffer;
-        m_showCode = true;
-        captureInput(false);
         return Json{{"ok", true}, {"file", textStatus()}}.dump();
       }
 
@@ -791,8 +833,8 @@ namespace Dot::Editor {
             return std::unexpected(replaced.error());
           }
 
-          m_codeDraft.swap(text);
           m_checkMessage.clear();
+          m_scriptDiagnostics.clear();
         } else if (command == "save-text") {
           auto saved = saveText();
 
@@ -807,8 +849,6 @@ namespace Dot::Editor {
           }
 
           m_text.reset();
-          m_codeDraft.clear();
-          m_showCode = false;
         }
 
         return Json{{"ok", true}, {"file", textStatus()}}.dump();
@@ -823,9 +863,12 @@ namespace Dot::Editor {
               "Save or discard the current resource draft before checking on-disk scripts");
         }
 
+        m_checkMessage.clear();
+        m_scriptDiagnostics.clear();
         auto tool = compiler();
 
         if (!tool) {
+          m_checkMessage = tool.error().message;
           return std::unexpected(tool.error());
         }
 
@@ -834,10 +877,21 @@ namespace Dot::Editor {
 
         if (!compiled) {
           m_checkMessage = compiled.error().message;
+          auto diagnostics = scriptDiagnostics(m_checkMessage,
+                                               m_project->description().value().scriptsDirectory);
+          m_scriptDiagnostics.clear();
+
+          if (diagnostics) {
+            m_scriptDiagnostics = std::move(*diagnostics);
+          } else {
+            m_checkMessage += "\nDiagnostic mapping: " + diagnostics.error().message;
+          }
+
           return std::unexpected(compiled.error());
         }
 
         m_checkMessage = "TypeScript checked successfully";
+        m_scriptDiagnostics.clear();
         return Json{{"ok", true}, {"sourceFiles", compiled->stats().value().sourceFiles}}.dump();
       }
 
@@ -912,10 +966,6 @@ namespace Dot::Editor {
         }
 
         captureInput(capture);
-
-        if (capture) {
-          m_showCode = false;
-        }
 
         return execute("{\"command\":\"inspect\"}");
       }
@@ -1308,6 +1358,14 @@ namespace Dot::Editor {
             fields(m_edit[component]);
           }
 
+          if (std::string_view(component) == "script") {
+            if (ImGui::SmallButton("Open script externally")) {
+              const auto source = m_project->description().value().scriptsDirectory + "/"
+                                  + m_edit[component]["source"].get<std::string>();
+              fileAction({{"command", "open-external"}, {"path", source}});
+            }
+          }
+
           if (ImGui::SmallButton("Remove component")) {
             m_edit[component] = nullptr;
 
@@ -1432,11 +1490,19 @@ namespace Dot::Editor {
         fileAction({{"command", "resources"}});
       }
 
+      if (!m_selectedResource.empty()) {
+        ImGui::TextWrapped("%s", m_selectedResource.c_str());
+
+        if (ImGui::Button("Open externally")) {
+          fileAction({{"command", "open-external"}, {"path", m_selectedResource}});
+        }
+      }
+
       ImGui::InputText("Path", &m_newPath);
 
       if (ImGui::Button("New script")) {
         if (fileAction({{"command", "create-script"}, {"path", m_newPath}})) {
-          fileAction({{"command", "open-text"}, {"path", m_newPath}, {"discard", false}});
+          fileAction({{"command", "open-external"}, {"path", m_newPath}});
         }
       }
 
@@ -1453,6 +1519,50 @@ namespace Dot::Editor {
             {{"command", "import-resource"}, {"path", m_newPath}, {"source", m_importSource}});
       }
 
+      if (ImGui::Button("Check scripts")) {
+        fileAction({{"command", "check-scripts"}});
+      }
+
+      if (m_text) {
+        const auto draft = m_text->snapshot().value();
+        ImGui::TextWrapped("Agent buffer: %s%s", draft.path.c_str(),
+                           draft.dirty ? " (unsaved)" : "");
+        ImGui::BeginDisabled(draft.readOnly);
+
+        if (ImGui::Button("Save agent draft")) {
+          fileAction({{"command", "save-text"}});
+        }
+
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+
+        if (ImGui::Button("Close agent buffer")) {
+          fileAction({{"command", "close-text"}, {"discard", false}});
+        }
+
+        if (draft.dirty && ImGui::Button("Discard agent draft")) {
+          fileAction({{"command", "close-text"}, {"discard", true}});
+        }
+      }
+
+      if (!m_checkMessage.empty()) {
+        ImGui::TextWrapped("%s", m_checkMessage.c_str());
+      }
+
+      for (std::size_t index = 0; index < m_scriptDiagnostics.size(); ++index) {
+        const auto item = m_scriptDiagnostics[index];
+        ImGui::PushID(static_cast<int>(index));
+        const auto label
+            = item.path + ':' + std::to_string(item.line) + ':' + std::to_string(item.column);
+
+        if (ImGui::Button(label.c_str())) {
+          fileAction({{"command", "open-external"}, {"path", item.path}});
+        }
+
+        ImGui::PopID();
+      }
+
+      ImGui::TextWrapped("Open text resources in the system default application.");
       ImGui::Separator();
       const auto entries = m_catalog;
 
@@ -1460,59 +1570,18 @@ namespace Dot::Editor {
         const auto name = entry["path"].get<std::string>();
 
         if (entry["type"] == "text") {
-          if (ImGui::Selectable(name.c_str(), m_text && m_text->snapshot().value().path == name)) {
-            fileAction({{"command", "open-text"}, {"path", name}, {"discard", false}});
+          if (ImGui::Selectable(name.c_str(), m_selectedResource == name,
+                                ImGuiSelectableFlags_AllowDoubleClick)) {
+            m_selectedResource = name;
+
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+              fileAction({{"command", "open-external"}, {"path", name}});
+            }
           }
         } else {
           ImGui::TextWrapped("%s%s", entry["type"] == "directory" ? "[dir] " : "[asset] ",
                              name.c_str());
         }
-      }
-    }
-
-    auto codePanel() -> void {
-      if (!m_text) {
-        ImGui::TextWrapped("Open a text file from Resources.");
-        return;
-      }
-
-      const auto file = m_text->snapshot().value();
-      ImGui::TextUnformatted(file.path.c_str());
-      ImGui::BeginDisabled(file.readOnly);
-
-      if ((ImGui::Button("Save file")
-           || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
-          && !file.readOnly) {
-        fileAction({{"command", "save-text"}});
-      }
-
-      ImGui::EndDisabled();
-      ImGui::SameLine();
-
-      if (ImGui::Button("Check scripts")) {
-        fileAction({{"command", "check-scripts"}});
-      }
-
-      ImGui::SameLine();
-
-      if (ImGui::Button("Discard buffer")) {
-        fileAction({{"command", "close-text"}, {"discard", true}});
-        return;
-      }
-
-      if (!m_checkMessage.empty()) {
-        ImGui::TextWrapped("%s", m_checkMessage.c_str());
-      }
-
-      ImGui::TextUnformatted(file.readOnly   ? "SDK (read-only)"
-                             : pendingText() ? "Unsaved file"
-                                             : "File saved");
-      auto flags
-          = ImGuiInputTextFlags_AllowTabInput | (file.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
-
-      if (ImGui::InputTextMultiline("##source", &m_codeDraft, ImGui::GetContentRegionAvail(),
-                                    flags)) {
-        fileAction({{"command", "replace-text"}, {"text", m_codeDraft}});
       }
     }
 
@@ -1525,10 +1594,9 @@ namespace Dot::Editor {
                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
                        | ImGuiWindowFlags_NoSavedSettings);
 
-      ImGui::BeginDisabled(playing() || m_showCode);
+      ImGui::BeginDisabled(playing());
 
-      if ((ImGui::Button("Save") || (!m_showCode && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S)))
-          && !playing() && !m_showCode) {
+      if ((ImGui::Button("Save") || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S))) && !playing()) {
         if (applyInspector()) {
           action({{"command", "save"}});
         }
@@ -1538,7 +1606,7 @@ namespace Dot::Editor {
       ImGui::BeginDisabled(!stats.canUndo);
 
       if ((ImGui::Button("Undo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z)) && stats.canUndo
-          && !playing() && !m_showCode) {
+          && !playing()) {
         action({{"command", "undo"}});
       }
 
@@ -1547,14 +1615,14 @@ namespace Dot::Editor {
       ImGui::BeginDisabled(!stats.canRedo);
 
       if ((ImGui::Button("Redo") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))
-          && stats.canRedo && !playing() && !m_showCode) {
+          && stats.canRedo && !playing()) {
         action({{"command", "redo"}});
       }
 
       ImGui::EndDisabled();
       ImGui::SameLine();
 
-      if (ImGui::Button("New entity") && !playing() && !m_showCode) {
+      if (ImGui::Button("New entity") && !playing()) {
         edit(Json::array({{{"op", "create"}, {"name", "Entity"}}}));
       }
 
@@ -1563,7 +1631,7 @@ namespace Dot::Editor {
 
       if ((ImGui::Button("Delete")
            || (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete)))
-          && m_document->stats()->selected && !playing() && !m_showCode) {
+          && m_document->stats()->selected && !playing()) {
         edit(Json::array({{{"op", "remove"},
                            {"entity", std::to_string(m_document->stats()->selected->value)}}}));
       }
@@ -1634,43 +1702,34 @@ namespace Dot::Editor {
       ImGui::BeginChild("Viewport", {std::max(100.F, available.x - 220 - 340 - 24), available.y},
                         ImGuiChildFlags_Borders);
 
-      if (ImGui::Button(m_showCode ? "Show preview" : "Show code")) {
-        m_showCode = !m_showCode;
-        captureInput(false);
+      ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
+
+      if (m_playError) {
+        ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
       }
 
-      if (m_showCode) {
-        codePanel();
+      if (!m_playDiagnostics.empty()) {
+        ImGui::TextWrapped(
+            "Play diagnostics: %s",
+            m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
+      }
+
+      m_viewOrigin = ImGui::GetCursorScreenPos();
+      const auto content = ImGui::GetContentRegionAvail();
+      m_viewWidth = std::max(1.F, content.x);
+      m_viewHeight = std::max(1.F, content.y);
+
+      if (m_previewReady && m_target) {
+        auto image = m_renderer->guiImage(*m_target, m_viewWidth, m_viewHeight);
+
+        if (!image) {
+          ImGui::EndChild();
+          ImGui::End();
+          return image;
+        }
       } else {
-        ImGui::TextUnformatted(playing() ? "Running game preview" : "Game camera preview");
-
-        if (m_playError) {
-          ImGui::TextWrapped("Play stopped advancing: %s", m_playError->message.c_str());
-        }
-
-        if (!m_playDiagnostics.empty()) {
-          ImGui::TextWrapped(
-              "Play diagnostics: %s",
-              m_playDiagnostics.back()["error"]["message"].get_ref<const std::string&>().c_str());
-        }
-
-        m_viewOrigin = ImGui::GetCursorScreenPos();
-        const auto content = ImGui::GetContentRegionAvail();
-        m_viewWidth = std::max(1.F, content.x);
-        m_viewHeight = std::max(1.F, content.y);
-
-        if (m_previewReady && m_target) {
-          auto image = m_renderer->guiImage(*m_target, m_viewWidth, m_viewHeight);
-
-          if (!image) {
-            ImGui::EndChild();
-            ImGui::End();
-            return image;
-          }
-        } else {
-          ImGui::TextWrapped(
-              "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
-        }
+        ImGui::TextWrapped(
+            "%s", m_previewError.empty() ? "Preparing scene preview" : m_previewError.c_str());
       }
 
       ImGui::EndChild();

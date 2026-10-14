@@ -157,7 +157,7 @@ resource file drafts, opening Save and close / Discard / Cancel confirmation.
 The viewport renders the actual game primary camera into a reusable GPU target;
 missing camera/assets display errors and can be recovered by editing/undo. Native
 renderer faults stop the loop. The toolbar now includes Play/Stop (F5); project
-resource/code authoring is provided through Resources and the code page. Export
+resource authoring and external source opening are provided through Resources. Export
 publishes standalone native games or data packages through the shared command below.
 
 `send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
@@ -283,28 +283,52 @@ lifetime/thread/reentry, partial creation cleanup, factory failure/recovery,
 close/cancel/save while playing and save conflicts. Validation is on arm64 macOS.
 
 
-## Resources and script editing
+## Resources and external source editing
 
-The Resources tab lists the actual assets and configured script directory in
-sorted project-relative order. Refresh rereads the bounded catalog; external
-changes do not automatically update the displayed catalog. Select a supported text
-file to open the code page, or use New script / Folder / Import to path. Import
-source is an explicit filesystem path; source bytes remain unchanged. New script
-creates an export named Behavior with a `dot:engine` import, including in nested
-folders. Attach it using the existing Script component inspector.
+The Resources tab lists assets and the configured script directory in sorted
+project-relative order. Select a text resource, then use Open externally or double
+click it. New script creates Behavior with a dot:engine import and opens the new
+file externally. The Script inspector also opens its authored source. All paths
+use the same resource metadata, exact spelling, symlink and readonly checks as
+agent file operations. Protected scripts/dot resources cannot be opened for
+external editing. An invalid source encoding can still be opened to repair it.
 
-The code page edits UTF-8 text, accepts tabs, supports Save file and native
-Cmd/Ctrl+S, and runs Check scripts against saved project files. Pending drafts must
-be saved/discarded before checking or starting Play. Saving source during Play
-feeds the existing TypeScript hot reload; save success does not claim the source
-compiles. Invalid compiled candidates keep old scripts running with diagnostics.
-OBJ saves/imports invalidate the scene mesh cache before the next render (the
-current implementation conservatively clears the cache after any resource write).
-The protected `scripts/dot` resource path remains read-only, but project creation
-no longer installs SDK files there. This stage provides one active text buffer;
-rename/delete, multiple buffers, syntax highlighting and completion are not claimed.
+The built-in code page and source-edit widget are removed. The 3D viewport remains
+visible. Files open through the system's default file application using an encoded
+file URI and [SDL's native launch interface](https://wiki.libsdl.org/SDL3/SDL_OpenURL).
+Errors remain visible. Acceptance means the launch request succeeded; the engine
+owns no external application and does not promise it loaded the document. Configure
+an OS file association for .ts/.mts to choose a source editor. No universal default
+application API promises line/column navigation, so diagnostic buttons open the
+file while displaying its exact source position. Native hosts may supply an owned
+WorkspaceConfig.openExternal launch callback; empty uses the system service.
+
+Check scripts compiles saved files with the real pinned compiler and static linker.
+Bounded positional compiler errors map from captured src paths back to actual
+project sources, with filename/line/column buttons; nonpositional errors remain raw
+context. The resources response exposes scripts.message and scripts.diagnostics.
+Compilation errors are never replaced by diagnostic-parser success. External .ts/
+.mts saves feed existing Play hot reload; invalid candidates retain old execution.
+
+Agent open-text/replace-text/save-text/close-text operations retain bounded drafts,
+identities/revisions, exact disk conflict checks and protected-path enforcement.
+Resource controls show the agent buffer status and allow explicit save/close/discard,
+without a source editor. Dirty agent drafts must be saved/discarded before Check,
+Play or external opening. Scene shortcuts now always address the scene; agent file
+saves are explicit. OBJ imports/agent saves invalidate the mesh cache; automatic
+external asset watching is not implemented.
 
 The same operations are available through live workspace requests:
+
+```json
+{"command":"open-external","path":"scripts/mover.ts"}
+```
+
+Success returns kind=external-file, accepted=true, the project-relative path and
+encoded file URI. This action preserves the agent buffer and scene, releases game
+input capture, and never saves source. Unknown fields, unsafe/missing/protected
+resources, pending agent drafts, unavailable handlers and launch exceptions fail.
+
 
 ```json
 {"command":"resources"}
@@ -394,7 +418,7 @@ revision/no-op/conflict behavior, binary source preservation/import boundaries,
 invalid paths/text/metadata, symlinks/depth/capacity, moves/thread ownership and
 shared descriptor lifetime. Workspace tests additionally verify buffer identity,
 nested-template compilation, dirty close/recovery and actual cached-mesh GPU
-changes. Native acceptance opens the code page, uses actual Cmd/Ctrl+S to persist
+changes. Native acceptance uses the agent file-save command to persist
 source while Play runs, then verifies faster real rigid-body motion from hot-reloaded
 TypeScript while authoring and native audio stay intact. Local validation remains
 arm64 macOS; Windows/Linux code is not locally validated.
@@ -434,5 +458,5 @@ shared preview cache. Preview/Play/export load actual referenced data and expose
 failures. Feature Lab is an editable project demonstrating persisted PBR and normal
 mapping. This stage provides basic inspectors and resource/agent authoring; dedicated
 material panels, visual light tools and the requested mature editor layout remain
-in development. The embedded source buffer is still present and its removal remains
-part of the roadmap; it is not required for creating material files through agents.
+in development. External source editing and the engine script namespace are
+implemented; the remaining editor layout/tooling stays part of the roadmap.

@@ -15,6 +15,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
+| External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
 | Playable example | [Prism Relay](Examples.md): collection, collisions, hazards, audio, score, deadline, pause, victory/defeat, restart and reload; real native input/GPU/audio acceptance |
@@ -27,12 +28,13 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 833/833 CTest cases
-(775 doctest cases and 58 executable checks), taking 118.20 and 29.90 seconds.
-The [test layers](Testing.md) separate 184 pure CPU unit cases from files/compiler/
+Latest arm64 macOS Debug and Release/NDEBUG suites each pass 841/841 CTest cases
+(783 doctest cases and 58 executable checks), taking 134.51 and 35.76 seconds.
+The [test layers](Testing.md) separate 187 pure CPU unit cases from files/compiler/
 platform integration, 63 offscreen GPU cases and native/acceptance workflows.
-Unit-only Debug/Release runs pass with deliberately invalid SDL device drivers.
-All 243 engine/test C/C++ files pass formatting checks. The current 257-entry native zip
+The earlier 184-case unit selection passed with deliberately invalid SDL drivers;
+the current 187-case selection adds pure URI/diagnostic checks.
+All 250 engine/test C/C++ files pass formatting checks. The current 257-entry native zip
 passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
 and relative/system loader-reference inspection. Its extracted macOS application
 starts through LaunchServices, also after moving the application alone. Complete
@@ -55,7 +57,7 @@ persisted and uploaded; the shader samples base-color textures and multiplies
 linear material/vertex/object colors and emission into HDR before exposure/tone
 mapping/display encoding. Renderer API material draws additionally support direct
 physical lighting with persisted material/light authoring and bounded shared asset caches. The editor uses
-component inspectors and one active source buffer. These are the delivered feature boundaries, not promises of material/lighting
+component inspectors, external source opening and bounded agent file drafts. These are the delivered feature boundaries, not promises of material/lighting
 systems or a general IDE. Runtime-member coverage is not exhaustive driver/device
 or argument-permutation coverage. macOS copies are ad-hoc signed and locally tested;
 release identity signing/notarization and installer publication have not been performed.

@@ -188,3 +188,31 @@ TEST_CASE("resources.moves_store_destruction_workers_and_no_implicit_save") {
   REQUIRE(text.save(2));
   CHECK(fixture.files().readText("scripts/mover.ts").value() == "export const pending = 1;");
 }
+
+TEST_CASE("resources.external_text_path_reuses_metadata_exact_paths_and_readonly_guards") {
+  Fixture fixture;
+  auto resources = ResourceStore::open(fixture.project).value();
+  CHECK(resources.externalTextPath("scripts/mover.ts").value()
+        == fixture.files().root() / "scripts/mover.ts");
+  REQUIRE(fixture.files().writeTextAtomic("scripts/repair.ts", std::string("\xc0\x80", 2)));
+  CHECK_FALSE(resources.openText("scripts/repair.ts"));
+  CHECK(resources.externalTextPath("scripts/repair.ts"));
+  REQUIRE(fixture.files().createDirectories("scripts/dot"));
+  REQUIRE(fixture.files().writeTextAtomic("scripts/dot/protected.ts", "protected"));
+  CHECK_FALSE(resources.externalTextPath("scripts/dot/protected.ts"));
+
+  for (const auto* path :
+       {"Scripts/mover.ts", "scripts/missing.ts", "../escape.ts", "project.dotproject", "assets"}) {
+    CHECK_FALSE(resources.externalTextPath(path));
+  }
+
+  std::filesystem::create_symlink("mover.ts", fixture.files().root() / "scripts/link.ts");
+  CHECK_FALSE(resources.externalTextPath("scripts/link.ts"));
+  auto moved = std::move(resources);
+  CHECK_FALSE(resources.externalTextPath("scripts/mover.ts"));
+  CHECK(moved.externalTextPath("scripts/mover.ts"));
+  auto description = fixture.project.description().value();
+  description.name = "Changed";
+  REQUIRE(fixture.project.save(description));
+  CHECK_FALSE(moved.externalTextPath("scripts/mover.ts"));
+}

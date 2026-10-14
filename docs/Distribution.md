@@ -12,7 +12,7 @@ Run DotEditor.exe on Windows or DotEditor on Linux. The native
 project home creates Camera and cube, Prism Relay or Feature Lab, or opens an
 existing project folder. Choose an existing parent directory and a new folder;
 existing destinations are preserved. Play clones the authored scene. The Resources
-page edits saved TypeScript source; hot reload retains compatible state. Export
+page opens TypeScript in the system default application; hot reload retains compatible state. Export
 includes the native game player and runtime libraries.
 
 ```text

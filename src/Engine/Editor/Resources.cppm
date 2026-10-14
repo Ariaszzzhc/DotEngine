@@ -68,6 +68,13 @@ export namespace Dot::Editor {
     [[nodiscard]] auto importFile(const std::filesystem::path& source, std::string_view destination)
         -> Core::Result<void>;
     [[nodiscard]] auto openText(std::string_view path) const -> Core::Result<TextDocument>;
+    /** Resolve an existing editable text resource for external opening without
+     * loading its content. Reuses metadata/path/readonly checks; malformed source
+     * bytes may be repaired externally. Caller serializes filesystem changes.
+     * 为外部打开解析现存可编辑文本资源，不读取内容；复用描述/路径/只读检查，允许在
+     * 外部修复无效源码字节；调用者须串行文件修改。 */
+    [[nodiscard]] auto externalTextPath(std::string_view path) const
+        -> Core::Result<std::filesystem::path>;
 
   private:
     struct Impl;

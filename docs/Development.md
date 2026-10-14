@@ -2804,3 +2804,73 @@ Removed the owned temporary migration script; retained build caches, latest pack
 and the private untracked document. Windows/Linux remain implementation-only.
 The larger rendering/editor/game roadmap remains unfinished; this stage closes
 script namespace and import syntax requirements only.
+
+
+## 2026-10-14 — External source editing
+
+Removed the embedded source-edit widget, code/preview switch and duplicated GUI
+source draft. The viewport stays visible. Resources select text files and open
+externally by button/double click; new scripts and Script inspector source buttons
+use the same open-external workspace operation. Agent TextDocument drafts, file
+identities/revisions, exact disk baseline/conflict checks, save/close/discard,
+compiler checks and Play hot reload remain. Scene shortcuts address the scene;
+agent saves are explicit, with status/save/discard controls but no source editor.
+
+Dot.Platform.ExternalFiles encodes bounded absolute UTF-8 file URIs, including
+reserved/non-ASCII bytes and Windows drive/UNC handling, without shell text.
+Existing regular files launch through SDL's system-associated application service
+on the main thread. Success is launch acceptance, not proof of loading; application
+ownership is external. Workspace hosts can supply an owned launch service; tests
+use this explicit seam for failure/exception/reentry behavior, not device success.
+ResourceStore.externalTextPath reuses actual metadata, exact path, symlink and
+readonly guards without loading file bytes, allowing malformed source repair.
+Protected resources cannot bypass their write policy through an external editor.
+
+Bounded pure diagnostic parsing maps src/file.ts(line,column) back to authored
+source paths with positions and open buttons, leaving other errors as raw context.
+It rejects unsafe/overflowing positions/paths and excess input/count without partial
+publication. Actual Go compiler output initially showed its first diagnostic sharing
+the exit-status line; separating context and diagnostics fixed the real integration
+case. Parsing does not replace compilation failure with success. GUI/agent queries
+expose check text and source diagnostics; default app opening does not claim universal
+line/column navigation. External language-server configuration and automatic external
+asset watching are not implemented.
+
+Added eight cases: URI encoding/input bounds, pure diagnostic mapping/capacity,
+worker/missing/special-file launch rejection, resource/readonly/move/metadata guards,
+workspace launch/reentry with preserved scene and agent state, expected/throwing
+launch failures and retained drafts, and actual compiler diagnostics/repair/clearing.
+Native workspace acceptance retains its source-save and lifecycle checks using the
+agent save operation and adds an actual external filesystem edit before hot reload.
+Initial compilation caught a void-result helper use and doctest macro precedence;
+fixed explicit expected-result checks and parenthesized diagnostics. Reviewed the
+Script inspector against actual scene JSON and corrected its source field lookup.
+Focused real compiler/native/URI/resource checks pass 12/12 in 7.89 seconds.
+
+A live packaged Debug workspace accepted open-external for a test-owned .txt path
+containing Chinese, spaces, # and %. Native TextEdit showed the exact decoded file
+and content. TypeScript mover.ts opened through the real OS association in Zed,
+with the exact project path observed; closed only that added tab, retaining the
+previous tab. The test workspace closed through its public control channel.
+Visual inspection showed the preview and absent code-page switch. Computer-use
+pointer attempts did not switch the self-drawn tab; mouse interaction is not claimed
+as manually verified. Slow UI observations did not cause duplicate launches: the
+specific live editor handle was polled and retained until explicit closure.
+
+Final arm64 macOS Debug and Release/NDEBUG full suites pass 841/841, in 134.51 and
+35.76 seconds (783 doctest cases, 58 executable checks). Selections are 187 pure CPU
+unit, 471 device-free integration, 63 offscreen GPU, 43 native and 90 acceptance;
+labels overlap. No sanitizer was used. All 250 engine/test C/C++ files pass
+clang-format and diff/private-reference checks. Reviewed URI/path/thread handling,
+callback captures/reentry/exception propagation, nonexecuting diagnostics, readonly
+checks, agent draft ownership/conflicts and source/editor/Play lifecycle behavior.
+
+The latest native ZIP is refreshed: 257 entries, 43,413,654 bytes. CRC, executable
+modes, manifests, embedded namespace imports and private/test/Finder/SDK-copy
+exclusions pass. The app passes deep strict signatures; all 16 Mach-O entries pass
+strict signatures and relative/system loader checks. Cleaned only the owned manual
+acceptance project after closing its workspace and added source tab; retained build
+caches/latest ZIP and the private untracked document. Windows/Linux implementation
+uses SDL's platform launch support; neither was validated locally. Remaining PBR
+lighting/shadows/IBL/SSAO, mature editor tooling and realistic game/scalability work
+are still required by the active goal.
