@@ -832,3 +832,9 @@ preview readiness/pending/error matched to the current form. Dirty material form
 selection changes. `captureAssetPreview` returns owned pixels only for completed,
 current cached previews; stale/pending/failed requests return errors. Scene/model
 hierarchy, HDR panorama, audio and script thumbnails are not implemented.
+
+Hierarchy mouse selection is committed after the tree traversal releases its scene
+snapshot references. `inspect.workspace.hierarchyRows` reports the actual rendered
+row rectangles and expansion state by entity ID for native input automation.
+Selecting a parent, child or the current entity does not mutate scene data or add
+undo history; a changed selection advances the document revision.

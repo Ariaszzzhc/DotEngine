@@ -4156,3 +4156,30 @@ Only arm64 macOS was built/run; Windows/Linux remain implemented but not locally
 validated. Async imports/previews, scene/model/audio thumbnails, material graphs,
 production authoring/animation/streaming and realistic polished Prism Relay remain
 unfinished. The full engine/editor/game objective remains active.
+
+
+### 2026-10-15 — Hierarchy mouse selection lifetime fix
+
+A real user click closed the release editor with JSON type_error.305. Hierarchy
+traversal borrowed entities/parent IDs from the workspace snapshot, while an inline
+selection action refreshed and replaced that snapshot before recursion resumed.
+Selection is now recorded by owned entity ID and dispatched after the entire tree
+traversal returns. No borrowed scene reference survives the refresh.
+
+Added actual rendered row rectangles/expansion state to workspace inspection for
+native automation, and an SDL mouse-down/up regression for parent, child, changed
+and repeated selection. It verifies scene data, dirty state and undo entry count
+are preserved, changed selection advances revision, and viewport capture survives.
+Temporarily restoring the old inline action makes this regression fail with the
+same JSON exception family (number rather than null from invalid storage); the
+fixed path passes 1/1 in Debug (1.03s). No assertion or error handling was weakened.
+
+The combined working tree, including the separately delivered preview worker,
+passes full Debug 967/967 (219.82s) and Release/NDEBUG 967/967 (48.18s); both include
+the native mouse regression. Subsequent formatting/comment-only rebuilds completed
+before the Release suite. Reviewed traversal lifetime, deferred ID ownership,
+selection revision/history semantics and real native input coverage. All 310 C/C++
+files pass clang-format; 16 WGSL files pass established spacing/line checks.
+Only arm64 macOS was validated. CUA coordinate-click attempts on the release window
+did not change selection, so they are not counted as mouse-selection proof; the
+SDL mouse-down/up test supplies that evidence.

@@ -330,6 +330,7 @@ namespace Dot::Editor {
     std::string m_assetFilter;
     bool m_viewVisible{true};
     Json m_visibleHierarchy = Json::array();
+    Json m_hierarchyRows = Json::object();
     Json m_visibleResources = Json::array();
     bool m_assetRefresh{};
     std::string m_checkMessage;
@@ -2048,6 +2049,7 @@ namespace Dot::Editor {
             {"tool", toolStatus()},
             {"filters", {{"hierarchy", m_hierarchyFilter}, {"resources", m_assetFilter}}},
             {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
+            {"hierarchyRows", m_hierarchyRows},
             {"layout",
              {{"pending", m_resetLayout || m_dockRequest.has_value()},
               {"error", m_layoutError},
@@ -2486,7 +2488,10 @@ namespace Dot::Editor {
       });
     }
 
-    auto tree(const Json& entities, const Json& parent, int depth = 0) -> void {
+    /** Defer selection until traversal releases all snapshot references.
+     * 遍历释放全部快照引用后再执行选择，避免刷新快照使递归引用失效。 */
+    auto tree(const Json& entities, const Json& parent, std::optional<std::string>& selection,
+              int depth = 0) -> void {
       if (depth > 256) {
         return;
       }
@@ -2516,13 +2521,18 @@ namespace Dot::Editor {
 
         ImGui::PushID(id.c_str());
         const bool open = ImGui::TreeNodeEx("entity", flags, "%s", name.c_str());
+        const auto origin = ImGui::GetItemRectMin();
+        const auto end = ImGui::GetItemRectMax();
+        m_hierarchyRows[id] = {{"origin", {origin.x, origin.y}},
+                               {"size", {end.x - origin.x, end.y - origin.y}},
+                               {"open", open}};
 
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-          action({{"command", "select"}, {"entity", id}});
+          selection = id;
         }
 
         if (open) {
-          tree(entities, entity["id"], depth + 1);
+          tree(entities, entity["id"], selection, depth + 1);
           ImGui::TreePop();
         }
 
@@ -4707,6 +4717,7 @@ namespace Dot::Editor {
       m_panelGeometry = Json::object();
 
       m_visibleHierarchy = Json::array();
+      m_hierarchyRows = Json::object();
       m_visibleResources = Json::array();
 
       if (beginPanel("Hierarchy", "hierarchy", "scene")) {
@@ -4714,8 +4725,13 @@ namespace Dot::Editor {
         searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
         ImGui::Separator();
         ImGui::BeginDisabled(playing());
-        tree(m_snapshot["scene"]["entities"], nullptr);
+        std::optional<std::string> selection;
+        tree(m_snapshot["scene"]["entities"], nullptr, selection);
         ImGui::EndDisabled();
+
+        if (selection) {
+          action({{"command", "select"}, {"entity", *selection}});
+        }
       }
 
       ImGui::End();

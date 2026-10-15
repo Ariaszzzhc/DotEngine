@@ -1175,6 +1175,74 @@ TEST_CASE("workspace.viewport_picks_guard_drafts_stale_revisions_and_render_epoc
   REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
 }
 
+TEST_CASE("workspace.native_hierarchy_parent_child_and_repeated_selection_keep_snapshot_alive") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  command(workspace,
+          {{"command", "edit"},
+           {"operations",
+            Json::array({{{"op", "parent"}, {"entity", "2"}, {"parent", "1"}},
+                         {{"op", "name"}, {"entity", "1"}, {"name", "Hierarchy parent"}},
+                         {{"op", "name"}, {"entity", "2"}, {"name", "Hierarchy child"}}})}});
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "filter-panel"}, {"panel", "hierarchy"}, {"query", "Hierarchy"}}.dump()));
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  const auto original = snapshot(workspace);
+  int count{};
+  auto windows = SDL_GetWindows(&count);
+  REQUIRE(windows);
+  REQUIRE(count == 1);
+  const auto window = SDL_GetWindowID(windows[0]);
+  SDL_free(windows);
+  const auto click = [&](const char* id) {
+    const auto before = snapshot(workspace);
+    const auto inspected = Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value());
+    const auto& rows = inspected["workspace"]["hierarchyRows"];
+    REQUIRE(rows.contains(id));
+    const auto& row = rows[id];
+    const float x = row["origin"][0].get<float>() + row["size"][0].get<float>() * 0.65F;
+    const float y = row["origin"][1].get<float>() + row["size"][1].get<float>() * 0.5F;
+    SDL_Event event{};
+    event.motion.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.windowID = window;
+    event.motion.x = x;
+    event.motion.y = y;
+    REQUIRE(SDL_PushEvent(&event));
+
+    for (const bool down : {true, false}) {
+      event = {};
+      event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+      event.button.windowID = window;
+      event.button.button = SDL_BUTTON_LEFT;
+      event.button.down = down;
+      event.button.x = x;
+      event.button.y = y;
+      REQUIRE(SDL_PushEvent(&event));
+      auto result = workspace.step(16ms);
+      REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    }
+
+    const auto selected = snapshot(workspace);
+    CHECK(selected["selected"] == id);
+    CHECK(selected["scene"] == original["scene"]);
+    CHECK(std::stoull(selected["revision"].get<std::string>())
+          == std::stoull(before["revision"].get<std::string>())
+                 + (before["selected"] == id ? 0 : 1));
+    CHECK(selected["dirty"] == original["dirty"]);
+    CHECK(selected["historyEntries"] == original["historyEntries"]);
+    REQUIRE(workspace.captureViewport());
+  };
+  click("1");
+  click("2");
+  click("1");
+  click("1");
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
+}
+
 TEST_CASE(
     "workspace.native_viewport_mouse_keyboard_focus_and_release_route_only_editor_navigation") {
   Fixture fixture;
