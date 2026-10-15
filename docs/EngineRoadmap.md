@@ -165,3 +165,12 @@ undo selection. Native pointer/shortcut and runnable document acceptance exercis
 the workflow. Multi-object transforms/framing, box selection, mixed-value property
 editing and persisted profiles remain unfinished; single-object gizmos are hidden
 for multiple selections to prevent partial group edits.
+
+
+The existing Move/Rotate/Scale gizmo now operates on frozen selections around the
+active pivot. Topmost selected roots transform once, local group operations share
+the frozen active affine frame, and unrepresentable samples roll back completely.
+A typed atomic Document transform commit supports larger groups than JSON edit
+operation limits, with real GPU/native input/history/save acceptance. Group
+framing, median/individual pivots, mixed-value properties, production animation/
+streaming and realistic polished Prism Relay remain unfinished.

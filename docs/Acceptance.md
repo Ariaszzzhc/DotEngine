@@ -266,4 +266,16 @@ runnable document acceptance additionally selects/duplicates/undoes two entities
 Native Hierarchy tests use actual SDL mouse and modifier/key events for arrow
 expansion, Command/Ctrl toggles, Shift ranges, Duplicate/Delete and undo selection
 restoration. Agent cases cover reversed/additive ranges and stale requests.
-Multi-object gizmo requests explicitly fail until group transforms are implemented.
+Group transform acceptance below now covers actual multi-object gizmos.
+
+
+Group transform foundation cases verify topmost roots, selected ancestor/active
+child overlap, shared pivot/orbits, mirrored nonuniform parents, local frames,
+absolute/reset samples, last-valid rollback on a later root's shear, scoped/owner/
+stale checks and one typed commit for 301 roots. They are filesystem integration
+tests without a device/window. Native/GPU cases retain all single-object checks
+and add group move/rotate/scale pointer drags, actual draft/committed/undo/redo
+pixels, unchanged descendant local transforms, cancellation/focus loss and saved
+group scene data. Runnable viewport acceptance additionally moves two roots and
+restores data/selection/pixels with one undo. No bulk-entity test is presented as
+populated-game performance evidence.

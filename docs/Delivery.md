@@ -344,3 +344,26 @@ payloads; CRC/modes/licenses, strict signatures and portable linkage checks pass
 for 13 regular Mach-O files/three relative links. Windows/Linux remain implemented
 without local validation. Large-game production and mature editor completion are
 still open requirements.
+
+
+The 2026-10-15 group-transform stage makes Move/Rotate/Scale operate on frozen
+selections around the active pivot. Topmost selected roots change once; descendants
+inherit, invalid later-root TRS samples roll back and release commits one typed
+Document transform/history transaction. Shared GUI/agent input, native saved scenes,
+actual GPU preview/commit/undo/redo and 301-root commits have focused coverage.
+Local group operations use the active affine frame; median/individual origins and
+group framing remain unfinished. This does not establish large-game production
+readiness or populated-scene frame-time performance.
+
+Full arm64 macOS Debug passes 978/978 (227.37s), Release/NDEBUG 978/978 (47.24s),
+with 914 doctest identities and 64 executable/script checks. A final inline-label
+row-spacing correction was rebuilt and checked with the eight affected native/
+GPU/viewport cases in Debug 8/8 (11.45s) and Release 8/8 (4.02s), after those full
+suites. Actual release UI checks show a three-root 3.5-meter draft, one commit/undo
+restoring scene/selection, corrected tool layout and normal cancellation/close.
+All 310 C/C++ and 16 WGSL sources pass established formatting checks. The latest
+ZIP has 272 entries/48,655,590 bytes and 240 exact payloads; CRC/modes/licenses,
+strict signatures and portable loader references pass for 13 regular Mach-O files/
+three relative links. Windows/Linux remain implementation targets without local
+validation; mature-editor, large-game and realistic polished Prism Relay work
+remains active.

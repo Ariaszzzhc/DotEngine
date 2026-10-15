@@ -8,6 +8,7 @@ module;
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -396,6 +397,58 @@ namespace Dot::Editor {
       return {};
     }
 
+    /** Prepare every allocating history change before replacing the stable scene.
+     * 替换稳定场景前准备所有需要分配的历史变更。 */
+    auto commit(World::Scene prepared, std::uint64_t next, std::vector<std::uint64_t> created,
+                std::vector<std::uint64_t> selection) -> Core::Result<EditReport> {
+      auto encoded = World::encodeScene(prepared);
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      if (*encoded == *m_history[m_cursor].text) {
+        return EditReport{m_revision, m_scene.id(), false, {}};
+      }
+
+      if (encoded->size() > m_config.historyBytes) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Edited scene exceeds editor history budget");
+      }
+
+      std::erase_if(created, [&](auto id) { return !prepared.findEntity(id); });
+      std::erase_if(selection, [&](auto id) { return !prepared.findEntity(id); });
+
+      if (encoded->size() + selection.size() * sizeof(std::uint64_t) > m_config.historyBytes) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Edited selection exceeds history budget");
+      }
+
+      auto text = std::make_shared<const std::string>(std::move(*encoded));
+      std::vector<Entry> history(m_history.begin(),
+                                 m_history.begin() + static_cast<std::ptrdiff_t>(m_cursor + 1));
+      history.push_back({std::move(text), std::move(selection)});
+      std::uint64_t bytes = 0;
+
+      for (const auto& entry : history) {
+        bytes += entry.bytes();
+      }
+
+      while (history.size() > m_config.historyEntries || bytes > m_config.historyBytes) {
+        bytes -= history.front().bytes();
+        history.erase(history.begin());
+      }
+
+      /** All allocating preparation precedes this nonthrowing commit.
+       * 全部分配准备在此无异常提交之前完成。 */
+      m_scene = std::move(prepared);
+      m_history = std::move(history);
+      m_cursor = m_history.size() - 1;
+      m_bytes = bytes;
+      m_next = next;
+      ++m_revision;
+      return EditReport{m_revision, m_scene.id(), true, std::move(created)};
+    }
+
     auto restore(std::size_t cursor) -> Core::Result<void> {
       auto scene = World::decodeScene(*m_history[cursor].text);
 
@@ -592,55 +645,7 @@ namespace Dot::Editor {
         return std::unexpected(prepared.error());
       }
 
-      auto encoded = World::encodeScene(*prepared);
-
-      if (!encoded) {
-        return std::unexpected(encoded.error());
-      }
-
-      if (*encoded == *m_impl->m_history[m_impl->m_cursor].text) {
-        return EditReport{m_impl->m_revision, m_impl->m_scene.id(), false, {}};
-      }
-
-      if (encoded->size() > m_impl->m_config.historyBytes) {
-        return Core::fail(Core::ErrorCode::Unavailable,
-                          "Edited scene exceeds editor history budget");
-      }
-
-      std::erase_if(created, [&](auto id) { return !prepared->findEntity(id); });
-      std::erase_if(selection, [&](auto id) { return !prepared->findEntity(id); });
-
-      if (encoded->size() + selection.size() * sizeof(std::uint64_t)
-          > m_impl->m_config.historyBytes) {
-        return Core::fail(Core::ErrorCode::Unavailable, "Edited selection exceeds history budget");
-      }
-
-      auto text = std::make_shared<const std::string>(std::move(*encoded));
-      std::vector<Impl::Entry> history(
-          m_impl->m_history.begin(),
-          m_impl->m_history.begin() + static_cast<std::ptrdiff_t>(m_impl->m_cursor + 1));
-      history.push_back({std::move(text), std::move(selection)});
-      std::uint64_t bytes = 0;
-
-      for (const auto& entry : history) {
-        bytes += entry.bytes();
-      }
-
-      while (history.size() > m_impl->m_config.historyEntries
-             || bytes > m_impl->m_config.historyBytes) {
-        bytes -= history.front().bytes();
-        history.erase(history.begin());
-      }
-
-      /** All allocating preparation precedes this nonthrowing commit.
-       * 全部分配准备在此无异常提交之前完成。 */
-      m_impl->m_scene = std::move(*prepared);
-      m_impl->m_history = std::move(history);
-      m_impl->m_cursor = m_impl->m_history.size() - 1;
-      m_impl->m_bytes = bytes;
-      m_impl->m_next = next;
-      ++m_impl->m_revision;
-      return EditReport{m_impl->m_revision, m_impl->m_scene.id(), true, std::move(created)};
+      return m_impl->commit(std::move(*prepared), next, std::move(created), std::move(selection));
     } catch (const Json::exception& error) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Edit JSON: " + std::string(error.what()));
@@ -650,6 +655,64 @@ namespace Dot::Editor {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare editor edit: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::applyTransforms(std::span<const World::TransformUpdate> updates,
+                                 std::uint64_t revision) -> Core::Result<EditReport> {
+    auto current = scene();
+
+    if (!current) {
+      return std::unexpected(current.error());
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (updates.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Transform edit exceeds 10000 entities");
+    }
+
+    if (updates.empty()) {
+      return EditReport{revision, (*current)->id(), false, {}};
+    }
+
+    try {
+      for (const auto& update : updates) {
+        auto entity = (*current)->entity(update.entity);
+
+        if (!entity) {
+          return std::unexpected(entity.error());
+        }
+      }
+
+      auto prepared = World::decodeScene(*m_impl->m_history[m_impl->m_cursor].text);
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      std::vector<World::TransformUpdate> mapped;
+      mapped.reserve(updates.size());
+
+      for (const auto& update : updates) {
+        mapped.push_back({{prepared->id(), update.entity.value}, update.transform});
+      }
+
+      auto applied = prepared->setTransforms(mapped);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      return m_impl->commit(std::move(*prepared), m_impl->m_next, {},
+                            m_impl->m_history[m_impl->m_cursor].selection);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare transform edit: " + std::string(error.what()));
     }
   }
 

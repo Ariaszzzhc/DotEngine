@@ -1496,11 +1496,10 @@ TEST_CASE("workspace.native_hierarchy_multiselect_range_duplicate_delete_and_und
   REQUIRE(workspace.dispatch(
       Json{{"command", "set-tool"}, {"tool", "move"}, {"space", "world"}, {"snap", 0}}.dump()));
   REQUIRE(workspace.step(16ms));
-  CHECK(inspect()["workspace"]["tool"]["handles"].empty());
-  CHECK_FALSE(workspace.dispatch(Json{
-      {"command", "begin-transform"},
-      {"revision", snapshot(workspace)["revision"]},
-      {"axis", 0},
-      {"uv", {.5, .5}}}.dump()));
+  CHECK_FALSE(inspect()["workspace"]["tool"]["handles"].empty());
+  command(workspace, {{"command", "begin-transform"}, {"axis", 0}, {"uv", {.5, .5}}});
+  CHECK(inspect()["workspace"]["tool"]["entities"].size() == 4);
+  CHECK(inspect()["workspace"]["tool"]["roots"] == 3);
+  command(workspace, {{"command", "finish-transform"}, {"commit", false}});
   REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
 }

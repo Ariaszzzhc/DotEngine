@@ -762,7 +762,7 @@ Play and export observe pending material fields/history. Material mutations are
 blocked during Play; Play renders saved assets, and Stop restores authoring preview.
 The toolbar/File/Edit save and undo/redo actions address the open material; scene
 history remains separate. Script editing continues in the external default editor.
-There is no material graph or standalone thumbnail/sphere preview yet.
+Material graphs remain unfinished; the asset browser below provides actual thumbnails and a studio sphere.
 
 GUI and live workspace commands use the same codec, document and preview path:
 
@@ -873,10 +873,8 @@ The clicked range endpoint becomes active, including when selecting backwards.
 Expanding an arrow does not select an entity. Highlighting shows every member.
 The Inspector states the selected count and edits only the active entity's
 properties. Viewport picking and Focus currently act on a single active entity.
-Group transform gestures are not implemented in this stage: multi-selection hides
-the single-object gizmo and rejects beginning a gesture rather than changing only
-one member. Group framing, box selection and mixed-value bulk properties remain
-planned.
+Move/Rotate/Scale gizmos transform the current selection around its active pivot.
+Group framing, box selection and mixed-value bulk properties remain planned.
 
 The toolbar Duplicate (Command/Ctrl+D) and Delete operations act on the whole
 selection in one undo transaction. Descendant unions prevent parent/child overlap
@@ -905,3 +903,28 @@ selection/edit/undo/redo resets its anchor to the active entity. Raw `edit` batc
 can use `duplicate` or `remove-many` operations with a nonempty `entities` array.
 Group deletion/duplication rejects an empty selection. Scene draft/Play/gesture
 guards apply to GUI and agent paths alike.
+
+
+Group gestures freeze the selected IDs, active pivot/frame, root world poses and
+external parent inverses at the start. Only topmost selected roots receive local
+changes; selected/unselected descendants inherit once through the hierarchy.
+World operations use world axes around the active origin. Group Local rotation/
+scale use the active entity's frozen parent-world × local T×R frame, excluding
+its own scale while retaining ancestor stretch/reflection. This is a shared group
+frame, not independent rotations around each member's center.
+
+All samples are absolute from the gesture start; position/orientation/scale do not
+accumulate rounding across pointer events. Every root must have representable
+parent-local TRS. Shear/singular/overflow/invalid-factor failures leave the entire
+last valid draft unchanged. Returning to the origin restores original local values
+exactly. Escape/focus loss/cancel discard the owned draft; release commits one
+typed transform transaction and selection-aware undo entry. Preview and committed
+rendering use the same scene path. Single-object local behavior remains unchanged.
+
+`begin-transform`/`update-transform`/`finish-transform` control the same group gizmo
+used by native mouse input. `inspect.workspace.tool` reports frozen `entities`,
+topmost `roots`, active `entity` and `pivot: "active"` during a gesture. The typed
+Document transform transaction supports up to 10000 current-scene handles without
+the generic JSON edit operation-count/transport bound; existing scene/history
+limits still apply. Median/individual-origin pivot modes and group framing remain
+unimplemented.

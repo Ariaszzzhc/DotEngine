@@ -4314,3 +4314,76 @@ Windows/Linux input branches are implemented but not locally validated. Group
 transforms, production animation/streaming and polished realistic Prism Relay are
 still unfinished. This stage advances editor scene production; the full
 large-game/mature-editor objective remains active.
+
+
+### 2026-10-15 — Transactional group transforms
+
+TransformGesture now freezes an ordered selection with its active entity as the
+pivot. It retains initial root world poses, external parent inverses and the
+active local affine frame. Selected descendants of another selected entity are
+not edited twice; their local values remain unchanged while the hierarchy moves
+them once. Group world rotation/scale orbit/stretch around the active origin;
+Local uses parent-world × local T×R, retaining ancestor stretch/reflection and
+excluding active entity scale. Single-object local behavior remains intact.
+
+Samples are absolute from the starting pose. Every root is converted to strict
+parent-local TRS before one transactional Scene transform batch updates the stable
+draft. Later-root shear, singular/invalid/overflow samples preserve every previous
+valid draft transform. Returning to the start restores original values exactly.
+Cancel/escape/focus loss discards the owned preview; commit validates owner,
+revision and scene scope before one history entry. No partial group publication.
+
+Document now has a typed <=10000-handle transform transaction, independent of the
+generic JSON edit transport/256-operation limit. It shares prepared scene/history
+commit, byte accounting, no-op behavior and selection pruning with ordinary edits.
+Current-scene handles/counts and the final batch are validated before publication.
+Gizmos and existing agent begin/update/finish commands now consume the same group
+gesture; inspection exposes frozen entities, root count and active pivot. The
+viewport shows the selection count/active pivot alongside tool controls.
+
+Four new CPU/filesystem integration cases exercise ancestor/active-child overlap,
+world/local pivots, reflected nonuniform parents, absolute/reset samples, later
+root rollback, owner checks and 301 roots committed as one transaction. Typed
+empty/stale/duplicate/foreign/10001-handle failures retain prior state. Two native
+cases exercise group Move/Rotate/Scale through agent and actual mouse input, real
+preview/commit/undo/redo pixels, descendant local preservation, cancel/focus loss
+and native saved scene data. Runnable viewport acceptance now moves two roots
+and restores data/selection/pixels on one undo. Existing single-object coverage
+is retained. Foundation selection passed 29/29 (2.03s); focused native/GPU checks
+passed 7/7 (9.09s). Initial test compilation required explicitly importing the
+World.Scene module for its handle/update declarations; no environment overrides.
+
+Both builds completed before serial full checks. Full Debug passed 978/978
+(227.37s), followed by Release/NDEBUG 978/978 (47.24s). Explicit standard-library
+includes were rebuilt in both configurations after Debug and before Release; no
+behavior changed in that cleanup. Inventory: 914 doctest identities plus 64
+executable/script checks. Overlapping labels: unit 213, integration 648, gpu 192,
+offscreen 113, native 67, acceptance 117, compiler 135, platform 27, process 19 and
+audio-native 32. All 310 C/C++ and 16 WGSL files pass established formatting checks.
+Reviewed root/active-frame ownership, one-time descendant inheritance, frozen
+parent inverses, all-or-nothing preview/commit, stale/foreign/moved lifetime and
+unchanged scene/selection/history semantics on failure.
+
+Actual release-directory Feature Lab shared live commands previewed three roots
+moving 3.5 meters without changing the document, committed all three once and
+restored the exact original scene/selection with one undo. Normal close returned
+exit 0 and removed control staging. Visual inspection found the new multi-select
+label introduced an extra blank control row; corrected its line break without
+changing viewport dimensions. After rebuilding both configurations, the eight
+affected native/GPU/viewport acceptance cases passed Debug 8/8 (11.45s) and
+Release/NDEBUG 8/8 (4.02s). Full suites above preceded this final row-spacing fix;
+the focused checks validate that final UI change. A second release UI inspection
+confirms inline active-pivot text, complete navigation hints and no controls
+scrollbar; cancel retains the exact scene/selection, then normal close returns 0.
+QA helpers/requests and control staging are removed; responses/logs remain. No
+authoring source files were saved during manual checks.
+
+Latest archive refreshed through owned staging: 272 entries, 48,655,590 bytes,
+240 payloads matching signed source. CRC/modes/exclusions, exact font/license/HDRI
+copies/credit and cgltf notices, 13 regular Mach-O files/three relative links,
+strict signatures and portable loader/rpaths pass. Caches/latest ZIP/private
+untracked document/reference artwork remain preserved. Only arm64 macOS was
+built/run; Windows/Linux implementation is not locally validated. Shared active
+pivot groups are implemented; group framing, median/individual pivots, box/mixed
+property tools, production animation/streaming and polished realistic Prism Relay
+remain unfinished. The full engine/editor/game goal remains active.

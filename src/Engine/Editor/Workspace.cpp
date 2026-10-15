@@ -3831,6 +3831,14 @@ namespace Dot::Editor {
     }
 
     auto toolStatus() const -> Json {
+      auto entities = Json::array();
+
+      if (m_transform) {
+        for (auto id : m_transform->entities()) {
+          entities.push_back(std::to_string(id));
+        }
+      }
+
       return {{"mode", toolName()},
               {"snapUnit", m_tool == Tool::Rotate  ? "degrees"
                            : m_tool == Tool::Scale ? "ratio"
@@ -3838,6 +3846,9 @@ namespace Dot::Editor {
               {"space", m_localTool ? "local" : "world"},
               {"snap", m_toolSnap},
               {"active", m_transform.has_value()},
+              {"entities", std::move(entities)},
+              {"roots", m_transform ? m_transform->rootCount() : 0},
+              {"pivot", "active"},
               {"value", m_transform ? Json(m_transformValue) : Json(nullptr)},
               {"entity", m_transform ? Json(std::to_string(m_transform->entity())) : Json(nullptr)},
               {"error", m_transformError},
@@ -3886,11 +3897,6 @@ namespace Dot::Editor {
                           "Transform tool is not ready for a gesture");
       }
 
-      if (m_document->stats()->selection.size() != 1) {
-        return Core::fail(Core::ErrorCode::InvalidState,
-                          "Transform gestures currently require exactly one selected entity");
-      }
-
       auto world = selectedWorld();
       auto axisDirection = toolBasis(axis);
       auto view = m_editorCamera.view();
@@ -3932,8 +3938,7 @@ namespace Dot::Editor {
         axisDrag.emplace(*drag);
       }
 
-      auto gesture
-          = TransformGesture::begin(*m_document, revision, m_document->stats()->selected->value);
+      auto gesture = TransformGesture::beginSelection(*m_document, revision);
 
       if (!gesture) {
         return std::unexpected(gesture.error());
@@ -4058,7 +4063,7 @@ namespace Dot::Editor {
       m_toolGeometry = Json::array();
 
       if (m_tool == Tool::Select || !m_editorView || playing()
-          || m_document->stats()->selection.size() != 1) {
+          || m_document->stats()->selection.empty()) {
         return;
       }
 
@@ -4275,7 +4280,12 @@ namespace Dot::Editor {
           ImGui::SameLine();
         }
 
-        ImGui::NewLine();
+        if (m_document->stats()->selection.size() > 1) {
+          ImGui::TextDisabled("%zu selected | Active pivot", m_document->stats()->selection.size());
+        } else {
+          ImGui::NewLine();
+        }
+
         bool local = m_localTool;
         ImGui::SetNextItemWidth(75);
         float snap = m_toolSnap;

@@ -1,13 +1,19 @@
 module;
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <exception>
 #include <expected>
 #include <memory>
 #include <numbers>
+#include <span>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
-
-#include "../Serialization/Json.hpp"
+#include <vector>
 
 module Dot.Editor.TransformTool;
 
@@ -231,11 +237,27 @@ namespace Dot::Editor {
     std::uint64_t scope;
     std::uint64_t entity;
     World::Scene draft;
+
     World::EntityId handle;
-    Math::Mat4 parentInverse;
+
+    struct Root {
+      std::uint64_t entity;
+      World::EntityId handle;
+      Math::Mat4 parentInverse;
+      Math::Mat4 world;
+      World::Transform original;
+    };
+
+    std::vector<std::uint64_t> selected;
+    std::vector<Root> roots;
+    Math::Mat4 activeInverse;
+    Math::Mat4 localFrame;
     Math::Mat4 initialWorld;
     World::Transform original;
     std::thread::id thread{std::this_thread::get_id()};
+
+    explicit Impl(World::Scene value) : draft(std::move(value)) {
+    }
 
     auto check() const -> Core::Result<void> {
       if (thread != std::this_thread::get_id()) {
@@ -243,6 +265,50 @@ namespace Dot::Editor {
       }
 
       return {};
+    }
+
+    /** Calculate all parent-local roots before atomically updating the stable draft.
+     * 先计算全部根的父局部变换，再原子更新地址稳定的草稿。 */
+    auto applyDelta(const Math::Mat4& delta, bool restore = false) -> Core::Result<void> {
+      try {
+        std::vector<World::TransformUpdate> updates;
+        updates.reserve(roots.size());
+
+        for (const auto& root : roots) {
+          if (restore) {
+            updates.push_back({root.handle, root.original});
+            continue;
+          }
+
+          auto world = Math::multiply(delta, root.world);
+          auto local
+              = world ? Math::multiply(root.parentInverse, *world) : std::unexpected(world.error());
+          auto parts = local ? Math::decomposeTrs(*local) : std::unexpected(local.error());
+
+          if (!parts) {
+            return Core::fail(
+                parts.error().code,
+                "Transform root " + std::to_string(root.entity)
+                    + " cannot be represented as parent-local TRS: " + parts.error().message);
+          }
+
+          updates.push_back({root.handle, {parts->position, parts->rotation, parts->scale}});
+        }
+
+        return draft.setTransforms(updates);
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          "Update transform group: " + std::string(error.what()));
+      }
+    }
+
+    auto localDelta(const Math::Mat4& delta) -> Core::Result<void> {
+      auto inverse = Math::inverse(localFrame);
+      auto forward = Math::multiply(localFrame, delta);
+      auto operation = inverse && forward ? Math::multiply(*forward, *inverse)
+                                          : Core::Result<Math::Mat4>{std::unexpected(
+                                                !inverse ? inverse.error() : forward.error())};
+      return operation ? applyDelta(*operation) : std::unexpected(operation.error());
     }
   };
 
@@ -256,89 +322,161 @@ namespace Dot::Editor {
 
   auto TransformGesture::begin(const Document& document, std::uint64_t revision,
                                std::uint64_t entity) -> Core::Result<TransformGesture> {
+    const std::array ids{entity};
+    return prepare(document, revision, ids);
+  }
+
+  auto TransformGesture::beginSelection(const Document& document, std::uint64_t revision)
+      -> Core::Result<TransformGesture> {
     auto stats = document.stats();
 
     if (!stats) {
       return std::unexpected(stats.error());
     }
 
-    if (stats->revision != revision) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Transform gesture has stale revision");
+    try {
+      std::vector<std::uint64_t> ids;
+
+      for (auto entity : stats->selection) {
+        ids.push_back(entity.value);
+      }
+
+      return prepare(document, revision, ids);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare selected transforms: " + std::string(error.what()));
+    }
+  }
+
+  auto TransformGesture::prepare(const Document& document, std::uint64_t revision,
+                                 std::span<const std::uint64_t> ids)
+      -> Core::Result<TransformGesture> {
+    auto stats = document.stats();
+
+    if (!stats) {
+      return std::unexpected(stats.error());
     }
 
-    auto source = document.scene();
-
-    if (!source) {
-      return std::unexpected(source.error());
+    if (stats->revision != revision || ids.empty() || ids.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Transform gesture requires current revision and 1..10000 entities");
     }
 
-    auto handle = (*source)->findEntity(entity);
+    try {
+      auto source = document.scene().value();
+      const auto entity = ids.back();
+      auto handle = source->findEntity(entity);
 
-    if (!handle) {
-      return std::unexpected(handle.error());
+      if (!handle) {
+        return std::unexpected(handle.error());
+      }
+
+      auto info = source->entity(*handle).value();
+      auto world = source->worldTransform(*handle);
+      auto localFrame = transformFrame(*source, *handle, true);
+      auto activeInverse = world ? Math::inverse(*world) : std::unexpected(world.error());
+
+      if (!world || !localFrame || !activeInverse) {
+        return std::unexpected(!world        ? world.error()
+                               : !localFrame ? localFrame.error()
+                                             : activeInverse.error());
+      }
+
+      auto encoded = World::encodeScene(*source);
+      auto draft = encoded ? World::decodeScene(*encoded)
+                           : Core::Result<World::Scene>{std::unexpected(encoded.error())};
+
+      if (!draft) {
+        return std::unexpected(draft.error());
+      }
+
+      auto impl = std::make_unique<Impl>(std::move(*draft));
+      impl->owner = &document;
+      impl->revision = revision;
+      impl->scope = stats->scene;
+      impl->entity = entity;
+      impl->handle = impl->draft.findEntity(entity).value();
+      impl->initialWorld = *world;
+      impl->activeInverse = *activeInverse;
+      impl->localFrame = *localFrame;
+      impl->original = info.transform;
+      impl->selected.assign(ids.begin(), ids.end());
+      const std::unordered_set<std::uint64_t> included(ids.begin(), ids.end());
+      std::unordered_map<std::uint64_t, std::optional<std::uint64_t>> parents;
+
+      auto sourceEntities = source->entities();
+
+      if (!sourceEntities) {
+        return std::unexpected(sourceEntities.error());
+      }
+
+      for (const auto& value : *sourceEntities) {
+        parents.emplace(value.id.value,
+                        value.parent ? std::optional{value.parent->value} : std::nullopt);
+      }
+
+      for (auto id : ids) {
+        bool inherited = false;
+        auto parent = parents.at(id);
+
+        while (parent) {
+          if (included.contains(*parent)) {
+            inherited = true;
+            break;
+          }
+
+          parent = parents.at(*parent);
+        }
+
+        if (inherited) {
+          continue;
+        }
+
+        auto rootHandle = source->findEntity(id).value();
+        auto root = source->entity(rootHandle).value();
+        Core::Result<Math::Mat4> inverse = Math::Mat4{};
+
+        if (root.parent) {
+          auto pose = source->worldTransform(*root.parent);
+          inverse = pose ? Math::inverse(*pose) : std::unexpected(pose.error());
+        }
+
+        auto pose = source->worldTransform(rootHandle);
+
+        if (!inverse || !pose) {
+          return std::unexpected(!inverse ? inverse.error() : pose.error());
+        }
+
+        impl->roots.push_back(
+            {id, impl->draft.findEntity(id).value(), *inverse, *pose, root.transform});
+      }
+
+      return TransformGesture(std::move(impl));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare transform group: " + std::string(error.what()));
     }
+  }
 
-    auto info = (*source)->entity(*handle);
-
-    if (!info) {
-      return std::unexpected(info.error());
-    }
-
-    auto world = (*source)->worldTransform(*handle);
-    Core::Result<Math::Mat4> parentInverse = Math::Mat4{};
-
-    if (info->parent) {
-      auto parent = (*source)->worldTransform(*info->parent);
-      parentInverse = parent ? Math::inverse(*parent) : std::unexpected(parent.error());
-    }
-
-    if (!world || !parentInverse) {
-      return std::unexpected(!world ? world.error() : parentInverse.error());
-    }
-
-    auto encoded = World::encodeScene(**source);
-
-    if (!encoded) {
-      return std::unexpected(encoded.error());
-    }
-
-    auto draft = World::decodeScene(*encoded);
+  auto TransformGesture::update(const Math::Mat4& world) -> Core::Result<void> {
+    auto draft = scene();
 
     if (!draft) {
       return std::unexpected(draft.error());
     }
 
-    auto draftHandle = draft->findEntity(entity).value();
-    return TransformGesture(std::make_unique<Impl>(&document, revision, stats->scene, entity,
-                                                   std::move(*draft), draftHandle, *parentInverse,
-                                                   *world, info->transform));
-  }
-
-  auto TransformGesture::update(const Math::Mat4& world) -> Core::Result<void> {
-    if (!m_impl) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Transform gesture is moved or committed");
-    }
-
-    auto checked = m_impl->check();
-
-    if (!checked) {
-      return checked;
-    }
-
     if (world == m_impl->initialWorld) {
-      return m_impl->draft.setTransform(m_impl->handle, m_impl->original);
+      return m_impl->applyDelta({}, true);
     }
 
-    auto local = Math::multiply(m_impl->parentInverse, world);
-    auto parts = local ? Math::decomposeTrs(*local) : std::unexpected(local.error());
-
-    if (!parts) {
-      return Core::fail(parts.error().code, "Transform cannot be represented as parent-local TRS: "
-                                                + parts.error().message);
-    }
-
-    return m_impl->draft.setTransform(m_impl->handle,
-                                      {parts->position, parts->rotation, parts->scale});
+    const bool translated
+        = std::equal(world.data.begin(), world.data.begin() + 12, m_impl->initialWorld.data.begin())
+          && world.data[15] == m_impl->initialWorld.data[15];
+    auto delta = translated ? Math::compose({world.data[12] - m_impl->initialWorld.data[12],
+                                             world.data[13] - m_impl->initialWorld.data[13],
+                                             world.data[14] - m_impl->initialWorld.data[14]})
+                            : Math::multiply(world, m_impl->activeInverse);
+    return delta ? m_impl->applyDelta(*delta) : std::unexpected(delta.error());
   }
 
   auto TransformGesture::rotate(int axis, float degrees, bool local) -> Core::Result<void> {
@@ -359,6 +497,10 @@ namespace Dot::Editor {
     auto delta = Math::rotationEulerDegrees(
         {axis == 0 ? degrees : 0, axis == 1 ? degrees : 0, axis == 2 ? degrees : 0});
     auto rotation = Math::compose({}, *delta);
+
+    if (local && m_impl->selected.size() > 1) {
+      return m_impl->localDelta(*rotation);
+    }
 
     if (local) {
       auto original = Math::compose({}, m_impl->original.rotation);
@@ -400,6 +542,12 @@ namespace Dot::Editor {
 
     if (factor == 1) {
       return update(m_impl->initialWorld);
+    }
+
+    if (local && m_impl->selected.size() > 1) {
+      auto delta = Math::compose(
+          {}, {}, {axis == 0 ? factor : 1, axis == 1 ? factor : 1, axis == 2 ? factor : 1});
+      return delta ? m_impl->localDelta(*delta) : std::unexpected(delta.error());
     }
 
     if (local) {
@@ -454,6 +602,15 @@ namespace Dot::Editor {
     return m_impl ? m_impl->revision : 0;
   }
 
+  auto TransformGesture::entities() const noexcept -> std::span<const std::uint64_t> {
+    return m_impl ? std::span<const std::uint64_t>{m_impl->selected}
+                  : std::span<const std::uint64_t>{};
+  }
+
+  auto TransformGesture::rootCount() const noexcept -> std::size_t {
+    return m_impl ? m_impl->roots.size() : 0;
+  }
+
   auto TransformGesture::commit(Document& document) -> Core::Result<EditReport> {
     auto draft = scene();
 
@@ -472,20 +629,21 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Transform gesture document conflict");
     }
 
-    const auto transform = (*draft)->entity(m_impl->handle)->transform;
-    using Json = Serialization::Detail::Json;
-    auto result = document.apply(
-        Json::array(
-            {{{"op", "transform"},
-              {"entity", std::to_string(m_impl->entity)},
-              {"value",
-               {{"position", {transform.position.x, transform.position.y, transform.position.z}},
-                {"rotation",
-                 {transform.rotation.x, transform.rotation.y, transform.rotation.z,
-                  transform.rotation.w}},
-                {"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}}}}})
-            .dump(),
-        m_impl->revision);
+    Core::Result<EditReport> result
+        = Core::fail(Core::ErrorCode::External, "Transform commit did not run");
+
+    try {
+      std::vector<World::TransformUpdate> updates;
+
+      for (const auto& root : m_impl->roots) {
+        updates.push_back({{m_impl->scope, root.entity}, (*draft)->entity(root.handle)->transform});
+      }
+
+      result = document.applyTransforms(updates, m_impl->revision);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Commit transform group: " + std::string(error.what()));
+    }
 
     if (result) {
       m_impl.reset();

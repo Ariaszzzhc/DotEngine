@@ -189,6 +189,32 @@ namespace Dot::Editor {
               "One undo must restore rotation/scale data and pixels");
     }
 
+    command({{"command", "select-many"}, {"entities", {std::to_string(peer.value), "2"}}});
+    checked(workspace.dispatch(
+        "{\"command\":\"set-tool\",\"tool\":\"move\",\"space\":\"world\",\"snap\":0.5}"));
+    frame();
+    const auto group = inspect();
+    const auto groupPixels = checked(workspace.captureViewport());
+    command({{"command", "begin-transform"}, {"axis", 0}, {"uv", {.5, .5}}});
+    require(inspect()["workspace"]["tool"]["roots"] == 2,
+            "Group gesture must freeze both selected roots");
+    command({{"command", "update-transform"}, {"uv", {.7, .5}}});
+    frame();
+    require(inspect()["scene"] == group["scene"]
+                && checked(workspace.captureViewport()).pixels != groupPixels.pixels,
+            "Group preview must change actual pixels without publishing scene edits");
+    command({{"command", "finish-transform"}, {"commit", true}});
+    const auto movedGroup = inspect();
+    require(
+        movedGroup["scene"]["entities"][1]["transform"]["position"][0].get<float>() > 0
+            && movedGroup["scene"]["entities"][3]["transform"]["position"][0].get<float>() > 1.5F,
+        "Group release must move both roots");
+    command({{"command", "undo"}});
+    frame();
+    require(inspect()["scene"] == group["scene"] && inspect()["selection"] == group["selection"]
+                && checked(workspace.captureViewport()).pixels == groupPixels.pixels,
+            "Group undo must restore scene, selection and pixels");
+
     command({{"command", "save"}});
     require(Json::parse(checked(World::encodeScene(checked(project.loadStartup()))))
                 == original["scene"],
@@ -197,7 +223,7 @@ namespace Dot::Editor {
     std::println(
         "Editor viewport acceptance passed: navigation, selection, camera isolation, transactional "
         "move/rotate/scale "
-        "movement");
+        "movement, group transforms");
     return 0;
   }
 }  // namespace Dot::Editor

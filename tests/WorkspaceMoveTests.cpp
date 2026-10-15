@@ -11,6 +11,7 @@ import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Workspace;
 import Dot.Project;
+import Dot.World.SceneFiles;
 
 namespace {
   using Json = nlohmann::json;
@@ -69,6 +70,32 @@ namespace {
       frame(workspace);
     }
   }
+
+  auto prepareGroup(Dot::Editor::Workspace& workspace) -> void {
+    prepare(workspace);
+    const auto mesh = inspect(workspace)["scene"]["entities"][1]["mesh"];
+    request(workspace,
+            {{"command", "edit"},
+             {"operations",
+              Json::array(
+                  {{{"op", "duplicate"}, {"entities", {"2"}}},
+                   {{"op", "create"}, {"name", "Child"}},
+                   {{"op", "parent"}, {"entity", "4"}, {"parent", "2"}},
+                   {{"op", "component"}, {"entity", "4"}, {"component", "mesh"}, {"value", mesh}},
+                   {{"op", "transform"},
+                    {"entity", "3"},
+                    {"value",
+                     {{"position", {-1, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}},
+                   {{"op", "transform"},
+                    {"entity", "4"},
+                    {"value",
+                     {{"position", {0, 1, 0}},
+                      {"rotation", {0, 0, 0, 1}},
+                      {"scale", {.4, .4, .4}}}}}})}});
+    request(workspace, {{"command", "select-many"}, {"entities", {"3", "4", "2"}}});
+    frame(workspace);
+  }
+
 }  // namespace
 
 TEST_CASE("workspace.move_tool_draft_pixels_single_history_cancel_save_and_boundaries") {
@@ -379,4 +406,188 @@ TEST_CASE("workspace.rotate_scale_native_ring_endpoint_input_and_cancel_restore_
     CHECK(inspect(workspace)["scene"] == original);
     CHECK((workspace.captureViewport()->pixels == image.pixels));
   }
+}
+
+TEST_CASE("workspace.group_transform_agent_pixels_snap_hierarchy_history_cancel_and_save") {
+  Fixture f;
+  auto workspace = f.open();
+  prepareGroup(workspace);
+  const auto original = inspect(workspace);
+
+  for (const auto* tool : {"move", "rotate", "scale"}) {
+    const bool rotation = std::string_view(tool) == "rotate";
+    request(workspace,
+            {{"command", "set-tool"},
+             {"tool", tool},
+             {"space", "world"},
+             {"snap", rotation                            ? 15.F
+                      : std::string_view(tool) == "scale" ? .1F
+                                                          : .5F}},
+            false);
+    frame(workspace);
+    const auto before = inspect(workspace);
+    const auto pixels = workspace.captureViewport()->pixels;
+    const auto viewport = before["workspace"]["view"]["viewport"];
+    const float width = viewport["size"][0].get<float>();
+    const float aspect = width / viewport["size"][1].get<float>();
+    request(workspace, {{"command", "begin-transform"},
+                        {"axis", rotation ? 2 : 0},
+                        {"uv", {rotation ? .7 : .5, .5}}});
+    auto status = inspect(workspace)["workspace"]["tool"];
+    CHECK(status["entities"] == original["selection"]);
+    CHECK(status["roots"] == 2);
+    CHECK(status["entity"] == "2");
+    CHECK_FALSE(workspace.dispatch(Json{
+        {"command", "select-many"},
+        {"revision", before["revision"]},
+        {"entities", {"3"}}}.dump()));
+    const Json uv
+        = rotation ? Json::array({.5F + .15F / aspect, .35F})
+                   : Json::array(
+                         {.5F + (std::string_view(tool) == "scale" ? 37.5F / width : .15F), .5F});
+    request(workspace, {{"command", "update-transform"}, {"uv", uv}});
+    frame(workspace);
+    const auto preview = workspace.captureViewport()->pixels;
+    CHECK(preview != pixels);
+    CHECK(inspect(workspace)["scene"] == before["scene"]);
+    CHECK(inspect(workspace)["selection"] == before["selection"]);
+    request(workspace, {{"command", "finish-transform"}, {"commit", true}});
+    frame(workspace);
+    const auto committed = inspect(workspace);
+    CHECK(committed["historyEntries"].get<int>()
+          == before["historyEntries"].get<int>() + (before["canRedo"].get<bool>() ? 0 : 1));
+    CHECK(workspace.captureViewport()->pixels == preview);
+    CHECK(committed["scene"]["entities"][3]["transform"]
+          == before["scene"]["entities"][3]["transform"]);
+    CHECK(committed["scene"]["entities"][2]["transform"]
+          != before["scene"]["entities"][2]["transform"]);
+    request(workspace, {{"command", "undo"}});
+    frame(workspace);
+    CHECK(inspect(workspace)["scene"] == before["scene"]);
+    CHECK(inspect(workspace)["selection"] == before["selection"]);
+    CHECK(workspace.captureViewport()->pixels == pixels);
+    request(workspace, {{"command", "redo"}});
+    frame(workspace);
+    CHECK(workspace.captureViewport()->pixels == preview);
+    request(workspace, {{"command", "undo"}});
+    frame(workspace);
+  }
+
+  request(workspace, {{"command", "begin-transform"}, {"axis", 0}, {"uv", {.5, .5}}});
+  request(workspace, {{"command", "update-transform"}, {"uv", {.6, .5}}});
+  request(workspace, {{"command", "finish-transform"}, {"commit", false}});
+  CHECK(inspect(workspace)["scene"] == original["scene"]);
+  request(workspace, {{"command", "save"}});
+  CHECK(Json::parse(Dot::World::encodeScene(f.project.loadStartup().value()).value())
+        == original["scene"]);
+  request(workspace, {{"command", "set-tool"}, {"tool", "move"}, {"space", "world"}, {"snap", .5}},
+          false);
+  frame(workspace);
+  request(workspace, {{"command", "begin-transform"}, {"axis", 0}, {"uv", {.5, .5}}});
+  request(workspace, {{"command", "update-transform"}, {"uv", {.65, .5}}});
+  request(workspace, {{"command", "finish-transform"}, {"commit", true}});
+  const auto saved = inspect(workspace);
+  request(workspace, {{"command", "save"}});
+  CHECK(Json::parse(Dot::World::encodeScene(f.project.loadStartup().value()).value())
+        == saved["scene"]);
+}
+
+TEST_CASE("workspace.group_transform_native_move_rotate_scale_and_focus_loss_are_transactional") {
+  Fixture f;
+  auto workspace = f.open();
+  prepareGroup(workspace);
+  int count{};
+  auto windows = SDL_GetWindows(&count);
+  REQUIRE(windows);
+  REQUIRE(count == 1);
+  const auto window = SDL_GetWindowID(windows[0]);
+  SDL_free(windows);
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  frame(workspace);
+  const auto pointer = [&](float x, float y) {
+    SDL_PumpEvents();
+    SDL_Event event{};
+    event.motion.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.windowID = window;
+    event.motion.x = x;
+    event.motion.y = y;
+    REQUIRE(SDL_PushEvent(&event));
+  };
+  const auto button = [&](bool down, float x, float y) {
+    SDL_Event event{};
+    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.windowID = window;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.down = down;
+    event.button.x = x;
+    event.button.y = y;
+    REQUIRE(SDL_PushEvent(&event));
+  };
+
+  for (const auto* tool : {"move", "rotate", "scale"}) {
+    const bool rotation = std::string_view(tool) == "rotate";
+    request(workspace,
+            {{"command", "set-tool"},
+             {"tool", tool},
+             {"space", "local"},
+             {"snap", rotation ? 15.F : .1F}},
+            false);
+    frame(workspace);
+    const auto before = inspect(workspace);
+    const auto pixels = workspace.captureViewport()->pixels;
+    const auto handles = before["workspace"]["tool"]["handles"];
+    REQUIRE_FALSE(handles.empty());
+    const auto start = handles.at(0);
+    const float x = (start["start"][0].get<float>() + start["end"][0].get<float>()) * .5F;
+    const float y = (start["start"][1].get<float>() + start["end"][1].get<float>()) * .5F;
+    float nextX = x + 45, nextY = y;
+
+    if (rotation) {
+      const auto target = handles.at(8);
+      nextX = (target["start"][0].get<float>() + target["end"][0].get<float>()) * .5F;
+      nextY = (target["start"][1].get<float>() + target["end"][1].get<float>()) * .5F;
+    }
+
+    pointer(x, y);
+    button(true, x, y);
+    frame(workspace);
+    REQUIRE(inspect(workspace)["workspace"]["tool"]["active"].get<bool>());
+    CHECK(inspect(workspace)["selection"] == before["selection"]);
+    pointer(nextX, nextY);
+    frame(workspace);
+    CHECK(workspace.captureViewport()->pixels != pixels);
+    CHECK(inspect(workspace)["scene"] == before["scene"]);
+    button(false, nextX, nextY);
+    frame(workspace);
+    CHECK_FALSE(inspect(workspace)["workspace"]["tool"]["active"].get<bool>());
+    CHECK(inspect(workspace)["historyEntries"].get<int>()
+          == before["historyEntries"].get<int>() + (before["canRedo"].get<bool>() ? 0 : 1));
+    request(workspace, {{"command", "undo"}});
+    frame(workspace);
+    CHECK(inspect(workspace)["scene"] == before["scene"]);
+    CHECK(inspect(workspace)["selection"] == before["selection"]);
+    CHECK(workspace.captureViewport()->pixels == pixels);
+  }
+
+  const auto before = inspect(workspace);
+  const auto pixels = workspace.captureViewport()->pixels;
+  const auto handle = before["workspace"]["tool"]["handles"].at(0);
+  const float x = (handle["start"][0].get<float>() + handle["end"][0].get<float>()) * .5F;
+  const float y = (handle["start"][1].get<float>() + handle["end"][1].get<float>()) * .5F;
+  pointer(x, y);
+  button(true, x, y);
+  frame(workspace);
+  REQUIRE(inspect(workspace)["workspace"]["tool"]["active"].get<bool>());
+  pointer(x + 45, y);
+  frame(workspace);
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+  REQUIRE(SDL_PushEvent(&focus));
+  frame(workspace);
+  CHECK_FALSE(inspect(workspace)["workspace"]["tool"]["active"].get<bool>());
+  CHECK(inspect(workspace)["scene"] == before["scene"]);
+  CHECK(workspace.captureViewport()->pixels == pixels);
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
 }

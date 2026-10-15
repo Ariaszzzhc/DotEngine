@@ -1,7 +1,9 @@
 module;
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 
 export module Dot.Editor.TransformTool;
 
@@ -68,6 +70,11 @@ export namespace Dot::Editor {
   public:
     [[nodiscard]] static auto begin(const Document& document, std::uint64_t revision,
                                     std::uint64_t entity) -> Core::Result<TransformGesture>;
+    /** Freeze the current ordered selection; pivot/frame belong to its active
+     * (last) entity. Update only topmost selected roots, descendants inherit once.
+     * 冻结当前有序选择，以末项主选为枢轴/框架；仅更新最上层入选根，后代只继承一次。 */
+    [[nodiscard]] static auto beginSelection(const Document& document, std::uint64_t revision)
+        -> Core::Result<TransformGesture>;
     TransformGesture(const TransformGesture&) = delete;
     auto operator=(const TransformGesture&) -> TransformGesture& = delete;
     TransformGesture(TransformGesture&&) noexcept;
@@ -75,8 +82,11 @@ export namespace Dot::Editor {
     ~TransformGesture();
     [[nodiscard]] auto update(const Math::Mat4& world) -> Core::Result<void>;
     /** Absolute operation relative to the gesture start; local edits preserve
-     * original position/scale or rotation. World edits use strict parent-local TRS.
-     * 相对手势开始的绝对操作；局部编辑保留原位置/缩放或旋转，世界编辑严格校验父局部 TRS。 */
+     * original position/scale or rotation for a single entity. Groups orbit/stretch
+     * around the active pivot in its frozen local affine frame or world axes;
+     * every root must admit parent-local TRS or the entire sample is rejected.
+     * 相对起点的绝对操作：单对象局部编辑保留原位置/缩放或旋转；成组操作围绕主选枢轴，
+     * 使用冻结的局部仿射框架或世界轴。每个根均须可表示为父局部 TRS，否则整次采样失败。 */
     [[nodiscard]] auto rotate(int axis, float degrees, bool local) -> Core::Result<void>;
     [[nodiscard]] auto scale(int axis, float factor, bool local) -> Core::Result<void>;
     [[nodiscard]] auto world() const -> Core::Result<Math::Mat4>;
@@ -84,9 +94,16 @@ export namespace Dot::Editor {
     [[nodiscard]] auto commit(Document& document) -> Core::Result<EditReport>;
     [[nodiscard]] auto entity() const noexcept -> std::uint64_t;
     [[nodiscard]] auto revision() const noexcept -> std::uint64_t;
+    /** Frozen selected IDs, borrowed until commit, replacement or destruction.
+     * 冻结的入选 ID，借用有效至提交、所有权替换或析构。 */
+    [[nodiscard]] auto entities() const noexcept -> std::span<const std::uint64_t>;
+    [[nodiscard]] auto rootCount() const noexcept -> std::size_t;
 
   private:
     struct Impl;
+    [[nodiscard]] static auto prepare(const Document& document, std::uint64_t revision,
+                                      std::span<const std::uint64_t> entities)
+        -> Core::Result<TransformGesture>;
     explicit TransformGesture(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;
   };

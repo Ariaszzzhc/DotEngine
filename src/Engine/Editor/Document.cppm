@@ -80,6 +80,13 @@ export namespace Dot::Editor {
      * 额外保留一个至多 64 MiB 快照。 */
     [[nodiscard]] auto apply(std::string_view operations, std::uint64_t revision)
         -> Core::Result<EditReport>;
+    /** Typed atomic transform batch, at most 10000 current-scene handles.
+     * Uses the same prepared scene/history commit as edit, without JSON operation
+     * count/transport limits. Empty/no-op batches preserve revision and history.
+     * 至多 10000 个当前场景句柄的类型化变换事务，共用 edit 的场景/历史提交，不受 JSON
+     * 操作数量/传输限制；空批次和无变化批次保留版本及历史。 */
+    [[nodiscard]] auto applyTransforms(std::span<const World::TransformUpdate> updates,
+                                       std::uint64_t revision) -> Core::Result<EditReport>;
     [[nodiscard]] auto select(std::optional<World::EntityId> entity, std::uint64_t revision)
         -> Core::Result<void>;
     /** Ordered unique live handles, at most 10000; last is the active entity.
