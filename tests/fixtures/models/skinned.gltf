@@ -1,0 +1,383 @@
+{
+  "asset": {
+    "version": "2.0"
+  },
+  "buffers": [
+    {
+      "byteLength": 2304,
+      "uri": "data:application/octet-stream;base64,mpmZvgAAgL8AAAAAmpmZPgAAgL8AAAAAmpmZvgAAQL8AAAAAmpmZPgAAQL8AAAAAmpmZvgAAAL8AAAAAmpmZPgAAAL8AAAAAmpmZvgAAgL4AAAAAmpmZPgAAgL4AAAAAmpmZvgAAAAAAAAAAmpmZPgAAAAAAAAAAmpmZvgAAgD4AAAAAmpmZPgAAgD4AAAAAmpmZvgAAAD8AAAAAmpmZPgAAAD8AAAAAmpmZvgAAQD8AAAAAmpmZPgAAQD8AAAAAmpmZvgAAgD8AAAAAmpmZPgAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AACAPwAAAAAAAAAAAACAvwAAgD8AAAAAAAAAAAAAgL8AAIA/AAAAAAAAAAAAAIC/AAAAAAAAgD8AAIA/AACAPwAAAAAAAGA/AACAPwAAYD8AAAAAAABAPwAAgD8AAEA/AAAAAAAAID8AAIA/AAAgPwAAAAAAAAA/AACAPwAAAD8AAAAAAADAPgAAgD8AAMA+AAAAAAAAgD4AAIA/AACAPgAAAAAAAAA+AACAPwAAAD4AAAAAAAAAAAAAgD8AAAAAAAECAwABAgMAAQIDAAECAwABAgMAAQIDAAECAwABAgMAAQIDAAECAwABAgMAAQIDAAECAwABAgMAAQIDAAECAwABAgMAAQIDAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAGA/zcxMPc3MTDzNzEw8AABgP83MTD3NzEw8zcxMPAAAQD/NzMw9zczMPM3MzDwAAEA/zczMPc3MzDzNzMw8AAAgP5qZGT6amRk9mpkZPQAAID+amRk+mpkZPZqZGT0AAAA/zcxMPs3MTD3NzEw9AAAAP83MTD7NzEw9zcxMPQAAwD4AAIA+AACAPQAAgD0AAMA+AACAPgAAgD0AAIA9AACAPpqZmT6amZk9mpmZPQAAgD6amZk+mpmZPZqZmT0AAAA+MzOzPjMzsz0zM7M9AAAAPjMzsz4zM7M9MzOzPQAAAADNzMw+zczMPc3MzD0AAAAAzczMPs3MzD3NzMw9BAAFAAYABwAEAAUABgAHAAQABQAGAAcABAAFAAYABwAEAAUABgAHAAQABQAGAAcABAAFAAYABwAEAAUABgAHAAQABQAGAAcABAAFAAYABwAEAAUABgAHAAQABQAGAAcABAAFAAYABwAEAAUABgAHAAQABQAGAAcABAAFAAYABwAEAAUABgAHAAQABQAGAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADNzEw8zcxMPM3MTDzNzEw8zcxMPM3MTDzNzEw8zcxMPM3MzDzNzMw8zczMPM3MzDzNzMw8zczMPM3MzDzNzMw8mpkZPZqZGT2amRk9mpkZPZqZGT2amRk9mpkZPZqZGT3NzEw9zcxMPc3MTD3NzEw9zcxMPc3MTD3NzEw9zcxMPQAAgD0AAIA9AACAPQAAgD0AAIA9AACAPQAAgD0AAIA9mpmZPZqZmT2amZk9mpmZPZqZmT2amZk9mpmZPZqZmT0zM7M9MzOzPTMzsz0zM7M9MzOzPTMzsz0zM7M9MzOzPc3MzD3NzMw9zczMPc3MzD3NzMw9zczMPc3MzD3NzMw9AAABAAMAAAADAAIAAgADAAUAAgAFAAQABAAFAAcABAAHAAYABgAHAAkABgAJAAgACAAJAAsACAALAAoACgALAA0ACgANAAwADAANAA8ADAAPAA4ADgAPABEADgARABAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAQAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAD/Xs10/"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 216
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 216,
+      "byteLength": 216
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 288
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 720,
+      "byteLength": 144
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 864,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 936,
+      "byteLength": 288
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1224,
+      "byteLength": 144
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1368,
+      "byteLength": 288
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1656,
+      "byteLength": 96
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1752,
+      "byteLength": 512
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2264,
+      "byteLength": 8
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2272,
+      "byteLength": 32
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3",
+      "min": [
+        -0.3,
+        -1,
+        0
+      ],
+      "max": [
+        0.3,
+        1,
+        0
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5121,
+      "count": 18,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5123,
+      "count": 18,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5123,
+      "count": 48,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 8,
+      "type": "MAT4"
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "min": [
+        0
+      ],
+      "max": [
+        2
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC4"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Metal sleeve",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.24,
+          0.45,
+          0.65,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.4
+      },
+      "emissiveFactor": [
+        0.01,
+        0.02,
+        0.025
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Flexible sleeve",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TANGENT": 2,
+            "TEXCOORD_0": 3,
+            "JOINTS_0": 4,
+            "WEIGHTS_0": 5,
+            "JOINTS_1": 6,
+            "WEIGHTS_1": 7
+          },
+          "indices": 8,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "skins": [
+    {
+      "joints": [
+        3,
+        0,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "inverseBindMatrices": 9,
+      "skeleton": 3
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Tip joint",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Skinned mesh node",
+      "mesh": 0,
+      "skin": 0,
+      "translation": [
+        7,
+        3,
+        1
+      ]
+    },
+    {
+      "name": "Character",
+      "children": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "关节根",
+      "translation": [
+        0,
+        -1,
+        0
+      ],
+      "children": [
+        0,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "Auxiliary 0",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Auxiliary 1",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Auxiliary 2",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Auxiliary 3",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Auxiliary 4",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "name": "Auxiliary 5",
+      "translation": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "nodes": [
+        2
+      ]
+    }
+  ],
+  "scene": 0,
+  "animations": [
+    {
+      "name": "Flex",
+      "samplers": [
+        {
+          "input": 10,
+          "output": 11,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 0,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 4,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 5,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 6,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 7,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 8,
+            "path": "rotation"
+          }
+        },
+        {
+          "sampler": 0,
+          "target": {
+            "node": 9,
+            "path": "rotation"
+          }
+        }
+      ]
+    }
+  ]
+}

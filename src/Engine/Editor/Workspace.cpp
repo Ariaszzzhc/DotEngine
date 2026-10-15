@@ -1536,6 +1536,8 @@ namespace Dot::Editor {
                     {"scene", result->scene},
                     {"model", result->model},
                     {"animations", result->animations},
+                    {"skins", result->skins},
+                    {"skinnedMeshes", result->skinnedMeshes},
                     {"meshes", result->meshes},
                     {"materials", result->materials},
                     {"images", result->images},

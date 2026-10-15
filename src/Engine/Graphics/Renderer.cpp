@@ -298,6 +298,7 @@ namespace Dot::Graphics {
     bool hasTangents{};
     bool m_uvFrame{};
     bool m_skinned{};
+    float m_poseOrientation{1};
     std::shared_ptr<Impl> m_source;
     std::uint64_t vertexBytes{};
     std::uint64_t indexBytes{};
@@ -1683,6 +1684,7 @@ namespace Dot::Graphics {
 
         Math::Mat4 normalMatrix;
         float orientation = 1;
+        float worldOrientation = 1;
 
         if (material.model == SurfaceModel::MetallicRoughness) {
           if (!draw.mesh->m_impl->hasNormals
@@ -1770,7 +1772,8 @@ namespace Dot::Graphics {
                       * (static_cast<double>(m[1]) * m[10] - static_cast<double>(m[9]) * m[2])
                 + static_cast<double>(m[8])
                       * (static_cast<double>(m[1]) * m[6] - static_cast<double>(m[5]) * m[2]);
-          orientation = determinant < 0 ? -1.0F : 1.0F;
+          worldOrientation = determinant < 0 ? -1.0F : 1.0F;
+          orientation = worldOrientation * draw.mesh->m_impl->m_poseOrientation;
         }
 
         auto transform = Math::multiply(viewProjection, draw.transform);
@@ -1793,7 +1796,7 @@ namespace Dot::Graphics {
               {material.model == SurfaceModel::MetallicRoughness ? 1.0F : 0.0F,
                material.normalTexture ? (draw.mesh->m_impl->hasTangents ? 2.0F : 1.0F) : 0.0F,
                material.doubleSided ? 1.0F : 0.0F, orientation},
-              {material.occlusionStrength, 0, 0, 0},
+              {material.occlusionStrength, worldOrientation, 0, 0},
               {static_cast<float>(material.alphaMode), material.alphaCutoff, 0, 0}},
              std::move(textures),
              draw.castsShadow && material.alphaMode != AlphaMode::Blend,
@@ -3400,13 +3403,13 @@ namespace Dot::Graphics {
         const Bounds value{{skinBound(words[1]), skinBound(words[2]), skinBound(words[3])},
                            {skinBound(words[4]), skinBound(words[5]), skinBound(words[6])}};
 
-        if (words[0] != 0 || !Math::isFinite(value.minimum) || !Math::isFinite(value.maximum)
-            || value.minimum.x > value.maximum.x || value.minimum.y > value.maximum.y
-            || value.minimum.z > value.maximum.z) {
+        if (words[0] != 0 || (words[7] & 6U) == 6U || !Math::isFinite(value.minimum)
+            || !Math::isFinite(value.maximum) || value.minimum.x > value.maximum.x
+            || value.minimum.y > value.maximum.y || value.minimum.z > value.maximum.z) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "GPU skin deformation invalid at batch index " + std::to_string(i)
-                                + ": singular/overflow/tangent seam (" + std::to_string(words[0])
-                                + ")");
+                                + ": singular/overflow/tangent seam/mixed orientation ("
+                                + std::to_string(words[0]) + ", " + std::to_string(words[7]) + ")");
         }
 
         bounds.push_back(value);
@@ -3417,7 +3420,9 @@ namespace Dot::Graphics {
         auto& mesh = *state.m_mesh.m_impl;
         mesh.vertices = state.m_vertices[state.m_next];
         mesh.bounds = bounds[i];
-        mesh.hasNormalMapFrame = mesh.m_uvFrame && (*report)[i * 8 + 7] == 0;
+        const auto flags = (*report)[i * 8 + 7];
+        mesh.hasNormalMapFrame = mesh.m_uvFrame && (flags & 1U) == 0;
+        mesh.m_poseOrientation = (flags & 4U) != 0 ? -1.F : 1.F;
         state.m_info.bounds = bounds[i];
         ++state.m_info.updates;
         state.m_next ^= 1U;

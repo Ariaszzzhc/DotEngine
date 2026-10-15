@@ -48,6 +48,8 @@ export namespace Dot::Editor {
     std::vector<std::string> warnings;
     std::string model;
     std::size_t animations{};
+    std::size_t skins{};
+    std::size_t skinnedMeshes{};
   };
 
   class TextDocument;

@@ -5,6 +5,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/SkinningAcceptance.cpp
     Runtime/AnimationAcceptance.cpp
     Runtime/ModelAnimationAcceptance.cpp
+    Runtime/ModelSkinAcceptance.cpp
     Runtime/AudioAcceptance.cpp
     Runtime/AudioScriptAcceptance.cpp
     Runtime/AuthoringAcceptance.cpp
@@ -31,12 +32,14 @@ add_executable(DotRuntimeAcceptance
     "${PROJECT_SOURCE_DIR}/src/Runtime/ProjectPlayer.cpp")
 target_link_libraries(DotRuntimeAcceptance PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotRuntimeAcceptance PRIVATE
-    DOT_IMAGE_FIXTURE_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/fixtures")
+    DOT_IMAGE_FIXTURE_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/fixtures"
+    DOT_MODEL_FIXTURES="${PROJECT_SOURCE_DIR}/tests/fixtures/models")
 
 add_executable(DotEditorAcceptance
     Editor/main.cpp
     Editor/ModelAcceptance.cpp
     Editor/AnimationAcceptance.cpp
+    Editor/ModelSkinAcceptance.cpp
     Editor/DocumentAcceptance.cpp
     Editor/GuiAcceptance.cpp
     Editor/ProjectAcceptance.cpp

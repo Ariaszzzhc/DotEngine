@@ -17,6 +17,8 @@ import Dot.Animation.Files;
 import Dot.Core.Paths;
 import Dot.Core.Text;
 import Dot.World.SceneFiles;
+import Dot.Assets.SceneSkins;
+import Dot.Assets.Material;
 
 namespace Dot::Assets {
   namespace {
@@ -126,6 +128,45 @@ namespace Dot::Assets {
         }
 
         result.animations.push_back(std::move(clip));
+      }
+
+      for (const auto& entity : take(result.scene.entities())) {
+        const auto contained = [&](const std::string& name, const char* directory) {
+          if (!name.starts_with(parent + directory)) {
+            throw std::invalid_argument("Model asset references a foreign bundle path");
+          }
+
+          regular(files, std::filesystem::path(std::u8string(name.begin(), name.end())));
+        };
+
+        if (entity.mesh && entity.mesh->kind == World::MeshKind::Asset) {
+          contained(entity.mesh->asset, "meshes/");
+        }
+
+        if (entity.skin) {
+          contained(entity.skin->asset, "skins/");
+        }
+
+        if (entity.material) {
+          contained(entity.material->asset, "materials/");
+          const auto& name = entity.material->asset;
+          const auto material = take(Assets::loadMaterial(
+              files, std::filesystem::path(std::u8string(name.begin(), name.end()))));
+
+          for (const auto* texture :
+               {&material.baseColorTexture, &material.metallicRoughnessTexture,
+                &material.normalTexture, &material.emissiveTexture, &material.occlusionTexture}) {
+            if (*texture) {
+              contained((*texture)->path, "images/");
+            }
+          }
+        }
+      }
+
+      auto skins = Assets::validateSceneSkins(files, result.scene);
+
+      if (!skins) {
+        throw skins.error();
       }
 
       return result;

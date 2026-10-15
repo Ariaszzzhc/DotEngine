@@ -34,6 +34,7 @@ namespace Dot::Graphics {
 
     try {
       auto output = mesh;
+      int orientation{};
 
       for (std::size_t vertex = 0; vertex < mesh.vertices.size(); ++vertex) {
         std::array<double, 16> mixed{};
@@ -60,6 +61,15 @@ namespace Dot::Graphics {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Singular skin blend at vertex " + std::to_string(vertex));
         }
+
+        const int current = determinant < 0 ? -1 : 1;
+
+        if (orientation != 0 && orientation != current) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Skin primitive mixes reflected blend orientations; split primitives");
+        }
+
+        orientation = current;
 
         Math::Mat4 matrix;
 

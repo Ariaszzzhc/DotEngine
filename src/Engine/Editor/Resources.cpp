@@ -486,7 +486,8 @@ namespace Dot::Editor {
       }
 
       const auto added = model->primitives.size() + model->materials.size() + model->images.size()
-                         + 6 + model->animations.size() + (model->animations.empty() ? 0 : 1);
+                         + 6 + model->animations.size() + (model->animations.empty() ? 0 : 1)
+                         + model->skins.size() + (model->skins.empty() ? 0 : 1);
 
       if (added > m_impl->m_limits.entries - entries->size()) {
         return Core::fail(Core::ErrorCode::Unavailable,
@@ -519,7 +520,14 @@ namespace Dot::Editor {
                                model->scene,
                                std::move(model->warnings),
                                std::string(destination) + "/model.dotmodel",
-                               model->animations.size()};
+                               model->animations.size(),
+                               model->skins.size()};
+
+      for (const auto& node : model->nodes) {
+        report.skinnedMeshes += static_cast<std::size_t>(std::ranges::count_if(
+            node.parts, [](const Assets::ModelPart& part) { return part.skin.has_value(); }));
+      }
+
       auto published = staging->publish(target->filename());
 
       if (!published) {

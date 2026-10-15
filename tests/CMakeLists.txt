@@ -87,6 +87,7 @@ add_executable(DotTests
     SkinFileTests.cpp
     ModelTests.cpp
     ModelAnimationTests.cpp
+    ModelSkinTests.cpp
     ModuleTests.cpp
     ExternalFileValidationTests.cpp
     SceneFileTests.cpp
@@ -412,3 +413,11 @@ set_tests_properties(editor.scene_animation PROPERTIES TIMEOUT 60 LABELS "accept
 add_test(NAME runtime.skinning COMMAND DotRuntimeAcceptance --skinning-test
     "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
 set_tests_properties(runtime.skinning PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)
+
+add_test(NAME runtime.model_skin COMMAND DotRuntimeAcceptance --model-skin-test
+    "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
+set_tests_properties(runtime.model_skin PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen;compiler" RUN_SERIAL TRUE)
+
+add_test(NAME editor.model_skin COMMAND DotEditorAcceptance --model-skin-test
+    "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
+set_tests_properties(editor.model_skin PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native;compiler;process" RUN_SERIAL TRUE)

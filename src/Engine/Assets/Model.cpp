@@ -18,6 +18,7 @@ module;
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -34,6 +35,9 @@ import Dot.Core.Text;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Animation.Files;
+import Dot.Animation.SkinFiles;
+import Dot.Animation.SceneSkin;
+import Dot.Graphics.Skinning;
 
 namespace Dot::Assets {
   namespace {
@@ -204,11 +208,18 @@ namespace Dot::Assets {
                   "Invalid alpha mode");
         }
 
-        constexpr std::array integers{
-            "index",  "texCoord",   "byteOffset",    "byteLength", "byteStride", "count",
-            "buffer", "bufferView", "componentType", "mesh",       "material",   "scene",
-            "source", "sampler",    "indices",       "mode",       "skin",       "camera",
-            "input",  "output",     "node"};
+        constexpr std::array integers{"index",         "texCoord",
+                                      "byteOffset",    "byteLength",
+                                      "byteStride",    "count",
+                                      "buffer",        "bufferView",
+                                      "componentType", "mesh",
+                                      "material",      "scene",
+                                      "source",        "sampler",
+                                      "indices",       "mode",
+                                      "skin",          "camera",
+                                      "input",         "output",
+                                      "node",          "inverseBindMatrices",
+                                      "skeleton"};
         constexpr std::array scalars{"metallicFactor", "roughnessFactor", "strength",
                                      "emissiveStrength", "alphaCutoff"};
         constexpr std::array vectors{"translation",    "rotation", "matrix", "baseColorFactor",
@@ -270,6 +281,13 @@ namespace Dot::Assets {
                     "Invalid vertex attribute indices");
           }
 
+          if (key == "joints") {
+            require(entry.is_array() && !entry.empty() && entry.size() <= 1024
+                        && std::ranges::all_of(
+                            entry, [](const Json& id) { return id.is_number_unsigned(); }),
+                    "Invalid skin joint references");
+          }
+
           extensions(entry);
         }
       } else if (value.is_string()) {
@@ -295,11 +313,177 @@ namespace Dot::Assets {
       return values;
     }
 
+    auto influences(const cgltf_primitive& primitive, std::size_t count,
+                    std::vector<std::string>& warnings) -> std::vector<Animation::SkinInfluence> {
+      std::array<const cgltf_accessor*, 2> joints{};
+      std::array<const cgltf_accessor*, 2> weights{};
+
+      for (std::size_t i = 0; i < primitive.attributes_count; ++i) {
+        const auto& attribute = primitive.attributes[i];
+
+        if (attribute.type != cgltf_attribute_type_joints
+            && attribute.type != cgltf_attribute_type_weights) {
+          continue;
+        }
+
+        require(attribute.index >= 0 && attribute.index < 2,
+                "Skin supports all four/eight influences; extra attribute sets are unsupported");
+        auto& slot = attribute.type == cgltf_attribute_type_joints
+                         ? joints[static_cast<std::size_t>(attribute.index)]
+                         : weights[static_cast<std::size_t>(attribute.index)];
+        require(!slot && attribute.data, "Duplicate/missing skin attribute");
+        slot = attribute.data;
+      }
+
+      require(bool(joints[0]) == bool(weights[0]) && bool(joints[1]) == bool(weights[1])
+                  && (!joints[1] || joints[0]),
+              "Skin joint/weight sets must be paired and contiguous");
+
+      if (!joints[0]) {
+        return {};
+      }
+
+      std::vector<Animation::SkinInfluence> result(count);
+
+      for (auto& influence : result) {
+        influence.weights = {};
+      }
+
+      bool floating{};
+      std::vector<std::uint64_t> quantized(count);
+
+      for (std::size_t set = 0; set < 2 && joints[set]; ++set) {
+        const auto& joint = *joints[set];
+        const auto& weight = *weights[set];
+        const auto unsignedType = [](cgltf_component_type type) {
+          return type == cgltf_component_type_r_8u || type == cgltf_component_type_r_16u;
+        };
+        const bool floatWeight = weight.component_type == cgltf_component_type_r_32f;
+        require(unsignedType(joint.component_type) && !joint.normalized
+                    && (floatWeight ? !weight.normalized
+                                    : unsignedType(weight.component_type) && weight.normalized),
+                "Invalid skin attribute component/normalization");
+        floating = floating || floatWeight;
+        const auto indices = accessor(&joint, cgltf_type_vec4, count);
+        const auto values = accessor(&weight, cgltf_type_vec4, count);
+        const auto denominator = weight.component_type == cgltf_component_type_r_8u ? 255 : 65535;
+
+        for (std::size_t vertex = 0; vertex < count; ++vertex) {
+          for (std::size_t slot = 0; slot < 4; ++slot) {
+            const auto index = indices[vertex * 4 + slot];
+            const auto value = values[vertex * 4 + slot];
+            require(index >= 0 && index <= 65535 && std::floor(index) == index && value >= 0
+                        && value <= 1,
+                    "Skin attribute contains invalid joint/weight values");
+            result[vertex].joints[set * 4 + slot] = static_cast<std::uint32_t>(index);
+            result[vertex].weights[set * 4 + slot] = value;
+
+            if (!floatWeight) {
+              const auto raw = static_cast<std::uint64_t>(
+                  std::llround(static_cast<double>(value) * denominator));
+              quantized[vertex] += raw * (denominator == 255 ? 257U : 1U);
+            }
+          }
+        }
+      }
+
+      bool renormalized{};
+
+      for (std::size_t vertex = 0; vertex < count; ++vertex) {
+        const auto& influence = result[vertex];
+        double sum{};
+        unsigned positive{};
+        std::set<std::uint32_t> unique;
+
+        for (std::size_t slot = 0; slot < 8; ++slot) {
+          const auto weight = influence.weights[slot];
+          sum += weight;
+
+          if (weight > 0) {
+            require(unique.insert(influence.joints[slot]).second,
+                    "Skin repeats a positive joint influence");
+            ++positive;
+          }
+        }
+
+        require(sum > 0 && (floating || quantized[vertex] == 65535),
+                "Skin weights require a positive sum and exact quantized normalization");
+        renormalized = renormalized || (floating && std::abs(sum - 1) > 2e-7 * positive);
+      }
+
+      if (renormalized) {
+        warnings.push_back("Non-unit float skin weights are normalized in native skin data");
+      }
+
+      return result;
+    }
+
+    struct SourceSkin {
+      std::vector<const cgltf_node*> joints;
+      std::vector<Math::Mat4> inverseBinds;
+      const cgltf_node* commonRoot{};
+    };
+
+    auto sourceSkin(const cgltf_skin& source) -> SourceSkin {
+      require(source.joints_count > 0 && source.joints_count <= 1024,
+              "Skin joint capacity must be in [1,1024]");
+      SourceSkin result;
+      std::set<const cgltf_node*> unique;
+      const auto ancestor = [](const cgltf_node* node, const cgltf_node* parent) {
+        for (auto current = node; current; current = current->parent) {
+          if (current == parent) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      for (std::size_t i = 0; i < source.joints_count; ++i) {
+        const auto* joint = source.joints[i];
+        require(joint && unique.insert(joint).second, "Skin joint is missing/duplicated");
+        require(!source.skeleton || ancestor(joint, source.skeleton),
+                "Skin skeleton is not an ancestor of every joint");
+        result.joints.push_back(joint);
+
+        if (i == 0) {
+          result.commonRoot = joint;
+        } else {
+          while (result.commonRoot && !ancestor(joint, result.commonRoot)) {
+            result.commonRoot = result.commonRoot->parent;
+          }
+
+          require(result.commonRoot, "Skin joints require a common hierarchy root");
+        }
+      }
+
+      result.inverseBinds.resize(source.joints_count);
+
+      if (const auto* matrices = source.inverse_bind_matrices) {
+        require(matrices->component_type == cgltf_component_type_r_32f && !matrices->normalized
+                    && matrices->count >= source.joints_count && matrices->count <= 1024
+                    && (!matrices->buffer_view || matrices->buffer_view->stride == 0),
+                "Skin inverse binds require bounded float MAT4 elements without stride");
+        const auto values = accessor(matrices, cgltf_type_mat4, matrices->count);
+        std::vector<Math::Mat4> all(matrices->count);
+
+        for (std::size_t i = 0; i < all.size(); ++i) {
+          std::copy_n(values.begin() + static_cast<std::ptrdiff_t>(i * 16), 16,
+                      all[i].data.begin());
+        }
+
+        take(Animation::Skin::create({all, {Animation::SkinInfluence{}}}));
+        std::copy_n(all.begin(), source.joints_count, result.inverseBinds.begin());
+      }
+
+      return result;
+    }
+
     auto validateData(cgltf_data& data) -> void {
       require(data.nodes_count <= 10000 && data.accessors_count <= 8192
                   && data.buffer_views_count <= 8192 && data.materials_count <= 4096
                   && data.images_count <= 1024 && data.meshes_count <= 4096
-                  && data.animations_count <= 1024,
+                  && data.animations_count <= 1024 && data.skins_count <= 1024,
               "Model object capacity exceeded");
 
       for (std::size_t i = 0; i < data.buffer_views_count; ++i) {
@@ -418,8 +602,8 @@ namespace Dot::Assets {
 
       require(parsed == cgltf_result_success && data,
               "Cannot parse glTF/GLB: " + std::to_string(parsed));
-      require(data->skins_count == 0 && data->cameras_count == 0 && data->lights_count == 0,
-              "Skinned/camera/light model import is not supported");
+      require(data->cameras_count == 0 && data->lights_count == 0,
+              "Camera/light model import is not supported");
       std::size_t inputBytes = bytes.size();
       std::map<std::string, std::vector<std::byte>> resources;
       const auto resource = [&](std::string_view uri) -> const std::vector<std::byte>& {
@@ -482,6 +666,19 @@ namespace Dot::Assets {
       result.warnings.push_back(
           "Node names/hierarchy retained; mesh/material/image names, extras and unused UV/color "
           "channels are not persisted.");
+      std::vector<SourceSkin> sourceSkins;
+
+      for (std::size_t i = 0; i < data->skins_count; ++i) {
+        sourceSkins.push_back(sourceSkin(data->skins[i]));
+      }
+
+      if (std::ranges::any_of(std::span(data->skins, data->skins_count),
+                              [](const cgltf_skin& skin) { return skin.skeleton != nullptr; })) {
+        result.warnings.push_back(
+            "Skeleton pivot metadata is not persisted; node hierarchy and joint order are "
+            "retained");
+      }
+
       std::size_t pixelBytes{};
       std::vector<bool> normalImages;
 
@@ -613,6 +810,7 @@ namespace Dot::Assets {
       }
 
       std::vector<std::vector<std::uint32_t>> meshPrimitives(data->meshes_count);
+      std::vector<std::vector<Animation::SkinInfluence>> primitiveInfluences;
       std::size_t vertices{}, indices{};
 
       for (std::size_t meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex) {
@@ -642,6 +840,7 @@ namespace Dot::Assets {
           output.material = static_cast<std::uint32_t>(
               p.material ? cgltf_material_index(data.get(), p.material) : data->materials_count);
           output.mesh.vertices.resize(count);
+          auto skinWeights = influences(p, count, result.warnings);
 
           for (std::size_t j = 0; j < count; ++j) {
             output.mesh.vertices[j].position
@@ -652,7 +851,8 @@ namespace Dot::Assets {
                ++attributeIndex) {
             const auto& a = p.attributes[attributeIndex];
 
-            if (a.type == cgltf_attribute_type_position
+            if (a.type == cgltf_attribute_type_position || a.type == cgltf_attribute_type_joints
+                || a.type == cgltf_attribute_type_weights
                 || (a.index != 0
                     && (a.type == cgltf_attribute_type_texcoord
                         || a.type == cgltf_attribute_type_color))) {
@@ -762,6 +962,20 @@ namespace Dot::Assets {
           if (!cgltf_find_accessor(&p, cgltf_attribute_type_normal, 0)) {
             require(!cgltf_find_accessor(&p, cgltf_attribute_type_tangent, 0),
                     "Tangents require normals");
+            require(output.mesh.indices.size() <= 1000000 - vertices,
+                    "Flat-normal model vertex budget exceeded");
+
+            if (!skinWeights.empty()) {
+              std::vector<Animation::SkinInfluence> expanded;
+              expanded.reserve(output.mesh.indices.size());
+
+              for (const auto index : output.mesh.indices) {
+                expanded.push_back(skinWeights[index]);
+              }
+
+              skinWeights = std::move(expanded);
+            }
+
             output.mesh = take(Graphics::withFlatNormals(output.mesh));
           }
 
@@ -777,6 +991,7 @@ namespace Dot::Assets {
           indices += output.mesh.indices.size();
           meshPrimitives[meshIndex].push_back(static_cast<std::uint32_t>(result.primitives.size()));
           result.primitives.push_back(std::move(output));
+          primitiveInfluences.push_back(std::move(skinWeights));
         }
       }
 
@@ -788,12 +1003,14 @@ namespace Dot::Assets {
       result.scene = static_cast<std::uint32_t>(selected);
       std::set<const cgltf_node*> visited;
       std::map<const cgltf_node*, std::uint32_t> nodeIds;
+      std::vector<const cgltf_node*> sourceNodes;
       std::size_t entities{};
       const auto visit
           = [&](auto&& self, const cgltf_node* node, std::optional<std::uint32_t> parent) -> void {
         require(visited.insert(node).second && ++entities <= 10000,
                 "Repeated/cyclic node or entity capacity exceeded");
-        require(!node->skin && !node->camera && !node->light && !node->has_mesh_gpu_instancing,
+        require(!node->camera && !node->light && !node->has_mesh_gpu_instancing
+                    && (!node->skin || node->mesh),
                 "Unsupported model node");
         ModelNode output;
         output.name = node->name && *node->name
@@ -816,17 +1033,22 @@ namespace Dot::Assets {
           take(Math::compose(output.transform.position, output.transform.rotation,
                              output.transform.scale));
         }
+
         output.parent = parent;
 
         if (node->mesh) {
-          output.primitives = meshPrimitives[cgltf_mesh_index(data.get(), node->mesh)];
-          entities += output.primitives.size();
+          for (const auto primitive : meshPrimitives[cgltf_mesh_index(data.get(), node->mesh)]) {
+            output.parts.push_back({primitive, {}});
+          }
+
+          entities += output.parts.size();
           require(entities <= 10000, "Model entity capacity exceeded");
         }
 
         const auto id = static_cast<std::uint32_t>(result.nodes.size());
         nodeIds.emplace(node, id);
         result.nodes.push_back(std::move(output));
+        sourceNodes.push_back(node);
 
         for (std::size_t child = 0; child < node->children_count; ++child) {
           self(self, node->children[child], id);
@@ -849,6 +1071,48 @@ namespace Dot::Assets {
       }
 
       require(!result.nodes.empty(), "Selected model scene is empty");
+      std::map<std::pair<std::uint32_t, std::size_t>, std::uint32_t> nativeSkins;
+      std::size_t skinOwners{}, influencedVertices{};
+
+      for (std::size_t nodeIndex = 0; nodeIndex < sourceNodes.size(); ++nodeIndex) {
+        const auto* node = sourceNodes[nodeIndex];
+
+        if (!node->skin) {
+          continue;
+        }
+
+        const auto sourceIndex = cgltf_skin_index(data.get(), node->skin);
+        const auto& skinSource = sourceSkins[sourceIndex];
+        require(nodeIds.contains(skinSource.commonRoot),
+                "Skin common root is outside selected scene");
+
+        for (auto& part : result.nodes[nodeIndex].parts) {
+          const auto& weights = primitiveInfluences[part.primitive];
+          require(!weights.empty(), "Skinned mesh primitive requires JOINTS_0/WEIGHTS_0");
+          require(++skinOwners <= 128 && weights.size() <= 4'000'000 - influencedVertices,
+                  "Model exceeds 128 skin owners/four million influenced vertices");
+          influencedVertices += weights.size();
+          const auto key = std::pair{part.primitive, sourceIndex};
+          auto existing = nativeSkins.find(key);
+
+          if (existing == nativeSkins.end()) {
+            ModelSkin skin;
+            skin.data = take(Animation::Skin::create({skinSource.inverseBinds, weights}));
+
+            for (const auto* joint : skinSource.joints) {
+              require(nodeIds.contains(joint), "Skin joint is outside selected scene");
+              skin.joints.push_back(nodeIds.at(joint));
+            }
+
+            existing
+                = nativeSkins.emplace(key, static_cast<std::uint32_t>(result.skins.size())).first;
+            result.skins.push_back(std::move(skin));
+          }
+
+          part.skin = existing->second;
+        }
+      }
+
       std::size_t channels{}, keys{};
 
       for (std::size_t index = 0; index < data->animations_count; ++index) {
@@ -959,7 +1223,8 @@ namespace Dot::Assets {
       require(Core::isPortableRelativePath(model.prefix) && model.prefix.starts_with("assets/")
                   && !model.nodes.empty() && model.nodes.size() <= 10000
                   && !model.primitives.empty() && model.materials.size() <= 4097
-                  && model.images.size() <= 1024 && model.animations.size() <= 1024,
+                  && model.images.size() <= 1024 && model.animations.size() <= 1024
+                  && model.skins.size() <= 128,
               "Invalid prepared model capacities/prefix");
       std::size_t vertices{}, indices{}, pixels{};
       std::set<std::string> imagePaths;
@@ -999,6 +1264,21 @@ namespace Dot::Assets {
       auto scene = take(World::Scene::create("Imported model"));
       std::vector<World::EntityId> nodes;
       std::vector<World::ParentUpdate> parents;
+      std::vector<std::tuple<World::EntityId, std::uint32_t, std::uint32_t>> pendingSkins;
+      std::set<std::uint32_t> usedSkins;
+      std::size_t influencedVertices{};
+
+      for (const auto& skin : model.skins) {
+        const auto& description = *take(skin.data.description());
+        require(skin.joints.size() == description.inverseBindMatrices.size(),
+                "Prepared skin inverse binds/joint counts differ");
+        std::set<std::uint32_t> unique;
+
+        for (const auto joint : skin.joints) {
+          require(joint < model.nodes.size() && unique.insert(joint).second,
+                  "Prepared skin joint is missing/duplicated");
+        }
+      }
 
       for (const auto& node : model.nodes) {
         auto entity = take(scene.createEntity(node.name));
@@ -1011,7 +1291,8 @@ namespace Dot::Assets {
           parents.push_back({entity, nodes[*node.parent]});
         }
 
-        for (const auto primitive : node.primitives) {
+        for (const auto& attachment : node.parts) {
+          const auto primitive = attachment.primitive;
           require(primitive < model.primitives.size(), "Invalid prepared primitive index");
           auto part = take(scene.createEntity(std::format("Primitive {}", primitive)));
           take(scene.setMeshRenderer(
@@ -1022,10 +1303,50 @@ namespace Dot::Assets {
               part, World::MaterialBinding{std::format("{}/materials/{}.dotmaterial", model.prefix,
                                                        model.primitives[primitive].material)}));
           parents.push_back({part, entity});
+
+          if (attachment.skin) {
+            require(*attachment.skin < model.skins.size(), "Invalid prepared skin index");
+            const auto& skin = model.skins[*attachment.skin];
+            const auto size = take(skin.data.description())->vertices.size();
+            require(size == model.primitives[primitive].mesh.vertices.size()
+                        && size <= 4'000'000 - influencedVertices && pendingSkins.size() < 128,
+                    "Prepared skin vertex count/owner budget differs from mesh");
+            influencedVertices += size;
+            pendingSkins.emplace_back(part, *attachment.skin, primitive);
+            usedSkins.insert(*attachment.skin);
+          }
         }
       }
 
       take(scene.setParents(parents));
+      require(usedSkins.size() == model.skins.size(), "Prepared model contains unused skin assets");
+      std::vector<std::vector<std::byte>> encodedSkins;
+      std::size_t skinBytes{};
+
+      for (const auto& skin : model.skins) {
+        const auto& description = *take(skin.data.description());
+        const auto size
+            = 16 + 64 * description.inverseBindMatrices.size() + 64 * description.vertices.size();
+        require(size <= 256 * 1024 * 1024 - skinBytes, "Prepared skin byte budget exceeds 256 MiB");
+        skinBytes += size;
+        encodedSkins.push_back(take(Animation::encodeSkin(skin.data)));
+      }
+
+      for (const auto& [owner, index, primitive] : pendingSkins) {
+        const auto& skin = model.skins[index];
+        World::SkinBinding binding;
+        binding.asset = std::format("{}/skins/{}.dotskin", model.prefix, index);
+
+        for (const auto joint : skin.joints) {
+          binding.joints.push_back(nodes[joint].value);
+        }
+
+        take(scene.setSkin(owner, std::move(binding)));
+        auto bound = take(Animation::SceneSkin::bind(scene, owner, skin.data));
+        const auto& mesh = model.primitives[primitive].mesh;
+        take(Graphics::deformMesh(mesh, skin.data, take(bound.palette(scene))));
+      }
+
       std::vector<std::string> encodedClips;
       std::size_t clipBytes{}, channelCount{}, keyCount{};
 
@@ -1084,6 +1405,14 @@ namespace Dot::Assets {
 
       if (!encodedClips.empty()) {
         take(staging.createDirectories("animations"));
+      }
+
+      if (!encodedSkins.empty()) {
+        take(staging.createDirectories("skins"));
+      }
+
+      for (std::size_t i = 0; i < encodedSkins.size(); ++i) {
+        take(staging.writeAtomic(std::format("skins/{}.dotskin", i), encodedSkins[i]));
       }
 
       for (std::size_t i = 0; i < encodedClips.size(); ++i) {

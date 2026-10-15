@@ -46,9 +46,9 @@ The native ring/scale case uses device-tagged SDL pointer injection with a scope
 filter for its window, so desktop pointer traffic cannot overwrite its prescribed
 samples. It retains real window/focus/keyboard events and restores the previous
 filter. The native translator, editor drag/history and GPU pixels are still tested.
-The current inventory contains 242 unit, 684 integration, 129 offscreen GPU,
-71 native and 124 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1050 CTest identities are covered; existing subsystem
+The current inventory contains 243 unit, 695 integration, 132 offscreen GPU,
+72 native and 126 acceptance cases. Labels overlap; integration includes GPU and
+native integration cases. All 1064 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
@@ -75,3 +75,11 @@ then run configurations sequentially. Integration tests intentionally enforce re
 wall-clock script/process budgets; competing compiler work can obscure their results.
 Investigate exact failures and verify them under the intended execution conditions;
 do not inflate production budgets or weaken assertions to accommodate build load.
+
+The model-skin file integration cases use owned malformed glTF/GLB variants without
+a device. `runtime.model_skin` compares nine real offscreen PBR/shadow/AO frames
+against CPU deformation, then verifies a relocated owned package without its source
+trees. `editor.model_skin` covers actual workspace import/Inspector/joint remapping,
+undo/Play/save/export and a relocated native game. Uniform skin reflection is tested
+through physical pixels/picking; CPU/GPU mixed-orientation failure cases retain the
+previous source/pose. These checks do not measure production character throughput.

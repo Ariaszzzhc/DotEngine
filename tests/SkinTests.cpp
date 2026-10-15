@@ -180,3 +180,26 @@ TEST_CASE("skin.reference_rejects_blended_singularity_overflow_and_tangent_seams
   CHECK_FALSE(Graphics::deformMesh(mesh, skin, palette));
   CHECK(mesh.vertices[0].tangent.w == 1);
 }
+
+TEST_CASE("skin.reference_disconnected_reflected_islands_require_separate_primitives") {
+  const auto original = Graphics::quad().value();
+  Graphics::MeshData mesh;
+
+  for (const auto index : original.indices) {
+    mesh.vertices.push_back(original.vertices[index]);
+  }
+
+  auto source = description(mesh.vertices.size());
+
+  for (std::size_t i = 3; i < source.vertices.size(); ++i) {
+    source.vertices[i].joints[0] = 1;
+  }
+
+  auto skin = Animation::Skin::create(std::move(source)).value();
+  const auto reflected = Math::compose({}, {}, {-1, 1, 1}).value();
+  const std::array mixed{Math::Mat4{}, reflected};
+  CHECK_FALSE(Graphics::deformMesh(mesh, skin, mixed));
+  const std::array uniform{reflected, reflected};
+  REQUIRE(Graphics::deformMesh(mesh, skin, uniform));
+  CHECK(mesh.vertices[0].position == original.vertices[0].position);
+}

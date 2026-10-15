@@ -73,8 +73,10 @@ fn vertexMain(@location(0) position: vec3f, @location(1) color: vec4f,
   output.uv = uv;
   output.worldPosition = (camera.model * vec4f(position, 1.0)).xyz;
   output.normal = (camera.normalMatrix * vec4f(normal, 0.0)).xyz;
+  /** Skin reflection is already in tangent.w; transport adds only world reflection.
+   * 蒙皮镜像已写入 tangent.w，切线传递只叠加世界变换手性。 */
   output.tangent = vec4f((camera.model * vec4f(tangent.xyz, 0.0)).xyz,
-    tangent.w * camera.flags.w);
+    tangent.w * camera.occlusion.y);
   return output;
 }
 

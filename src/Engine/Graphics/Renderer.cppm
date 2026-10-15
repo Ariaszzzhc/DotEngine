@@ -428,9 +428,12 @@ export namespace Dot::Graphics {
      * CPU, compute vertices/frames/bounds on GPU, read one compact status batch,
      * then publish every posed buffer/bound together. Failure retains all previous
      * views/counters. The status read is synchronous; no populated-game cost claim.
+     * Uniform blend reflection adjusts physical front faces in every raster pass;
+     * mixed orientations require separate primitives and fail the entire batch.
      * 每次至多 128 个不同蒙皮/四百万顶点；CPU 校验后由 GPU 计算顶点/切线框架/边界，
      * 同步读取一批紧凑状态，再一起发布所有输出及边界；失败保留此前视图/计数。
-     * 状态读取为同步操作，不宣称已验证大型游戏帧时。 */
+     * 状态读取为同步操作，不宣称已验证大型游戏帧时。统一镜像修正全部光栅通道的正面，
+     * 混合朝向须拆分 primitive，否则整批更新失败。 */
     [[nodiscard]] auto updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void>;
     /** Explicit owned GPU vertex readback for diagnostics/reference comparison.
      * 诊断及参考对照用的显式 GPU 顶点读回，结果独立拥有。 */

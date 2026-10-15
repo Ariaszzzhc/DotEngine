@@ -9,7 +9,7 @@ appear only once with positive weight. Creation normalizes weights once. Copies
 share immutable storage; empty/moved handles return errors.
 
 These conventions follow [Khronos skin attributes](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skinned-mesh-attributes).
-This module does not itself add glTF skin import.
+The model importer converts glTF/GLB skins into these same native assets and bindings.
 
 A mesh-local palette is `inverse(meshWorld) * jointWorld * inverseBind`, in column
 major order. Rendering with meshWorld cancels the mesh node's transform, leaving
@@ -22,7 +22,11 @@ absolute magnitude at most 1e8.
 file operation. It computes the weighted matrix per vertex, applies its inverse
 transpose to normals, re-orthogonalizes tangents and flips handedness on reflection.
 A normalized linear determinant magnitude <=1e-6 fails, as do overflow, invalid
-inputs and a triangle crossing a tangent-handedness seam. Color/UV/indices remain
+inputs and a triangle crossing a tangent-handedness seam. A primitive must retain
+one blended-matrix orientation; disconnected reflected islands require separate
+primitives. Uniform reflection preserves the authored front-face convention across
+PBR, shadows, AO and picking. Tangent handedness combines skin reflection once with
+the separate world-transform sign. Color/UV/indices remain
 unchanged. It does not mutate the original mesh or cache a partly evaluated pose.
 
 ```sh
@@ -33,7 +37,7 @@ build/debug/bin/DotRuntimeAcceptance --skinning-test build/debug/tests/animation
 The development-only acceptance reloads a saved skin/scene, uses actual scene joints
 and node animation to drive GPU skinning, writes bind/reference/GPU DotMesh data plus nine PNG frames
 and compares positions/normals and actual physical/shadow/AO pixels. Unit data/
-reference cases still create no device. glTF skin import, animation blending,
+reference cases still create no device. Animation blending,
 retargeting and populated-game scale remain unfinished.
 
 ## Saved assets and scene bindings
@@ -130,5 +134,38 @@ authoring/undo/isolated-Play pixels and prove that stop restores the authoring p
 
 The runnable also compares automatic saved-scene PBR/shadow/AO output to its
 independent CPU mesh and writes skin-scene.png. This is a diagnostic deformation
-scene, not realistic game artwork. glTF JOINTS/WEIGHTS/inverse-bind import and visual
-skeleton/timeline/blend tools remain unfinished.
+scene, not realistic game artwork. Visual skeleton/timeline/blend tools remain unfinished.
+
+## glTF/GLB import
+
+The importer retains four/eight weights, byte/short joints, float or normalized
+byte/short weights, sparse/strided accessors and optional float inverse binds.
+Absent inverse binds use identity. Ordered joint IDs are remapped after every node
+and primitive entity exists; the mesh-node transform cancels through the palette.
+Referenced joints and their common hierarchy root must belong to the selected scene.
+Non-unit float weights produce a warning and normalize; quantized sets require an
+exact combined integer sum. Out-of-range indices fail even at zero weight. More
+than eight influences and malformed pairings fail explicitly.
+
+Shared primitive/skin pairs reuse immutable native files; a mesh instantiated with
+different source skins retains distinct bindings. Flat-normal vertex expansion
+copies each triangle corner's original influences. Import permits 128 skin owners,
+four million instance-weighted vertices and 256 MiB encoded skin data. Prepared
+models validate bindings and initial CPU deformation before writing owned staging.
+Publication remains exclusive. Reload verifies bundle-local referenced assets and
+initial deformation without a GPU. Resource reports include `skins` and `skinnedMeshes`.
+
+```sh
+ctest --preset debug -R '^(model\.skin_|runtime.model_skin$|editor.model_skin$)'
+build/debug/bin/DotRuntimeAcceptance --model-skin-test \
+  build/debug/bin/resources/typescript-native/tsc build/debug/tests/animation_acceptance
+```
+
+The runtime acceptance imports the owned eight-joint GLB, saves/reloads native
+assets, advances actual GameSession animation and compares nine PBR/shadow/AO
+frames with independent CPU-deformed geometry. It checks picking/bounds, resource
+release and export pixels after both authoring and relocated input trees are deleted.
+The editor acceptance uses actual import/Inspector/duplicate/undo/Play/save/export
+commands and runs the relocated native game after removing its source project.
+Diagnostic ribbon images do not establish realistic character production or
+populated-game throughput. GPU status waits remain synchronous.

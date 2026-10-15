@@ -8,6 +8,7 @@
 import Dot.Animation.SceneSkin;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Mesh;
+import Dot.Assets.Material;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Graphics.Geometry;
@@ -90,6 +91,29 @@ TEST_CASE("skin.scene_gpu_matches_saved_cpu_reference_bounds_picking_and_persist
   CHECK(renderer.readTarget(target)->pixels == actual.pixels);
   CHECK(service.stats()->skins == 1);
   CHECK(service.stats()->meshes == 1);
+}
+
+TEST_CASE("skin.scene_gpu_ignored_mesh_reflection_preserves_physical_faces_picking_and_normals") {
+  Fixture f;
+  Assets::MaterialDescription material;
+  material.baseColor = {.2F, .4F, .8F, 1};
+  REQUIRE(Assets::saveMaterial(f.files, "assets/physical.dotmaterial", material));
+  REQUIRE(f.scene.setMaterial(f.owner, World::MaterialBinding{"assets/physical.dotmaterial"}));
+  const auto light = f.scene.createEntity("Light").value();
+  REQUIRE(f.scene.setLight(light, World::Light{.intensity = 4}));
+  REQUIRE(f.scene.setOcclusion(OcclusionSettings{}));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  const auto initial = service.render(f.scene, 64, 64).value();
+  REQUIRE(service.pick(f.scene, 64, 64, {.5F, .5F}).value() == f.owner);
+  REQUIRE(f.scene.setTransform(f.owner, {{7, 3, 1}, {}, {-2, 3, .5F}}));
+  const auto mirrored = service.render(f.scene, 64, 64).value();
+  CHECK((mirrored.pixels == initial.pixels));
+  CHECK(service.pick(f.scene, 64, 64, {.5F, .5F}).value() == f.owner);
+  REQUIRE(f.scene.setTransform(f.joint, {{}, {}, {-1, 1, 1}}));
+  const auto mirroredJoint = service.render(f.scene, 64, 64).value();
+  CHECK((mirroredJoint.pixels == initial.pixels));
+  CHECK(service.pick(f.scene, 64, 64, {.5F, .5F}).value() == f.owner);
 }
 
 TEST_CASE("skin.scene_gpu_shares_inputs_prunes_hidden_disabled_and_foreign_scene_scopes") {

@@ -120,7 +120,21 @@ TEST_CASE(
       auto bounds = meshBounds(reference).value();
       CHECK(Math::length(controller.info()->bounds.minimum - bounds.minimum) < .00001);
       CHECK(Math::length(controller.info()->bounds.maximum - bounds.maximum) < .00001);
-      auto uploaded = renderer.upload(reference).value();
+      auto visibleReference = reference;
+
+      if (sign < 0) {
+        if (visibleReference.indices.empty()) {
+          for (std::size_t i = 0; i < visibleReference.vertices.size(); i += 3) {
+            std::swap(visibleReference.vertices[i + 1], visibleReference.vertices[i + 2]);
+          }
+        } else {
+          for (std::size_t i = 0; i < visibleReference.indices.size(); i += 3) {
+            std::swap(visibleReference.indices[i + 1], visibleReference.indices[i + 2]);
+          }
+        }
+      }
+
+      auto uploaded = renderer.upload(visibleReference).value();
       const std::array expected{MeshDraw{&uploaded, {}, {1, 1, 1, 1}, material}};
       const std::array posed{MeshDraw{&view, {}, {1, 1, 1, 1}, material}};
       auto first = renderer.renderMeshes(expected, camera, 96, 96).value();
@@ -373,4 +387,41 @@ TEST_CASE("skin.gpu_rejects_float_overflow_and_reflected_tangent_seams_and_obeys
   CHECK(fit->info()->bytes == exact.maxSkinBytes);
   CHECK_FALSE(bounded.createSkin(quadSource, skinFor(quad().value())));
   CHECK(bounded.resourceStats()->skinBytes == exact.maxSkinBytes);
+}
+
+TEST_CASE(
+    "skin.gpu_mixed_disconnected_orientations_fail_atomically_and_uniform_reflection_recovers") {
+  const auto original = quad().value();
+  MeshData mesh;
+
+  for (const auto index : original.indices) {
+    mesh.vertices.push_back(original.vertices[index]);
+  }
+
+  Animation::SkinDescription description;
+  description.inverseBindMatrices.resize(2);
+  description.vertices.resize(mesh.vertices.size());
+
+  for (std::size_t i = 3; i < description.vertices.size(); ++i) {
+    description.vertices[i].joints[0] = 1;
+  }
+
+  auto renderer = Renderer::create().value();
+  auto source = renderer.upload(mesh).value();
+  auto controller
+      = renderer.createSkin(source, Animation::Skin::create(std::move(description)).value())
+            .value();
+  const std::array identity{Math::Mat4{}, Math::Mat4{}};
+  changed(renderer, controller, identity);
+  const auto before = renderer.readSkin(controller).value();
+  const auto updates = controller.info()->updates;
+  const auto reflected = Math::compose({}, {}, {-1, 1, 1}).value();
+  const std::array mixed{Math::Mat4{}, reflected};
+  const std::array invalid{SkinUpdate{&controller, mixed}};
+  CHECK_FALSE(renderer.updateSkins(invalid));
+  CHECK(controller.info()->updates == updates);
+  CHECK(same(renderer.readSkin(controller).value(), before));
+  const std::array uniform{reflected, reflected};
+  changed(renderer, controller, uniform);
+  CHECK(controller.info()->updates == updates + 1);
 }

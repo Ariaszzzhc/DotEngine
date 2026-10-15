@@ -353,5 +353,19 @@ compares automatic SceneRenderer physical/shadow/AO pixels against its CPU mesh 
 saves skin-scene.png. Focused cases additionally cover exact scene-cache residency,
 shared input pruning, stale/foreign scene scopes, explicit reload, failed-target
 preservation and current bounds/picking. Actual workspace authoring/undo/isolated
-Play pixels and relocated package skin ownership have dedicated tests. glTF skin
-import, realistic character assets and populated-game throughput remain unfinished.
+Play pixels and relocated package skin ownership have dedicated tests. Realistic
+character assets and populated-game throughput remain unfinished.
+
+`runtime.model_skin` imports an actual eight-joint GLB and reloads native skin,
+scene and animation assets. Nine automatic SceneRenderer PBR/shadow/AO frames match
+independent CPU deformation; current bounds/picking and resource release are checked.
+The relocated package owns its files and reproduces a known pose after both its
+authoring project and relocated input folder are removed. `editor.model_skin` runs
+actual import, Inspector, complete-joint duplicate remapping, undo, isolated Play,
+save and native export; the moved game starts after deleting its source project.
+Malformed binary/attribute/hierarchy variants, quantized normalization, sparse and
+strided inputs, shared/different rigs, flat-normal weight expansion, exact owner and
+catalog capacities and publication failures have focused CPU/file integration cases.
+Uniform mirrored deformation preserves PBR faces and picking; mixed reflected islands
+fail without publishing partial GPU poses. These are diagnostic fixtures, not a
+production character or a populated-game performance result.

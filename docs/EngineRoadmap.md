@@ -185,7 +185,7 @@ node bindings, with independent bundle reload and actual animated reference pixe
 Saved animation players now span scene insertion/duplication/history/save, Inspector,
 GameSession/editor Play and relocated native exports. Native clip switching and SDK
 playback controls are now available, including actual Feature Lab keyboard controls, editor Play and relocated games. Visual
-bindings/timeline, skinning/morphs/blending/state machines/events and animation
+bindings/timeline, morphs/blending/state machines/events and animation
 streaming are still unfinished. Production animation and realistic polished
 Prism Relay remain open.
 
@@ -197,7 +197,10 @@ retain previous poses on failed batches, and feed ordinary PBR/shadow/SSAO/picki
 passes. Saved .dotskin resources and ordered scene bindings now feed automatic scene
 rendering, bounds/picking and Inspector/duplicate/history/isolated Play. Session and
 export preparation validate actual assets and relocated owned packages retain them.
-glTF skin import, visual skeleton/timeline tools, blending/state machines and populated
-game performance remain open. The native acceptance uses actual joint hierarchy
+glTF/GLB skin import now converts four/eight influences and inverse binds to owned
+native assets, preserving joint order, hierarchy and current animation players.
+Editor import/instantiation/Play/export share those contracts. Visual skeleton/timeline
+tools, blending/state machines and populated-game performance remain open.
+The native acceptance uses actual joint hierarchy
 animation and reference-compared rendered frames; it does not establish full
-skinned-model authoring or realistic game production.
+character animation authoring or realistic game production.

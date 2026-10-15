@@ -6,10 +6,11 @@ logical node indices to live scene-scoped entity handles. This foundation is usa
 by native engine consumers and runnable acceptance. glTF/GLB node animations now
 convert to these clips and native model bindings. Saved animation players now run
 through GameSession, editor Play and native exports. TypeScript playback controls
-are available through the engine-owned SDK. Timeline controls remain unfinished. Native GPU skinning now has a
-[separate foundation](Skinning.md). Imported-skin
-authoring, morph targets, blending/state machines, events/root motion and production animation
-streaming remain unfinished; this does not establish full animated-model support.
+are available through the engine-owned SDK. Timeline controls remain unfinished.
+[Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
+isolated Play and owned exports. Visual character authoring, morph targets,
+blending/state machines, events/root motion and production animation streaming
+remain unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
 STEP holds the preceding key, LINEAR interpolates vectors and uses shortest-arc
@@ -94,7 +95,8 @@ nonnormalized floats without buffer-view stride; scalar input bounds must exactl
 match finite increasing key times. Shared/sparse accessors use checked unpacking.
 Rotation output is VEC4, other channels VEC3; cubic output contains in/value/out
 triples per key. Existing clip validation also rejects duplicate targets, invalid
-rotations and singular scale keys. Imported skins/morphs remain unsupported.
+rotations and singular scale keys. Skinned models use the same joint-node channels
+and native players; morph targets remain unsupported.
 
 Import supports at most 1024 source clips, 30000 aggregate channels and one million
 aggregate keys. Every channel is validated, including targets outside the selected

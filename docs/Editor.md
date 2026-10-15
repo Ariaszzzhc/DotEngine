@@ -945,9 +945,16 @@ edits ordered live joint entities; a mesh is required. Applying uses ordinary na
 component/history validation. Duplicate requires all joints in the selected subtree
 union, remaps their IDs and rejects external references without partial edits.
 Model-scene instantiation remaps the same references. Bounds/framing/picking use the
-current deformed mesh. Skeleton visualization, glTF skin import and a visual
+current deformed mesh. Skeleton visualization and a visual
 animation timeline remain unfinished.
 
 Move a character root that contains its joints, or edit the joint transforms, to
 pose a skinned mesh. Its mesh-owner world transform cancels through the skin palette;
 moving only that mesh entity does not move the joint-driven world geometry.
+
+glTF/GLB import now creates these same native skin assets and scene components.
+`import-model` reports generated `skins` and `skinnedMeshes`; instantiate the returned
+scene to insert the complete joint hierarchy and animation bindings. Every copied
+joint receives a fresh entity ID. Asset import does not silently insert a character
+or enable different collision shapes. The [skin acceptance](Skinning.md) checks actual
+import, Inspector, duplicate/undo, isolated Play and relocated native export.

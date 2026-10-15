@@ -17,7 +17,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | Authored geometric SSAO | Saved optional settings, depth/world-normal guides, bounded radial search and bilateral filtering, diffuse IBL composition, transactional Rendering pane, preview/Play/relocated exports, actual grayscale/HDR and owned working-map release; temporal quality and scalability remain planned |
 | Directional soft shadows | Saved optional single directional source, stabilized 1..4 cascades, real depth passes, sixteen-tap/hardware PCF, receiver-plane correction, mesh cast/receive, overlap blending, inspector/agent/Play/export and actual hard/soft/disabled images; point/spot/contact-hardening/scalability remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
-| Native scene GPU skinning | [Skinning](Skinning.md): saved eight-slot skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; glTF skin import and visual skeleton tools remain unfinished |
+| Native scene GPU skinning | [Skinning](Skinning.md): glTF/GLB four/eight-weight import, saved skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; visual skeleton tools and blending remain unfinished |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio/animation; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
@@ -33,11 +33,11 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG each pass 1050/1050 CTest identities
-(982 doctest cases and 68 executable/script checks), taking 242.57s and 45.47s.
-The [test layers](Testing.md) separate 242 pure CPU unit cases from 684 integration,
-129 offscreen GPU, 71 native and 124 acceptance cases; labels overlap. All 355
-current engine/application/test C/C++ files pass clang-format; 17 unchanged WGSL
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1064/1064 CTest identities
+(994 doctest cases and 70 executable/script checks), taking 254.43s and 56.25s.
+The [test layers](Testing.md) separate 243 pure CPU unit cases from 695 integration,
+132 offscreen GPU, 72 native and 126 acceptance cases; labels overlap. All 359
+current engine/application/test C/C++ files pass clang-format; 17 WGSL
 files pass established indentation/line/whitespace checks and actual pipeline runs.
 The native animation SDK and interactive Feature Lab are covered through actual
 TypeScript, SDL input, GPU/audio, isolated editor Play and relocated game exports.
@@ -55,14 +55,14 @@ Only arm64 macOS has been built and run locally; no Windows/Linux result is clai
 The caller's LLVM/compiler/linker environment is preserved.
 
 The renderer retains authored normals/UVs/tangents and imports bounded OBJ, DotMesh
-and static/rigid-animated glTF/GLB content into native PBR meshes/materials/images.
+and static, rigid-animated and skinned glTF/GLB content into native PBR resources.
 It consumes direct lights, HDRI IBL, directional soft shadows and geometric SSAO,
 composes HDR radiance and tone maps for display. Scene authoring and shared caches
 span editor preview, Play and exports. The editor has docked panels, an independent
 camera, picking, single/group gizmos, multiselection/history, material/asset tools,
 external source opening and bounded agent drafts. Saved node-animation players and
 script controls now share the native GameSession path. Saved native GPU skins span
-scene rendering, editor bindings/history/Play and exports; glTF skin import,
+scene rendering, glTF/GLB import, editor bindings/history/Play and exports;
 blending, visual skeleton/animation
 authoring, streaming, populated-game performance, broader production
 editor tools and polished realistic Prism Relay remain unfinished. macOS copies
@@ -522,3 +522,32 @@ archive staging is removed. Only arm64 macOS is validated. glTF skin import,
 skeleton/timeline tools, mixing/retargeting, async status/streaming, populated-game
 performance, mature editor completion and polished realistic Prism Relay remain open.
 Windows/Linux remain implementation targets without local execution evidence.
+
+
+glTF/GLB skins now import four/eight influences and ordered inverse binds into
+owned native skin assets and scene components. Publication resolves all joint
+entities before binding, retains per-rig reuse, validates initial deformation and
+accounts for exact skin catalog growth. Bundle reload checks local references.
+The actual runtime imports an eight-joint GLB, reloads native assets, compares nine
+CPU-reference PBR/shadow/AO frames, checks bounds/picking and resource release, then
+reproduces a known exported pose after removing both source trees. Actual editor
+import/Inspector/joint duplicate remapping/undo/isolated Play/save/native export
+use production handlers; the moved game starts without its authoring project.
+Uniform reflected skins retain physical front faces and separate tangent/world
+handedness. Mixed reflected islands fail atomically and require separate primitives.
+
+Both configured builds succeed. Focused Debug passes 45/45 (24.28s), expanded
+Release passes 63/63 (6.64s). Complete Debug and Release/NDEBUG run sequentially and
+pass 1064/1064 each (254.43s/56.25s): 994 doctest cases plus 70 executable/script
+checks. A final test-only blank-line adjustment rebuilds both affected targets;
+the nine model-skin file cases pass again in each configuration (0.75s/0.10s).
+All 359 C/C++ and 17 WGSL files pass established formatting checks. Diagnostics
+show a flexible metal ribbon; they do not establish production character artwork.
+
+The refreshed owned archive is 49,065,340 bytes/276 entries/244 exact payloads.
+CRC/modes, original font/HDRI/licenses, private/source exclusions, strict signatures
+and portable loader/rpaths pass; 13 regular Mach-O files and three relative library
+links are checked. Owned archive staging is removed. Only arm64 macOS is validated.
+Visual skeleton/timeline authoring, blending/retargeting, asynchronous skin status,
+streaming and populated-game performance, mature editor completion and polished
+realistic Prism Relay remain unfinished.

@@ -9,6 +9,8 @@
 #endif
 
 namespace Dot::Editor {
+  auto testModelSkinning(const std::filesystem::path& compiler, const std::filesystem::path& parent)
+      -> int;
   auto testModelImport(const std::filesystem::path& parent) -> int;
   auto testSceneAnimation(const std::filesystem::path& compiler,
                           const std::filesystem::path& parent) -> int;
@@ -34,6 +36,10 @@ auto main(int argc, char** argv) -> int {
 
     if (argc == 3 && command == "--model-import-test") {
       return Dot::Editor::testModelImport(path(argv[2]));
+    }
+
+    if (argc == 4 && command == "--model-skin-test") {
+      return Dot::Editor::testModelSkinning(path(argv[2]), path(argv[3]));
     }
 
     if (argc == 4 && command == "--scene-animation-test") {

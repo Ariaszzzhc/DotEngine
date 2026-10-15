@@ -80,12 +80,15 @@ baked occlusion textures, their factors, sidedness and supported sampler setting
 Color slots are sRGB, data slots linear. PNG/JPEG are losslessly canonicalized to
 RGBA8 PNG after decoding; RGBA is retained and coverage is explicit at rendering
 without implicit gamma conversion. Emissive strength and unlit materials with
-compatible native slots are supported. Skinned/morph content, compressed
+compatible native slots are supported. Morph content, compressed
 geometry/textures, cameras/lights, UV transforms/UV sets other
 than zero and mixed sampler filtering currently return explicit errors. They are
 not imported with missing visual semantics. Node TRS animation is supported through
 native clips/bindings and saved scene players as described in [Animation](Animation.md).
-Skinning and a complete character animation pipeline remain unfinished.
+Skinned glTF/GLB meshes now retain native inverse binds, ordered joints and all
+four/eight influences, as described in [Skinning](Skinning.md). A complete character
+animation pipeline, including blends, retargeting and visual skeleton tools,
+remains unfinished.
 
 Source buffers/images can be GLB views, strict base64 data URIs or percent-escaped
 portable paths under the source-file directory. Remote/absolute/traversal/symlink
@@ -97,10 +100,11 @@ ordering are checked before library reads. Callers serialize source/filesystem e
 this is not hostile-race isolation or crash-durable publishing.
 
 Importer prepares native `meshes/*.dotmesh`, `materials/*.dotmaterial`, `images/*.png`
-and `model.dotscene`, plus `model.dotmodel` node bindings and any native animation
-clips in an owned sibling directory, then publishes without replacing
+and `model.dotscene`, plus `model.dotmodel` node bindings, any `skins/*.dotskin`
+and native animation clips in an owned sibling directory, then publishes without replacing
 an existing destination. Failures before publication preserve source/project and
 remove staging. Asset import and scene insertion are separate operations: insertion
-remaps entity/parent/animation-target IDs and commits one document history transaction. Undo retains
-the reusable asset directory. Imported physical models need authored scene lighting
+remaps entity/parent/joint/animation-target IDs and commits one document history
+transaction. Undo retains the reusable asset directory. Imported physical models
+need authored scene lighting
 or an HDR environment to be visible; no substitute illumination is persisted.

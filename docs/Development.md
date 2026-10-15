@@ -4864,3 +4864,73 @@ source exclusions. Strict signatures and portable loader/rpath references pass
 for 13 regular Mach-O files/three relative library links. Private archive staging
 is removed. No new external dependency, compiler override or linkage policy change
 was introduced.
+
+
+## 2026-10-15 — glTF skins through native editor and games
+
+glTF/GLB import now retains four/eight influences, ordered joints and optional
+inverse binds through native .dotskin assets and scene components. Shared
+primitive/skin pairs reuse immutable data; distinct rigs retain distinct bindings.
+Publication constructs all nodes before joint remapping, validates initial CPU
+deformation and encodes skins before writing owned staging. Flat-normal expansion
+copies original per-corner influences. Bundle reload verifies local asset paths and
+real skin/mesh counts. Resource catalog growth includes skin files/directories;
+import reports expose skins and skinnedMeshes through actual workspace commands.
+
+Strict tests cover glTF/GLB ownership, optional/extra/malformed inverse binds,
+four/eight and float/normalized integer weights, exact quantized sums, sparse and
+strided attributes, zero-weight out-of-range indices, selected-scene/common-root
+rules, duplicate joints, different rigs, multiple primitives and exact owner/catalog
+capacities. Non-unit float weights warn and normalize; unsupported extra influence
+sets fail explicitly. No compatibility layout or version dispatcher was added.
+
+The runtime acceptance imports the actual owned eight-joint GLB, reloads native
+files, advances GameSession animation and compares nine PBR/shadow/AO frames with
+independent CPU deformation. Picking/bounds and resource release are checked. A
+relocated package reproduces a known pose after both authoring and relocated input
+trees are removed. Actual editor import/Inspector/complete-joint duplicate remapping,
+undo/isolated Play/save/native export checks use production handlers; the relocated
+native game starts after removing its source project. First/middle/final runtime
+frames and editor bind/Play viewport images were inspected: a diagnostic metal ribbon
+bends as expected. This is not realistic character or game artwork.
+
+The physical mirrored-owner test initially failed: the skin palette cancels its
+mesh transform, but physical front-face selection used only that transform sign.
+GPU status now carries blend orientation into the published posed mesh; every
+physical raster pass receives the combined face sign. Tangent transport separately
+uses world reflection because skin deformation already writes tangent handedness.
+The first combined-sign implementation double-counted reflection and failed the
+existing eight-weight normal-map pixel comparison; separating those signs fixes
+it. Uniform reflection preserves authored faces/picking. Mixed reflected islands in
+one primitive fail atomically, with an explicit split-primitive contract in both
+CPU and GPU paths; previous buffers, bounds and counters remain intact.
+
+Earlier iteration also corrected a shadowed parser variable, a temporary-vector
+borrow in a new test, missing direct module imports and ignored nonvoid script
+lifecycle reports. Final review covered accessor bounds/normalization, source/node
+ownership, deferred references, output byte/catalog budgets, error propagation,
+transactional GPU publication, reflected normals/tangents and test-only dispatch.
+The corrected focused Debug selection passes 45/45 (24.28s). Both final configured
+builds succeed with the caller's existing environment; strengthened editor coverage
+requires every duplicated joint to leave the original joint set. All 359 C/C++
+sources pass clang-format and all 17 WGSL files pass two-space indentation,
+100-column and whitespace checks. Final focused Release and full suites follow
+sequentially after both builds. Only arm64 macOS execution is claimed. Skeleton
+visualization, blending/retargeting, asynchronous skin status, populated-game
+throughput and polished realistic Prism Relay remain open.
+
+The expanded final Release selection passes 63/63 (6.64s), including previous model
+import/animation and editor animation cases. Full Debug passes 1064/1064 (254.43s);
+full Release/NDEBUG runs afterward and passes 1064/1064 (56.25s), with no competing
+compilation. Inventory is 994 doctest cases plus 70 executable/script checks: 243
+unit, 695 integration, 216 GPU, 132 offscreen, 72 native, 126 acceptance, 149 compiler,
+21 process, 27 platform and 32 audio-native labels (overlapping). Final style review
+adds one blank line before a test loop, with no behavior change; both affected
+test targets rebuild and the nine model-skin integration cases pass again in Debug
+(0.75s) and Release/NDEBUG (0.10s). All 359 C/C++ files and diff whitespace pass again.
+
+The owned archive target succeeds. Final ZIP is 49,065,340 bytes, 276 entries and
+244 exact payloads. CRC/modes, original font/HDRI/license bytes and private/source
+exclusions pass. Strict signatures and portable loader/rpaths pass for 13 regular
+Mach-O files and three relative library links. Private archive staging is removed.
+No external dependency, compiler override or linkage-policy change was introduced.

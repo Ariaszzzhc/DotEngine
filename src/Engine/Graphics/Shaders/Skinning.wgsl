@@ -88,6 +88,11 @@ fn skinVertices(@builtin(global_invocation_id) invocation: vec3u) {
     return;
   }
 
+  /** Share blend orientation with every raster pass; mesh-node reflection may
+   * cancel inside the palette and must not independently reverse front faces.
+   * 所有光栅通道共用混合朝向；网格节点镜像可能已在调色板内抵消，不能单独反转正面。 */
+  atomicOr(&report[7], select(2u, 4u, determinant < 0.0));
+
   let original = sourceVertices[index];
   var result = original;
   /** Scale before multiplication so overflow is rejected before it happens.
