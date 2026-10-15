@@ -5,6 +5,8 @@
 #include <vector>
 
 import Dot.Assets.Image;
+import Dot.Assets.ModelBundle;
+import Dot.Animation.SceneAnimator;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Resources;
@@ -14,6 +16,52 @@ import Dot.Graphics.Renderer;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Math;
+
+TEST_CASE("model.animation_gpu_reloaded_bundle_matches_authored_pose_and_releases_resources") {
+  using namespace Dot;
+  auto storage = Core::StagedDirectory::create(
+                     Core::FileSystem::open(std::filesystem::temp_directory_path()).value())
+                     .value();
+  auto project = Project::Project::create(storage.files().value(), "game").value();
+  auto resources = Editor::ResourceStore::open(project).value();
+  REQUIRE(resources.importModel(std::filesystem::path(DOT_MODEL_FIXTURES) / "animated.glb",
+                                "assets/model"));
+  auto renderer = Graphics::Renderer::create().value();
+  const auto baseline = renderer.resourceStats().value();
+
+  {
+    auto model
+        = Assets::loadModelBundle(project.files().value(), "assets/model/model.dotmodel").value();
+    auto& scene = model.scene;
+    const auto camera = scene.createEntity("Camera").value();
+    REQUIRE(scene.setCamera(camera, World::Camera{.projection = World::Projection::Orthographic,
+                                                  .orthographicHeight = 4,
+                                                  .primary = true}));
+    REQUIRE(scene.setTransform(camera, {{0, 0, 3}}));
+    REQUIRE(scene.setLight(scene.createEntity("Key light").value(), World::Light{.intensity = 3}));
+    auto reference = World::decodeScene(World::encodeScene(scene).value()).value();
+    REQUIRE(reference.setTransform(reference.findEntity(model.bindings[0].entity.value).value(),
+                                   {{.85F, 0, 0}}));
+    REQUIRE(reference.setTransform(reference.findEntity(model.bindings[1].entity.value).value(),
+                                   {{}, {0, 0, .382683432365F, .923879532511F}, {-.5F, 2, 1}}));
+    auto animator
+        = Animation::SceneAnimator::bind(scene, model.animations[0], model.bindings).value();
+    auto drawing = Graphics::SceneRenderer::create(renderer, project.files().value()).value();
+    const auto initial = drawing.render(scene, 128, 128).value();
+    const auto expected = drawing.render(reference, 128, 128).value();
+    REQUIRE(animator.seek(scene, 1));
+    CHECK(drawing.render(scene, 128, 128)->pixels == expected.pixels);
+    CHECK(expected.pixels != initial.pixels);
+    REQUIRE(animator.stop(scene));
+    CHECK(drawing.render(scene, 128, 128)->pixels == initial.pixels);
+  }
+
+  CHECK(renderer.resourceStats()->meshes == baseline.meshes);
+  CHECK(renderer.resourceStats()->vertexBytes == baseline.vertexBytes);
+  CHECK(renderer.resourceStats()->indexBytes == baseline.indexBytes);
+  CHECK(renderer.resourceStats()->textures == baseline.textures);
+  CHECK(renderer.resourceStats()->targets == baseline.targets);
+}
 
 TEST_CASE("model.gpu_imported_textured_hierarchy_matches_independent_native_reference") {
   using namespace Dot;

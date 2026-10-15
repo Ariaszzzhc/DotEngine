@@ -119,6 +119,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Assets/Material.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/Assets/Model.cpp
+    src/Engine/Assets/ModelBundle.cpp
     src/Engine/World/Scene.cpp
     src/Engine/World/SceneFiles.cpp
     src/Engine/Physics/World.cpp
@@ -216,6 +217,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Assets/Material.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/Assets/Model.cppm
+        src/Engine/Assets/ModelBundle.cppm
         src/Engine/World/Scene.cppm
         src/Engine/World/SceneFiles.cppm
         src/Engine/Physics/World.cppm

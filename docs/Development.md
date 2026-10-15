@@ -4467,3 +4467,76 @@ Debug (6.73s) and Release/NDEBUG (2.52s), covering parent/child/repeated selecti
 modifier ranges, duplicate/delete and undo. This confirms the current code path;
 the user's launched application path has been requested to distinguish an older
 package from a new failure. No additional production fix is claimed for this check.
+
+
+### 2026-10-15 — glTF TRS clips and native model bundles
+
+Animated glTF/GLB node translation, rotation and scale now convert to immutable
+native clips. Import checks scalar float time accessors/bounds, vector float outputs,
+normalization/stride restrictions, output cardinality and all existing clip/key
+contracts before remapping source node indices into the selected hierarchy. Source
+clips/channels/keys have aggregate budgets. Channels outside the selected scene are
+validated then excluded with explicit warnings; clips with no remaining targets are
+omitted. Unnamed clips use stable source-index names. Matrix-target animations,
+skinning and morph targets remain explicit unsupported failures.
+
+Non-matrix nodes preserve authored TRS axes/signs instead of decomposing their
+composed matrix into an equivalent but animation-incompatible representation.
+Native model preparation validates the scene, clip targets and aggregate encoded
+bytes before writing. Each bundle now owns model.dotmodel with canonical node/entity
+IDs, scene and ordered native clip paths, alongside editable geometry/material/images.
+The separate ModelBundle interface/implementation reloads owned scene/clips and live
+bindings without source glTF lifetime. Strict descriptor schema/UTF-8/size, same-bundle
+paths, canonical unique live IDs, aggregate clip budgets and link/special-file checks
+reject malformed resources. Scene moves retain bindings; playback is explicit.
+
+ResourceStore accounts for the descriptor, clip files and optional animation folder
+before atomic publication. Editor GUI/agent import reports native model path and
+animation count, while .dotmodel/.dotanimation remain externally editable resources.
+Existing Add model to scene still inserts geometry only: saved animation authoring,
+GameSession/editor timeline/SDK playback are the next consumer stage, not implemented
+by this import milestone. Skinning/morphs/blending/events/streaming and polished game
+production remain open requirements.
+
+Owned glTF/GLB diagnostic fixtures intentionally reorder source nodes versus tree
+traversal, combine cubic parent translation/linear reflected-child rotation/STEP
+scale and include another scene's unnamed clip. File integration covers remapping,
+source-independent reload/moves/playback, malformed binary/channel/accessor data,
+excluded invalid channels, strict descriptor paths/IDs, actual symlink rejection and
+failed-publication/staging preservation. An independent native pose matches real
+imported animation pixels and stop restores bind pose; GPU resources return to
+baseline. Runnable --model-animation-test saves nine real offscreen PNGs; first,
+midpoint and last images were inspected. Native editor model acceptance checks the
+actual import command/report without claiming timeline support.
+
+Initial tests required one explicit Core.Result module import; no warning policy or
+compiler/linker environment was changed. Initial seven new focused cases pass 7/7
+(0.91s). After reviewed time-bound validation and runnable acceptance, all affected
+model/import/editor cases pass 17/17 (5.77s). All 325 C/C++ sources pass clang-format;
+16 WGSL sources pass established indentation/trailing-space/line-length checks.
+
+The first full Debug suite passes 1001/1001 (218.20s). During final review, split
+scene filtering and node remapping so erase_if's predicate never mutates elements;
+this avoids depending on standard-library predicate invocation details. Strengthened
+file integration to exercise primitive-interleaved node IDs and the exact resource
+catalog capacity (one entry short rejects, exact fit publishes). Both configurations
+are rebuilt before final validation. Also corrected stale Assets documentation that
+still called the already-implemented PBR/IBL/shadow/SSAO/HDR renderer planned.
+
+Final Debug passes 1001/1001 (215.74s) after the final predicate review and expanded
+binding/catalog checks; final focused animation cases also pass 7/7 (0.91s).
+The inventory is 935 doctest identities plus 66 executable/script checks; overlapping
+labels include 224 unit, 658 integration, 196 GPU, 117 offscreen, 67 native and 119
+acceptance cases. Final formatting recheck passes all 325 C/C++ files; WGSL remains
+16 passing files. Only arm64 macOS is locally validated.
+
+Final Release/NDEBUG passes 1001/1001 (38.71s). Reviewed module ownership/lifetime,
+source accessor arithmetic, scene-selection filtering/remapping, file boundaries,
+pre-publication resource budgets, exception/result propagation and platform-neutral
+paths. No engine product main gained acceptance code. The owned archive target
+succeeds; final ZIP is 48,680,122 bytes/272 entries/240 exact payloads with passing
+CRC, executable modes, original font/HDRI/license payloads and private-input/source
+exclusions. Strict signatures and portable loader references pass for 13 regular
+Mach-O files/three relative symlinks; archive staging is removed. Windows/Linux
+remain implemented targets without local validation. The full large-game/editor/
+realistic Prism Relay objective stays active.

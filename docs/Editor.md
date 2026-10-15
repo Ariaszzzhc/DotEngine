@@ -724,12 +724,14 @@ The current scene's camera/environment/lighting remain authoritative.
 ```
 
 Import optionally accepts an unsigned `scene` index 0..1023. It reports source scene,
-mesh/material/image/node counts, generated scene path and metadata warnings. Import
-publishes reusable resources without dirtying the scene; instantiation needs the
+mesh/material/image/node and animation counts, generated scene and native model
+descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
+Add model to scene still inserts geometry only. Saved animation players/timeline
+controls are unfinished. Import publishes reusable resources without dirtying the scene; instantiation needs the
 current authoring revision. A failed catalog refresh after publication explicitly
 reports that the bundle was committed. Existing destinations are never overwritten.
-Native `.gltf`, `.dotmesh` and `.dotscene` text resources can open in the external
-editor; internal text transport remains only an automation buffer.
+Native `.gltf`, `.dotmesh`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources
+can open in the external editor; internal text transport remains only an automation buffer.
 
 
 Material coverage is persisted in `.dotmaterial` alphaMode (`opaque`, `mask`, `blend`)

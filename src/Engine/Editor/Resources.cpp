@@ -62,7 +62,7 @@ namespace Dot::Editor {
       return extension == ".ts" || extension == ".mts" || extension == ".json" || extension == ".md"
              || extension == ".txt" || extension == ".obj" || extension == ".wgsl"
              || extension == ".dotmaterial" || extension == ".dotmesh" || extension == ".dotscene"
-             || extension == ".gltf";
+             || extension == ".gltf" || extension == ".dotmodel" || extension == ".dotanimation";
     }
 
     auto validText(std::string_view text, std::size_t limit) -> Core::Result<void> {
@@ -485,8 +485,8 @@ namespace Dot::Editor {
         return std::unexpected(entries.error());
       }
 
-      const auto added
-          = model->primitives.size() + model->materials.size() + model->images.size() + 5;
+      const auto added = model->primitives.size() + model->materials.size() + model->images.size()
+                         + 6 + model->animations.size() + (model->animations.empty() ? 0 : 1);
 
       if (added > m_impl->m_limits.entries - entries->size()) {
         return Core::fail(Core::ErrorCode::Unavailable,
@@ -517,7 +517,9 @@ namespace Dot::Editor {
                                model->images.size(),
                                model->nodes.size(),
                                model->scene,
-                               std::move(model->warnings)};
+                               std::move(model->warnings),
+                               std::string(destination) + "/model.dotmodel",
+                               model->animations.size()};
       auto published = staging->publish(target->filename());
 
       if (!published) {

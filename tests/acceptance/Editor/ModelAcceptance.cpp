@@ -48,6 +48,13 @@ namespace Dot::Editor {
     const auto imported
         = command({{"command", "import-model"}, {"path", "assets/model"}, {"source", source}});
     require(imported["meshes"] == 1 && imported["images"] == 3, "Native model import report");
+    const auto animated = command(
+        {{"command", "import-model"},
+         {"path", "assets/animated"},
+         {"source",
+          (std::filesystem::path(DOT_MODEL_FIXTURES) / "animated.glb").generic_string()}});
+    require(animated["animations"] == 1 && animated["model"] == "assets/animated/model.dotmodel",
+            "Native animation import report retains clip and binding descriptor");
     require(inspect()["dirty"] == false, "Asset import must not mutate authoring scene");
     command({{"command", "edit"},
              {"operations", Json::array({{{"op", "remove"}, {"entity", "2"}},

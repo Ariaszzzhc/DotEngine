@@ -54,18 +54,18 @@ vertices otherwise keep missing normals; rendering does not pretend lighting exi
 
 `DotRuntimeAcceptance --surface-mesh-test <existing-directory>` exercises surface
 persistence and an owned normal-color visualization through actual GPU upload and
-pixel readback. Material/texture sampling and light/shadow rendering are subsequent
-capabilities in the [engine roadmap](EngineRoadmap.md).
+pixel readback. Material/texture sampling and light/shadow rendering are documented
+in [Rendering](Rendering.md); production gaps remain in the [roadmap](EngineRoadmap.md).
 
 ## Images and surface textures
 
 PNG/JPEG and Radiance RGBE import, explicit color spaces, immutable GPU texture
 ownership, mips, samplers and material base-color sampling are documented in
-[rendering development](Rendering.md). Physical PBR/HDRI/soft-shadow/SSAO/HDR
-rendering remains planned; retaining HDR pixels does not yet provide IBL.
+[rendering development](Rendering.md), including the implemented PBR/HDRI IBL,
+soft shadows, SSAO and HDR/tonemapping pipeline and its current limits.
 
 
-## Static glTF/GLB models
+## glTF/GLB models
 
 `Dot.Assets.Model` imports triangle lists/strips/fans, indexed/nonindexed geometry,
 strided and sparse accessors, normalized attributes and required mesh quantization.
@@ -80,11 +80,12 @@ baked occlusion textures, their factors, sidedness and supported sampler setting
 Color slots are sRGB, data slots linear. PNG/JPEG are losslessly canonicalized to
 RGBA8 PNG after decoding; RGBA is retained and coverage is explicit at rendering
 without implicit gamma conversion. Emissive strength and unlit materials with
-compatible native slots are supported. Animated/skinned/morph content, compressed
+compatible native slots are supported. Skinned/morph content, compressed
 geometry/textures, cameras/lights, UV transforms/UV sets other
 than zero and mixed sampler filtering currently return explicit errors. They are
-not imported with missing visual semantics. This is static model authoring, not a
-complete animation/content pipeline.
+not imported with missing visual semantics. Node TRS animation is supported through
+native clips/bindings as described in [Animation](Animation.md); automatic saved-scene
+playback, skinning and a complete character animation pipeline remain unfinished.
 
 Source buffers/images can be GLB views, strict base64 data URIs or percent-escaped
 portable paths under the source-file directory. Remote/absolute/traversal/symlink
@@ -96,7 +97,8 @@ ordering are checked before library reads. Callers serialize source/filesystem e
 this is not hostile-race isolation or crash-durable publishing.
 
 Importer prepares native `meshes/*.dotmesh`, `materials/*.dotmaterial`, `images/*.png`
-and `model.dotscene` in an owned sibling directory, then publishes without replacing
+and `model.dotscene`, plus `model.dotmodel` node bindings and any native animation
+clips in an owned sibling directory, then publishes without replacing
 an existing destination. Failures before publication preserve source/project and
 remove staging. Asset import and scene insertion are separate operations: insertion
 remaps entity/parent IDs and commits one document history transaction. Undo retains

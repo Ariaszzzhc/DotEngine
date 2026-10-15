@@ -293,3 +293,13 @@ and failed-save preservation. GPU samples match an independent native reference;
 `DotRuntimeAcceptance --animation-test <existing-output-directory>` writes nine
 real PNG frames/native clip, restores bind-pose pixels and releases resources.
 This is a native TRS animation foundation, not glTF/skinning/editor/SDK integration.
+
+
+Model animation acceptance imports GLB TRS channels, publishes/reloads the actual
+native scene/clip/binding bundle, samples nine offscreen textured frames and verifies
+rest pixels/resource release. CPU/file integration checks cover glTF and GLB remapping,
+scene selection with warnings, shared sampler inputs, binary malformed/nonfinite/
+unordered/singular data, unsupported targets, strict descriptor paths/IDs, moves,
+source independence and failed-publication preservation. The native editor model
+acceptance also checks animation import report fields. Automatic authoring-scene/
+GameSession animation playback remains explicitly unfinished.

@@ -1534,6 +1534,8 @@ namespace Dot::Editor {
         m_selectedResource = result->scene;
         return Json{{"ok", true},
                     {"scene", result->scene},
+                    {"model", result->model},
+                    {"animations", result->animations},
                     {"meshes", result->meshes},
                     {"materials", result->materials},
                     {"images", result->images},

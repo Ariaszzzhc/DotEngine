@@ -3,9 +3,9 @@
 `Dot.Animation.Clip` provides immutable shared TRS channel data. `Dot.Animation.Files`
 loads/saves native `.dotanimation` clips, and `Dot.Animation.SceneAnimator` binds
 logical node indices to live scene-scoped entity handles. This foundation is usable
-by native engine consumers and runnable acceptance. It is not yet integrated into
-glTF import, GameSession components, the editor timeline or TypeScript SDK. Skinning,
-morph targets, blending/state machines, events/root motion and production animation
+by native engine consumers and runnable acceptance. glTF/GLB node animations now
+convert to these clips and native model bindings. GameSession components, the editor
+timeline and TypeScript SDK playback remain unfinished. Skinning, morph targets, blending/state machines, events/root motion and production animation
 streaming remain unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
@@ -80,3 +80,49 @@ resource release. Offscreen tests additionally compare an animated sample agains
 an independently constructed native reference pose. CPU unit cases never create a
 window/device; file tests are integration cases. Only arm64 macOS is locally
 validated; Windows/Linux remain implementation targets.
+
+
+## Imported model animation
+
+`Dot.Assets.Model` reads glTF/GLB TRS channels and remaps source node indices to the
+selected native hierarchy. Authored TRS signs/axes are retained for partial-channel
+animation; matrix-target animation is rejected. Input/output accessors must be
+nonnormalized floats without buffer-view stride; scalar input bounds must exactly
+match finite increasing key times. Shared/sparse accessors use checked unpacking.
+Rotation output is VEC4, other channels VEC3; cubic output contains in/value/out
+triples per key. Existing clip validation also rejects duplicate targets, invalid
+rotations and singular scale keys. Skinning/morphs remain unsupported.
+
+Import supports at most 1024 source clips, 30000 aggregate channels and one million
+aggregate keys. Every channel is validated, including targets outside the selected
+scene. Such targets are excluded with explicit warnings; empty resulting clips are
+omitted. Names are retained, with stable source-index names for unnamed clips.
+
+Native bundles contain `model.dotscene`, `animations/N.dotanimation` and
+`model.dotmodel`. The descriptor records project-relative scene/ordered clip paths
+and canonical string entity IDs for each logical node. Primitive entities do not
+participate in the node index table. `Dot.Assets.ModelBundle::loadModelBundle`
+returns an owned scene, immutable clips and live SceneAnimator node bindings; a
+scene move retains those bindings. Files are independent of original glTF bytes.
+No playback begins automatically. The descriptor is strict JSON <=1 MiB; encoded
+clips total <=64 MiB with aggregate channel/key limits. References remain inside
+the same model bundle; links, malformed/duplicate/missing IDs and wrong targets fail.
+Import prepares the complete bundle in owned staging and publishes without replacing
+an existing destination. This does not isolate hostile filesystem races.
+
+The editor import command reports `model`, `animations` and its existing scene/
+geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
+**Add model to scene currently inserts only the geometry hierarchy.** Saved scene
+animation components, automatic GameSession playback, editor timeline controls and
+TypeScript animation APIs are the next consumer stage.
+
+```sh
+ctest --preset debug -R '^(model.animation_|runtime.model_animation$)'
+build/debug/bin/DotRuntimeAcceptance --model-animation-test tests/fixtures/models/animated.glb build/debug/tests/animation_acceptance
+```
+
+The runnable case imports a textured GLB, reloads its native bundle and saves nine
+actual offscreen model-animation PNGs. An independent authored-pose GPU reference
+checks conversion at the cubic midpoint, linear quaternion and exact STEP key;
+stop restores initial pixels and GPU resources return to baseline. The diagnostic
+fixture is test geometry, not production art or evidence of full character animation.

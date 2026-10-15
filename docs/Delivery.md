@@ -385,3 +385,28 @@ loader references for 13 regular Mach-O files/three relative links. Native hiera
 click regressions additionally pass three consecutive runs each in both builds.
 Windows/Linux remain implemented without local validation. The large-game,
 mature-editor and polished realistic Prism Relay requirements remain active.
+
+
+The 2026-10-15 animated-model import stage converts glTF/GLB TRS channels into
+native clips while retaining authored transform axes/signs. Selected-scene remapping,
+validated/explained exclusions, shared inputs and strict malformed-data rejection
+have file integration coverage. Native model descriptors persist scene/clip paths
+and exact node/entity bindings, including interleaved primitive entity IDs. Owned
+bundle reload, scene moves, original-source removal, explicit playback/restoration,
+exact catalog capacity and failed-publication preservation are verified.
+
+An independent authored pose matches actual imported-animation GPU pixels; the
+runnable acceptance generates nine actual frames and releases drawing resources.
+The real editor import command reports native model descriptor/animation count and
+recognizes externally editable model/clip resources. Add model to scene currently
+inserts geometry only. Saved animation components, automatic GameSession/editor/
+TypeScript playback, skinning/morphs/blending/events/streaming and realistic game
+content are unfinished. This stage does not establish production animation or the
+full large-game/mature-editor objective.
+
+Final arm64 macOS Debug passes 1001/1001 (215.74s), Release/NDEBUG 1001/1001
+(38.71s): 935 doctest identities plus 66 executable/script cases. All 325 C/C++ and
+16 WGSL sources pass formatting checks. Latest ZIP is 48,680,122 bytes/272 entries,
+240 matching payloads with passing CRC/modes/licenses, strict signatures and portable
+loader references for 13 regular Mach-O files/three relative links. Windows/Linux
+remain implementation targets without local validation; the full goal remains active.

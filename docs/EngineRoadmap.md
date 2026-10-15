@@ -180,6 +180,8 @@ Native immutable TRS clips now support Step/Linear/CubicSpline, strict native cl
 assets and explicit scene-bound playback with reverse/loop/pause/seek/stop. Sampling
 and local transforms commit atomically with clock state; actual offscreen reference
 pixels, saved clips/nine frames and resource release have acceptance coverage.
-This precedes consumers: glTF animated-node import, GameSession/editor/SDK playback,
-skinning/morphs/blending/state machines/events and animation streaming are still
-unfinished. Production animation and realistic polished Prism Relay remain open.
+glTF/GLB TRS animated-node import now retains native clips and persisted model
+node bindings, with independent bundle reload and actual animated reference pixels.
+GameSession/editor/SDK playback, skinning/morphs/blending/state machines/events and
+animation streaming are still unfinished. Production animation and realistic polished
+Prism Relay remain open.

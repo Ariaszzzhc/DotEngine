@@ -3,6 +3,7 @@
 add_executable(DotRuntimeAcceptance
     Runtime/main.cpp
     Runtime/AnimationAcceptance.cpp
+    Runtime/ModelAnimationAcceptance.cpp
     Runtime/AudioAcceptance.cpp
     Runtime/AudioScriptAcceptance.cpp
     Runtime/AuthoringAcceptance.cpp

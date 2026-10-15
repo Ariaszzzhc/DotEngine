@@ -33,6 +33,7 @@ import Dot.Core.Paths;
 import Dot.Core.Text;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.Animation.Files;
 
 namespace Dot::Assets {
   namespace {
@@ -206,7 +207,8 @@ namespace Dot::Assets {
         constexpr std::array integers{
             "index",  "texCoord",   "byteOffset",    "byteLength", "byteStride", "count",
             "buffer", "bufferView", "componentType", "mesh",       "material",   "scene",
-            "source", "sampler",    "indices",       "mode",       "skin",       "camera"};
+            "source", "sampler",    "indices",       "mode",       "skin",       "camera",
+            "input",  "output",     "node"};
         constexpr std::array scalars{"metallicFactor", "roughnessFactor", "strength",
                                      "emissiveStrength", "alphaCutoff"};
         constexpr std::array vectors{"translation",    "rotation", "matrix", "baseColorFactor",
@@ -251,6 +253,11 @@ namespace Dot::Assets {
             require(entry.is_boolean(), "Model boolean field: " + key);
           }
 
+          if (key == "interpolation") {
+            require(entry == "STEP" || entry == "LINEAR" || entry == "CUBICSPLINE",
+                    "Unsupported animation interpolation");
+          }
+
           if (std::ranges::find(textures, key) != textures.end()) {
             require(entry.is_object() && entry.contains("index"),
                     "Texture requires an index: " + key);
@@ -291,7 +298,8 @@ namespace Dot::Assets {
     auto validateData(cgltf_data& data) -> void {
       require(data.nodes_count <= 10000 && data.accessors_count <= 8192
                   && data.buffer_views_count <= 8192 && data.materials_count <= 4096
-                  && data.images_count <= 1024 && data.meshes_count <= 4096,
+                  && data.images_count <= 1024 && data.meshes_count <= 4096
+                  && data.animations_count <= 1024,
               "Model object capacity exceeded");
 
       for (std::size_t i = 0; i < data.buffer_views_count; ++i) {
@@ -410,9 +418,8 @@ namespace Dot::Assets {
 
       require(parsed == cgltf_result_success && data,
               "Cannot parse glTF/GLB: " + std::to_string(parsed));
-      require(data->animations_count == 0 && data->skins_count == 0 && data->cameras_count == 0
-                  && data->lights_count == 0,
-              "Animated/skinned/camera/light model import is not supported");
+      require(data->skins_count == 0 && data->cameras_count == 0 && data->lights_count == 0,
+              "Skinned/camera/light model import is not supported");
       std::size_t inputBytes = bytes.size();
       std::map<std::string, std::vector<std::byte>> resources;
       const auto resource = [&](std::string_view uri) -> const std::vector<std::byte>& {
@@ -780,6 +787,7 @@ namespace Dot::Assets {
       require(!scene || selected < data->scenes_count, "Requested model scene does not exist");
       result.scene = static_cast<std::uint32_t>(selected);
       std::set<const cgltf_node*> visited;
+      std::map<const cgltf_node*, std::uint32_t> nodeIds;
       std::size_t entities{};
       const auto visit
           = [&](auto&& self, const cgltf_node* node, std::optional<std::uint32_t> parent) -> void {
@@ -793,9 +801,21 @@ namespace Dot::Assets {
                           : std::format("Node {}", cgltf_node_index(data.get(), node));
         require(output.name.size() <= 256 && Core::isValidUtf8(output.name),
                 "Invalid model node name");
-        Math::Mat4 matrix;
-        cgltf_node_transform_local(node, matrix.data.data());
-        output.transform = take(Math::decomposeTrs(matrix));
+        if (node->has_matrix) {
+          Math::Mat4 matrix;
+          cgltf_node_transform_local(node, matrix.data.data());
+          output.transform = take(Math::decomposeTrs(matrix));
+        } else {
+          // Preserve authored TRS signs/axes for partial animation channels.
+          // 保留作者 TRS 符号及轴，避免部分动画通道与分解后的另一种姿态混用。
+          output.transform
+              = {{node->translation[0], node->translation[1], node->translation[2]},
+                 {node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3]},
+                 {node->scale[0], node->scale[1], node->scale[2]}};
+          output.transform.rotation = take(Math::normalized(output.transform.rotation));
+          take(Math::compose(output.transform.position, output.transform.rotation,
+                             output.transform.scale));
+        }
         output.parent = parent;
 
         if (node->mesh) {
@@ -805,6 +825,7 @@ namespace Dot::Assets {
         }
 
         const auto id = static_cast<std::uint32_t>(result.nodes.size());
+        nodeIds.emplace(node, id);
         result.nodes.push_back(std::move(output));
 
         for (std::size_t child = 0; child < node->children_count; ++child) {
@@ -828,6 +849,102 @@ namespace Dot::Assets {
       }
 
       require(!result.nodes.empty(), "Selected model scene is empty");
+      std::size_t channels{}, keys{};
+
+      for (std::size_t index = 0; index < data->animations_count; ++index) {
+        const auto& animation = data->animations[index];
+        require(animation.channels_count > 0 && animation.channels_count <= 30000 - channels
+                    && animation.samplers_count > 0 && animation.samplers_count <= 30000,
+                "Animation channel/sampler budget exceeded");
+        channels += animation.channels_count;
+        Animation::ClipDescription description{
+            animation.name && *animation.name ? animation.name : std::format("Animation {}", index),
+            {}};
+
+        for (std::size_t channelIndex = 0; channelIndex < animation.channels_count;
+             ++channelIndex) {
+          const auto& channel = animation.channels[channelIndex];
+          require(channel.target_node && !channel.target_node->has_matrix && channel.sampler
+                      && (channel.target_path == cgltf_animation_path_type_translation
+                          || channel.target_path == cgltf_animation_path_type_rotation
+                          || channel.target_path == cgltf_animation_path_type_scale),
+                  "Animation requires a TRS node target (matrix/morph targets unsupported)");
+          const auto& sampler = *channel.sampler;
+          const auto* input = sampler.input;
+          const auto* output = sampler.output;
+          require(input && output, "Animation sampler accessors are missing");
+          const auto& inputMetadata
+              = metadata["accessors"][cgltf_accessor_index(data.get(), input)];
+          require(input && output && input->component_type == cgltf_component_type_r_32f
+                      && output->component_type == cgltf_component_type_r_32f && !input->normalized
+                      && !output->normalized
+                      && (!input->buffer_view || input->buffer_view->stride == 0)
+                      && (!output->buffer_view || output->buffer_view->stride == 0)
+                      && input->count <= 1000000 - keys && input->has_min && input->has_max
+                      && inputMetadata["min"].size() == 1 && inputMetadata["max"].size() == 1,
+                  "Animation requires bounded float accessors without stride/normalization and "
+                  "time bounds");
+          keys += input->count;
+          const auto mode = sampler.interpolation == cgltf_interpolation_type_step
+                                ? Animation::Interpolation::Step
+                            : sampler.interpolation == cgltf_interpolation_type_linear
+                                ? Animation::Interpolation::Linear
+                                : Animation::Interpolation::CubicSpline;
+          const bool cubic = mode == Animation::Interpolation::CubicSpline;
+          const bool rotation = channel.target_path == cgltf_animation_path_type_rotation;
+          const auto times = accessor(input, cgltf_type_scalar, input->count);
+          const auto values = accessor(output, rotation ? cgltf_type_vec4 : cgltf_type_vec3,
+                                       input->count * (cubic ? 3 : 1));
+          require(input->min[0] == times.front() && input->max[0] == times.back(),
+                  "Animation time bounds differ from keys");
+          Animation::Track track{
+              static_cast<std::uint32_t>(cgltf_node_index(data.get(), channel.target_node)),
+              rotation ? Animation::Path::Rotation
+              : channel.target_path == cgltf_animation_path_type_scale
+                  ? Animation::Path::Scale
+                  : Animation::Path::Translation,
+              mode,
+              {}};
+          const std::size_t components = rotation ? 4 : 3;
+          const auto value = [&](std::size_t item) -> Math::Vec4 {
+            const auto offset = item * components;
+            return {values[offset], values[offset + 1], values[offset + 2],
+                    rotation ? values[offset + 3] : 0};
+          };
+          track.keys.reserve(times.size());
+
+          for (std::size_t key = 0; key < times.size(); ++key) {
+            track.keys.push_back(cubic ? Animation::Key{times[key], value(key * 3 + 1),
+                                                        value(key * 3), value(key * 3 + 2)}
+                                       : Animation::Key{times[key], value(key)});
+          }
+
+          description.tracks.push_back(std::move(track));
+        }
+
+        // Validate excluded channels too; scene selection cannot hide bad input.
+        // 被场景选择排除的通道也必须校验，不允许筛选掩盖无效源数据。
+        take(Animation::Clip::create(description));
+        const auto sourceChannels = description.tracks.size();
+        std::erase_if(description.tracks, [&](const auto& track) {
+          return !nodeIds.contains(&data->nodes[track.node]);
+        });
+        const auto excluded = sourceChannels - description.tracks.size();
+
+        for (auto& track : description.tracks) {
+          track.node = nodeIds.at(&data->nodes[track.node]);
+        }
+
+        if (excluded) {
+          result.warnings.push_back(std::format(
+              "Animation {}: {} channels outside selected scene excluded", index, excluded));
+        }
+
+        if (!description.tracks.empty()) {
+          result.animations.push_back(take(Animation::Clip::create(std::move(description))));
+        }
+      }
+
       return result;
     } catch (const Failure& error) {
       return Core::fail(error.error.code, "Import model: " + error.error.message);
@@ -842,7 +959,7 @@ namespace Dot::Assets {
       require(Core::isPortableRelativePath(model.prefix) && model.prefix.starts_with("assets/")
                   && !model.nodes.empty() && model.nodes.size() <= 10000
                   && !model.primitives.empty() && model.materials.size() <= 4097
-                  && model.images.size() <= 1024,
+                  && model.images.size() <= 1024 && model.animations.size() <= 1024,
               "Invalid prepared model capacities/prefix");
       std::size_t vertices{}, indices{}, pixels{};
       std::set<std::string> imagePaths;
@@ -879,23 +996,6 @@ namespace Dot::Assets {
         indices += primitive.mesh.indices.size();
       }
 
-      require(std::filesystem::is_empty(staging.root()), "Model staging must be empty");
-      take(staging.createDirectories("meshes"));
-      take(staging.createDirectories("materials"));
-      take(staging.createDirectories("images"));
-
-      for (std::size_t i = 0; i < model.images.size(); ++i) {
-        take(staging.writeAtomic(std::format("images/{}.png", i), model.images[i].png));
-      }
-
-      for (std::size_t i = 0; i < model.materials.size(); ++i) {
-        take(saveMaterial(staging, std::format("materials/{}.dotmaterial", i), model.materials[i]));
-      }
-
-      for (std::size_t i = 0; i < model.primitives.size(); ++i) {
-        take(saveMesh(staging, std::format("meshes/{}.dotmesh", i), model.primitives[i].mesh));
-      }
-
       auto scene = take(World::Scene::create("Imported model"));
       std::vector<World::EntityId> nodes;
       std::vector<World::ParentUpdate> parents;
@@ -926,7 +1026,70 @@ namespace Dot::Assets {
       }
 
       take(scene.setParents(parents));
+      std::vector<std::string> encodedClips;
+      std::size_t clipBytes{}, channelCount{}, keyCount{};
+
+      for (const auto& clip : model.animations) {
+        const auto& description = *take(clip.description());
+        require(description.tracks.size() <= 30000 - channelCount,
+                "Prepared animation channel budget exceeded");
+        channelCount += description.tracks.size();
+
+        for (const auto& track : description.tracks) {
+          require(track.node < nodes.size() && track.keys.size() <= 1000000 - keyCount,
+                  "Prepared animation target/key budget exceeded");
+          keyCount += track.keys.size();
+        }
+
+        auto encoded = take(Animation::encodeClip(clip));
+        require(encoded.size() <= fileLimit - clipBytes, "Prepared animation byte budget exceeded");
+        clipBytes += encoded.size();
+        encodedClips.push_back(std::move(encoded));
+      }
+
+      Json descriptor{{"scene", model.prefix + "/model.dotscene"},
+                      {"animations", Json::array()},
+                      {"nodes", Json::array()}};
+
+      for (const auto node : nodes) {
+        descriptor["nodes"].push_back(std::to_string(node.value));
+      }
+
+      for (std::size_t i = 0; i < encodedClips.size(); ++i) {
+        descriptor["animations"].push_back(
+            std::format("{}/animations/{}.dotanimation", model.prefix, i));
+      }
+
+      const auto descriptorText = descriptor.dump() + "\n";
+      require(descriptorText.size() <= 1024 * 1024, "Model descriptor exceeds 1 MiB");
+      require(std::filesystem::is_empty(staging.root()), "Model staging must be empty");
+      take(staging.createDirectories("meshes"));
+      take(staging.createDirectories("materials"));
+      take(staging.createDirectories("images"));
+
+      if (!encodedClips.empty()) {
+        take(staging.createDirectories("animations"));
+      }
+
+      for (std::size_t i = 0; i < encodedClips.size(); ++i) {
+        const auto name = std::format("animations/{}.dotanimation", i);
+        take(staging.writeTextAtomic(name, encodedClips[i]));
+      }
+
+      for (std::size_t i = 0; i < model.images.size(); ++i) {
+        take(staging.writeAtomic(std::format("images/{}.png", i), model.images[i].png));
+      }
+
+      for (std::size_t i = 0; i < model.materials.size(); ++i) {
+        take(saveMaterial(staging, std::format("materials/{}.dotmaterial", i), model.materials[i]));
+      }
+
+      for (std::size_t i = 0; i < model.primitives.size(); ++i) {
+        take(saveMesh(staging, std::format("meshes/{}.dotmesh", i), model.primitives[i].mesh));
+      }
+
       take(World::saveScene(staging, "model.dotscene", scene));
+      take(staging.writeTextAtomic("model.dotmodel", descriptorText));
       return {};
     } catch (const Failure& error) {
       return Core::fail(error.error.code, "Write model bundle: " + error.error.message);
