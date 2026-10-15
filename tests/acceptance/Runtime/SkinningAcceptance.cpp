@@ -8,7 +8,9 @@
 
 import Dot.Animation.Clip;
 import Dot.Animation.SceneAnimator;
+import Dot.Animation.SceneSkin;
 import Dot.Animation.Skin;
+import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
 import Dot.Assets.Mesh;
 import Dot.Core.Files;
@@ -17,6 +19,7 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.Skinning;
 import Dot.Math;
 import Dot.World.Scene;
+import Dot.World.SceneFiles;
 
 namespace Dot::Runtime {
   /** Real node hierarchy drives GPU skinning; compare owned CPU reference vertices
@@ -29,9 +32,9 @@ namespace Dot::Runtime {
 
     {
       auto scene = World::Scene::create("Skinning hierarchy").value();
-      const auto first = scene.createEntity("Root joint").value();
-      const auto second = scene.createEntity("Tip joint").value();
-      const auto entity = scene.createEntity("Skin mesh node").value();
+      auto first = scene.createEntity("Root joint").value();
+      auto second = scene.createEntity("Tip joint").value();
+      auto entity = scene.createEntity("Skin mesh node").value();
       scene.setTransform(first, {{0, -1, 0}}).value();
       scene.setTransform(second, {{0, 1, 0}}).value();
       scene.setParent(second, first).value();
@@ -69,6 +72,22 @@ namespace Dot::Runtime {
       }
 
       auto skin = Animation::Skin::create(std::move(description)).value();
+      files.createDirectories("assets").value();
+      Animation::saveSkin(files, "assets/strip.dotskin", skin).value();
+      Assets::saveMesh(files, "assets/strip.dotmesh", mesh).value();
+      scene
+          .setMeshRenderer(entity,
+                           World::MeshRenderer{World::MeshKind::Asset, "assets/strip.dotmesh"})
+          .value();
+      scene.setSkin(entity, World::SkinBinding{"assets/strip.dotskin", {first.value, second.value}})
+          .value();
+      World::saveScene(files, "skin.dotscene", scene).value();
+      scene = World::loadScene(files, "skin.dotscene").value();
+      first.scene = scene.id();
+      second.scene = scene.id();
+      entity.scene = scene.id();
+      skin = Animation::loadSkin(files, "assets/strip.dotskin").value();
+      auto bound = Animation::SceneSkin::bind(scene, entity, skin).value();
       auto clip = Animation::Clip::create(
                       {"Bend",
                        {{1,
@@ -108,7 +127,11 @@ namespace Dot::Runtime {
         animator.seek(scene, static_cast<double>(frame) * .25).value();
         const std::array worlds{scene.worldTransform(first).value(),
                                 scene.worldTransform(second).value()};
-        const auto palette = skin.palette(world, worlds).value();
+        const auto palette = bound.palette(scene).value();
+
+        if (palette != skin.palette(world, worlds).value()) {
+          throw std::runtime_error("Reloaded scene binding changed ordered skin palette");
+        }
         const std::array updates{Graphics::SkinUpdate{&controller, palette}};
         renderer.updateSkins(updates).value();
         auto reference = Graphics::deformMesh(mesh, skin, palette).value();
@@ -175,7 +198,8 @@ namespace Dot::Runtime {
     }
 
     std::println(
-        "Skinning acceptance passed: native hierarchy, GPU deformation, nine reference-compared "
+        "Skinning acceptance passed: saved skin/scene, native hierarchy, GPU deformation, nine "
+        "reference-compared "
         "frames and owned release");
     return 0;
   }

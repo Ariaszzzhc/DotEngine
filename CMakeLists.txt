@@ -78,6 +78,9 @@ target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Animation/Skin.cpp
+    src/Engine/Animation/SkinFiles.cpp
+    src/Engine/Animation/SceneSkin.cpp
+    src/Engine/Animation/SkinSource.cpp
     src/Engine/Graphics/Skinning.cpp
     src/Engine/Animation/Clip.cpp
     src/Engine/Animation/Source.cpp
@@ -183,6 +186,9 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Result.cppm
         src/Engine/Core/Logging.cppm
         src/Engine/Animation/Skin.cppm
+        src/Engine/Animation/SkinFiles.cppm
+        src/Engine/Animation/SceneSkin.cppm
+        src/Engine/Animation/SkinSource.cppm
         src/Engine/Graphics/Skinning.cppm
         src/Engine/Animation/Clip.cppm
         src/Engine/Animation/Source.cppm

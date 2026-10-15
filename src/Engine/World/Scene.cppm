@@ -20,6 +20,7 @@ export import Dot.Graphics.Occlusion;
 export import Dot.Audio.Source;
 export import Dot.Script.Source;
 export import Dot.Animation.Source;
+export import Dot.Animation.SkinSource;
 
 export namespace Dot::World {
   /** Scene-scoped handle. Values are never reused within a scene; moving its
@@ -134,6 +135,7 @@ export namespace Dot::World {
 
   using ScriptComponent = Script::ComponentProperties;
   using AnimationPlayer = Animation::PlayerProperties;
+  using SkinBinding = Animation::SkinProperties;
 
   struct AnimationPlayerInfo {
     EntityId entity;
@@ -157,6 +159,7 @@ export namespace Dot::World {
     std::optional<MaterialBinding> material{};
     std::optional<Light> light{};
     std::optional<AnimationPlayer> animation{};
+    std::optional<SkinBinding> skin{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -207,6 +210,13 @@ export namespace Dot::World {
      * 不读文件，校验场景内有效目标；至多 128 播放器，合计万绑定/1024 片段路径。
      * 删除其他播放器引用的目标前须移除/改绑播放器，播放阶段校验资源及物理写入权。 */
     [[nodiscard]] auto setAnimationPlayer(EntityId entity, std::optional<AnimationPlayer> player)
+        -> Core::Result<void>;
+    /** Store at most 128 skin bindings. Require a mesh and unique live local joints.
+     * Files/count matching are consumer responsibilities. Referenced joint deletion
+     * requires removing/rebinding external owners; remove skin before its mesh.
+     * 至多保存 128 蒙皮绑定，要求网格及唯一有效的场景内关节；文件/数量由消费方校验。
+     * 删除被引用关节须先移除/改绑外部所有者；须先移除蒙皮再移除其网格。 */
+    [[nodiscard]] auto setSkin(EntityId entity, std::optional<SkinBinding> skin)
         -> Core::Result<void>;
     /** Snapshots sorted by creation ID for deterministic consumers.
      * 按创建 ID 排序的快照，供消费者确定性使用。 */

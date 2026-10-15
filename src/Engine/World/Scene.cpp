@@ -244,6 +244,7 @@ namespace Dot::World {
       const auto* material = registry.try_get<MaterialBinding>(native);
       const auto* light = registry.try_get<Light>(native);
       const auto* animation = registry.try_get<AnimationPlayer>(native);
+      const auto* skin = registry.try_get<SkinBinding>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
@@ -256,7 +257,8 @@ namespace Dot::World {
               script ? std::optional{*script} : std::nullopt,
               material ? std::optional{*material} : std::nullopt,
               light ? std::optional{*light} : std::nullopt,
-              animation ? std::optional{*animation} : std::nullopt};
+              animation ? std::optional{*animation} : std::nullopt,
+              skin ? std::optional{*skin} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -558,6 +560,53 @@ namespace Dot::World {
     auto native = m_impl->resolve(entity);
     return native ? Core::Result<Transform>{m_impl->registry.get<Transform>(*native)}
                   : std::unexpected(native.error());
+  }
+
+  auto Scene::setSkin(EntityId entity, std::optional<SkinBinding> skin) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene was moved");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!skin) {
+      m_impl->registry.remove<SkinBinding>(*native);
+      return {};
+    }
+
+    auto valid = Animation::validateSkinProperties(*skin);
+
+    if (!valid) {
+      return valid;
+    }
+
+    if (!m_impl->registry.any_of<MeshRenderer>(*native)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Skin binding requires a mesh renderer");
+    }
+
+    std::size_t count{1};
+
+    for (const auto entry : m_impl->registry.view<SkinBinding>()) {
+      count += entry != *native ? 1U : 0U;
+    }
+
+    if (count > 128) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Scene exceeds 128 skin bindings");
+    }
+
+    for (const auto joint : skin->joints) {
+      if (!m_impl->lookup.contains(joint)) {
+        return Core::fail(Core::ErrorCode::NotFound,
+                          "Skin joint does not exist: " + std::to_string(joint));
+      }
+    }
+
+    m_impl->registry.emplace_or_replace<SkinBinding>(*native, std::move(*skin));
+    return {};
   }
 
   auto Scene::animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>> {
@@ -878,6 +927,19 @@ namespace Dot::World {
       }
     }
 
+    for (const auto entry : scene.registry.view<SkinBinding>()) {
+      const auto owner = scene.registry.get<Identity>(entry).value;
+
+      if (!removedIds.contains(owner)) {
+        for (const auto joint : scene.registry.get<SkinBinding>(entry).joints) {
+          if (removedIds.contains(joint)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Joint is referenced by skin owner " + std::to_string(owner));
+          }
+        }
+      }
+    }
+
     for (auto iterator = removed.rbegin(); iterator != removed.rend(); ++iterator) {
       scene.registry.destroy(scene.lookup.at(*iterator));
       scene.lookup.erase(*iterator);
@@ -1009,6 +1071,10 @@ namespace Dot::World {
     }
 
     if (!mesh) {
+      if (m_impl->registry.any_of<SkinBinding>(*native)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Remove skin binding before its mesh");
+      }
+
       m_impl->registry.remove<MeshRenderer>(*native);
       return {};
     }

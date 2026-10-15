@@ -44,6 +44,7 @@ add_executable(DotUnitTests
     HomeDialogTests.cpp
     SceneAnimatorTests.cpp
     SkinTests.cpp
+    SkinBindingTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
@@ -83,6 +84,7 @@ add_executable(DotTests
     ImageTests.cpp
     MaterialTests.cpp
     AnimationFileTests.cpp
+    SkinFileTests.cpp
     ModelTests.cpp
     ModelAnimationTests.cpp
     ModuleTests.cpp

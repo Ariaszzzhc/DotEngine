@@ -9,7 +9,7 @@ appear only once with positive weight. Creation normalizes weights once. Copies
 share immutable storage; empty/moved handles return errors.
 
 These conventions follow [Khronos skin attributes](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#skinned-mesh-attributes).
-This module does not itself add glTF skin import or a persisted scene component.
+This module does not itself add glTF skin import.
 
 A mesh-local palette is `inverse(meshWorld) * jointWorld * inverseBind`, in column
 major order. Rendering with meshWorld cancels the mesh node's transform, leaving
@@ -30,11 +30,37 @@ ctest --preset debug -R '^(skin\.|runtime.skinning$)'
 build/debug/bin/DotRuntimeAcceptance --skinning-test build/debug/tests/animation_acceptance
 ```
 
-The development-only acceptance now uses actual scene joints and node animation
-to drive GPU skinning, writes bind/reference/GPU DotMesh data plus nine PNG frames
+The development-only acceptance reloads a saved skin/scene, uses actual scene joints
+and node animation to drive GPU skinning, writes bind/reference/GPU DotMesh data plus nine PNG frames
 and compares positions/normals and actual physical/shadow/AO pixels. Unit data/
-reference cases still create no device. Imported skin assets, persisted scene
-bindings, editor skin authoring and populated-game scale remain unfinished.
+reference cases still create no device. glTF skin import, automatic scene rendering,
+editor skin authoring and populated-game scale remain unfinished.
+
+## Saved assets and scene bindings
+
+`Dot.Animation.SkinFiles` reads/writes one strict little-endian `.dotskin` layout.
+The 16-byte header holds `DOTSKIN` plus NUL and uint32 joint/vertex counts. Column
+major float32 inverse binds follow, then eight uint32 indices and eight float32
+weights per vertex. Exact length is `16 + 64 * joints + 64 * vertices`, bounded by
+64 MiB. Counts and length are checked before allocation, all payloads use the same
+native skin validation, and no structure padding or native endianness is assumed.
+Portable paths reject links/special files. Save encodes completely before atomic
+replacement; parents must exist. Loaded immutable data outlives its input file.
+
+The optional scene `skin` component holds `asset`, ordered canonical decimal-string
+`joints` and `enabled`. Paths start with `assets/` and end with `.dotskin`; joints
+are 1..1024 unique, positive local entity IDs. At most 128 owners are allowed. A
+mesh is required; consumers verify actual files and exact geometry/joint counts.
+Disabling deformation does not permit dangling references. Delete/rebind external
+owners before deleting joints; remove skin before its mesh. Whole-subtree removal
+is allowed when every affected owner is also removed. Serialization resolves refs
+after constructing all entities, so source order does not affect correctness.
+
+`Dot.Animation.SceneSkin` owns immutable bind data and copied component values.
+It evaluates current joint-world transforms in binding order, including complete
+ancestor hierarchies and mesh-world cancellation. It borrows no scene address;
+scene moves preserve identity, while foreign/deleted/changed bindings fail. It is
+an owner-thread CPU service; no rendering or scene mutation is hidden in sampling.
 
 ## GPU deformation
 
@@ -69,5 +95,5 @@ static normals/UVs with current GPU triangle geometry.
 readSkin is explicit owned GPU vertex readback for diagnostics. Normal updates
 read only a compact status/bounds report, but that wait is synchronous. These APIs
 are not an asynchronous skin pipeline or populated-game frame-time guarantee.
-Scene binding/persistence and glTF import must connect actual native resources
-before editor projects can use these controllers automatically.
+Automatic scene-renderer consumption and glTF import must still connect these
+native resources before editor projects can use the controllers automatically.

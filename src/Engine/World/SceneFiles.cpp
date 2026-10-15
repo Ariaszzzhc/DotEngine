@@ -267,6 +267,7 @@ namespace Dot::World {
       std::optional<MaterialBinding> material;
       std::optional<Light> light;
       std::optional<AnimationPlayer> animation;
+      std::optional<SkinBinding> skin;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -285,7 +286,7 @@ namespace Dot::World {
       for (const auto& value : root["entities"]) {
         Codec::requireFields(value, {"id", "name", "parent", "transform"},
                              {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                              "script", "material", "light", "animation"});
+                              "script", "material", "light", "animation", "skin"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -340,6 +341,16 @@ namespace Dot::World {
           }
 
           record.animation = std::move(*animation);
+        }
+
+        if (value.contains("skin") && !value["skin"].is_null()) {
+          auto skin = Animation::decodeSkinProperties(value["skin"].dump());
+
+          if (!skin) {
+            return std::unexpected(skin.error());
+          }
+
+          record.skin = std::move(*skin);
         }
 
         records.push_back(std::move(record));
@@ -493,6 +504,12 @@ namespace Dot::World {
       }
 
       for (const auto& record : records) {
+        changed = scene->setSkin(handles.at(record.id), record.skin);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
         changed = scene->setAnimationPlayer(handles.at(record.id), record.animation);
 
         if (!changed) {
@@ -611,6 +628,18 @@ namespace Dot::World {
 
     for (const auto& entity : *entities) {
       const auto& transform = entity.transform;
+      Json skin = nullptr;
+
+      if (entity.skin) {
+        auto encoded = Animation::encodeSkinProperties(*entity.skin);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        skin = Codec::parseJson(*encoded);
+      }
+
       Json animation = nullptr;
 
       if (entity.animation) {
@@ -642,6 +671,7 @@ namespace Dot::World {
            {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}
                                                   : Json(nullptr)},
            {"animation", std::move(animation)},
+           {"skin", std::move(skin)},
            {"script", entity.script
                           ? Json{{"source", entity.script->source},
                                  {"className", entity.script->className},

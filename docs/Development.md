@@ -4773,3 +4773,25 @@ private/source exclusions. Strict signatures and portable loader/rpath reference
 pass for 13 regular Mach-O files/three relative links. Private archive staging is
 removed. Shader sources stay private; the new skin shader is embedded normally.
 Windows/Linux remain implementation targets without local execution evidence.
+
+
+## 2026-10-15 — Saved skins and ordered scene joints
+
+Added separate SkinFiles, SkinSource and SceneSkin module interfaces/implementations.
+The single little-endian .dotskin binary owns inverse binds and eight-slot vertex
+influences, validates exact counts/length before allocation and uses rooted regular
+paths plus atomic writes. Saved scene components retain ordered local joint IDs;
+mesh/reference/capacity guards prevent dangling deletion and partial changes. The
+CPU scene sampler owns immutable data and component values, follows current world
+hierarchies and reports foreign/deleted/changed bindings without borrowing a scene.
+
+Reviewed endianness/packed offsets, bounded reads/allocation, Unicode paths, link
+rejection, atomic replacement, serialization order, thread/scope/move lifetime and
+mesh-local palette order. First builds found a copied JSON range warning and a
+wrong MeshRenderer aggregate initializer in new tests; both were corrected without
+environment changes. Both complete builds succeed before testing. Focused Debug
+passes 22/22 (9.12s), Release/NDEBUG 22/22 (0.99s), including the extended runnable
+GPU acceptance which reloads actual saved assets and compares nine posed frames.
+All touched C++ files pass formatting and diff checks. No Windows/Linux run is
+claimed. Automatic scene rendering, glTF skin import and editor authoring follow
+this foundation; no full-engine or polished-game completion is claimed.
