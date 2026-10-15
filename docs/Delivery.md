@@ -18,14 +18,14 @@ and its evidence; passing these tests does not establish missing product capabil
 | Directional soft shadows | Saved optional single directional source, stabilized 1..4 cascades, real depth passes, sixteen-tap/hardware PCF, receiver-plane correction, mesh cast/receive, overlap blending, inspector/agent/Play/export and actual hard/soft/disabled images; point/spot/contact-hardening/scalability remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Native scene GPU skinning | [Skinning](Skinning.md): glTF/GLB four/eight-weight import, saved skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; visual skeleton tools and production blend workflows remain unfinished |
-| Native animation transition foundation | [Animation](Animation.md): dual-clip cross-fades, shortest-arc rotation, partial-channel fallback, continuous interruption and atomic clocks/poses; imported-skin GPU reference acceptance; library/SDK/editor transition integration and blend graphs remain unfinished |
+| Native animation transition foundation | [Animation](Animation.md): dual-clip cross-fades, shortest-arc rotation, partial-channel fallback, continuous interruption and atomic clocks/poses; imported-skin GPU reference acceptance; cached-library/SDK controls, isolated editor Play and relocated native exports; visual transition authoring and blend graphs remain unfinished |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio/animation; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
 | Playable example | [Prism Relay](Examples.md): collection, collisions, hazards, audio, score, deadline, pause, victory/defeat, restart and reload; real native input/GPU/audio acceptance |
-| Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 93 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
+| Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 95 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
 | Deployable editor | [Portable distribution](Distribution.md) includes compiler/embedded modules/font/templates/player and dependencies; relocated editor creates, checks, previews, runs and exports an independent game |
 
 Development proceeded in reviewed, tested commits from core files/processes/events
@@ -34,9 +34,9 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG each pass 1075/1075 CTest identities
-(1004 doctest cases and 71 executable/script checks), taking 267.42s and 58.81s.
-The [test layers](Testing.md) separate 253 pure CPU unit cases from 695 integration,
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1080/1080 CTest identities
+(1009 doctest cases and 71 executable/script checks), taking 257.76s and 53.36s.
+The [test layers](Testing.md) separate 253 pure CPU unit cases from 700 integration,
 133 offscreen GPU, 72 native and 127 acceptance cases; labels overlap. All 361
 current engine/application/test C/C++ files pass clang-format; 17 WGSL
 files pass established indentation/line/whitespace checks and actual pipeline runs.
@@ -575,3 +575,23 @@ dot:engine transition controls, isolated editor Play/export transition acceptanc
 visual blend authoring. Those remain next integration work. Layered/additive blend
 graphs, state machines, animation streaming, populated-game throughput, mature editor
 completion and realistic polished Prism Relay remain unfinished.
+
+
+## Scene-library and script cross-fades
+
+Native transitions now consume cached library clips through ScenePlayers and the
+embedded dot:engine SDK. animation.crossFade/Entity.crossFadeAnimation expose
+owned progress snapshots and preserve saved player descriptions. Writer unions
+include interrupted channels until successful completion/cancellation; pause and
+failed sampling retain reservations. Released outgoing channels are not overwritten
+by later stop. Strict argument, thread/scope, competing player and physics failures
+remain explicit. Script preparation/migration forbids transition writes.
+
+Actual imported-rig runtime/editor acceptance uses the real APIs, independent joint
+angles, CPU/GPU frame comparisons, isolated authoring and relocated native exports
+without source projects. Feature Lab now inventories 95 SDK members and demonstrates
+0.25-second input-driven fades. Final focused Debug passes 18/18 (21.45s); complete
+Debug passes 1080/1080 (257.76s), then Release/NDEBUG passes 1080/1080 (53.36s).
+All 361 C/C++ sources pass clang-format; all 17 unchanged WGSL sources pass existing
+layout checks. Visual animation tools, populated-game performance, mature editor
+and realistic Prism Relay remain unfinished. No interim distribution ZIP is created.

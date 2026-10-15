@@ -46,9 +46,9 @@ The native ring/scale case uses device-tagged SDL pointer injection with a scope
 filter for its window, so desktop pointer traffic cannot overwrite its prescribed
 samples. It retains real window/focus/keyboard events and restores the previous
 filter. The native translator, editor drag/history and GPU pixels are still tested.
-The current inventory contains 253 unit, 695 integration, 133 offscreen GPU,
+The current inventory contains 253 unit, 700 integration, 133 offscreen GPU,
 72 native and 127 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1075 CTest identities are covered; existing subsystem
+native integration cases. All 1080 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
@@ -87,6 +87,8 @@ previous source/pose. These checks do not measure production character throughpu
 Cross-fade behavior and quaternion SLERP remain device-free unit checks. The
 development-only `runtime.animation_blend` imports an actual GLB, reloads a saved
 native clip, compares ten skinned GPU images with independent joint angles/CPU
-geometry and checks bind/resource restoration. It supplies native transition
-evidence before library/SDK/editor consumers are integrated; it does not claim
-those controls, additive layers or populated-character throughput.
+geometry and checks bind/resource restoration. ScenePlayers/SDK integration now
+adds writer-union retirement, failures, snapshots and actual TypeScript controls.
+The model-skin runtime/editor cases consume those controls, independently check
+joint angles and replay relocated exports. Visual transition editing, additive
+layers and populated-character throughput remain unfinished.

@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
 import Dot.Animation.SceneSkin;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
@@ -59,11 +61,56 @@ namespace Dot::Runtime {
 
     const auto authoredEntities = scene.entities().value();
 
+    Animation::ClipDescription counter{"Counter flex", {}};
+    const auto negative = Math::rotationEulerDegrees({0, 0, -60}).value();
+
+    for (const auto& track : bundle.animations[0].description().value()->tracks) {
+      counter.tracks.push_back(
+          {track.node,
+           Animation::Path::Rotation,
+           Animation::Interpolation::Linear,
+           {{0, {0, 0, 0, 1}}, {2, {negative.x, negative.y, negative.z, negative.w}}}});
+    }
+
+    Animation::saveClip(assets, "assets/counter.dotanimation",
+                        Animation::Clip::create(std::move(counter)).value())
+        .value();
+    assets
+        .writeTextAtomic("scripts/skin.ts", R"ts(
+import {animation, ScriptComponent} from 'dot:engine';
+
+export class SkinController extends ScriptComponent {
+  private phase = 0;
+
+  onStart(): void { this.self.playAnimation(0, true); }
+
+  onUpdate(): void {
+    if (this.phase++ === 1) {
+      this.self.seekAnimation(0.5);
+      animation.crossFade(this.self.id, 1, 2);
+    }
+
+    const state = this.self.animationState;
+
+    if (state.clip === 1 && state.transition &&
+        (state.transition.durationSeconds !== 2 ||
+         state.transition.elapsedSeconds !== state.timeSeconds)) {
+      throw Error('exported native animation transition clock');
+    }
+  }
+
+  onStop(): void { this.self.stopAnimation(); }
+}
+)ts")
+        .value();
+
     for (const auto& entity : authoredEntities) {
       if (entity.animation) {
         auto player = *entity.animation;
         player.looping = false;
+        player.clips.push_back("assets/counter.dotanimation");
         scene.setAnimationPlayer(entity.id, player).value();
+        scene.setScript(entity.id, World::ScriptComponent{"skin.ts", "SkinController"}).value();
       }
     }
 
@@ -115,6 +162,23 @@ namespace Dot::Runtime {
       for (int frame = 0; frame <= 8; ++frame) {
         clean(session.update(frame == 0 ? 0 : .25).value().frame);
         const auto actual = drawing.render(*playing, 256, 256).value();
+        const auto time = double(frame) * .25;
+        const auto weight = time / 2;
+        const auto degrees
+            = frame == 0 ? 0 : (1 - weight) * std::min(.5 + time, 2.0) * 30 - weight * time * 30;
+        const auto expectedRotation = Math::rotationEulerDegrees({0, 0, float(degrees)}).value();
+
+        for (const auto& track : bundle.animations[0].description().value()->tracks) {
+          const auto joint
+              = std::ranges::find(bundle.bindings, track.node, &Animation::NodeBinding::node);
+          require(joint != bundle.bindings.end(), "Expected imported animated joint");
+          const auto rotation
+              = playing->transform(playing->findEntity(joint->entity.value).value())->rotation;
+          require(std::abs(rotation.z - expectedRotation.z) < .00001F
+                      && std::abs(rotation.w - expectedRotation.w) < .00001F,
+                  "Script-controlled native skin fade must match independent joint angles");
+        }
+
         const auto palette = binding.palette(*playing).value();
         const auto reference = Graphics::deformMesh(mesh, skin, palette).value();
         Assets::saveMesh(assets, "assets/reference.dotmesh", reference).value();
@@ -171,11 +235,13 @@ namespace Dot::Runtime {
                                                           package.program().value())
                          .value();
       clean(session.start().value());
+      clean(session.update(0).value().frame);
       clean(session.update(.5).value().frame);
       auto drawing = Graphics::SceneRenderer::create(renderer, package.files().value()).value();
       const auto actual = drawing.render(*session.scene().value(), 256, 256).value();
-      require(actual.pixels == exportedPose,
-              "Relocated skin export must replay without authoring/source/compiler files");
+      require(
+          actual.pixels == exportedPose,
+          "Relocated script-driven skin fade must replay without authoring/source/compiler files");
       files.writeAtomic("model-skin-export.png", Assets::encodeImage(actual).value()).value();
       clean(session.close().value());
     }
@@ -187,7 +253,8 @@ namespace Dot::Runtime {
             "Imported skin drawing scopes must release all owned geometry/skin resources");
     std::println(
         "Model skin acceptance passed: GLB import, native files/session, eight weights, "
-        "nine CPU-compared PBR/shadow/AO frames, picking/bounds and relocated export");
+        "nine independent-angle/CPU-compared script fade frames, picking/bounds and relocated "
+        "export");
     return 0;
   }
 }  // namespace Dot::Runtime

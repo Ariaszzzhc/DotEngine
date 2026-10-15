@@ -17,7 +17,7 @@ A hierarchy root uses an ID above JavaScript's safe integer range. D moves the
 native dynamic body. The scene name/window title shows the completed check count.
 
 `audit.ts` throws on failed behavior checks. Only successful assertions enter the
-native Report entity's disabled script metadata. `coverage.json` lists the 93
+native Report entity's disabled script metadata. `coverage.json` lists the 95
 current runtime SDK members, including getter/setter distinctions. The inventory
 check reads the actual SDK independently, and execution tests compare it with the
 report only after explicit stop. Six additional checks exercise component removal,
@@ -68,8 +68,9 @@ materials currently contribute no shadow/SSAO geometry and use object-level sort
 ## Native animation
 
 The saved Animated panel has a PBR material and two ordinary .dotanimation clips.
-Digit 1 plays/restarts lift, Digit 2 switches to turn, and Space pauses/resumes.
-Switching restores outgoing channels rather than accumulating transforms; Stop
+Digit 1 fades/restarts lift, Digit 2 fades to turn, and Space pauses/resumes.
+Both clips advance during each 0.25-second fade; outgoing-only channels return to
+their binding pose. Interruptions retain the visible composite pose; Stop
 restores the original binding pose. The script uses the engine-owned `dot:engine`
 module's animation service and Entity methods, not scripted transform simulation.
 Animation assertions run on the first update, following initialization checks, so

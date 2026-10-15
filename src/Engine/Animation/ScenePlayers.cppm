@@ -63,6 +63,17 @@ export namespace Dot::Animation {
      * 默认恢复播放，restart 才重启，反向从末尾开始。停止恢复最初绑定姿态。 */
     [[nodiscard]] auto play(World::EntityId owner, std::optional<std::uint32_t> clip = {},
                             bool restart = false) -> Core::Result<void>;
+    /** Fade to a library clip's directional start without editing saved data.
+     * Reserve the union of outgoing/incoming entity writers, including interrupted
+     * channels, until successful completion/seek/stop/switch. Validate competing
+     * players and rigid-body ancestors before changing pose or reservations.
+     * Same-clip fades restart; zero seconds switches immediately. Pause retains
+     * reservations. Invalid updates retain both clocks, pose and writer ownership.
+     * 淡化到库内片段正/反向起点，不改保存描述；保留源/目标及被打断通道的实体写入权，
+     * 至成功完成/seek/stop/换片后释放。变更前校验其他播放器及刚体祖先；同片淡化重启，
+     * 零时长立即切换。暂停仍保留写入权，失败保留双时钟、姿态及所有权。 */
+    [[nodiscard]] auto crossFade(World::EntityId owner, std::uint32_t clip, double seconds)
+        -> Core::Result<void>;
     [[nodiscard]] auto pause(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto stop(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto seek(World::EntityId owner, double seconds) -> Core::Result<void>;

@@ -7,6 +7,7 @@ module;
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -40,6 +41,7 @@ namespace Dot::Animation {
       std::size_t channels{}, keys{};
       double duration{};
       bool primed{};
+      std::optional<std::vector<std::uint64_t>> m_destinationWriters{};
     };
 
     std::shared_ptr<World::Scene> scene;
@@ -86,6 +88,31 @@ namespace Dot::Animation {
       }
 
       return found->second;
+    }
+
+    auto writersFor(const Player& player, std::uint32_t clip) const -> std::vector<std::uint64_t> {
+      std::map<std::uint32_t, std::uint64_t> targets;
+
+      for (const auto& target : player.properties.targets) {
+        targets.emplace(target.node, target.entity);
+      }
+
+      std::set<std::uint64_t> unique;
+
+      for (const auto& track : player.library[clip].description().value()->tracks) {
+        unique.insert(targets.at(track.node));
+      }
+
+      return {unique.begin(), unique.end()};
+    }
+
+    /** All storage is prepared before pose mutation; retirement only swaps/releases.
+     * 姿态变更前准备全部存储，过渡退休只交换/释放，不再分配。 */
+    auto retireWriters(Player& player) -> void {
+      if (player.m_destinationWriters && !player.animator.state().value().transition) {
+        player.writers.swap(*player.m_destinationWriters);
+        player.m_destinationWriters.reset();
+      }
     }
 
     auto authority(std::uint64_t owner, const std::vector<std::uint64_t>& writers)
@@ -333,6 +360,8 @@ namespace Dot::Animation {
         return Core::fail(advanced.error().code, "Animation player " + std::to_string(owner) + ": "
                                                      + advanced.error().message);
       }
+
+      m_impl->retireWriters(*player);
     }
 
     return {};
@@ -403,19 +432,7 @@ namespace Dot::Animation {
 
     if (selected != player.clip) {
       try {
-        std::map<std::uint32_t, std::uint64_t> targets;
-
-        for (const auto& target : player.properties.targets) {
-          targets.emplace(target.node, target.entity);
-        }
-
-        std::set<std::uint64_t> unique;
-
-        for (const auto& track : player.library[selected].description().value()->tracks) {
-          unique.insert(targets.at(track.node));
-        }
-
-        std::vector<std::uint64_t> writers(unique.begin(), unique.end());
+        auto writers = m_impl->writersFor(player, selected);
         auto valid = m_impl->authority(owner.value, writers);
 
         if (!valid) {
@@ -431,6 +448,7 @@ namespace Dot::Animation {
         player.clip = selected;
         player.duration = player.library[selected].duration().value();
         player.writers = std::move(writers);
+        player.m_destinationWriters.reset();
       } catch (const std::exception& error) {
         return Core::fail(Core::ErrorCode::External,
                           "Select animation clip: " + std::string(error.what()));
@@ -453,7 +471,74 @@ namespace Dot::Animation {
     }
 
     player.primed = true;
+    m_impl->retireWriters(player);
     return {};
+  }
+
+  auto ScenePlayers::crossFade(World::EntityId owner, std::uint32_t clip, double seconds)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 86400) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Animation fade seconds require [0,86400]");
+    }
+
+    auto controlled = m_impl->controlled(owner);
+
+    if (!controlled) {
+      return std::unexpected(controlled.error());
+    }
+
+    auto& player = **controlled;
+
+    if (clip >= player.library.size()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Animation clip index exceeds library");
+    }
+
+    try {
+      auto destination = m_impl->writersFor(player, clip);
+      std::vector<std::uint64_t> active = destination;
+      std::optional<std::vector<std::uint64_t>> pending;
+
+      if (seconds > 0) {
+        active.insert(active.end(), player.writers.begin(), player.writers.end());
+        std::ranges::sort(active);
+        active.erase(std::unique(active.begin(), active.end()), active.end());
+        pending = std::move(destination);
+      }
+
+      auto authorized = m_impl->authority(owner.value, active);
+
+      if (!authorized) {
+        return authorized;
+      }
+
+      const auto duration = player.library[clip].duration().value();
+      auto faded = player.animator.crossFade(*m_impl->scene, player.library[clip], seconds);
+
+      if (!faded) {
+        return faded;
+      }
+
+      player.clip = clip;
+      player.duration = duration;
+      player.writers = std::move(active);
+      player.m_destinationWriters = std::move(pending);
+      player.primed = true;
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Cross-fade animation clip: " + std::string(error.what()));
+    }
   }
 
   auto ScenePlayers::pause(World::EntityId owner) -> Core::Result<void> {
@@ -491,6 +576,7 @@ namespace Dot::Animation {
 
     if (stopped) {
       (*player)->primed = true;
+      m_impl->retireWriters(**player);
     }
 
     return stopped;
@@ -511,6 +597,7 @@ namespace Dot::Animation {
 
     if (positioned) {
       (*player)->primed = true;
+      m_impl->retireWriters(**player);
     }
 
     return positioned;

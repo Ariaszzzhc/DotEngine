@@ -150,7 +150,9 @@ function inspect(self: ScriptComponent['self']): void {
 
   for (const action of [() => self.playAnimation(), () => self.pauseAnimation(),
                        () => self.stopAnimation(), () => self.seekAnimation(1),
-                       () => self.configureAnimation(1, false)]) {
+                       () => self.configureAnimation(1, false),
+                       () => self.crossFadeAnimation(1, 1),
+                       () => animation.crossFade(self.id, 1, 1)]) {
     let denied = false;
 
     try {
@@ -211,6 +213,10 @@ export class Actor extends ScriptComponent {
     const missing = scene.create('No player');
     const actions: [() => void, string][] = [
       [() => this.self.playAnimation(2), 'InvalidArgument'],
+      [() => this.self.crossFadeAnimation(2, 1), 'InvalidArgument'],
+      [() => this.self.crossFadeAnimation(1, -1), 'InvalidArgument'],
+      [() => this.self.crossFadeAnimation(1, 86401), 'InvalidArgument'],
+      [() => this.self.crossFadeAnimation(1, NaN), 'InvalidArgument'],
       [() => this.self.seekAnimation(-1), 'InvalidArgument'],
       [() => this.self.seekAnimation(3), 'InvalidArgument'],
       [() => this.self.configureAnimation(17, true), 'InvalidArgument'],
@@ -267,11 +273,14 @@ TEST_CASE("animation_sdk_host_arguments_lifetime_moves_threads_and_replaced_scop
 
   for (const auto& index : {Json(-1), Json(1.5), Json(1024), Json("1")}) {
     CHECK_FALSE(bindings[1].callback(Json::array({id, index, false}).dump()));
+    CHECK_FALSE(bindings.back().callback(Json::array({id, index, 1}).dump()));
   }
 
   CHECK_FALSE(bindings[1].callback(Json::array({id, nullptr, "true"}).dump()));
   CHECK_FALSE(bindings[4].callback(Json::array({id, "1"}).dump()));
   CHECK_FALSE(bindings[5].callback(Json::array({id, 1, "true"}).dump()));
+  CHECK_FALSE(bindings.back().callback(Json::array({id, nullptr, 1}).dump()));
+  CHECK_FALSE(bindings.back().callback(Json::array({id, 1, "1"}).dump()));
 
   bool rejected{};
   std::thread worker(
@@ -308,10 +317,117 @@ TEST_CASE("animation_sdk_typecheck_rejects_wrong_ids_controls_and_script_schedul
        {"import {animation} from 'dot:engine';animation.play({scene:1,value:2});",
         "import {animation} from 'dot:engine';animation.seek({scene:'1',value:'1'},'1');",
         "import {animation} from 'dot:engine';animation.advance(1);",
+        "import {animation} from 'dot:engine';animation.crossFade({scene:'1',value:'1'},null,1);",
+        "import {scene} from 'dot:engine';scene.create().crossFadeAnimation(1,'1');",
         "import {animation} from 'dot:engine';animation.play({scene:'1',value:'1'},'Move');",
         "import {scene} from 'dot:engine';scene.create().configureAnimation(1,'true');"}) {
     auto result = fixture.compile(source);
     REQUIRE_FALSE(result);
     CHECK(result.error().message.find("TS") != std::string::npos);
   }
+}
+
+TEST_CASE("animation_sdk_cross_fade_real_typescript_snapshots_interruptions_pause_and_stop") {
+  Fixture fixture;
+  auto compiled = fixture.compile(R"ts(
+import {animation, ScriptComponent, type AnimationTransition} from 'dot:engine';
+
+export class Actor extends ScriptComponent {
+  private phase = 0;
+
+  onStart(): void {
+    this.self.playAnimation(0, true);
+    this.self.seekAnimation(0.5);
+    animation.crossFade(this.self.id, 1, 1);
+    const transition: AnimationTransition|null = this.self.animationState.transition;
+
+    if (!transition || transition.elapsedSeconds !== 0 || transition.durationSeconds !== 1 ||
+        this.self.transform.position.x !== 1 || this.self.animationState.timeSeconds !== 0) {
+      throw Error('fade start continuity');
+    }
+
+    transition.elapsedSeconds = 99;
+
+    if (this.self.animationState.transition?.elapsedSeconds !== 0) {
+      throw Error('transition snapshot ownership');
+    }
+  }
+
+  onUpdate(): void {
+    const state = this.self.animationState;
+    const pose = this.self.transform;
+
+    if (this.phase === 0) {
+      if (state.timeSeconds !== 0.25 || state.transition?.elapsedSeconds !== 0.25 ||
+          pose.position.x !== 2.875 || pose.scale.x !== 1.0625) {
+        throw Error('two live native clip clocks');
+      }
+
+      this.self.pauseAnimation();
+    } else if (this.phase === 1) {
+      if (state.timeSeconds !== 0.25 || state.transition?.elapsedSeconds !== 0.25) {
+        throw Error('paused fade advanced');
+      }
+
+      this.self.crossFadeAnimation(0, 0.5);
+
+      if (this.self.transform.position.x !== pose.position.x ||
+          this.self.transform.scale.x !== pose.scale.x) {
+        throw Error('interrupted fade discontinuity');
+      }
+    } else if (this.phase === 2) {
+      if (pose.position.x !== 1.6875 || pose.scale.x !== 1.03125 ||
+          state.timeSeconds !== 0.25 || state.transition?.elapsedSeconds !== 0.25) {
+        throw Error('interrupted composite must remain frozen as source');
+      }
+    } else if (this.phase === 3) {
+      if (state.transition !== null || pose.position.x !== 1 || pose.scale.x !== 1) {
+        throw Error('completed fade');
+      }
+
+      this.self.configureAnimation(-1, false);
+      this.self.crossFadeAnimation(1, 0);
+
+      if (this.self.animationState.transition !== null || this.self.transform.scale.x !== 3 ||
+          this.self.animationState.timeSeconds !== 2) {
+        throw Error('immediate reverse fade');
+      }
+
+      this.self.crossFadeAnimation(0, 1);
+      this.self.seekAnimation(1);
+
+      if (this.self.animationState.transition !== null) {
+        throw Error('seek must retire fade');
+      }
+
+      this.self.crossFadeAnimation(1, 1);
+    }
+
+    this.phase++;
+  }
+
+  onStop(): void {
+    this.self.stopAnimation();
+
+    if (this.self.animationState.transition !== null || this.self.transform.position.x !== 7 ||
+        this.self.transform.scale.x !== 1) {
+      throw Error('stop must restore original rest and retire fade');
+    }
+  }
+}
+)ts");
+  REQUIRE_MESSAGE(compiled, (compiled ? "" : compiled.error().message));
+  auto session = Script::AnimationSession::create(fixture.scene, fixture.files).value();
+  auto scripts = fixture.scripts(*compiled, session);
+  good(scripts.start());
+  REQUIRE(session.advance(.25));
+  good(scripts.update(.1));
+  REQUIRE(session.advance(.5));
+  good(scripts.update(.1));
+  REQUIRE(session.advance(.25));
+  good(scripts.update(.1));
+  REQUIRE(session.advance(.25));
+  good(scripts.update(.1));
+  good(scripts.stop());
+  CHECK(fixture.scene->entity(fixture.actor)->animation == fixture.player);
 }

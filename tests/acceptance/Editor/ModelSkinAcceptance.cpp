@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <print>
@@ -7,11 +8,14 @@
 #include <string>
 #include <utility>
 
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
 import Dot.Assets.Image;
 import Dot.Core.Files;
 import Dot.Core.Process;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Workspace;
+import Dot.Math;
 import Dot.Project;
 import Dot.Project.GameSession;
 
@@ -100,6 +104,67 @@ namespace Dot::Editor {
               "Skin Inspector must reflect remapped imported joint IDs");
       require(mesh["skin"]["joints"].size() == 8 && mesh["skin"]["joints"][0] != "4",
               "Model insertion must remap source skin joints past existing entities");
+      auto assets = project.files().value();
+      auto source
+          = Animation::loadClip(assets, actor["animation"]["clips"][0].get<std::string>()).value();
+      auto counter = *source.description().value();
+      counter.name = "Counter flex";
+
+      for (auto& track : counter.tracks) {
+        for (auto& key : track.keys) {
+          key.value.z = -key.value.z;
+        }
+      }
+
+      Animation::saveClip(assets, "assets/counter.dotanimation",
+                          Animation::Clip::create(std::move(counter)).value())
+          .value();
+      assets
+          .writeTextAtomic("scripts/skin.ts", R"ts(
+import {ScriptComponent} from 'dot:engine';
+
+export class SkinController extends ScriptComponent {
+  onStart(): void {
+    this.self.playAnimation(0, true);
+    this.self.seekAnimation(0.5);
+    const before = this.self.animationState;
+    this.self.crossFadeAnimation(1, 2);
+
+    if (before.timeSeconds !== 0.5 || this.self.animationState.clip !== 1 ||
+        this.self.animationState.transition?.durationSeconds !== 2) {
+      throw Error('native exported skin fade did not start');
+    }
+  }
+
+  onUpdate(): void {
+    const state = this.self.animationState;
+
+    if (state.clip !== 1 ||
+        (state.transition ? state.transition.elapsedSeconds !== state.timeSeconds :
+                            state.timeSeconds !== 2 || state.playing)) {
+      throw Error('native exported skin fade did not advance');
+    }
+  }
+}
+)ts")
+          .value();
+      auto animation = actor["animation"];
+      animation["clips"].push_back("assets/counter.dotanimation");
+      animation["looping"] = false;
+      action({{"command", "edit"},
+              {"operations", Json::array({{{"op", "component"},
+                                           {"entity", actor["id"]},
+                                           {"component", "animation"},
+                                           {"value", animation}},
+                                          {{"op", "component"},
+                                           {"entity", actor["id"]},
+                                           {"component", "script"},
+                                           {"value",
+                                            {{"source", "skin.ts"},
+                                             {"className", "SkinController"},
+                                             {"enabled", true},
+                                             {"properties", Json::object()}}}}})}});
+      frame();
       const auto initial = workspace.captureViewport().value();
       const auto authored = inspect()["scene"];
       auto bad = workspace.dispatch(
@@ -146,6 +211,27 @@ namespace Dot::Editor {
       action({{"command", "play"}});
       workspace.step(500ms).value();
       const auto played = workspace.captureViewport().value();
+      const auto running = send({{"command", "inspect-play"}});
+      require(running["play"]["diagnostics"].empty() && running["play"]["error"].is_null(),
+              "Scripted editor fade must not hide script/native failures");
+      const auto expected = Math::rotationEulerDegrees({0, 0, 18.75F}).value();
+
+      for (const auto& track : source.description().value()->tracks) {
+        const auto targets = actor["animation"]["targets"];
+        const auto binding = std::ranges::find_if(
+            targets, [&](const auto& target) { return target["node"] == track.node; });
+        require(binding != targets.end(), "Expected remapped editor joint target");
+        const auto playingEntities = running["scene"]["entities"];
+        const auto joint = std::ranges::find_if(playingEntities, [&](const auto& entity) {
+          return entity["id"] == (*binding)["entity"];
+        });
+        require(joint != playingEntities.end(), "Expected live Play joint");
+        const auto rotation = (*joint)["transform"]["rotation"];
+        require(std::abs(rotation[2].template get<float>() - expected.z) < .00001F
+                    && std::abs(rotation[3].template get<float>() - expected.w) < .00001F,
+                "Editor Play joints must match independent dual-clip fade angles");
+      }
+
       require(played.pixels != initial.pixels, "Imported joints must animate actual Play pixels");
       require(inspect()["scene"] == authored, "Play must leave authoring poses unchanged");
       action({{"command", "stop-play"}});
@@ -171,7 +257,7 @@ namespace Dot::Editor {
     const auto executable = relocated / "DotGame";
 #endif
     const auto child = Core::runProcess({executable, {"--frames", "8"}, relocated, 30s}).value();
-    require(child.exitCode == 0,
+    require(child.exitCode == 0 && child.standardError.find("Script entity ") == std::string::npos,
             "Relocated native skin game must run without its authoring project");
     std::println(
         "Editor skin acceptance passed: GLB import, Inspector, joint remapping, "

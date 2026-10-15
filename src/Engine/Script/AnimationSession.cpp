@@ -22,8 +22,9 @@ namespace Dot::Script {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
     using Reply = Core::Result<std::optional<std::string>>;
-    constexpr std::array methods{"animation.state", "animation.play", "animation.pause",
-                                 "animation.stop",  "animation.seek", "animation.configure"};
+    constexpr std::array methods{"animation.state",    "animation.play", "animation.pause",
+                                 "animation.stop",     "animation.seek", "animation.configure",
+                                 "animation.crossFade"};
 
     auto written(Core::Result<void> value) -> Reply {
       return value ? Reply{std::optional<std::string>{}} : std::unexpected(value.error());
@@ -51,9 +52,11 @@ namespace Dot::Script {
 
       try {
         const auto args = Codec::parseJson(arguments, 8);
-        const auto count = method == "animation.play" || method == "animation.configure" ? 3U
-                           : method == "animation.seek"                                  ? 2U
-                                                                                         : 1U;
+        const auto count = method == "animation.play" || method == "animation.configure"
+                                   || method == "animation.crossFade"
+                               ? 3U
+                           : method == "animation.seek" ? 2U
+                                                        : 1U;
 
         if (!args.is_array() || args.size() != count) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Incorrect animation arguments");
@@ -69,6 +72,13 @@ namespace Dot::Script {
             return std::unexpected(state.error());
           }
 
+          Json transition = nullptr;
+
+          if (state->playback.transition) {
+            transition = {{"elapsedSeconds", state->playback.transition->elapsed},
+                          {"durationSeconds", state->playback.transition->duration}};
+          }
+
           return std::optional{Json{{"clip", state->clip},
                                     {"asset", state->asset},
                                     {"name", state->name},
@@ -76,7 +86,8 @@ namespace Dot::Script {
                                     {"timeSeconds", state->playback.time},
                                     {"speed", state->playback.speed},
                                     {"looping", state->playback.looping},
-                                    {"playing", state->playback.playing}}
+                                    {"playing", state->playback.playing},
+                                    {"transition", std::move(transition)}}
                                    .dump()};
         }
 
@@ -96,6 +107,16 @@ namespace Dot::Script {
 
         if (method == "animation.pause") {
           return written(m_players.pause(owner));
+        }
+
+        if (method == "animation.crossFade") {
+          if (!args[1].is_number_unsigned() || args[1] > 1023 || !args[2].is_number()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Animation cross-fade requires a clip index and seconds");
+          }
+
+          return written(
+              m_players.crossFade(owner, args[1].get<std::uint32_t>(), args[2].get<double>()));
         }
 
         if (method == "animation.stop") {

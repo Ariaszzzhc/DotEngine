@@ -5005,3 +5005,58 @@ final builds. Every new transition/math/runnable case and prior editor/script/ga
 path is included. Source formatting and staged whitespace checks pass. No interim
 distribution ZIP was generated; no Windows/Linux execution or full-goal completion is
 claimed.
+
+## Scene-library and script animation transitions
+
+ScenePlayers now exposes library-index cross-fades without editing saved player
+properties. Outgoing/incoming entity writers and interrupted channels remain
+reserved during transitions, including pause. Successful completion, seek, stop,
+restart or immediate switching retires outgoing ownership with preallocated storage;
+competing players and rigid-body ancestors fail before mutation. Sampling failures
+retain pose, both clocks, progress and reservations. Cached clips survive source
+file removal. Each player retains the existing per-player atomicity contract.
+
+The embedded dot:engine SDK adds animation.crossFade and Entity.crossFadeAnimation,
+plus owned nullable transition snapshots. Host controls validate strict arguments
+and remain forbidden during constructors/state migration. Feature Lab independently
+inventories 95 runtime members and demonstrates gradual Digit 1/2 transitions.
+Actual imported GLB rig acceptance drives the SDK, checks independent joint angles
+and CPU/GPU PBR/shadow/AO frames, and replays a known fade after source removal.
+Editor acceptance now runs the scripted fade in isolated Play, checks remapped joint
+angles and diagnostics, restores authoring pixels, saves/exports, and rejects hidden
+script errors in the relocated native child. Visual skeleton/timeline/transition
+editing, blend graphs, streaming/performance and realistic game content remain open.
+
+Initial focused ScenePlayers/SDK checks pass 10/10 (0.72s); actual imported skin,
+editor and Feature Lab checks pass 7/7 (21.57s). The latter are then strengthened
+with independently calculated editor joint angles and explicit script error checks.
+Compilation catches a shadowed local in that additional acceptance code; the local
+is renamed before final builds. No toolchain/environment workaround is introduced.
+Final Debug/Release builds and complete validation follow below. No interim ZIP is
+prepared; native export checks are subsystem evidence, not a distribution handoff.
+
+Final review corrects the added editor angle check to look up live Play entities,
+not authoring entities, and avoids rejecting a legitimately completed fade in a
+slower native child. Both final builds succeed. Final focused Debug passes 18/18
+(21.45s), including all four cancellation ownership subcases and hidden script
+error checks. All 361 tracked C/C++ files pass clang-format. The 17 unchanged WGSL
+sources pass whitespace, 100-column and two-space checks, allowing JavaDoc comment
+continuation alignment; actual pipelines are also covered by native/GPU tests.
+The current inventory is 1080 identities: 1009 doctest cases and 71 executable/
+script checks, with 253 unit, 700 integration, 217 GPU, 133 offscreen, 72 native,
+127 acceptance, 154 compiler, 21 process, 27 platform and 32 audio-native labels
+(overlapping). Complete Debug then Release/NDEBUG follow after compilation ends.
+
+Complete Debug passes 1080/1080 (257.76s). Every new library/SDK case, diagnostic
+model frame, editor workflow and prior engine/game check is included. Release/NDEBUG
+runs afterward without concurrent compilation. Runtime and editor diagnostic skin
+PNGs are visually inspected; they show the intended bent ribbon, not character art.
+
+
+Complete Release/NDEBUG passes 1080/1080 (53.36s), after Debug and both completed
+builds. Final diff review covers allocation-before-pose ordering, writer retirement
+and interruption ownership, shared callback/scene lifetime, strict host arguments,
+ReadOnly migration gates, unchanged authoring, platform-neutral implementation,
+formatting and focused failure/normal/boundary coverage. Only arm64 macOS is
+executed; Windows/Linux support is implementation-only. No full-goal completion or
+production animation performance is claimed.

@@ -443,6 +443,11 @@ export const audio = Object.freeze({
   },
 });
 
+export interface AnimationTransition {
+  elapsedSeconds: number;
+  durationSeconds: number;
+}
+
 export interface AnimationState {
   clip: number;
   asset: string;
@@ -452,6 +457,7 @@ export interface AnimationState {
   speed: number;
   looping: boolean;
   playing: boolean;
+  transition: AnimationTransition|null;
 }
 
 /**
@@ -469,6 +475,18 @@ export const animation = Object.freeze({
 
   play(entity: EntityId, clip: number|null = null, restart = false): void {
     invoke('animation.play', [entity, clip, restart]);
+  },
+
+  /**
+   * Blend to a library clip's directional start over unscaled seconds [0,86400].
+   * Both clip clocks advance; pause freezes the fade. Interruptions preserve the
+   * visible pose. Zero switches immediately; seek/stop cancel the transition.
+   * Saved descriptions remain unchanged. Failure retains pose and playback state.
+   * 按非缩放秒数 [0,86400] 淡化到库内片段正/反向起点；双时钟推进，暂停冻结过渡。
+   * 打断保持可见姿态，零时长立即切换；seek/stop 取消过渡，不改保存描述，失败保留状态。
+   */
+  crossFade(entity: EntityId, clip: number, seconds: number): void {
+    invoke('animation.crossFade', [entity, clip, seconds]);
   },
 
   pause(entity: EntityId): void {
@@ -629,6 +647,10 @@ export class Entity {
 
   playAnimation(clip: number|null = null, restart = false): void {
     animation.play(this.id, clip, restart);
+  }
+
+  crossFadeAnimation(clip: number, seconds: number): void {
+    animation.crossFade(this.id, clip, seconds);
   }
 
   pauseAnimation(): void {

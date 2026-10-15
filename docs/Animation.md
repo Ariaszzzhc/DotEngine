@@ -9,9 +9,10 @@ through GameSession, editor Play and native exports. TypeScript playback control
 are available through the engine-owned SDK. Timeline controls remain unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
 isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
-actual skinned-GPU acceptance. Library/SDK/editor transition controls, visual character
-authoring, morph targets, blend graphs/state machines, events/root motion and production animation streaming
-remain unfinished; this does not establish full animated-model support.
+actual skinned-GPU acceptance. Library/SDK transitions now run in editor Play and
+relocated exports. Visual transition/character authoring, morph targets, blend
+graphs/state machines, events/root motion and production animation streaming remain
+unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
 STEP holds the preceding key, LINEAR interpolates vectors and uses shortest-arc
@@ -253,13 +254,14 @@ verifies prior-channel restoration and exact bind-pose pixels after switch/stop.
 
 `dot:engine` exports `animation` and the owned `AnimationState` snapshot. Entity
 provides `animationState`, `playAnimation`, `pauseAnimation`, `stopAnimation`,
-`seekAnimation` and `configureAnimation` conveniences. Authored enabled players and
-valid clip resources are required; no synthetic player is created for an entity.
+`seekAnimation`, `configureAnimation` and `crossFadeAnimation` conveniences. Authored
+enabled players and valid clip resources are required; no synthetic player is created for an entity.
 
 | Service call | Behavior |
 | --- | --- |
-| `state(entity)` | Last synchronized clip index/asset/name, duration/time seconds, speed/looping/playing; returned values are owned |
+| `state(entity)` | Last synchronized clip index/asset/name, duration/time seconds, speed/looping/playing and nullable transition progress; returned values are owned |
 | `play(entity, clip = null, restart = false)` | Resume current clip or atomically switch to a library index; explicit restart uses its directional start |
+| `crossFade(entity, clip, seconds)` | Blend to a library clip's directional start over finite unscaled [0,86400] seconds; zero switches immediately |
 | `pause(entity)` | Hold current clock and pose |
 | `stop(entity)` | Restore original bound animated fields and pause at zero |
 | `seek(entity, seconds)` | Apply a finite [0,duration] sample without changing playing state |
@@ -284,7 +286,7 @@ export class Panel extends ScriptComponent {
 
   onUpdate(): void {
     if (input.key('E').pressed) {
-      this.self.playAnimation(0, true);
+      this.self.crossFadeAnimation(0, 0.25);
     }
   }
 }
@@ -292,4 +294,17 @@ export class Panel extends ScriptComponent {
 
 Feature Lab demonstrates two saved clips, Digit 1/2 selection and Space pause/resume
 with actual SDL input, native poses, editor Play and relocated standalone coverage.
-It does not establish skinning/blending, timeline tooling or populated-game scale.
+Digit 1/2 now cross-fade over 0.25 seconds. An `AnimationState.transition` is either
+null or an owned `{elapsedSeconds, durationSeconds}` snapshot; `timeSeconds` is the
+incoming clip clock. Both clips advance during a fade. Pause freezes both clocks
+and progress; speed zero freezes clip clocks while the fade still progresses.
+Interrupted fades retain the visible composite pose without accumulating chains.
+Seek/stop/immediate switching retire transitions after successful pose application.
+
+ScenePlayers reserves outgoing/incoming entity writers, retaining interrupted
+channels until completion or explicit cancellation succeeds. Competing players and
+rigid-body ancestors reject controls before mutation. Failed samples retain all
+clocks, poses and reservations. Once retired, outgoing-only entities can be owned
+by other players; stopping the new clip cannot overwrite those released entities.
+Saved player descriptions are unchanged. Visual transition/timeline authoring and
+populated-game scale remain unfinished.

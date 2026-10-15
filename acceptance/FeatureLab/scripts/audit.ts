@@ -313,6 +313,17 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check(
         'animation.failedControl',
         panel.animationState.clip === 1 && !panel.animationState.playing);
+    animation.crossFade(panel.id, 0, 0.25);
+    this.check(
+        'animation.crossFade',
+        panel.animationState.transition?.durationSeconds === 0.25
+            && equal(panel.transform, authored));
+    panel.crossFadeAnimation(1, 0.5);
+    this.check(
+        'Entity.crossFadeAnimation',
+        panel.animationState.clip === 1 && panel.animationState.transition?.elapsedSeconds === 0
+            && equal(panel.transform, authored));
+    panel.stopAnimation();
     panel.playAnimation(0, true);
   }
 
@@ -373,7 +384,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     const panel = this.entity('Animated panel');
 
     if (input.key('Digit1').pressed || input.key('Digit2').pressed) {
-      panel.playAnimation(input.key('Digit2').pressed ? 1 : 0, true);
+      panel.crossFadeAnimation(input.key('Digit2').pressed ? 1 : 0, 0.25);
     }
 
     if (input.key('Space').pressed) {

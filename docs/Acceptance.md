@@ -380,3 +380,17 @@ loop/zero speed, interruptions, moves/threads/scopes, duration limits, singular 
 invalid source/target samples and world overflow with complete clock/pose rollback.
 This is native SceneAnimator acceptance; script/editor transition controls and
 populated-character scale are not established by it.
+
+
+ScenePlayers integration now tests cached-library fades, dual clocks, paused and
+interrupted ownership unions, outgoing-writer retirement, physics conflicts and
+failed-sample rollback. Real compiled TypeScript exercises both cross-fade API
+forms, owned transition snapshots, strict arguments, preparation/migration write
+rejection, reverse/immediate fades and seek/stop cancellation. Feature Lab's
+independent inventory includes all 95 SDK members; native Digit 1/2 input triggers
+visible gradual transitions. `runtime.model_skin` drives the imported rig through
+actual TypeScript, independently calculated joint angles and CPU/GPU PBR/shadow/AO
+frames, then reproduces a known fade frame from an owned relocated export after
+source removal. `editor.model_skin` also starts the scripted fade in isolated Play
+and runs the relocated native game. This closes script consumption; visual animation
+transition authoring and populated character performance remain separate work.

@@ -209,7 +209,7 @@ Native SceneAnimator cross-fades now blend both moving clips, handle partial
 channels and interrupted transitions, and commit pose/clock/progress atomically.
 An actual imported eight-joint GLB has ten independently reference-compared GPU
 frames and bind/resource restoration acceptance. This supplies the tested native
-foundation before ScenePlayers authority reservations, SDK and editor/Play/export
-controls consume transitions. Those integrations, visual skeleton/blend authoring,
-layered/additive blending and state machines remain required work; no general
+foundation. ScenePlayers now reserves the full transition writer union, and SDK
+controls run in isolated editor Play and relocated exports. Visual skeleton/blend
+authoring, layered/additive blending and state machines remain required work; no general
 character-animation or populated-game completion is claimed.
