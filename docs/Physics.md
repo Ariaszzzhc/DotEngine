@@ -93,7 +93,7 @@ Recreate the world to resume simulation. In Debug, only Jolt's final assertion
 for these returned update-error flags is allowed to continue; other assertions
 still report their origin and request a breakpoint.
 
-## Ray queries and acceptance
+## Ray queries
 
 `rayCast` takes an origin and displacement, with endpoints within position
 limits and displacement length at least 0.001. It returns the closest hit,
@@ -101,12 +101,6 @@ including sensors, or a successful empty optional for a miss. Invalid inputs
 return an error. A hit contains the public body handle, segment fraction, and
 point. Fraction-zero hits can start inside a shape and have no surface normal;
 positive-fraction hits include a normalized world-space normal.
-
-Run `build/debug/bin/DotRuntimeAcceptance --physics-test` to drop a sphere onto a static
-box, verify its resting height and a ray hit, then destroy it and reject its old
-handle. Focused tests also cover restitution, gravity scaling, all three shapes,
-kinematic motion, sensors, limits, transactional input failures, native sequence
-wrap, worker execution, moves, and actual contact-capacity failure.
 
 ## Scene simulation
 
@@ -145,11 +139,6 @@ snapshots/rays remain diagnostic operations. `reset` prepares an independent
 candidate world and replaces bindings only on success. It restarts motion from
 authoring descriptions and can bind a different scene. It is required to recover
 from writeback or backend faults.
-
-Run `DotRuntimeAcceptance --scene-physics-test` for a falling scene cube, entity-scoped ray
-query, and synchronized cleanup. `--scene-physics-render-test` additionally checks
-the actual GPU pixels at its resting position. GPU tests also compare the initial
-and final pixels to prove that scene writeback changes rendering.
 
 ## Contact events
 
@@ -192,9 +181,6 @@ or queue failure after a step faults the world/service and rejects incomplete
 event delivery. Faulted bodies remain available for diagnostic reads/cleanup;
 recreate or reset to resume. There is no silent truncation of event streams.
 
-`--scene-physics-test` and its GPU variant verify contact begin and destruction
-alongside collision poses, entity ray queries, and synchronized cleanup.
-
 ## Native character controller foundation
 
 `Dot.Physics.Character` separates CPU-only capsule/configuration/input validation
@@ -231,10 +217,3 @@ phase. Body statistics count rigid bodies; `characters` counts owned capsules.
 Scene persistence, component Inspector/SDK binding, humanoid animation and the
 requested over-the-shoulder camera are subsequent integration work. This API alone
 does not establish a finished character template or large-crowd scalability.
-
-Run `build/debug/bin/DotRuntimeAcceptance --character-test` for an actual headless
-Jolt drop/walk/jump/wall/landing/lifetime acceptance path. The `character.*` unit
-and integration selections cover finite bounds, foreign/stale/moved handles,
-thread rejection, capacity failure/recovery, sensors, destroyed support, steps,
-slopes, dynamic pushing, horizontal/vertical platforms and colliding capsule
-cleanup. The test executable is only built with `BUILD_TESTING=ON`.

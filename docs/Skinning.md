@@ -29,17 +29,6 @@ PBR, shadows, AO and picking. Tangent handedness combines skin reflection once w
 the separate world-transform sign. Color/UV/indices remain
 unchanged. It does not mutate the original mesh or cache a partly evaluated pose.
 
-```sh
-ctest --preset debug -R '^(skin\.|runtime.skinning$)'
-build/debug/bin/DotRuntimeAcceptance --skinning-test build/debug/tests/animation_acceptance
-```
-
-The development-only acceptance reloads a saved skin/scene, uses actual scene joints
-and node animation to drive GPU skinning, writes bind/reference/GPU DotMesh data plus nine PNG frames
-and compares positions/normals and actual physical/shadow/AO pixels. Unit data/
-reference cases still create no device. Animation blending,
-retargeting and populated-game scale remain unfinished.
-
 ## Saved assets and scene bindings
 
 `Dot.Animation.SkinFiles` reads/writes one strict little-endian `.dotskin` layout.
@@ -129,12 +118,9 @@ pickers. Adding a binding requires a mesh. Draft application uses the same compo
 edit/history transaction as agent commands; missing assets/count mismatches produce
 explicit rendering/Play/export errors. Duplicate requires every referenced joint
 inside the copied subtree union; both duplicate and model-scene instantiation remap
-joint IDs. Undo/redo/save preserve them. Native workspace tests compare actual
-authoring/undo/isolated-Play pixels and prove that stop restores the authoring pose.
-
-The runnable also compares automatic saved-scene PBR/shadow/AO output to its
-independent CPU mesh and writes skin-scene.png. This is a diagnostic deformation
-scene, not realistic game artwork. Visual skeleton/timeline/blend tools remain unfinished.
+joint IDs. Undo/redo/save preserve them. Offscreen GPU regressions compare saved
+scene deformation with independent CPU mesh references. Visual skeleton/timeline/
+blend tools remain unfinished.
 
 ## glTF/GLB import
 
@@ -155,17 +141,7 @@ models validate bindings and initial CPU deformation before writing owned stagin
 Publication remains exclusive. Reload verifies bundle-local referenced assets and
 initial deformation without a GPU. Resource reports include `skins` and `skinnedMeshes`.
 
-```sh
-ctest --preset debug -R '^(model\.skin_|runtime.model_skin$|editor.model_skin$)'
-build/debug/bin/DotRuntimeAcceptance --model-skin-test \
-  build/debug/bin/resources/typescript-native/tsc build/debug/tests/animation_acceptance
-```
-
-The runtime acceptance imports the owned eight-joint GLB, saves/reloads native
-assets, advances actual GameSession animation and compares nine PBR/shadow/AO
-frames with independent CPU-deformed geometry. It checks picking/bounds, resource
-release and export pixels after both authoring and relocated input trees are deleted.
-The editor acceptance uses actual import/Inspector/duplicate/undo/Play/save/export
-commands and runs the relocated native game after removing its source project.
 Diagnostic ribbon images do not establish realistic character production or
-populated-game throughput. GPU status waits remain synchronous.
+populated-game throughput. GPU status waits remain synchronous. Validate integrated
+import/edit/Play/export through the real editor's agent interface and ordinary
+example projects; use computer use for human-style interaction when needed.

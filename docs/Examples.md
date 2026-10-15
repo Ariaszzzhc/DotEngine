@@ -58,22 +58,18 @@ Runtime windows follow the current native scene name, so attached scripts can
 publish status through the existing scene API without application-specific game
 bindings. Title updates are skipped when unchanged and native errors propagate.
 
-Six focused acceptance cases cover owned/failed checkpoints, configuration bounds,
-round/pause/win/health/deadline/reset behavior, a complete route through real Jolt
-sensors, actual outer-wall collision, hazard sleep/continued damage, offline PCM,
-nine-component hot reload, real SDL key events and GPU presentation/pixel changes,
-a native audio endpoint, and relocated standalone startup after authoring deletion.
-A GPU readback preview is generated under the test build's example_acceptance
-folder. Local verification covers arm64 macOS; Windows/Linux remain unvalidated.
+Headless regressions cover checkpoints, configuration bounds, round state, real
+Jolt sensors/collisions, offline PCM and hot reload. Validate integrated visuals
+through the actual editor and exported player, using agent operations and computer
+use where appropriate. Local verification covers arm64 macOS; Windows/Linux remain
+unvalidated.
 
-This sample exercises the listed systems. The [Feature Lab acceptance project](Acceptance.md)
+This sample exercises the listed systems. The [Feature Lab example project](Acceptance.md)
 separately inventories and executes the complete current runtime SDK against native
 components and services; the sample alone is not evidence of full API coverage.
 
-
 The [project home](ProjectHome.md) can create a writable Prism Relay copy with the
 engine module imports directly from its packaged template; manual copying is optional.
-
 
 ### Physical industrial environment
 

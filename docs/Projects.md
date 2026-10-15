@@ -87,15 +87,6 @@ line per request and shares the Document module used by editor clients. See
 [editor documents and automation](Editor.md) for the strict protocol and lifetime
 contracts and the native graphical workspace.
 
-`DotEditorAcceptance --project-test <absolute-compiler> <existing-parent>` exercises exclusive
-creation, real template compilation and attached script/input execution, native scene
-and descriptor saves, relocation with fresh scene scope, recompilation and compiler/
-process/VM cleanup. `--project-render-test` additionally verifies actual Metal pixels
-from the template's script-driven movement. Tests own their temporary parent scopes.
-Separate child-process tests exercise every public command and actual TypeScript
-failure diagnostics. Local verification covers macOS; Windows/Linux implementations
-remain uncompiled/unexecuted locally.
-
 ## Running a project
 
 ```text
@@ -132,14 +123,6 @@ the scene stays available for inspection. Destruction releases storage without
 calling script hooks. Offline mode renders real PCM; playback opens a real endpoint
 and rejects offline rendering. Native failure after side effects faults the session,
 with no rollback; closing releases it even when scene identity has been invalidated.
-
-`--project-player-test <absolute-compiler> <existing-parent>` creates a
-complete temporary template, uses the same player/session loop with deterministic
-published input, verifies real native presentation and changed rendered pixels,
-opens a muted real endpoint, and checks compiler/VM/audio ownership returns to
-baseline after explicit shutdown. This checks the endpoint opening and cleanup;
-the audio playback acceptance cases separately verify delivered PCM/frame counters.
-
 
 ## Precompiled game sessions
 

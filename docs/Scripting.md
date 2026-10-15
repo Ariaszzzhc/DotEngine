@@ -8,7 +8,7 @@ The [native TypeScript compiler](#native-typescript-compilation) produces ESM fo
 this layer. The [registered host bridge and core scene SDK](#registered-host-services)
 are implemented together with persistent instances and the entity lifecycle service.
 Source hot reload and native scene/component/input/physics/audio APIs are implemented
-through the services below. See [acceptance coverage](Acceptance.md) for SDK evidence.
+through the services below. See [example workflows](Acceptance.md) for SDK evidence.
 
 Create a Runtime with a project FileSystem, load a canonical UTF-8 .js/.mjs entry,
 and call an exported function through its scoped ModuleId. Entry paths are root
@@ -95,13 +95,6 @@ context/runtime. SDK callbacks contain C++ exceptions rather than unwinding over
 the C ABI. Faulted statistics remain queryable; calls/loads require a new realm.
 `backendMemory` reports process-wide live allocator payload for lifetime checks.
 
-Run `DotRuntimeAcceptance --script-test <existing-directory>` for an actual file-backed ESM
-graph, async JSON calls, shared state, recoverable exceptions, execution interruption,
-and complete allocator cleanup. Unit tests also cover malformed inputs, import
-paths/attributes/NUL, strict results, memory/job/stack limits, diagnostic getters,
-failed initialization, cycles, cache identity, thread/move/foreign destruction,
-and lifetime. Only macOS Debug/Release are validated; no sanitizers are used.
-
 # Native TypeScript compilation
 
 `Dot.Script.Compiler` uses the official standalone Go compiler from the pinned
@@ -173,15 +166,6 @@ must be positive. Capture and output inspection are bounded, and the Process lay
 owns termination/reaping. These are not OS memory/disk quotas or hard real-time
 guarantees: output size is checked after the compiler finishes, and generation
 destruction cannot report filesystem deletion failures.
-
-Run `DotRuntimeAcceptance --typescript-test <absolute-compiler> <existing-directory>` for real
-type checking, ESM emission/execution, source maps, deliberate type diagnostics,
-continued old-runtime execution and complete generation/process/VM cleanup.
-Focused tests include actual Unicode/mts/declaration compilation, source maps,
-lazy imports after authoring removal, configuration isolation, missing imports,
-exact resource boundaries, failed candidates, copy/move/lifetime/concurrency and
-test-only tool fixtures for zero/partial/unexpected output, timeout and oversized
-diagnostics. These fixtures never substitute for the real compiler acceptance.
 
 # Registered host services
 
@@ -308,14 +292,7 @@ actor.audioSource = source;
 actor.rigidBody = null;
 ```
 
-`--script-authoring-test <absolute-compiler> <directory>` creates all
-six components through actual compiled TypeScript, checks native rejection,
-saves/loads the authored scene in a fresh scope and dispatches typed lifecycle
-edits and removal. Audio paths intentionally need not exist for this authoring
-case; playback is verified by the separate native audio acceptances.
-`--script-authoring-render-test` additionally verifies actual Metal pixels for a
-script-created camera and blue mesh, a lifecycle-assigned green tint, and hidden
-geometry. Constructors and state migration may query these descriptions/primary
+Constructors and state migration may query these descriptions/primary
 entities/existence, while component assignment is denied during preparation and
 save/load just like earlier scene writes. Lifecycle callbacks may edit authoring;
 self-disable takes effect when the next lifecycle dispatch synchronizes the scene.
@@ -337,18 +314,10 @@ export function tick(seconds: number): void {
 }
 ```
 
-This example uses exported functions as a runnable host/SDK acceptance layer;
+This example calls exported functions through the native host/SDK bridge;
 the entity-attached lifecycle service below provides scheduled instances. Candidate
 load/initializer failures through this direct bridge can have native side effects,
 so it must not be mistaken for transactional hot reload.
-
-Run `DotRuntimeAcceptance --script-host-test <absolute-compiler> <directory>` for
-the actual TypeScript SDK, native entity creation/deletion and parenting, renaming,
-recoverable transform rejection, sixty typed transform ticks, and compiler/process/
-VM cleanup.
-`--script-host-render-test` takes the same arguments and also checks actual GPU
-pixels before/after script-driven movement of a native cube. macOS uses Metal;
-Windows/Linux implementations are not validated locally. No sanitizers are used.
 
 # Persistent script objects
 
@@ -384,14 +353,6 @@ by normal collection or realm destruction. Released/foreign handles fail. Releas
 is allowed on a faulted realm but still requires its owner thread without reentry.
 Moves preserve instances; quiescent realm destruction may occur on another thread.
 `RuntimeStats.instances` reports live host-held handles, not every object in JS.
-
-Run `DotRuntimeAcceptance --script-instance-test <absolute-compiler> <directory>`
-for actual TypeScript classes with private state and inherited hooks, two native
-entities driven independently through sixty async updates, contextual failure
-recovery, explicit stop calls, stale-handle rejection and complete compiler/process/
-VM cleanup. This acceptance caller invokes hooks explicitly; the entity lifecycle
-service below provides attached descriptions, persistence and scheduling, with
-source hot reload provided by LiveScripts.
 
 # Entity-attached lifecycle service
 
@@ -475,16 +436,6 @@ export class Player extends ScriptComponent<{speed: number}> {
 }
 ```
 
-Run `--script-components-test <compiler> <directory>` to save/load an
-actual authored scene, compile project classes with engine-owned declarations, automatically dispatch
-start/sixty async updates/fixed updates/stop on two independent native entities,
-and verify original handles are foreign after load plus full compiler/process/VM
-cleanup. `--script-components-render-test` also validates real GPU pixels before/
-after lifecycle-driven native movement. Only macOS Debug/Release are validated.
-The source hot-reload service below extends this lifecycle layer. Native input,
-physics and audio bindings are described below; [editor](Editor.md), [export](Export.md)
-and [example](Examples.md) workflows consume these same native services.
-
 # Source hot reload
 
 `SceneScripts::reload(newProgram)` prepares a wholly independent realm/generation
@@ -560,13 +511,6 @@ Polling/capture/compilation are synchronous and not a hard frame-time guarantee;
 compiler invocations retain Process time/output bounds. Captured text and native
 transport containers are outside the VM allocator quota. This version uses
 portable content capture rather than platform notification APIs.
-
-Run `--script-reload-test <compiler> <directory>` for actual source edits,
-type-error retention while old code continues, new code compiled into another
-realm, private state migration without duplicate startup/cleanup, changed native
-movement and compiler/process/VM teardown. `--script-reload-render-test` also checks
-actual GPU pixels before/after the reloaded behavior. macOS Debug/Release are
-validated; Windows/Linux use common C++ implementations but remain unverified.
 
 # Input frames and native services
 
@@ -672,14 +616,6 @@ rebuilds guards for each candidate realm; LiveScripts carries the same services
 through compilation failures and successful reloads. Capture owned dependencies,
 or keep borrowed dependencies alive for the service lifetime.
 
-Run `--script-input-test <absolute-compiler> <directory>` for deterministic
-SDL event injection through the application event pump and publication callback,
-real TypeScript components, fixed-step edge sharing, repeat keys, Unicode text,
-mouse/pointer/wheel, focus release and source hot reload with private state migration.
-CTest uses SDL's dummy video driver for this input case; it does not assert physical
-keyboard delivery. Compiler generations, process handles and VM allocations return
-to baseline. The existing Cocoa/Metal/CoreAudio acceptances remain separate checks.
-
 # Runtime physics services
 
 `Dot.Script.PhysicsSource::create(sharedScene, config)` owns a real Jolt-backed
@@ -771,15 +707,6 @@ prepares its empty encoded batch before replacing the world. A Runtime rejecting
 an otherwise valid published batch does not consume native data; another reader
 with adequate transport capacity can still read it.
 
-`--script-physics-test <absolute-compiler> <directory>` compiles actual
-TypeScript classes controlling real linear/angular velocity, impulse and kinematic
-motion. It checks rays and sensor batches, catches invalid control, advances thirty
-fixed frames, changes source and migrates a private counter halfway through while
-preserving native motion, then verifies explicit stop and compiler/process/VM cleanup.
-`--script-physics-render-test` additionally verifies actual Metal pixel changes
-from the script-controlled physical movement. Local validation covers macOS;
-Windows/Linux implementations remain unverified.
-
 # Runtime audio services
 
 `Dot.Script.AudioSession::create(sharedScene, files, mixerConfig, limits)` owns a
@@ -855,17 +782,6 @@ continues during compilation/preparation, so snapshots can advance independently
 Stats expose actual playback state/errors and queue/frame/callback counters; offline
 mode explicitly reports null playback data.
 
-`--script-audio-test <absolute-compiler> <directory>` compiles actual
-TypeScript components and verifies play/seek/gain through deterministic PCM, pause
-through silence, atomic stop, changed-source migration with the same paused voice/
-cursor/gain, and explicit stop/resource cleanup. `--script-audio-play-test` exercises
-the same controls against a real endpoint with endpoint software gain zero and
-checks actual frame delivery and native rejection of offline rendering. Both cases
-verify compiler generations, process/VM handles and mixer/output backend allocations
-return to baseline. Local hardware validation covers macOS CoreAudio; Windows/Linux
-implementations remain unverified.
-
-
 ## Published ESM generations
 
 `CompiledProgram::publish` writes JS/MJS and a strict version-1 manifest to a
@@ -875,7 +791,6 @@ map directives and validates against default loader limits before publication.
 membership/counts/sizes and UTF-8/NUL boundaries, then captures ESM into a private
 owned generation without compiler processes. Keep an owner alive for Runtime
 using its borrowed files. Subsequent package changes do not affect captured code.
-
 
 ## Animation service
 

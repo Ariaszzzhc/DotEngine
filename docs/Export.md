@@ -63,13 +63,6 @@ Callers serialize filesystem changes. Counts and sizes are format checks, not
 code authenticity, hostile-race isolation or crash durability guarantees. A
 package contains executable JavaScript.
 
-`runtime.exported_game` relocates the package and deletes its authoring project,
-then verifies actual native input, GPU pixel changes, audio endpoint and shutdown.
-Focused tests cover immutable byte capture, strict formats/limits, invalid text,
-resource/script failures, no overwrite, ownership and workspace/CLI behavior.
-Local validation covers arm64 macOS; x86_64 Windows/Linux remain unvalidated.
-
-
 ## Standalone native games
 
 ```text
@@ -86,13 +79,11 @@ and automation use the same operation:
 ```
 
 The exported root includes DotGame, native libraries, runtime.json, license notices
-and a `game/` data package. Playback finds `game/` relative to the executable,
-independent of the current working directory. It needs no authoring directory,
-TypeScript compiler, editor font or engine build checkout. Zero/omitted frame
-budget runs until close; malformed budgets fail before loading game resources.
-Deterministic native checks belong to the development-only
-`DotRuntimeAcceptance --game-verify <data-package>` driver. Exported DotGame accepts
-normal playback/frame budgets and contains no acceptance command or input assertions.
+and a game/ data package. Playback finds that package relative to the executable,
+independently of the current working directory. It needs no authoring directory,
+compiler, editor font or engine checkout. Zero/omitted frame budget runs until close;
+malformed budgets fail before loading game resources. Automated package checks use
+headless GameSession; native playback is checked through the actual product.
 
 The build creates `bin/resources/runtime-kit`, also available via the RuntimeKit
 installation component. macOS uses [CMake BundleUtilities](https://cmake.org/cmake/help/latest/module/BundleUtilities.html)
@@ -128,14 +119,13 @@ notices are preserved during export. Ad-hoc signing enables local execution;
 release signing/notarization and native installers remain separate distribution
 work, and no result is claimed for those workflows.
 
-Acceptance relocates the complete directory, deletes its authoring project and
-intermediate kit, starts the delivered player from a different working directory
-and checks real native input, GPU pixel changes, audio endpoint and shutdown.
-Additional tests cover malformed/mismatched kits, file sizes, extra files,
+Headless integration tests relocate native exports, delete authoring inputs and
+exercise actual package/script/animation behavior through GameSession. Verify
+standalone native playback separately through the actual product. Other tests
+cover malformed/mismatched kits, file sizes, extra files,
 symlinks/Finder metadata, executable permissions, moved owners, manifest changes,
-no overwrite, source preservation, failure after copying native files and GUI/CLI
-parity. Local validation is arm64 macOS; Windows/Linux remain unvalidated.
-
+no overwrite, source preservation and failure after copying native files. Local
+validation is arm64 macOS; Windows/Linux remain unvalidated.
 
 The [Prism Relay example](Examples.md) is a complete ordinary project that can be
 edited, played and exported through these operations. Runtime window titles follow

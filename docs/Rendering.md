@@ -38,15 +38,9 @@ The material also has finite nonnegative linear emissive radiance in [0,65503]
 per RGB channel, added before exposure; alpha is unaffected. Transparency blending remains planned; direct physical materials, HDRI lighting
 and explicit directional shadows are described below.
 
-Run the development-only native acceptance with:
-
-```sh
-build/debug/bin/DotRuntimeAcceptance --texture-test tests/fixtures
-```
-
-It loads actual PNG/HDR files, samples a retained texture through a material into a
-persistent GPU target, checks actual RGBA pixels and confirms mesh/texture/target
-release. Focused tests cover sRGB versus linear sampling, alpha, filtering, UV row
+GPU regressions load actual PNG/HDR files, sample retained textures through materials
+into persistent GPU targets, check RGBA pixels and verify mesh/texture/target release.
+Focused tests cover sRGB versus linear sampling, alpha, filtering, UV row
 orientation, addressing outside the unit square, odd-edge mip minification,
 source independence, sharing/moves, foreign handles, invalid inputs, residency
 limits and recovery. Native surface/GUI regressions use the same current pipeline.
@@ -85,20 +79,6 @@ frames, replacing them only when dimensions change and allocation succeeds. Thes
 are separately reported as `frameBytes` (12 logical bytes per pixel, bounded to
 256 MiB); persistent asset targets retain their own count/byte budget. Allocation
 failures return errors and retain the previous working storage.
-
-```sh
-build/debug/bin/DotRuntimeAcceptance --hdr-test build/debug/tests/file_acceptance
-```
-
-This development-only case renders three cubes with increasing emissive radiance,
-checks actual pre-mapping highlights above one, writes the GPU display image to
-`hdr-tonemap.ppm`, presents through the native window, resizes and checks resource
-release. Cube face colors visualize authored normals; this is not a lighting/PBR
-or game-art showcase. Focused tests cover default gray references/highlight
-separation, Reinhard exposure, single input/output sRGB conversion, unchanged alpha,
-emissive draw/depth ownership, invalid input retaining both images, padded readback,
-thread/foreign/moved owners and working-buffer reuse. Existing camera/tint/physics
-pixel tests explicitly select linear diagnostics to keep their assertions focused.
 
 ## Delivered direct PBR rendering
 
@@ -146,14 +126,6 @@ Texture slots are shared immutable resources and every draw has independent mode
 normal, material and texture data. Frame light buffers are owned by submitted
 commands. Operations remain confined to the renderer thread.
 
-```sh
-build/debug/bin/DotRuntimeAcceptance --pbr-test build/debug/tests/file_acceptance
-```
-
-The native acceptance saves and loads a real scene, sphere mesh, fifteen material
-assets and a normal-map image before drawing dielectric/gold/copper roughness rows
-under two persisted lights. It checks HDR highlights,
-writes `pbr-direct.ppm`, presents/resizes and verifies shared resource release.
 Focused GPU tests compare an analytic frontal BRDF value, metal/dielectric response,
 roughness peaks, point distance/range, spot direction, dark/emissive frames, packed
 texture channels, normal/emissive maps, inverse-transpose/mirrored transformations,
@@ -264,7 +236,6 @@ Each stage must reach runtime, persistent viewport and authoring/agent paths bef
 claiming an editable production feature. Planned rendering cannot be presented as
 implemented just because resource or unit tests pass.
 
-
 ## GPU environment preprocessing foundation
 
 `Dot.Graphics.Environment` validates opaque linear 2:1 latitude-longitude HDR
@@ -301,17 +272,7 @@ creating thread/live device. Foreign, absent, expired, invalid face/mip maps fai
 quiescent destruction can outlive the renderer. readEnvironment returns actual
 floating-point device pixels with no implicit convolution or display conversion.
 
-```sh
-build/debug/bin/DotRuntimeAcceptance --environment-test \
-  /absolute/DotEngine/assets/environments/studio_small_09_1k.hdr \
-  /existing/output-directory
-```
-
-This development-only driver verifies real preprocessing, HDR retention, BRDF
-readback/shared release and writes a diagnostic Reinhard/sRGB cube cross. It opens
-no desktop window. Input is the unmodified CC0 [Studio Small 09](https://polyhaven.com/a/studio_small_09)
-resource with source/author/hash recorded in assets/environments/README.md. Runtime
-fetches no assets/API. Unit tests check bounds/face axes; offscreen tests check
+Unit tests check bounds/face axes; offscreen tests check
 constant energy, all faces/mips, independent linear-field diffuse moments,
 roughness blur, BRDF's smooth/rough limits, actual HDRI, budget/failure/lifetime.
 
@@ -373,9 +334,6 @@ without detaching another service's binding. Scene files persist HDRI references
 settings and the editor exposes the configuration through its Environment pane
 and transaction commands.
 
-The offscreen environment acceptance also renders `environment-lighting.ppm`: six
-actual HDRI-lit spheres with no direct lights (copper above, blue dielectric below;
-roughness .06/.3/.8 left to right), plus sky, HDR readback and GPU ACES output.
 Independent constant-energy tests check diffuse and the analytical rough-metal
 limit, intensity/unbinding/unlit behavior; directional fields check perspective
 rays, yaw, orthographic sky and geometry depth. This evidence establishes the
@@ -413,8 +371,7 @@ asset fetch or absolute authoring path is required by the exported player.
 
 Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
-Its existing native standalone acceptance validates that delivery path. This
-provides authored IBL; directional shadows and the renderer SSAO foundation are
+This provides authored IBL; directional shadows and the renderer SSAO foundation are
 described below, while temporal AO,
 point/spot shadows, async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
@@ -468,13 +425,7 @@ shadows and edit the nested settings; integral work controls retain integer JSON
 Document transactions/undo/saving, preview, Play and export use the same scene path.
 Feature Lab's saved directional headlight now requests cascades.
 
-```sh
-build/debug/bin/DotRuntimeAcceptance --shadow-test /existing/output-directory
-```
-
-The development-only offscreen driver renders hard/soft/disabled comparisons into
-shadow-hard.ppm, shadow-soft.ppm and shadow-none.ppm, verifies actual HDR differences
-and releases working maps. CPU tests cover fits/splits/texel stability/occluders;
+CPU tests cover fits/splits/texel stability/occluders;
 GPU tests check moving shadows, casting/receiving, measured penumbrae, all four
 cascades including off-camera casters, resource resize/release, other lights, IBL/
 emission and input failure retention. Saved-scene and document tests verify authoring.
@@ -505,13 +456,7 @@ Null settings release the textures. readOcclusion returns the grayscale visibili
 of the last committed mesh frame and fails before a frame or after disabling.
 Input validation failures preserve settings, target frame counts and prior images.
 
-```sh
-build/debug/bin/DotRuntimeAcceptance --occlusion-test /existing/output-directory
-```
-
-The BUILD_TESTING-only driver saves and reopens an ordinary scene with material/mesh/HDR assets, renders IBL, cascaded shadows and AO together, and writes
-occlusion-enabled.ppm, occlusion-disabled.ppm and occlusion-visibility.ppm, checks
-actual HDR attenuation and releases AO storage. Focused CPU/GPU tests cover finite
+Focused CPU/GPU tests cover finite
 reconstruction, bounds, flat planes, contact/lifted objects, normal maps, background,
 orthographic camera motion, diffuse-only composition, invalid inputs, thread
 ownership and resizing/release. Saved optional scene settings and the editor Rendering pane now share strict codec,
@@ -524,7 +469,6 @@ and scalable geometry submission remain planned. Source WGSL is independently
 maintained under src/Engine/Graphics/Shaders with two-space indentation, spacing,
 100-column lines and separated functions/control blocks. CMake embeds it privately;
 the shipped engine needs no shader source files or filesystem search paths.
-
 
 ## Independent views and coverage-aware picking
 
@@ -543,7 +487,6 @@ Scratch targets and uniforms are released after readback; lifetime/thread/device
 validation follows normal renderer ownership. It currently reads back synchronously
 and conservatively prunes candidates against the cropped pixel frustum; spatial
 GPU-driven indexing remains planned; alpha-aware picking is implemented below.
-
 
 ## Conservative camera clipping / 保守相机裁剪
 
@@ -577,7 +520,6 @@ BVH spatial classification is described below. Streaming, occlusion culling and
 per-cascade caster pruning remain unimplemented; camera clipping alone does not
 establish large-game scalability.
 
-
 ## Instanced mesh submission / 网格实例化提交
 
 `Dot.Graphics.DrawBatches` owns a stable compact source-index list and consecutive
@@ -610,7 +552,6 @@ visibility, transparency sorting, animation and production
 content still require dedicated implementation; instancing alone does not establish
 large-game readiness.
 
-
 ## Spatial visibility index / 空间可见性索引
 
 `Dot.Graphics.SpatialIndex` owns a balanced BVH over at most 10000 finite world
@@ -640,7 +581,6 @@ system. Refit preserves topology, so extensive movement can reduce tree efficien
 adaptive rebuilding, separate per-camera caches and GPU-driven visibility remain
 future work. Counters measure classification work, not frame-rate improvement.
 
-
 ## Authored tangent frames / 作者切线坐标框架
 
 Vertices and DotMesh retain tangent XYZ and handedness W. Tangents are unit,
@@ -657,7 +597,6 @@ tangents because its changed normals invalidate the original frame.
 顶点与资产保留切线及手性；作者坐标框架直接进入 GPU，而缺失时才重建。模型反射
 和非均匀缩放使用正确变换；生成平面法线明确清除失效切线，静态 glTF 导入在后续段落说明。
 
-
 Baked occlusion is a fifth linear texture slot: R encodes visibility, strength
 [0,1] mixes it with one. It multiplies indirect HDR/IBL alongside SSAO; direct lights
 and emission remain unaffected. Renderer, scene cache, current material codec and
@@ -665,7 +604,6 @@ game packaging validate/bind this slot. Instance storage is 288 bytes with occlu
 parameters at offset 256; GPU surface/geometry layouts share that stride. Actual
 texture identities participate in consecutive batching. Existing authoring materials
 use the current complete schema including occlusionStrength/occlusionTexture.
-
 
 ## Material alpha coverage
 
@@ -691,7 +629,6 @@ Opaque semantics are applied at rendering, so authored alpha survives later edit
 Rendering/inspection report solid and blended instance/draw quantities only after
 successful submission. Feature Lab has actual Glass and checker Cutout materials.
 
-
 `SceneRenderer::previewMaterial` owns one explicit unsaved material override by
 portable asset path. It applies to every matching scene binding without file/scene
 mutation. Description validation precedes cache invalidation; actual rendering uses
@@ -699,7 +636,6 @@ the existing bounded texture loading and reports image/normal/budget failures.
 `clearCache` reloads textures while retaining the explicit override. Passing null
 restores disk materials and invalidates only affected material entries. This is
 used by material authoring, not by the game session's saved-asset path.
-
 
 `Renderer::guiImage(Texture)` retains same-device texture ownership until GUI
 submission/error cleanup, matching render-target images. It performs no implicit
@@ -711,15 +647,14 @@ load publication for independent mesh draws without scene or lighting mutation.
 Editor AssetPreview owns a separate stable renderer/resolver and explicit studio
 lights/optional baked HDRI, returning bounded display-encoded CPU images.
 
-
 Editor PreviewWorker owns the isolated AssetPreview provider on its background
 thread, including creation, studio decode/bake, render/readback and destruction.
 Only owned request descriptions and display pixels cross the queue. GUI upload
 and its renderer remain on the main thread. Same-slot tickets/generation checks,
 bounded completions and joined shutdown preserve device/thread ownership; actual
-worker GPU and native UI tests cover the path. Active driver calls are not forcibly
+worker GPU regressions cover the provider path. Inspect GUI integration through
+the actual editor. Active driver calls are not forcibly
 canceled, so shutdown may wait for their completion.
-
 
 ## GPU skin meshes
 

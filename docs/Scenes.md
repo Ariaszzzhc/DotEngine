@@ -86,9 +86,8 @@ See `Physics.md` for the binding and failure contracts.
 }
 ```
 
-Run `DotRuntimeAcceptance --scene-file-test <existing-directory>` for save/load acceptance
-at `scenes/main.dotscene`. Renderable scenes also need a camera; the file codec
-permits scenes without one so editing and persistence can occur independently.
+Renderable scenes need a camera; the file codec permits camera-free scenes so
+editing and persistence can occur independently.
 
 Audio sources require exactly `asset`, `voice`, `spatial`, and boolean `playOnStart`.
 Voice settings require `volume`, `pan`, `pitch`, and boolean `looping`. Spatial
@@ -100,12 +99,10 @@ not duplicated in this description; it belongs to the entity transform.
 
 Audio listeners require only boolean `primary`. At most one listener can be
 primary, independently of the camera. Multiple primary listeners fail loading
-the whole candidate scene. Missing/null audio fields remain valid in older files.
-No audio asset is opened or native voice/device created by component editing or
-scene loading; `Dot.Audio.SceneAudio` resolves them in an explicit binding step. See `Audio.md`
-for parameter/path contracts. Run `DotRuntimeAcceptance --scene-audio-test <existing-directory>`
-for persistence, parent transforms, independent scene identity, and failed-load
-isolation at `scenes/audio.dotscene`.
+the whole candidate scene. Missing/null audio fields are optional. No audio asset
+is opened or native voice/device created by component editing or scene loading;
+`Dot.Audio.SceneAudio` resolves them in an explicit binding step. See `Audio.md`
+for parameter/path contracts.
 
 Script components are authoring data and initialize no VM while editing/loading.
 A non-null `script` requires exactly `source`, `className`, `properties`, and

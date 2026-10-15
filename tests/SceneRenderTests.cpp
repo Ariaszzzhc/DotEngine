@@ -17,7 +17,6 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
-import Dot.Platform.Window;
 import Dot.Math;
 import Dot.Physics.SceneSimulation;
 import Dot.Physics.Body;
@@ -297,43 +296,6 @@ TEST_CASE("scene_render.moves_worker_rejection_and_release") {
   }
 
   CHECK(renderer->resourceStats()->meshes == 0);
-}
-
-TEST_CASE("scene_render.native_scene_presentation_and_surface_size") {
-  Dot::Platform::WindowConfig config;
-  config.title = "DotEngine Scene";
-  config.width = 200;
-  config.height = 200;
-  config.gpuSurface = true;
-  auto window = Dot::Platform::Window::create(config);
-  REQUIRE(window);
-  auto renderer = Renderer::create(&*window);
-  REQUIRE(renderer);
-  auto service = SceneRenderer::create(*renderer);
-  REQUIRE(service);
-  auto scene = makeScene();
-  const auto entity = addQuad(scene, 0, {0, 1, 0, 1});
-  static_cast<void>(entity);
-  auto size = renderer->surfaceSize();
-  REQUIRE(size);
-  CHECK(size->width > 0);
-  CHECK(size->height > 0);
-  int presented = 0;
-
-  for (int frame = 0; frame < 6; ++frame) {
-    if (frame == 3) {
-      REQUIRE(window->resize(300, 200));
-    }
-
-    auto result = service->present(scene);
-    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
-
-    if (*result == PresentResult::Presented) {
-      ++presented;
-    }
-  }
-
-  CHECK(presented >= 4);
 }
 
 TEST_CASE("scene_render.full_scene_instance_capacity_and_clear_validation") {

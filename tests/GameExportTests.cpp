@@ -12,6 +12,8 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Process;
 import Dot.Project;
 import Dot.Project.GameExport;
+import Dot.Project.GamePackage;
+import Dot.Project.GameSession;
 import Dot.Script.Compiler;
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
@@ -174,7 +176,7 @@ TEST_CASE("runtime_kit.publication_preserves_sources_destination_and_move_state"
   CHECK_FALSE(Fs::exists(fixture.files().root() / "changed"));
 }
 
-TEST_CASE("runtime_distribution.actual_relocated_native_game_needs_no_authoring_or_tools") {
+TEST_CASE("runtime_distribution.relocated_package_runs_headless_without_authoring_or_tools") {
   Fixture fixture;
   auto parent = fixture.files();
   auto project = Project::create(parent, "authoring", {}).value();
@@ -196,21 +198,21 @@ TEST_CASE("runtime_distribution.actual_relocated_native_game_needs_no_authoring_
   Fs::rename(published->root(), parent.root() / "relocated game");
   Fs::remove_all(project.files()->root());
   Fs::remove_all(independent.root());
-#ifdef _WIN32
-  const auto executable = parent.root() / "relocated game/DotGame.exe";
-#else
-  const auto executable = parent.root() / "relocated game/DotGame";
-#endif
-  auto result = Dot::Core::runProcess({executable, {"--frames", "30"}, parent.root()});
-  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
-  CHECK_MESSAGE(result->exitCode == 0, result->standardError);
-  auto verified
-      = Dot::Core::runProcess({DOT_RUNTIME_ACCEPTANCE,
-                               {"--game-verify", (parent.root() / "relocated game/game").string()},
-                               parent.root()});
-  REQUIRE_MESSAGE(verified, (verified ? "" : verified.error().message));
-  CHECK_MESSAGE(verified->exitCode == 0, verified->standardError);
-  CHECK(verified->standardOutput.find("Standalone game acceptance passed") != std::string::npos);
+  auto relocated = Dot::Core::FileSystem::open(parent.root() / "relocated game").value();
+  auto package
+      = GamePackage::open(Dot::Core::FileSystem::open(relocated.root() / "game").value()).value();
+  auto session = GameSession::createCompiled(package.files().value(), package.description().value(),
+                                             package.scene().value(), package.program().value())
+                     .value();
+  auto started = session.start().value();
+  CHECK(started.failures.empty());
+  CHECK_FALSE(started.realmFaulted);
+  auto updated = session.update(1.0 / 60).value();
+  CHECK(updated.frame.failures.empty());
+  CHECK_FALSE(updated.frame.realmFaulted);
+  auto closed = session.close().value();
+  CHECK(closed.failures.empty());
+  CHECK_FALSE(closed.realmFaulted);
   CHECK(Dot::Core::processResources().children == 0);
   CHECK(Dot::Core::processResources().handles == 0);
 }
@@ -271,14 +273,29 @@ TEST_CASE("runtime_distribution.saved_animation_survives_relocation_without_auth
   REQUIRE_MESSAGE(exported, (exported ? "" : exported.error().message));
   Fs::rename(exported->root(), parent.root() / "relocated animation");
   Fs::remove_all(project.files()->root());
-#ifdef _WIN32
-  const auto executable = parent.root() / "relocated animation/DotGame.exe";
-#else
-  const auto executable = parent.root() / "relocated animation/DotGame";
-#endif
-  auto played = Core::runProcess({executable, {"--frames", "30"}, parent.root()});
-  REQUIRE_MESSAGE(played, (played ? "" : played.error().message));
-  CHECK_MESSAGE(played->exitCode == 0, played->standardError);
+  auto package = GamePackage::open(
+                     Core::FileSystem::open(parent.root() / "relocated animation/game").value())
+                     .value();
+  auto session = GameSession::createCompiled(package.files().value(), package.description().value(),
+                                             package.scene().value(), package.program().value())
+                     .value();
+  auto started = session.start().value();
+  CHECK(started.failures.empty());
+  CHECK_FALSE(started.realmFaulted);
+
+  for (int frame = 0; frame < 30; ++frame) {
+    auto updated = session.update(1.0 / 60).value();
+    REQUIRE(updated.frame.failures.empty());
+    REQUIRE_FALSE(updated.frame.realmFaulted);
+  }
+
+  CHECK(session.scene().value()->findEntity(2).has_value());
+  CHECK(
+      session.scene().value()->transform(session.scene().value()->findEntity(2).value())->position.x
+      > .1F);
+  auto closed = session.close().value();
+  CHECK(closed.failures.empty());
+  CHECK_FALSE(closed.realmFaulted);
   CHECK(Core::processResources().children == 0);
   CHECK(Core::processResources().handles == 0);
 }

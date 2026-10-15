@@ -1,8 +1,8 @@
 # Feature Lab
 
-An ordinary native project for component and runtime SDK acceptance. Open this
+An ordinary editable example project demonstrating engine components and the runtime SDK. Open this
 folder directly with DotEditor; its scripts import the engine-owned `dot:engine` module. The build
-also supplies `build/<preset>/acceptance/FeatureLab` without copying engine SDK sources.
+also supplies `build/<preset>/examples/FeatureLab` without copying engine SDK sources.
 The generated copy is refreshed by builds; copy it
 elsewhere before persistent authoring changes.
 
@@ -11,7 +11,7 @@ OBJ meshes, hierarchy, static/dynamic/kinematic bodies, sphere/box/capsule shape
 a sensor, an audio listener/source and attached/disabled script descriptors.
 Kinematic uses a saved copper PBR material; Quad uses an authored-tangent DotMesh and saved dielectric normal-map
 material. The main camera carries a directional headlight. Their native scene
-components and shared resource counters are checked by the GPU/native acceptance;
+components and shared resource counters are visible in the editor;
 material/light runtime script accessors are not yet exposed.
 A hierarchy root uses an ID above JavaScript's safe integer range. D moves the
 native dynamic body. The scene name/window title shows the completed check count.
@@ -30,8 +30,8 @@ The report includes the last input, physics/contact and audio snapshots plus hoo
 counts. Opening the scene alone does not claim that runtime checks have executed.
 
 This project does not enumerate every failure/input permutation. Focused subsystem
-cases and command-line acceptance cases provide the broader limits, lifetime,
-thread, format, device and error-path coverage described in docs/Acceptance.md.
+regressions provide the broader limits, lifetime, thread, format, device and
+error-path coverage described in docs/Testing.md.
 Local validation is arm64 macOS; Windows/Linux implementations are not locally
 validated. No JavaScript scene/rendering/physics substitute is used.
 
@@ -77,6 +77,6 @@ Animation assertions run on the first update, following initialization checks, s
 the full audit stays within the unchanged per-hook host-call limit. Fixed authored
 entity names resolve once per script realm; getters still read actual native state.
 Hot reload preserves completed checks and native playback without replaying start.
-Native acceptance injects real SDL keys and checks selected-clip pose, paused pose
-and resumed motion. The same checks run through editor Play and a relocated export
-after removal of its authoring tree. This is rigid-node animation, not skinning.
+Use the actual editor's Play and agent controls to inspect selected-clip pose,
+pause and resumed motion; computer use can exercise the keyboard bindings. This is
+rigid-node animation, not skinning.

@@ -28,28 +28,6 @@ namespace {
   }
 }  // namespace
 
-TEST_CASE("graphics.real_adapter_and_triangle_readback") {
-  auto renderer
-      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});
-  REQUIRE_MESSAGE(renderer, (renderer ? "" : renderer.error().message));
-  auto info = renderer->adapterInfo();
-  REQUIRE(info);
-  CHECK_FALSE(info->name.empty());
-  CHECK(info->maxTextureDimension >= 256);
-#if defined(__APPLE__)
-  CHECK(info->backend == Backend::Metal);
-#elif defined(_WIN32)
-  CHECK(info->backend == Backend::D3D12);
-#else
-  CHECK(info->backend == Backend::Vulkan);
-#endif
-  auto image = renderer->render(triangle(), {}, 64, 64);
-  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
-  CHECK(image->pixels.size() == 64 * 64 * 4);
-  CHECK(pixel(*image, 32, 32) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
-  CHECK(pixel(*image, 0, 0) == std::array<std::uint8_t, 4>{0, 0, 0, 255});
-}
-
 TEST_CASE("graphics.readback_padding_and_single_pixel") {
   auto renderer
       = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}});

@@ -5183,3 +5183,70 @@ platform-neutral implementation. Actual CLI acceptance reports a 1.785 m jump
 peak, a 2.430 m wall stop, grounded landing and released capsule ownership. Only
 arm64 macOS is executed. No character rendering or final template completion is
 claimed by this stage.
+
+
+## 2026-10-15 — Cleanup while the engine goal is paused
+
+The user paused feature development to reassess project structure, test scope and
+original goals. No character scene/SDK/camera or new rendering work is resumed.
+The unfinished, unverified body/character batch draft was saved as an ignored patch
+at build/cleanup/paused-character-batch.patch; the two Physics World module files
+were restored to the reviewed 0c6fee2 baseline before cleanup. This draft is not
+implemented or validated by the cleanup.
+
+Removed tests/acceptance and both dedicated acceptance executables, per-stage
+triangle/cube/visual probes, and automatic desktop-window workspace/home/native
+example/distribution tests. Enduring CPU, file/compiler/VM, document/resource,
+physics, audio and offscreen GPU contracts remain. Unit tests never initialize
+windows/devices; platform integration explicitly uses SDL's dummy video driver.
+The headless project-action case extracted from HomeTests retains real creation
+and loading of all three templates without opening a Home or Workspace.
+
+Native export regressions now load actual relocated GamePackage data into compiled
+headless GameSession after deleting authoring inputs, check script/animation
+advancement and shutdown, and never start a native game window. They no longer
+claim native presentation or loader execution coverage. The first full Debug run
+passed 973/974 (133.47s): a newly added RuntimeKit::open assertion mistakenly treated
+an exported game directory, which also owns game/, as a pure kit. Removing that
+incorrect assertion retains the actual publication/package/session checks. Both
+configurations were rebuilt before the final serial full runs.
+
+Moved Feature Lab from acceptance/ to examples/, including generated copies,
+project-home templates and distribution inputs. Removed the one-off Prism Relay
+mesh authoring script; its authored meshes/materials and CC0 provenance remain.
+Deleted retired binaries/obsolete generated Feature Lab copies, old scratch patches,
+helper scripts and investigation directories. Compiler/dependency build caches,
+the existing latest archive, user design inputs and untracked planning document
+remain. No new editor distribution/archive was built.
+
+The editor's complete AI control requirement is preserved in AGENTS, skills and
+current workflow documentation. Prefer real CLI/strict JSON/live mailbox operations;
+computer use supplements human-style clicks/keys and unexpected visual/UI failures.
+No test-only product operation or substitute editor state was introduced. Current
+documentation removes retired commands; historical log entries remain historical.
+
+Final macOS arm64 results: Debug 974/974 (133.63s), then Release/NDEBUG 974/974
+(15.77s), without concurrent compilation. Identical inventories contain 256 unit
+and 718 integration cases, including 123 offscreen GPU, 27 dummy-platform and 27
+actual audio-device checks (labels overlap). No acceptance/native-window target
+or retired executable remains in the inventory. All five changed/new C++ test
+files pass clang-format --dry-run --Werror; diff whitespace checks pass.
+
+A separate single actual Debug editor session opens examples/FeatureLab. Product
+agent operations inspect a ready viewport and completed previews, select entity 2,
+focus the scene, start Play and inspect running state at 1302 frames/1458 fixed
+steps with no diagnostics, no error and no dropped time. Stop reports 1314 frames/
+1473 fixed steps; authoring scene equals the original snapshot, remains clean and
+retains its selection revision. The close request is queued; the editor exits 0
+and removes its owned control directory. The helper cannot read a close response
+after that retirement, so close is verified by actual process exit and cleanup,
+not a retained receipt. Temporary request/response observations live only under
+ignored build/cleanup. No new window-test driver or manual visual-quality claim
+is made. Windows/Linux remain unexecuted locally.
+
+Precommit review checks test/device separation, actual package ownership/error
+paths, module files unchanged, all Feature Lab source/build/template/install paths,
+asset provenance, current documentation and excluded user inputs. Fewer tests do
+not establish production readiness. Prism Relay remains an intermediate project;
+its requested non-shooting shoulder-view character template and mature editor/
+large-game requirements remain open pending reassessment.

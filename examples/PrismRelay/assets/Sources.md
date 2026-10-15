@@ -1,6 +1,6 @@
 # Prism Relay asset sources
 
-Original geometry in meshes/ is authored for DotEngine by tools/prism_relay/author_meshes.py.
+Original geometry in meshes/ is authored for DotEngine.
 It is stored as ordinary native mesh resources; Python is not needed to open or run the game.
 The original crystal OBJ and feedback PCM remain repository-authored assets.
 

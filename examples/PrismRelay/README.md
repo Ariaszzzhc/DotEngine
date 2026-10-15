@@ -52,10 +52,7 @@ local relay/service lights; geometric SSAO and the default HDR/ACES-fitted outpu
 pipeline are used. Point-light shadow casting remains an engine limitation.
 
 [Asset sources and SHA-256](assets/Sources.md) record the upstream authors/license.
-The project and its export retain all inputs locally and work offline. Original
-mesh geometry can be regenerated from the repository root with
-`python3 tools/prism_relay/author_meshes.py`; this is an authoring tool and is not
-needed by the editor or game. Assemblies group their mechanical pieces into owned
+The project and its export retain all inputs locally and work offline. Assemblies group their mechanical pieces into owned
 meshes instead of inflating the hierarchy with one entity per grille slat.
 
 This is the first physical environment pass. Complete realistic art direction,

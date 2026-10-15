@@ -1,7 +1,8 @@
 # DotEngine development
 
-- Build from the foundation upward. Each subsystem must have a runnable acceptance
-  case and focused tests before consumers depend on it.
+- Build from the foundation upward. Keep focused behavioral regression tests and
+  validate integrated features through actual editor/example workflows. Do not
+  retain temporary visual probes or add a bespoke acceptance executable per stage.
 - Work inside this repository. Do not inspect other local projects.
 - Keep the engine a static C++26 library with C++ module interfaces under
   `src/Engine`. Runtime and editor executables consume modules, without an installed
@@ -25,6 +26,18 @@
   do not claim Windows/Linux validation without evidence.
 - Add behavioral tests for normal paths, failures, resource lifetime, and boundary
   conditions. Use CTest; tests must also run with assertions disabled.
+- Unit tests must not initialize windows, rendering devices or audio devices.
+  Automated integration tests must not open desktop windows. Keep durable
+  offscreen rendering regressions separate from unit tests; validate editor
+  workflows through actual product agent operations, with computer use for visual
+  interaction when needed. Temporary investigation
+  scripts belong in ignored build storage and are not committed.
+- Keep editable demonstration projects together under `examples/`, including
+  `examples/FeatureLab` and `examples/PrismRelay`.
+- The editor must remain fully controllable by AI agents. Every user operation
+  needs an equivalent strict machine-readable operation using the same product
+  implementation. Prefer CLI/JSON control for validation; computer use supplements
+  this with human-style interaction and unexpected UI failure investigation.
 - Before each commit, review the diff for correctness, ownership, error handling,
   platform assumptions, formatting, and appropriate test coverage. Run relevant
   checks and record actual results in the development log.

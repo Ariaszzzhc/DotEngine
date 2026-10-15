@@ -81,18 +81,8 @@ clipboard and IME placement remain in the official platform backend. Core's key
 vocabulary includes Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter, with exact
 SDL, GUI and script SDK mappings.
 
-`DotEditorAcceptance --gui-test <existing-parent>` creates an owned temporary
-project and real native window. Tab/space events travel through SDL, Platform and
-Application into a real ImGui button. Its handler edits the native Document;
-the GPU preview changes actual pixels and uses one reused target. The test checks
-surface presentation and context cleanup. Focused GPU cases additionally cover
-actual GUI colors/DPI, target/readback equivalence, callback/stack error recovery,
-text/button/modifier input, malformed fonts, budgets, thread/move/lifetime rules,
-foreign context restoration and releasing a target inside its image callback.
-
 Local verification uses macOS/Metal. Windows/Linux implementations and dependency
 features are supported in code but remain uncompiled/unexecuted locally.
-
 
 The editor's pinned Sarasa UI SC Regular resource supplies upstream-composed Inter
 Western and CJK glyphs; it does not depend on OS font installation. The GPU font case
@@ -101,7 +91,6 @@ the renderer, resolves actual Latin/Chinese/Japanese/Korean glyphs without fallb
 and draws/readbacks mixed text before closing and checking context lifetime. An empty
 font path still selects the renderer's explicitly documented built-in font; failed
 explicit fonts never silently substitute it.
-
 
 ## Current-frame viewport images
 
@@ -123,9 +112,9 @@ The immediate guiImage API remains useful for already rendered cached textures.
 
 Offscreen cases verify actual DPI-rounded dimensions and red pixels on the first
 frame and resize, owner/unrendered/wrong-size errors, absence, exceptions, non-replay,
-GUI reentry/close protection, size/count bounds and target release. Native workspace
-acceptance exercises this path through camera-free editing, missing-camera recovery,
-material undo and Play/Stop.
+GUI reentry/close protection, size/count bounds and target release. Validate workspace
+integration through actual camera-free editing, missing-camera recovery, material
+undo and Play/Stop using the editor's agent interface.
 
 The editor's translation manipulator overlays actual projected axes on the Scene
 image, with hit-testing from those same observed segments. Its draft scene is resolved

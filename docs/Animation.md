@@ -3,13 +3,13 @@
 `Dot.Animation.Clip` provides immutable shared TRS channel data. `Dot.Animation.Files`
 loads/saves native `.dotanimation` clips, and `Dot.Animation.SceneAnimator` binds
 logical node indices to live scene-scoped entity handles. This foundation is usable
-by native engine consumers and runnable acceptance. glTF/GLB node animations now
+by native engine consumers. glTF/GLB node animations now
 convert to these clips and native model bindings. Saved animation players now run
 through GameSession, editor Play and native exports. TypeScript playback controls
 are available through the engine-owned SDK. Timeline controls remain unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
 isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
-actual skinned-GPU acceptance. Library/SDK transitions now run in editor Play and
+offscreen skinned-GPU regression tests. Library/SDK transitions now run in editor Play and
 relocated exports. Visual transition/character authoring, morph targets, blend
 graphs/state machines, events/root motion and production animation streaming remain
 unfinished; this does not establish full animated-model support.
@@ -73,19 +73,10 @@ or unrelated components; animation uses this lightweight boundary. Playback curr
 allocates owned sample/pose batches per application; allocation-free pose caches,
 parallel evaluation and populated-scene performance are not established.
 
-After a Debug build, run the focused tests and real offscreen acceptance:
-
-```sh
-ctest --preset debug -R '^(animation\.|runtime.animation$)'
-build/debug/bin/DotRuntimeAcceptance --animation-test build/debug/tests/animation_acceptance
-```
-
-The acceptance saves a native clip and ten actual GPU PNG frames, exercises parent
-translation/child rotation/scale, restores bind-pose pixels and verifies drawing
-resource release. Offscreen tests additionally compare an animated sample against
-an independently constructed native reference pose. CPU unit cases never create a
-window/device; file tests are integration cases. Only arm64 macOS is locally
-validated; Windows/Linux remain implementation targets.
+Offscreen tests compare animated samples against independently constructed native
+reference poses. CPU unit cases never create a window/device; file tests are
+integration cases. Only arm64 macOS is locally validated; Windows/Linux remain
+implementation targets.
 
 ## Native cross-fades
 
@@ -115,21 +106,11 @@ target samples, missing bindings and world overflow preserve all prior state.
 `Math::slerp` also exposes the normalized shortest-arc rotation operation for other
 native consumers, including finite-weight and nonzero-input checks.
 
-```sh
-ctest --preset debug -R '^(animation\.fade_|runtime.animation_blend$|Math spherical)'
-build/debug/bin/DotRuntimeAcceptance --animation-blend-test build/debug/tests/animation_acceptance
-```
-
-The runnable imports the actual eight-joint GLB, reloads a saved opposite-direction
-clip, then cross-fades and interrupts it. Ten PBR/shadow/AO images compare against
-independently calculated joint angles and CPU-deformed geometry. Stop restores bind
-pixels and drawing resources return to baseline. The inspected ribbon images are
-diagnostics, not character artwork. This stage is the lower-level native transition
+This stage is the lower-level native transition
 service. ScenePlayers authority reservations, SDK exposure, isolated editor Play/
-export transition acceptance and visual blend controls still need integration;
+export transition workflows and visual blend controls still need integration;
 existing immediate library controls remain available. Layered/additive blending,
 state machines, animation streaming and populated-game throughput remain unfinished.
-
 
 ## Imported model animation
 
@@ -165,18 +146,6 @@ geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
 Add model to scene remaps and retains the saved animation player and its node IDs.
 GameSession/editor Play/native exports automatically play the selected clip. Editor
 timeline tools remain unfinished.
-
-```sh
-ctest --preset debug -R '^(model.animation_|runtime.model_animation$)'
-build/debug/bin/DotRuntimeAcceptance --model-animation-test tests/fixtures/models/animated.glb build/debug/tests/animation_acceptance
-```
-
-The runnable case imports a textured GLB, reloads its native bundle and saves nine
-actual offscreen model-animation PNGs. An independent authored-pose GPU reference
-checks conversion at the cubic midpoint, linear quaternion and exact STEP key;
-stop restores initial pixels and GPU resources return to baseline. The diagnostic
-fixture is test geometry, not production art or evidence of full character animation.
-
 
 ## Saved animation players
 
@@ -222,13 +191,6 @@ inspectable final scene. No hidden timer, renderer or window is created. Scene
 player synchronization still copies bounded authoring descriptions and checks node
 ancestors; populated-scene frame times/streaming are not established.
 
-`editor.scene_animation` runs actual import/Inspector/Play GPU pixels, stop, save,
-copy/remapping, undo and invalid deletion. The standalone native export case removes
-its authoring tree after relocating the game; its script observes native animation
-motion and fails on stop if animation never advanced. This demonstrates the real
-runtime path, not production skinning/blending/character-animation readiness.
-
-
 ## Runtime clip controls
 
 ScenePlayers provides owned state snapshots and explicit play/pause/stop/seek/
@@ -245,10 +207,7 @@ Clip selection validates the new actual writers against other players and rigid-
 authority before applying. Failed targets, samples or final world transforms retain
 the old clip, complete pose and playback clock. Reads are observational snapshots
 of the last synchronized description; changed descriptions require synchronization.
-Controls hold no borrowed scene address and remain owner-thread APIs. The runnable
-`runtime.animation` acceptance now saves a tenth image, animation-switch.png, and
-verifies prior-channel restoration and exact bind-pose pixels after switch/stop.
-
+Controls hold no borrowed scene address and remain owner-thread APIs.
 
 ## TypeScript playback
 

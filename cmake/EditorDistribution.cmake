@@ -20,7 +20,7 @@ endforeach()
 install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/licenses/" DESTINATION licenses COMPONENT EditorDistribution)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/examples/PrismRelay" DESTINATION examples
     COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" DESTINATION examples
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/examples/FeatureLab" DESTINATION examples
     COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
 install(FILES "${CMAKE_SOURCE_DIR}/docs/Distribution.md" DESTINATION . RENAME README.md COMPONENT EditorDistribution)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/EditorInfo.plist.in"

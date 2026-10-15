@@ -42,20 +42,11 @@ Object/group/smoothing metadata loss is reported in `warnings`; supplied normals
 carry their authored smooth/hard distinctions. OBJ lines
 are limited to 1 MiB; malformed numbers cannot fall back to zero/default values.
 
-Run `DotRuntimeAcceptance --asset-test <existing-directory>` to save and reload a cube at
-`assets/cube.dotmesh`. This acceptance case reports file/codec errors and returns
-a non-zero exit status when its checks fail.
-
 `Dot.Graphics.Geometry::withFlatNormals` explicitly derives winding-based flat
 normals into a new non-indexed mesh without modifying the source. It retains colors
 and UVs, uses double intermediates for extreme finite geometry and rejects
 degenerate faces or expansion beyond one million vertices. Primitive/unattributed
 vertices otherwise keep missing normals; rendering does not pretend lighting exists.
-
-`DotRuntimeAcceptance --surface-mesh-test <existing-directory>` exercises surface
-persistence and an owned normal-color visualization through actual GPU upload and
-pixel readback. Material/texture sampling and light/shadow rendering are documented
-in [Rendering](Rendering.md); production gaps remain in the [roadmap](EngineRoadmap.md).
 
 ## Images and surface textures
 
@@ -63,7 +54,6 @@ PNG/JPEG and Radiance RGBE import, explicit color spaces, immutable GPU texture
 ownership, mips, samplers and material base-color sampling are documented in
 [rendering development](Rendering.md), including the implemented PBR/HDRI IBL,
 soft shadows, SSAO and HDR/tonemapping pipeline and its current limits.
-
 
 ## glTF/GLB models
 

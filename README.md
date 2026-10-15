@@ -1,172 +1,69 @@
 # DotEngine
 
-A C++26 game engine for arm64 macOS and x86_64 Windows/Linux, developed from tested core
-modules toward a 3D runtime and editor.
+A C++26 game engine for arm64 macOS and x86_64 Windows/Linux. The engine is a static
+library with separate module interfaces/implementations; the runtime, editor and
+standalone player consume those modules without an installed public header tree.
 
 ## Build and test
 
-Initialize the vcpkg submodule and provide LLVM Clang, CMake 3.31 or newer, and
-Ninja on `PATH`. The build preserves compiler/linker flags from the environment,
-including `CPPFLAGS`. No machine-specific toolchain paths are stored in the project.
+Provide LLVM Clang, CMake 3.31 or newer and Ninja on PATH. Dependencies come from
+the pinned vcpkg manifest. The build preserves caller CPPFLAGS/LDFLAGS and does not
+hardcode local toolchain paths.
 
 ```sh
 git submodule update --init --recursive
 cmake --preset debug
 cmake --build --preset debug-unit
 ctest --preset debug-unit
-```
 
-Acceptance implementations live in `tests/acceptance`. `DotRuntimeAcceptance` and
-`DotEditorAcceptance` are built only with `BUILD_TESTING=ON` and are never installed
-in editor/game distributions. Product executables retain playback and authoring/
-automation commands. Use `-DBUILD_TESTING=OFF` when configuring a product-only build.
-
-The unit preset builds/runs pure CPU behavior without opening windows or requiring
-GPU/audio devices or the TypeScript compiler. After a full build, use
-`debug-integration` for CPU/files/compiler/platform integration (SDL dummy display),
-`debug-gpu` for offscreen GPU pixels, or `debug-native` for actual desktop-window
-checks. `debug-acceptance` selects executable/editor/game workflows. The unfiltered
-`debug` test preset remains the complete pre-commit suite, including device checks.
-See [test layers](docs/Testing.md) for commands and environment requirements.
-
-The `release` configure, build, and matching test presets provide the optimized configuration.
-Executables use the `.exe` suffix on Windows.
-
-## Start the editor
-
-```sh
 cmake --build --preset debug
-build/debug/bin/DotEditor
+ctest --preset debug
 ```
 
-Choose an existing project folder or create a new project from Camera and cube,
-Prism Relay, or Feature Lab. Creation validates the new project before publishing
-and preserves existing destinations. The native workspace provides scene editing,
-resource/script authoring, Play/hot reload and standalone native game export.
+Unit tests initialize no windows or graphics/audio devices. Integration and
+regression tests do not open desktop windows; durable GPU checks render offscreen.
+Release/NDEBUG has matching presets. See [testing](docs/Testing.md). Configure with
+`-DBUILD_TESTING=OFF` for a product-only build. Stage-specific acceptance executables
+and visual demonstration drivers are not part of the project.
 
-See [project home and automation](docs/ProjectHome.md), [editor workflow](docs/Editor.md),
-[playable example](docs/Examples.md), [export](docs/Export.md) and
-[acceptance coverage](docs/Acceptance.md). [Delivery evidence](docs/Delivery.md)
-records the usable workflow and current feature boundaries. Local validation is arm64 macOS;
-Windows/Linux implementation support is not a claim of local validation.
-
-## Portable editor distribution
+## Editor and examples
 
 ```sh
-cmake --build --preset release --target DotEditorArchive
+build/debug/bin/DotEditor
+build/debug/bin/DotEditor open examples/FeatureLab
 ```
 
-The platform-named zip under `build/release/distribution` contains the editor,
-compiler, embedded engine modules, font, templates and native libraries. See
-[distribution and validation](docs/Distribution.md) for usage and tested boundaries.
-On macOS, double-click `DotEngine.app`. Complete projects in the archive's
-`examples` directory can be opened directly or copied through project-home creation.
+Both editable demonstration projects live under `examples/`:
 
-## Current state
+- [Feature Lab](examples/FeatureLab/README.md): engine component and script SDK showcase.
+- [Prism Relay](examples/PrismRelay/README.md): industrial PBR environment; its requested
+  non-shooting over-the-shoulder character template remains unfinished.
 
-The [capability roadmap](docs/EngineRoadmap.md) records the required large-3D-game
-and mature-editor end state. Current rendering/editor foundations do not yet meet
-that target; texture sampling, surface resource ownership and HDR exposure/tone mapping are
-implemented; direct metallic/roughness PBR and punctual lighting are available
-through saved scene material/light components, shared preview/Play/export and basic
-inspector/agent authoring. HDRI IBL, soft shadows, SSAO and mature editor tools remain
-in development. [Rendering](docs/Rendering.md) distinguishes current contracts
-from the required rendering end state.
+Build-generated copies live under `build/<preset>/examples/`. Project-home creation
+uses the same owned example templates. Open scripts in the external default editor;
+the engine provides `dot:engine`/`dot:host`, and project imports omit extensions.
 
-The static C++26 module library provides native scenes, WebGPU rendering, physics,
-audio and entity-attached TypeScript scripts. Interfaces and implementation units
-are separate. The editor includes validated project creation, scene/resource/script
-editing, Play with hot reload, automation and standalone native export. Prism Relay
-is a playable example; Feature Lab exercises every component and runtime SDK member.
-Scripts open in the system-associated external editor; saved edits feed Play hot
-reload, and bounded agent file operations remain available. The built-in source
-editor has been removed. The portable editor archive supports tested local deployment. Release signing,
-notarization and installer publication have not been validated.
+The editor must be fully controllable by AI agents. CLI, strict JSON commands and
+the live control mailbox provide real authoring/Play/export operations. Prefer them
+for integrated validation; computer use supplements human-style interaction and
+unexpected UI investigations. See [project home](docs/ProjectHome.md) and
+[editor operations](docs/Editor.md).
 
-SDL3 windowing, input, and the application loop are available. Run
-`build/debug/bin/DotRuntimeAcceptance --window-smoke` in a desktop session for a short native
-window acceptance case. Automated window tests use SDL's dummy video driver.
+## Current boundaries
 
-The math module provides checked transforms, quaternions, camera matrices, and
-WebGPU depth conventions. Run `build/debug/bin/DotRuntimeAcceptance --math-test` for its
-camera projection and TRS decomposition acceptance case. Matrix decomposition
-validates affine structure, shear, reflection, and reconstruction precision.
-GLM stays private to the implementation.
+Implemented foundations include PBR textures/materials, HDRI IBL, directional soft
+shadows, SSAO, HDR/tone mapping, glTF/GLB import, GPU skinning/animation cross-fades,
+rigid-body physics, native character physics and audio. The docked editor supports
+scene/resource/material authoring, selection/gizmos, undo/redo, isolated Play and
+native export. These features do not establish a mature editor or large-game
+production readiness. Character scene/SDK/camera integration, production content
+workflows and populated-scene scalability remain unfinished.
 
-Dawn rendering supports colored triangle lists, camera transforms, depth testing,
-RGBA8 offscreen readback, and native window presentation with resize handling.
-Run `build/debug/bin/DotRuntimeAcceptance --gpu-test` for pixel readback or
-`build/debug/bin/DotRuntimeAcceptance --render-smoke` for a short visible triangle case.
-GPU/native CTest cases require an available device and desktop session; they
-report initialization failures instead of treating missing hardware as success.
+The original engine/editor goal is paused for cleanup and reassessment. See
+[current evidence](docs/Delivery.md), [goal boundaries](docs/EngineRoadmap.md) and
+the chronological [development log](docs/Development.md). Only arm64 macOS has been
+validated locally; Windows/Linux have implementation support without a local test claim.
 
-Indexed meshes upload once and share GPU buffers across instances. Mesh draws
-carry separate world transforms and tint colors; resource counters report live
-ownership. Run `build/debug/bin/DotRuntimeAcceptance --mesh-test` for a perspective-camera
-cube acceptance case.
-
-Mesh assets support strict `.dotmesh` JSON and bounded OBJ geometry
-import, with explicit warnings for unsupported retained attributes. Run
-`build/debug/bin/DotRuntimeAcceptance --asset-test <existing-directory>` for atomic save/load
-acceptance. See `docs/Assets.md` for the format and importer contract.
-
-EnTT scenes provide scoped entity handles, owned snapshots, validated transforms,
-parent hierarchies, and subtree lifetime management. Run
-`build/debug/bin/DotRuntimeAcceptance --scene-test` for hierarchy/world-transform acceptance.
-Camera and mesh description components are available, with checked projection
-matrices and primary-camera ownership. The scene render service loads shared
-meshes within a byte budget, prunes unused resources, and reports missing assets
-or importer warnings. `build/debug/bin/DotRuntimeAcceptance --scene-render-test` verifies
-an actual entity/camera scene through Metal pixel readback. Versioned `.dotscene`
-files preserve entity values, hierarchy, transforms, and camera/mesh components.
-Run `build/debug/bin/DotRuntimeAcceptance --scene-file-test <existing-directory>` for
-save/load acceptance; see `docs/Scenes.md` for the strict format contract.
-
-Jolt physics provides independently owned worlds, scoped body handles, three
-primitive shapes, static/kinematic/dynamic motion, sensors, impulses, and ray
-queries. Run `build/debug/bin/DotRuntimeAcceptance --physics-test` for falling-body collision
-and lifetime acceptance. See `docs/Physics.md` for limits and failure semantics;
-optional rigid-body descriptions support validated editing, owned scene snapshots,
-and scene persistence. The scene simulation service synchronizes component/pose
-edits, retains unaffected motion, and writes world poses back through parent
-hierarchies. `--scene-physics-test` exercises scene collision and cleanup;
-`--scene-physics-render-test` also checks actual GPU pixels after the fall.
-Owned contact events cover begin/stay/sleep/end, sensors, removal/reconfiguration,
-and explicit queue limits; scene events retain entity values after destruction.
-
-Audio resources decode bounded WAV/FLAC/MP3 into shared immutable float PCM.
-Run `build/debug/bin/DotRuntimeAcceptance --audio-clip-test <existing-directory>` for
-known sample values, ownership, and failures. See `docs/Audio.md` for limits
-and format contracts. Offline mixing provides scoped voices, pause/seek/loop,
-gain/pan/pitch, rate conversion, and allocation budgets. `--audio-mix-test` checks
-actual summed PCM and cleanup. Native playback consumes a bounded PCM queue,
-counts underruns/clipping, and retains explicit device failures. Run
-`--audio-output-test` for a real, muted backend/callback acceptance case.
-A dedicated playback worker executes voice controls and continuously fills the
-queue while the client is idle. `--audio-playback-test` verifies this through a
-real muted endpoint. Spatial mono voices use listener/source poses, distance
-attenuation, directional cones, and optional Doppler; `--audio-spatial-test` checks
-actual stereo PCM direction. Scenes store validated audio source/listener components
-without opening audio resources. `--scene-audio-test <existing-directory>` checks
-their file round trip, scoped identity, and failure isolation. Connecting these
-components to live playback is provided by `Dot.Audio.SceneAudio` through an
-owned bounded clip cache and one backend batch. `--scene-audio-play-test
-<existing-directory>` loads a saved scene, verifies actual spatial PCM and
-missing-asset retention, and releases destroyed entities' voices/assets.
-Voice batches prepare every new resource before editing existing voices;
-`--audio-batch-test` checks failed-edit retention and full-capacity replacement
-using actual PCM. Playback runs each batch as one worker command.
-
-See `docs/Development.md` for implementation milestones and actual validation.
-
-`Dot.Script.Runtime` executes project-relative JavaScript ESM through a bounded
-QuickJS-NG realm, with scoped modules, JSON export calls, Promise jobs, contextual
-errors, and allocation/time limits. `--script-test <existing-directory>` exercises
-the real VM and cleanup. See `docs/Scripting.md` for native TypeScript compilation,
-scene/component/input/physics/audio APIs, entity lifecycle and hot-reload contracts.
-
-`Dot.Core.Process` runs explicit tools without shell interpolation, captures
-bounded stdout/stderr, preserves real exit status, and cleans up on timeout.
-`--process-test <fixture-executable> <existing-directory>` verifies real children;
-see `docs/Processes.md`. This supplies the execution boundary for the integrated
-standalone Go TypeScript compiler, without a Node.js dependency.
+Portable editor packaging remains available as an explicit
+`cmake --build --preset release --target DotEditorArchive` target. It is not needed
+for ordinary development or this cleanup. See [distribution](docs/Distribution.md).

@@ -117,14 +117,6 @@ This sequence edits and explicitly saves:
 ]
 ```
 
-`DotEditorAcceptance --document-test <existing-parent>` creates an owned temporary project,
-selects and moves the attached cube, rejects its stale handle, undoes/redoes,
-saves and reopens. `--document-render-test` additionally verifies changed actual
-GPU pixels and exact restoration of the initial/edited frames on undo/redo.
-These acceptances test the authoring model and renderer, without claiming a
-graphical editor window. Local verification is on macOS; Windows/Linux common
-code remains uncompiled/unexecuted locally.
-
 The native [GUI rendering layer](Gui.md) provides persistent GPU previews and
 isolated ImGui/SDL3/WebGPU contexts.
 
@@ -191,15 +183,6 @@ liveness/heartbeat guarantee. No hostile filesystem-race isolation or crash dura
 is promised. The private control directory is removed with Workspace ownership;
 it is temporary session data, not project authoring content.
 
-`DotEditorAcceptance --workspace-test <existing-parent>` exercises the packaged font, real
-native project window, SDL Cmd/Ctrl+Z activation, changed/restored Metal viewport
-pixels, online edit/stale/retry responses, moved/worker guards and control/context
-cleanup. Focused workspace CTest cases cover strict commands, dirty close and actual
-save, absent-camera recovery, malformed mailbox requests, terminal response-I/O
-failure/no replay, pending overflow and repeated initialization/lifetime. Local
-verification is on arm64 macOS; Windows/Linux remain uncompiled/unexecuted locally.
-
-
 ## Game preview
 
 Play clones the current validated Document scene, including unsaved edits, into a
@@ -239,13 +222,6 @@ succeeded. Stop executes script hooks and releases native audio/physics/script
 ownership, including after game faults. Editor closure, frame failure and ownership
 destruction also stop active games; destructor diagnostics go to stderr.
 
-The packaged standalone TypeScript compiler includes its pinned standard library
-files and license/notice, with no Node/npm dependency or hardcoded development
-path. A custom WorkspaceConfig compiler path may be provided; missing/incompatible
-compilers and missing native audio endpoints fail explicitly, without fallback.
-Tests explicitly use offline audio where appropriate; the native acceptance uses
-real playback with endpoint software volume zero.
-
 ```json
 {"command":"capture-input","capture":true}
 ```
@@ -273,15 +249,11 @@ stop/apply effects are not rolled back. Cancel clears the close confirmation.
 Discard uses the existing close request with discard=true. Close cleanup errors
 are returned by frame/run operations rather than substituted with successful exit.
 
-The extended native workspace acceptance receives F5 through SDL and an actual
-ImGui shortcut, opens real native playback, runs a script controlling a real rigid
-body from captured D input and querying its real audio voice, releases capture via
-Escape and stops via F5. It verifies changed/restored GPU pixels, authoring isolation,
-stop hooks and compiled generation release. Additional tests cover unsaved scene
-cloning, fixed timing/input bounds, hot reload, ordinary/realm errors, moves/source
-lifetime/thread/reentry, partial creation cleanup, factory failure/recovery,
-close/cancel/save while playing and save conflicts. Validation is on arm64 macOS.
-
+Headless tests cover scene cloning, timing/input bounds, hot reload, script errors
+and resource lifetime. Validate the actual workspace through its agent interface:
+inspect authoring, start Play, inspect game state, stop and confirm authoring
+isolation. Use computer use for F5/Escape, focus, pointer capture and visual behavior
+when needed. Validation is on arm64 macOS.
 
 ## Resources and external source editing
 
@@ -328,7 +300,6 @@ Success returns kind=external-file, accepted=true, the project-relative path and
 encoded file URI. This action preserves the agent buffer and scene, releases game
 input capture, and never saves source. Unknown fields, unsafe/missing/protected
 resources, pending agent drafts, unavailable handlers and launch exceptions fail.
-
 
 ```json
 {"command":"resources"}
@@ -416,13 +387,9 @@ race isolation or crash-durability promise.
 Focused resource tests cover actual Unicode files/catalog, protected-path enforcement,
 revision/no-op/conflict behavior, binary source preservation/import boundaries,
 invalid paths/text/metadata, symlinks/depth/capacity, moves/thread ownership and
-shared descriptor lifetime. Workspace tests additionally verify buffer identity,
-nested-template compilation, dirty close/recovery and actual cached-mesh GPU
-changes. Native acceptance uses the agent file-save command to persist
-source while Play runs, then verifies faster real rigid-body motion from hot-reloaded
-TypeScript while authoring and native audio stay intact. Local validation remains
+shared descriptor lifetime. Validate buffer identity, dirty close/recovery and
+live source-save behavior through the actual workspace agent operations. Local validation remains
 arm64 macOS; Windows/Linux code is not locally validated.
-
 
 ## Exporting the current scene
 
@@ -432,7 +399,6 @@ It requires stopped Play, the current revision and no pending inspector/file
 drafts. See [game data export](Export.md) for the format, CLI, limits and ownership.
 Native export includes the player and runtime libraries; data-only export remains
 available through the checkbox.
-
 
 ## Starting and creating projects
 
@@ -557,7 +523,6 @@ and validation. Work values must be integers; unknown fields and unsupported
 ranges fail before history or drafts change. AO is optional scene data. Temporal reprojection, multi-layer/offscreen geometry and
 populated-scene quality/cost work remain planned.
 
-
 ## Independent scene navigation and selection
 
 The session-owned editor view provides perspective/orthographic browsing, RMB plus
@@ -589,14 +554,8 @@ Agent commands share these implementations:
 - `pick-view`: current `revision`, top-left normalized `uv` in [0,1). A successful
   preview of the same view/document is required first.
 
-`inspect.workspace.view` reports mode, readiness, fly ownership, logical viewport
-rectangle and session camera. Scene selection changes metadata revisions but does
-not dirty the scene. The native acceptance entry is
-`DotEditorAcceptance --viewport-test <existing-parent>`, built only with BUILD_TESTING.
-
 The visual direction is recorded in [EditorDesign.md](EditorDesign.md). Its reference
 art is a design input; the scene and controls must always reflect engine state.
-
 
 ## Docked workspace and themes
 
@@ -629,7 +588,6 @@ or during Play; they do not mutate the scene. `inspect.workspace.theme` and `fil
 report session state. Sarasa UI SC Regular supplies Inter Western/CJK mixed text from
 one pinned packaged font, rendered at a compact logical size with native DPI handling.
 Gizmos, thumbnails, cross-session profiles and detached native panels remain planned.
-
 
 Console presents actual workspace/viewport errors, Play failure context and compiler
 locations that open externally. Runtime diagnostics remain available after Stop and
@@ -705,7 +663,6 @@ for actual GPU commands, distinct from `input`/`visible`/`culled`/`shadow`/`occl
 instance quantities. Rendering labels the two rows explicitly. Per-instance variation
 is preserved after batching and does not change scene/Inspector authoring contracts.
 
-
 The Rendering pane also shows actual CPU visibility tests: BVH nodes, world AABBs,
 exact local-box tests and unindexed homogeneous tests. `inspect.workspace.view.draws.spatial`
 includes indexed/changed/refitted quantities and rebuild status for the last successful
@@ -713,7 +670,6 @@ mesh pass. Camera-only changes reuse bounds/tree topology. These counts exclude
 linear input validation and bounds generation; they are not frame-time or FPS claims.
 渲染面板显示真实空间分类次数，检查接口还报告更新/重建状态；计数不含线性输入
 校验和边界生成，也不表示帧耗时或 FPS。
-
 
 ## Model import and instantiation
 
@@ -740,13 +696,11 @@ reports that the bundle was committed. Existing destinations are never overwritt
 Native `.gltf`, `.dotmesh`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources
 can open in the external editor; internal text transport remains only an automation buffer.
 
-
 Material coverage is persisted in `.dotmaterial` alphaMode (`opaque`, `mask`, `blend`)
 and alphaCutoff fields. Imports retain glTF alpha semantics; referenced files open in
 the external editor. Rendering and `workspace.view.draws` show actual `solid`, `blended`,
 `solidDraws` and `blendedDraws` values from the completed GPU pass. Feature Lab includes
 Glass and textured Cutout entities using the actual engine policies.
-
 
 ## Structured material authoring / 结构化材质编辑
 
@@ -791,7 +745,6 @@ buffer requires no pending resource changes or explicit discard and invalidates 
 buffer identities. Invalid descriptions/unknown fields/stale requests preserve state.
 Undo/redo require staged fields to be applied or reset first. Texture contents are
 validated at actual preview/Play/export use, rather than silently substituted.
-
 
 ## Asset browser and isolated previews / 资产浏览与独立预览
 
@@ -864,7 +817,6 @@ row rectangles and expansion state by entity ID for native input automation.
 Selecting a parent, child or the current entity does not mutate scene data or add
 undo history; a changed selection advances the document revision.
 
-
 ## Scene multiselection and group edits
 
 The document owns an ordered set of selected entities. `selection` contains unique
@@ -913,7 +865,6 @@ can use `duplicate` or `remove-many` operations with a nonempty `entities` array
 Group deletion/duplication rejects an empty selection. Scene draft/Play/gesture
 guards apply to GUI and agent paths alike.
 
-
 Group gestures freeze the selected IDs, active pivot/frame, root world poses and
 external parent inverses at the start. Only topmost selected roots receive local
 changes; selected/unselected descendants inherit once through the hierarchy.
@@ -938,7 +889,6 @@ the generic JSON edit operation-count/transport bound; existing scene/history
 limits still apply. Median/individual-origin pivot modes and group framing remain
 unimplemented.
 
-
 Saved [skin bindings](Skinning.md) render automatically in preview and isolated Play.
 The Skin Inspector chooses an existing .dotskin asset, toggles enabled state and
 edits ordered live joint entities; a mesh is required. Applying uses ordinary native
@@ -956,9 +906,8 @@ glTF/GLB import now creates these same native skin assets and scene components.
 `import-model` reports generated `skins` and `skinnedMeshes`; instantiate the returned
 scene to insert the complete joint hierarchy and animation bindings. Every copied
 joint receives a fresh entity ID. Asset import does not silently insert a character
-or enable different collision shapes. The [skin acceptance](Skinning.md) checks actual
+or enable different collision shapes. The [skin regressions](Skinning.md) check actual
 import, Inspector, duplicate/undo, isolated Play and relocated native export.
-
 
 Viewport inspection now includes a nullable `view.error` string with the latest
 actual preview failure. `captureViewport` includes that context when no preview can

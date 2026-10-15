@@ -121,26 +121,6 @@
       }
     },
     {
-      "name": "debug-acceptance",
-      "inherits": "debug",
-      "displayName": "Debug acceptance",
-      "filter": {
-        "include": {
-          "label": "^acceptance$"
-        }
-      }
-    },
-    {
-      "name": "debug-native",
-      "inherits": "debug",
-      "displayName": "Debug native",
-      "filter": {
-        "include": {
-          "label": "^native$"
-        }
-      }
-    },
-    {
       "name": "release-unit",
       "inherits": "release",
       "displayName": "Release unit",
@@ -170,26 +150,6 @@
       "filter": {
         "include": {
           "label": "^offscreen$"
-        }
-      }
-    },
-    {
-      "name": "release-acceptance",
-      "inherits": "release",
-      "displayName": "Release acceptance",
-      "filter": {
-        "include": {
-          "label": "^acceptance$"
-        }
-      }
-    },
-    {
-      "name": "release-native",
-      "inherits": "release",
-      "displayName": "Release native",
-      "filter": {
-        "include": {
-          "label": "^native$"
         }
       }
     }

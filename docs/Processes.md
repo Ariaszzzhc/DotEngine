@@ -51,12 +51,3 @@ current glibc Linux implementation paths remain unverified.
 for quiescent lifetime checks; it does not enumerate child-internal resources.
 Calls can run concurrently with independent outputs/directories. Descriptor, spawn
 attribute/action, process/thread/job, and inheritance-list ownership is RAII.
-
-Run `DotRuntimeAcceptance --process-test <fixture-executable> <existing-directory>` using
-`build/debug/bin/DotProcessFixture` (or Release) for actual status/stdin/stdout/
-stderr capture, output beyond pipe capacity, timeout and cleanup. Focused tests also
-cover literal/Unicode arguments and paths, binary output, combined/exact limits,
-missing/invalid inputs, descendants retaining pipes, repeated/concurrent calls,
-signals, descriptor inheritance, closed parent stdin, and unchanged inherited
-environment. Process tests use their own target so changing a fixture path does not
-recompile unrelated unit tests. TypeScript compiler integration remains pending.

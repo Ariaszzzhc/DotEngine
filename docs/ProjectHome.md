@@ -89,16 +89,15 @@ may have committed; subsequent calls cannot hide that error or replay actions.
 The created project remains available for reopening. This is local automation,
 not an authenticated remote protocol.
 
-Native acceptance renders the home, creates/selects via the shared mailbox, reads
-its response, releases the GUI, opens/renders the chosen workspace and runs Play/
-Stop. Other cases cover source preservation/engine module ownership, invalid inputs/compiler
-failures/no overwrite, all three template choices, thread/move/lifetime checks,
-response failure after committed creation and real CLI arguments/budgets. Local
-validation is arm64 macOS; Windows/Linux remain unvalidated. CPU mailbox cases
-cover copied selection/error strings, cancellation, one-shot consumption and worker
-completion after caller retirement. Native acceptance covers page/form retention
-and actual SDL pointer navigation. Manual Release-app verification opened the system
+Headless project-action tests cover template creation, source preservation and
+validated project loading. CPU mailbox cases cover copied selection/error strings,
+cancellation, one-shot consumption and worker completion after caller retirement.
+Validate the actual home/workspace transition through its agent interface; computer
+use supplements form navigation and native folder-picker interaction. Local
+validation is arm64 macOS; Windows/Linux remain unvalidated.
+
+Historical manual Release-app verification opened the system
 picker through the Browse button, cancelled, selected a creation parent, created a
 project and selected that existing folder through the picker to enter its workspace.
-The final Create page was visually inspected for aligned columns. Parent-picker
+The Create page was visually inspected for aligned columns. Parent-picker
 invocation used the shared command; project-picker invocation used a GUI click.

@@ -8,8 +8,8 @@ add_custom_target(DotExamples ALL
     VERBATIM)
 
 add_custom_target(DotFeatureLab ALL
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/acceptance/FeatureLab/scripts"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab"
-        "${CMAKE_BINARY_DIR}/acceptance/FeatureLab"
-    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${CMAKE_BINARY_DIR}/acceptance/FeatureLab/scripts/dot"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/examples/FeatureLab/scripts"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/examples/FeatureLab"
+        "${CMAKE_BINARY_DIR}/examples/FeatureLab"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${CMAKE_BINARY_DIR}/examples/FeatureLab/scripts/dot"
     VERBATIM)

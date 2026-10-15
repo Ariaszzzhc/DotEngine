@@ -47,7 +47,7 @@ cmake --build --preset release --target DotEditorArchive
 ```
 
 Output is `build/release/distribution/DotEngine` and the platform-named zip beside
-it. Debug offers the same targets for diagnostic acceptance. These outputs are
+it. Debug offers the same targets for diagnosis. These outputs are
 owned/generated and refreshed by those targets; keep authored projects elsewhere.
 Do not edit the delivered templates in place: project-home creation copies them
 into the new project; engine modules remain owned by the engine binaries.
@@ -57,10 +57,8 @@ Release signing/notarization or native installer publication require a separate
 release workflow; no result is claimed for those processes. Caller compiler/linker
 settings are preserved and only distributed copies are relocated/signed.
 
-Acceptance copies the distribution to a new path containing spaces, starts the
-native home (including macOS LaunchServices), opens/type-checks its complete example,
-creates an example project with packaged resources, runs the real
-compiler and editor preview/native runtime, exports a game, then deletes the project
-and editor copy before running the delivered game. Local checks also inspect native
-loader references and signatures. Validation covers arm64 macOS Debug and
-Release/NDEBUG; it does not promise every driver or external filesystem behavior.
+Distribution verification uses the actual editor home, project creation, Play and
+export operations through the product's agent interface. Native picker, launch and
+visual behavior can be checked with computer use. Relocation, loader references and
+signatures require actual checks of the generated distribution. Historical results
+are recorded in Development.md; no fresh distribution was requested by the cleanup.
