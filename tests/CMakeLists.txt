@@ -51,6 +51,7 @@ add_executable(DotUnitTests
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
     BodyTests.cpp
+    CharacterTests.cpp
     MixerTests.cpp
     FrameQueueTests.cpp
     SpatialTests.cpp
@@ -93,6 +94,7 @@ add_executable(DotTests
     ExternalFileValidationTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
+    CharacterPhysicsTests.cpp
     PhysicsBatchTests.cpp
     ContactTests.cpp
     SceneContactTests.cpp
@@ -207,6 +209,8 @@ add_test(NAME runtime.script_audio_play COMMAND DotRuntimeAcceptance --script-au
 set_tests_properties(runtime.script_audio_play PROPERTIES TIMEOUT 30 LABELS "audio-native" RUN_SERIAL TRUE)
 add_test(NAME runtime.physics COMMAND DotRuntimeAcceptance --physics-test)
 set_tests_properties(runtime.physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
+add_test(NAME runtime.character COMMAND DotRuntimeAcceptance --character-test)
+set_tests_properties(runtime.character PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_clips COMMAND DotRuntimeAcceptance --audio-clip-test "${CMAKE_CURRENT_BINARY_DIR}/file_acceptance")
 set_tests_properties(runtime.audio_clips PROPERTIES TIMEOUT 15 LABELS "acceptance")
 add_test(NAME runtime.audio_mix COMMAND DotRuntimeAcceptance --audio-mix-test)

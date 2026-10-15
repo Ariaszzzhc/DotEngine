@@ -21,6 +21,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/MaterialAcceptance.cpp
     Runtime/InstanceAcceptance.cpp
     Runtime/PhysicsAcceptance.cpp
+    Runtime/CharacterAcceptance.cpp
     Runtime/PbrAcceptance.cpp
     Runtime/PhysicsScriptAcceptance.cpp
     Runtime/ProcessAcceptance.cpp

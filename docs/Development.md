@@ -5118,3 +5118,68 @@ project-local asset references, explicit normals/UV frames, license/source hashe
 owned export input lifetime, preview-error recovery, source-template copy checks,
 platform-neutral changes and retained existing coverage. Only arm64 macOS is
 executed. No interim package or character-template completion is claimed.
+
+## Native character physics foundation
+
+The requested non-shooting over-the-shoulder template now has a native physical
+foundation. A separate Dot.Physics.Character interface/implementation validates
+Y-up feet-origin capsule properties, initial pose and horizontal/jump intent without
+initializing Jolt. World owns real Jolt virtual characters in its existing body
+simulation; creation prepares shape, contacts and ownership before publication.
+Public handles remain scoped and monotonic across moves. World destruction removes
+all capsule references before physics storage, and explicit destruction is available
+after faults. Character capacity is independent from body capacity.
+
+Actual capsule sweeps support falling, one-use jumping, wall sliding, ceilings,
+walkable/steep slopes, configurable stair traversal, dynamic-body pushing and
+horizontal/vertical platform support. Ground is refreshed before using it, including
+after deleting a platform or another capsule. Characters and bodies share the
+existing 60 Hz substep bound; body-only simulation retains its existing update path.
+Reported native query overflow and unexpected post-mutation failures fault the world
+with context, rather than returning a successful incomplete update. Input/pose
+validation failures preserve state and pending jump intent. Teleport explicitly clears
+motion/intent; yaw preserves both. Solver velocity includes native support probing.
+
+The initial focused run passes 9/11; the resting-velocity assertion incorrectly
+assumes a rigid body's zero velocity rather than the virtual controller's downward
+support probe. It now checks that actual bounded probe. The stair failure is a real
+integration error: pre-clipping steep-slope velocity removes the desired direction
+needed by ExtendedUpdate's own stair test. The redundant clipping is removed;
+actual stair traversal and rejection of a 65-degree ramp both pass. A later test
+compile rejects a shadowed local variable; renaming it fixes the warning without
+changing toolchain settings. No environment workaround or sanitizer is introduced.
+
+Final focused Debug character/physics selection passes 40/40 (2.37s). The final
+character-only selection, including additional yaw/teleport intent checks, passes
+17/17 (0.85s): three CPU unit, thirteen actual Jolt integration and one headless
+CLI acceptance. It covers capacity recovery, stale/foreign/moved handles, worker
+rejection, sensor pass-through, removed support, capsule/capsule contacts and repeated
+cleanup, native contact budget failure during creation/teleport/stepping, coupled
+substeps and dynamic/platform behavior. The acceptance implementation/dispatch lives
+only in tests/acceptance and BUILD_TESTING targets. No new window is required.
+
+Both final Debug/Release builds succeed before the complete suites. Current CTest
+inventory is 1100 identities: 1028 doctest plus 72 executable/script checks. Labels
+(overlapping) are 256 unit, 714 integration, 133 offscreen, 219 GPU, 74 native,
+130 acceptance, 155 compiler, 21 process, 27 platform and 32 audio-native. Full Debug
+then Release/NDEBUG run serially below.
+
+This is an engine library foundation. It has no inner body proxy, so rigid-body
+ray/sensor/event streams and fast incoming bodies do not see virtual capsules.
+Scene persistence/Inspector/SDK, actual humanoid animation, mouse capture and the
+over-the-shoulder collision camera are not implemented by this stage. Prism Relay
+still has its intermediate environment/startup, not the final requested template.
+
+Full Debug passes 1100/1100 (317.34s). Release/NDEBUG follows without concurrent
+compilation. All 366 current C/C++ files pass clang-format, including the new
+module units, focused tests and development-only acceptance driver. Diff whitespace
+checks pass; the 17 WGSL sources and library linkage are unchanged.
+
+Complete Release/NDEBUG passes 1100/1100 (61.49s). Final source review checks
+native lifetime/order, collider-list reservation and prepublication ownership,
+strict finite limits, world/thread/handle scope, stale support refresh, jump intent,
+post-mutation fault behavior, coupled substeps, unchanged body-only updates and
+platform-neutral implementation. Actual CLI acceptance reports a 1.785 m jump
+peak, a 2.430 m wall stop, grounded landing and released capsule ownership. Only
+arm64 macOS is executed. No character rendering or final template completion is
+claimed by this stage.

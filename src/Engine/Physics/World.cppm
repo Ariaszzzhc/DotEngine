@@ -10,6 +10,7 @@ module;
 export module Dot.Physics.World;
 
 export import Dot.Physics.Body;
+export import Dot.Physics.Character;
 
 import Dot.Core.Result;
 import Dot.Math;
@@ -21,11 +22,18 @@ export namespace Dot::Physics {
     auto operator==(const BodyId&) const -> bool = default;
   };
 
+  struct CharacterId {
+    std::uint64_t world{};
+    std::uint64_t value{};
+    auto operator==(const CharacterId&) const -> bool = default;
+  };
+
   struct WorldConfig {
     std::uint32_t maxBodies{1024};
     Math::Vec3 gravity{0, -9.81F, 0};
     std::uint32_t workerThreads{};
     std::uint32_t maxContactEvents{65536};
+    std::uint32_t maxCharacters{64};
   };
 
   struct BodyState {
@@ -44,6 +52,24 @@ export namespace Dot::Physics {
     bool faulted{};
     std::size_t contactPairs{};
     std::size_t queuedContactEvents{};
+    std::size_t characters{};
+  };
+
+  /** Last observed capsule state; groundBody is absent for character support or
+   * removed bodies. Character contacts are separate from rigid-body contact events.
+   * 最近观测的胶囊状态；其他角色或已删除刚体支撑时无 groundBody。
+   * 角色接触不进入刚体接触事件流。 */
+  struct CharacterState {
+    Math::Vec3 position;
+    Math::Quat rotation;
+    /** Native controller velocity, including the downward support probe; not a
+     * finite difference of corrected feet positions. 原生控制器速度，包含向下支撑探测，
+     * 并非修正后脚底位置的差分速度。 */
+    Math::Vec3 velocity;
+    GroundState ground;
+    Math::Vec3 groundNormal;
+    Math::Vec3 groundVelocity;
+    std::optional<BodyId> groundBody;
   };
 
   struct RayHit {
@@ -115,7 +141,9 @@ export namespace Dot::Physics {
     /** 1..4096 bodies, 0..8 workers; zero executes synchronously without workers.
      * Gravity magnitude is at most 1000; 1..262144 queued contact events.
      * 1..4096 个刚体、0..8 个工作线程；零表示同步执行而不启动工作线程，
-     * 重力大小不超过 1000，接触事件队列容量为 1..262144。 */
+     * 重力大小不超过 1000，接触事件队列容量为 1..262144。
+     * Character capacity is 0..256; zero disables character creation.
+     * 角色容量为 0..256，零表示禁用角色创建。 */
     [[nodiscard]] static auto create(const WorldConfig& config = {}) -> Core::Result<World>;
     World(const World&) = delete;
     auto operator=(const World&) -> World& = delete;
@@ -136,6 +164,30 @@ export namespace Dot::Physics {
         -> Core::Result<std::vector<std::optional<BodyId>>>;
     [[nodiscard]] auto destroyBody(BodyId body) -> Core::Result<void>;
     [[nodiscard]] auto body(BodyId body) const -> Core::Result<BodyState>;
+    /** Own a feet-origin Y-up virtual capsule in this world's real body simulation.
+     * Requires vertical nonpositive gravity. Characters collide with solid bodies
+     * and each other, but have no inner rigid-body proxy: rayCast, sensors and rigid
+     * body events do not see them. Capacity is independent of maxBodies.
+     * 在本世界刚体仿真内拥有脚底原点、Y 向上的虚拟胶囊；要求重力竖直向下或为零。
+     * 与实体刚体及其他角色碰撞，无内部刚体代理，故射线、传感器与刚体事件不感知角色。
+     * 容量独立于 maxBodies。 */
+    [[nodiscard]] auto createCharacter(const CharacterConfig& config = {})
+        -> Core::Result<CharacterId>;
+    [[nodiscard]] auto destroyCharacter(CharacterId character) -> Core::Result<void>;
+    [[nodiscard]] auto character(CharacterId character) const -> Core::Result<CharacterState>;
+    /** Horizontal velocity persists; jump edges merge until the next substep, then
+     * are consumed even when unsupported. Invalid input preserves pending intent.
+     * 水平速度持续有效，跳跃边沿合并至下个子步并消耗，未受支撑也消耗；无效输入保留意图。 */
+    [[nodiscard]] auto setCharacterInput(CharacterId character, const CharacterInput& input)
+        -> Core::Result<void>;
+    /** Teleport clears velocity/input and refreshes contacts without advancing time.
+     * Initial overlap is resolved by the next step, not by this pose operation.
+     * 传送清空速度/输入并刷新接触而不推进时间；初始重叠在下次步进处理。 */
+    [[nodiscard]] auto teleportCharacter(CharacterId character, Math::Vec3 feet,
+                                         float yawDegrees = 0) -> Core::Result<void>;
+    /** Yaw does not clear motion or queued input. 朝向修改不清除运动或排队输入。 */
+    [[nodiscard]] auto setCharacterYaw(CharacterId character, float yawDegrees)
+        -> Core::Result<void>;
     /** Step [0.000001,0.25] seconds, subdivided at 60 Hz. Invalid input does not
      * advance time. Backend errors can occur after advancement and fault the
      * world: reads/destruction remain available, further mutations fail.

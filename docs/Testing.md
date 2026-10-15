@@ -46,9 +46,9 @@ The native ring/scale case uses device-tagged SDL pointer injection with a scope
 filter for its window, so desktop pointer traffic cannot overwrite its prescribed
 samples. It retains real window/focus/keyboard events and restores the previous
 filter. The native translator, editor drag/history and GPU pixels are still tested.
-The current inventory contains 253 unit, 701 integration, 133 offscreen GPU,
-74 native and 129 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1083 CTest identities are covered; existing subsystem
+The current inventory contains 256 unit, 714 integration, 133 offscreen GPU,
+74 native and 130 acceptance cases. Labels overlap; integration includes GPU and
+native integration cases. All 1100 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
@@ -92,3 +92,10 @@ adds writer-union retirement, failures, snapshots and actual TypeScript controls
 The model-skin runtime/editor cases consume those controls, independently check
 joint angles and replay relocated exports. Visual transition editing, additive
 layers and populated-character throughput remain unfinished.
+
+
+Character configuration/input validation remains pure CPU unit coverage. The
+`character.physics_*` cases use the real Jolt world without windows or devices;
+`runtime.character` is a headless runnable drop/walk/jump/wall/landing/lifetime
+acceptance. These checks establish the native capsule foundation, not scene/SDK
+binding or a rendered humanoid template.

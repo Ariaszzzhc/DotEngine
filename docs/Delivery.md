@@ -19,6 +19,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
 | Native scene GPU skinning | [Skinning](Skinning.md): glTF/GLB four/eight-weight import, saved skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; visual skeleton tools and production blend workflows remain unfinished |
 | Native animation transition foundation | [Animation](Animation.md): dual-clip cross-fades, shortest-arc rotation, partial-channel fallback, continuous interruption and atomic clocks/poses; imported-skin GPU reference acceptance; cached-library/SDK controls, isolated editor Play and relocated native exports; visual transition authoring and blend graphs remain unfinished |
+| Native character physics foundation | [Physics](Physics.md): real Y-up virtual capsule sweeps in the body world, grounded jumps, wall/ceiling/stair/slope collision, dynamic pushing, platform velocity, scoped ownership and headless acceptance; scene/SDK/Inspector, humanoid and over-the-shoulder camera integration remain pending |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio/animation; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
@@ -34,10 +35,10 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG each pass 1083/1083 CTest identities
-(1012 doctest cases and 71 executable/script checks), taking 321.83s and 71.87s.
-The [test layers](Testing.md) separate 253 pure CPU unit cases from 701 integration,
-133 offscreen GPU, 74 native and 129 acceptance cases; labels overlap. All 361
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1100/1100 CTest identities
+(1028 doctest cases and 72 executable/script checks), taking 317.34s and 61.49s.
+The [test layers](Testing.md) separate 256 pure CPU unit cases from 714 integration,
+133 offscreen GPU, 74 native and 130 acceptance cases; labels overlap. All 366
 current engine/application/test C/C++ files pass clang-format; 17 WGSL
 files pass established indentation/line/whitespace checks and actual pipeline runs.
 The native animation SDK and interactive Feature Lab are covered through actual
@@ -610,3 +611,19 @@ All 361 tracked C/C++ files pass clang-format. Original geometry regeneration is
 content-identical; shader sources are unchanged. Actual editor and relocated-export
 PNGs are inspected. This remains an environment foundation, not final realistic
 art or the required humanoid template. No interim distribution archive is produced.
+
+
+## Native character physics foundation
+
+A separate configuration module and owned Jolt virtual capsules now provide
+native walking/jumping, stair/slope/wall/ceiling collision, dynamic pushing and
+horizontal/vertical platform support in the existing physics world. Scoped handles,
+owner-thread failures, capacity recovery, teleport/yaw intent and repeated contact
+cleanup have focused checks and a runnable headless acceptance. No window is
+required by the new character tests. Capsule broad-phase presence and scene/SDK/
+Inspector, humanoid animation and over-the-shoulder camera remain integration work.
+
+Full Debug passes 1100/1100 (317.34s), followed by Release/NDEBUG 1100/1100 (61.49s).
+All 366 C/C++ files pass clang-format; shader inputs and library linkage are
+unchanged. This is a library foundation and does not complete Prism Relay or the
+engine/editor goal. No interim distribution archive is produced.

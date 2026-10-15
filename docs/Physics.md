@@ -194,3 +194,47 @@ recreate or reset to resume. There is no silent truncation of event streams.
 
 `--scene-physics-test` and its GPU variant verify contact begin and destruction
 alongside collision poses, entity ray queries, and synchronized cleanup.
+
+## Native character controller foundation
+
+`Dot.Physics.Character` separates CPU-only capsule/configuration/input validation
+from `Dot.Physics.World`'s Jolt implementation. `createCharacter` owns a feet-origin
+Y-up virtual capsule in the same body world, with independent capacity (default 64,
+0..256), monotonic world-scoped handles and owner-thread operations. World moves
+preserve handles; destruction releases all capsules before native physics storage.
+Characters require vertical nonpositive gravity. Configuration/input errors preserve
+existing state; contact-query preparation failures do not publish a character.
+
+The capsule has configurable radius/cylinder half-height, walkable slope, stair
+height, floor-stick distance, mass, push strength, jump speed and native query hit
+budget. Horizontal world-space input is limited to 50 m/s. Its velocity persists;
+jump edges merge until the next simulation substep, then are consumed whether or
+not the capsule can jump. Air requests do not become buffered landing jumps.
+`setCharacterYaw` changes facing without clearing intent. `teleportCharacter`
+clears velocity/input, refreshes contacts without advancing time, and leaves any
+initial overlap recovery to the next step. A failed query after pose mutation faults
+the world; diagnostic reads/destruction remain available.
+
+Character and rigid-body simulation advance together at the existing 60 Hz
+substep bound. Current support is refreshed before using it, so removed bodies or
+capsules cannot supply stale jumping support. Actual native capsule sweeps handle
+wall sliding, ceilings, stairs, walkable/steep ramps, dynamic-body pushing and
+moving-platform velocity. Ground state, ground normal/velocity and an optional
+live body handle are returned. Controller velocity includes the native downward
+support probe; it is not a difference of corrected feet positions. Native reported
+contact-budget failure is an error, rather than a successful truncated result.
+
+This foundation intentionally has no inner rigid-body proxy. Virtual capsules
+collide with solid bodies and one another, but ordinary ray casts, rigid-body
+sensor/contact events and fast incoming bodies do not see a capsule in the broad
+phase. Body statistics count rigid bodies; `characters` counts owned capsules.
+Scene persistence, component Inspector/SDK binding, humanoid animation and the
+requested over-the-shoulder camera are subsequent integration work. This API alone
+does not establish a finished character template or large-crowd scalability.
+
+Run `build/debug/bin/DotRuntimeAcceptance --character-test` for an actual headless
+Jolt drop/walk/jump/wall/landing/lifetime acceptance path. The `character.*` unit
+and integration selections cover finite bounds, foreign/stale/moved handles,
+thread rejection, capacity failure/recovery, sensors, destroyed support, steps,
+slopes, dynamic pushing, horizontal/vertical platforms and colliding capsule
+cleanup. The test executable is only built with `BUILD_TESTING=ON`.

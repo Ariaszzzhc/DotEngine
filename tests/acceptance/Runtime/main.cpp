@@ -48,6 +48,7 @@ namespace Dot::Runtime {
   auto testProjectPlayer(const std::filesystem::path& executable,
                          const std::filesystem::path& parentRoot) -> int;
   auto testScenePhysics(bool render) -> int;
+  auto testCharacter() -> int;
   auto testAudioClip(const std::filesystem::path& root) -> int;
   auto testAudioMix() -> int;
   auto testAudioOutput() -> int;
@@ -867,6 +868,10 @@ auto main(int argc, char** argv) -> int {
 
     if (argc == 2 && std::string_view(argv[1]) == "--physics-test") {
       return testPhysics();
+    }
+
+    if (argc == 2 && std::string_view(argv[1]) == "--character-test") {
+      return Dot::Runtime::testCharacter();
     }
 
     if (argc == 2 && std::string_view(argv[1]) == "--version") {

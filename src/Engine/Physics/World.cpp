@@ -13,6 +13,7 @@ module;
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -49,6 +50,7 @@ module;
 module Dot.Physics.World;
 
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Core.Result;
 import Dot.Math;
 
@@ -536,6 +538,13 @@ namespace Dot::Physics {
       JPH::BodyID m_id;
     };
 
+    class SolidBodies final : public JPH::BodyFilter {
+    public:
+      auto ShouldCollideLocked(const JPH::Body& body) const -> bool override {
+        return !body.IsSensor();
+      }
+    };
+
     struct BodyDeleter {
       JPH::BodyInterface* interface;
 
@@ -588,10 +597,17 @@ namespace Dot::Physics {
       std::uint64_t userTag;
     };
 
+    struct CharacterEntry {
+      std::unique_ptr<JPH::CharacterVirtual> capsule;
+      CharacterProperties properties;
+      CharacterInput input;
+    };
+
     std::shared_ptr<Runtime> m_runtime;
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_identity;
     std::uint64_t m_nextBody{1};
+    std::uint64_t m_nextCharacter{1};
     WorldConfig m_config;
     bool m_faulted{};
     std::uint64_t m_step{};
@@ -603,6 +619,8 @@ namespace Dot::Physics {
     ContactCollector m_contacts;
     JPH::PhysicsSystem m_system;
     std::unordered_map<std::uint64_t, Entry> m_bodies;
+    JPH::CharacterVsCharacterCollisionSimple m_characterCollisions;
+    std::map<std::uint64_t, CharacterEntry> m_characters;
 
     Impl(std::shared_ptr<Runtime> owner, std::uint64_t identity, WorldConfig config)
         : m_runtime(std::move(owner)),
@@ -622,10 +640,13 @@ namespace Dot::Physics {
                     m_broadFilter, m_pairFilter);
       m_system.SetGravity(native(config.gravity));
       m_bodies.reserve(config.maxBodies);
+      m_characterCollisions.mCharacters.reserve(config.maxCharacters);
       m_system.SetContactListener(&m_contacts);
     }
 
     ~Impl() {
+      m_characterCollisions.mCharacters.clear();
+      m_characters.clear();
       m_system.SetContactListener(nullptr);
       auto& bodies = m_system.GetBodyInterface();
 
@@ -669,6 +690,92 @@ namespace Dot::Physics {
 
       return found->second;
     }
+
+    auto resolve(CharacterId id, bool mutate = false) -> Core::Result<CharacterEntry*> {
+      auto valid = ready(mutate);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      if (id.world != m_identity || id.value == 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Foreign/invalid physics character handle");
+      }
+
+      const auto found = m_characters.find(id.value);
+
+      if (found == m_characters.end()) {
+        return Core::fail(Core::ErrorCode::NotFound, "Physics character handle no longer exists");
+      }
+
+      return &found->second;
+    }
+
+    auto refreshCharacter(JPH::CharacterVirtual& character) -> Core::Result<void> {
+      character.RefreshContacts(m_system.GetDefaultBroadPhaseLayerFilter(movingLayer),
+                                m_system.GetDefaultLayerFilter(movingLayer), SolidBodies{}, {},
+                                m_temporary);
+
+      if (character.GetMaxHitsExceeded()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Character contact capacity exceeded");
+      }
+
+      return {};
+    }
+
+    auto advanceCharacters(float seconds) -> Core::Result<void> {
+      const auto gravity = native(m_config.gravity);
+
+      for (auto& [id, entry] : m_characters) {
+        (void)id;
+        auto& character = *entry.capsule;
+        /** Refresh before using support: bodies/peers may have moved or been
+         * removed since the last substep, and must not enable a stale jump.
+         * 支撑使用前刷新，刚体/其他角色可能已移动或删除，不能用过期支撑起跳。 */
+        auto refreshed = refreshCharacter(character);
+
+        if (!refreshed) {
+          return refreshed;
+        }
+
+        character.UpdateGroundVelocity();
+        const auto vertical = character.GetLinearVelocity().GetY();
+        const auto ground = character.GetGroundVelocity();
+        auto velocity = JPH::Vec3{0, vertical, 0};
+
+        if (character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround
+            && vertical - ground.GetY() < .1F) {
+          velocity = ground;
+
+          if (entry.input.jump) {
+            velocity += JPH::Vec3{0, entry.properties.jumpSpeed, 0};
+          }
+        }
+
+        entry.input.jump = false;
+        velocity += native(entry.input.velocity) + gravity * seconds;
+        /** ExtendedUpdate retains desired motion for its stair test before
+         * rejecting steep-slope velocity; pre-clipping would prevent stepping.
+         * ExtendedUpdate 在坡面速度裁剪前保留台阶探测所需意图，提前裁剪会阻止登阶。 */
+        character.SetLinearVelocity(velocity);
+        JPH::CharacterVirtual::ExtendedUpdateSettings settings;
+        settings.mWalkStairsStepUp = {0, entry.properties.stepHeight, 0};
+        settings.mStickToFloorStepDown = {0, -entry.properties.stickDistance, 0};
+        character.ExtendedUpdate(
+            seconds, gravity, settings, m_system.GetDefaultBroadPhaseLayerFilter(movingLayer),
+            m_system.GetDefaultLayerFilter(movingLayer), SolidBodies{}, {}, m_temporary);
+
+        if (character.GetMaxHitsExceeded() || !Math::isFinite(vector(character.GetPosition()))
+            || !Math::isFinite(vector(character.GetLinearVelocity()))) {
+          return Core::fail(
+              Core::ErrorCode::External,
+              "Character update exceeded contact capacity or produced invalid motion");
+        }
+      }
+
+      return {};
+    }
   };
 
   World::World(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
@@ -682,8 +789,9 @@ namespace Dot::Physics {
 
   auto World::create(const WorldConfig& config) -> Core::Result<World> {
     if (config.maxBodies == 0 || config.maxBodies > 4096 || config.workerThreads > 8
-        || config.maxContactEvents == 0 || config.maxContactEvents > 262144
-        || !Math::isFinite(config.gravity) || Math::length(config.gravity) > 1000) {
+        || config.maxCharacters > 256 || config.maxContactEvents == 0
+        || config.maxContactEvents > 262144 || !Math::isFinite(config.gravity)
+        || Math::length(config.gravity) > 1000) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid physics world limits/gravity");
     }
 
@@ -960,6 +1068,246 @@ namespace Dot::Physics {
                      vector(bodies.GetAngularVelocity(entry->nativeId))};
   }
 
+  auto World::createCharacter(const CharacterConfig& config) -> Core::Result<CharacterId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto ready = m_impl->ready(true);
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    auto validated = validatedCharacterConfig(config);
+
+    if (!validated) {
+      return std::unexpected(validated.error());
+    }
+
+    const auto gravity = m_impl->m_config.gravity;
+
+    if (gravity.x != 0 || gravity.z != 0 || gravity.y > 0) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Y-up characters require vertical nonpositive world gravity");
+    }
+
+    if (m_impl->m_characters.size() == m_impl->m_config.maxCharacters
+        || m_impl->m_nextCharacter >= JPH::CharacterID::cInvalidCharacterID) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Physics character capacity/IDs exhausted");
+    }
+
+    auto rotation = Math::rotationEulerDegrees({0, validated->yawDegrees, 0});
+
+    if (!rotation) {
+      return std::unexpected(rotation.error());
+    }
+
+    try {
+      auto shape = JPH::CapsuleShapeSettings{validated->halfHeight, validated->radius}.Create();
+
+      if (shape.HasError()) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Cannot create character capsule: {}", shape.GetError()));
+      }
+
+      JPH::CharacterVirtualSettings settings;
+      settings.mID = JPH::CharacterID{static_cast<JPH::uint32>(m_impl->m_nextCharacter)};
+      settings.mShape = shape.Get();
+      settings.mShapeOffset = {0, validated->radius + validated->halfHeight, 0};
+      settings.mSupportingVolume = JPH::Plane{JPH::Vec3::sAxisY(), -validated->radius};
+      settings.mMaxSlopeAngle = JPH::DegreesToRadians(validated->maxSlopeDegrees);
+      settings.mMass = validated->mass;
+      settings.mMaxStrength = validated->maxStrength;
+      settings.mMaxNumHits = validated->maxContacts;
+      auto capsule = std::make_unique<JPH::CharacterVirtual>(
+          &settings, native(validated->position), native(*rotation), 0, &m_impl->m_system);
+      capsule->SetCharacterVsCharacterCollision(&m_impl->m_characterCollisions);
+      auto refreshed = m_impl->refreshCharacter(*capsule);
+
+      if (!refreshed) {
+        return std::unexpected(refreshed.error());
+      }
+
+      const CharacterId result{m_impl->m_identity, m_impl->m_nextCharacter};
+      const auto [inserted, created] = m_impl->m_characters.emplace(
+          result.value, Impl::CharacterEntry{std::move(capsule), *validated, {}});
+      (void)created;
+      /** The collider list is reserved at world creation; publish only after all
+       * character construction, contact queries and map allocation succeed.
+       * 碰撞列表在世界创建时预留，完成角色构造、接触查询与映射分配后才发布。 */
+      m_impl->m_characterCollisions.Add(inserted->second.capsule.get());
+      ++m_impl->m_nextCharacter;
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Cannot initialize character: {}", error.what()));
+    }
+  }
+
+  auto World::destroyCharacter(CharacterId id) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    m_impl->m_characterCollisions.Remove((*entry)->capsule.get());
+    m_impl->m_characters.erase(id.value);
+    return {};
+  }
+
+  auto World::character(CharacterId id) const -> Core::Result<CharacterState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    const auto& capsule = *(*entry)->capsule;
+    GroundState ground;
+
+    switch (capsule.GetGroundState()) {
+      case JPH::CharacterBase::EGroundState::OnGround:
+        ground = GroundState::Grounded;
+        break;
+      case JPH::CharacterBase::EGroundState::OnSteepGround:
+        ground = GroundState::Steep;
+        break;
+      case JPH::CharacterBase::EGroundState::NotSupported:
+        ground = GroundState::Unsupported;
+        break;
+      case JPH::CharacterBase::EGroundState::InAir:
+        ground = GroundState::Airborne;
+        break;
+      default:
+        return Core::fail(Core::ErrorCode::External, "Unknown native character ground state");
+    }
+
+    std::optional<BodyId> support;
+    const auto found = m_impl->m_bodies.find(capsule.GetGroundUserData());
+
+    if (found != m_impl->m_bodies.end() && found->second.nativeId == capsule.GetGroundBodyID()) {
+      support = BodyId{m_impl->m_identity, found->first};
+    }
+
+    return CharacterState{vector(capsule.GetPosition()),
+                          quaternion(capsule.GetRotation()),
+                          vector(capsule.GetLinearVelocity()),
+                          ground,
+                          vector(capsule.GetGroundNormal()),
+                          vector(capsule.GetGroundVelocity()),
+                          support};
+  }
+
+  auto World::setCharacterInput(CharacterId id, const CharacterInput& input) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id, true);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    auto valid = validateCharacterInput(input);
+
+    if (!valid) {
+      return valid;
+    }
+
+    (*entry)->input.velocity = input.velocity;
+    (*entry)->input.jump = (*entry)->input.jump || input.jump;
+    return {};
+  }
+
+  auto World::setCharacterYaw(CharacterId id, float yawDegrees) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id, true);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    CharacterConfig config;
+    config.yawDegrees = yawDegrees;
+    auto valid = validatedCharacterConfig(config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto rotation = Math::rotationEulerDegrees({0, valid->yawDegrees, 0});
+
+    if (!rotation) {
+      return std::unexpected(rotation.error());
+    }
+
+    (*entry)->capsule->SetRotation(native(*rotation));
+    return {};
+  }
+
+  auto World::teleportCharacter(CharacterId id, Math::Vec3 feet, float yawDegrees)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto entry = m_impl->resolve(id, true);
+
+    if (!entry) {
+      return std::unexpected(entry.error());
+    }
+
+    CharacterConfig config;
+    config.position = feet;
+    config.yawDegrees = yawDegrees;
+    auto valid = validatedCharacterConfig(config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto rotation = Math::rotationEulerDegrees({0, valid->yawDegrees, 0});
+
+    if (!rotation) {
+      return std::unexpected(rotation.error());
+    }
+
+    try {
+      auto& capsule = *(*entry)->capsule;
+      capsule.SetPosition(native(feet));
+      capsule.SetRotation(native(*rotation));
+      capsule.SetLinearVelocity(JPH::Vec3::sZero());
+      (*entry)->input = {};
+      auto refreshed = m_impl->refreshCharacter(capsule);
+
+      if (!refreshed) {
+        m_impl->m_faulted = true;
+        return Core::fail(refreshed.error().code,
+                          "Character teleport advanced pose: " + refreshed.error().message);
+      }
+
+      return {};
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Character teleport may have changed pose: {}", error.what()));
+    }
+  }
+
   auto World::step(double seconds) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
@@ -985,9 +1333,38 @@ namespace Dot::Physics {
 
     ++m_impl->m_step;
     m_impl->m_contacts.begin();
-    const auto result = m_impl->m_system.Update(static_cast<float>(seconds),
-                                                static_cast<int>(std::ceil(seconds * 60)),
-                                                &m_impl->m_temporary, m_impl->m_jobs.get());
+    auto result = JPH::EPhysicsUpdateError::None;
+    const auto substeps = static_cast<int>(std::ceil(seconds * 60));
+
+    if (m_impl->m_characters.empty()) {
+      result = m_impl->m_system.Update(static_cast<float>(seconds), substeps, &m_impl->m_temporary,
+                                       m_impl->m_jobs.get());
+    } else {
+      try {
+        const auto interval = static_cast<float>(seconds / substeps);
+
+        for (int substep = 0; substep < substeps; ++substep) {
+          auto advanced = m_impl->advanceCharacters(interval);
+
+          if (!advanced) {
+            m_impl->m_faulted = true;
+            return Core::fail(advanced.error().code, "Physics character step may have advanced: "
+                                                         + advanced.error().message);
+          }
+
+          result = m_impl->m_system.Update(interval, 1, &m_impl->m_temporary, m_impl->m_jobs.get());
+
+          if (result != JPH::EPhysicsUpdateError::None) {
+            break;
+          }
+        }
+      } catch (const std::exception& error) {
+        m_impl->m_faulted = true;
+        return Core::fail(
+            Core::ErrorCode::External,
+            std::format("Physics character step may have advanced: {}", error.what()));
+      }
+    }
 
     if (result != JPH::EPhysicsUpdateError::None) {
       m_impl->m_faulted = true;
@@ -1063,9 +1440,10 @@ namespace Dot::Physics {
       return std::unexpected(ready.error());
     }
 
-    return WorldStats{m_impl->m_bodies.size(),
-                      m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody),
-                      m_impl->m_faulted, m_impl->m_contacts.pairs(), m_impl->m_contacts.queued()};
+    return WorldStats{
+        m_impl->m_bodies.size(),     m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody),
+        m_impl->m_faulted,           m_impl->m_contacts.pairs(),
+        m_impl->m_contacts.queued(), m_impl->m_characters.size()};
   }
 
   auto World::drainContactEvents() -> Core::Result<std::vector<ContactEvent>> {

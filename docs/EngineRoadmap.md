@@ -213,3 +213,11 @@ foundation. ScenePlayers now reserves the full transition writer union, and SDK
 controls run in isolated editor Play and relocated exports. Visual skeleton/blend
 authoring, layered/additive blending and state machines remain required work; no general
 character-animation or populated-game completion is claimed.
+
+
+A native feet-origin Y-up capsule controller now runs inside the existing Jolt
+world, with actual jumps, stairs/slopes/wall/ceiling collision, dynamic pushing,
+platform motion and scoped lifetime/failure acceptance. It is a library foundation;
+scene component/Inspector/SDK integration, broad-phase presence, humanoid locomotion
+and the over-the-shoulder follow/orbit/collision camera still remain. The Prism Relay
+template requirement remains open.
