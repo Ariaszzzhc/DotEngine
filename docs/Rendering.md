@@ -719,3 +719,14 @@ and its renderer remain on the main thread. Same-slot tickets/generation checks,
 bounded completions and joined shutdown preserve device/thread ownership; actual
 worker GPU and native UI tests cover the path. Active driver calls are not forcibly
 canceled, so shutdown may wait for their completion.
+
+
+## GPU skin meshes
+
+[Skinning](Skinning.md) provides native controllers sharing static mesh uploads and
+immutable eight-slot influences. updateSkins publishes complete posed buffers and
+exact GPU bounds only after batch validation; ordinary mesh views feed existing
+physical color, shadow, SSAO and picking paths. readSkin is explicit owned diagnostic
+readback; regular updates map only compact bounds/status. The status wait is
+synchronous and has no populated-scene performance claim. Automatic imported-skin
+scene resources, editor binding and animation mixing remain unfinished.

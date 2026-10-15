@@ -188,3 +188,13 @@ playback controls are now available, including actual Feature Lab keyboard contr
 bindings/timeline, skinning/morphs/blending/state machines/events and animation
 streaming are still unfinished. Production animation and realistic polished
 Prism Relay remain open.
+
+
+Native skin data now supports bounded eight-slot joint influences, immutable inverse
+binds and mesh-local palettes with a CPU deformation reference. GPU controllers
+share static inputs, update posed vertices/normal/tangent frames and exact bounds,
+retain previous poses on failed batches, and feed ordinary PBR/shadow/SSAO/picking
+passes. Imported-skin resources, saved scene bindings, editor integration, blending/
+state machines and populated-game performance remain open. The native acceptance
+uses actual joint hierarchy animation and reference-compared rendered frames; it
+does not establish full skinned-model authoring or realistic game production.

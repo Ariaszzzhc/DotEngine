@@ -336,3 +336,17 @@ behavior checks. Native SDL Digit 2/Space events verify real switched/paused/res
 poses without changing the saved selected-clip description. Existing native GPU/
 audio, editor Play isolation and relocated export-after-authoring-removal paths
 exercise these same scripts. No skinning or populated-game scale is inferred.
+
+
+`DotRuntimeAcceptance --skinning-test <existing-output-directory>` now animates an
+actual native joint hierarchy, derives mesh-local inverse-bind palettes and deforms
+GPU vertices. Nine PBR/shadow/AO PNGs and bind/reference/GPU mesh artifacts are saved.
+GPU positions/normals and images are compared with an independent double-intermediate
+CPU path; an invalid blended pose retains the previous complete buffer and count.
+Scope exit releases all owned skin, vertex and index resources. Focused cases cover
+eight influences, indexed/unindexed data, reflected nonuniform tangent frames,
+batch rollback, bounds-driven culling/picking, normal-map eligibility, strict
+capacities, byte budgets, float overflow and moved/foreign/thread/device lifetime.
+CPU data/reference cases remain in the device-free unit layer; GPU cases and the
+runnable now use real offscreen devices. No automatic imported-skin/editor binding
+or populated-game throughput is inferred from these checks.

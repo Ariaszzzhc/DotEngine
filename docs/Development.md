@@ -4714,7 +4714,62 @@ acceptance and six CPU cases. Exact joint/vertex boundaries, failed samples, cop
 moves and concurrent immutable reads retain coverage. GPU and imported-scene
 consumers follow this tested foundation; they are not claimed implemented here.
 
-Release/NDEBUG focused checks pass 7/7 (0.61s). All touched C++ files pass
+Release/NDEBUG focused checks pass 7/7 (0.70s). All touched C++ files pass
 clang-format and diff checks. Tests require no window or device at this stage;
 only arm64 macOS is validated. Separate unit and runnable file cases retain their
 actual layer labels. The large-engine objective remains active.
+
+
+## 2026-10-15 — GPU skin controllers and shared render passes
+
+Added owned GPU skin controllers sharing static mesh/index uploads, immutable
+weights and palettes. Two posed buffers retain the current view until an entire
+batch succeeds. Separate WGSL computes eight-weight positions, inverse-transpose
+normal directions, orthogonal/reflected tangents, triangle-handedness checks and
+exact signed bounds. Compact status is read once per batch; errors preserve every
+previous buffer, bound and counter. Rescaled position arithmetic guards overflow
+before multiplication. Normal-map eligibility combines stable UVs with current
+geometry. Ordinary mesh views feed unchanged PBR, shadows, SSAO and picking, with
+updated bounds used by spatial classification.
+
+Reviewed packed data offsets, finite/affine and sample boundaries, alias rejection,
+shared source/output lifetime, device/thread checks, queue ordering, budgets and
+all-or-none publication. Added logical skin residency counters; retained Mesh views
+keep current geometry after their controller retires. readSkin provides explicit
+diagnostic vertex readback. Synchronous compact-status waiting is a known cost;
+large populated-scene throughput, asynchronous scheduling and imported-scene/editor
+skin resources remain unfinished.
+
+The first actual GPU focused suite passes 5/5 (4.50s): vertex/normal/tangent/bounds
+reference, physical normal-map pixels, batch rollback, culling/picking and frame
+recovery, shared lifetime/foreign/thread/moves/budgets, and matching shadow/AO
+reference passes. The expanded runnable passes 1/1 (3.20s); native joint animation
+drives nine real frames with CPU vertex/pixel comparisons, bind/reference/GPU mesh
+artifacts and resource release. First/mid/last PNGs were inspected and show actual
+bending. Added explicit GPU overflow, reflected seam and exact budget checks before
+final validation. Final results follow below; no Windows/Linux run is claimed.
+
+Final focused Debug passes 13/13 (9.03s), Release/NDEBUG 13/13 (1.25s), including
+explicit float-overflow rejection before invalid arithmetic, GPU seam rejection
+and an exact 688-byte extra-residency fit. Corrected the prior foundation release
+timing from command-wall time to its actual 0.70s CTest result. All 341 C/C++ and
+17 standalone WGSL files pass formatting. The inventory is 1032 identities: 964
+doctest cases plus 68 executable/script checks. Labels overlap: 235 unit, 674
+integration, 206 GPU, 124 offscreen, 70 native and 123 acceptance. Both final builds
+finish before full suites; full final results are recorded below after completion.
+
+Final Debug passes 1032/1032 (238.56s), including all existing editor, native game,
+relocation, physics/audio and rendering contracts. No full suite overlaps builds
+or another configuration. The new GPU path retains actual device failures and
+resource checks; unit cases remain free of native device initialization.
+
+Final Release/NDEBUG passes 1032/1032 (49.65s). Full configurations run sequentially
+after both builds complete. Only arm64 macOS is built/run; Windows/Linux use the
+same portable CPU/WebGPU implementation without a local validation claim.
+
+The owned archive target succeeds. Final ZIP is 48,935,380 bytes/276 entries/244
+exact payloads with passing CRC, executable modes, original font/HDRI/licenses and
+private/source exclusions. Strict signatures and portable loader/rpath references
+pass for 13 regular Mach-O files/three relative links. Private archive staging is
+removed. Shader sources stay private; the new skin shader is embedded normally.
+Windows/Linux remain implementation targets without local execution evidence.

@@ -22,6 +22,7 @@ export import Dot.Graphics.Lighting;
 export import Dot.Graphics.Environment;
 export import Dot.Graphics.Occlusion;
 export import Dot.Graphics.RenderQueue;
+export import Dot.Animation.Skin;
 
 export namespace Dot::Graphics {
   enum class Backend { Metal, D3D12, Vulkan };
@@ -59,6 +60,8 @@ export namespace Dot::Graphics {
     /** Full-resolution SSAO depth/normal/raw/filtered working storage; logical bytes.
      * 全分辨率 SSAO 深度/法线/原始及过滤结果的工作存储，记录逻辑字节。 */
     std::uint64_t occlusionBytes{};
+    std::uint64_t skins{};
+    std::uint64_t skinBytes{};
   };
 
   /** CPU visibility work for the completed pass. Input validation and bounds
@@ -174,9 +177,11 @@ export namespace Dot::Graphics {
   using GuiViewportDraw = std::function<Core::Result<std::optional<RenderTarget>>(
       std::uint32_t width, std::uint32_t height)>;
 
-  /** Immutable GPU mesh with shared ownership. Copies share the uploaded buffers;
+  /** Shared GPU mesh. Static uploads are immutable; SkinnedMesh views observe
+   * successful updates and retain the last pose after their controller retires.
+   * Copies share the uploaded buffers;
    * a mesh can outlive its renderer for destruction, but cannot then be drawn.
-   * 共享所有权的不可变 GPU 网格；副本共享已上传缓冲区。
+   * 共享 GPU 网格：静态上传不可变，蒙皮视图观察成功更新，控制器销毁后保留末姿态；副本共享缓冲区。
    * 网格可在渲染器销毁后释放，但届时无法绘制。
    */
   class Mesh {
@@ -192,9 +197,49 @@ export namespace Dot::Graphics {
 
   private:
     friend class Renderer;
+    friend class SkinnedMesh;
     struct Impl;
     explicit Mesh(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;
+  };
+
+  struct SkinInfo {
+    std::uint32_t vertices;
+    std::uint32_t joints;
+    std::uint64_t bytes;
+    std::uint64_t updates;
+    Bounds bounds;
+  };
+
+  /** Shared GPU skin controller. Original mesh and immutable skin remain owned;
+   * mesh() returns the shared, mutable posed view used by every rendering pass.
+   * Owner-thread queries/updates; quiescent destruction may outlive the renderer.
+   * bytes counts weights/palette/spare vertex/report/parameter storage, excluding
+   * source/current output vertices already accounted by ordinary mesh counters.
+   * 共享 GPU 蒙皮控制器，拥有源网格及不可变蒙皮；mesh() 返回所有渲染通道共用的变形视图。
+   * 查询/更新限创建线程，静止销毁可晚于渲染器。bytes 计权重/调色板/备用顶点/报告/参数，
+   * 源及当前输出顶点已由普通网格计数覆盖，不重复计算。 */
+  class SkinnedMesh {
+  public:
+    SkinnedMesh() noexcept;
+    SkinnedMesh(const SkinnedMesh&) noexcept;
+    auto operator=(const SkinnedMesh&) noexcept -> SkinnedMesh&;
+    SkinnedMesh(SkinnedMesh&&) noexcept;
+    auto operator=(SkinnedMesh&&) noexcept -> SkinnedMesh&;
+    ~SkinnedMesh();
+    [[nodiscard]] auto info() const -> Core::Result<SkinInfo>;
+    [[nodiscard]] auto mesh() const -> Core::Result<Mesh>;
+
+  private:
+    friend class Renderer;
+    struct Impl;
+    explicit SkinnedMesh(std::shared_ptr<Impl> impl) noexcept;
+    std::shared_ptr<Impl> m_impl;
+  };
+
+  struct SkinUpdate {
+    const SkinnedMesh* skin;
+    std::span<const Math::Mat4> palette;
   };
 
   enum class TextureFilter { Nearest, Linear };
@@ -349,6 +394,8 @@ export namespace Dot::Graphics {
     std::uint64_t maxTextureBytes{512 * 1024 * 1024};
     PostProcessSettings postProcess{};
     Lighting lighting{};
+    std::uint32_t maxSkins{256};
+    std::uint64_t maxSkinBytes{512 * 1024 * 1024};
   };
 
   /** Owns a Dawn device and optional native surface; all operations and destruction
@@ -370,6 +417,24 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto adapterInfo() const -> Core::Result<AdapterInfo>;
     [[nodiscard]] auto surfaceSize() const -> Core::Result<Platform::Extent>;
     [[nodiscard]] auto upload(const MeshData& data) -> Core::Result<Mesh>;
+    /** Share one static source upload, allocate two posed buffers and owned skin
+     * resources. Initially exposes bind geometry; no pose is fabricated. Reject
+     * foreign/dynamic sources and mismatched counts, enforce residency budgets.
+     * 共用静态源上传，分配双变形缓冲及蒙皮资源，初始显示绑定几何，不伪造姿态。
+     * 拒绝跨设备/动态源及数量不匹配，并执行驻留预算。 */
+    [[nodiscard]] auto createSkin(const Mesh& source, Animation::Skin skin)
+        -> Core::Result<SkinnedMesh>;
+    /** At most 128 distinct skins / four million vertices per call. Validate on
+     * CPU, compute vertices/frames/bounds on GPU, read one compact status batch,
+     * then publish every posed buffer/bound together. Failure retains all previous
+     * views/counters. The status read is synchronous; no populated-game cost claim.
+     * 每次至多 128 个不同蒙皮/四百万顶点；CPU 校验后由 GPU 计算顶点/切线框架/边界，
+     * 同步读取一批紧凑状态，再一起发布所有输出及边界；失败保留此前视图/计数。
+     * 状态读取为同步操作，不宣称已验证大型游戏帧时。 */
+    [[nodiscard]] auto updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void>;
+    /** Explicit owned GPU vertex readback for diagnostics/reference comparison.
+     * 诊断及参考对照用的显式 GPU 顶点读回，结果独立拥有。 */
+    [[nodiscard]] auto readSkin(const SkinnedMesh& skin) -> Core::Result<std::vector<Vertex>>;
     /** RGBA8 texture upload within image/device limits; at most 4096 textures and
      * 512 MiB logical texels including mip levels (configurable residency budget). Mips average
      * linear light (sRGB decoded/re-encoded; alpha stays linear), preserve odd edges, and are owned

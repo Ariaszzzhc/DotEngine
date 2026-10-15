@@ -17,6 +17,8 @@ module;
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -131,6 +133,9 @@ namespace Dot::Graphics {
       Math::Vec4 alpha{0, .5F, 0, 0};
     };
 
+    static_assert(sizeof(Animation::SkinInfluence) == 64);
+    static_assert(offsetof(Animation::SkinInfluence, weights) == 32);
+    static_assert(sizeof(Math::Mat4) == 64);
     static_assert(sizeof(Vertex) == 64);
     static_assert(offsetof(Vertex, tangent) == 48);
     static_assert(sizeof(InstanceData) == 288);
@@ -189,6 +194,8 @@ namespace Dot::Graphics {
       std::atomic<std::uint64_t> textureBytes{};
       std::atomic<std::uint64_t> environments{};
       std::atomic<std::uint64_t> environmentBytes{};
+      std::atomic<std::uint64_t> m_skins{};
+      std::atomic<std::uint64_t> m_skinBytes{};
       std::atomic<bool> failed{};
       std::mutex mutex;
       std::string failure;
@@ -289,6 +296,9 @@ namespace Dot::Graphics {
     bool hasNormals{};
     bool hasNormalMapFrame{};
     bool hasTangents{};
+    bool m_uvFrame{};
+    bool m_skinned{};
+    std::shared_ptr<Impl> m_source;
     std::uint64_t vertexBytes{};
     std::uint64_t indexBytes{};
     bool tracked{};
@@ -327,6 +337,68 @@ namespace Dot::Graphics {
     }
 
     return m_impl->info;
+  }
+
+  struct SkinnedMesh::Impl {
+    std::thread::id m_thread{std::this_thread::get_id()};
+    std::shared_ptr<Diagnostics> m_owner;
+    Animation::Skin m_skin;
+    Mesh m_mesh;
+    std::array<wgpu::Buffer, 2> m_vertices;
+    wgpu::Buffer m_weights;
+    wgpu::Buffer m_palette;
+    wgpu::Buffer m_report;
+    wgpu::Buffer m_parameters;
+    wgpu::Buffer m_indices;
+    SkinInfo m_info{};
+    std::uint32_t m_next{1};
+    bool m_tracked{};
+
+    ~Impl() {
+      if (m_tracked) {
+        m_owner->m_skins.fetch_sub(1);
+        m_owner->m_skinBytes.fetch_sub(m_info.bytes);
+      }
+    }
+
+    auto check() const -> Core::Result<void> {
+      if (m_thread != std::this_thread::get_id() || !m_owner->alive.load()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Skin requires its live device/owner thread");
+      }
+
+      return m_owner->failed.load() ? Core::fail(Core::ErrorCode::Unavailable, "Skin device failed")
+                                    : Core::Result<void>{};
+    }
+  };
+
+  SkinnedMesh::SkinnedMesh() noexcept = default;
+
+  SkinnedMesh::SkinnedMesh(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  SkinnedMesh::SkinnedMesh(const SkinnedMesh&) noexcept = default;
+
+  auto SkinnedMesh::operator=(const SkinnedMesh&) noexcept -> SkinnedMesh& = default;
+
+  SkinnedMesh::SkinnedMesh(SkinnedMesh&&) noexcept = default;
+
+  auto SkinnedMesh::operator=(SkinnedMesh&&) noexcept -> SkinnedMesh& = default;
+
+  SkinnedMesh::~SkinnedMesh() = default;
+
+  auto SkinnedMesh::info() const -> Core::Result<SkinInfo> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Skin is empty or moved");
+    }
+
+    auto valid = m_impl->check();
+    return valid ? Core::Result<SkinInfo>{m_impl->m_info} : std::unexpected(valid.error());
+  }
+
+  auto SkinnedMesh::mesh() const -> Core::Result<Mesh> {
+    auto valid = info();
+    return valid ? Core::Result<Mesh>{m_impl->m_mesh} : std::unexpected(valid.error());
   }
 
   struct RenderTarget::Impl {
@@ -491,6 +563,9 @@ namespace Dot::Graphics {
     wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
+    wgpu::BindGroupLayout m_skinLayout;
+    wgpu::ComputePipeline m_skinVertices;
+    wgpu::ComputePipeline m_skinFaces;
     wgpu::Surface surface;
 #if defined(__APPLE__)
     SDL_MetalView metalView{};
@@ -2735,8 +2810,10 @@ namespace Dot::Graphics {
   auto Renderer::create(Platform::Window* window, const RendererConfig& config)
       -> Core::Result<Renderer> {
     if (config.maxTextures == 0 || config.maxTextures > 4096 || config.maxTextureBytes == 0
-        || config.maxTextureBytes > 512 * 1024 * 1024) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture residency budget");
+        || config.maxTextureBytes > 512 * 1024 * 1024 || config.maxSkins == 0
+        || config.maxSkins > 1024 || config.maxSkinBytes == 0
+        || config.maxSkinBytes > 512 * 1024 * 1024) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture/skin residency budget");
     }
 
     auto settings = validatePostProcess(config.postProcess);
@@ -2949,18 +3026,47 @@ namespace Dot::Graphics {
     mesh->hasNormals = surface->hasNormals;
     mesh->hasNormalMapFrame = surface->hasNormalMapFrame;
     mesh->hasTangents = surface->hasTangents;
+    mesh->m_uvFrame = surface->hasNormals;
+    const auto corners = data.indices.empty() ? data.vertices.size() : data.indices.size();
+
+    for (std::size_t face = 0; !surface->hasNormalMapFrame && mesh->m_uvFrame && face < corners;
+         face += 3) {
+      const auto vertex = [&](std::size_t i) -> const Vertex& {
+        return data.vertices[data.indices.empty() ? face + i : data.indices[face + i]];
+      };
+      const auto& a = vertex(0);
+      const auto& b = vertex(1);
+      const auto& c = vertex(2);
+      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
+      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
+      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
+      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
+      const auto determinant = ux * vy - uy * vx;
+      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
+      mesh->m_uvFrame = mesh->hasTangents
+                        || (scale > 0 && std::abs(determinant) >= 1e-12
+                            && std::abs(determinant) > scale * 1e-6);
+
+      for (const auto* v : {&a, &b, &c}) {
+        mesh->m_uvFrame
+            = mesh->m_uvFrame && std::abs(v->texCoord.x) <= 1e6 && std::abs(v->texCoord.y) <= 1e6;
+      }
+    }
+
     mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
     mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
     ErrorScope scope(gpu.instance, gpu.device);
     wgpu::BufferDescriptor descriptor;
     descriptor.size = mesh->vertexBytes;
-    descriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+    descriptor.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst
+                       | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::Storage;
     mesh->vertices = gpu.device.CreateBuffer(&descriptor);
     gpu.queue.WriteBuffer(mesh->vertices, 0, data.vertices.data(), mesh->vertexBytes);
 
     if (!data.indices.empty()) {
       descriptor.size = mesh->indexBytes;
-      descriptor.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
+      descriptor.usage
+          = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage;
       mesh->indices = gpu.device.CreateBuffer(&descriptor);
       gpu.queue.WriteBuffer(mesh->indices, 0, data.indices.data(), mesh->indexBytes);
     }
@@ -2976,6 +3082,395 @@ namespace Dot::Graphics {
     gpu.diagnostics->indexBytes.fetch_add(mesh->indexBytes);
     mesh->tracked = true;
     return Mesh(std::move(mesh));
+  }
+
+  namespace {
+    auto mappedSkinWords(const wgpu::Instance& instance, const wgpu::Buffer& buffer,
+                         std::size_t bytes) -> Core::Result<std::vector<std::uint32_t>> {
+      auto pending = std::make_shared<Pending<bool>>();
+      pending->error = "Skin buffer mapping failed";
+      const auto future = buffer.MapAsync(
+          wgpu::MapMode::Read, 0, bytes, wgpu::CallbackMode::WaitAnyOnly,
+          [pending](wgpu::MapAsyncStatus status, wgpu::StringView message) noexcept {
+            pending->value = status == wgpu::MapAsyncStatus::Success;
+
+            if (!pending->value) {
+              describeFailure(pending->error, "Skin readback", static_cast<unsigned>(status),
+                              message);
+            }
+          });
+      auto ready = wait(instance, future, "Skin readback");
+
+      if (!ready) {
+        buffer.Destroy();
+        return std::unexpected(ready.error());
+      }
+
+      if (!pending->value) {
+        return Core::fail(Core::ErrorCode::External, pending->error);
+      }
+
+      const auto* data = buffer.GetConstMappedRange(0, bytes);
+
+      if (!data) {
+        buffer.Unmap();
+        return Core::fail(Core::ErrorCode::External, "Skin readback returned no bytes");
+      }
+
+      try {
+        std::vector<std::uint32_t> result(bytes / 4);
+        std::memcpy(result.data(), data, bytes);
+        buffer.Unmap();
+        return result;
+      } catch (const std::exception& error) {
+        buffer.Unmap();
+        return Core::fail(Core::ErrorCode::External,
+                          "Skin readback allocation: " + std::string(error.what()));
+      }
+    }
+
+    auto skinBound(std::uint32_t encoded) -> float {
+      const auto bits = (encoded & 0x80000000U) != 0 ? encoded ^ 0x80000000U : ~encoded;
+      return std::bit_cast<float>(bits);
+    }
+  }  // namespace
+
+  auto Renderer::createSkin(const Mesh& source, Animation::Skin skin) -> Core::Result<SkinnedMesh> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
+    }
+
+    auto valid = m_impl->check();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto description = skin.description();
+
+    if (!description) {
+      return std::unexpected(description.error());
+    }
+
+    auto& gpu = *m_impl;
+
+    if (!source.m_impl || source.m_impl->owner != gpu.diagnostics || source.m_impl->m_skinned
+        || source.m_impl->info.vertices != (*description)->vertices.size()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Skin requires a same-device static mesh with matching vertex count");
+    }
+
+    const auto sourceBytes = source.m_impl->vertexBytes;
+    const auto weightBytes = (*description)->vertices.size() * sizeof(Animation::SkinInfluence);
+    const auto paletteBytes = (*description)->inverseBindMatrices.size() * sizeof(Math::Mat4);
+    const auto bytes = sourceBytes + weightBytes + paletteBytes + 48
+                       + (source.m_impl->info.indices == 0 ? 4U : 0U);
+
+    if (gpu.diagnostics->m_skins.load() >= gpu.config.maxSkins || bytes > gpu.config.maxSkinBytes
+        || gpu.diagnostics->m_skinBytes.load() > gpu.config.maxSkinBytes - bytes) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Skin residency budget exceeded");
+    }
+
+    try {
+      auto state = std::make_shared<SkinnedMesh::Impl>();
+      state->m_owner = gpu.diagnostics;
+      state->m_skin = std::move(skin);
+      state->m_info = {source.m_impl->info.vertices,
+                       static_cast<std::uint32_t>((*description)->inverseBindMatrices.size()),
+                       bytes, 0, source.m_impl->bounds};
+      auto output = std::make_shared<Mesh::Impl>();
+      output->owner = gpu.diagnostics;
+      output->m_source = source.m_impl;
+      output->m_skinned = true;
+      output->info = source.m_impl->info;
+      output->bounds = source.m_impl->bounds;
+      output->hasNormals = source.m_impl->hasNormals;
+      output->hasTangents = source.m_impl->hasTangents;
+      output->hasNormalMapFrame = source.m_impl->hasNormalMapFrame;
+      output->m_uvFrame = source.m_impl->m_uvFrame;
+      output->indices = source.m_impl->indices;
+      output->vertexBytes = sourceBytes;
+      ErrorScope scope(gpu.instance, gpu.device);
+      const auto allocate = [&](std::uint64_t size, wgpu::BufferUsage usage) {
+        wgpu::BufferDescriptor descriptor;
+        descriptor.size = size;
+        descriptor.usage = usage;
+        return gpu.device.CreateBuffer(&descriptor);
+      };
+      auto encoder = gpu.device.CreateCommandEncoder();
+
+      for (auto& buffer : state->m_vertices) {
+        buffer
+            = allocate(sourceBytes, wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Storage
+                                        | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc);
+        encoder.CopyBufferToBuffer(source.m_impl->vertices, 0, buffer, 0, sourceBytes);
+      }
+
+      output->vertices = state->m_vertices[0];
+      state->m_weights
+          = allocate(weightBytes, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst);
+      state->m_palette
+          = allocate(paletteBytes, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst);
+      state->m_report = allocate(
+          32, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc);
+      state->m_parameters = allocate(16, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst);
+      state->m_indices = source.m_impl->indices;
+
+      if (!state->m_indices) {
+        state->m_indices = allocate(4, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst);
+      }
+
+      const std::array<std::uint32_t, 4> parameters{
+          output->info.indices,
+          (output->info.indices == 0 ? output->info.vertices : output->info.indices) / 3, 0, 0};
+      gpu.queue.WriteBuffer(state->m_parameters, 0, parameters.data(), sizeof(parameters));
+      gpu.queue.WriteBuffer(state->m_weights, 0, (*description)->vertices.data(), weightBytes);
+      auto commands = encoder.Finish();
+      gpu.queue.Submit(1, &commands);
+      valid = scope.finish();
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      gpu.diagnostics->meshes.fetch_add(1);
+      gpu.diagnostics->vertexBytes.fetch_add(sourceBytes);
+      output->tracked = true;
+      state->m_mesh = Mesh(std::move(output));
+      gpu.diagnostics->m_skins.fetch_add(1);
+      gpu.diagnostics->m_skinBytes.fetch_add(bytes);
+      state->m_tracked = true;
+      return SkinnedMesh(std::move(state));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Create GPU skin: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
+    }
+
+    auto valid = m_impl->check();
+
+    if (!valid) {
+      return valid;
+    }
+
+    if (updates.size() > 128) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Skin update batch exceeds 128 controllers");
+    }
+
+    if (updates.empty()) {
+      return {};
+    }
+
+    auto& gpu = *m_impl;
+    std::set<const SkinnedMesh::Impl*> unique;
+    std::size_t vertices{};
+
+    for (const auto& update : updates) {
+      if (!update.skin || !update.skin->m_impl || update.skin->m_impl->m_owner != gpu.diagnostics
+          || !unique.insert(update.skin->m_impl.get()).second) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid/foreign/duplicate skin update");
+      }
+
+      const auto& state = *update.skin->m_impl;
+      valid = Animation::validateSkinPalette(state.m_skin, update.palette);
+
+      if (!valid) {
+        return valid;
+      }
+
+      if (state.m_info.updates == std::numeric_limits<std::uint64_t>::max()
+          || state.m_info.vertices > 4'000'000 - vertices) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Skin update vertex/counter capacity exceeded");
+      }
+
+      vertices += state.m_info.vertices;
+    }
+
+    try {
+      ErrorScope scope(gpu.instance, gpu.device);
+
+      if (!gpu.m_skinVertices) {
+        std::array<wgpu::BindGroupLayoutEntry, 7> entries{};
+
+        for (std::uint32_t i = 0; i < entries.size(); ++i) {
+          entries[i].binding = i;
+          entries[i].visibility = wgpu::ShaderStage::Compute;
+          entries[i].buffer.type = i == 6             ? wgpu::BufferBindingType::Uniform
+                                   : i == 3 || i == 4 ? wgpu::BufferBindingType::Storage
+                                                      : wgpu::BufferBindingType::ReadOnlyStorage;
+        }
+
+        wgpu::BindGroupLayoutDescriptor layoutDescriptor;
+        layoutDescriptor.entryCount = entries.size();
+        layoutDescriptor.entries = entries.data();
+        gpu.m_skinLayout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
+        wgpu::PipelineLayoutDescriptor pipelineLayout;
+        pipelineLayout.bindGroupLayoutCount = 1;
+        pipelineLayout.bindGroupLayouts = &gpu.m_skinLayout;
+        auto layout = gpu.device.CreatePipelineLayout(&pipelineLayout);
+        wgpu::ShaderSourceWGSL source;
+        source.code = Detail::skinningShader;
+        wgpu::ShaderModuleDescriptor shaderDescriptor;
+        shaderDescriptor.nextInChain = &source;
+        auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
+        wgpu::ComputePipelineDescriptor pipeline;
+        pipeline.layout = layout;
+        pipeline.compute.module = shader;
+        pipeline.compute.entryPoint = "skinVertices";
+        gpu.m_skinVertices = gpu.device.CreateComputePipeline(&pipeline);
+        pipeline.compute.entryPoint = "validateFaces";
+        gpu.m_skinFaces = gpu.device.CreateComputePipeline(&pipeline);
+      }
+
+      wgpu::BufferDescriptor readbackDescriptor;
+      readbackDescriptor.size = updates.size() * 32;
+      readbackDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+      auto readback = gpu.device.CreateBuffer(&readbackDescriptor);
+      auto encoder = gpu.device.CreateCommandEncoder();
+
+      for (std::size_t i = 0; i < updates.size(); ++i) {
+        const auto& update = updates[i];
+        auto& state = *update.skin->m_impl;
+        const auto& mesh = *state.m_mesh.m_impl;
+        const std::array<std::uint32_t, 8> initial{0, 0xffffffffU, 0xffffffffU, 0xffffffffU,
+                                                   0, 0,           0,           0};
+        gpu.queue.WriteBuffer(state.m_report, 0, initial.data(), sizeof(initial));
+        gpu.queue.WriteBuffer(state.m_palette, 0, update.palette.data(),
+                              update.palette.size_bytes());
+        const std::array buffers{mesh.m_source->vertices, state.m_weights,
+                                 state.m_palette,         state.m_vertices[state.m_next],
+                                 state.m_report,          state.m_indices,
+                                 state.m_parameters};
+        std::array<wgpu::BindGroupEntry, 7> entries{};
+
+        for (std::uint32_t binding = 0; binding < entries.size(); ++binding) {
+          entries[binding].binding = binding;
+          entries[binding].buffer = buffers[binding];
+          entries[binding].size = buffers[binding].GetSize();
+        }
+
+        wgpu::BindGroupDescriptor groupDescriptor;
+        groupDescriptor.layout = gpu.m_skinLayout;
+        groupDescriptor.entryCount = entries.size();
+        groupDescriptor.entries = entries.data();
+        auto group = gpu.device.CreateBindGroup(&groupDescriptor);
+        auto pass = encoder.BeginComputePass();
+        pass.SetPipeline(gpu.m_skinVertices);
+        pass.SetBindGroup(0, group);
+        pass.DispatchWorkgroups((mesh.info.vertices + 63) / 64);
+        pass.End();
+        pass = encoder.BeginComputePass();
+        pass.SetPipeline(gpu.m_skinFaces);
+        pass.SetBindGroup(0, group);
+        const auto faces = (mesh.info.indices == 0 ? mesh.info.vertices : mesh.info.indices) / 3;
+        pass.DispatchWorkgroups((faces + 63) / 64);
+        pass.End();
+        encoder.CopyBufferToBuffer(state.m_report, 0, readback, i * 32, 32);
+      }
+
+      auto commands = encoder.Finish();
+      gpu.queue.Submit(1, &commands);
+      valid = scope.finish();
+
+      if (!valid) {
+        gpu.m_skinVertices = {};
+        gpu.m_skinFaces = {};
+        gpu.m_skinLayout = {};
+        return valid;
+      }
+
+      auto report = mappedSkinWords(gpu.instance, readback, updates.size() * 32);
+
+      if (!report) {
+        return std::unexpected(report.error());
+      }
+
+      std::vector<Bounds> bounds;
+      bounds.reserve(updates.size());
+
+      for (std::size_t i = 0; i < updates.size(); ++i) {
+        const auto* words = report->data() + i * 8;
+        const Bounds value{{skinBound(words[1]), skinBound(words[2]), skinBound(words[3])},
+                           {skinBound(words[4]), skinBound(words[5]), skinBound(words[6])}};
+
+        if (words[0] != 0 || !Math::isFinite(value.minimum) || !Math::isFinite(value.maximum)
+            || value.minimum.x > value.maximum.x || value.minimum.y > value.maximum.y
+            || value.minimum.z > value.maximum.z) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "GPU skin deformation invalid at batch index " + std::to_string(i)
+                                + ": singular/overflow/tangent seam (" + std::to_string(words[0])
+                                + ")");
+        }
+
+        bounds.push_back(value);
+      }
+
+      for (std::size_t i = 0; i < updates.size(); ++i) {
+        auto& state = *updates[i].skin->m_impl;
+        auto& mesh = *state.m_mesh.m_impl;
+        mesh.vertices = state.m_vertices[state.m_next];
+        mesh.bounds = bounds[i];
+        mesh.hasNormalMapFrame = mesh.m_uvFrame && (*report)[i * 8 + 7] == 0;
+        state.m_info.bounds = bounds[i];
+        ++state.m_info.updates;
+        state.m_next ^= 1U;
+      }
+
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Update GPU skins: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::readSkin(const SkinnedMesh& skin) -> Core::Result<std::vector<Vertex>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
+    }
+
+    auto valid = m_impl->check();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    if (!skin.m_impl || skin.m_impl->m_owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Readback requires a same-device skin");
+    }
+
+    auto& gpu = *m_impl;
+    const auto& mesh = *skin.m_impl->m_mesh.m_impl;
+    ErrorScope scope(gpu.instance, gpu.device);
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = mesh.vertexBytes;
+    descriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+    auto buffer = gpu.device.CreateBuffer(&descriptor);
+    auto encoder = gpu.device.CreateCommandEncoder();
+    encoder.CopyBufferToBuffer(mesh.vertices, 0, buffer, 0, mesh.vertexBytes);
+    auto commands = encoder.Finish();
+    gpu.queue.Submit(1, &commands);
+    valid = scope.finish();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto words = mappedSkinWords(gpu.instance, buffer, static_cast<std::size_t>(mesh.vertexBytes));
+
+    if (!words) {
+      return std::unexpected(words.error());
+    }
+
+    std::vector<Vertex> vertices(mesh.info.vertices);
+    std::memcpy(vertices.data(), words->data(), static_cast<std::size_t>(mesh.vertexBytes));
+    return vertices;
   }
 
   auto validateTextureOptions(const TextureOptions& options) -> Core::Result<void> {
@@ -3209,7 +3704,9 @@ namespace Dot::Graphics {
                          stats.environments.load(),
                          stats.environmentBytes.load(),
                          m_impl->shadowBytes,
-                         m_impl->occlusionStorageBytes};
+                         m_impl->occlusionStorageBytes,
+                         stats.m_skins.load(),
+                         stats.m_skinBytes.load()};
   }
 
   auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)

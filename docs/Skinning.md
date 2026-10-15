@@ -30,9 +30,44 @@ ctest --preset debug -R '^(skin\.|runtime.skinning$)'
 build/debug/bin/DotRuntimeAcceptance --skinning-test build/debug/tests/animation_acceptance
 ```
 
-The development-only acceptance writes bind and independently deformed DotMesh
-artifacts. Unit cases cover eight influences, quantization normalization, bind
-identity, mesh-local order, nonuniform/reflected normal and tangent frames, invalid
-weights/indices/affine matrices, exact capacities, source preservation and shared
-lifetime. GPU skinning, scene binding/persistence, glTF skin import, editor workflows
-and populated-game scale remain unfinished at this foundation stage.
+The development-only acceptance now uses actual scene joints and node animation
+to drive GPU skinning, writes bind/reference/GPU DotMesh data plus nine PNG frames
+and compares positions/normals and actual physical/shadow/AO pixels. Unit data/
+reference cases still create no device. Imported skin assets, persisted scene
+bindings, editor skin authoring and populated-game scale remain unfinished.
+
+## GPU deformation
+
+Renderer::createSkin shares a same-device static mesh and an immutable skin. It
+checks vertex counts and residency before allocating owned weights, palette, two
+posed vertex buffers, parameters and status. RendererConfig permits 1..1024 skin
+controllers and 1 byte..512 MiB of extra skin storage; source/current posed vertices
+remain in ordinary mesh counters. A new controller exposes bind geometry with zero
+updates. Dynamic/foreign sources are rejected; no recursive skin chain is created.
+
+A SkinnedMesh copy shares one controller. mesh() returns the posed Mesh view; all
+color, depth/shadow, SSAO-guide and picking paths use its same current vertex buffer.
+A retained view freezes the last successful geometry when the controller retires,
+and retains the static input/index buffers. Queries and updates require the creating
+thread and live device; quiescent destruction can outlive the renderer.
+
+Renderer::updateSkins accepts up to 128 different controllers/four million vertices.
+It validates the complete CPU request before queue writes, computes packed vertices
+and tangent frames on GPU, checks triangle handedness, and reduces signed float
+bounds through monotonic integer atomic keys. A compact status batch is mapped once;
+only after every result succeeds are all buffers, bounds and counters published.
+Invalid palettes, blended singularity, float overflow or handedness seams retain
+all previous views. Source geometry is always used, so poses do not accumulate.
+
+The WGSL source lives separately in Skinning.wgsl and is embedded privately by the
+normal shader target. It rescales positions before arithmetic to detect overflow
+without depending on nonfinite propagation. The blended inverse-transpose direction
+uses cofactors and determinant sign; tangents are orthogonalized and reflected W
+is retained. Deformation can remove/recover a normal-map frame; eligibility combines
+static normals/UVs with current GPU triangle geometry.
+
+readSkin is explicit owned GPU vertex readback for diagnostics. Normal updates
+read only a compact status/bounds report, but that wait is synchronous. These APIs
+are not an asynchronous skin pipeline or populated-game frame-time guarantee.
+Scene binding/persistence and glTF import must connect actual native resources
+before editor projects can use these controllers automatically.
