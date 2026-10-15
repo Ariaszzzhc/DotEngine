@@ -801,15 +801,29 @@ packaged CC0 Studio Small 09 HDRI; they do not modify scene camera, lighting, SS
 HDR targets, draw statistics or files. This is a static studio preview, not a
 material graph or a replacement for judging the material in its scene lighting.
 
-At most one synchronous preview job runs per editor frame, prioritizing the open
-material form. Play pauses generation. GUI caches at most 64 128px thumbnails plus
-one 256px material image (each CPU/GPU image set is at most 4.25 MiB), with least-
-recently-used eviction and bounded queue. Files decode/texture-upload under existing
-limits; the isolated resolver has a 64 MiB logical asset budget. GPU readback and
-upload bridge the two devices only when a preview is generated. No asynchronous,
-zero-copy or stall-free performance claim is made. Visible rows are clipped; cached
-images do not render again every frame. Save/import invalidates previews; Refresh
-files/previews rereads the catalog and invalidates cached images after external edits.
+One owned background thread performs source decoding, HDRI loading/baking, isolated
+GPU creation/rendering/readback and GPU destruction. The GUI submits owned requests
+and polls up to eight completed images per frame, then uploads current results to
+its own device. It does not wait for preview rendering. Same-slot requests coalesce;
+material forms have priority over FIFO thumbnails. Ticket/form checks discard late
+results after edits, refresh, cache eviction and close/reopen.
+
+The worker holds at most 64 pending requests, one active request and eight completed
+images (16..256px each, at most 2 MiB total completed pixels). Completion saturation
+pauses starting more work. GUI caches at most 64 128px thumbnails plus one 256px
+material image (each CPU/GPU image set at most 4.25 MiB); the isolated texture resolver
+retains its existing 64 MiB budget. These limits do not include bounded source
+image decode/transient rendering. Play pauses starting queued work; an already-active
+operation may finish, and results are collected after Stop. Refresh invalidates all
+tickets and requests provider recreation on its own thread, without a UI-thread join.
+Initialization errors remain explicit until refresh; there is no sample fallback.
+
+GUI texture uploads still occur on the main thread; this is not a zero-copy pipeline
+or a general stall-free/FPS guarantee. Close/destruction cancels queued work and
+joins the worker, allowing an active file/GPU call to finish safely. No worker is
+detached or forcibly interrupted. Cached images remain immutable until save/import
+or explicit refresh; visible rows are clipped. Scene/model/audio/HDR/script thumbnail
+formats and asynchronous model import are separate unfinished work.
 
 Workspace GUI and automation share these strict commands:
 
@@ -828,7 +842,9 @@ root. Asset selection/directory requests validate against the current catalog.
 `request-preview` queues supported files and does not claim generation succeeded.
 `preview-assets` and `inspect.workspace.previews` report pending count, processed jobs,
 ready/error/warning states, current view/directory, device presence and material
-preview readiness/pending/error matched to the current form. Dirty material forms must be saved/discarded before asset
+preview readiness/pending/error matched to the current form. Worker state includes
+active/paused/stopped, pending/completed and submitted/started/finished/discarded
+counters. Dirty material forms must be saved/discarded before asset
 selection changes. `captureAssetPreview` returns owned pixels only for completed,
 current cached previews; stale/pending/failed requests return errors. Scene/model
 hierarchy, HDR panorama, audio and script thumbnails are not implemented.

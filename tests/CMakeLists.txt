@@ -70,6 +70,7 @@ add_executable(DotTests
     TransformToolTests.cpp
     ResourceTests.cpp
     MaterialDocumentTests.cpp
+    PreviewWorkerTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
     AudioHostTests.cpp

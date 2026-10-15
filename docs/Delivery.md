@@ -303,3 +303,24 @@ and portable loader/rpath checks pass (13 regular Mach-O files, 3 relative links
 QA instances/request scratch and owned staging are closed/removed. Only arm64 macOS
 validated. Mature production authoring and realistic polished Prism Relay remain
 incomplete; the full engine/editor/game objective stays active.
+
+
+The 2026-10-15 editor stage fixes real Hierarchy mouse-selection snapshot
+invalidation and adds owned asynchronous asset/material previews. Native mouse
+regression fails on the old inline action and passes with deferred selection;
+scene/history semantics remain intact. Preview source/HDRI/GPU work and destruction
+run on an owned thread with bounded queues, current-ticket publication, explicit
+errors, pause/reset and joined close. GUI uploads and model imports remain
+synchronous; this does not establish a general streaming system.
+
+The combined stage passes 967/967 Debug (219.82s) and 967/967 Release/NDEBUG
+(48.18s) on arm64 macOS: 903 doctest identities and 64 executable/script checks.
+All 310 C/C++ and 16 WGSL sources pass established formatting checks. Actual release
+UI inspection shows eight thumbnails/current copper sphere, nine completed jobs
+and no pending/error state; normal close returns exit 0. Mouse-selection proof
+comes from the native SDL regression, not the inconclusive CUA coordinate clicks.
+The refreshed ZIP contains 272 entries/48,635,402 bytes, with 240 exact payloads,
+CRC/modes/exclusions, font/HDRI/license checks, 13 regular Mach-O files/three links,
+strict signatures and relative/system loader references verified. Windows/Linux,
+production streaming and the full large-game/mature-editor target remain unvalidated
+or unfinished as documented in the roadmap.

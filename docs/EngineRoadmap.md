@@ -148,3 +148,11 @@ folder breadcrumbs, grid/list and project-wide search. Material Inspector has an
 isolated studio sphere for unsaved forms; failure states and scene isolation are
 verified. Asynchronous preview/import work, zero-copy previews, scene/model/audio
 thumbnails, material graphs and broader production authoring remain unfinished.
+
+
+Asset/material preview decoding, HDRI preparation, GPU rendering/readback and device
+lifetime now run on an owned background worker. Bounded queues/backpressure,
+coalescing/priority, stale result rejection, explicit initialization errors and joined
+shutdown are implemented. Main-thread GUI upload, synchronous model import, broader
+streaming/animation and production content workflows remain unfinished. This is
+not a general asynchronous asset pipeline or large-game readiness claim.

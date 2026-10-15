@@ -35,6 +35,7 @@ import Dot.Editor.Play;
 import Dot.Editor.Resources;
 import Dot.Editor.MaterialDocument;
 import Dot.Editor.AssetPreview;
+import Dot.Editor.PreviewWorker;
 import Dot.Assets.Image;
 import Dot.Editor.ScriptDiagnostics;
 import Dot.Platform.ExternalFiles;
@@ -279,16 +280,19 @@ namespace Dot::Editor {
       std::string error;
       std::string warning;
       std::uint64_t used{};
+      std::uint64_t ticket{};
     };
 
-    std::optional<AssetPreview> m_assetPreviewer;
+    std::optional<PreviewWorker> m_previewWorker;
+    std::string m_materialRequestedKey;
+    std::uint64_t m_materialTicket{};
+    bool m_previewsStopped{};
     std::map<std::string, PreviewEntry> m_thumbnails;
     std::deque<std::string> m_thumbnailQueue;
     PreviewEntry m_materialSample;
     std::string m_materialSampleKey;
     std::string m_previewServiceError;
     std::uint64_t m_previewClock{};
-    std::uint64_t m_previewJobs{};
     bool m_assetGrid{true};
     std::string m_assetDirectory{"assets"};
     std::uint64_t m_buffer{};
@@ -546,19 +550,44 @@ namespace Dot::Editor {
                            {"warning", entry.warning}});
       }
 
+      const auto worker = m_previewWorker ? m_previewWorker->stats().value() : PreviewWorkerStats{};
       return {{"entries", entries},
-              {"pending", m_thumbnailQueue.size()},
-              {"jobs", m_previewJobs},
-              {"device", m_assetPreviewer.has_value()},
-              {"serviceError", m_previewServiceError},
+              {"pending", m_thumbnailQueue.size() + worker.pending + worker.completed
+                              + (worker.active ? 1 : 0)},
+              {"jobs", worker.finished},
+              {"device", worker.ready},
+              {"serviceError", worker.initializationError.empty() ? m_previewServiceError
+                                                                  : worker.initializationError},
+              {"worker",
+               {{"pending", worker.pending},
+                {"completed", worker.completed},
+                {"active", worker.active},
+                {"paused", worker.paused},
+                {"stopped", worker.stopped || m_previewsStopped},
+                {"submitted", worker.submitted},
+                {"started", worker.started},
+                {"finished", worker.finished},
+                {"discarded", worker.discarded}}},
               {"materialReady", currentMaterial && m_materialSample.texture.has_value()},
-              {"materialPending", m_material.has_value() && !currentMaterial},
+              {"materialPending", m_material.has_value() && !currentMaterial && !m_previewsStopped},
               {"materialError", currentMaterial ? m_materialSample.error : std::string{}},
               {"layout", m_assetGrid ? "grid" : "list"},
               {"directory", m_assetDirectory}};
     }
 
-    auto clearPreviews() -> void {
+    auto stopPreviews() -> Core::Result<void> {
+      m_previewsStopped = true;
+      m_thumbnailQueue.clear();
+      return m_previewWorker ? m_previewWorker->stop() : Core::Result<void>{};
+    }
+
+    auto clearPreviews(bool resetProvider = false) -> void {
+      if (m_previewWorker) {
+        m_previewWorker->invalidate(resetProvider).value();
+      }
+
+      m_materialRequestedKey.clear();
+      m_materialTicket = 0;
       m_thumbnails.clear();
       m_thumbnailQueue.clear();
       m_materialSample = {};
@@ -567,7 +596,7 @@ namespace Dot::Editor {
     }
 
     auto requestPreview(const std::string& path) -> void {
-      if (!assetPreviewKind(path)) {
+      if (m_previewsStopped || !assetPreviewKind(path)) {
         return;
       }
 
@@ -582,6 +611,11 @@ namespace Dot::Editor {
         auto oldest = std::ranges::min_element(m_thumbnails, {},
                                                [](const auto& item) { return item.second.used; });
         const auto evicted = oldest->first;
+
+        if (m_previewWorker) {
+          m_previewWorker->cancel("asset/" + evicted).value();
+        }
+
         m_thumbnails.erase(oldest);
         std::erase(m_thumbnailQueue, evicted);
       }
@@ -592,34 +626,34 @@ namespace Dot::Editor {
       m_thumbnailQueue.push_back(path);
     }
 
-    auto generatePreview(const std::string& path, std::uint32_t size,
-                         const Assets::MaterialDescription* material = nullptr) -> PreviewEntry {
-      ++m_previewJobs;
-
-      if (!m_assetPreviewer && m_previewServiceError.empty()) {
-        auto location = resource("environments");
-        auto files = location ? Core::FileSystem::open(*location)
-                              : Core::Result<Core::FileSystem>{std::unexpected(location.error())};
-        auto hdr = files ? Assets::loadHdrImage(*files, "studio_small_09_1k.hdr")
-                         : Core::Result<Graphics::HdrImage>{std::unexpected(files.error())};
-        auto preview = hdr ? AssetPreview::create(m_project->files().value(), &*hdr)
-                           : Core::Result<AssetPreview>{std::unexpected(hdr.error())};
-
-        if (preview) {
-          m_assetPreviewer.emplace(std::move(*preview));
-        } else {
-          m_previewServiceError = preview.error().message;
-        }
+    auto ensurePreviewWorker() -> Core::Result<void> {
+      if (m_previewsStopped) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Preview generation is stopped");
       }
 
+      if (m_previewWorker) {
+        return {};
+      }
+
+      auto location = resource("environments");
+
+      if (!location) {
+        return std::unexpected(location.error());
+      }
+
+      auto worker = createAssetPreviewWorker(m_project->files().value(),
+                                             *location / "studio_small_09_1k.hdr");
+
+      if (!worker) {
+        return std::unexpected(worker.error());
+      }
+
+      m_previewWorker.emplace(std::move(*worker));
+      return {};
+    }
+
+    auto receivePreview(Core::Result<AssetPreviewImage> rendered) -> PreviewEntry {
       PreviewEntry entry;
-
-      if (!m_assetPreviewer) {
-        entry.error = m_previewServiceError;
-        return entry;
-      }
-
-      auto rendered = m_assetPreviewer->render(path, size, material);
 
       if (!rendered) {
         entry.error = rendered.error().message;
@@ -643,42 +677,104 @@ namespace Dot::Editor {
       return entry;
     }
 
-    /** One synchronous preview job per editor frame, prioritized for the material
-     * form. Cache at most 64 128px thumbnails plus one 256px material sphere.
-     * 每编辑器帧至多一个同步预览任务，优先材质表单；缓存至多 64 张 128px 缩略图及
-     * 一张 256px 材质球，CPU/GPU 图像各自至多约 4.25 MiB。 */
+    /** Decode/bake/render/readback run on one owned worker. The GUI polls up to
+     * eight bounded results and uploads only current tickets; no wait for rendering.
+     * 解码、烘焙、渲染、回读由单一工作线程拥有；GUI 轮询至多八份有界结果，只上传当前
+     * 票号的图像，不等待渲染。 */
     auto updatePreviews() -> void {
-      if (playing()) {
+      if (playing() || m_previewsStopped) {
         return;
       }
 
       if (m_material) {
         const auto key = std::to_string(m_buffer) + m_materialForm.dump();
 
-        if (key != m_materialSampleKey) {
-          auto value = Assets::decodeMaterial(m_materialForm.dump());
+        if (key != m_materialRequestedKey) {
           m_materialSample = {};
+          m_materialSampleKey.clear();
+          m_materialTicket = 0;
 
-          if (value) {
-            m_materialSample = generatePreview(m_material->snapshot()->path, 256, &*value);
-          } else {
-            m_materialSample.error = value.error().message;
+          if (m_previewWorker) {
+            m_previewWorker->cancel("material").value();
           }
 
-          m_materialSampleKey = key;
-          return;
+          auto value = Assets::decodeMaterial(m_materialForm.dump());
+          auto available
+              = value ? ensurePreviewWorker() : Core::Result<void>{std::unexpected(value.error())};
+
+          if (!available) {
+            m_materialSample.error = available.error().message;
+            m_materialSampleKey = m_materialRequestedKey = key;
+          } else {
+            auto submitted = m_previewWorker->submit(
+                {"material", m_material->snapshot()->path, 256, std::move(*value), true});
+
+            if (submitted) {
+              m_materialTicket = *submitted;
+              m_materialRequestedKey = key;
+            } else if (submitted.error().code != Core::ErrorCode::Unavailable) {
+              m_materialSample.error = submitted.error().message;
+              m_materialSampleKey = m_materialRequestedKey = key;
+            }
+          }
         }
       }
 
-      if (!m_thumbnailQueue.empty()) {
-        auto path = std::move(m_thumbnailQueue.front());
-        m_thumbnailQueue.pop_front();
+      for (int count = 0; count < 8 && !m_thumbnailQueue.empty(); ++count) {
+        const auto path = m_thumbnailQueue.front();
         auto found = m_thumbnails.find(path);
 
-        if (found != m_thumbnails.end()) {
-          const auto used = found->second.used;
-          found->second = generatePreview(path, 128);
-          found->second.used = used;
+        if (found == m_thumbnails.end()) {
+          m_thumbnailQueue.pop_front();
+          continue;
+        }
+
+        auto available = ensurePreviewWorker();
+
+        if (!available) {
+          found->second.error = available.error().message;
+          m_previewServiceError = available.error().message;
+          m_thumbnailQueue.pop_front();
+          continue;
+        }
+
+        auto submitted = m_previewWorker->submit({"asset/" + path, path, 128, {}, false});
+
+        if (!submitted && submitted.error().code == Core::ErrorCode::Unavailable) {
+          break;
+        }
+
+        m_thumbnailQueue.pop_front();
+
+        if (submitted) {
+          found->second.ticket = *submitted;
+        } else {
+          found->second.error = submitted.error().message;
+        }
+      }
+
+      if (!m_previewWorker) {
+        return;
+      }
+
+      auto completed = m_previewWorker->takeCompleted().value();
+
+      for (auto& item : completed) {
+        if (item.slot == "material") {
+          if (m_material && item.ticket == m_materialTicket
+              && m_materialRequestedKey == std::to_string(m_buffer) + m_materialForm.dump()) {
+            m_materialSample = receivePreview(std::move(item.result));
+            m_materialSampleKey = m_materialRequestedKey;
+          }
+        } else if (item.slot.starts_with("asset/")) {
+          auto found = m_thumbnails.find(item.slot.substr(6));
+
+          if (found != m_thumbnails.end() && found->second.ticket == item.ticket) {
+            const auto used = found->second.used;
+            found->second = receivePreview(std::move(item.result));
+            found->second.used = used;
+            found->second.ticket = item.ticket;
+          }
         }
       }
     }
@@ -690,8 +786,14 @@ namespace Dot::Editor {
                 : Json(nullptr);
 
       if (!m_material) {
+        if (m_previewWorker) {
+          m_previewWorker->cancel("material").value();
+        }
+
         m_materialSample = {};
         m_materialSampleKey.clear();
+        m_materialRequestedKey.clear();
+        m_materialTicket = 0;
       }
 
       m_renderedView.reset();
@@ -811,6 +913,11 @@ namespace Dot::Editor {
       }
 
       m_play.emplace(std::move(*created));
+
+      if (m_previewWorker) {
+        m_previewWorker->setPaused(true).value();
+      }
+
       m_playDiagnostics = Json::array();
       m_playError.reset();
       m_gameInput = Platform::InputState{};
@@ -835,6 +942,10 @@ namespace Dot::Editor {
         m_playError = stopped.error();
         diagnostic(errorJson(stopped.error()));
         return std::unexpected(stopped.error());
+      }
+
+      if (m_previewWorker) {
+        m_previewWorker->setPaused(false).value();
       }
 
       report(*stopped);
@@ -1119,7 +1230,7 @@ namespace Dot::Editor {
             return std::unexpected(refreshed.error());
           }
 
-          clearPreviews();
+          clearPreviews(true);
         }
 
         return Json{{"ok", true}, {"previews", previewStatus()}}.dump();
@@ -1171,6 +1282,10 @@ namespace Dot::Editor {
           m_requestedPane = "inspector";
           requestPreview(path);
         } else {
+          if (m_previewsStopped) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Preview generation is stopped");
+          }
+
           if (!assetPreviewKind(path)) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
                               "Asset has no implemented preview type");
@@ -2003,7 +2118,13 @@ namespace Dot::Editor {
           m_axisDrag.reset();
           m_rotationDrag.reset();
           auto stopped = stopPlay();
+          auto previewsStopped = stopPreviews();
           m_application->stop();
+
+          if (!previewsStopped) {
+            m_closeError = previewsStopped.error();
+            return std::unexpected(previewsStopped.error());
+          }
 
           if (!stopped) {
             m_closeError = stopped.error();
@@ -4919,6 +5040,11 @@ namespace Dot::Editor {
 
         if (!m_pendingClose) {
           auto stopped = stopPlay();
+          auto previewsStopped = stopPreviews();
+
+          if (!previewsStopped) {
+            return std::unexpected(previewsStopped.error());
+          }
 
           if (!stopped) {
             return std::unexpected(stopped.error());

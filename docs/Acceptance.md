@@ -243,3 +243,16 @@ AssetBrowserTests drives thumbnail requests, folder/search/list commands, indepe
 material form previews/errors, cache/queue limits and explicit failed-source status.
 It compares main viewport pixels, camera and drawing counters before/after previews.
 These native/GPU checks remain compiled only with BUILD_TESTING.
+
+
+PreviewWorkerTests uses controlled provider gates without a GPU/window to establish
+that submit/poll continue while work is blocked, same-slot/priority ordering, late
+active discard, 64-request/8-result bounds, completion backpressure, initialization
+failure/reset, pause, exceptions/output validation, owner/move and joined stop with
+provider destruction on its worker thread. AssetPreviewTests additionally creates,
+renders and destroys the real offscreen renderer on that thread and checks actual
+pixels/missing studio errors. Native asset browser cases await actual completion
+with deadlines, retain pixel/source/isolation assertions, and exercise rapid form
+changes, refresh/close/reopen generations, joined close and post-close rejection.
+Workspace Play tests assert pause/resume state. Provider-gated integration tests do
+not substitute for those real GPU/native acceptance cases.

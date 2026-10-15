@@ -710,3 +710,12 @@ reuses its bounded shared texture loading, color-space/normal checks and complet
 load publication for independent mesh draws without scene or lighting mutation.
 Editor AssetPreview owns a separate stable renderer/resolver and explicit studio
 lights/optional baked HDRI, returning bounded display-encoded CPU images.
+
+
+Editor PreviewWorker owns the isolated AssetPreview provider on its background
+thread, including creation, studio decode/bake, render/readback and destruction.
+Only owned request descriptions and display pixels cross the queue. GUI upload
+and its renderer remain on the main thread. Same-slot tickets/generation checks,
+bounded completions and joined shutdown preserve device/thread ownership; actual
+worker GPU and native UI tests cover the path. Active driver calls are not forcibly
+canceled, so shutdown may wait for their completion.

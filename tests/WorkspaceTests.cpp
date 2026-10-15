@@ -572,6 +572,9 @@ TEST_CASE("workspace.material_staging_preview_history_save_and_reopen_use_real_s
   savedBlue.baseColor = {0, 0, 1, 1};
   REQUIRE(Dot::Assets::saveMaterial(files, "assets/surface.dotmaterial", savedBlue));
   command(workspace, {{"command", "play"}});
+  CHECK(Json::parse(workspace.dispatch("{\"command\":\"preview-assets\"}")
+                        .value())["previews"]["worker"]["paused"]
+            .get<bool>());
   REQUIRE(workspace.step(16ms));
   auto game = workspace.captureViewport().value();
   bool bluePixel{};
@@ -589,6 +592,9 @@ TEST_CASE("workspace.material_staging_preview_history_save_and_reopen_use_real_s
       {"revision", reopened["revision"]},
       {"value", value}}.dump()));
   command(workspace, {{"command", "stop-play"}});
+  CHECK_FALSE(Json::parse(workspace.dispatch("{\"command\":\"preview-assets\"}")
+                              .value())["previews"]["worker"]["paused"]
+                  .get<bool>());
   REQUIRE(workspace.step(16ms));
   CHECK(workspace.captureViewport()->pixels == red);
   REQUIRE(files.writeTextAtomic("assets/surface.dotmaterial", savedSource));

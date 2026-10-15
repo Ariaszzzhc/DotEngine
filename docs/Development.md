@@ -4183,3 +4183,64 @@ files pass clang-format; 16 WGSL files pass established spacing/line checks.
 Only arm64 macOS was validated. CUA coordinate-click attempts on the release window
 did not change selection, so they are not counted as mouse-selection proof; the
 SDL mouse-down/up test supplies that evidence.
+
+
+### 2026-10-15 — Owned asynchronous editor previews
+
+Added separate Dot.Editor.PreviewWorker interface/implementation and an owned
+jthread service. Source decoding, packaged studio HDRI loading/baking, isolated
+GPU creation/rendering/readback and provider destruction run on the worker. The
+owner submits owned requests and polls bounded display pixels; only GUI texture
+upload remains on the GUI thread. No source/GUI/device borrow crosses threads.
+
+Queues hold at most 64 waiting requests, one active request and eight completions.
+Completion backpressure prevents unbounded images. Monotonic slot tickets coalesce
+queued/completed work and reject late active results after form changes, refresh,
+eviction or close/reopen. Material forms have priority over FIFO thumbnails.
+Initialization failures stay explicit until refresh requests provider recreation
+on its worker. Play pauses starting work; Stop resumes. Accepted close cancels
+waiting work and joins active work, with no detached thread or fake GPU success.
+Active driver/file calls may finish before close returns; main-thread upload and
+model import remain synchronous, with no zero-copy or general FPS guarantee.
+
+Four controlled-provider integration cases exercise nonblocking submission/polling
+under a blocked job, priority/coalescing, late discard, capacity/backpressure,
+validation/exceptions, initialization reset, pause, owner/move and joined provider
+lifetime. They create no GPU/window. A real offscreen worker case verifies actual
+Metal pixels and missing-studio errors. Native workflows retain previous pixel/
+source/main-scene isolation coverage, awaiting actual completion with deadlines;
+new rapid-form/refresh/reopen/close checks reject stale samples and prove joined
+shutdown/post-close rejection. Play tests also assert worker pause/resume.
+
+Foundation/provider/offscreen selection passed 5/5 (1.48s). An initial expanded
+native run exposed an incorrect test assumption that ACES leaves a red material's
+blue channel exactly zero (actual value 9); the test now compares the entire
+reopened image against an independently completed initial saved-red render. It
+retains the staged-blue pixel assertions. Final focused checks passed 11/11
+(11.33s). Both final builds succeeded; full Debug passed 967/967 (219.82s), and
+Release/NDEBUG passed 967/967 (48.18s), including the separate Hierarchy fix.
+Final whitespace/comment-only rebuilds completed before Release verification.
+Inventory: 903 doctest identities plus 64 executable/script checks; overlapping
+labels unit 213, integration 640, gpu 189, offscreen 113, native 64, acceptance 114,
+compiler 135, platform 27, process 19 and audio-native 32. All 310 C/C++ and 16 WGSL
+files pass established formatting checks. Reviewed stable worker ownership,
+bounded transactional enqueue, callbacks outside queue locks, exception/error
+publication, exact form/ticket checks, pause/refresh and joined shutdown.
+
+The actual release-directory Feature Lab displays eight generated thumbnails and
+the real copper studio sphere. Inspection records nine finished jobs, no pending
+work/errors and a ready current material image. Normal close returns exit 0 and
+removes the control staging directory; source scene/material files were not saved.
+Refreshed ZIP through the owned archive target: 272 entries, 48,635,402 bytes, all
+240 file/link payloads match signed source. CRC/modes/exclusions, exact font/license
+and three HDRI copies/credit, cgltf notices, 13 regular Mach-O files/three relative
+links, strict signatures and portable loader/rpaths pass. Build caches, latest ZIP,
+audit/log evidence and private untracked document/artwork remain preserved.
+Only arm64 macOS was built/run; Windows/Linux remain implementation targets without
+local validation. Broader asynchronous imports/streaming, scene/model/audio
+thumbnails, material graphs, mature production authoring and polished realistic
+Prism Relay remain unfinished. The full engine/editor/game goal remains active.
+
+Final diff review added only blank separators around two control-flow blocks;
+clang-format/whitespace checks passed and the archive was rebuilt afterward.
+No executable behavior or test assertion changed after full-suite verification.

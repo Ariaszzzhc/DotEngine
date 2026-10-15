@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <thread>
@@ -10,6 +11,7 @@
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AssetPreview;
+import Dot.Editor.PreviewWorker;
 import Dot.Assets.Image;
 import Dot.Assets.Mesh;
 import Dot.Assets.Material;
@@ -109,4 +111,41 @@ TEST_CASE("asset_preview.material_sphere_mesh_bounds_hdr_normal_errors_and_no_so
   CHECK_FALSE(Editor::assetPreviewKind("../bad.png"));
   CHECK_FALSE(Editor::assetPreviewKind("scene.dotscene"));
   CHECK(Editor::assetPreviewKind("mesh.obj") == Editor::AssetPreviewKind::Mesh);
+}
+
+TEST_CASE("asset_preview.real_worker_owns_offscreen_preview_and_reports_missing_studio") {
+  using namespace Dot;
+  using namespace std::chrono_literals;
+  Fixture f;
+  f.image("source.png", {1, 1, {255, 0, 0, 255}});
+  const auto studio = std::filesystem::path(DOT_ENVIRONMENT_ASSETS) / "studio_small_09_1k.hdr";
+  auto worker = Editor::createAssetPreviewWorker(f.files, studio).value();
+  const auto ticket = worker.submit({"image", "source.png", 64, {}, false}).value();
+  const auto deadline = std::chrono::steady_clock::now() + 15s;
+  std::vector<Editor::PreviewCompletion> completed;
+
+  while (completed.empty() && std::chrono::steady_clock::now() < deadline) {
+    completed = worker.takeCompleted().value();
+    std::this_thread::sleep_for(1ms);
+  }
+
+  REQUIRE(completed.size() == 1);
+  CHECK(completed[0].ticket == ticket);
+  REQUIRE_MESSAGE(completed[0].result,
+                  (completed[0].result ? "" : completed[0].result.error().message));
+  CHECK(pixel(completed[0].result->image, 32, 32) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  REQUIRE(worker.stop());
+  auto bad = Editor::createAssetPreviewWorker(f.files, f.files.root() / "missing.hdr").value();
+  REQUIRE(bad.submit({"image", "source.png", 64, {}, false}));
+  const auto failedDeadline = std::chrono::steady_clock::now() + 3s;
+
+  while (bad.stats()->completed == 0 && std::chrono::steady_clock::now() < failedDeadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+
+  auto failed = bad.takeCompleted().value();
+  REQUIRE(failed.size() == 1);
+  CHECK_FALSE(failed[0].result);
+  CHECK_FALSE(bad.stats()->ready);
+  CHECK_FALSE(bad.stats()->initializationError.empty());
 }
