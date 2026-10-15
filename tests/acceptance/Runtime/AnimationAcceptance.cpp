@@ -81,6 +81,22 @@ namespace Dot::Runtime {
               "Animation failed to change real pixels or changed an unauthored channel");
         }
 
+        auto alternate = Clip::create({"Panel lift",
+                                       {{1,
+                                         Path::Translation,
+                                         Interpolation::Linear,
+                                         {{0, {0, 1.5F, 0, 0}}, {2, {0, .5F, 0, 0}}}}}})
+                             .value();
+        animator.setClip(scene, alternate).value();
+        auto switched = drawing.render(scene, 256, 256).value();
+        files.writeAtomic("animation-switch.png", Assets::encodeImage(switched).value()).value();
+
+        if (switched.pixels == initial.pixels || scene.transform(parent)->position.x != -1
+            || scene.transform(child)->scale.x != .5F) {
+          throw std::runtime_error(
+              "Clip switch did not restore former channels and render its new pose");
+        }
+
         animator.stop(scene).value();
 
         if (drawing.render(scene, 256, 256)->pixels != initial.pixels) {
@@ -94,7 +110,7 @@ namespace Dot::Runtime {
       }
 
       std::println(
-          "Animation acceptance passed: strict saved clip, hierarchical TRS playback, nine GPU "
+          "Animation acceptance passed: strict saved clip, hierarchical TRS playback, ten GPU "
           "frames, bind-pose restore and resource release");
       return 0;
     } catch (const std::exception& error) {

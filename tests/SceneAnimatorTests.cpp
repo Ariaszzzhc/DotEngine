@@ -198,3 +198,59 @@ TEST_CASE("animation.scene_final_world_overflow_rolls_back_valid_local_channels"
   CHECK(scene.entity(child)->transform.position.x == 0);
   CHECK(scene.worldTransform(child)->data[12] == 0);
 }
+
+TEST_CASE("animation.scene_clip_switch_restores_prior_fields_preserves_bind_pose_and_is_atomic") {
+  auto scene = World::Scene::create().value();
+  auto first = scene.createEntity().value();
+  auto second = scene.createEntity().value();
+  REQUIRE(scene.setTransform(first, {{7, 0, 0}}));
+  REQUIRE(scene.setTransform(second, {{0, 3, 0}}));
+  const std::array bindings{NodeBinding{0, first}, NodeBinding{1, second}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings).value();
+  REQUIRE(player.seek(scene, 1));
+  auto scale
+      = Clip::create(
+            {"Scale",
+             {{1, Path::Scale, Interpolation::Linear, {{0, {2, 2, 2, 0}}, {2, {4, 4, 4, 0}}}}}})
+            .value();
+  REQUIRE(player.setClip(scene, scale));
+  CHECK(scene.transform(first)->position.x == 7);
+  CHECK(scene.transform(second)->scale.x == 2);
+  CHECK(player.state()->time == 0);
+  REQUIRE(player.advance(scene, .5));
+  CHECK(scene.transform(second)->scale.x == 2.5F);
+  REQUIRE(player.configure(-1, false));
+  REQUIRE(player.setClip(scene, moving()));
+  CHECK(scene.transform(second)->scale.x == 1);
+  CHECK(scene.transform(first)->position.x == 4);
+  CHECK(player.state()->time == 2);
+  REQUIRE(player.stop(scene));
+  CHECK(scene.transform(first)->position.x == 7);
+  CHECK_FALSE(player.state()->playing);
+  auto missing = Clip::create({"Unbound",
+                               {{2, Path::Translation, Interpolation::Step, {{0, {1, 0, 0, 0}}}}}})
+                     .value();
+  CHECK_FALSE(player.setClip(scene, missing));
+  CHECK_FALSE(player.setClip(scene, Clip{}));
+  auto overflowParent = scene.createEntity().value();
+  REQUIRE(scene.setTransform(overflowParent, {{}, {}, {1e20F, 1e20F, 1e20F}}));
+  REQUIRE(scene.setParent(second, overflowParent));
+  auto overflow
+      = Clip::create(
+            {"Overflow", {{1, Path::Translation, Interpolation::Step, {{0, {1e20F, 0, 0, 0}}}}}})
+            .value();
+  CHECK_FALSE(player.setClip(scene, overflow));
+  CHECK(scene.transform(first)->position.x == 7);
+  CHECK(scene.transform(second)->position.y == 3);
+  CHECK(player.state()->time == 0);
+  CHECK_FALSE(player.state()->playing);
+  REQUIRE(player.play());
+  REQUIRE(player.seek(scene, 1));
+  CHECK(scene.transform(first)->position.x == 2);
+  auto moved = std::move(player);
+  CHECK_FALSE(player.setClip(scene, moving()));
+  bool rejected{};
+  std::thread worker([&] { rejected = !moved.setClip(scene, moving()); });
+  worker.join();
+  CHECK(rejected);
+}

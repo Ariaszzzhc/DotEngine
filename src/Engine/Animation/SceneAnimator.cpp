@@ -61,7 +61,8 @@ namespace Dot::Animation {
       return {};
     }
 
-    auto apply(World::Scene& scene, double time, bool restore = false) -> Core::Result<void> {
+    auto apply(World::Scene& scene, double time, bool restore = false,
+               const Clip* replacement = nullptr) -> Core::Result<void> {
       auto checked = checkScene(scene);
 
       if (!checked) {
@@ -69,10 +70,11 @@ namespace Dot::Animation {
       }
 
       try {
+        const auto& next = replacement ? *replacement : clip;
         std::vector<ChannelSample> samples;
 
         if (!restore) {
-          auto sampled = clip.sample(time);
+          auto sampled = next.sample(time);
 
           if (!sampled) {
             return std::unexpected(sampled.error());
@@ -82,29 +84,14 @@ namespace Dot::Animation {
         }
 
         std::map<std::uint32_t, World::Transform> poses;
+        const auto assign = [&](const Track& track, Math::Vec4 value) {
+          auto [entry, inserted] = poses.try_emplace(track.node);
 
-        for (const auto& [node, target] : targets) {
-          poses.emplace(node, scene.transform(target.entity).value());
-        }
-
-        const auto& tracks = clip.description().value()->tracks;
-
-        for (std::size_t index = 0; index < tracks.size(); ++index) {
-          const auto& track = tracks[index];
-          auto& pose = poses.at(track.node);
-          const auto& rest = targets.at(track.node).rest;
-          Math::Vec4 value{};
-
-          if (restore) {
-            value = track.path == Path::Translation
-                        ? Math::Vec4{rest.position.x, rest.position.y, rest.position.z, 0}
-                    : track.path == Path::Scale
-                        ? Math::Vec4{rest.scale.x, rest.scale.y, rest.scale.z, 0}
-                        : Math::Vec4{rest.rotation.x, rest.rotation.y, rest.rotation.z,
-                                     rest.rotation.w};
-          } else {
-            value = samples[index].value;
+          if (inserted) {
+            entry->second = scene.transform(targets.at(track.node).entity).value();
           }
+
+          auto& pose = entry->second;
 
           if (track.path == Path::Translation) {
             pose.position = {value.x, value.y, value.z};
@@ -113,10 +100,32 @@ namespace Dot::Animation {
           } else {
             pose.rotation = {value.x, value.y, value.z, value.w};
           }
+        };
+
+        if (restore || replacement) {
+          for (const auto& track : clip.description().value()->tracks) {
+            const auto& rest = targets.at(track.node).rest;
+            const auto value
+                = track.path == Path::Translation
+                      ? Math::Vec4{rest.position.x, rest.position.y, rest.position.z, 0}
+                  : track.path == Path::Scale
+                      ? Math::Vec4{rest.scale.x, rest.scale.y, rest.scale.z, 0}
+                      : Math::Vec4{rest.rotation.x, rest.rotation.y, rest.rotation.z,
+                                   rest.rotation.w};
+            assign(track, value);
+          }
+        }
+
+        if (!restore) {
+          const auto& tracks = next.description().value()->tracks;
+
+          for (std::size_t i = 0; i < tracks.size(); ++i) {
+            assign(tracks[i], samples[i].value);
+          }
         }
 
         std::vector<World::TransformUpdate> updates;
-        updates.reserve(targets.size());
+        updates.reserve(poses.size());
 
         for (const auto& [node, pose] : poses) {
           updates.push_back({targets.at(node).entity, pose});
@@ -179,10 +188,9 @@ namespace Dot::Animation {
           return Core::fail(Core::ErrorCode::NotFound,
                             "Animation target node is not bound: " + std::to_string(track.node));
         }
-
-        impl->targets.emplace(track.node, node->second);
       }
 
+      impl->targets = std::move(nodes);
       impl->clip = std::move(clip);
       return SceneAnimator(std::move(impl));
     } catch (const std::exception& error) {
@@ -334,4 +342,37 @@ namespace Dot::Animation {
 
     return applied;
   }
+
+  auto SceneAnimator::setClip(World::Scene& scene, Clip clip) -> Core::Result<void> {
+    auto current = state();
+
+    if (!current) {
+      return std::unexpected(current.error());
+    }
+
+    auto description = clip.description();
+
+    if (!description) {
+      return std::unexpected(description.error());
+    }
+
+    for (const auto& track : (*description)->tracks) {
+      if (!m_impl->targets.contains(track.node)) {
+        return Core::fail(Core::ErrorCode::NotFound, "Animation replacement target is not bound: "
+                                                         + std::to_string(track.node));
+      }
+    }
+
+    const auto time = current->speed < 0 ? clip.duration().value() : 0;
+    auto applied = m_impl->apply(scene, time, false, &clip);
+
+    if (applied) {
+      m_impl->clip = std::move(clip);
+      m_impl->playback.time = time;
+      m_impl->playback.playing = true;
+    }
+
+    return applied;
+  }
+
 }  // namespace Dot::Animation

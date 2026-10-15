@@ -155,7 +155,7 @@ unchanged descriptions retain clocks/rest poses, removed/disabled players releas
 playback, changed descriptions restart against the current local pose. Same-value
 assignments retain playback. Disk clip edits require a changed description or a new
 session. All library clips are validated, with 30000 aggregate channels/one million
-keys per scene. Active clip data is owned; unselected clips are checked then released.
+keys per scene. All immutable library clips are retained within that aggregate budget for native switching.
 
 Actual selected-channel writers must be disjoint across players. Rigid bodies on
 an animated node or ancestor are rejected until explicit animation/physics authority
@@ -178,3 +178,24 @@ copy/remapping, undo and invalid deletion. The standalone native export case rem
 its authoring tree after relocating the game; its script observes native animation
 motion and fails on stop if animation never advanced. This demonstrates the real
 runtime path, not production skinning/blending/character-animation readiness.
+
+
+## Runtime clip controls
+
+ScenePlayers provides owned state snapshots and explicit play/pause/stop/seek/
+configure controls. They synchronize descriptions without advancing time and leave
+saved player descriptions unchanged. Playing another library index restores the
+previous channels to original binding values and applies the new directional start
+in one local-transform transaction. Original bindings include every supplied node,
+so switching disjoint clips does not accumulate stale transforms. Speed/looping
+remain live runtime settings; same-clip play resumes unless restart is requested.
+Restart/first play uses the end for negative speed, zero otherwise. Stop restores
+only the selected animated channels and pauses at time zero.
+
+Clip selection validates the new actual writers against other players and rigid-body
+authority before applying. Failed targets, samples or final world transforms retain
+the old clip, complete pose and playback clock. Reads are observational snapshots
+of the last synchronized description; changed descriptions require synchronization.
+Controls hold no borrowed scene address and remain owner-thread APIs. The runnable
+`runtime.animation` acceptance now saves a tenth image, animation-switch.png, and
+verifies prior-channel restoration and exact bind-pose pixels after switch/stop.

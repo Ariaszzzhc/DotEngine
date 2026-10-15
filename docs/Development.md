@@ -4610,3 +4610,25 @@ The owned DotEditorArchive target succeeds. ZIP audit passes 272 entries/240 exa
 payloads, 48,839,304 bytes, CRC and executable modes, original font/HDRI/licenses and
 private/source exclusions. Strict signatures and portable loader references pass
 for 13 regular Mach-O files/three relative links; archive staging is removed.
+
+
+## 2026-10-15 — Native animation library control
+
+SceneAnimator now retains all original node bindings, restores outgoing animated
+fields and applies a replacement clip's directional start in one scene transform
+transaction. ScenePlayers owns bounded immutable clip libraries and exposes native
+state/play/pause/stop/seek/configure controls. Manual selections/configuration retain
+clocks across ordinary synchronization and never rewrite saved descriptions. New
+actual writers are checked against other players and rigid-body authority before
+switching; invalid samples/world transforms leave old pose/clip/clock unchanged.
+
+Reviewed scope/thread/move ownership, shared immutable clip lifetime, original rest
+poses across disjoint channels, synchronization and post-commit operations. CPU
+transaction cases and file integration cover pause/reverse/restart/seek/stop, failed
+clip/writer/physics selection, untouched authoring and playback after deleting an
+unselected clip's original file. Both builds succeed. Focused Debug passes 12/12
+(3.93s), Release/NDEBUG 12/12 (1.34s), including the runnable GPU switch acceptance.
+After adding original-file deletion coverage, that strengthened case passes in both
+configurations. The actual tenth PNG was inspected. Formatting and diff checks pass
+for all touched C++ files. No SDK control or production animation completion is
+claimed by this foundation stage; that consumer follows next.

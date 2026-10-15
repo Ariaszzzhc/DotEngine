@@ -126,3 +126,96 @@ TEST_CASE("animation.game_session_saved_clone_fixed_variable_fault_and_close_use
   REQUIRE(session.close());
   CHECK(session.stats()->state == Project::SessionState::Closed);
 }
+
+TEST_CASE("animation.scene_player_manual_library_controls_keep_authoring_and_original_rest") {
+  Fixture fixture;
+  REQUIRE(fixture.scene->setTransform(fixture.target, {{7, 0, 0}}));
+  auto scale = Animation::Clip::create({"Scale",
+                                        {{0,
+                                          Animation::Path::Scale,
+                                          Animation::Interpolation::Linear,
+                                          {{0, {2, 2, 2, 0}}, {2, {4, 4, 4, 0}}}}}})
+                   .value();
+  REQUIRE(Animation::saveClip(fixture.files, "assets/scale.dotanimation", scale));
+  fixture.properties.clips.push_back("assets/scale.dotanimation");
+  fixture.properties.playOnStart = false;
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.play(fixture.owner));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  REQUIRE(players.pause(fixture.owner));
+  REQUIRE(players.advance(.5));
+  CHECK(players.state(fixture.owner)->playback.time == .5);
+  REQUIRE(std::filesystem::remove(fixture.files.root() / "assets/scale.dotanimation"));
+  REQUIRE(players.play(fixture.owner, 1));
+  CHECK(players.state(fixture.owner)->name == "Scale");
+  CHECK(players.state(fixture.owner)->clip == 1);
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 7);
+  CHECK(fixture.scene->transform(fixture.target)->scale.x == 2);
+  REQUIRE(players.configure(fixture.owner, -1, false));
+  REQUIRE(players.play(fixture.owner, {}, true));
+  CHECK(players.state(fixture.owner)->playback.time == 2);
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->scale.x == 3.5F);
+  REQUIRE(players.seek(fixture.owner, 1));
+  REQUIRE(players.pause(fixture.owner));
+  REQUIRE(players.advance(.1));
+  CHECK(fixture.scene->transform(fixture.target)->scale.x == 3);
+  CHECK_FALSE(players.play(fixture.owner, 2));
+  CHECK_FALSE(players.seek(fixture.owner, 3));
+  CHECK_FALSE(players.configure(fixture.owner, 17, true));
+  CHECK(players.state(fixture.owner)->playback.time == 1);
+  CHECK(players.state(fixture.owner)->clip == 1);
+  REQUIRE(players.stop(fixture.owner));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->scale.x == 1);
+  REQUIRE(players.play(fixture.owner, 0));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 2);
+  REQUIRE(players.stop(fixture.owner));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 7);
+  CHECK(fixture.scene->entity(fixture.owner)->animation == fixture.properties);
+  auto foreign = World::Scene::create().value();
+  CHECK_FALSE(players.play(foreign.createEntity().value()));
+  auto moved = std::move(players);
+  CHECK_FALSE(players.state(fixture.owner));
+  CHECK_FALSE(players.play(fixture.owner));
+  CHECK_FALSE(players.pause(fixture.owner));
+  CHECK_FALSE(players.stop(fixture.owner));
+  CHECK_FALSE(players.seek(fixture.owner, 0));
+  CHECK_FALSE(players.configure(fixture.owner, 1, true));
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, {}));
+  CHECK_FALSE(moved.state(fixture.owner));
+  CHECK_FALSE(moved.play(fixture.owner));
+}
+
+TEST_CASE("animation.scene_clip_selection_rejects_writer_and_physics_conflicts_without_effects") {
+  Fixture fixture;
+  const auto other = fixture.scene->createEntity("Other target").value();
+  auto alternate = Animation::Clip::create({"Other",
+                                            {{1,
+                                              Animation::Path::Translation,
+                                              Animation::Interpolation::Linear,
+                                              {{0, {3, 0, 0, 0}}, {2, {5, 0, 0, 0}}}}}})
+                       .value();
+  REQUIRE(Animation::saveClip(fixture.files, "assets/other.dotanimation", alternate));
+  fixture.properties.clips.push_back("assets/other.dotanimation");
+  fixture.properties.targets.push_back({1, other.value});
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  World::AnimationPlayer another{{"assets/other.dotanimation"}, {{1, other.value}}};
+  REQUIRE(fixture.scene->setAnimationPlayer(other, another));
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.advance(.5));
+  CHECK_FALSE(players.play(fixture.owner, 1));
+  CHECK(players.state(fixture.owner)->clip == 0);
+  CHECK(players.state(fixture.owner)->playback.time == .5);
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  REQUIRE(fixture.scene->setAnimationPlayer(other, {}));
+  REQUIRE(fixture.scene->setRigidBody(other, World::RigidBody{}));
+  CHECK_FALSE(players.play(fixture.owner, 1));
+  CHECK(players.state(fixture.owner)->clip == 0);
+  REQUIRE(fixture.scene->setRigidBody(other, {}));
+  REQUIRE(players.play(fixture.owner, 1));
+  CHECK(players.state(fixture.owner)->clip == 1);
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 0);
+}

@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <expected>
@@ -33,6 +34,8 @@ namespace Dot::Animation {
     struct Player {
       PlayerProperties properties;
       SceneAnimator animator;
+      std::vector<Clip> library;
+      std::uint32_t clip;
       std::vector<std::uint64_t> writers;
       std::size_t channels{}, keys{};
       double duration{};
@@ -56,6 +59,89 @@ namespace Dot::Animation {
       }
 
       return {};
+    }
+
+    auto player(World::EntityId owner) const -> Core::Result<std::shared_ptr<Player>> {
+      auto valid = check();
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      auto entity = scene->entity(owner);
+
+      if (!entity) {
+        return std::unexpected(entity.error());
+      }
+
+      const auto found = players.find(owner.value);
+
+      if (!entity->animation || !entity->animation->enabled || found == players.end()) {
+        return Core::fail(Core::ErrorCode::NotFound, "Entity has no synchronized animation player");
+      }
+
+      if (found->second->properties != *entity->animation) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Animation description needs synchronization");
+      }
+
+      return found->second;
+    }
+
+    auto authority(std::uint64_t owner, const std::vector<std::uint64_t>& writers)
+        -> Core::Result<void> {
+      for (const auto id : writers) {
+        for (const auto& [other, player] : players) {
+          if (other != owner && std::ranges::find(player->writers, id) != player->writers.end()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Animation clip conflicts with another player");
+          }
+        }
+
+        auto current = scene->findEntity(id);
+
+        while (current) {
+          auto entity = scene->entity(*current);
+
+          if (!entity) {
+            return std::unexpected(entity.error());
+          }
+
+          if (entity->rigidBody) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Animation clip conflicts with rigid-body authority");
+          }
+
+          if (!entity->parent) {
+            break;
+          }
+
+          current = *entity->parent;
+        }
+
+        if (!current) {
+          return std::unexpected(current.error());
+        }
+      }
+
+      return {};
+    }
+
+    auto controlled(World::EntityId owner) -> Core::Result<std::shared_ptr<Player>> {
+      auto valid = check();
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      auto entity = scene->entity(owner);
+
+      if (!entity) {
+        return std::unexpected(entity.error());
+      }
+
+      auto ready = synchronize();
+      return ready ? player(owner) : std::unexpected(ready.error());
     }
 
     auto synchronize() -> Core::Result<void> {
@@ -86,7 +172,7 @@ namespace Dot::Animation {
               targets.emplace(target.node, target.entity);
             }
 
-            Clip selected;
+            std::vector<Clip> library;
             std::size_t playerChannels{}, playerKeys{};
 
             for (std::size_t i = 0; i < properties.clips.size(); ++i) {
@@ -110,11 +196,10 @@ namespace Dot::Animation {
                                   "Animation library channel budget exceeded");
               }
 
-              if (i == properties.clip) {
-                selected = std::move(clip);
-              }
+              library.push_back(std::move(clip));
             }
 
+            const auto& selected = library[properties.clip];
             const auto duration = take(selected.duration());
             auto animator = take(SceneAnimator::bind(*scene, selected, bindings));
             auto configured = animator.configure(properties.speed, properties.looping);
@@ -138,7 +223,7 @@ namespace Dot::Animation {
             }
 
             player = std::make_shared<Player>(
-                properties, std::move(animator),
+                properties, std::move(animator), std::move(library), properties.clip,
                 std::vector<std::uint64_t>(selectedWriters.begin(), selectedWriters.end()),
                 playerChannels, playerKeys, duration, false);
           }
@@ -233,8 +318,8 @@ namespace Dot::Animation {
 
     for (auto& [owner, player] : m_impl->players) {
       if (!player->primed && player->properties.playOnStart) {
-        auto initial = player->animator.seek(*m_impl->scene,
-                                             player->properties.speed < 0 ? player->duration : 0);
+        auto initial = player->animator.seek(
+            *m_impl->scene, player->animator.state().value().speed < 0 ? player->duration : 0);
 
         if (!initial) {
           return initial;
@@ -272,5 +357,172 @@ namespace Dot::Animation {
     }
 
     return result;
+  }
+
+  auto ScenePlayers::state(World::EntityId owner) const -> Core::Result<ScenePlayerState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto result = m_impl->player(owner);
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    const auto& player = **result;
+    auto playback = player.animator.state();
+
+    if (!playback) {
+      return std::unexpected(playback.error());
+    }
+
+    return ScenePlayerState{player.clip, player.properties.clips[player.clip],
+                            player.library[player.clip].description().value()->name,
+                            player.duration, *playback};
+  }
+
+  auto ScenePlayers::play(World::EntityId owner, std::optional<std::uint32_t> clip, bool restart)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto result = m_impl->controlled(owner);
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    auto& player = **result;
+    const auto selected = clip.value_or(player.clip);
+
+    if (selected >= player.library.size()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Animation clip index exceeds library");
+    }
+
+    if (selected != player.clip) {
+      try {
+        std::map<std::uint32_t, std::uint64_t> targets;
+
+        for (const auto& target : player.properties.targets) {
+          targets.emplace(target.node, target.entity);
+        }
+
+        std::set<std::uint64_t> unique;
+
+        for (const auto& track : player.library[selected].description().value()->tracks) {
+          unique.insert(targets.at(track.node));
+        }
+
+        std::vector<std::uint64_t> writers(unique.begin(), unique.end());
+        auto valid = m_impl->authority(owner.value, writers);
+
+        if (!valid) {
+          return valid;
+        }
+
+        auto switched = player.animator.setClip(*m_impl->scene, player.library[selected]);
+
+        if (!switched) {
+          return switched;
+        }
+
+        player.clip = selected;
+        player.duration = player.library[selected].duration().value();
+        player.writers = std::move(writers);
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          "Select animation clip: " + std::string(error.what()));
+      }
+    } else {
+      if (restart || !player.primed) {
+        const auto state = player.animator.state().value();
+        auto rewound = player.animator.seek(*m_impl->scene, state.speed < 0 ? player.duration : 0);
+
+        if (!rewound) {
+          return rewound;
+        }
+      }
+
+      auto played = player.animator.play();
+
+      if (!played) {
+        return played;
+      }
+    }
+
+    player.primed = true;
+    return {};
+  }
+
+  auto ScenePlayers::pause(World::EntityId owner) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    auto paused = (*player)->animator.pause();
+
+    if (paused) {
+      (*player)->primed = true;
+    }
+
+    return paused;
+  }
+
+  auto ScenePlayers::stop(World::EntityId owner) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    auto stopped = (*player)->animator.stop(*m_impl->scene);
+
+    if (stopped) {
+      (*player)->primed = true;
+    }
+
+    return stopped;
+  }
+
+  auto ScenePlayers::seek(World::EntityId owner, double seconds) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    auto positioned = (*player)->animator.seek(*m_impl->scene, seconds);
+
+    if (positioned) {
+      (*player)->primed = true;
+    }
+
+    return positioned;
+  }
+
+  auto ScenePlayers::configure(World::EntityId owner, double speed, bool looping)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+    return player ? (*player)->animator.configure(speed, looping) : std::unexpected(player.error());
   }
 }  // namespace Dot::Animation

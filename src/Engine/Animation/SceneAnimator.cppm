@@ -61,6 +61,13 @@ export namespace Dot::Animation {
     /** Restore only animated fields to bind pose and stop at time zero atomically.
      * 仅恢复动画字段的绑定姿态，同时停止并归零；事务失败时保留此前状态。 */
     [[nodiscard]] auto stop(World::Scene& scene) -> Core::Result<void>;
+    /** Switch the clip using original binding poses. Restore former channels and
+     * apply the new directional start in one scene transaction, then play. All
+     * bindings supplied at bind remain available; invalid targets/samples preserve
+     * the old clip, pose and clock. Speed/looping remain unchanged.
+     * 用最初绑定姿态切换片段，一次场景事务恢复旧通道并应用新片段正/反向起点，随后播放。
+     * bind 提供的全部绑定始终可用；目标/采样无效保留旧片段、姿态及时钟，速度/循环不变。 */
+    [[nodiscard]] auto setClip(World::Scene& scene, Clip clip) -> Core::Result<void>;
 
   private:
     struct Impl;
