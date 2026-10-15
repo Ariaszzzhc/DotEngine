@@ -5250,3 +5250,84 @@ asset provenance, current documentation and excluded user inputs. Fewer tests do
 not establish production readiness. Prism Relay remains an intermediate project;
 its requested non-shooting shoulder-view character template and mature editor/
 large-game requirements remain open pending reassessment.
+
+
+## 2026-10-15 — Saved character controllers and shared scene simulation
+
+The user resumed the original engine/editor objective after cleanup. Large-game
+capability, mature editor workflows, complete product AI control and the requested
+non-shooting shoulder-view Prism Relay remain the goal. This stage connects native
+character physics to ordinary saved scenes and editor operations; it does not
+claim that the requested humanoid/template or general production readiness is done.
+
+The previously archived batch draft was reviewed and extended into mixed body/
+character synchronization. Both sets prepare before mutation, retain state/IDs on
+invalid input and capacity failure, and support replacements at full capacity.
+Final native contact queries run after publication; a failure then explicitly
+faults the world, preserving diagnostic reads/destruction instead of pretending
+rollback. Focused tests cover result ordering, handles, capacity, motion and jump
+intent retention, owner-thread/move behavior and post-publication contact failure.
+
+Scene owns an optional character description without initializing physics. It is
+mutually exclusive with a rigid body on the same entity. The strict existing scene
+codec rejects malformed/unknown fields and validates integer contact budgets
+before conversion, including oversized integers that would otherwise wrap.
+Document/agent edits, history, save/reload, duplicate and Inspector drafts consume
+that same description. Inspector defaults come from the canonical scene codec;
+there is no parallel test-only editor operation or compatibility format.
+
+SceneSimulation binds Y-up feet-origin capsules, checks positive uniform world
+scale and scales capsule dimensions while retaining world-metre stair/stick
+settings. Characters and bodies synchronize together; their world poses write back
+in one hierarchy-ordered scene transform transaction. Pose edits reset intent;
+property-only replacements preserve live velocity, queued jump and explicit yaw.
+Ground support uses scene-scoped entity IDs. Support lookup currently scans body
+bindings; no crowd/performance claim is made. Faulted binding can recover through
+an independently prepared reset. Characters retain the documented virtual-capsule
+limitation: no inner broad-phase body, ray/sensor or rigid-body event participation.
+
+Character roots and their ancestors reserve physical transform authority, while
+child bones/meshes remain animatable. Both ordinary animation and cross-fade clip
+switches reject conflicting writers before changing pose/playback. Focused tests
+exercise actual child animation and root/ancestor/cross-fade rejection.
+
+The first focused mixed/native-controller selection passes 26/26 (1.29s), followed
+by scene/document/animation/physics selection 94/94 (4.66s). Both configurations
+build successfully. The first full Debug run passes 989/990 (135.63s): the new
+relocated-package test incorrectly calls only variable update, which intentionally
+does not step physics. The test is corrected to call the existing fixedUpdate then
+update contract, and passes its focused rerun. No engine fallback or altered time
+semantics is introduced. Final rebuilt full-suite and actual product observations
+are recorded below once complete.
+
+
+Final rebuilt macOS arm64 full suites pass sequentially: Debug 990/990 (134.22s),
+then Release/NDEBUG 990/990 (19.33s), without concurrent compilation. The inventory
+has 257 unit and 733 integration cases, including 123 offscreen GPU and 27 dummy-
+platform cases (labels overlap); no desktop-window acceptance target is added.
+All 16 changed/new C++ files pass clang-format --dry-run --Werror, and diff
+whitespace checks pass. Dependencies, caller toolchain flags and linkage contracts
+are unchanged. Windows/Linux remain implemented but unexecuted locally.
+
+After both suites, one actual Debug editor session opens a writable blank project
+created through the product project-action command in ignored build storage.
+Strict live agent operations author a saved character, floor and child visual,
+select and duplicate its hierarchy (the copied controller is preserved), undo/
+redo/undo, save, focus the scene, start Play and inspect actual runtime state.
+At 3400 frames/1707 fixed steps the capsule's feet are y=-4.10e-8, with no script
+or realm diagnostics, no native error and no dropped time. Stop reports 3429 frames/
+1722 fixed steps and exactly preserves the saved authoring scene/revision/clean
+state. The agent then exports a real data package and queues clean close; the
+editor exits 0 and retires its control directory. No native game window, screenshot
+comparison or end-user visual-quality claim is made. This uses ordinary product
+operations, not a retained test driver or a committed generated example.
+
+Precommit review covers mixed-batch prepublication ownership, final contact fault
+semantics, retained motion/IDs, hierarchy writeback, strict integer decoding,
+component exclusivity, animation authority, editor/agent sharing, separate module
+interfaces/implementations, formatting and test scope. The new headless package
+regression additionally removes authoring and relocated input before running the
+owned compiled scene, proving actual capsule landing without source/compiler use
+at runtime. Character SDK controls, realistic humanoid content, camera/input
+integration and the final Prism Relay template remain subsequent work; none is
+claimed complete by this stage.

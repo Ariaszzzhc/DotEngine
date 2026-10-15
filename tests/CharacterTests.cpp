@@ -2,12 +2,47 @@
 
 #include <cmath>
 #include <limits>
+#include <thread>
+#include <utility>
+#include <vector>
 
 import Dot.Physics.Character;
 import Dot.Core.Result;
 import Dot.Math;
+import Dot.World.Scene;
 
 using namespace Dot::Physics;
+
+TEST_CASE("character.scene_authoring_is_device_free_exclusive_and_preserves_lifetime") {
+  auto scene = Dot::World::Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  REQUIRE(scene.setCharacterController(entity, CharacterProperties{}));
+  CHECK(scene.entity(entity)->character == CharacterProperties{});
+  CHECK(scene.characterControllers().value() == std::vector{entity});
+  CHECK_FALSE(scene.setRigidBody(entity, Dot::World::RigidBody{}));
+  auto invalid = CharacterProperties{};
+  invalid.radius = 0;
+  CHECK_FALSE(scene.setCharacterController(entity, invalid));
+  CHECK(scene.entity(entity)->character == CharacterProperties{});
+  auto foreign = Dot::World::Scene::create().value();
+  CHECK_FALSE(foreign.setCharacterController(entity, {}));
+  bool rejected{};
+  std::thread worker([&] {
+    rejected = !scene.setCharacterController(entity, {}) && !scene.characterControllers();
+  });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.characterControllers());
+  REQUIRE(moved.setCharacterController(entity, {}));
+  REQUIRE(moved.setRigidBody(entity, Dot::World::RigidBody{}));
+  CHECK_FALSE(moved.setCharacterController(entity, CharacterProperties{}));
+  REQUIRE(moved.setRigidBody(entity, {}));
+  REQUIRE(moved.setCharacterController(entity, CharacterProperties{}));
+  REQUIRE(moved.destroyEntity(entity));
+  CHECK(moved.characterControllers()->empty());
+  CHECK_FALSE(moved.setCharacterController(entity, CharacterProperties{}));
+}
 
 TEST_CASE("character.authoring_bounds_and_normalized_yaw_are_device_free") {
   REQUIRE(validateCharacterProperties({}));

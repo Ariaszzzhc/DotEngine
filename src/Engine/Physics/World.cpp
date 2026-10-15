@@ -724,6 +724,36 @@ namespace Dot::Physics {
       return {};
     }
 
+    auto prepareCharacter(const CharacterConfig& config, std::uint64_t id)
+        -> Core::Result<CharacterEntry> {
+      auto rotation = Math::rotationEulerDegrees({0, config.yawDegrees, 0});
+
+      if (!rotation) {
+        return std::unexpected(rotation.error());
+      }
+
+      auto shape = JPH::CapsuleShapeSettings{config.halfHeight, config.radius}.Create();
+
+      if (shape.HasError()) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Cannot create character capsule: {}", shape.GetError()));
+      }
+
+      JPH::CharacterVirtualSettings settings;
+      settings.mID = JPH::CharacterID{static_cast<JPH::uint32>(id)};
+      settings.mShape = shape.Get();
+      settings.mShapeOffset = {0, config.radius + config.halfHeight, 0};
+      settings.mSupportingVolume = JPH::Plane{JPH::Vec3::sAxisY(), -config.radius};
+      settings.mMaxSlopeAngle = JPH::DegreesToRadians(config.maxSlopeDegrees);
+      settings.mMass = config.mass;
+      settings.mMaxStrength = config.maxStrength;
+      settings.mMaxNumHits = config.maxContacts;
+      auto capsule = std::make_unique<JPH::CharacterVirtual>(&settings, native(config.position),
+                                                             native(*rotation), 0, &m_system);
+      capsule->SetCharacterVsCharacterCollision(&m_characterCollisions);
+      return CharacterEntry{std::move(capsule), config, {}};
+    }
+
     auto advanceCharacters(float seconds) -> Core::Result<void> {
       const auto gravity = native(m_config.gravity);
 
@@ -1010,6 +1040,153 @@ namespace Dot::Physics {
     }
   }
 
+  auto World::applyChanges(std::span<const BodyChange> bodies,
+                           std::span<const CharacterChange> characters)
+      -> Core::Result<WorldChangeResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto ready = m_impl->ready(true);
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    if (characters.size() > 512) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Character batch exceeds 512 changes");
+    }
+
+    bool committed{};
+
+    try {
+      WorldChangeResult result;
+      result.characters.reserve(characters.size());
+      std::unordered_set<std::uint64_t> seen;
+      std::map<std::uint64_t, Impl::CharacterEntry> prepared;
+      auto count = m_impl->m_characters.size();
+      auto next = m_impl->m_nextCharacter;
+
+      for (const auto& change : characters) {
+        if ((!change.character && !change.config)
+            || (change.preserveMotion && (!change.character || !change.config))) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid character batch entry");
+        }
+
+        Impl::CharacterEntry* previous{};
+
+        if (change.character) {
+          auto entry = m_impl->resolve(*change.character, true);
+
+          if (!entry) {
+            return std::unexpected(entry.error());
+          }
+
+          if (!seen.insert(change.character->value).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate character batch handle");
+          }
+
+          previous = *entry;
+          --count;
+        }
+
+        if (!change.config) {
+          result.characters.push_back({});
+          continue;
+        }
+
+        auto config = validatedCharacterConfig(*change.config);
+
+        if (!config) {
+          return std::unexpected(config.error());
+        }
+
+        const auto gravity = m_impl->m_config.gravity;
+
+        if (gravity.x != 0 || gravity.z != 0 || gravity.y > 0) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Y-up characters require vertical nonpositive world gravity");
+        }
+
+        if (!change.character && next >= JPH::CharacterID::cInvalidCharacterID) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Physics character IDs exhausted");
+        }
+
+        const auto id = change.character.value_or(CharacterId{m_impl->m_identity, next});
+
+        if (!change.character) {
+          ++next;
+        }
+
+        auto entry = m_impl->prepareCharacter(*config, id.value);
+
+        if (!entry) {
+          return std::unexpected(entry.error());
+        }
+
+        if (change.preserveMotion) {
+          entry->capsule->SetLinearVelocity(previous->capsule->GetLinearVelocity());
+          entry->input = previous->input;
+        }
+
+        prepared.emplace(id.value, std::move(*entry));
+        result.characters.push_back(id);
+        ++count;
+      }
+
+      if (count > m_impl->m_config.maxCharacters) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Character batch exceeds capacity");
+      }
+
+      auto applied = applyChanges(bodies);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      result.bodies = std::move(*applied);
+      committed = !bodies.empty() || !characters.empty();
+      m_impl->m_nextCharacter = next;
+
+      for (const auto& change : characters) {
+        if (change.character) {
+          const auto found = m_impl->m_characters.find(change.character->value);
+          m_impl->m_characterCollisions.Remove(found->second.capsule.get());
+          m_impl->m_characters.erase(found);
+        }
+      }
+
+      while (!prepared.empty()) {
+        auto node = prepared.extract(prepared.begin());
+        auto* capsule = node.mapped().capsule.get();
+        m_impl->m_characters.insert(std::move(node));
+        m_impl->m_characterCollisions.Add(capsule);
+      }
+
+      if (committed) {
+        for (auto& [id, entry] : m_impl->m_characters) {
+          (void)id;
+          auto refreshed = m_impl->refreshCharacter(*entry.capsule);
+
+          if (!refreshed) {
+            m_impl->m_faulted = true;
+            return Core::fail(refreshed.error().code,
+                              "Physics batch published before character query failed: "
+                                  + refreshed.error().message);
+          }
+        }
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = m_impl->m_faulted || committed;
+      return Core::fail(
+          Core::ErrorCode::External,
+          std::format("Physics mixed batch failed{}: {}",
+                      committed ? " after publication" : " during preparation", error.what()));
+    }
+  }
+
   auto World::destroyBody(BodyId id) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
@@ -1097,41 +1274,22 @@ namespace Dot::Physics {
       return Core::fail(Core::ErrorCode::Unavailable, "Physics character capacity/IDs exhausted");
     }
 
-    auto rotation = Math::rotationEulerDegrees({0, validated->yawDegrees, 0});
-
-    if (!rotation) {
-      return std::unexpected(rotation.error());
-    }
-
     try {
-      auto shape = JPH::CapsuleShapeSettings{validated->halfHeight, validated->radius}.Create();
+      auto prepared = m_impl->prepareCharacter(*validated, m_impl->m_nextCharacter);
 
-      if (shape.HasError()) {
-        return Core::fail(Core::ErrorCode::External,
-                          std::format("Cannot create character capsule: {}", shape.GetError()));
+      if (!prepared) {
+        return std::unexpected(prepared.error());
       }
 
-      JPH::CharacterVirtualSettings settings;
-      settings.mID = JPH::CharacterID{static_cast<JPH::uint32>(m_impl->m_nextCharacter)};
-      settings.mShape = shape.Get();
-      settings.mShapeOffset = {0, validated->radius + validated->halfHeight, 0};
-      settings.mSupportingVolume = JPH::Plane{JPH::Vec3::sAxisY(), -validated->radius};
-      settings.mMaxSlopeAngle = JPH::DegreesToRadians(validated->maxSlopeDegrees);
-      settings.mMass = validated->mass;
-      settings.mMaxStrength = validated->maxStrength;
-      settings.mMaxNumHits = validated->maxContacts;
-      auto capsule = std::make_unique<JPH::CharacterVirtual>(
-          &settings, native(validated->position), native(*rotation), 0, &m_impl->m_system);
-      capsule->SetCharacterVsCharacterCollision(&m_impl->m_characterCollisions);
-      auto refreshed = m_impl->refreshCharacter(*capsule);
+      auto refreshed = m_impl->refreshCharacter(*prepared->capsule);
 
       if (!refreshed) {
         return std::unexpected(refreshed.error());
       }
 
       const CharacterId result{m_impl->m_identity, m_impl->m_nextCharacter};
-      const auto [inserted, created] = m_impl->m_characters.emplace(
-          result.value, Impl::CharacterEntry{std::move(capsule), *validated, {}});
+      const auto [inserted, created]
+          = m_impl->m_characters.emplace(result.value, std::move(*prepared));
       (void)created;
       /** The collider list is reserved at world creation; publish only after all
        * character construction, contact queries and map allocation succeed.

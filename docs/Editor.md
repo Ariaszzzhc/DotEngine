@@ -60,11 +60,20 @@ Edit operations use strict fields:
 | transform | entity, value | Replace the complete native transform |
 | component | entity, component, value | Replace/remove one native component |
 
-Components are camera, mesh, rigidBody, audioSource, audioListener, script, material and light.
+Components are camera, mesh, rigidBody, character, audioSource, audioListener,
+script, material, light, animation and skin.
 Values use the same schema as native scene files; null removes the component.
 Script authoring describes a source/class/properties/enabled attachment and does
 not execute code. Asset existence belongs to runtime bindings, so documents may
 author valid paths to resources that have not yet been created.
+
+Character controllers share the scene codec's complete capsule/movement/contact
+properties. The Inspector uses the same defaults and component transaction as agent
+edits. Rigid body and character controller are mutually exclusive; removal/addition
+can be applied in one document transaction. Physics binds them only when Play or
+an exported game initializes. Invalid world tilt/scale is an explicit binding
+error. Scene parent/pose edits remain ordinary authoring operations; property-only
+reconfiguration preserves runtime motion. See [physics](Physics.md).
 
 A batch has 1..256 operations within 1 MiB of UTF-8 JSON, with maximum depth 64.
 Unknown/missing/duplicate fields, malformed/canonical-ID violations and invalid
@@ -132,7 +141,7 @@ for diagnostics. It prints and flushes one JSON line containing `ok` and an abso
 `control` path. Window dimensions start at 1280x800 with minimum 800x480.
 
 The scene tree selects entities; the inspector edits names, local transforms,
-parents and all six native components. Script properties use strict JSON object
+parents and native components. Script properties use strict JSON object
 input, including arrays/null/nested values. Add/remove and property changes are
 buffered until Apply changes or Save; Reset discards that buffer. Applying the
 inspector produces one native document history entry. Selecting another entity,

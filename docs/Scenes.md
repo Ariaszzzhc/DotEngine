@@ -9,7 +9,8 @@ fresh scene identity. Existing live scenes and their handles remain independent.
 The root requires `version` (integer 1), `name`, and `entities`, and allows optional
 `environment` (null/absent means no environment). Unknown fields are rejected. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
-`rigidBody`, `audioSource`, `audioListener`, `script`, `material`, and `light` are optional and may be null.
+`rigidBody`, `character`, `audioSource`, `audioListener`, `script`, `material`, `light`,
+`animation` and `skin` are optional and may be null.
 Unknown or duplicate fields are rejected.
 Documents are limited to 64 MiB, 10000 entities, and JSON nesting depth 64. Hierarchies must be
 acyclic with depth at most 256.
@@ -85,6 +86,13 @@ See `Physics.md` for the binding and failure contracts.
   "sensor": false
 }
 ```
+
+The optional `character` component requires exactly radius, halfHeight,
+maxSlopeDegrees, stepHeight, stickDistance, mass, maxStrength, jumpSpeed and
+maxContacts. All numeric values must satisfy the native controller's finite bounds;
+maxContacts is an integer in [1,4096], without narrowing/wrapping large integers.
+It cannot coexist with rigidBody. Pose remains in the entity transform; decoding
+creates no physics backend. See [physics](Physics.md) for binding and scale rules.
 
 Renderable scenes need a camera; the file codec permits camera-free scenes so
 editing and persistence can occur independently.

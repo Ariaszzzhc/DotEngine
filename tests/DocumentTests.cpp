@@ -78,6 +78,30 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("document_character_agent_edits_history_and_save_share_strict_components") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const Json character{{"radius", .35},      {"halfHeight", .55},   {"maxSlopeDegrees", 50},
+                       {"stepHeight", .35},  {"stickDistance", .3}, {"mass", 75},
+                       {"maxStrength", 100}, {"jumpSpeed", 6},      {"maxContacts", 256}};
+  const Json operation{
+      {"op", "component"}, {"entity", "2"}, {"component", "character"}, {"value", character}};
+  auto edited = request(document, {{"command", "edit"}, {"operations", Json::array({operation})}});
+  CHECK(edited["scene"]["entities"][1]["character"]["maxContacts"] == 256);
+  const auto before = state(document);
+  auto bad = operation;
+  bad["value"]["maxContacts"] = 4294967297ULL;
+  CHECK_FALSE(document.apply(Json::array({bad}).dump(), revision(document)));
+  CHECK(state(document) == before);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["character"].is_null());
+  REQUIRE(document.redo(revision(document)));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(state(reopened)["scene"]["entities"][1]["character"]
+        == state(document)["scene"]["entities"][1]["character"]);
+}
+
 TEST_CASE("document_open_selection_owned_snapshot_and_stale_requests") {
   Fixture fixture;
   auto document = fixture.document();

@@ -285,6 +285,7 @@ namespace Dot::Editor {
              {"material", nullptr},
              {"light", nullptr},
              {"rigidBody", nullptr},
+             {"character", nullptr},
              {"audioSource", nullptr},
              {"audioListener", nullptr},
              {"script", nullptr}});
@@ -363,7 +364,7 @@ namespace Dot::Editor {
         const auto component = command["component"].get<std::string>();
         constexpr std::array components{"camera",        "mesh",   "rigidBody", "audioSource",
                                         "audioListener", "script", "material",  "light",
-                                        "animation",     "skin"};
+                                        "animation",     "skin",   "character"};
 
         if (std::ranges::find(components, component) == components.end()) {
           return Core::fail(Core::ErrorCode::InvalidArgument,

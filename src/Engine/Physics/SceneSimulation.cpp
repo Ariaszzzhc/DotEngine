@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <format>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <thread>
@@ -19,6 +20,7 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.World.Scene;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Physics.World;
 
 namespace Dot::Physics {
@@ -63,6 +65,41 @@ namespace Dot::Physics {
       }
 
       return validatedBodyConfig(result);
+    }
+
+    auto configuration(const CharacterProperties& description, const Math::TransformParts& pose)
+        -> Core::Result<CharacterConfig> {
+      const auto scale = pose.scale;
+      const auto maximum = std::max({scale.x, scale.y, scale.z});
+
+      if (scale.x <= 0 || scale.y <= 0 || scale.z <= 0
+          || std::abs(scale.x - scale.y) > maximum * 1e-5F
+          || std::abs(scale.x - scale.z) > maximum * 1e-5F) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Character controllers require positive uniform world scale");
+      }
+
+      auto rotation = Math::compose({}, pose.rotation);
+
+      if (!rotation) {
+        return std::unexpected(rotation.error());
+      }
+
+      const auto& matrix = rotation->data;
+
+      if (std::abs(matrix[4]) > 1e-5F || std::abs(matrix[5] - 1) > 1e-5F
+          || std::abs(matrix[6]) > 1e-5F) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Character controllers require a Y-up world orientation");
+      }
+
+      CharacterConfig result;
+      static_cast<CharacterProperties&>(result) = description;
+      result.position = pose.position;
+      result.radius *= scale.x;
+      result.halfHeight *= scale.x;
+      result.yawDegrees = std::atan2(matrix[8], matrix[10]) * 180 / std::numbers::pi_v<float>;
+      return validatedCharacterConfig(result);
     }
 
     auto localTransform(const Math::Mat4& world, const Math::Mat4& parent, Math::Vec3 authoredScale)
@@ -123,11 +160,19 @@ namespace Dot::Physics {
       Math::Vec3 scale;
     };
 
+    struct CharacterEntry {
+      CharacterId character;
+      CharacterProperties description;
+      Math::Mat4 source;
+      Math::Vec3 scale;
+    };
+
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_scene;
     WorldConfig m_config;
     World m_world;
     std::unordered_map<std::uint64_t, Entry> m_entries;
+    std::unordered_map<std::uint64_t, CharacterEntry> m_characters;
     bool m_faulted{};
 
     Impl(std::uint64_t scene, WorldConfig config, World world)
@@ -167,6 +212,28 @@ namespace Dot::Physics {
       }
 
       return found->second.body;
+    }
+
+    auto resolveCharacter(EntityId entity, bool mutate = false) const -> Core::Result<CharacterId> {
+      auto checked = ready(mutate);
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      if (entity.scene != m_scene || entity.value == 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid character entity or foreign scene");
+      }
+
+      const auto found = m_characters.find(entity.value);
+
+      if (found == m_characters.end()) {
+        return Core::fail(Core::ErrorCode::NotFound,
+                          "Entity has no synchronized character controller");
+      }
+
+      return found->second.character;
     }
   };
 
@@ -235,6 +302,9 @@ namespace Dot::Physics {
       std::unordered_map<std::uint64_t, Impl::Entry> desired;
       std::vector<BodyChange> changes;
       std::vector<std::uint64_t> keys;
+      std::unordered_map<std::uint64_t, Impl::CharacterEntry> desiredCharacters;
+      std::vector<CharacterChange> characterChanges;
+      std::vector<std::uint64_t> characterKeys;
 
       for (const auto& entity : *entities) {
         if (!entity.rigidBody) {
@@ -299,7 +369,76 @@ namespace Dot::Physics {
         }
       }
 
-      auto applied = m_impl->m_world.applyChanges(changes);
+      for (const auto& entity : *entities) {
+        if (!entity.character) {
+          continue;
+        }
+
+        auto matrix = scene.worldTransform(entity.id);
+
+        if (!matrix) {
+          return context(entity.id, matrix.error());
+        }
+
+        auto parts = Math::decomposeTrs(*matrix);
+
+        if (!parts) {
+          return context(entity.id, parts.error());
+        }
+
+        auto config = configuration(*entity.character, *parts);
+
+        if (!config) {
+          return context(entity.id, config.error());
+        }
+
+        const auto existing = m_impl->m_characters.find(entity.id.value);
+
+        if (existing != m_impl->m_characters.end()
+            && existing->second.description == *entity.character
+            && existing->second.source == *matrix) {
+          desiredCharacters.emplace(entity.id.value, existing->second);
+          continue;
+        }
+
+        std::optional<CharacterId> id;
+        bool preserveMotion{};
+
+        if (existing != m_impl->m_characters.end()) {
+          id = existing->second.character;
+          preserveMotion = existing->second.source == *matrix;
+
+          if (preserveMotion) {
+            auto state = m_impl->m_world.character(*id);
+
+            if (!state) {
+              return context(entity.id, state.error());
+            }
+
+            config = configuration(*entity.character,
+                                   {state->position, state->rotation, parts->scale});
+
+            if (!config) {
+              return context(entity.id, config.error());
+            }
+          }
+        }
+
+        desiredCharacters.emplace(
+            entity.id.value, Impl::CharacterEntry{id.value_or(CharacterId{}), *entity.character,
+                                                  *matrix, parts->scale});
+        characterChanges.push_back({id, *config, preserveMotion});
+        characterKeys.push_back(entity.id.value);
+      }
+
+      for (const auto& [key, entry] : m_impl->m_characters) {
+        if (!desiredCharacters.contains(key)) {
+          characterChanges.push_back({entry.character, std::nullopt});
+          characterKeys.push_back(key);
+        }
+      }
+
+      auto applied = m_impl->m_world.applyChanges(changes, characterChanges);
 
       if (!applied) {
         auto stats = m_impl->m_world.stats();
@@ -310,12 +449,19 @@ namespace Dot::Physics {
       committed = true;
 
       for (std::size_t i = 0; i < keys.size(); ++i) {
-        if ((*applied)[i]) {
-          desired.at(keys[i]).body = *(*applied)[i];
+        if (applied->bodies[i]) {
+          desired.at(keys[i]).body = *applied->bodies[i];
+        }
+      }
+
+      for (std::size_t i = 0; i < characterKeys.size(); ++i) {
+        if (applied->characters[i]) {
+          desiredCharacters.at(characterKeys[i]).character = *applied->characters[i];
         }
       }
 
       m_impl->m_entries.swap(desired);
+      m_impl->m_characters.swap(desiredCharacters);
       return {};
     } catch (const std::exception& error) {
       m_impl->m_faulted = m_impl->m_faulted || committed;
@@ -380,6 +526,7 @@ namespace Dot::Physics {
             = entity.parent ? matrices[indices.at(entity.parent->value)] : Math::Mat4{};
         auto transform = entity.transform;
         const auto binding = m_impl->m_entries.find(entity.id.value);
+        const auto characterBinding = m_impl->m_characters.find(entity.id.value);
 
         if (binding != m_impl->m_entries.end()) {
           auto state = m_impl->m_world.body(binding->second.body);
@@ -427,6 +574,35 @@ namespace Dot::Physics {
           }
         }
 
+        if (characterBinding != m_impl->m_characters.end()) {
+          auto state = m_impl->m_world.character(characterBinding->second.character);
+
+          if (!state) {
+            m_impl->m_faulted = true;
+            return context(entity.id, state.error());
+          }
+
+          auto world
+              = Math::compose(state->position, state->rotation, characterBinding->second.scale);
+          auto local = world ? localTransform(*world, parent, entity.transform.scale)
+                             : Core::Result<Transform>{std::unexpected(world.error())};
+
+          if (!local) {
+            m_impl->m_faulted = true;
+            return context(entity.id, local.error());
+          }
+
+          auto rotation = Math::normalized(local->rotation);
+
+          if (!rotation) {
+            m_impl->m_faulted = true;
+            return context(entity.id, rotation.error());
+          }
+
+          transform = {local->position, *rotation, local->scale};
+          updates.push_back({entity.id, transform});
+        }
+
         auto local = Math::compose(transform.position, transform.rotation, transform.scale);
         auto world = local ? Math::multiply(parent, *local)
                            : Core::Result<Math::Mat4>{std::unexpected(local.error())};
@@ -447,6 +623,10 @@ namespace Dot::Physics {
       }
 
       for (auto& [value, entry] : m_impl->m_entries) {
+        entry.source = matrices[indices.at(value)];
+      }
+
+      for (auto& [value, entry] : m_impl->m_characters) {
         entry.source = matrices[indices.at(value)];
       }
 
@@ -487,6 +667,60 @@ namespace Dot::Physics {
 
     auto id = m_impl->resolve(entity);
     return id ? m_impl->m_world.body(*id) : Core::Result<BodyState>{std::unexpected(id.error())};
+  }
+
+  auto SceneSimulation::character(EntityId entity) const -> Core::Result<SceneCharacterState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto id = m_impl->resolveCharacter(entity);
+
+    if (!id) {
+      return std::unexpected(id.error());
+    }
+
+    auto state = m_impl->m_world.character(*id);
+
+    if (!state) {
+      return std::unexpected(state.error());
+    }
+
+    std::optional<EntityId> support;
+
+    if (state->groundBody) {
+      for (const auto& [value, entry] : m_impl->m_entries) {
+        if (entry.body == *state->groundBody) {
+          support = EntityId{m_impl->m_scene, value};
+          break;
+        }
+      }
+    }
+
+    return SceneCharacterState{state->position, state->rotation,     state->velocity,
+                               state->ground,   state->groundNormal, state->groundVelocity,
+                               support};
+  }
+
+  auto SceneSimulation::setCharacterInput(EntityId entity, const CharacterInput& input)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto id = m_impl->resolveCharacter(entity, true);
+    return id ? m_impl->m_world.setCharacterInput(*id, input)
+              : Core::Result<void>{std::unexpected(id.error())};
+  }
+
+  auto SceneSimulation::setCharacterYaw(EntityId entity, float yawDegrees) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto id = m_impl->resolveCharacter(entity, true);
+    return id ? m_impl->m_world.setCharacterYaw(*id, yawDegrees)
+              : Core::Result<void>{std::unexpected(id.error())};
   }
 
   auto SceneSimulation::stats() const -> Core::Result<WorldStats> {

@@ -214,6 +214,42 @@ This foundation intentionally has no inner rigid-body proxy. Virtual capsules
 collide with solid bodies and one another, but ordinary ray casts, rigid-body
 sensor/contact events and fast incoming bodies do not see a capsule in the broad
 phase. Body statistics count rigid bodies; `characters` counts owned capsules.
-Scene persistence, component Inspector/SDK binding, humanoid animation and the
-requested over-the-shoulder camera are subsequent integration work. This API alone
-does not establish a finished character template or large-crowd scalability.
+Scene persistence, Inspector/agent authoring and shared GameSession simulation now
+use the controller. TypeScript controls, humanoid content and the requested
+over-the-shoulder camera remain unfinished. This does not establish a finished
+character template or large-crowd scalability.
+
+## Scene character controllers
+
+`Scene::setCharacterController` stores validated CPU-only properties. A controller
+and rigid body cannot coexist on one entity; explicitly remove the old component
+before adding the other. Scene loading, document edits/history/duplication, Inspector
+drafts, Play cloning and game packages use the same optional `character` description.
+Editing does not allocate a native controller or world.
+
+`SceneSimulation` binds feet-origin capsules to entity world poses. World scale must
+be positive and uniform within 1e-5 relative tolerance; it scales radius and cylinder
+half-height. Step/stick distances remain world metres. Shear, reflections and tilt
+are binding errors. World yaw is supported, including rotated/scaled parents. Body
+and character poses write back together in hierarchy order through one scene
+transform transaction. A changed authored pose clears velocity and queued input;
+property-only replacement retains native motion, pending jump and explicitly set yaw.
+
+The native scene service exposes `character`, `setCharacterInput` and
+`setCharacterYaw`. State includes world feet/rotation/velocity, ground state/normal/
+velocity and optional scene-scoped `groundEntity`. Queries describe the latest
+synchronization; removed/foreign/moved handles and wrong-thread calls fail explicitly.
+Support lookup currently scans synchronized bodies. It is not a crowd-performance
+claim. Capsule contacts still do not enter rigid-body events or ray queries.
+
+The mixed `World::applyChanges(bodies, characters)` prepares both sets before
+mutation. Invalid descriptions, duplicate/stale/foreign handles and final-capacity
+failures retain both sets and do not consume new IDs. Replacements work at full
+capacity and preserve public IDs. Input-order results use nullopt for deletions.
+Final native contact queries occur after publication, so a query/slot failure then
+faults the world rather than reporting fake atomic rollback. Diagnostic reads and
+destruction remain available; scene reset independently prepares a replacement world.
+
+Animation may drive bones/meshes below a character root. It cannot write that root
+or any ancestor, including when switching/cross-fading to another clip. This prevents
+an animation channel from fighting capsule ownership without blocking child animation.

@@ -29,6 +29,16 @@ export namespace Dot::Physics {
     std::optional<ContactGeometry> geometry;
   };
 
+  struct SceneCharacterState {
+    Math::Vec3 position;
+    Math::Quat rotation;
+    Math::Vec3 velocity;
+    GroundState ground;
+    Math::Vec3 groundNormal;
+    Math::Vec3 groundVelocity;
+    std::optional<Dot::World::EntityId> groundEntity;
+  };
+
   /** Owns a physics world and bindings, without retaining a scene reference.
    * Operations require the creating thread; destruction requires quiescence.
    * Moving a scene preserves its identity and bindings. Queries describe the
@@ -63,6 +73,18 @@ export namespace Dot::Physics {
      * 用独立准备的世界替换，失败保留原绑定；成功从编辑数据重置运动，并可绑定另一场景。 */
     [[nodiscard]] auto reset(const Dot::World::Scene& scene) -> Core::Result<void>;
     [[nodiscard]] auto body(Dot::World::EntityId entity) const -> Core::Result<BodyState>;
+    /** Character dimensions follow positive uniform world scale; feet must remain
+     * Y-up. Step/stick distances remain world metres. Inputs are world-space;
+     * set yaw without clearing motion. Character poses write back with body poses
+     * in the same scene transaction. Support refers to synchronized rigid bodies.
+     * 角色尺寸按正向等比世界缩放，脚底须保持 Y 向上，台阶/贴地距离仍为世界米。
+     * 输入使用世界坐标，转向保留运动；角色/刚体位姿在同一场景事务写回，支撑指向已同步刚体。 */
+    [[nodiscard]] auto character(Dot::World::EntityId entity) const
+        -> Core::Result<SceneCharacterState>;
+    [[nodiscard]] auto setCharacterInput(Dot::World::EntityId entity, const CharacterInput& input)
+        -> Core::Result<void>;
+    [[nodiscard]] auto setCharacterYaw(Dot::World::EntityId entity, float yawDegrees)
+        -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<WorldStats>;
     /** Owned contact events preserve entity values even after component/entity
      * removal. Successful drain consumes them; faulted services reject delivery.

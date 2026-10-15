@@ -46,6 +46,45 @@ namespace {
   };
 }  // namespace
 
+TEST_CASE("animation.character_root_protects_physics_without_blocking_child_bones") {
+  Fixture fixture;
+  const auto root = fixture.scene->createEntity("Character root").value();
+  REQUIRE(fixture.scene->setCharacterController(root, World::CharacterController{}));
+  REQUIRE(fixture.scene->setParent(fixture.target, root));
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  CHECK(fixture.scene->transform(root)->position.x == 0);
+  auto properties = fixture.properties;
+  properties.targets[0].entity = root.value;
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, properties));
+  CHECK_FALSE(players.advance(.5));
+  CHECK(fixture.scene->transform(root)->position.x == 0);
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(players.advance(.25));
+  REQUIRE(fixture.scene->setParent(fixture.target, {}));
+  REQUIRE(fixture.scene->setParent(root, fixture.target));
+  const auto before = fixture.scene->transform(fixture.target).value();
+  CHECK_FALSE(players.advance(.25));
+  CHECK(fixture.scene->transform(fixture.target)->position == before.position);
+  REQUIRE(fixture.scene->setParent(root, {}));
+  REQUIRE(fixture.scene->setParent(fixture.target, root));
+  auto clip = Animation::Clip::create({"Root motion",
+                                       {{1,
+                                         Animation::Path::Translation,
+                                         Animation::Interpolation::Linear,
+                                         {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                  .value();
+  REQUIRE(Animation::saveClip(fixture.files, "assets/root.dotanimation", clip));
+  properties = fixture.properties;
+  properties.clips.push_back("assets/root.dotanimation");
+  properties.targets.push_back({1, root.value});
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, properties));
+  REQUIRE(players.advance(.25));
+  CHECK_FALSE(players.crossFade(fixture.owner, 1, .5));
+  CHECK(players.state(fixture.owner)->clip == 0);
+}
+
 TEST_CASE("animation.scene_players_retain_clocks_reconfigure_pause_reverse_and_remove") {
   Fixture fixture;
   auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();

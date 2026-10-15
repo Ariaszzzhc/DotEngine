@@ -24,6 +24,7 @@ import Dot.World.SceneFiles;
 import Dot.Animation.SceneSkin;
 import Dot.Animation.SkinFiles;
 import Dot.Math;
+import Dot.Physics.Body;
 
 namespace {
   using namespace Dot::Project;
@@ -85,6 +86,54 @@ TEST_CASE("game_package.relocation_snapshot_and_precompiled_session_are_independ
   }
   CHECK(std::filesystem::exists(owned));
   CHECK_FALSE(std::filesystem::exists(owned / "scripts/mover.ts"));
+}
+
+TEST_CASE("game_package_character_lands_after_relocation_and_authoring_removal") {
+  Fixture fixture;
+  auto scene = fixture.project.loadStartup().value();
+  const auto actor = scene.findEntity(2).value();
+  REQUIRE(scene.setScript(actor, {}));
+  REQUIRE(scene.setTransform(actor, {{0, 3, 0}}));
+  REQUIRE(scene.setCharacterController(actor, Dot::World::CharacterController{}));
+  const auto floor = scene.createEntity("Floor").value();
+  Dot::World::RigidBody body;
+  body.motion = Dot::Physics::Motion::Static;
+  body.shape = Dot::Physics::Shape::Box;
+  body.halfExtents = {10, .5F, 10};
+  REQUIRE(scene.setRigidBody(floor, body));
+  REQUIRE(scene.setTransform(floor, {{0, -.5F, 0}}));
+  auto published = GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                        fixture.directory.files(), "character-game")
+                       .value();
+  const auto relocated = fixture.directory.root / "relocated character";
+  std::filesystem::rename(published.root(), relocated);
+  auto package = GamePackage::open(Dot::Core::FileSystem::open(relocated).value()).value();
+  std::filesystem::remove_all(fixture.project.files()->root());
+  std::filesystem::remove_all(relocated);
+  auto session = GameSession::createCompiled(package.files().value(), package.description().value(),
+                                             package.scene().value(), package.program().value())
+                     .value();
+  auto started = session.start().value();
+  REQUIRE(started.failures.empty());
+  REQUIRE_FALSE(started.realmFaulted);
+
+  for (int frame = 0; frame < 120; ++frame) {
+    auto fixed = session.fixedUpdate().value();
+    REQUIRE(fixed.frame.failures.empty());
+    REQUIRE_FALSE(fixed.frame.realmFaulted);
+    auto updated = session.update(1.0 / 60).value();
+    REQUIRE(updated.frame.failures.empty());
+    REQUIRE_FALSE(updated.frame.realmFaulted);
+  }
+
+  const auto runtimeScene = session.scene().value();
+  const auto runtimeActor = runtimeScene->findEntity(actor.value).value();
+  CHECK(runtimeScene->entity(runtimeActor)->character.has_value());
+  CHECK(runtimeScene->transform(runtimeActor)->position.y == doctest::Approx(0).epsilon(.04));
+  CHECK(scene.transform(actor)->position.y == 3);
+  auto closed = session.close().value();
+  CHECK(closed.failures.empty());
+  CHECK_FALSE(closed.realmFaulted);
 }
 
 TEST_CASE("game_package.strict_manifests_trees_and_limits_fail_without_leaks") {

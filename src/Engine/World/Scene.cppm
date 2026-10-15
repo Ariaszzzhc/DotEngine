@@ -14,6 +14,7 @@ export module Dot.World.Scene;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Graphics.Lighting;
 export import Dot.Graphics.Environment;
 export import Dot.Graphics.Occlusion;
@@ -123,6 +124,11 @@ export namespace Dot::World {
    * 初始速度使用世界坐标，层级与缩放是否适用由独立的仿真绑定阶段负责。 */
   using RigidBody = Physics::BodyProperties;
 
+  /** CPU-only feet-origin capsule description, mutually exclusive with a rigid
+   * body on the same entity. World pose/scale are checked by SceneSimulation.
+   * 纯 CPU 脚底原点胶囊描述，与同实体刚体互斥；世界位姿/缩放由仿真绑定检查。 */
+  using CharacterController = Physics::CharacterProperties;
+
   /** Stored audio authoring only; world pose comes from the entity. No file or
    * playback backend is initialized by editing. 仅保存音频编辑描述，世界位姿来自实体；
    * 编辑不读取文件，也不初始化播放后端。 */
@@ -160,6 +166,7 @@ export namespace Dot::World {
     std::optional<Light> light{};
     std::optional<AnimationPlayer> animation{};
     std::optional<SkinBinding> skin{};
+    std::optional<CharacterController> character{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -204,6 +211,9 @@ export namespace Dot::World {
     /** Owned, ID-sorted animation descriptions without unrelated component copies.
      * 按 ID 排序的动画描述副本，不复制无关组件。 */
     [[nodiscard]] auto animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>>;
+    /** Sorted controller owners without copying unrelated component data.
+     * 返回按 ID 排序的角色控制器所有者，不复制无关组件。 */
+    [[nodiscard]] auto characterControllers() const -> Core::Result<std::vector<EntityId>>;
     /** Validate local live targets without IO. At most 128 players, aggregate
      * 10000 bindings/1024 clip paths. External-target deletion is rejected until
      * its player is removed/rebound. Playback checks asset/physics authority.
@@ -266,6 +276,12 @@ export namespace Dot::World {
     /** Validate every body property before replacement; removal is idempotent.
      * 替换前校验所有刚体属性，移除具有幂等性。 */
     [[nodiscard]] auto setRigidBody(EntityId entity, std::optional<RigidBody> body)
+        -> Core::Result<void>;
+    /** Validate without creating a physics world. Failure preserves components;
+     * remove a conflicting rigid body explicitly before attaching a controller.
+     * 校验而不创建物理世界，失败保留组件；添加前须明确移除冲突刚体。 */
+    [[nodiscard]] auto setCharacterController(EntityId entity,
+                                              std::optional<CharacterController> character)
         -> Core::Result<void>;
     /** Validate the complete description before replacement; missing assets are
      * resolved by the playback binding, and removal is idempotent.

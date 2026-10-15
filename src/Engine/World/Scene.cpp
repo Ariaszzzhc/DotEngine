@@ -22,6 +22,7 @@ import Dot.Core.Paths;
 import Dot.Graphics.Lighting;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Audio.Source;
 import Dot.Script.Source;
 
@@ -245,6 +246,7 @@ namespace Dot::World {
       const auto* light = registry.try_get<Light>(native);
       const auto* animation = registry.try_get<AnimationPlayer>(native);
       const auto* skin = registry.try_get<SkinBinding>(native);
+      const auto* character = registry.try_get<CharacterController>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
@@ -258,7 +260,8 @@ namespace Dot::World {
               material ? std::optional{*material} : std::nullopt,
               light ? std::optional{*light} : std::nullopt,
               animation ? std::optional{*animation} : std::nullopt,
-              skin ? std::optional{*skin} : std::nullopt};
+              skin ? std::optional{*skin} : std::nullopt,
+              character ? std::optional{*character} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -607,6 +610,29 @@ namespace Dot::World {
 
     m_impl->registry.emplace_or_replace<SkinBinding>(*native, std::move(*skin));
     return {};
+  }
+
+  auto Scene::characterControllers() const -> Core::Result<std::vector<EntityId>> {
+    auto ready = entityCount();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    try {
+      std::vector<EntityId> result;
+      const auto view = m_impl->registry.view<const CharacterController, const Identity>();
+
+      for (const auto native : view) {
+        result.push_back({m_impl->identity, view.get<const Identity>(native).value});
+      }
+
+      std::ranges::sort(result, {}, &EntityId::value);
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Enumerate character controllers: " + std::string(error.what()));
+    }
   }
 
   auto Scene::animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>> {
@@ -1172,7 +1198,44 @@ namespace Dot::World {
       return checked;
     }
 
+    if (m_impl->registry.any_of<CharacterController>(*native)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "An entity cannot own both a rigid body and character controller");
+    }
+
     m_impl->registry.emplace_or_replace<RigidBody>(*native, *body);
+    return {};
+  }
+
+  auto Scene::setCharacterController(EntityId entity, std::optional<CharacterController> character)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!character) {
+      m_impl->registry.remove<CharacterController>(*native);
+      return {};
+    }
+
+    auto checked = Physics::validateCharacterProperties(*character);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (m_impl->registry.any_of<RigidBody>(*native)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "An entity cannot own both a rigid body and character controller");
+    }
+
+    m_impl->registry.emplace_or_replace<CharacterController>(*native, *character);
     return {};
   }
 

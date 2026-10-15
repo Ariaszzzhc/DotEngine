@@ -1,8 +1,8 @@
-# Goal boundaries and reassessment
+# Goal boundaries and implementation
 
-The engine/editor goal is paused for project cleanup and reassessment. This does
-not redefine completion around the features already built or the number of tests.
-The original requirements remain:
+The user has resumed engine development after project cleanup. Completion is not
+defined around features already built or the number of tests. The original
+requirements remain:
 
 - Capability to make large 3D games, including usable rendering, content production,
   resource/scene management and evidence from populated real projects.
@@ -21,13 +21,13 @@ The original requirements remain:
 | --- | --- | --- |
 | Rendering | PBR material/texture slots, HDRI IBL, directional cascaded soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, resource streaming and populated-scene performance |
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning and animation cross-fades | Production skeleton/animation authoring, layered/state-machine workflows and scalability |
-| Physics/gameplay | Rigid bodies, queries/contacts, native Y-up virtual capsule movement/jumping/stairs/slopes/platforms | Character scene/component/SDK/Inspector integration, broad-phase presence, actual humanoid and shoulder camera |
+| Physics/gameplay | Rigid bodies, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms and Inspector/agent authoring | Character SDK controls, broad-phase presence, actual humanoid and shoulder camera |
 | Editor | Docked views, scene/resource/material authoring, picking/multiselection/gizmos, undo/redo, isolated Play and export | Consistent production workflows, complex scene organization and performance/debugging tools |
 | AI control | Product CLI, strict JSON operations and live mailbox; shared document/resource/Play operations | Audit complete human/agent operation parity as workflows evolve; no test-only substitutes |
 | Example experience | Feature Lab and the current Prism Relay industrial environment | Coherent usable demonstrations; replace Prism Relay's intermediate collection startup with the requested character template |
 | Production evidence | Focused headless behavior/GPU tests and past macOS product checks | Real project workflow, stress/performance and shipping evidence beyond test counts |
 
-Review direction before resuming feature development. Prioritize complete usable
+Prioritize complete usable
 editor/game workflows and clear engine contracts. Do not accumulate one-off visual
 acceptance executables, procedural example-generation scripts or staged test counts
 as substitutes for those workflows. Unit tests never initialize windows/devices;

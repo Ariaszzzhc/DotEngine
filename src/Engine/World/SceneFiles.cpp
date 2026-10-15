@@ -17,6 +17,7 @@ import Dot.World.Scene;
 import Dot.Graphics.Shadows;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Audio.Source;
 import Dot.Script.Source;
 
@@ -178,6 +179,23 @@ namespace Dot::World {
       return result;
     }
 
+    auto characterController(const Json& value) -> CharacterController {
+      Codec::requireFields(
+          value, {"radius", "halfHeight", "maxSlopeDegrees", "stepHeight", "stickDistance", "mass",
+                  "maxStrength", "jumpSpeed", "maxContacts"});
+
+      if (!value["maxContacts"].is_number_integer() || value["maxContacts"] < 1
+          || value["maxContacts"] > 4096) {
+        throw std::invalid_argument("Character maxContacts must be an integer in [1,4096]");
+      }
+
+      return {Codec::number(value["radius"]),           Codec::number(value["halfHeight"]),
+              Codec::number(value["maxSlopeDegrees"]),  Codec::number(value["stepHeight"]),
+              Codec::number(value["stickDistance"]),    Codec::number(value["mass"]),
+              Codec::number(value["maxStrength"]),      Codec::number(value["jumpSpeed"]),
+              value["maxContacts"].get<std::uint32_t>()};
+    }
+
     auto audioSource(const Json& value) -> AudioSource {
       Codec::requireFields(value, {"asset", "voice", "spatial", "playOnStart"});
       AudioSource result;
@@ -268,6 +286,7 @@ namespace Dot::World {
       std::optional<Light> light;
       std::optional<AnimationPlayer> animation;
       std::optional<SkinBinding> skin;
+      std::optional<CharacterController> character;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -286,7 +305,7 @@ namespace Dot::World {
       for (const auto& value : root["entities"]) {
         Codec::requireFields(value, {"id", "name", "parent", "transform"},
                              {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                              "script", "material", "light", "animation", "skin"});
+                              "script", "material", "light", "animation", "skin", "character"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -310,6 +329,10 @@ namespace Dot::World {
 
         if (value.contains("rigidBody") && !value["rigidBody"].is_null()) {
           record.rigidBody = rigidBody(value["rigidBody"]);
+        }
+
+        if (value.contains("character") && !value["character"].is_null()) {
+          record.character = characterController(value["character"]);
         }
 
         if (value.contains("audioSource") && !value["audioSource"].is_null()) {
@@ -484,6 +507,12 @@ namespace Dot::World {
           return std::unexpected(changed.error());
         }
 
+        changed = scene->setCharacterController(entity, record.character);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
         changed = scene->setAudioSource(entity, record.audioSource);
 
         if (!changed) {
@@ -610,6 +639,18 @@ namespace Dot::World {
               {"gravityFactor", value.gravityFactor},
               {"sensor", value.sensor}};
     }
+
+    auto characterJson(const CharacterController& value) -> Json {
+      return {{"radius", value.radius},
+              {"halfHeight", value.halfHeight},
+              {"maxSlopeDegrees", value.maxSlopeDegrees},
+              {"stepHeight", value.stepHeight},
+              {"stickDistance", value.stickDistance},
+              {"mass", value.mass},
+              {"maxStrength", value.maxStrength},
+              {"jumpSpeed", value.jumpSpeed},
+              {"maxContacts", value.maxContacts}};
+    }
   }  // namespace
 
   auto encodeScene(const Scene& scene) -> Core::Result<std::string> {
@@ -667,6 +708,7 @@ namespace Dot::World {
            {"material", entity.material ? Json{{"asset", entity.material->asset}} : Json(nullptr)},
            {"light", entity.light ? lightJson(*entity.light) : Json(nullptr)},
            {"rigidBody", entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr)},
+           {"character", entity.character ? characterJson(*entity.character) : Json(nullptr)},
            {"audioSource", entity.audioSource ? sourceJson(*entity.audioSource) : Json(nullptr)},
            {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}
                                                   : Json(nullptr)},

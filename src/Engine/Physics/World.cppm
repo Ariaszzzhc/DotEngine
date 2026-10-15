@@ -129,6 +129,20 @@ export namespace Dot::Physics {
     bool preserveAngularVelocity{};
   };
 
+  struct CharacterChange {
+    std::optional<CharacterId> character;
+    std::optional<CharacterConfig> config;
+    /** Explicitly retain backend velocity and queued input during replacement;
+     * otherwise both reset. Scene callers disable this for teleports.
+     * 替换时明确保留后端速度及排队输入，否则清空两者；场景调用者在传送时禁用。 */
+    bool preserveMotion{};
+  };
+
+  struct WorldChangeResult {
+    std::vector<std::optional<BodyId>> bodies;
+    std::vector<std::optional<CharacterId>> characters;
+  };
+
   /** Owns a Jolt simulation, shapes, bodies, temporary allocator, and job system.
    * Operations require the creating thread; destruction requires quiescence.
    * Independent worlds share process-lifetime Jolt type registration;
@@ -162,6 +176,17 @@ export namespace Dot::Physics {
      * 可能部分应用并使世界故障，保留诊断读取和销毁操作。 */
     [[nodiscard]] auto applyChanges(std::span<const BodyChange> changes)
         -> Core::Result<std::vector<std::optional<BodyId>>>;
+    /** Prepare both kinds before mutation; full-capacity replacements retain IDs.
+     * At most 8192 body and 512 character changes, unique per handle kind. Ordered
+     * results use nullopt for deletion. Final contacts are queried after publishing
+     * both sets; native slot/contact failures then fault the world, with diagnostic
+     * reads/destruction still available. Input/capacity failures retain both sets.
+     * 修改前准备两类对象，满容量替换保留 ID；刚体/角色变更分别最多 8192/512 项，
+     * 各类句柄不重复，结果按输入排序，删除返回空值。发布两类后查询最终接触；随后原生槽位/
+     * 接触失败使世界故障，仍可读取诊断和销毁；输入/容量错误保留两类对象。 */
+    [[nodiscard]] auto applyChanges(std::span<const BodyChange> bodies,
+                                    std::span<const CharacterChange> characters)
+        -> Core::Result<WorldChangeResult>;
     [[nodiscard]] auto destroyBody(BodyId body) -> Core::Result<void>;
     [[nodiscard]] auto body(BodyId body) const -> Core::Result<BodyState>;
     /** Own a feet-origin Y-up virtual capsule in this world's real body simulation.

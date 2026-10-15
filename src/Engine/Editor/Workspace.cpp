@@ -259,8 +259,32 @@ namespace Dot::Editor {
       }
 
       auto encoded = World::encodeScene(*scene);
-      return encoded ? Core::Result<Json>{Codec::parseJson(*encoded)["entities"][0]}
-                     : std::unexpected(encoded.error());
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      auto result = Codec::parseJson(*encoded)["entities"][0];
+      auto removed = scene->setRigidBody(id, std::nullopt);
+
+      if (!removed) {
+        return std::unexpected(removed.error());
+      }
+
+      auto attached = scene->setCharacterController(id, World::CharacterController{});
+
+      if (!attached) {
+        return std::unexpected(attached.error());
+      }
+
+      encoded = World::encodeScene(*scene);
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      result["character"] = Codec::parseJson(*encoded)["entities"][0]["character"];
+      return result;
     }
   }  // namespace
 
@@ -2815,14 +2839,19 @@ namespace Dot::Editor {
         fields(m_edit["transform"]);
       }
 
-      for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light", "animation", "skin"}) {
+      for (const auto* component :
+           {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script", "material",
+            "light", "animation", "skin", "character"}) {
         ImGui::PushID(component);
         const auto title = label(component);
 
         if (m_edit[component].is_null()) {
           if (std::string_view(component) == "skin" && m_edit["mesh"].is_null()) {
             ImGui::TextDisabled("Add a mesh before a skin binding");
+          } else if ((std::string_view(component) == "character" && !m_edit["rigidBody"].is_null())
+                     || (std::string_view(component) == "rigidBody"
+                         && !m_edit["character"].is_null())) {
+            ImGui::TextDisabled("Rigid body and character controller are exclusive");
           } else if (ImGui::Button(("Add " + title).c_str())) {
             if (std::string_view(component) == "skin") {
               m_edit[component] = {{"asset", "assets/skin.dotskin"},
@@ -3113,8 +3142,9 @@ namespace Dot::Editor {
         operations.push_back({{"op", "transform"}, {"entity", id}, {"value", m_edit["transform"]}});
       }
 
-      for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light", "animation", "skin"}) {
+      for (const auto* component :
+           {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script", "material",
+            "light", "animation", "skin", "character"}) {
         if (m_edit[component] != m_original[component]) {
           operations.push_back({{"op", "component"},
                                 {"entity", id},

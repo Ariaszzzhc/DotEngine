@@ -115,9 +115,51 @@ namespace Dot::Animation {
       }
     }
 
+    /** Physics owns a character's root and ancestor transforms, while bones/meshes
+     * below that root remain independently animatable.
+     * 物理拥有角色根及祖先变换，根下的骨骼/网格仍可独立动画。 */
+    auto characterAuthority() const -> Core::Result<std::set<std::uint64_t>> {
+      auto owners = scene->characterControllers();
+
+      if (!owners) {
+        return std::unexpected(owners.error());
+      }
+
+      std::set<std::uint64_t> result;
+
+      for (auto current : *owners) {
+        while (result.insert(current.value).second) {
+          auto entity = scene->entity(current);
+
+          if (!entity) {
+            return std::unexpected(entity.error());
+          }
+
+          if (!entity->parent) {
+            break;
+          }
+
+          current = *entity->parent;
+        }
+      }
+
+      return result;
+    }
+
     auto authority(std::uint64_t owner, const std::vector<std::uint64_t>& writers)
         -> Core::Result<void> {
+      auto protectedTransforms = characterAuthority();
+
+      if (!protectedTransforms) {
+        return std::unexpected(protectedTransforms.error());
+      }
+
       for (const auto id : writers) {
+        if (protectedTransforms->contains(id)) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Animation clip conflicts with character controller authority");
+        }
+
         for (const auto& [other, player] : players) {
           if (other != owner && std::ranges::find(player->writers, id) != player->writers.end()) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -174,6 +216,7 @@ namespace Dot::Animation {
     auto synchronize() -> Core::Result<void> {
       try {
         const auto descriptions = take(scene->animationPlayers());
+        const auto protectedTransforms = take(characterAuthority());
         std::map<std::uint64_t, std::shared_ptr<Player>> candidate;
         std::set<std::uint64_t> writers;
         std::size_t channels{}, keys{};
@@ -264,6 +307,11 @@ namespace Dot::Animation {
           keys += player->keys;
 
           for (const auto id : player->writers) {
+            if (protectedTransforms.contains(id)) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Animation conflicts with character controller authority");
+            }
+
             if (!writers.insert(id).second) {
               return Core::fail(Core::ErrorCode::InvalidArgument,
                                 "Animation players write the same entity");

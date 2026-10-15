@@ -93,10 +93,12 @@ add_executable(DotTests
     SceneFileTests.cpp
     PhysicsTests.cpp
     CharacterPhysicsTests.cpp
+    CharacterBatchTests.cpp
     PhysicsBatchTests.cpp
     ContactTests.cpp
     SceneContactTests.cpp
     ScenePhysicsTests.cpp
+    SceneCharacterTests.cpp
     RigidBodyTests.cpp
     AudioTests.cpp
     SceneAudioTests.cpp

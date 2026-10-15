@@ -193,6 +193,10 @@ ancestors; populated-scene frame times/streaming are not established.
 
 ## Runtime clip controls
 
+Character controller roots and their ancestors are reserved for physics. Child
+bones/meshes remain animatable. Clip switches and cross-fades validate this same
+authority before modifying playback or pose; see [scene physics](Physics.md).
+
 ScenePlayers provides owned state snapshots and explicit play/pause/stop/seek/
 configure controls. They synchronize descriptions without advancing time and leave
 saved player descriptions unchanged. Playing another library index restores the
