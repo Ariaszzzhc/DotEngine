@@ -43,6 +43,7 @@ add_executable(DotUnitTests
     AnimationPlayerTests.cpp
     HomeDialogTests.cpp
     SceneAnimatorTests.cpp
+    SkinTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
@@ -405,3 +406,7 @@ set_tests_properties(runtime.model_animation PROPERTIES TIMEOUT 60 LABELS "accep
 add_test(NAME editor.scene_animation COMMAND DotEditorAcceptance --scene-animation-test
     "${DOT_TYPESCRIPT_COMPILER}" "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.scene_animation PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native" RUN_SERIAL TRUE)
+
+add_test(NAME runtime.skinning COMMAND DotRuntimeAcceptance --skinning-test
+    "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
+set_tests_properties(runtime.skinning PROPERTIES TIMEOUT 60 LABELS "acceptance;integration")

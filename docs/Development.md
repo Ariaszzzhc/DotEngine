@@ -4694,3 +4694,27 @@ source clip files and the saved panel binding. CRC/executable modes, original
 font/HDRI/licenses, private/source exclusions, strict signatures and portable loader
 references pass for 13 regular Mach-O files/three relative links. Private archive
 staging is removed. Only arm64 macOS execution is validated.
+
+
+## 2026-10-15 — Native skin data and deformation reference
+
+Added separate Animation.Skin and Graphics.Skinning interfaces/implementations.
+Immutable skin data owns up to 1024 inverse binds and one million eight-slot vertex
+influences; strict joint/weight validation precedes one-time normalization. Pure
+mesh-local palette evaluation retains joint order and checks finite invertible
+affine transforms and bounded entries. The CPU reference preserves source geometry
+and unanimated attributes, uses inverse-transpose blended normals and orthogonal
+tangents with reflected handedness, and rejects singular/overflow/seam results.
+
+Reviewed immutable ownership, precise counts, affine/matrix order, normalized
+weights, source preservation and error propagation. A first implementation build
+needed an explicit span include; the LLVM environment was unchanged. Debug builds
+and focused cases pass 7/7 (1.95s), including a development-only runnable artifact
+acceptance and six CPU cases. Exact joint/vertex boundaries, failed samples, copies/
+moves and concurrent immutable reads retain coverage. GPU and imported-scene
+consumers follow this tested foundation; they are not claimed implemented here.
+
+Release/NDEBUG focused checks pass 7/7 (0.61s). All touched C++ files pass
+clang-format and diff checks. Tests require no window or device at this stage;
+only arm64 macOS is validated. Separate unit and runnable file cases retain their
+actual layer labels. The large-engine objective remains active.

@@ -26,6 +26,7 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto testSkinning(const std::filesystem::path& output) -> int;
   auto testAnimation(const std::filesystem::path& output) -> int;
   auto testModelAnimation(const std::filesystem::path& source, const std::filesystem::path& output)
       -> int;
@@ -741,6 +742,10 @@ auto main(int argc, char** argv) -> int {
               std::u8string(argv[2], argv[2] + std::char_traits<char>::length(argv[2]))),
           std::filesystem::path(
               std::u8string(argv[3], argv[3] + std::char_traits<char>::length(argv[3]))));
+    }
+
+    if (argc == 3 && std::string_view(argv[1]) == "--skinning-test") {
+      return Dot::Runtime::testSkinning(argv[2]);
     }
 
     if (argc == 3 && std::string_view(argv[1]) == "--animation-test") {

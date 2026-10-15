@@ -2,6 +2,7 @@
 # 验收驱动仅用于开发，消费相同的引擎与播放器。
 add_executable(DotRuntimeAcceptance
     Runtime/main.cpp
+    Runtime/SkinningAcceptance.cpp
     Runtime/AnimationAcceptance.cpp
     Runtime/ModelAnimationAcceptance.cpp
     Runtime/AudioAcceptance.cpp
