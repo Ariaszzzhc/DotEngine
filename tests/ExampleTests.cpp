@@ -6,10 +6,16 @@
 #include <cmath>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
+import Dot.Assets.Image;
+import Dot.Assets.Material;
+import Dot.Assets.Mesh;
+import Dot.Graphics.Geometry;
+import Dot.Graphics.Image;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -386,4 +392,82 @@ TEST_CASE("prism.hot_reload_preserves_round_and_native_scene") {
   CHECK(title(session) == before);
   CHECK_FALSE(entity(session, "CrystalVisual1").mesh->visible);
   report(session.close());
+}
+
+TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inputs") {
+  Fixture fixture;
+  auto scene = fixture.project.loadStartup().value();
+  auto files = fixture.project.files().value();
+  std::map<std::string, Graphics::MeshSurface> surfaces;
+  std::map<std::string, Assets::MaterialDescription> materials;
+  REQUIRE(scene.environment()->has_value());
+  REQUIRE(scene.occlusion()->has_value());
+  auto panorama = Assets::loadHdrImage(files, scene.environment()->value().asset);
+  REQUIRE_MESSAGE(panorama, (panorama ? "" : panorama.error().message));
+  unsigned shadowed{};
+
+  for (const auto& entity : scene.entities().value()) {
+    if (entity.light && entity.light->shadows) {
+      ++shadowed;
+    }
+
+    if (!entity.mesh) {
+      continue;
+    }
+
+    INFO(entity.name);
+    REQUIRE(entity.material);
+    REQUIRE(entity.mesh->kind == World::MeshKind::Asset);
+    const auto& path = entity.mesh->asset;
+
+    if (!surfaces.contains(path)) {
+      auto mesh = Assets::loadMesh(files, path);
+      REQUIRE_MESSAGE(mesh, (mesh ? "" : mesh.error().message));
+      surfaces.emplace(path, Graphics::meshSurface(mesh->data).value());
+    }
+
+    const auto& material = entity.material->asset;
+
+    if (!materials.contains(material)) {
+      auto loaded = Assets::loadMaterial(files, material);
+      REQUIRE_MESSAGE(loaded, (loaded ? "" : loaded.error().message));
+      materials.emplace(material, std::move(*loaded));
+    }
+
+    CHECK(surfaces.at(path).hasNormals);
+
+    if (materials.at(material).normalTexture) {
+      CHECK_MESSAGE(surfaces.at(path).hasNormalMapFrame, path);
+    }
+  }
+
+  CHECK(shadowed == 1);
+  CHECK(surfaces.size() >= 10);
+  CHECK(materials.size() >= 8);
+  unsigned photographic{};
+
+  for (const auto& [path, material] : materials) {
+    if (!material.baseColorTexture) {
+      continue;
+    }
+
+    INFO(path);
+    ++photographic;
+    REQUIRE(material.metallicRoughnessTexture);
+    REQUIRE(material.normalTexture);
+    REQUIRE(material.occlusionTexture);
+    CHECK(material.baseColorTexture->sampling.colorSpace == Graphics::ColorSpace::Srgb);
+    CHECK(material.normalTexture->sampling.colorSpace == Graphics::ColorSpace::Linear);
+    CHECK(material.metallicRoughnessTexture->sampling.colorSpace == Graphics::ColorSpace::Linear);
+
+    for (const auto* source : {&*material.baseColorTexture, &*material.metallicRoughnessTexture,
+                               &*material.normalTexture, &*material.occlusionTexture}) {
+      auto image = Assets::loadImage(files, source->path);
+      REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+      CHECK(image->width == 1024);
+      CHECK(image->height == 1024);
+    }
+  }
+
+  CHECK(photographic == 2);
 }

@@ -5060,3 +5060,61 @@ ReadOnly migration gates, unchanged authoring, platform-neutral implementation,
 formatting and focused failure/normal/boundary coverage. Only arm64 macOS is
 executed; Windows/Linux support is implementation-only. No full-goal completion or
 production animation performance is claimed.
+
+## Physical example environment and preview diagnostics
+
+Prism Relay now owns local photo-derived concrete/metal PBR resources, original
+hard-surface meshes with explicit normals, HDRI illumination, directional soft
+shadows, SSAO
+and a perspective industrial bay. Source authors, CC0 links and SHA-256 inputs are
+stored with the project. Geometry is reproducible with a standard-library Python
+authoring tool; runtime/editor depend only on the generated native assets. Mechanical
+slats/vents are grouped as meshes rather than individual hierarchy entries. The
+scene has 173 entities, with its existing collision/sensor route still intact.
+This stage establishes usable game content inputs, not realistic art completion.
+
+The user clarified the next target: a non-shooting over-the-shoulder humanoid
+character template with movement/jumping and camera control. Roadmap/example docs
+now explicitly record that requirement. The intermediate collection scene is not
+presented as the requested final gameplay. Character physics, model/animation,
+follow/orbit camera and camera collision remain required next integration work.
+
+Actual PBR rendering initially rejects the old crystal OBJ's absent normals;
+the authored crystal now supplies explicit facet normals. A device-free asset
+integration checks normal-map frames and actual local 1K texture inputs. Real
+rendering verifies six shared textures, HDR values above one, ACES-fitted output,
+and independently visible contributions from IBL, texture maps, soft shadows and
+SSAO. Preview override removal restores exact original pixels. The ordinary editor
+runs the project in isolated Play, restores authoring pixels, and an owned package
+reproduces the gameplay-ready frame after both source trees are deleted. Existing
+native input/audio/standalone and collection/damage/restart/reload cases are retained
+until the clean character-template replacement stage.
+
+The new editor case initially reads a viewport before native Docking initialization
+settles; it now uses the existing three-frame layout initialization. Actual preview
+failures now appear through inspect's nullable view.error and contextual capture
+errors; a missing OBJ/undo test checks recovery. The initial diagnostic test used
+the document-only snapshot API instead of workspace inspect; the endpoint is
+corrected. Final targeted physical workflow passes 1/1 (15.61s), diagnostic recovery
+passes 1/1 (1.14s); earlier complete game/source/template focus passes 9/9 (26.54s).
+An explicit ColorSpace module import fixes new test compilation without environment
+changes. All 361 C/C++ files pass clang-format. Regenerating all 15 original mesh/OBJ
+outputs produces identical SHA-256 values. Shaders are unchanged. Both configured
+Debug/Release builds succeed; full suites run serially below. No interim ZIP is made.
+
+The first full Debug run passes 1080/1083 (331.06s); three project-home/CLI
+assertions still hard-code the earlier 40-entity template. They now compare the
+created scene count with its actual source template, retaining the complete-copy
+contract. Both builds succeed again. Final full Debug passes 1083/1083 (321.83s);
+Release/NDEBUG runs afterward without concurrent compilation. The inventory is
+1012 doctest plus 71 executable/script identities: 253 unit, 701 integration,
+133 offscreen, 219 GPU, 74 native, 129 acceptance, 155 compiler, 21 process,
+27 platform and 32 audio-native labels (overlapping). All tracked C/C++ formatting
+and diff whitespace checks pass. Actual editor Play and relocated-export PNGs
+are visually inspected; neither image is presented as final character-template art.
+
+Complete Release/NDEBUG passes 1083/1083 (71.87s). Final diff review checks
+project-local asset references, explicit normals/UV frames, license/source hashes,
+owned export input lifetime, preview-error recovery, source-template copy checks,
+platform-neutral changes and retained existing coverage. Only arm64 macOS is
+executed. No interim package or character-template completion is claimed.

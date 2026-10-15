@@ -24,7 +24,7 @@ and its evidence; passing these tests does not establish missing product capabil
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
-| Playable example | [Prism Relay](Examples.md): collection, collisions, hazards, audio, score, deadline, pause, victory/defeat, restart and reload; real native input/GPU/audio acceptance |
+| Example environment | [Prism Relay](Examples.md): local photographic PBR/normal/ARM, original hard-surface meshes, HDRI, soft shadows, SSAO and HDR/ACES; actual preview/Play/owned-export pixels; collection startup is intermediate, requested non-shooting over-the-shoulder character template remains pending |
 | Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 95 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
 | Deployable editor | [Portable distribution](Distribution.md) includes compiler/embedded modules/font/templates/player and dependencies; relocated editor creates, checks, previews, runs and exports an independent game |
 
@@ -34,10 +34,10 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG each pass 1080/1080 CTest identities
-(1009 doctest cases and 71 executable/script checks), taking 257.76s and 53.36s.
-The [test layers](Testing.md) separate 253 pure CPU unit cases from 700 integration,
-133 offscreen GPU, 72 native and 127 acceptance cases; labels overlap. All 361
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1083/1083 CTest identities
+(1012 doctest cases and 71 executable/script checks), taking 321.83s and 71.87s.
+The [test layers](Testing.md) separate 253 pure CPU unit cases from 701 integration,
+133 offscreen GPU, 74 native and 129 acceptance cases; labels overlap. All 361
 current engine/application/test C/C++ files pass clang-format; 17 WGSL
 files pass established indentation/line/whitespace checks and actual pipeline runs.
 The native animation SDK and interactive Feature Lab are covered through actual
@@ -595,3 +595,18 @@ Debug passes 1080/1080 (257.76s), then Release/NDEBUG passes 1080/1080 (53.36s).
 All 361 C/C++ sources pass clang-format; all 17 unchanged WGSL sources pass existing
 layout checks. Visual animation tools, populated-game performance, mature editor
 and realistic Prism Relay remain unfinished. No interim distribution ZIP is created.
+
+
+## Physical environment and preview diagnostics
+
+Prism Relay now owns local CC0 photographic PBR textures/HDRI and reproducible
+original meshes, with actual texture, IBL, SSAO and shadow contributions checked
+through pixels. Editor isolated Play retains authoring; an owned compiled export
+reproduces the gameplay-ready frame after source trees are removed. Contextual
+preview diagnostics and missing-mesh/undo recovery are also covered.
+
+Full Debug passes 1083/1083 (321.83s), followed by Release/NDEBUG 1083/1083 (71.87s).
+All 361 tracked C/C++ files pass clang-format. Original geometry regeneration is
+content-identical; shader sources are unchanged. Actual editor and relocated-export
+PNGs are inspected. This remains an environment foundation, not final realistic
+art or the required humanoid template. No interim distribution archive is produced.

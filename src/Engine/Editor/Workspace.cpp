@@ -2429,6 +2429,7 @@ namespace Dot::Editor {
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
+          {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
           {"textInput", m_renderer->guiStats().value().text},
           {"source", playing()     ? "play"
@@ -5688,7 +5689,10 @@ namespace Dot::Editor {
     }
 
     if (!m_impl->m_previewReady || !m_impl->m_target) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Workspace has no rendered preview");
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        m_impl->m_previewError.empty()
+                            ? "Workspace has no rendered preview"
+                            : "Workspace preview: " + m_impl->m_previewError);
     }
 
     return m_impl->m_renderer->readTarget(*m_impl->m_target);

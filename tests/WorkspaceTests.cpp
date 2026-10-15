@@ -1584,3 +1584,36 @@ TEST_CASE("skin.workspace_inspector_authoring_history_and_isolated_play_render_r
   auto saved = fixture.project.loadStartup().value();
   CHECK(saved.transform(saved.findEntity(joint.value).value())->position.x == 0);
 }
+
+TEST_CASE("workspace.preview_failure_context_is_observable_and_undo_recovers_pixels") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  const auto inspect
+      = [&] { return Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value()); };
+  const auto initial = workspace.captureViewport().value();
+  CHECK(inspect()["workspace"]["view"]["error"].is_null());
+  auto mesh = snapshot(workspace)["scene"]["entities"][1]["mesh"];
+  mesh["kind"] = "asset";
+  mesh["asset"] = "assets/missing.obj";
+  command(
+      workspace,
+      {{"command", "edit"},
+       {"operations",
+        Json::array(
+            {{{"op", "component"}, {"entity", "2"}, {"component", "mesh"}, {"value", mesh}}})}});
+  REQUIRE(workspace.step(16ms));
+  auto failed = workspace.captureViewport();
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().message.find("missing.obj") != std::string::npos);
+  CHECK(inspect()["workspace"]["view"]["error"].get<std::string>().find("missing.obj")
+        != std::string::npos);
+  command(workspace, {{"command", "undo"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == initial.pixels);
+  CHECK(inspect()["workspace"]["view"]["error"].is_null());
+}

@@ -2,7 +2,11 @@
 
 ## Prism Relay
 
-Prism Relay is a playable 3D collection game authored as a normal native project.
+Prism Relay's target is a realistic science-fiction, non-shooting over-the-shoulder
+character template: movement, jumping, camera follow and physical collision.
+Character integration is still required. Its current intermediate startup retains
+the earlier playable 3D collection prototype while the physical environment is
+being established; the following controls describe that intermediate behavior.
 Collect eight violet crystals in 75 seconds, avoid red hazards and preserve three
 health points. Native walls and the central obelisk block the player. Eight score
 indicators, three health markers, a shrinking time bar and the runtime title show
@@ -30,7 +34,7 @@ their actual game scripts using the engine's embedded modules/declarations; SDK
 sources are absent from both project trees. The portable
 editor includes complete projects under its top-level `examples` directory.
 
-The saved scene owns 40 native entities and their camera/listener, transforms,
+The saved scene owns 173 native entities and their camera/listener, transforms,
 hierarchy, meshes, rigid bodies, sensor pickups/hazards, audio and script
 attachments. The OBJ crystal and synthesized mono PCM sounds are original sample
 assets. Scripts attach to the player and visual crystal children; they do not
@@ -69,3 +73,17 @@ components and services; the sample alone is not evidence of full API coverage.
 
 The [project home](ProjectHome.md) can create a writable Prism Relay copy with the
 engine module imports directly from its packaged template; manual copying is optional.
+
+
+### Physical industrial environment
+
+Prism Relay now consumes actual PBR materials, local Poly Haven photo-derived
+color/normal/ARM maps and the Studio Small 09 HDRI. Original hard-surface assets
+with explicit normals form the deck, drone, cell docks, relay and service equipment.
+Perspective
+framing, authored directional soft shadows, local lights, geometric SSAO and the
+HDR/ACES-fitted display path run through ordinary scene components. Source and
+license records live with the project; no runtime downloads or special game renderer
+are introduced. Existing route, damage, restart and hot-reload checks remain.
+This environment pass does not establish finished realistic game art, polished
+camera/HUD/levels or populated-game performance.

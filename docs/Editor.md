@@ -958,3 +958,10 @@ scene to insert the complete joint hierarchy and animation bindings. Every copie
 joint receives a fresh entity ID. Asset import does not silently insert a character
 or enable different collision shapes. The [skin acceptance](Skinning.md) checks actual
 import, Inspector, duplicate/undo, isolated Play and relocated native export.
+
+
+Viewport inspection now includes a nullable `view.error` string with the latest
+actual preview failure. `captureViewport` includes that context when no preview can
+be captured; it does not report a successful frame for a failed asset load. A later
+successful draw clears the error. A native missing-mesh/undo case checks diagnostic
+visibility and recovery of the original pixels after the Docking layout settles.

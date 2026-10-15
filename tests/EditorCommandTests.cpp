@@ -403,7 +403,11 @@ TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
   REQUIRE(files.writeTextAtomic("request.json", request.dump()));
   auto result = command(directory, {"project-action", utf(resources), "request.json"});
   CHECK(result["project"]["name"] == "Home project");
-  CHECK(result["scene"]["entities"].size() == 40);
+  CHECK(result["scene"]["entities"].size()
+        == Dot::Project::Project::open(resources / "templates/PrismRelay")
+               ->loadStartup()
+               ->entityCount()
+               .value());
   command(directory, {"project-action", utf(resources), "request.json"}, false);
 
   for (const auto* budget : {"", "-1", "+1", "1.5", "1x", "18446744073709551616"}) {

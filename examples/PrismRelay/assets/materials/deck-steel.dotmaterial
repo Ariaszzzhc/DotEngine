@@ -1,0 +1,66 @@
+{
+  "model": "metallicRoughness",
+  "baseColor": [
+    0.85,
+    0.88,
+    0.92,
+    1
+  ],
+  "emissive": [
+    0,
+    0,
+    0
+  ],
+  "metallic": 1,
+  "roughness": 1,
+  "normalScale": 0.65,
+  "doubleSided": false,
+  "baseColorTexture": {
+    "path": "assets/textures/metal_plate_diff_1k.jpg",
+    "sampling": {
+      "colorSpace": "srgb",
+      "filter": "linear",
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "mipmaps": true,
+      "maxAnisotropy": 8
+    }
+  },
+  "metallicRoughnessTexture": {
+    "path": "assets/textures/metal_plate_arm_1k.jpg",
+    "sampling": {
+      "colorSpace": "linear",
+      "filter": "linear",
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "mipmaps": true,
+      "maxAnisotropy": 8
+    }
+  },
+  "normalTexture": {
+    "path": "assets/textures/metal_plate_nor_gl_1k.jpg",
+    "sampling": {
+      "colorSpace": "linear",
+      "filter": "linear",
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "mipmaps": true,
+      "maxAnisotropy": 8
+    }
+  },
+  "emissiveTexture": null,
+  "occlusionStrength": 1,
+  "occlusionTexture": {
+    "path": "assets/textures/metal_plate_arm_1k.jpg",
+    "sampling": {
+      "colorSpace": "linear",
+      "filter": "linear",
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "mipmaps": true,
+      "maxAnisotropy": 8
+    }
+  },
+  "alphaMode": "opaque",
+  "alphaCutoff": 0.5
+}

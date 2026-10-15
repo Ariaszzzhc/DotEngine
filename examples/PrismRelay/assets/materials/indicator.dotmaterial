@@ -1,0 +1,26 @@
+{
+  "model": "metallicRoughness",
+  "baseColor": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "emissive": [
+    0,
+    0,
+    0
+  ],
+  "metallic": 0.1,
+  "roughness": 0.35,
+  "normalScale": 0.6,
+  "doubleSided": false,
+  "baseColorTexture": null,
+  "metallicRoughnessTexture": null,
+  "normalTexture": null,
+  "emissiveTexture": null,
+  "occlusionStrength": 1,
+  "occlusionTexture": null,
+  "alphaMode": "opaque",
+  "alphaCutoff": 0.5
+}

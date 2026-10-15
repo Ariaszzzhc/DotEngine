@@ -9,14 +9,14 @@
       "transform": {
         "position": [
           0,
-          12,
-          14
+          13,
+          18
         ],
         "rotation": [
-          -0.3420201433256687,
+          -0.29904079225608665,
           0,
           0,
-          0.9396926207859084
+          0.9542403285162769
         ],
         "scale": [
           1,
@@ -25,8 +25,8 @@
         ]
       },
       "camera": {
-        "projection": "orthographic",
-        "verticalFovDegrees": 60,
+        "projection": "perspective",
+        "verticalFovDegrees": 46,
         "orthographicHeight": 20,
         "nearPlane": 0.1,
         "farPlane": 100,
@@ -59,12 +59,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/concrete-slab.dotmesh",
         "tint": [
-          0.06,
-          0.1,
-          0.18,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -89,6 +89,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/concrete.dotmaterial"
       }
     },
     {
@@ -98,7 +101,7 @@
       "transform": {
         "position": [
           0,
-          0.6,
+          1.6,
           -7.5
         ],
         "rotation": [
@@ -109,17 +112,17 @@
         ],
         "scale": [
           15,
-          1.2,
+          3.2,
           0.3
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/concrete-wall.dotmesh",
         "tint": [
-          0.14,
-          0.22,
-          0.35,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -144,6 +147,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/concrete.dotmaterial"
       }
     },
     {
@@ -169,12 +175,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
-          0.14,
-          0.22,
-          0.35,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -199,6 +205,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
       }
     },
     {
@@ -224,12 +233,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
-          0.14,
-          0.22,
-          0.35,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -254,6 +263,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
       }
     },
     {
@@ -279,12 +291,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
-          0.14,
-          0.22,
-          0.35,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -309,6 +321,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
       }
     },
     {
@@ -334,8 +349,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/drone-shell.dotmesh",
         "tint": [
           0.3,
           0.85,
@@ -395,6 +410,9 @@
           "maxHealth": 3
         },
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/drone.dotmaterial"
       }
     },
     {
@@ -523,6 +541,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -548,8 +569,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -557,6 +578,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -641,6 +665,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -666,8 +693,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -675,6 +702,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -759,6 +789,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -784,8 +817,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -793,6 +826,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -877,6 +913,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -902,8 +941,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -911,6 +950,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -995,6 +1037,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -1020,8 +1065,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -1029,6 +1074,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1113,6 +1161,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -1138,8 +1189,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -1147,6 +1198,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1231,6 +1285,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -1256,8 +1313,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -1265,6 +1322,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1349,6 +1409,9 @@
         "className": "CrystalSpin",
         "properties": {},
         "enabled": true
+      },
+      "material": {
+        "asset": "assets/materials/crystal.dotmaterial"
       }
     },
     {
@@ -1374,8 +1437,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.1,
           0.2,
@@ -1383,6 +1446,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1408,12 +1474,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/hazard-grille.dotmesh",
         "tint": [
           1,
-          0.2,
-          0.2,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -1438,6 +1504,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": true
+      },
+      "material": {
+        "asset": "assets/materials/hazard.dotmaterial"
       }
     },
     {
@@ -1463,12 +1532,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/hazard-grille.dotmesh",
         "tint": [
           1,
-          0.2,
-          0.2,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -1493,6 +1562,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": true
+      },
+      "material": {
+        "asset": "assets/materials/hazard.dotmaterial"
       }
     },
     {
@@ -1518,12 +1590,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/hazard-grille.dotmesh",
         "tint": [
           1,
-          0.2,
-          0.2,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -1548,6 +1620,9 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": true
+      },
+      "material": {
+        "asset": "assets/materials/hazard.dotmaterial"
       }
     },
     {
@@ -1573,8 +1648,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           1,
           0.3,
@@ -1582,6 +1657,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1607,8 +1685,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           1,
           0.3,
@@ -1616,6 +1694,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1641,8 +1722,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           1,
           0.3,
@@ -1650,6 +1731,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1675,8 +1759,8 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
         "tint": [
           0.2,
           0.8,
@@ -1684,6 +1768,9 @@
           1
         ],
         "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/indicator.dotmaterial"
       }
     },
     {
@@ -1709,12 +1796,12 @@
         ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "kind": "asset",
+        "asset": "assets/meshes/relay-column.dotmesh",
         "tint": [
-          0.22,
-          0.35,
-          0.55,
+          1,
+          1,
+          1,
           1
         ],
         "visible": true
@@ -1739,7 +1826,4959 @@
         "restitution": 0,
         "gravityFactor": 0,
         "sensor": false
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "100",
+      "name": "Facility foundation",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          -0.45,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/service-apron.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/concrete.dotmaterial"
+      }
+    },
+    {
+      "id": "101",
+      "name": "Deck -6 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6,
+          0.035,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "102",
+      "name": "Deck -6 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6,
+          0.035,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "103",
+      "name": "Deck -6 +0",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6,
+          0.035,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "104",
+      "name": "Deck -6 +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6,
+          0.035,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "105",
+      "name": "Deck -6 +6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6,
+          0.035,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "106",
+      "name": "Deck -3 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.035,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "107",
+      "name": "Deck -3 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.035,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "108",
+      "name": "Deck -3 +0",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.035,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "109",
+      "name": "Deck -3 +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.035,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "110",
+      "name": "Deck -3 +6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.035,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "111",
+      "name": "Deck +0 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.035,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "112",
+      "name": "Deck +0 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.035,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "113",
+      "name": "Deck +0 +0",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.035,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "114",
+      "name": "Deck +0 +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.035,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "115",
+      "name": "Deck +0 +6",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.035,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "116",
+      "name": "Deck +3 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.035,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "117",
+      "name": "Deck +3 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.035,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "118",
+      "name": "Deck +3 +0",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.035,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "119",
+      "name": "Deck +3 +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.035,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "120",
+      "name": "Deck +3 +6",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.035,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "121",
+      "name": "Deck +6 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          6,
+          0.035,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "122",
+      "name": "Deck +6 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          6,
+          0.035,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "123",
+      "name": "Deck +6 +0",
+      "parent": null,
+      "transform": {
+        "position": [
+          6,
+          0.035,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "124",
+      "name": "Deck +6 +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          6,
+          0.035,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "125",
+      "name": "Deck +6 +6",
+      "parent": null,
+      "transform": {
+        "position": [
+          6,
+          0.035,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/deck-panel.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/deck-steel.dotmaterial"
+      }
+    },
+    {
+      "id": "126",
+      "name": "Drone hardware",
+      "parent": "7",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/drone-hardware.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "127",
+      "name": "Drone optics",
+      "parent": "7",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/drone-optics.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "128",
+      "name": "Relay indicators",
+      "parent": "40",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/relay-indicators.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "129",
+      "name": "Cell dock 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.07,
+          5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "130",
+      "name": "Cell dock 2",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.07,
+          5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "131",
+      "name": "Cell dock 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          5.5,
+          0.07,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "132",
+      "name": "Cell dock 4",
+      "parent": null,
+      "transform": {
+        "position": [
+          5.5,
+          0.07,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "133",
+      "name": "Cell dock 5",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.07,
+          -5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "134",
+      "name": "Cell dock 6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.07,
+          -5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "135",
+      "name": "Cell dock 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5.5,
+          0.07,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "136",
+      "name": "Cell dock 8",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5.5,
+          0.07,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cell-dock.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "137",
+      "name": "Instrument console",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          0.015,
+          8.65
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          14.4,
+          0.18,
+          2.15
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "138",
+      "name": "Console fastener -7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "139",
+      "name": "Console fastener -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "140",
+      "name": "Console fastener -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "141",
+      "name": "Console fastener -1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -1,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "142",
+      "name": "Console fastener +1",
+      "parent": null,
+      "transform": {
+        "position": [
+          1,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "143",
+      "name": "Console fastener +3",
+      "parent": null,
+      "transform": {
+        "position": [
+          3,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "144",
+      "name": "Console fastener +5",
+      "parent": null,
+      "transform": {
+        "position": [
+          5,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "145",
+      "name": "Console fastener +7",
+      "parent": null,
+      "transform": {
+        "position": [
+          7,
+          0.13,
+          9.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.065,
+          0.025,
+          0.065
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "146",
+      "name": "North stanchion -7.7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.7,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "147",
+      "name": "North stanchion -5.0",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "148",
+      "name": "North stanchion -2.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -2.5,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "149",
+      "name": "North stanchion +0.0",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "150",
+      "name": "North stanchion +2.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          2.5,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "151",
+      "name": "North stanchion +5.0",
+      "parent": null,
+      "transform": {
+        "position": [
+          5,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "152",
+      "name": "North stanchion +7.7",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.7,
+          2.2,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          4.4,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "153",
+      "name": "North header",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          4.35,
+          -7.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          15.8,
+          0.32,
+          0.65
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "154",
+      "name": "Rail post -1 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.68,
+          0.95,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "155",
+      "name": "Rail warning -1 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.38,
+          0.6,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "156",
+      "name": "Rail post -1 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.68,
+          0.95,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "157",
+      "name": "Rail warning -1 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.38,
+          0.6,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "158",
+      "name": "Rail post -1 0",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.68,
+          0.95,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "159",
+      "name": "Rail warning -1 0",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.38,
+          0.6,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "160",
+      "name": "Rail post -1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.68,
+          0.95,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "161",
+      "name": "Rail warning -1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.38,
+          0.6,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "162",
+      "name": "Rail post -1 6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.68,
+          0.95,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "163",
+      "name": "Rail warning -1 6",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.38,
+          0.6,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "164",
+      "name": "Rail cap -1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -7.5,
+          1.23,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.4,
+          0.08,
+          15.5
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "165",
+      "name": "Service duct -1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -8.15,
+          0.6,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "166",
+      "name": "Service duct -1 -1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -8.15,
+          0.6,
+          -1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "167",
+      "name": "Service duct -1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          -8.15,
+          0.6,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "168",
+      "name": "Rail post 1 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.68,
+          0.95,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "169",
+      "name": "Rail warning 1 -6",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.38,
+          0.6,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "170",
+      "name": "Rail post 1 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.68,
+          0.95,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "171",
+      "name": "Rail warning 1 -3",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.38,
+          0.6,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "172",
+      "name": "Rail post 1 0",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.68,
+          0.95,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "173",
+      "name": "Rail warning 1 0",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.38,
+          0.6,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "174",
+      "name": "Rail post 1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.68,
+          0.95,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "175",
+      "name": "Rail warning 1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.38,
+          0.6,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "176",
+      "name": "Rail post 1 6",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.68,
+          0.95,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.32,
+          1.9,
+          0.32
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "177",
+      "name": "Rail warning 1 6",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.38,
+          0.6,
+          6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.025,
+          0.35,
+          0.12
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "178",
+      "name": "Rail cap 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          7.5,
+          1.23,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.4,
+          0.08,
+          15.5
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "179",
+      "name": "Service duct 1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          8.15,
+          0.6,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "180",
+      "name": "Service duct 1 -1",
+      "parent": null,
+      "transform": {
+        "position": [
+          8.15,
+          0.6,
+          -1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "181",
+      "name": "Service duct 1 3",
+      "parent": null,
+      "transform": {
+        "position": [
+          8.15,
+          0.6,
+          3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.6,
+          1.1,
+          2.7
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "182",
+      "name": "Bay lamp -5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5.5,
+          3.45,
+          -7.61
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.6,
+          0.12,
+          0.07
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "183",
+      "name": "Bay lamp 0",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          3.45,
+          -7.61
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.6,
+          0.12,
+          0.07
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "184",
+      "name": "Bay lamp 5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          5.5,
+          3.45,
+          -7.61
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.6,
+          0.12,
+          0.07
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/warm.dotmaterial"
+      }
+    },
+    {
+      "id": "185",
+      "name": "Deck guide -6.9 -5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.9,
+          0.074,
+          -5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "186",
+      "name": "Deck guide -6.9 -1.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.9,
+          0.074,
+          -1.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "187",
+      "name": "Deck guide -6.9 2.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.9,
+          0.074,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "188",
+      "name": "Deck guide -6.9 5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.9,
+          0.074,
+          5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "189",
+      "name": "Deck guide 6.9 -5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.9,
+          0.074,
+          -5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "190",
+      "name": "Deck guide 6.9 -1.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.9,
+          0.074,
+          -1.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "191",
+      "name": "Deck guide 6.9 2.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.9,
+          0.074,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "192",
+      "name": "Deck guide 6.9 5.5",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.9,
+          0.074,
+          5.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.04,
+          0.016,
+          1.6
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "193",
+      "name": "Bay key",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          8,
+          0
+        ],
+        "rotation": [
+          -0.46602891776520633,
+          -0.24107786342134122,
+          -0.13363164179934384,
+          0.8407384229858913
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "light": {
+        "kind": "directional",
+        "color": [
+          1,
+          0.91,
+          0.79
+        ],
+        "intensity": 3.4,
+        "range": 10,
+        "innerConeDegrees": 20,
+        "outerConeDegrees": 35,
+        "enabled": true,
+        "shadows": {
+          "resolution": 1024,
+          "cascades": 2,
+          "distance": 42,
+          "splitLambda": 0.65,
+          "depthBias": 0.0002,
+          "slopeBias": 0.001,
+          "normalBias": 0.01,
+          "filterRadius": 2
+        }
+      }
+    },
+    {
+      "id": "194",
+      "name": "Relay spill",
+      "parent": null,
+      "transform": {
+        "position": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "light": {
+        "kind": "point",
+        "color": [
+          0.12,
+          0.55,
+          1
+        ],
+        "intensity": 16,
+        "range": 6,
+        "innerConeDegrees": 20,
+        "outerConeDegrees": 35,
+        "enabled": true,
+        "shadows": null
+      }
+    },
+    {
+      "id": "195",
+      "name": "Service fill west",
+      "parent": null,
+      "transform": {
+        "position": [
+          -5,
+          2.4,
+          -6.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "light": {
+        "kind": "point",
+        "color": [
+          1,
+          0.72,
+          0.4
+        ],
+        "intensity": 24,
+        "range": 8,
+        "innerConeDegrees": 20,
+        "outerConeDegrees": 35,
+        "enabled": true,
+        "shadows": null
+      }
+    },
+    {
+      "id": "196",
+      "name": "Service fill east",
+      "parent": null,
+      "transform": {
+        "position": [
+          5,
+          2.4,
+          -6.7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "light": {
+        "kind": "point",
+        "color": [
+          1,
+          0.72,
+          0.4
+        ],
+        "intensity": 24,
+        "range": 8,
+        "innerConeDegrees": 20,
+        "outerConeDegrees": 35,
+        "enabled": true,
+        "shadows": null
+      }
+    },
+    {
+      "id": "197",
+      "name": "Back service panel -6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.25,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "203",
+      "name": "Panel service lamp -6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.25,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "204",
+      "name": "Back service panel -3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3.75,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "210",
+      "name": "Panel service lamp -3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3.75,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "211",
+      "name": "Back service panel -1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -1.25,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "217",
+      "name": "Panel service lamp -1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -1.25,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "218",
+      "name": "Back service panel 1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          1.25,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "224",
+      "name": "Panel service lamp 1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          1.25,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "225",
+      "name": "Back service panel 3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          3.75,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "231",
+      "name": "Panel service lamp 3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          3.75,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "232",
+      "name": "Back service panel 6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.25,
+          1.7,
+          -7.31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2.2,
+          2.4,
+          0.075
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "238",
+      "name": "Panel service lamp 6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.25,
+          0.9,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.7,
+          0.05,
+          0.03
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/cyan.dotmaterial"
+      }
+    },
+    {
+      "id": "239",
+      "name": "Adjacent power cabinet -1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          1.45,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "240",
+      "name": "Cabinet steel lid -1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          2.95,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "244",
+      "name": "Adjacent power cabinet -1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          1.45,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "245",
+      "name": "Cabinet steel lid -1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          2.95,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "249",
+      "name": "Adjacent power cabinet -1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          1.45,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "250",
+      "name": "Cabinet steel lid -1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -10.5,
+          2.95,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "254",
+      "name": "Adjacent power cabinet 1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          1.45,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "255",
+      "name": "Cabinet steel lid 1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          2.95,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "259",
+      "name": "Adjacent power cabinet 1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          1.45,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "260",
+      "name": "Cabinet steel lid 1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          2.95,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "264",
+      "name": "Adjacent power cabinet 1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          1.45,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.8,
+          2.9,
+          2.2
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/paint.dotmaterial"
+      }
+    },
+    {
+      "id": "265",
+      "name": "Cabinet steel lid 1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          10.5,
+          2.95,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.95,
+          0.15,
+          2.35
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/chamfered-block.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "269",
+      "name": "Intake assembly -6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -6.25,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "270",
+      "name": "Intake assembly -3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          -3.75,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "271",
+      "name": "Intake assembly -1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          -1.25,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "272",
+      "name": "Intake assembly 1.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          1.25,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "273",
+      "name": "Intake assembly 3.75",
+      "parent": null,
+      "transform": {
+        "position": [
+          3.75,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "274",
+      "name": "Intake assembly 6.25",
+      "parent": null,
+      "transform": {
+        "position": [
+          6.25,
+          2.27,
+          -7.245
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/intake-louvre.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "275",
+      "name": "Cabinet cooling assembly -1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          -9.57,
+          1.5,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "276",
+      "name": "Cabinet cooling assembly -1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          -9.57,
+          1.5,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "277",
+      "name": "Cabinet cooling assembly -1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          -9.57,
+          1.5,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "278",
+      "name": "Cabinet cooling assembly 1 -5",
+      "parent": null,
+      "transform": {
+        "position": [
+          9.57,
+          1.5,
+          -5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "279",
+      "name": "Cabinet cooling assembly 1 1",
+      "parent": null,
+      "transform": {
+        "position": [
+          9.57,
+          1.5,
+          1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
+      }
+    },
+    {
+      "id": "280",
+      "name": "Cabinet cooling assembly 1 7",
+      "parent": null,
+      "transform": {
+        "position": [
+          9.57,
+          1.5,
+          7
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "kind": "asset",
+        "asset": "assets/meshes/cabinet-cooling.dotmesh",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/materials/steel.dotmaterial"
       }
     }
-  ]
+  ],
+  "environment": {
+    "asset": "assets/studio_small_09_1k.hdr",
+    "intensity": 0.45,
+    "rotationDegrees": 30,
+    "background": false,
+    "radianceSize": 128,
+    "diffuseSize": 32,
+    "specularSize": 128,
+    "brdfSize": 128,
+    "samples": 512
+  },
+  "occlusion": {
+    "radius": 0.45,
+    "bias": 0.025,
+    "strength": 1.2,
+    "directions": 8,
+    "steps": 4,
+    "filterRadius": 2
+  }
 }

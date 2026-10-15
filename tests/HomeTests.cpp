@@ -64,10 +64,16 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
     auto result = Editor::performProjectAction(resources, request.dump());
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     CHECK(result->description()->name == "项目");
-    CHECK(result->loadStartup()->entityCount().value()
-          == (std::string_view(choice) == "blank"   ? 2
-              : std::string_view(choice) == "prism" ? 40
-                                                    : 16));
+    const auto expectedCount
+        = std::string_view(choice) == "blank"
+              ? 2
+              : Project::Project::open(
+                    resources.root() / "templates"
+                    / (std::string_view(choice) == "prism" ? "PrismRelay" : "FeatureLab"))
+                    ->loadStartup()
+                    ->entityCount()
+                    .value();
+    CHECK(result->loadStartup()->entityCount().value() == expectedCount);
 
     if (std::string_view(choice) == "lab") {
       const auto startup = result->loadStartup().value();
@@ -117,7 +123,12 @@ TEST_CASE("home.native_mailbox_selects_project_preserves_responses_and_releases_
   auto selected = home.selection();
   REQUIRE(selected);
   REQUIRE(selected->has_value());
-  CHECK((**selected).loadStartup()->entityCount().value() == 40);
+  CHECK((**selected).loadStartup()->entityCount().value()
+        == Project::Project::open(std::filesystem::path(DOT_EDITOR_RESOURCES) / "templates"
+                                  / "PrismRelay")
+               ->loadStartup()
+               ->entityCount()
+               .value());
   auto channel = Core::FileSystem::open(control).value();
   auto response = Json::parse(channel.readText("responses/create.json").value());
   CHECK(response["response"]["ok"] == true);

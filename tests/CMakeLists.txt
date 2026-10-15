@@ -310,7 +310,7 @@ dotDiscoverTests(DotExampleTests LABELS "integration;compiler" PROPERTIES TIMEOU
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/example_acceptance")
 add_executable(DotExampleNativeTests main.cpp ExampleNativeTests.cpp)
-target_link_libraries(DotExampleNativeTests PRIVATE DotEngine doctest::doctest SDL3::SDL3)
+target_link_libraries(DotExampleNativeTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotExampleNativeTests PRIVATE
     DOT_EXAMPLE_CAPTURE_ROOT="${CMAKE_CURRENT_BINARY_DIR}/example_acceptance"
     DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"

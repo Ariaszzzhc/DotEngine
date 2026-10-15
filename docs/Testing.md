@@ -46,9 +46,9 @@ The native ring/scale case uses device-tagged SDL pointer injection with a scope
 filter for its window, so desktop pointer traffic cannot overwrite its prescribed
 samples. It retains real window/focus/keyboard events and restores the previous
 filter. The native translator, editor drag/history and GPU pixels are still tested.
-The current inventory contains 253 unit, 700 integration, 133 offscreen GPU,
-72 native and 127 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1080 CTest identities are covered; existing subsystem
+The current inventory contains 253 unit, 701 integration, 133 offscreen GPU,
+74 native and 129 acceptance cases. Labels overlap; integration includes GPU and
+native integration cases. All 1083 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.

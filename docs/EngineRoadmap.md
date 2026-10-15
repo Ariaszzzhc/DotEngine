@@ -24,7 +24,7 @@ the `dot:` namespace; project imports use relative paths without extensions.
 | Engine script namespace | All engine-provided modules use registered `dot:` names, starting with `dot:engine`; engine SDK ownership/type declarations cannot depend on confusing user-relative paths; unknown engine names fail explicitly |
 | Project module syntax | Relative imports omit extensions; compiler and VM agree on deterministic resolution, including ambiguity/failure cases, immutable generations, hot reload and independent exported playback |
 | Capability showcase | Feature Lab stays an independently editable editor project with real native features and complete SDK/component acceptance; demonstrations consume delivered engine capabilities |
-| High-quality 3D example | Prism Relay becomes a realistic science-fiction game with coherent assets/materials/light, camera/HUD, polished gameplay/feedback and independent deployment; actual played and rendered evidence is required |
+| High-quality 3D example | Prism Relay becomes a realistic science-fiction, non-shooting over-the-shoulder character template with actual humanoid movement/jumping, camera follow/collision, coherent assets/materials/light and independent deployment; actual played and rendered evidence is required |
 
 The engine script namespace and extensionless project-module contracts are
 implemented with a shared registry/resolver, injected declarations, static linking
