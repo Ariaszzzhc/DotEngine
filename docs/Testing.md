@@ -46,9 +46,9 @@ The native ring/scale case uses device-tagged SDL pointer injection with a scope
 filter for its window, so desktop pointer traffic cannot overwrite its prescribed
 samples. It retains real window/focus/keyboard events and restores the previous
 filter. The native translator, editor drag/history and GPU pixels are still tested.
-The current inventory contains 243 unit, 695 integration, 132 offscreen GPU,
-72 native and 126 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1064 CTest identities are covered; existing subsystem
+The current inventory contains 253 unit, 695 integration, 133 offscreen GPU,
+72 native and 127 acceptance cases. Labels overlap; integration includes GPU and
+native integration cases. All 1075 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.
@@ -83,3 +83,10 @@ trees. `editor.model_skin` covers actual workspace import/Inspector/joint remapp
 undo/Play/save/export and a relocated native game. Uniform skin reflection is tested
 through physical pixels/picking; CPU/GPU mixed-orientation failure cases retain the
 previous source/pose. These checks do not measure production character throughput.
+
+Cross-fade behavior and quaternion SLERP remain device-free unit checks. The
+development-only `runtime.animation_blend` imports an actual GLB, reloads a saved
+native clip, compares ten skinned GPU images with independent joint angles/CPU
+geometry and checks bind/resource restoration. It supplies native transition
+evidence before library/SDK/editor consumers are integrated; it does not claim
+those controls, additive layers or populated-character throughput.

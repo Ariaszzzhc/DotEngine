@@ -204,3 +204,12 @@ tools, blending/state machines and populated-game performance remain open.
 The native acceptance uses actual joint hierarchy
 animation and reference-compared rendered frames; it does not establish full
 character animation authoring or realistic game production.
+
+Native SceneAnimator cross-fades now blend both moving clips, handle partial
+channels and interrupted transitions, and commit pose/clock/progress atomically.
+An actual imported eight-joint GLB has ten independently reference-compared GPU
+frames and bind/resource restoration acceptance. This supplies the tested native
+foundation before ScenePlayers authority reservations, SDK and editor/Play/export
+controls consume transitions. Those integrations, visual skeleton/blend authoring,
+layered/additive blending and state machines remain required work; no general
+character-animation or populated-game completion is claimed.

@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
@@ -19,13 +20,85 @@ import Dot.Math;
 import Dot.World.Scene;
 
 namespace Dot::Animation {
+  namespace {
+    using Channel = std::pair<std::uint32_t, Path>;
+    using Values = std::map<Channel, Math::Vec4>;
+
+    auto channelValue(const World::Transform& pose, Path path) -> Math::Vec4 {
+      if (path == Path::Translation) {
+        return {pose.position.x, pose.position.y, pose.position.z, 0};
+      }
+
+      if (path == Path::Scale) {
+        return {pose.scale.x, pose.scale.y, pose.scale.z, 0};
+      }
+
+      return {pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w};
+    }
+
+    auto clockAfter(PlaybackState state, double duration, double seconds) -> PlaybackState {
+      if (!state.playing || seconds == 0 || state.speed == 0) {
+        return state;
+      }
+
+      state.time += seconds * state.speed;
+
+      if (duration == 0) {
+        state.time = 0;
+        state.playing = state.looping;
+      } else if (state.looping) {
+        state.time = std::fmod(state.time, duration);
+
+        if (state.time < 0) {
+          state.time += duration;
+        }
+      } else {
+        if ((state.speed > 0 && state.time >= duration) || (state.speed < 0 && state.time <= 0)) {
+          state.playing = false;
+        }
+
+        state.time = std::clamp(state.time, 0.0, duration);
+      }
+
+      return state;
+    }
+
+    auto mixed(Path path, Math::Vec4 first, Math::Vec4 last, double weight)
+        -> Core::Result<Math::Vec4> {
+      if (weight == 0 || weight == 1) {
+        return weight == 0 ? first : last;
+      }
+
+      if (path == Path::Rotation) {
+        auto rotation = Math::slerp({first.x, first.y, first.z, first.w},
+                                    {last.x, last.y, last.z, last.w}, weight);
+        return rotation
+                   ? Core::Result<Math::Vec4>{{rotation->x, rotation->y, rotation->z, rotation->w}}
+                   : std::unexpected(rotation.error());
+      }
+
+      return Math::Vec4{static_cast<float>(std::lerp(double(first.x), double(last.x), weight)),
+                        static_cast<float>(std::lerp(double(first.y), double(last.y), weight)),
+                        static_cast<float>(std::lerp(double(first.z), double(last.z), weight)), 0};
+    }
+  }  // namespace
+
   struct SceneAnimator::Impl {
     struct Target {
       World::EntityId entity;
       World::Transform rest;
     };
 
+    struct Transition {
+      std::optional<Clip> source;
+      double sourceTime{};
+      bool sourcePlaying{};
+      Values origin;
+    };
+
     Clip clip;
+    std::optional<Transition> m_transition;
+    bool m_applied{};
     std::uint64_t scope{};
     std::map<std::uint32_t, Target> targets;
     PlaybackState playback;
@@ -61,8 +134,25 @@ namespace Dot::Animation {
       return {};
     }
 
+    auto restValues() const -> Values {
+      Values values;
+
+      for (const auto& track : clip.description().value()->tracks) {
+        values[{track.node, track.path}] = channelValue(targets.at(track.node).rest, track.path);
+      }
+
+      if (m_transition) {
+        for (const auto& [channel, value] : m_transition->origin) {
+          values[channel] = channelValue(targets.at(channel.first).rest, channel.second);
+        }
+      }
+
+      return values;
+    }
+
     auto apply(World::Scene& scene, double time, bool restore = false,
-               const Clip* replacement = nullptr) -> Core::Result<void> {
+               const Clip* replacement = nullptr, const Transition* fade = nullptr,
+               double sourceTime = 0, double weight = 0) -> Core::Result<void> {
       auto checked = checkScene(scene);
 
       if (!checked) {
@@ -71,7 +161,11 @@ namespace Dot::Animation {
 
       try {
         const auto& next = replacement ? *replacement : clip;
-        std::vector<ChannelSample> samples;
+        Values values;
+
+        if (restore || replacement || (m_transition && !fade)) {
+          values = restValues();
+        }
 
         if (!restore) {
           auto sampled = next.sample(time);
@@ -80,47 +174,64 @@ namespace Dot::Animation {
             return std::unexpected(sampled.error());
           }
 
-          samples = std::move(*sampled);
+          if (fade) {
+            values = fade->origin;
+            Values destination;
+
+            for (const auto& [channel, value] : values) {
+              destination[channel] = channelValue(targets.at(channel.first).rest, channel.second);
+            }
+
+            if (fade->source && weight > 0 && weight < 1) {
+              auto outgoing = fade->source->sample(sourceTime);
+
+              if (!outgoing) {
+                return std::unexpected(outgoing.error());
+              }
+
+              for (const auto& sample : *outgoing) {
+                values[{sample.node, sample.path}] = sample.value;
+              }
+            }
+
+            for (const auto& sample : *sampled) {
+              destination[{sample.node, sample.path}] = sample.value;
+            }
+
+            for (auto& [channel, value] : values) {
+              auto result = mixed(channel.second, value, destination.at(channel), weight);
+
+              if (!result) {
+                return std::unexpected(result.error());
+              }
+
+              value = *result;
+            }
+          } else {
+            for (const auto& sample : *sampled) {
+              values[{sample.node, sample.path}] = sample.value;
+            }
+          }
         }
 
         std::map<std::uint32_t, World::Transform> poses;
-        const auto assign = [&](const Track& track, Math::Vec4 value) {
-          auto [entry, inserted] = poses.try_emplace(track.node);
+
+        for (const auto& [channel, value] : values) {
+          const auto [node, path] = channel;
+          auto [entry, inserted] = poses.try_emplace(node);
 
           if (inserted) {
-            entry->second = scene.transform(targets.at(track.node).entity).value();
+            entry->second = scene.transform(targets.at(node).entity).value();
           }
 
           auto& pose = entry->second;
 
-          if (track.path == Path::Translation) {
+          if (path == Path::Translation) {
             pose.position = {value.x, value.y, value.z};
-          } else if (track.path == Path::Scale) {
+          } else if (path == Path::Scale) {
             pose.scale = {value.x, value.y, value.z};
           } else {
             pose.rotation = {value.x, value.y, value.z, value.w};
-          }
-        };
-
-        if (restore || replacement) {
-          for (const auto& track : clip.description().value()->tracks) {
-            const auto& rest = targets.at(track.node).rest;
-            const auto value
-                = track.path == Path::Translation
-                      ? Math::Vec4{rest.position.x, rest.position.y, rest.position.z, 0}
-                  : track.path == Path::Scale
-                      ? Math::Vec4{rest.scale.x, rest.scale.y, rest.scale.z, 0}
-                      : Math::Vec4{rest.rotation.x, rest.rotation.y, rest.rotation.z,
-                                   rest.rotation.w};
-            assign(track, value);
-          }
-        }
-
-        if (!restore) {
-          const auto& tracks = next.description().value()->tracks;
-
-          for (std::size_t i = 0; i < tracks.size(); ++i) {
-            assign(tracks[i], samples[i].value);
           }
         }
 
@@ -131,7 +242,13 @@ namespace Dot::Animation {
           updates.push_back({targets.at(node).entity, pose});
         }
 
-        return scene.setTransforms(updates);
+        auto result = scene.setTransforms(updates);
+
+        if (result) {
+          m_applied = true;
+        }
+
+        return result;
       } catch (const std::exception& error) {
         return Core::fail(Core::ErrorCode::External,
                           "Apply scene animation: " + std::string(error.what()));
@@ -237,6 +354,7 @@ namespace Dot::Animation {
 
     if (restart) {
       m_impl->playback.time = 0;
+      m_impl->m_applied = false;
     }
 
     return {};
@@ -268,6 +386,8 @@ namespace Dot::Animation {
 
     if (applied) {
       m_impl->playback.time = time;
+      m_impl->playback.transition.reset();
+      m_impl->m_transition.reset();
     }
 
     return applied;
@@ -291,35 +411,41 @@ namespace Dot::Animation {
       return live;
     }
 
-    if (seconds == 0 || checked->speed == 0) {
-      return m_impl->apply(scene, checked->time);
-    }
+    auto next = clockAfter(*checked, m_impl->clip.duration().value(), seconds);
+    double sourceTime{};
+    bool sourcePlaying{};
+    double weight{};
 
-    const auto duration = m_impl->clip.duration().value();
-    auto next = *checked;
-    next.time += seconds * next.speed;
+    if (m_impl->m_transition) {
+      const auto& fade = *m_impl->m_transition;
+      next.transition->elapsed
+          = std::min(next.transition->duration, next.transition->elapsed + seconds);
+      weight = next.transition->elapsed / next.transition->duration;
 
-    if (duration == 0) {
-      next.time = 0;
-      next.playing = next.looping;
-    } else if (next.looping) {
-      next.time = std::fmod(next.time, duration);
-
-      if (next.time < 0) {
-        next.time += duration;
-      }
-    } else {
-      if (duration == 0 || (next.speed > 0 && next.time >= duration)
-          || (next.speed < 0 && next.time <= 0)) {
-        next.playing = false;
+      if (fade.source) {
+        const auto source
+            = clockAfter({fade.sourceTime, next.speed, next.looping, fade.sourcePlaying},
+                         fade.source->duration().value(), seconds);
+        sourceTime = source.time;
+        sourcePlaying = source.playing;
       }
 
-      next.time = std::clamp(next.time, 0.0, duration);
+      next.playing = next.playing || weight < 1;
     }
 
-    auto applied = m_impl->apply(scene, next.time);
+    auto applied = m_impl->apply(scene, next.time, false, nullptr,
+                                 m_impl->m_transition ? &*m_impl->m_transition : nullptr,
+                                 sourceTime, weight);
 
     if (applied) {
+      if (m_impl->m_transition && weight < 1) {
+        m_impl->m_transition->sourceTime = sourceTime;
+        m_impl->m_transition->sourcePlaying = sourcePlaying;
+      } else {
+        m_impl->m_transition.reset();
+        next.transition.reset();
+      }
+
       m_impl->playback = next;
     }
 
@@ -338,6 +464,8 @@ namespace Dot::Animation {
     if (applied) {
       m_impl->playback.time = 0;
       m_impl->playback.playing = false;
+      m_impl->playback.transition.reset();
+      m_impl->m_transition.reset();
     }
 
     return applied;
@@ -370,9 +498,76 @@ namespace Dot::Animation {
       m_impl->clip = std::move(clip);
       m_impl->playback.time = time;
       m_impl->playback.playing = true;
+      m_impl->playback.transition.reset();
+      m_impl->m_transition.reset();
     }
 
     return applied;
+  }
+
+  auto SceneAnimator::crossFade(World::Scene& scene, Clip clip, double seconds)
+      -> Core::Result<void> {
+    auto current = state();
+
+    if (!current) {
+      return std::unexpected(current.error());
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 86400) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Animation fade seconds require [0,86400]");
+    }
+
+    if (seconds == 0) {
+      return setClip(scene, std::move(clip));
+    }
+
+    auto description = clip.description();
+    auto live = m_impl->checkScene(scene);
+
+    if (!description || !live) {
+      return !description ? Core::Result<void>{std::unexpected(description.error())} : live;
+    }
+
+    try {
+      Impl::Transition fade;
+      fade.origin = m_impl->restValues();
+
+      for (const auto& track : (*description)->tracks) {
+        if (!m_impl->targets.contains(track.node)) {
+          return Core::fail(Core::ErrorCode::NotFound, "Animation fade target is not bound");
+        }
+
+        fade.origin[{track.node, track.path}] = {};
+      }
+
+      for (auto& [channel, value] : fade.origin) {
+        value = channelValue(scene.transform(m_impl->targets.at(channel.first).entity).value(),
+                             channel.second);
+      }
+
+      if (!m_impl->m_transition && m_impl->m_applied && current->playing) {
+        fade.source = m_impl->clip;
+        fade.sourceTime = current->time;
+        fade.sourcePlaying = true;
+      }
+
+      const auto time = current->speed < 0 ? clip.duration().value() : 0;
+      auto result = m_impl->apply(scene, time, false, &clip, &fade, fade.sourceTime, 0);
+
+      if (result) {
+        m_impl->clip = std::move(clip);
+        m_impl->m_transition = std::move(fade);
+        m_impl->playback.time = time;
+        m_impl->playback.playing = true;
+        m_impl->playback.transition = TransitionProgress{0, seconds};
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Start animation fade: " + std::string(error.what()));
+    }
   }
 
 }  // namespace Dot::Animation

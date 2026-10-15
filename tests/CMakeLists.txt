@@ -43,6 +43,7 @@ add_executable(DotUnitTests
     AnimationPlayerTests.cpp
     HomeDialogTests.cpp
     SceneAnimatorTests.cpp
+    AnimationTransitionTests.cpp
     SkinTests.cpp
     SkinBindingTests.cpp
     EnvironmentTests.cpp
@@ -400,6 +401,10 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
 add_test(NAME runtime.animation COMMAND DotRuntimeAcceptance --animation-test
     "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
 set_tests_properties(runtime.animation PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)
+
+add_test(NAME runtime.animation_blend COMMAND DotRuntimeAcceptance --animation-blend-test
+    "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
+set_tests_properties(runtime.animation_blend PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)
 
 add_test(NAME runtime.model_animation COMMAND DotRuntimeAcceptance --model-animation-test
     "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models/animated.glb"

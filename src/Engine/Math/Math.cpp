@@ -127,6 +127,27 @@ namespace Dot::Math {
                 static_cast<float>(quaternion.z), static_cast<float>(quaternion.w)};
   }
 
+  auto slerp(Quat from, Quat to, double weight) -> Core::Result<Quat> {
+    if (!std::isfinite(weight) || weight < 0 || weight > 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Rotation blend weight requires [0,1]");
+    }
+
+    auto first = normalized(from);
+    auto second = normalized(to);
+
+    if (!first || !second) {
+      return !first ? first : second;
+    }
+
+    if (weight == 0 || weight == 1) {
+      return weight == 0 ? first : second;
+    }
+
+    const auto result = glm::slerp(native(*first), native(*second), weight);
+    return normalized(Quat{static_cast<float>(result.x), static_cast<float>(result.y),
+                           static_cast<float>(result.z), static_cast<float>(result.w)});
+  }
+
   auto rotationEulerDegrees(Vec3 degrees) -> Core::Result<Quat> {
     if (!isFinite(degrees)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Rotation angles must be finite");

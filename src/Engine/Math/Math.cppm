@@ -62,6 +62,10 @@ export namespace Dot::Math {
    * 拒绝零值及非有限输入；有限极值使用双精度中间结果。 */
   [[nodiscard]] auto normalized(Vec3 value) -> Core::Result<Vec3>;
   [[nodiscard]] auto normalized(Quat value) -> Core::Result<Quat>;
+  /** Shortest-arc spherical rotation blend with finite weight [0,1]. Normalize
+   * both nonzero inputs and the result; endpoint signs are retained exactly.
+   * 最短球面弧旋转混合，权重须为有限 [0,1]；非零输入及结果归一化，端点保留原符号。 */
+  [[nodiscard]] auto slerp(Quat from, Quat to, double weight) -> Core::Result<Quat>;
   /** Euler angles use degrees and the quaternion convention Rz * Ry * Rx.
    * 欧拉角单位为度，四元数旋转约定为 Rz * Ry * Rx。 */
   [[nodiscard]] auto rotationEulerDegrees(Vec3 degrees) -> Core::Result<Quat>;

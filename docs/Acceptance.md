@@ -369,3 +369,14 @@ catalog capacities and publication failures have focused CPU/file integration ca
 Uniform mirrored deformation preserves PBR faces and picking; mixed reflected islands
 fail without publishing partial GPU poses. These are diagnostic fixtures, not a
 production character or a populated-game performance result.
+
+`runtime.animation_blend` imports an eight-joint GLB, reloads a saved native target
+clip and renders ten cross-fade/interruption frames. Independent joint-angle poses
+and CPU deformation supply actual PBR/shadow/AO pixel references. It checks starting/
+interrupted pose continuity, completed nonlooping state, one reused GPU skin,
+bind-pose restoration and complete drawing resource release. Device-free cases cover
+dual-clock sampling, partial-channel fallback, shortest-arc rotation, pause/reverse/
+loop/zero speed, interruptions, moves/threads/scopes, duration limits, singular scale,
+invalid source/target samples and world overflow with complete clock/pose rollback.
+This is native SceneAnimator acceptance; script/editor transition controls and
+populated-character scale are not established by it.

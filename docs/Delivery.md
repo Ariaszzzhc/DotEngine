@@ -17,7 +17,8 @@ and its evidence; passing these tests does not establish missing product capabil
 | Authored geometric SSAO | Saved optional settings, depth/world-normal guides, bounded radial search and bilateral filtering, diffuse IBL composition, transactional Rendering pane, preview/Play/relocated exports, actual grayscale/HDR and owned working-map release; temporal quality and scalability remain planned |
 | Directional soft shadows | Saved optional single directional source, stabilized 1..4 cascades, real depth passes, sixteen-tap/hardware PCF, receiver-plane correction, mesh cast/receive, overlap blending, inspector/agent/Play/export and actual hard/soft/disabled images; point/spot/contact-hardening/scalability remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
-| Native scene GPU skinning | [Skinning](Skinning.md): glTF/GLB four/eight-weight import, saved skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; visual skeleton tools and blending remain unfinished |
+| Native scene GPU skinning | [Skinning](Skinning.md): glTF/GLB four/eight-weight import, saved skin assets and ordered scene joints, shared static inputs, transactional GPU deformation and exact bounds across PBR/shadow/AO/picking; Inspector/history/Play and relocated export ownership; visual skeleton tools and production blend workflows remain unfinished |
+| Native animation transition foundation | [Animation](Animation.md): dual-clip cross-fades, shortest-arc rotation, partial-channel fallback, continuous interruption and atomic clocks/poses; imported-skin GPU reference acceptance; library/SDK/editor transition integration and blend graphs remain unfinished |
 | Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio/animation; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
@@ -33,10 +34,10 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG each pass 1064/1064 CTest identities
-(994 doctest cases and 70 executable/script checks), taking 254.43s and 56.25s.
-The [test layers](Testing.md) separate 243 pure CPU unit cases from 695 integration,
-132 offscreen GPU, 72 native and 126 acceptance cases; labels overlap. All 359
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1075/1075 CTest identities
+(1004 doctest cases and 71 executable/script checks), taking 267.42s and 58.81s.
+The [test layers](Testing.md) separate 253 pure CPU unit cases from 695 integration,
+133 offscreen GPU, 72 native and 127 acceptance cases; labels overlap. All 361
 current engine/application/test C/C++ files pass clang-format; 17 WGSL
 files pass established indentation/line/whitespace checks and actual pipeline runs.
 The native animation SDK and interactive Feature Lab are covered through actual
@@ -551,3 +552,26 @@ links are checked. Owned archive staging is removed. Only arm64 macOS is validat
 Visual skeleton/timeline authoring, blending/retargeting, asynchronous skin status,
 streaming and populated-game performance, mature editor completion and polished
 realistic Prism Relay remain unfinished.
+
+
+The native transition foundation adds dual-clock cross-fades, normalized shortest-arc
+rotation, partial-channel fallback and bounded continuous interruptions. Pose/clock/
+progress commit atomically; invalid samples, singular blended scales and world
+overflow retain the previous state. A clock-only restart followed by a fade retains
+the still-visible pose until sampling. Device-free behavior checks and ten actual
+imported-skin GPU frames compare with independent angle/CPU references, then verify
+bind-pose restoration, one reused GPU skin and complete resource release.
+
+Both configured builds succeed; focused Debug passes 65/65 (17.72s), followed by a
+restart-boundary addition and final Release/NDEBUG focused 65/65 (3.70s). Complete
+final Debug and Release/NDEBUG run sequentially after both builds and pass
+1075/1075 each (267.42s/58.81s). There are 1004 doctest cases plus 71 executable/
+script checks. All 361 C/C++ and 17 unchanged WGSL files pass established formatting.
+Only arm64 macOS is locally validated. Existing native export/relocation tests remain
+included; interim ZIP generation/handoff is deferred per the user's preference.
+
+This stage supplies SceneAnimator transitions, not ScenePlayers authority reservation,
+dot:engine transition controls, isolated editor Play/export transition acceptance or
+visual blend authoring. Those remain next integration work. Layered/additive blend
+graphs, state machines, animation streaming, populated-game throughput, mature editor
+completion and realistic polished Prism Relay remain unfinished.

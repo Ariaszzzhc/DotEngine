@@ -2,6 +2,7 @@ module;
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 
 export module Dot.Animation.SceneAnimator;
@@ -16,11 +17,20 @@ export namespace Dot::Animation {
     World::EntityId entity;
   };
 
+  struct TransitionProgress {
+    double elapsed;
+    double duration;
+    auto operator==(const TransitionProgress&) const -> bool = default;
+  };
+
   struct PlaybackState {
+    /** Incoming clip time during a transition; progress uses unscaled seconds.
+     * 过渡期间为目标片段时钟，淡化进度使用未缩放秒数。 */
     double time{};
     double speed{1};
     bool looping{true};
     bool playing{true};
+    std::optional<TransitionProgress> transition{};
   };
 
   /** Owns immutable clip and node bindings, not a borrowed scene address. All
@@ -68,6 +78,23 @@ export namespace Dot::Animation {
      * 用最初绑定姿态切换片段，一次场景事务恢复旧通道并应用新片段正/反向起点，随后播放。
      * bind 提供的全部绑定始终可用；目标/采样无效保留旧片段、姿态及时钟，速度/循环不变。 */
     [[nodiscard]] auto setClip(World::Scene& scene, Clip clip) -> Core::Result<void>;
+    /** Cross-fade to a directional clip start over finite seconds [0,86400]. Zero
+     * switches immediately. Both clips advance; missing destination channels fade
+     * to bind values, missing source channels start from the visible local pose.
+     * Rotation uses shortest-arc SLERP. Interruptions retain one frozen visible
+     * pose instead of stacking layers. Fade time is unscaled; pause freezes both
+     * clocks and fade, while speed zero freezes clip clocks only. A paused or
+     * unapplied source is frozen. Both live clips use current speed/loop settings.
+     * Nonlooping ends
+     * hold until fading finishes. Seek/stop/setClip cancel only after a successful
+     * pose transaction. Invalid samples preserve all poses, clips and clocks.
+     * 用有限秒数 [0,86400] 淡化到新片段正/反向起点，零为立即切换。双片段同时推进；目标
+     * 缺失通道淡回绑定值，源缺失通道取当前可见局部姿态，旋转走最短 SLERP。打断冻结当前
+     * 姿态，不叠加无限图层。淡化使用未缩放时间，暂停冻结全部时钟，零速仅冻结片段。
+     * 暂停或尚未应用的源保持冻结；两个活动片段共用当前速度/循环设置。
+     * 非循环端点保持至淡化完成；seek/stop/setClip 成功提交后才取消。失败保留全部状态。 */
+    [[nodiscard]] auto crossFade(World::Scene& scene, Clip clip, double seconds)
+        -> Core::Result<void>;
 
   private:
     struct Impl;

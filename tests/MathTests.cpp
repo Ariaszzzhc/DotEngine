@@ -419,3 +419,26 @@ TEST_CASE("Math TRS decomposition seeded transformed point round trips") {
     CHECK(after->z == doctest::Approx(before->z).epsilon(0.0001).scale(1));
   }
 }
+
+TEST_CASE("Math spherical blends normalize endpoints and follow the shortest rotation arc") {
+  const auto first = rotationEulerDegrees({0, 0, 170}).value();
+  const auto last = rotationEulerDegrees({0, 0, -170}).value();
+  const auto middle = slerp(first, last, .5).value();
+  const auto transform = compose({}, middle).value();
+  CHECK(transform.data[0] == doctest::Approx(-1));
+  CHECK(transform.data[5] == doctest::Approx(-1));
+  CHECK(slerp(first, last, 0).value() == normalized(first).value());
+  CHECK(slerp(first, last, 1).value() == normalized(last).value());
+  const Quat opposite{-first.x, -first.y, -first.z, -first.w};
+  CHECK(compose({}, slerp(first, opposite, .5).value()).value() == compose({}, first).value());
+  CHECK(slerp(Quat{0, 0, 0, maximum}, Quat{0, 0, 0, -maximum}, .5).value() == Quat{});
+  CHECK(slerp(Quat{}, Quat{0, 0, .000001F, 1}, .5)->z == doctest::Approx(.0000005));
+
+  for (const auto weight : {-1.0, 1.1, std::numeric_limits<double>::infinity(),
+                            std::numeric_limits<double>::quiet_NaN()}) {
+    CHECK_FALSE(slerp(first, last, weight));
+  }
+
+  CHECK_FALSE(slerp(Quat{0, 0, 0, 0}, last, 0));
+  CHECK_FALSE(slerp(first, Quat{infinity, 0, 0, 1}, 1));
+}

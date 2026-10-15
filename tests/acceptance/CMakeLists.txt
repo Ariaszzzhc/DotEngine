@@ -4,6 +4,7 @@ add_executable(DotRuntimeAcceptance
     Runtime/main.cpp
     Runtime/SkinningAcceptance.cpp
     Runtime/AnimationAcceptance.cpp
+    Runtime/AnimationBlendAcceptance.cpp
     Runtime/ModelAnimationAcceptance.cpp
     Runtime/ModelSkinAcceptance.cpp
     Runtime/AudioAcceptance.cpp

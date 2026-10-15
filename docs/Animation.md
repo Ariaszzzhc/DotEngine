@@ -8,8 +8,9 @@ convert to these clips and native model bindings. Saved animation players now ru
 through GameSession, editor Play and native exports. TypeScript playback controls
 are available through the engine-owned SDK. Timeline controls remain unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
-isolated Play and owned exports. Visual character authoring, morph targets,
-blending/state machines, events/root motion and production animation streaming
+isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
+actual skinned-GPU acceptance. Library/SDK/editor transition controls, visual character
+authoring, morph targets, blend graphs/state machines, events/root motion and production animation streaming
 remain unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
@@ -47,9 +48,9 @@ file on validation failure. It does not create parent directories.
 
 A SceneAnimator owns a clip and explicit node/entity bindings, not a scene address.
 Bindings must be unique, live and cover every clip target in one scene scope.
-Unused bindings may describe the rest of an imported hierarchy, but are not stored
-as animated targets. Moving the scene retains valid handles; changing its scope or
-removing an animated target fails. Animator operations require the creating thread;
+All supplied bindings retain original rest values for later clip switches, even
+when the current clip does not write them. Moving the scene retains valid handles;
+changing its scope or removing any bound target fails. Animator operations require the creating thread;
 moves preserve state, while moved-from operations return errors.
 
 Playback uses explicit elapsed seconds (0..86400 per advance), configurable speed
@@ -84,6 +85,49 @@ resource release. Offscreen tests additionally compare an animated sample agains
 an independently constructed native reference pose. CPU unit cases never create a
 window/device; file tests are integration cases. Only arm64 macOS is locally
 validated; Windows/Linux remain implementation targets.
+
+## Native cross-fades
+
+`SceneAnimator::crossFade(scene, clip, seconds)` transitions to the incoming clip's
+directional start. Duration is finite 0..86400 seconds; zero uses the immediate
+switch operation. Both active clips advance with the current speed/loop settings.
+Their translation/scale channels blend linearly and rotations use normalized
+shortest-arc SLERP. `PlaybackState.time` is incoming clip time; its optional
+`transition` reports unscaled `elapsed` and `duration` seconds.
+
+Starting retains the visible local pose. Missing source channels start there;
+missing destination channels return to original bind values. Unaffected fields
+continue using current scene values. A paused or never-applied source stays frozen.
+Pause freezes both clip clocks and fade; speed zero freezes only clip clocks.
+Nonlooping endpoints hold until transition completion. A new transition during an
+existing one freezes the current composite instead of retaining an unbounded layer
+chain. At most 30000 distinct channel values fit the existing 10000-node bindings.
+Seek, stop and immediate switching restore outgoing-only channels and cancel the
+transition only after a successful scene transaction. `play(restart)` changes only
+incoming time/play state; it does not restart the fade clock. Restarted clock-only
+state counts as unapplied until the next pose sample, so a subsequent fade starts
+from the still-visible pose.
+
+Every sample and final world transform must validate before publishing poses,
+incoming/outgoing clocks or fade progress. Singular blended scale, invalid source/
+target samples, missing bindings and world overflow preserve all prior state.
+`Math::slerp` also exposes the normalized shortest-arc rotation operation for other
+native consumers, including finite-weight and nonzero-input checks.
+
+```sh
+ctest --preset debug -R '^(animation\.fade_|runtime.animation_blend$|Math spherical)'
+build/debug/bin/DotRuntimeAcceptance --animation-blend-test build/debug/tests/animation_acceptance
+```
+
+The runnable imports the actual eight-joint GLB, reloads a saved opposite-direction
+clip, then cross-fades and interrupts it. Ten PBR/shadow/AO images compare against
+independently calculated joint angles and CPU-deformed geometry. Stop restores bind
+pixels and drawing resources return to baseline. The inspected ribbon images are
+diagnostics, not character artwork. This stage is the lower-level native transition
+service. ScenePlayers authority reservations, SDK exposure, isolated editor Play/
+export transition acceptance and visual blend controls still need integration;
+existing immediate library controls remain available. Layered/additive blending,
+state machines, animation streaming and populated-game throughput remain unfinished.
 
 
 ## Imported model animation

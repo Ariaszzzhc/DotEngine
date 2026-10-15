@@ -4934,3 +4934,74 @@ The owned archive target succeeds. Final ZIP is 49,065,340 bytes, 276 entries an
 exclusions pass. Strict signatures and portable loader/rpaths pass for 13 regular
 Mach-O files and three relative library links. Private archive staging is removed.
 No external dependency, compiler override or linkage-policy change was introduced.
+
+
+## 2026-10-15 — Native atomic animation cross-fades
+
+SceneAnimator now supports two moving clips with linear translation/scale and
+normalized shortest-arc quaternion SLERP. Math exposes the reusable checked rotation
+operation. Fade progress uses unscaled elapsed time; pause freezes both clocks and
+fade, speed zero freezes clip clocks, and nonlooping endpoints hold until fading
+finishes. Missing source fields start at the visible local pose; missing destination
+fields fade to original binding values. Other transform fields remain live.
+Interruptions freeze the current composite in one bounded channel map rather than
+retaining an accumulating layer chain. Paused/unapplied sources stay frozen.
+Seek/stop/immediate switching restore outgoing-only channels and retire transitions
+only after a successful scene transaction. Complete poses, both clocks and progress
+are retained on sampling or final world validation failures. Clips and snapshots
+are owned; scene moves preserve scope and wrong threads/retired bindings fail.
+
+The native foundation follows the repository's bottom-up rule before library/SDK/
+editor consumption. Cross-fade is not yet routed through ScenePlayers authority
+reservation, dot:engine, editor controls or exported gameplay transition commands.
+Those are required next integration stages; current immediate playback is retained.
+No animation blend graph/state machine, populated-game performance, mature editor
+or realistic Prism Relay completion is inferred.
+
+Math boundary/shortest-arc checks pass 1/1 (0.04s). Initial new test compilation
+caught an assumed equality operator on World::Transform; comparisons now check all
+three actual fields. Expanded native transition cases pass 9/9 (0.09s), including
+invalid source and target samples followed by recovery that proves both clocks
+rolled back. Other cases cover partial channels, old rest values, dual-clock phase,
+pause/reverse/loop/zero speed, repeated interruption, zero/day-long durations,
+singular blended scale, world overflow, moves/scopes/threads and failed starts.
+Existing native animation checks also pass during iteration.
+
+The runnable imports the actual eight-joint GLB, saves/reloads an opposing native
+clip, then cross-fades and interrupts it. Ten PBR/shadow/AO frames match independently
+calculated joint angles and CPU-deformed geometry. Starting/interrupted pixels are
+continuous; a single persistent GPU skin is reused, stop restores bind pixels and
+all drawing resources return to baseline. Debug runnable passes 1/1 (3.18s). Three
+actual first/intermediate/final PNGs were inspected: the diagnostic ribbon changes
+bend as expected. This is not realistic character or game artwork.
+
+Both final configured Debug/Release builds succeed using the caller's toolchain
+environment. Review covers sample/channel ownership, bounded interruption state,
+unscaled versus clip clocks, partial-channel fallback, normalized rotation endpoints,
+failure-before-commit ordering, reflected/singular scales, scene/thread identity,
+test-only dispatch and unchanged shader/resource lifetimes. All 361 C/C++ files pass
+clang-format and 17 unchanged WGSL files pass established indentation/line/whitespace
+checks. Focused final selections and full suites follow after both builds finish,
+with configurations run sequentially. Only arm64 macOS is locally validated.
+
+Combined Debug animation/math/script/skin/editor checks pass 65/65 (17.72s).
+Final review then covers a clock-only restart followed immediately by a fade: the
+old sampled pose is marked unapplied until sampling, so the fade freezes what is
+still visible instead of treating the rewound clock as an already applied pose.
+That boundary is added to the ownership/move case. Both final builds succeed again;
+Release/NDEBUG focused checks pass 65/65 (3.70s). Full suites follow without any
+concurrent compilation.
+
+Full Debug passes 1075/1075 (267.42s). Inventory is 1004 doctest cases plus 71
+executable/script checks: 253 unit, 695 integration, 217 GPU, 133 offscreen, 72
+native, 127 acceptance, 149 compiler, 21 process, 27 platform and 32 audio-native
+labels (overlapping). Full Release/NDEBUG runs afterward without competing builds.
+Per the user's updated delivery preference, interim ZIP generation and distribution
+handoff are deferred until the full engine/editor/game objective is complete.
+Necessary native export/relocation tests remain part of subsystem verification.
+
+Final Release/NDEBUG passes 1075/1075 (58.81s), following complete Debug after both
+final builds. Every new transition/math/runnable case and prior editor/script/game
+path is included. Source formatting and staged whitespace checks pass. No interim
+distribution ZIP was generated; no Windows/Linux execution or full-goal completion is
+claimed.
