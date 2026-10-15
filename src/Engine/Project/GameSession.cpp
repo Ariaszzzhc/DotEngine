@@ -20,6 +20,7 @@ import Dot.World.SceneFiles;
 import Dot.Platform.Input;
 import Dot.Script.AudioSession;
 import Dot.Script.AnimationSession;
+import Dot.Assets.SceneSkins;
 
 namespace Dot::Project {
   namespace {
@@ -248,6 +249,12 @@ namespace Dot::Project {
                                    const Script::CompiledProgram* precompiled)
       -> Core::Result<GameSession> {
     try {
+      auto skins = Assets::validateSceneSkins(assets, scene);
+
+      if (!skins) {
+        return std::unexpected(skins.error());
+      }
+
       auto impl = std::make_unique<Impl>();
       impl->m_description = std::move(description);
       impl->m_audioMode = config.audioMode;

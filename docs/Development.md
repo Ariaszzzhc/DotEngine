@@ -4795,3 +4795,72 @@ GPU acceptance which reloads actual saved assets and compares nine posed frames.
 All touched C++ files pass formatting and diff checks. No Windows/Linux run is
 claimed. Automatic scene rendering, glTF skin import and editor authoring follow
 this foundation; no full-engine or polished-game completion is claimed.
+
+
+## 2026-10-15 — Automatic scene skins, editor and export
+
+SceneRenderer now loads enabled saved skins, shares immutable inputs and retains
+one GPU controller per mesh owner. Current joint-world palettes update in one
+visible batch before drawing. Color/PBR/shadow/SSAO/pick and bounds use the same
+posed geometry. Both posed buffers plus weight/palette/control storage are charged
+to the scene budget; hidden/disabled/rebound/deleted or foreign-scope controllers
+retire before their static inputs. Explicit clearCache reloads actual files.
+
+Added CPU-only actual-asset/count/initial-deformation checks before GameSession
+constructs services/scripts; GamePackage publication inherits the same validation.
+The Inspector exposes asset/enabled/ordered live-joint controls. Component edits,
+duplicate/model instantiation remapping, history and saves share native contracts.
+Physics colliders remain authored shapes, not implicitly deformed geometry.
+
+Reviewed scoped cache identity, GPU/source lifetime and byte accounting, span/draw
+pointer stability, palette evaluation order, failed updates/targets, native file
+errors, initial validation before scripts and ImGui draft/stack balance. First
+builds caught a shadowed UI label and missing direct Scene import in the new native
+test; both were corrected. Both final builds finish before tests. Initial focused
+Debug passes 30/31 because the new test assumed an inactive docked Inspector had
+already drawn. Explicitly showing that pane fixes the test; its rerun passes 1/1
+(1.33s). Focused final Release/NDEBUG passes 31/31 (1.70s).
+
+Actual tests cover exact cache fit/one-byte shortage, resource reuse/pruning,
+current bounds/pick, independent CPU mesh pixels, persistent targets, malformed
+assets/counts, immutable reload and failed blend recovery. The native workspace
+compares authoring/undo/isolated animated Play pixels and restores authoring on
+stop. Relocated package checks delete the source project before loading copied
+skin data and sampling live runtime joints. The runnable additionally compares
+automatic scene PBR/shadow/AO pixels and writes skin-scene.png; that actual image
+was inspected and shows a bent diagnostic strip. This is not realistic game art.
+
+Full final suites run sequentially after both builds; results follow below. glTF
+skin import, skeleton visualization, mixing/retargeting, asynchronous skin status
+and populated-game throughput remain unfinished. Only arm64 macOS is validated.
+
+The first full Debug passes 1050/1050 (253.45s). Initial full Release passes
+1049/1050 (59.73s): the existing native ring/scale input case intermittently fails
+to begin/commit its synthetic drag. Five unchanged Release reruns pass; a first
+focus/pump-only adjustment still fails in repeated Debug execution. The test was
+mixing injected and desktop pointer traffic. Added a scoped device-tagged SDL
+pointer filter for that window, preserving focus/keyboard/window events and
+restoring any previous filter. An unrelated pointer event is explicitly rejected;
+the real SDL translation, editor, GPU pixels and undo checks remain active. Final
+builds succeed; the isolated case passes ten successive runs in each configuration
+(Debug 11.00s, Release 3.10s). Final full suites follow after that harness change.
+
+Final Debug passes 1050/1050 (242.57s) after rebuilding both configurations with
+the scoped input fixture. It includes every new skin/editor/export test and the
+previously intermittent ring/scale case. Final Release runs afterward, with no
+competing build/full suite. All 355 C/C++ sources pass clang-format; all 17 unchanged
+WGSL sources pass established indentation/line/whitespace checks and actual GPU
+pipeline execution. Inventory is 982 doctest identities plus 68 executable/script
+checks: 242 unit, 684 integration, 212 GPU, 129 offscreen, 71 native, 124 acceptance,
+147 compiler, 20 process, 27 platform and 32 audio-native labels (overlapping).
+
+Final Release/NDEBUG passes 1050/1050 (45.47s), including the ring/scale case and
+every new skin check. Complete configurations remain sequential, after their final
+builds. No Windows/Linux execution or full large-game/editor readiness is claimed.
+
+The owned archive target succeeds. Final ZIP is 49,049,965 bytes/276 entries/244
+exact payloads, with passing CRC/modes, original font/HDRI/licenses and private/
+source exclusions. Strict signatures and portable loader/rpath references pass
+for 13 regular Mach-O files/three relative library links. Private archive staging
+is removed. No new external dependency, compiler override or linkage policy change
+was introduced.

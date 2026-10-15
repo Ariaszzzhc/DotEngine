@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "EnvironmentFixture.hpp"
 
@@ -25,6 +26,12 @@ import Dot.Script.Compiler;
 import Dot.Script.Host;
 import Dot.Graphics.Renderer;
 import Dot.World.SceneFiles;
+import Dot.World.Scene;
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
+import Dot.Animation.SkinFiles;
+import Dot.Graphics.Geometry;
+import Dot.Math;
 
 namespace {
   using namespace Dot::Editor;
@@ -1511,4 +1518,69 @@ TEST_CASE("workspace.native_hierarchy_multiselect_range_duplicate_delete_and_und
   CHECK(inspect()["workspace"]["tool"]["roots"] == 3);
   command(workspace, {{"command", "finish-transform"}, {"commit", false}});
   REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
+}
+
+TEST_CASE("skin.workspace_inspector_authoring_history_and_isolated_play_render_real_deformation") {
+  Fixture fixture;
+  auto scene = fixture.project.loadStartup().value();
+  const auto owner = scene.entities()->at(1).id;
+  const auto joint = scene.createEntity("Skin joint").value();
+  REQUIRE(scene.setScript(owner, std::nullopt));
+  const auto files = fixture.project.files().value();
+  const auto geometry = Dot::Graphics::cube().value();
+  auto skin = Dot::Animation::Skin::create(
+                  {std::vector<Dot::Math::Mat4>(1),
+                   std::vector<Dot::Animation::SkinInfluence>(geometry.vertices.size())})
+                  .value();
+  REQUIRE(Dot::Animation::saveSkin(files, "assets/rig.dotskin", skin));
+  REQUIRE(scene.setSkin(owner, Dot::World::SkinBinding{"assets/rig.dotskin", {joint.value}}));
+  auto clip = Dot::Animation::Clip::create({"Move joint",
+                                            {{0,
+                                              Dot::Animation::Path::Translation,
+                                              Dot::Animation::Interpolation::Linear,
+                                              {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                  .value();
+  REQUIRE(Dot::Animation::saveClip(files, "assets/move.dotanimation", clip));
+  REQUIRE(scene.setAnimationPlayer(
+      joint, Dot::World::AnimationPlayer{{"assets/move.dotanimation"}, {{0, joint.value}}}));
+  REQUIRE(fixture.project.saveStartup(scene));
+  auto workspace = fixture.open();
+  REQUIRE(workspace.dispatch("{\"command\":\"set-view\",\"mode\":\"game\"}"));
+  command(workspace, {{"command", "select"}, {"entity", std::to_string(owner.value)}});
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.dispatch("{\"command\":\"show-pane\",\"pane\":\"inspector\"}"));
+  REQUIRE(workspace.step(16ms));
+  REQUIRE(workspace.step(16ms));
+  const auto initial = workspace.captureViewport().value();
+  const auto inspect = Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value());
+  REQUIRE(inspect["workspace"]["inspector"].is_object());
+  CHECK(inspect["workspace"]["inspector"]["skin"]["asset"] == "assets/rig.dotskin");
+  auto transform = snapshot(workspace)["scene"]["entities"].back()["transform"];
+  transform["position"][0] = 1;
+  command(workspace, {{"command", "edit"},
+                      {"operations", Json::array({{{"op", "transform"},
+                                                   {"entity", std::to_string(joint.value)},
+                                                   {"value", transform}}})}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels != initial.pixels);
+  command(workspace, {{"command", "undo"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == initial.pixels);
+  const auto authored = workspace.snapshot().value();
+  command(workspace, {{"command", "play"}});
+
+  for (int frame = 0; frame < 5; ++frame) {
+    REQUIRE(workspace.step(100ms));
+  }
+
+  CHECK(workspace.captureViewport()->pixels != initial.pixels);
+  const auto playing = Json::parse(workspace.dispatch("{\"command\":\"inspect-play\"}").value());
+  CHECK(playing["scene"]["entities"].back()["transform"]["position"][0].get<double>() > 0);
+  CHECK(workspace.snapshot().value() == authored);
+  command(workspace, {{"command", "stop-play"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == initial.pixels);
+  auto saved = fixture.project.loadStartup().value();
+  CHECK(saved.transform(saved.findEntity(joint.value).value())->position.x == 0);
 }

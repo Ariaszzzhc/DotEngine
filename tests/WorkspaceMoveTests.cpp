@@ -17,6 +17,49 @@ namespace {
   using Json = nlohmann::json;
   using namespace std::chrono_literals;
 
+  /** Keep synthetic SDL pointer samples independent from desktop mouse traffic.
+   * Preserve window/focus/keyboard events and restore any prior global filter.
+   * 隔离注入的 SDL 鼠标样本与桌面真实鼠标流量；保留窗口/焦点/键盘事件并恢复原过滤器。 */
+  class PointerInputScope {
+  public:
+    static constexpr SDL_MouseID device = 0x7ffffffeU;
+
+    explicit PointerInputScope(SDL_WindowID window) : m_window(window) {
+      static_cast<void>(SDL_GetEventFilter(&m_previous, &m_data));
+      SDL_SetEventFilter(filter, this);
+    }
+
+    ~PointerInputScope() {
+      SDL_SetEventFilter(m_previous, m_data);
+    }
+
+    PointerInputScope(const PointerInputScope&) = delete;
+    auto operator=(const PointerInputScope&) -> PointerInputScope& = delete;
+
+  private:
+    static auto SDLCALL filter(void* data, SDL_Event* event) -> bool {
+      auto& scope = *static_cast<PointerInputScope*>(data);
+
+      if (scope.m_previous && !scope.m_previous(scope.m_data, event)) {
+        return false;
+      }
+
+      if (event->type == SDL_EVENT_MOUSE_MOTION) {
+        return event->motion.windowID != scope.m_window || event->motion.which == device;
+      }
+
+      if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN || event->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        return event->button.windowID != scope.m_window || event->button.which == device;
+      }
+
+      return true;
+    }
+
+    SDL_WindowID m_window;
+    SDL_EventFilter m_previous{};
+    void* m_data{};
+  };
+
   struct Fixture {
     Dot::Core::StagedDirectory storage
         = Dot::Core::StagedDirectory::create(
@@ -341,10 +384,18 @@ TEST_CASE("workspace.rotate_scale_native_ring_endpoint_input_and_cancel_restore_
   REQUIRE(count == 1);
   const auto window = SDL_GetWindowID(windows[0]);
   SDL_free(windows);
+  PointerInputScope pointerScope{window};
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  frame(workspace);
   const auto pointer = [&](float x, float y) {
+    SDL_PumpEvents();
     SDL_Event event{};
     event.motion.type = SDL_EVENT_MOUSE_MOTION;
     event.motion.windowID = window;
+    event.motion.which = PointerInputScope::device;
     event.motion.x = x;
     event.motion.y = y;
     REQUIRE(SDL_PushEvent(&event));
@@ -353,12 +404,19 @@ TEST_CASE("workspace.rotate_scale_native_ring_endpoint_input_and_cancel_restore_
     SDL_Event event{};
     event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.windowID = window;
+    event.button.which = PointerInputScope::device;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.down = down;
     event.button.x = x;
     event.button.y = y;
     REQUIRE(SDL_PushEvent(&event));
   };
+  SDL_Event unrelated{};
+  unrelated.motion.type = SDL_EVENT_MOUSE_MOTION;
+  unrelated.motion.windowID = window;
+  unrelated.motion.x = 0;
+  unrelated.motion.y = 0;
+  CHECK_FALSE(SDL_PushEvent(&unrelated));
   const auto image = workspace.captureViewport().value();
   const auto original = inspect(workspace)["scene"];
 
@@ -389,7 +447,7 @@ TEST_CASE("workspace.rotate_scale_native_ring_endpoint_input_and_cancel_restore_
     pointer(x, y);
     button(true, x, y);
     frame(workspace);
-    CHECK(inspect(workspace)["workspace"]["tool"]["active"] == true);
+    REQUIRE(inspect(workspace)["workspace"]["tool"]["active"] == true);
     CHECK(inspect(workspace)["selected"] == "2");
     pointer(nextX, nextY);
     frame(workspace);

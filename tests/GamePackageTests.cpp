@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "EnvironmentFixture.hpp"
 #include "SceneAudioFixture.hpp"
@@ -20,6 +21,9 @@ import Dot.Project.GameSession;
 import Dot.Script.Compiler;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.Animation.SceneSkin;
+import Dot.Animation.SkinFiles;
+import Dot.Math;
 
 namespace {
   using namespace Dot::Project;
@@ -224,4 +228,55 @@ TEST_CASE("game_package.environment_hdr_survives_relocation_and_invalid_sources_
   REQUIRE(scene.setEnvironment(settings));
   CHECK_FALSE(GamePackage::publish(fixture.project, scene, fixture.compiler(),
                                    fixture.directory.files(), "missing-environment-game"));
+}
+
+TEST_CASE("skin.game_package_validates_before_scripts_and_relocates_owned_skin_data") {
+  Fixture fixture;
+  auto files = fixture.project.files().value();
+  auto scene = fixture.project.loadStartup().value();
+  const auto owner = scene.entities()->at(1).id;
+  const auto joint = scene.createEntity("Joint").value();
+  const Dot::World::SkinBinding properties{"assets/rig.dotskin", {joint.value}};
+  REQUIRE(scene.setSkin(owner, properties));
+  REQUIRE(fixture.project.saveStartup(scene));
+  const auto generations = Dot::Script::compilerGenerations();
+  CHECK_FALSE(GameSession::create(fixture.project, fixture.compiler()));
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  CHECK_FALSE(GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                   fixture.directory.files(), "missing-skin"));
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "missing-skin"));
+  auto geometry = Dot::Graphics::cube().value();
+  auto skin = Dot::Animation::Skin::create(
+                  {std::vector<Dot::Math::Mat4>(1),
+                   std::vector<Dot::Animation::SkinInfluence>(geometry.vertices.size())})
+                  .value();
+  REQUIRE(Dot::Animation::saveSkin(files, properties.asset, skin));
+  auto published = GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                        fixture.directory.files(), "skinned")
+                       .value();
+  const auto relocated = fixture.directory.root / "relocated-skin";
+  std::filesystem::rename(published.root(), relocated);
+  auto package = GamePackage::open(Dot::Core::FileSystem::open(relocated).value()).value();
+  CHECK(package.files()->readBytes(properties.asset).value()
+        == files.readBytes(properties.asset).value());
+  std::filesystem::remove_all(files.root());
+  auto source = package.scene().value();
+  auto session = GameSession::createCompiled(package.files().value(), package.description().value(),
+                                             source, package.program().value())
+                     .value();
+  REQUIRE(session.start());
+  REQUIRE(session.update(.25));
+  const auto playing = session.scene().value();
+  const auto playingOwner = playing->findEntity(owner.value).value();
+  const auto playingJoint = playing->findEntity(joint.value).value();
+  REQUIRE(playing->setTransform(playingJoint, {{2, 0, 0}}));
+  auto loaded = Dot::Animation::loadSkin(package.files().value(), properties.asset).value();
+  auto bound = Dot::Animation::SceneSkin::bind(*playing, playingOwner, loaded).value();
+  const auto world = playing->worldTransform(playingOwner).value();
+  const auto position
+      = Dot::Math::transformPoint(
+            Dot::Math::multiply(world, bound.palette(*playing)->front()).value(), {})
+            .value();
+  CHECK(position.x == doctest::Approx(2));
+  REQUIRE(session.close());
 }

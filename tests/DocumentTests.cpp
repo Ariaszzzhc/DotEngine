@@ -685,3 +685,52 @@ TEST_CASE("document.group_boundaries_names_capacity_handles_and_opaque_script_da
           .dump()));
   CHECK(exhausted.snapshot().value() == exhaustedState);
 }
+
+TEST_CASE("skin.document_duplicate_instance_and_history_remap_joint_references_transactionally") {
+  Fixture fixture;
+  auto scene = Dot::World::Scene::create().value();
+  const auto root = scene.createEntity("Character").value();
+  const auto mesh = scene.createEntity("Mesh").value();
+  const auto joint = scene.createEntity("Joint").value();
+  REQUIRE(scene.setParent(mesh, root));
+  REQUIRE(scene.setParent(joint, root));
+  REQUIRE(scene.setMeshRenderer(mesh, Dot::World::MeshRenderer{}));
+  REQUIRE(scene.setSkin(mesh, Dot::World::SkinBinding{"assets/rig.dotskin", {joint.value}}));
+  REQUIRE(fixture.project().saveStartup(scene));
+  auto document = fixture.document();
+  const auto before = document.snapshot().value();
+  CHECK_FALSE(document.apply(Json::array({{{"op", "duplicate"}, {"entities", {"2"}}}}).dump(),
+                             revision(document)));
+  CHECK(document.snapshot().value() == before);
+  const auto copies = edit(document, Json::array({{{"op", "duplicate"}, {"entities", {"1"}}}}));
+  REQUIRE(copies.created.size() == 3);
+  auto copied = document.scene().value();
+  const auto copiedMesh = copied->entity(copied->findEntity(copies.created[1]).value()).value();
+  CHECK(copiedMesh.skin->joints == std::vector<std::uint64_t>{copies.created[2]});
+  REQUIRE(document.undo(revision(document)));
+  CHECK(document.scene().value()->entityCount().value() == 3);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(document.scene().value()->entityCount().value() == 6);
+  REQUIRE(Dot::World::saveScene(fixture.project().files().value(), "assets/model.dotscene", scene));
+  const auto instance = edit(
+      document, Json::array({{{"op", "instantiate-model"}, {"path", "assets/model.dotscene"}}}));
+  REQUIRE(instance.created.size() == 3);
+  copied = document.scene().value();
+  CHECK(copied->entity(copied->findEntity(instance.created[1]).value())->skin->joints
+        == std::vector<std::uint64_t>{instance.created[2]});
+  auto invalid = Json::array(
+      {{{"op", "component"},
+        {"entity", "2"},
+        {"component", "skin"},
+        {"value", {{"asset", "assets/rig.dotskin"}, {"joints", {"999"}}, {"enabled", true}}}}});
+  const auto stable = document.snapshot().value();
+  CHECK_FALSE(document.apply(invalid.dump(), revision(document)));
+  CHECK(document.snapshot().value() == stable);
+  edit(document,
+       Json::array(
+           {{{"op", "component"}, {"entity", "2"}, {"component", "skin"}, {"value", nullptr}},
+            {{"op", "remove"}, {"entity", "3"}}}));
+  REQUIRE(document.save(revision(document)));
+  auto saved = fixture.project().loadStartup().value();
+  CHECK_FALSE(saved.findEntity(3));
+}

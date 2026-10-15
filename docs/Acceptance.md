@@ -348,5 +348,10 @@ eight influences, indexed/unindexed data, reflected nonuniform tangent frames,
 batch rollback, bounds-driven culling/picking, normal-map eligibility, strict
 capacities, byte budgets, float overflow and moved/foreign/thread/device lifetime.
 CPU data/reference cases remain in the device-free unit layer; GPU cases and the
-runnable now use real offscreen devices. No automatic imported-skin/editor binding
-or populated-game throughput is inferred from these checks.
+runnable now use real offscreen devices. The runnable reloads .dotskin/scene files,
+compares automatic SceneRenderer physical/shadow/AO pixels against its CPU mesh and
+saves skin-scene.png. Focused cases additionally cover exact scene-cache residency,
+shared input pruning, stale/foreign scene scopes, explicit reload, failed-target
+preservation and current bounds/picking. Actual workspace authoring/undo/isolated
+Play pixels and relocated package skin ownership have dedicated tests. glTF skin
+import, realistic character assets and populated-game throughput remain unfinished.

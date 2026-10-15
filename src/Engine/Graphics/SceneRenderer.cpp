@@ -24,6 +24,8 @@ import Dot.Graphics.Geometry;
 import Dot.Assets.Mesh;
 import Dot.Assets.Material;
 import Dot.Assets.Image;
+import Dot.Animation.SceneSkin;
+import Dot.Animation.SkinFiles;
 
 namespace Dot::Graphics {
   namespace {
@@ -94,6 +96,14 @@ namespace Dot::Graphics {
       bool normalEncoding;
     };
 
+    struct SkinEntry {
+      std::string mesh;
+      World::SkinBinding properties;
+      Animation::SceneSkin binding;
+      SkinnedMesh controller;
+      std::uint64_t bytes;
+    };
+
     struct MaterialEntry {
       Material material;
       std::vector<std::string> textures;
@@ -123,6 +133,9 @@ namespace Dot::Graphics {
     std::unordered_map<std::string, Entry> cache;
     std::unordered_map<std::string, MaterialEntry> materials;
     std::unordered_map<std::string, TextureEntry> textures;
+    std::uint64_t skinScene{};
+    std::unordered_map<std::uint64_t, SkinEntry> skins;
+    std::unordered_map<std::string, Animation::Skin> skinAssets;
     std::optional<MaterialPreview> preview;
 
     struct EnvironmentEntry {
@@ -339,6 +352,110 @@ namespace Dot::Graphics {
       }
 
       return Entry{std::move(*uploaded), resourceBytes, std::move(warning), *bounds};
+    }
+
+    /** Retire controllers before shared inputs. Scoped identities prevent reuse
+     * across scenes; bounds may retain hidden meshes until the next frame.
+     * 先释放控制器再释放共用输入；场景范围防止跨场景复用，包围盒可保留隐藏网格至下一帧。 */
+    auto pruneSkins(const World::Scene& scene, const std::vector<World::EntityInfo>& entities,
+                    bool visibleOnly) -> void {
+      if (skinScene != scene.id()) {
+        for (const auto& [id, entry] : skins) {
+          bytes -= entry.bytes;
+        }
+
+        skins.clear();
+        skinAssets.clear();
+        skinScene = scene.id();
+      }
+
+      std::unordered_map<std::uint64_t, const World::EntityInfo*> current;
+
+      for (const auto& entity : entities) {
+        current.emplace(entity.id.value, &entity);
+      }
+
+      std::unordered_set<std::string> needed;
+
+      for (auto iterator = skins.begin(); iterator != skins.end();) {
+        const auto found = current.find(iterator->first);
+        const auto* entity = found == current.end() ? nullptr : found->second;
+        const bool keep = entity && entity->mesh && (!visibleOnly || entity->mesh->visible)
+                          && entity->skin && entity->skin->enabled
+                          && *entity->skin == iterator->second.properties
+                          && key(*entity->mesh).value() == iterator->second.mesh;
+
+        if (!keep) {
+          bytes -= iterator->second.bytes;
+          iterator = skins.erase(iterator);
+        } else {
+          needed.insert(iterator->second.properties.asset);
+          ++iterator;
+        }
+      }
+
+      std::erase_if(skinAssets, [&](const auto& entry) { return !needed.contains(entry.first); });
+    }
+
+    auto skin(const World::Scene& scene, const World::EntityInfo& entity,
+              const std::string& meshKey, const Entry& source) -> Core::Result<SkinEntry*> {
+      auto existing = skins.find(entity.id.value);
+
+      if (existing != skins.end()) {
+        return &existing->second;
+      }
+
+      if (!assets) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Scene skin requires an asset root");
+      }
+
+      auto cached = skinAssets.find(entity.skin->asset);
+      auto loaded = cached != skinAssets.end()
+                        ? Core::Result<Animation::Skin>{cached->second}
+                        : Animation::loadSkin(*assets, assetPath(entity.skin->asset));
+
+      if (!loaded) {
+        return std::unexpected(loaded.error());
+      }
+
+      auto binding = Animation::SceneSkin::bind(scene, entity.id, *loaded);
+
+      if (!binding) {
+        return std::unexpected(binding.error());
+      }
+
+      const auto data = loaded->description().value();
+      const auto mesh = source.mesh.info().value();
+
+      if (mesh.vertices != data->vertices.size()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Scene skin vertex count does not match its mesh");
+      }
+
+      /** Charge both posed buffers, weights, palette and compact GPU controls.
+       * Shared static input/index bytes are already charged by cache.
+       * 计入两个变形缓冲、权重、调色板及 GPU 控制；共用静态输入/索引已由 cache 计费。 */
+      const auto residency = 2ULL * mesh.vertices * sizeof(Vertex)
+                             + data->vertices.size() * sizeof(Animation::SkinInfluence)
+                             + data->inverseBindMatrices.size() * sizeof(Math::Mat4) + 48
+                             + (mesh.indices == 0 ? 4U : 0U);
+
+      if (residency > budget - bytes) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene skin cache byte budget exceeded");
+      }
+
+      auto controller = renderer->createSkin(source.mesh, *loaded);
+
+      if (!controller) {
+        return std::unexpected(controller.error());
+      }
+
+      skinAssets.try_emplace(entity.skin->asset, *loaded);
+      auto inserted = skins.emplace(
+          entity.id.value,
+          SkinEntry{meshKey, *entity.skin, std::move(*binding), std::move(*controller), residency});
+      bytes += residency;
+      return &inserted.first->second;
     }
 
     auto loadMaterial(std::string_view path) -> Core::Result<MaterialEntry> {
@@ -616,6 +733,8 @@ namespace Dot::Graphics {
                             "Visible scene exceeds 10000 mesh instances");
         }
 
+        pruneSkins(scene, *entities, true);
+
         for (auto iterator = cache.begin(); iterator != cache.end();) {
           if (!needed.contains(iterator->first)) {
             bytes -= iterator->second.bytes;
@@ -656,6 +775,10 @@ namespace Dot::Graphics {
          */
         frame.meshes.reserve(drawCount);
         frame.draws.reserve(drawCount);
+        std::vector<std::vector<Math::Mat4>> palettes;
+        std::vector<SkinUpdate> updates;
+        palettes.reserve(128);
+        updates.reserve(128);
 
         for (const auto& entity : *entities) {
           if (!entity.mesh || !entity.mesh->visible) {
@@ -708,7 +831,29 @@ namespace Dot::Graphics {
           }
 
           frame.entities.push_back(entity.id);
-          frame.meshes.push_back(found->second.mesh);
+          Mesh mesh = found->second.mesh;
+
+          if (entity.skin && entity.skin->enabled) {
+            auto bound = skin(scene, entity, *resourceKey, found->second);
+
+            if (!bound) {
+              return Core::fail(bound.error().code, "Scene skin owner "
+                                                        + std::to_string(entity.id.value) + ": "
+                                                        + bound.error().message);
+            }
+
+            auto palette = (*bound)->binding.palette(scene);
+
+            if (!palette) {
+              return std::unexpected(palette.error());
+            }
+
+            palettes.push_back(std::move(*palette));
+            updates.push_back({&(*bound)->controller, palettes.back()});
+            mesh = (*bound)->controller.mesh().value();
+          }
+
+          frame.meshes.push_back(std::move(mesh));
           frame.draws.push_back({&frame.meshes.back(), *world, entity.mesh->tint,
                                  std::move(material), entity.mesh->castsShadow,
                                  entity.mesh->receivesShadow});
@@ -745,6 +890,14 @@ namespace Dot::Graphics {
         }
 
         occlusionRevision = *revision;
+
+        if (!updates.empty()) {
+          auto updated = renderer->updateSkins(updates);
+
+          if (!updated) {
+            return std::unexpected(updated.error());
+          }
+        }
 
         return Core::Result<Frame>{std::move(frame)};
       } catch (const std::exception& error) {
@@ -951,6 +1104,13 @@ namespace Dot::Graphics {
     }
 
     try {
+      auto entities = scene.entities();
+
+      if (!entities) {
+        return std::unexpected(entities.error());
+      }
+
+      m_impl->pruneSkins(scene, *entities, false);
       auto found = m_impl->cache.find(*resourceKey);
 
       if (found == m_impl->cache.end()) {
@@ -962,6 +1122,29 @@ namespace Dot::Graphics {
 
         found = m_impl->cache.emplace(*resourceKey, std::move(*loaded)).first;
         m_impl->bytes += found->second.bytes;
+      }
+
+      if (info->skin && info->skin->enabled) {
+        auto bound = m_impl->skin(scene, *info, *resourceKey, found->second);
+
+        if (!bound) {
+          return std::unexpected(bound.error());
+        }
+
+        auto palette = (*bound)->binding.palette(scene);
+
+        if (!palette) {
+          return std::unexpected(palette.error());
+        }
+
+        const std::array updates{SkinUpdate{&(*bound)->controller, *palette}};
+        auto updated = m_impl->renderer->updateSkins(updates);
+
+        if (!updated) {
+          return std::unexpected(updated.error());
+        }
+
+        return transformedBounds((*bound)->controller.info()->bounds, *transform);
       }
 
       return transformedBounds(found->second.bounds, *transform);
@@ -983,6 +1166,11 @@ namespace Dot::Graphics {
     }
 
     std::uint64_t textureBytes{};
+    std::uint64_t skinBytes{};
+
+    for (const auto& [id, entry] : m_impl->skins) {
+      skinBytes += entry.bytes;
+    }
 
     for (const auto& [key, entry] : m_impl->textures) {
       textureBytes += entry.bytes;
@@ -994,7 +1182,9 @@ namespace Dot::Graphics {
                             m_impl->textures.size(),
                             textureBytes,
                             m_impl->environment ? 1U : 0U,
-                            m_impl->environment ? m_impl->environment->bytes : 0U};
+                            m_impl->environment ? m_impl->environment->bytes : 0U,
+                            m_impl->skins.size(),
+                            skinBytes};
   }
 
   auto SceneRenderer::warnings() const -> Core::Result<std::vector<std::string>> {
@@ -1110,6 +1300,8 @@ namespace Dot::Graphics {
     m_impl->environment.reset();
     m_impl->materials.clear();
     m_impl->textures.clear();
+    m_impl->skins.clear();
+    m_impl->skinAssets.clear();
     m_impl->cache.clear();
     m_impl->bytes = 0;
     return {};

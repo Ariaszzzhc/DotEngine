@@ -194,7 +194,10 @@ Native skin data now supports bounded eight-slot joint influences, immutable inv
 binds and mesh-local palettes with a CPU deformation reference. GPU controllers
 share static inputs, update posed vertices/normal/tangent frames and exact bounds,
 retain previous poses on failed batches, and feed ordinary PBR/shadow/SSAO/picking
-passes. Imported-skin resources, saved scene bindings, editor integration, blending/
-state machines and populated-game performance remain open. The native acceptance
-uses actual joint hierarchy animation and reference-compared rendered frames; it
-does not establish full skinned-model authoring or realistic game production.
+passes. Saved .dotskin resources and ordered scene bindings now feed automatic scene
+rendering, bounds/picking and Inspector/duplicate/history/isolated Play. Session and
+export preparation validate actual assets and relocated owned packages retain them.
+glTF skin import, visual skeleton/timeline tools, blending/state machines and populated
+game performance remain open. The native acceptance uses actual joint hierarchy
+animation and reference-compared rendered frames; it does not establish full
+skinned-model authoring or realistic game production.

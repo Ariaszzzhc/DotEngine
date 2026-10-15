@@ -216,7 +216,7 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp SkinGpuTests.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp SceneSkinGpuTests.cpp SkinGpuTests.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")

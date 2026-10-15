@@ -7,6 +7,7 @@
 
 import Dot.Animation.SceneSkin;
 import Dot.Animation.SkinFiles;
+import Dot.Assets.SceneSkins;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Math;
@@ -28,6 +29,47 @@ namespace {
         .value();
   }
 }  // namespace
+
+TEST_CASE("skin.scene_asset_validation_checks_real_files_counts_and_initial_pose_without_devices") {
+  auto staging = storage();
+  auto files = staging.files().value();
+  REQUIRE(files.createDirectories("assets"));
+  auto scene = World::Scene::create().value();
+  const auto owner = scene.createEntity().value();
+  const auto joint = scene.createEntity().value();
+  REQUIRE(scene.setMeshRenderer(owner, World::MeshRenderer{World::MeshKind::Quad, {}}));
+  World::SkinBinding properties{"assets/rig.dotskin", {joint.value}};
+  REQUIRE(scene.setSkin(owner, properties));
+  CHECK_FALSE(Assets::validateSceneSkins(files, scene));
+  REQUIRE(Animation::saveSkin(files, properties.asset, skin()));
+  REQUIRE(Assets::validateSceneSkins(files, scene));
+  REQUIRE(scene.setMeshRenderer(owner, World::MeshRenderer{}));
+  CHECK_FALSE(Assets::validateSceneSkins(files, scene));
+  REQUIRE(scene.setMeshRenderer(owner, World::MeshRenderer{World::MeshKind::Quad, {}}));
+  auto mismatch = Animation::Skin::create(
+                      {std::vector<Math::Mat4>(2), std::vector<Animation::SkinInfluence>(4)})
+                      .value();
+  REQUIRE(Animation::saveSkin(files, properties.asset, mismatch));
+  CHECK_FALSE(Assets::validateSceneSkins(files, scene));
+  auto description = *mismatch.description().value();
+
+  for (auto& influence : description.vertices) {
+    influence.joints[1] = 1;
+    influence.weights = {.5F, .5F};
+  }
+
+  const auto tip = scene.createEntity().value();
+  properties.joints.push_back(tip.value);
+  REQUIRE(scene.setSkin(owner, properties));
+  REQUIRE(Animation::saveSkin(files, properties.asset,
+                              Animation::Skin::create(std::move(description)).value()));
+  REQUIRE(Assets::validateSceneSkins(files, scene));
+  REQUIRE(scene.setTransform(tip, {{}, {}, {-1, 1, 1}}));
+  CHECK_FALSE(Assets::validateSceneSkins(files, scene));
+  properties.enabled = false;
+  REQUIRE(scene.setSkin(owner, properties));
+  REQUIRE(Assets::validateSceneSkins(files, scene));
+}
 
 TEST_CASE("skin.files_atomic_unicode_roundtrip_rejects_links_missing_and_special_paths") {
   auto staging = storage();

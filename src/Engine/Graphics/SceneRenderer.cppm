@@ -31,6 +31,8 @@ export namespace Dot::Graphics {
     std::uint64_t textureBytes{};
     std::size_t environments{};
     std::uint64_t environmentBytes{};
+    std::size_t skins{};
+    std::uint64_t skinBytes{};
   };
 
   struct MaterialPreview {
@@ -42,6 +44,11 @@ export namespace Dot::Graphics {
    * descriptor. Byte budget covers logical GPU mesh/texture bytes; at most 4096
    * materials and 4096 textures. Immutable assets reload explicitly via clearCache.
    * Scene light poses and camera view rays come from current world transforms.
+   * Enabled saved skins share immutable source data, own one GPU controller per
+   * mesh owner, and update current joint-world palettes as one atomic visible batch.
+   * Both posed buffers/weights/palette/control storage count toward the cache budget;
+   * source meshes remain shared. clearCache reloads files. Bounds/pick/shadow/AO use
+   * the posed mesh. Hidden/disabled/rebound/deleted owners are pruned before inputs.
    * Scene-owned HDR environments share the cache budget; replacement peak must fit
    * both maps. Saved SSAO settings are authoritative per frame; clearCache/destruction
    * detach only this service's environment/occlusion bindings. AO working textures
@@ -50,6 +57,9 @@ export namespace Dot::Graphics {
    * Operations/destruction require the renderer's creating thread.
    * 拥有有界共享网格/材质/贴图缓存及可选资产根目录描述；字节预算覆盖逻辑 GPU 数据，
    * 最多 4096 材质/4096 贴图，缓存不可变资源由 clearCache 显式重载；光源位姿/视线取世界变换。
+   * 启用蒙皮共用不可变源数据，每网格所有者持有 GPU 控制器，可见关节调色板一次事务更新。
+   * 两个变形缓冲/权重/调色板/控制数据计入预算，源网格共享；包围盒/拾取/阴影/AO 用变形网格。
+   * clearCache 重载文件；隐藏/禁用/改绑/删除的所有者先于共用输入释放。
    * 场景 HDR 环境共用缓存预算，替换峰值须容纳两张环境；保存的 SSAO 每帧生效；
    * 清缓存/销毁仅解绑本服务的环境/AO。AO 工作纹理归渲染器，与资产缓存预算分离。
    * 借用渲染器，须保持其地址且更晚销毁。

@@ -2813,13 +2813,19 @@ namespace Dot::Editor {
       }
 
       for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light", "animation"}) {
+                                    "script", "material", "light", "animation", "skin"}) {
         ImGui::PushID(component);
         const auto title = label(component);
 
         if (m_edit[component].is_null()) {
-          if (ImGui::Button(("Add " + title).c_str())) {
-            if (std::string_view(component) == "animation") {
+          if (std::string_view(component) == "skin" && m_edit["mesh"].is_null()) {
+            ImGui::TextDisabled("Add a mesh before a skin binding");
+          } else if (ImGui::Button(("Add " + title).c_str())) {
+            if (std::string_view(component) == "skin") {
+              m_edit[component] = {{"asset", "assets/skin.dotskin"},
+                                   {"joints", Json::array({m_edit["id"]})},
+                                   {"enabled", true}};
+            } else if (std::string_view(component) == "animation") {
               m_edit[component]
                   = {{"clips", Json::array({"assets/animation.dotanimation"})},
                      {"targets", Json::array({{{"node", 0}, {"entity", m_edit["id"]}}})},
@@ -2877,6 +2883,87 @@ namespace Dot::Editor {
 
             if (m_propertiesInvalid) {
               ImGui::TextWrapped("Properties must be a valid JSON object with unique fields.");
+            }
+          } else if (std::string_view(component) == "skin") {
+            auto& skin = m_edit[component];
+            bool enabled = skin["enabled"].get<bool>();
+
+            if (ImGui::Checkbox("Enabled", &enabled)) {
+              skin["enabled"] = enabled;
+            }
+
+            const auto asset = skin["asset"].get<std::string>();
+
+            if (ImGui::BeginCombo("Skin asset", asset.c_str())) {
+              for (const auto& entry : m_catalog) {
+                const auto path = entry["path"].get<std::string>();
+
+                if (path.ends_with(".dotskin") && ImGui::Selectable(path.c_str(), path == asset)) {
+                  skin["asset"] = path;
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+
+            ImGui::TextWrapped("Joint order must match the skin asset's inverse binds.");
+            auto& joints = skin["joints"];
+
+            if (ImGui::TreeNode("Joint bindings")) {
+              for (std::size_t i = 0; i < joints.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                const auto joint = joints[i].get<std::string>();
+                std::string current = joint;
+
+                for (const auto& entity : m_snapshot["scene"]["entities"]) {
+                  if (entity["id"] == joint) {
+                    current = entity["name"].get<std::string>() + " (" + joint + ")";
+                    break;
+                  }
+                }
+
+                if (ImGui::BeginCombo(("Joint " + std::to_string(i)).c_str(), current.c_str())) {
+                  for (const auto& entity : m_snapshot["scene"]["entities"]) {
+                    const auto id = entity["id"].get<std::string>();
+
+                    if (id != joint && std::ranges::find(joints, entity["id"]) != joints.end()) {
+                      continue;
+                    }
+
+                    const auto jointName = entity["name"].get<std::string>() + " (" + id + ")";
+
+                    if (ImGui::Selectable(jointName.c_str(), id == joint)) {
+                      joints[i] = id;
+                    }
+                  }
+
+                  ImGui::EndCombo();
+                }
+
+                ImGui::BeginDisabled(joints.size() <= 1);
+                const bool remove = ImGui::SmallButton("Remove joint");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+
+                if (remove) {
+                  joints.erase(joints.begin() + static_cast<Json::difference_type>(i));
+                  break;
+                }
+              }
+
+              ImGui::BeginDisabled(joints.size() >= 1024);
+
+              if (ImGui::SmallButton("Add joint")) {
+                for (const auto& entity : m_snapshot["scene"]["entities"]) {
+                  if (std::ranges::find(joints, entity["id"]) == joints.end()) {
+                    joints.push_back(entity["id"]);
+                    break;
+                  }
+                }
+              }
+
+              ImGui::EndDisabled();
+              ImGui::TreePop();
             }
           } else if (std::string_view(component) == "animation") {
             auto& player = m_edit[component];
@@ -3024,7 +3111,7 @@ namespace Dot::Editor {
       }
 
       for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light", "animation"}) {
+                                    "script", "material", "light", "animation", "skin"}) {
         if (m_edit[component] != m_original[component]) {
           operations.push_back({{"op", "component"},
                                 {"entity", id},

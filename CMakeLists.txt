@@ -80,6 +80,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/Skin.cpp
     src/Engine/Animation/SkinFiles.cpp
     src/Engine/Animation/SceneSkin.cpp
+    src/Engine/Assets/SceneSkins.cpp
     src/Engine/Animation/SkinSource.cpp
     src/Engine/Graphics/Skinning.cpp
     src/Engine/Animation/Clip.cpp
@@ -188,6 +189,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/Skin.cppm
         src/Engine/Animation/SkinFiles.cppm
         src/Engine/Animation/SceneSkin.cppm
+        src/Engine/Assets/SceneSkins.cppm
         src/Engine/Animation/SkinSource.cppm
         src/Engine/Graphics/Skinning.cppm
         src/Engine/Animation/Clip.cppm

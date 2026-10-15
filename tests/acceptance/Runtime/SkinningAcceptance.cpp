@@ -13,9 +13,11 @@ import Dot.Animation.Skin;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
 import Dot.Assets.Mesh;
+import Dot.Assets.Material;
 import Dot.Core.Files;
 import Dot.Graphics.Geometry;
 import Dot.Graphics.Renderer;
+import Dot.Graphics.SceneRenderer;
 import Dot.Graphics.Skinning;
 import Dot.Math;
 import Dot.World.Scene;
@@ -103,8 +105,12 @@ namespace Dot::Runtime {
       auto floor = renderer.upload(Graphics::cube({3, .15F, 2}).value()).value();
       Graphics::Lighting lighting;
       lighting.viewPosition = {0, 0, 5};
+      lighting.viewDirection = Math::Vec3{0, 0, -1};
+      const auto lightRotation = Math::rotationEulerDegrees({-35, 35, 0}).value();
+      const auto lightDirection
+          = Math::transformVector(Math::compose({}, lightRotation).value(), {0, 0, -1}).value();
       lighting.lights = {
-          {.direction = {.5F, -1, -1},
+          {.direction = lightDirection,
            .intensity = 4,
            .shadows = Graphics::ShadowSettings{.resolution = 128, .cascades = 1, .distance = 15}}};
       renderer.setLighting(lighting).value();
@@ -117,6 +123,34 @@ namespace Dot::Runtime {
       material.baseColor = {.8F, .35F, .12F, 1};
       material.metallic = .65F;
       material.roughness = .35F;
+      Assets::MaterialDescription authored;
+      authored.baseColor = material.baseColor;
+      authored.metallic = material.metallic;
+      authored.roughness = material.roughness;
+      Assets::saveMaterial(files, "assets/copper.dotmaterial", authored).value();
+      scene.setMaterial(entity, World::MaterialBinding{"assets/copper.dotmaterial"}).value();
+      const auto floorEntity = scene.createEntity("Floor").value();
+      scene.setMeshRenderer(floorEntity, World::MeshRenderer{}).value();
+      scene.setTransform(floorEntity, {{0, -1.2F, .1F}, {}, {3, .15F, 2}}).value();
+      scene.setMaterial(floorEntity, World::MaterialBinding{"assets/copper.dotmaterial"}).value();
+      const auto cameraEntity = scene.createEntity("Camera").value();
+      scene
+          .setCamera(cameraEntity, World::Camera{.projection = World::Projection::Orthographic,
+                                                 .orthographicHeight = 4,
+                                                 .nearPlane = .1F,
+                                                 .farPlane = 15,
+                                                 .primary = true})
+          .value();
+      scene.setTransform(cameraEntity, {lighting.viewPosition}).value();
+      const auto lightEntity = scene.createEntity("Key light").value();
+      scene
+          .setLight(lightEntity,
+                    World::Light{.intensity = 4, .shadows = lighting.lights[0].shadows})
+          .value();
+      scene.setTransform(lightEntity, {{}, lightRotation}).value();
+      scene.setOcclusion(Graphics::OcclusionSettings{}).value();
+      World::saveScene(files, "skin.dotscene", scene).value();
+      auto sceneRenderer = Graphics::SceneRenderer::create(renderer, files).value();
       std::array draws{Graphics::MeshDraw{&view, world, {1, 1, 1, 1}, material},
                        Graphics::MeshDraw{
                            &floor, Math::compose({0, -1.2F, .1F}).value(), {1, 1, 1, 1}, material}};
@@ -161,6 +195,22 @@ namespace Dot::Runtime {
           throw std::runtime_error("GPU skin physical/shadow/AO pixels differ from reference");
         }
 
+        const auto automatic = sceneRenderer.render(scene, 256, 256).value();
+        unsigned automaticDifference{};
+
+        for (std::size_t i = 0; i < automatic.pixels.size(); ++i) {
+          automaticDifference += static_cast<unsigned>(
+              std::abs(int(automatic.pixels[i]) - int(expected.pixels[i])));
+        }
+
+        if (automaticDifference > 2048) {
+          throw std::runtime_error("Automatic scene skin/shadow/AO differs from CPU reference");
+        }
+
+        if (frame == 8) {
+          files.writeAtomic("skin-scene.png", Assets::encodeImage(automatic).value()).value();
+        }
+
         if (frame == 0) {
           initial = actual.pixels;
         } else if (frame == 8 && actual.pixels == initial) {
@@ -198,7 +248,8 @@ namespace Dot::Runtime {
     }
 
     std::println(
-        "Skinning acceptance passed: saved skin/scene, native hierarchy, GPU deformation, nine "
+        "Skinning acceptance passed: saved skin/scene, native hierarchy, automatic scene GPU "
+        "deformation, nine "
         "reference-compared "
         "frames and owned release");
     return 0;

@@ -42,9 +42,13 @@ resize, event dispatch, presentation and destruction. Unit tests must not create
 window just to inspect pure data. Separate CPU validation and pixel checks from
 native presentation. Repeated creation/destruction specifically verifies lifetime;
 do not share one global fixture if that would hide leaks or initialization failures.
-The current inventory contains 235 unit, 674 integration, 124 offscreen GPU,
-70 native and 123 acceptance cases. Labels overlap; integration includes GPU and
-native integration cases. All 1032 CTest identities are covered; existing subsystem
+The native ring/scale case uses device-tagged SDL pointer injection with a scoped
+filter for its window, so desktop pointer traffic cannot overwrite its prescribed
+samples. It retains real window/focus/keyboard events and restores the previous
+filter. The native translator, editor drag/history and GPU pixels are still tested.
+The current inventory contains 242 unit, 684 integration, 129 offscreen GPU,
+71 native and 124 acceptance cases. Labels overlap; integration includes GPU and
+native integration cases. All 1050 CTest identities are covered; existing subsystem
 coverage is retained. Use CTest JSON inventory for exact filter intersections.
 During iteration select the changed layer/cases; run the full configurations at a
 cohesive stage boundary rather than repeatedly launching the entire editor suite.

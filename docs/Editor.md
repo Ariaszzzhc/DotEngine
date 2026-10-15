@@ -937,3 +937,17 @@ Document transform transaction supports up to 10000 current-scene handles withou
 the generic JSON edit operation-count/transport bound; existing scene/history
 limits still apply. Median/individual-origin pivot modes and group framing remain
 unimplemented.
+
+
+Saved [skin bindings](Skinning.md) render automatically in preview and isolated Play.
+The Skin Inspector chooses an existing .dotskin asset, toggles enabled state and
+edits ordered live joint entities; a mesh is required. Applying uses ordinary native
+component/history validation. Duplicate requires all joints in the selected subtree
+union, remaps their IDs and rejects external references without partial edits.
+Model-scene instantiation remaps the same references. Bounds/framing/picking use the
+current deformed mesh. Skeleton visualization, glTF skin import and a visual
+animation timeline remain unfinished.
+
+Move a character root that contains its joints, or edit the joint transforms, to
+pose a skinned mesh. Its mesh-owner world transform cancels through the skin palette;
+moving only that mesh entity does not move the joint-driven world geometry.
