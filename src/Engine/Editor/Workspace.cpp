@@ -9,10 +9,12 @@ module;
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <expected>
 #include <filesystem>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +34,8 @@ import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
 import Dot.Editor.Resources;
 import Dot.Editor.MaterialDocument;
+import Dot.Editor.AssetPreview;
+import Dot.Assets.Image;
 import Dot.Editor.ScriptDiagnostics;
 import Dot.Platform.ExternalFiles;
 import Dot.Script.Compiler;
@@ -268,6 +272,25 @@ namespace Dot::Editor {
     std::optional<MaterialDocument> m_material;
     Json m_materialForm;
     std::string m_materialPreviewKey;
+
+    struct PreviewEntry {
+      std::optional<Graphics::Texture> texture;
+      std::optional<Graphics::Image> image;
+      std::string error;
+      std::string warning;
+      std::uint64_t used{};
+    };
+
+    std::optional<AssetPreview> m_assetPreviewer;
+    std::map<std::string, PreviewEntry> m_thumbnails;
+    std::deque<std::string> m_thumbnailQueue;
+    PreviewEntry m_materialSample;
+    std::string m_materialSampleKey;
+    std::string m_previewServiceError;
+    std::uint64_t m_previewClock{};
+    std::uint64_t m_previewJobs{};
+    bool m_assetGrid{true};
+    std::string m_assetDirectory{"assets"};
     std::uint64_t m_buffer{};
     Json m_catalog = Json::array();
     std::string m_selectedResource;
@@ -510,11 +533,166 @@ namespace Dot::Editor {
               {"canRedo", state.canRedo}};
     }
 
+    auto previewStatus() const -> Json {
+      Json entries = Json::array();
+      const bool currentMaterial
+          = m_material && m_materialSampleKey == std::to_string(m_buffer) + m_materialForm.dump();
+
+      for (const auto& [path, entry] : m_thumbnails) {
+        entries.push_back({{"path", path},
+                           {"ready", entry.texture.has_value()},
+                           {"error", entry.error},
+                           {"warning", entry.warning}});
+      }
+
+      return {{"entries", entries},
+              {"pending", m_thumbnailQueue.size()},
+              {"jobs", m_previewJobs},
+              {"device", m_assetPreviewer.has_value()},
+              {"serviceError", m_previewServiceError},
+              {"materialReady", currentMaterial && m_materialSample.texture.has_value()},
+              {"materialPending", m_material.has_value() && !currentMaterial},
+              {"materialError", currentMaterial ? m_materialSample.error : std::string{}},
+              {"layout", m_assetGrid ? "grid" : "list"},
+              {"directory", m_assetDirectory}};
+    }
+
+    auto clearPreviews() -> void {
+      m_thumbnails.clear();
+      m_thumbnailQueue.clear();
+      m_materialSample = {};
+      m_materialSampleKey.clear();
+      m_previewServiceError.clear();
+    }
+
+    auto requestPreview(const std::string& path) -> void {
+      if (!assetPreviewKind(path)) {
+        return;
+      }
+
+      auto found = m_thumbnails.find(path);
+
+      if (found != m_thumbnails.end()) {
+        found->second.used = ++m_previewClock;
+        return;
+      }
+
+      if (m_thumbnails.size() == 64) {
+        auto oldest = std::ranges::min_element(m_thumbnails, {},
+                                               [](const auto& item) { return item.second.used; });
+        const auto evicted = oldest->first;
+        m_thumbnails.erase(oldest);
+        std::erase(m_thumbnailQueue, evicted);
+      }
+
+      PreviewEntry pending;
+      pending.used = ++m_previewClock;
+      m_thumbnails.emplace(path, std::move(pending));
+      m_thumbnailQueue.push_back(path);
+    }
+
+    auto generatePreview(const std::string& path, std::uint32_t size,
+                         const Assets::MaterialDescription* material = nullptr) -> PreviewEntry {
+      ++m_previewJobs;
+
+      if (!m_assetPreviewer && m_previewServiceError.empty()) {
+        auto location = resource("environments");
+        auto files = location ? Core::FileSystem::open(*location)
+                              : Core::Result<Core::FileSystem>{std::unexpected(location.error())};
+        auto hdr = files ? Assets::loadHdrImage(*files, "studio_small_09_1k.hdr")
+                         : Core::Result<Graphics::HdrImage>{std::unexpected(files.error())};
+        auto preview = hdr ? AssetPreview::create(m_project->files().value(), &*hdr)
+                           : Core::Result<AssetPreview>{std::unexpected(hdr.error())};
+
+        if (preview) {
+          m_assetPreviewer.emplace(std::move(*preview));
+        } else {
+          m_previewServiceError = preview.error().message;
+        }
+      }
+
+      PreviewEntry entry;
+
+      if (!m_assetPreviewer) {
+        entry.error = m_previewServiceError;
+        return entry;
+      }
+
+      auto rendered = m_assetPreviewer->render(path, size, material);
+
+      if (!rendered) {
+        entry.error = rendered.error().message;
+        return entry;
+      }
+
+      auto texture
+          = m_renderer->uploadTexture(rendered->image, {.colorSpace = Graphics::ColorSpace::Linear,
+                                                        .addressU = Graphics::TextureAddress::Clamp,
+                                                        .addressV = Graphics::TextureAddress::Clamp,
+                                                        .mipmaps = false});
+
+      if (!texture) {
+        entry.error = texture.error().message;
+        return entry;
+      }
+
+      entry.texture = std::move(*texture);
+      entry.image = std::move(rendered->image);
+      entry.warning = std::move(rendered->warning);
+      return entry;
+    }
+
+    /** One synchronous preview job per editor frame, prioritized for the material
+     * form. Cache at most 64 128px thumbnails plus one 256px material sphere.
+     * 每编辑器帧至多一个同步预览任务，优先材质表单；缓存至多 64 张 128px 缩略图及
+     * 一张 256px 材质球，CPU/GPU 图像各自至多约 4.25 MiB。 */
+    auto updatePreviews() -> void {
+      if (playing()) {
+        return;
+      }
+
+      if (m_material) {
+        const auto key = std::to_string(m_buffer) + m_materialForm.dump();
+
+        if (key != m_materialSampleKey) {
+          auto value = Assets::decodeMaterial(m_materialForm.dump());
+          m_materialSample = {};
+
+          if (value) {
+            m_materialSample = generatePreview(m_material->snapshot()->path, 256, &*value);
+          } else {
+            m_materialSample.error = value.error().message;
+          }
+
+          m_materialSampleKey = key;
+          return;
+        }
+      }
+
+      if (!m_thumbnailQueue.empty()) {
+        auto path = std::move(m_thumbnailQueue.front());
+        m_thumbnailQueue.pop_front();
+        auto found = m_thumbnails.find(path);
+
+        if (found != m_thumbnails.end()) {
+          const auto used = found->second.used;
+          found->second = generatePreview(path, 128);
+          found->second.used = used;
+        }
+      }
+    }
+
     auto resetMaterialForm() -> void {
       m_materialForm
           = m_material
                 ? Codec::parseJson(Assets::encodeMaterial(m_material->snapshot()->value).value())
                 : Json(nullptr);
+
+      if (!m_material) {
+        m_materialSample = {};
+        m_materialSampleKey.clear();
+      }
+
       m_renderedView.reset();
       m_previewReady = false;
     }
@@ -914,6 +1092,105 @@ namespace Dot::Editor {
                     {"kind", command == "export" ? "game-native" : "game-data"},
                     {"package", std::string(utf.begin(), utf.end())}}
             .dump();
+      }
+
+      if (command == "clear-asset-selection") {
+        Codec::requireFields(parsed, {"command"});
+
+        if (m_material && pendingText()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Save or discard the current material first");
+        }
+
+        m_material.reset();
+        resetMaterialForm();
+        m_selectedResource.clear();
+        return Json{{"ok", true}, {"selected", nullptr}}.dump();
+      }
+
+      if (command == "preview-assets" || command == "refresh-previews") {
+        Codec::requireFields(parsed, {"command"});
+
+        if (command == "refresh-previews") {
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return std::unexpected(refreshed.error());
+          }
+
+          clearPreviews();
+        }
+
+        return Json{{"ok", true}, {"previews", previewStatus()}}.dump();
+      }
+
+      if (command == "request-preview" || command == "select-asset"
+          || command == "set-asset-directory") {
+        Codec::requireFields(parsed, {"command", "path"});
+        const auto path = parsed["path"].get<std::string>();
+        const auto found = std::ranges::find(m_catalog, path, [](const auto& entry) {
+          return entry["path"].template get<std::string>();
+        });
+
+        if (found == m_catalog.end() && !(command == "set-asset-directory" && path.empty())) {
+          return Core::fail(Core::ErrorCode::NotFound,
+                            "Asset is not in the current project catalog");
+        }
+
+        if (command == "set-asset-directory") {
+          if (!path.empty() && (*found)["type"] != "directory") {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Asset directory is not a directory");
+          }
+
+          m_assetDirectory = path;
+          m_assetFilter.clear();
+        } else if (command == "select-asset") {
+          if ((*found)["type"] == "directory") {
+            return execute(Json{{"command", "set-asset-directory"}, {"path", path}}.dump());
+          }
+
+          if (m_selectedResource == path && m_material) {
+            return Json{{"ok", true}, {"selected", path}}.dump();
+          }
+
+          if (m_material && pendingText()) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Save or discard the current material first");
+          }
+
+          if (path.ends_with(".dotmaterial")) {
+            return execute(
+                Json{{"command", "open-material"}, {"path", path}, {"discard", false}}.dump());
+          }
+
+          m_material.reset();
+          resetMaterialForm();
+          m_selectedResource = path;
+          m_requestedPane = "inspector";
+          requestPreview(path);
+        } else {
+          if (!assetPreviewKind(path)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Asset has no implemented preview type");
+          }
+
+          requestPreview(path);
+        }
+
+        return Json{{"ok", true}, {"previews", previewStatus()}}.dump();
+      }
+
+      if (command == "set-assets-view") {
+        Codec::requireFields(parsed, {"command", "mode"});
+        const auto mode = parsed["mode"].get<std::string>();
+
+        if (mode != "grid" && mode != "list") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown asset view mode");
+        }
+
+        m_assetGrid = mode == "grid";
+        return Json{{"ok", true}, {"previews", previewStatus()}}.dump();
       }
 
       if (command == "create-material") {
@@ -1746,6 +2023,11 @@ namespace Dot::Editor {
       }
 
       auto result = m_document->dispatch(request);
+
+      if (result && command == "select" && !m_material) {
+        m_selectedResource.clear();
+      }
+
       auto updated = refresh();
 
       if (!updated) {
@@ -1781,6 +2063,7 @@ namespace Dot::Editor {
             {"view", viewStatus()},
             {"message", m_message},
             {"material", materialStatus()},
+            {"previews", previewStatus()},
             {"file", textStatus()}};
         return response.dump();
       }
@@ -2520,6 +2803,18 @@ namespace Dot::Editor {
       ImGui::TextWrapped("Material: %s%s", state["path"].get_ref<const std::string&>().c_str(),
                          state["dirty"].get<bool>() ? " *" : "");
       ImGui::TextWrapped("Shared asset. Unsaved fields preview on all matching scene objects.");
+
+      if (m_materialSample.texture) {
+        const float side = std::min(160.F, ImGui::GetContentRegionAvail().x);
+        auto shown = m_renderer->guiImage(*m_materialSample.texture, side, side);
+
+        if (!shown) {
+          m_message = shown.error().message;
+        }
+      } else {
+        ImGui::TextWrapped("%s", m_materialSample.error.empty() ? "Generating material preview..."
+                                                                : m_materialSample.error.c_str());
+      }
       auto& form = m_materialForm;
       bool changed{};
 
@@ -2536,9 +2831,10 @@ namespace Dot::Editor {
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
         row("Shading");
 
-        if (ImGui::BeginCombo("##shading", form["model"].get_ref<const std::string&>().c_str())) {
+        if (ImGui::BeginCombo("##shading", form["model"] == "unlit" ? "Unlit" : "PBR")) {
           for (const auto* name : {"metallicRoughness", "unlit"}) {
-            if (ImGui::Selectable(name, form["model"] == name)) {
+            if (ImGui::Selectable(std::string_view(name) == "unlit" ? "Unlit" : "PBR",
+                                  form["model"] == name)) {
               form["model"] = name;
               changed = true;
             }
@@ -3010,7 +3306,7 @@ namespace Dot::Editor {
 
       if (ImGui::BeginPopup("Asset actions")) {
         if (ImGui::Button("Refresh files")) {
-          fileAction({{"command", "resources"}});
+          fileAction({{"command", "refresh-previews"}});
         }
 
         if (!m_selectedResource.empty()) {
@@ -3106,35 +3402,183 @@ namespace Dot::Editor {
         ImGui::EndPopup();
       }
 
-      ImGui::TextWrapped("Select materials to edit. Open scripts in the default application.");
+      if (ImGui::SmallButton(m_assetGrid ? "Grid *" : "Grid")) {
+        fileAction({{"command", "set-assets-view"}, {"mode", "grid"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::SmallButton(!m_assetGrid ? "List *" : "List")) {
+        fileAction({{"command", "set-assets-view"}, {"mode", "list"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::SmallButton("Project")) {
+        fileAction({{"command", "set-asset-directory"}, {"path", ""}});
+      }
+
+      std::size_t offset{};
+
+      while (offset < m_assetDirectory.size()) {
+        auto end = m_assetDirectory.find('/', offset);
+        end = end == std::string::npos ? m_assetDirectory.size() : end;
+        const auto prefix = m_assetDirectory.substr(0, end);
+        const auto segment = m_assetDirectory.substr(offset, end - offset);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("/");
+        ImGui::SameLine();
+
+        if (ImGui::SmallButton(segment.c_str())) {
+          fileAction({{"command", "set-asset-directory"}, {"path", prefix}});
+          break;
+        }
+
+        offset = end + 1;
+      }
+
       ImGui::Separator();
-      const auto entries = m_catalog;
+      Json entries = Json::array();
       m_visibleResources = Json::array();
 
-      for (const auto& entry : entries) {
+      for (const auto& entry : m_catalog) {
         const auto name = entry["path"].get<std::string>();
+        const auto slash = name.rfind('/');
+        const auto parent = slash == std::string::npos ? std::string{} : name.substr(0, slash);
 
-        if (!matchesFilter(name, m_assetFilter)) {
+        if ((!m_assetFilter.empty() && !matchesFilter(name, m_assetFilter))
+            || (m_assetFilter.empty() && parent != m_assetDirectory)) {
           continue;
         }
 
+        entries.push_back(entry);
         m_visibleResources.push_back(name);
+      }
 
-        if (entry["type"] == "text") {
-          if (ImGui::Selectable(name.c_str(), m_selectedResource == name,
-                                ImGuiSelectableFlags_AllowDoubleClick)) {
-            m_selectedResource = name;
+      const auto select = [&](const Json& entry, bool doubleClick) {
+        const auto path = entry["path"].get<std::string>();
 
-            if (name.ends_with(".dotmaterial")) {
-              fileAction({{"command", "open-material"}, {"path", name}, {"discard", false}});
-            } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-              fileAction({{"command", "open-external"}, {"path", name}});
+        if (fileAction({{"command", "select-asset"}, {"path", path}}) && doubleClick
+            && entry["type"] == "text" && !path.ends_with(".dotmaterial")) {
+          fileAction({{"command", "open-external"}, {"path", path}});
+        }
+      };
+      const int columns
+          = m_assetGrid
+                ? std::clamp(static_cast<int>(ImGui::GetContentRegionAvail().x / 104), 1, 12)
+                : 1;
+      const int rows = (static_cast<int>(entries.size()) + columns - 1) / columns;
+      ImGuiListClipper clipper;
+
+      if (ImGui::BeginTable("asset-grid", columns, ImGuiTableFlags_SizingStretchSame)) {
+        clipper.Begin(rows, m_assetGrid ? 112.F : ImGui::GetFrameHeightWithSpacing());
+        while (clipper.Step()) {
+          for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+            ImGui::TableNextRow(0, m_assetGrid ? 112.F : ImGui::GetFrameHeightWithSpacing());
+
+            for (int column = 0; column < columns; ++column) {
+              const int index = row * columns + column;
+
+              if (index >= static_cast<int>(entries.size())) {
+                break;
+              }
+
+              ImGui::TableSetColumnIndex(column);
+              const auto entry = entries[static_cast<std::size_t>(index)];
+              const auto path = entry["path"].get<std::string>();
+              const auto slash = path.rfind('/');
+              const auto name = slash == std::string::npos ? path : path.substr(slash + 1);
+              const auto kind = assetPreviewKind(path);
+              const char* type = entry["type"] == "directory" ? "Folder"
+                                 : !kind ? (entry["type"] == "text" ? "Text" : "Asset")
+                                 : *kind == AssetPreviewKind::Image ? "Image"
+                                 : *kind == AssetPreviewKind::Mesh  ? "Mesh"
+                                                                    : "Material";
+              ImGui::PushID(path.c_str());
+              requestPreview(path);
+              auto preview = m_thumbnails.find(path);
+
+              if (m_assetGrid) {
+                if (preview != m_thumbnails.end() && preview->second.texture) {
+                  auto shown = m_renderer->guiImage(*preview->second.texture, 64, 64);
+
+                  if (!shown) {
+                    m_message = shown.error().message;
+                  }
+
+                  if (ImGui::IsItemClicked()) {
+                    select(entry, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+                  }
+                } else if (ImGui::Button(
+                               preview != m_thumbnails.end() && !preview->second.error.empty()
+                                   ? "Error"
+                                   : type,
+                               {64, 64})) {
+                  select(entry, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+                }
+              }
+
+              const auto dot = name.rfind('.');
+              const auto caption
+                  = m_assetGrid && entry["type"] != "directory" && dot != std::string::npos
+                        ? name.substr(0, dot)
+                        : name;
+
+              if (ImGui::Selectable(caption.c_str(), m_selectedResource == path,
+                                    ImGuiSelectableFlags_AllowDoubleClick,
+                                    {0, m_assetGrid ? 22.F : 0.F})) {
+                select(entry, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+              }
+
+              if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted(path.c_str());
+
+                if (preview != m_thumbnails.end()) {
+                  const auto& message = preview->second.error.empty() ? preview->second.warning
+                                                                      : preview->second.error;
+                  ImGui::TextWrapped("%s", message.c_str());
+                }
+
+                ImGui::EndTooltip();
+              }
+
+              if (m_assetGrid) {
+                ImGui::TextDisabled("%s", type);
+              }
+
+              ImGui::PopID();
             }
           }
-        } else {
-          ImGui::TextWrapped("%s%s", entry["type"] == "directory" ? "[dir] " : "[asset] ",
-                             name.c_str());
         }
+
+        ImGui::EndTable();
+      }
+    }
+
+    auto assetInspector() -> void {
+      ImGui::TextWrapped("Asset: %s", m_selectedResource.c_str());
+      requestPreview(m_selectedResource);
+      const auto found = m_thumbnails.find(m_selectedResource);
+
+      if (found == m_thumbnails.end()) {
+        ImGui::TextUnformatted("No preview for this asset type.");
+      } else if (found->second.texture) {
+        const auto size = std::min(196.F, ImGui::GetContentRegionAvail().x);
+        auto shown = m_renderer->guiImage(*found->second.texture, size, size);
+
+        if (!shown) {
+          m_message = shown.error().message;
+        }
+
+        ImGui::TextWrapped("%s", found->second.warning.c_str());
+      } else {
+        ImGui::TextWrapped("%s", found->second.error.empty() ? "Generating preview..."
+                                                             : found->second.error.c_str());
+      }
+
+      if (ImGui::Button("Return to scene Inspector")) {
+        fileAction({{"command", "clear-asset-selection"}});
       }
     }
 
@@ -4326,6 +4770,8 @@ namespace Dot::Editor {
         ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
         if (m_material) {
           materialInspector();
+        } else if (!m_selectedResource.empty() && assetPreviewKind(m_selectedResource)) {
+          assetInspector();
         } else {
           inspector();
         }
@@ -4529,8 +4975,10 @@ namespace Dot::Editor {
 
           m_assetRefresh = false;
           m_renderedView.reset();
+          clearPreviews();
         }
 
+        updatePreviews();
         viewportInput(m_application->input(), std::chrono::duration<double>(frame.elapsed).count());
         auto shown = m_renderer->presentGui(
             [&] { return draw(); },
@@ -4827,6 +5275,39 @@ namespace Dot::Editor {
     }
 
     return m_impl->m_renderer->readTarget(*m_impl->m_target);
+  }
+
+  auto Workspace::captureAssetPreview(std::string_view path) -> Core::Result<Graphics::Image> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Workspace was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      if (m_impl->m_material && m_impl->m_material->snapshot()->path == path) {
+        const auto key = std::to_string(m_impl->m_buffer) + m_impl->m_materialForm.dump();
+
+        if (key == m_impl->m_materialSampleKey && m_impl->m_materialSample.image) {
+          return *m_impl->m_materialSample.image;
+        }
+      } else {
+        auto found = m_impl->m_thumbnails.find(std::string(path));
+
+        if (found != m_impl->m_thumbnails.end() && found->second.image) {
+          return *found->second.image;
+        }
+      }
+
+      return Core::fail(Core::ErrorCode::InvalidState, "Asset preview is pending, failed or stale");
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Capture asset preview: " + std::string(error.what()));
+    }
   }
 
   auto submitWorkspaceRequest(const std::filesystem::path& control, std::string_view id,

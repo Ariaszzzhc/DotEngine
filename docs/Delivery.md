@@ -283,3 +283,23 @@ loader/rpath checks pass (13 regular Mach-O files, 3 relative links). QA instanc
 and owned staging/request scratch are closed/removed. Only arm64 macOS validated.
 Material graphs/thumbnails, mature production authoring and realistic polished
 Prism Relay remain incomplete; the full engine/editor/game objective stays active.
+
+
+The Assets browser now has actual image/mesh/material thumbnails, grid/list,
+folder breadcrumbs and project-wide search. Material Inspector renders the current
+unsaved form on an independent studio sphere. Preview rendering uses an isolated
+device and the packaged CC0 HDRI; main scene pixels/camera/draw counters and source
+files remain unchanged. Errors and pending/stale states are explicit. Caches/queue
+are bounded and one synchronous job runs per frame; async/zero-copy previews and
+broader scene/model/audio thumbnails/material graphs remain unfinished.
+
+Actual release-directory UI QA recorded eight ready thumbnails plus the material
+sphere, nine completed jobs, zero pending and no errors. All final builds precede
+serial validation: Debug 960/960 (211.45s), Release/NDEBUG 960/960 (38.93s). All 307
+C/C++ and 16 WGSL files pass established formatting checks. Latest ZIP: 272 entries,
+48,604,643 bytes; all 240 file/link payloads match signed source. Exact font/license/
+three HDRI copies/credit/material assets, CRC/modes/exclusions, strict signatures
+and portable loader/rpath checks pass (13 regular Mach-O files, 3 relative links).
+QA instances/request scratch and owned staging are closed/removed. Only arm64 macOS
+validated. Mature production authoring and realistic polished Prism Relay remain
+incomplete; the full engine/editor/game objective stays active.

@@ -107,6 +107,13 @@ export namespace Dot::Graphics {
      * 解析贴图/预算并报告错误；空值恢复磁盘材质，不写资源或修改场景，重载缓存保留覆盖。 */
     [[nodiscard]] auto previewMaterial(std::optional<MaterialPreview> preview)
         -> Core::Result<void>;
+    /** Resolve a validated material through this service's bounded, shared
+     * texture cache for independent mesh draws. Own returned handles; no scene,
+     * renderer lighting or files are changed. clearCache reloads future requests.
+     * 为独立网格绘制复用本服务有界共享贴图缓存，校验材质并返回拥有的句柄；
+     * 不更改场景、渲染器光照或文件，clearCache 使后续请求重新加载。 */
+    [[nodiscard]] auto resolveMaterial(const Assets::MaterialDescription& value)
+        -> Core::Result<Material>;
 
   private:
     struct Impl;

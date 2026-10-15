@@ -206,7 +206,7 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
@@ -264,7 +264,8 @@ set_tests_properties(editor.workspace PROPERTIES TIMEOUT 60 LABELS "gpu;native" 
 add_test(NAME editor.viewport COMMAND DotEditorAcceptance --viewport-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.viewport PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native" RUN_SERIAL TRUE)
 
-add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp WorkspaceLayoutTests.cpp WorkspaceMoveTests.cpp)
+add_executable(DotWorkspaceTests main.cpp WorkspaceTests.cpp WorkspaceLayoutTests.cpp WorkspaceMoveTests.cpp AssetBrowserTests.cpp)
+add_dependencies(DotWorkspaceTests DotEditorResources)
 target_link_libraries(DotWorkspaceTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json SDL3::SDL3)
 target_compile_definitions(DotWorkspaceTests PRIVATE
     DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"

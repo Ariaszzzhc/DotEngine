@@ -4080,3 +4080,79 @@ built/run; Windows/Linux implementation remains locally unverified. Material gra
 standalone material spheres/asset thumbnails, broader production authoring/animation/
 streaming and realistic polished Prism Relay remain unfinished. The full engine/
 editor/game objective remains active.
+
+
+## Asset browser and isolated previews / 资产浏览与独立预览 (2026-10-15)
+
+Added GUI texture images with same-device validation and submission/error-scope
+ownership, then exposed independent material resolution through SceneRenderer's
+existing bounded texture loader. Shared color-space/normal checks, complete-load
+publication and owned handles are retained. The foundation's two GPU cases passed
+2/2 (1.13s), covering exact GUI pixels, foreign/empty inputs and lifetime through
+submission plus independent texture-cache validation/release.
+
+Added AssetPreview as separate interface/implementation with a stable independent
+offscreen renderer/resolver. It renders real PNG/JPEG images with preserved aspect/
+alpha, DotMesh/OBJ geometry framed from actual bounds, and material UV spheres with
+actual PBR, five slots, normal maps and Opaque/Mask/Blend. Studio lights are explicit;
+optional HDRI is baked at creation. Workspace requests its own packaged Studio
+Small 09 HDRI/credit rather than depending on an example project. Unsupported
+scene/model/audio/HDR/script thumbnail types retain type labels; errors never become
+sample images. The image bridge is bounded synchronous GPU readback/GUI upload,
+not asynchronous/zero-copy processing or a claim of stall-free performance.
+
+Initial preview pixel checks found opposite-edge color bleeding from default
+Repeat image sampling; corrected previews to Clamp. The HDR diagnostic fixture
+violated the existing minimum panorama height; replaced it with valid 4x2 data and
+kept explicit error reporting. Preview cases then passed 2/2 (1.43s): real pixels,
+source preservation, draft sphere changes, HDR/normal failures, mesh framing,
+thread/move behavior and resource release. Fixed missing explicit STL inclusion
+and incomplete designated initialization under the existing warnings-as-errors
+configuration without changing the caller's environment.
+
+Assets now has grid/list, folder breadcrumbs and global search for nonempty filters.
+Visible rows are clipped and actual previews are cached with LRU eviction: at most
+64 128px thumbnails and one 256px current material sphere, each CPU/GPU image set
+at most 4.25 MiB. The isolated resolver budget is 64 MiB; decoded sources and transient
+rendering use their existing bounds. One synchronous job per frame prioritizes the
+material form; Play pauses generation. Save/import and explicit refresh invalidate
+images. Strict workspace commands expose selection, directory/view mode, queue/
+cache/error/warning/current-material states; pending work is never reported as
+successful generation. Capture returns owned completed pixels, not stale images.
+
+Native workflows passed 5/5 (7.42s), including existing material editing and new
+thumbnail navigation/search, independent form spheres, explicit missing-image
+errors, bounded queue/cache and unchanged main viewport pixels/camera/draw counters.
+Opened the real release-directory Feature Lab workspace. Actual UI inspection
+showed eight real image/mesh/material thumbnails and a live copper sphere; the
+control response recorded nine completed jobs, zero pending and no preview errors.
+Grid labels were shortened to asset names, retaining full paths in tooltips/list;
+shading labels now read PBR/Unlit. Normal close and no remaining QA editor process
+were verified; no project source or scene was written. Owned QA request scratch
+and control staging were removed, preserving captured response/log evidence.
+
+Both builds completed before serial full checks. The first Debug full run passed
+960/960 (208.56s). Final review identified that the current-material status could
+briefly report an old image ready after staging a new form. Readiness/error now
+match the exact current buffer/form key, with explicit materialPending, and closing
+releases the old sphere. Strengthened native checks assert immediate pending/not-
+ready semantics and closed state. After rebuilding both configurations, final
+Debug passed 960/960 (211.45s); final Release/NDEBUG passed 960/960 (38.93s).
+
+Inventory: 896 doctest identities plus 64 executable/script checks. Overlapping
+labels: unit 213, integration 635, gpu 186, offscreen 112, native 62, acceptance 112,
+compiler 135, platform 27, process 19, audio-native 32. All 307 C/C++ and 16 WGSL
+files pass established formatting checks. Reviewed renderer/GUI ownership, stable
+borrows, independent device state, bounded cache/queue/readbacks, error publication,
+form generations, source preservation, color encoding and portable file paths.
+
+Archive refreshed through existing owned metadata-filtered staging: 272 entries,
+48,604,643 bytes, all 240 file/link payloads match signed source. The third exact
+HDRI copy and source credit, font/license, material assets/cgltf notices, CRC/modes/
+exclusions, 13 regular Mach-O files/3 relative links, strict app signatures and
+portable loader/rpath checks pass. Build caches/latest ZIP/audit evidence/private
+source document/reference artwork remain preserved and private inputs untracked.
+Only arm64 macOS was built/run; Windows/Linux remain implemented but not locally
+validated. Async imports/previews, scene/model/audio thumbnails, material graphs,
+production authoring/animation/streaming and realistic polished Prism Relay remain
+unfinished. The full engine/editor/game objective remains active.

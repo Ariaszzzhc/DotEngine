@@ -538,6 +538,7 @@ namespace Dot::Graphics {
     wgpu::Sampler whiteSampler;
     std::unique_ptr<Detail::GuiBackend> gui;
     std::vector<RenderTarget> guiTargets;
+    std::vector<Texture> guiTextures;
 
     struct GuiViewportRequest {
       Detail::GuiImageSlot slot;
@@ -559,11 +560,13 @@ namespace Dot::Graphics {
         owner.guiFrameActive = true;
         owner.guiViewports.clear();
         owner.guiTargets.clear();
+        owner.guiTextures.clear();
       }
 
       ~GuiFrameScope() {
         owner.guiViewports.clear();
         owner.guiTargets.clear();
+        owner.guiTextures.clear();
         owner.guiFrameActive = false;
       }
     };
@@ -617,6 +620,7 @@ namespace Dot::Graphics {
 
     ~Impl() {
       guiTargets.clear();
+      guiTextures.clear();
       gui.reset();
       diagnostics->alive.store(false);
 
@@ -3979,6 +3983,7 @@ namespace Dot::Graphics {
     }
 
     m_impl->guiTargets.clear();
+    m_impl->guiTextures.clear();
     m_impl->gui.reset();
     return {};
   }
@@ -4048,6 +4053,35 @@ namespace Dot::Graphics {
 
     m_impl->guiTargets.push_back(target);
     return m_impl->gui->image(target.m_impl->view.Get(), width, height);
+  }
+
+  auto Renderer::guiImage(const Texture& texture, float width, float height) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!m_impl->gui || !m_impl->gui->building()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "GUI image requires an active GUI callback");
+    }
+
+    if (!texture.m_impl || texture.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "GUI image texture is empty or foreign");
+    }
+
+    auto info = texture.info();
+
+    if (!info) {
+      return std::unexpected(info.error());
+    }
+
+    m_impl->guiTextures.push_back(texture);
+    return m_impl->gui->image(texture.m_impl->view.Get(), width, height);
   }
 
   auto Renderer::guiViewport(const GuiViewportDraw& draw, float width, float height)

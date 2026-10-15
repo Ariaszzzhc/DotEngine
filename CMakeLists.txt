@@ -89,6 +89,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/Resources.cpp
     src/Engine/Editor/MaterialDocument.cpp
+    src/Engine/Editor/AssetPreview.cpp
     src/Engine/Editor/Play.cpp
     src/Engine/Editor/Workspace.cpp
     src/Engine/Editor/Home.cpp
@@ -186,6 +187,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/Resources.cppm
         src/Engine/Editor/MaterialDocument.cppm
+        src/Engine/Editor/AssetPreview.cppm
         src/Engine/Editor/Play.cppm
         src/Engine/Editor/Workspace.cppm
         src/Engine/Editor/Home.cppm
@@ -273,6 +275,7 @@ add_custom_target(DotEditorResources
         "$<TARGET_FILE_DIR:DotEditor>/resources/templates"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/examples/PrismRelay" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/PrismRelay"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/acceptance/FeatureLab" "$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/assets/environments" "$<TARGET_FILE_DIR:DotEditor>/resources/environments"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DOT_TYPESCRIPT_TOOL_DIRECTORY}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_TYPESCRIPT_LICENSE}" "$<TARGET_FILE_DIR:DotEditor>/resources/typescript-native/LICENSE.txt"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotEditor>/resources/EditorSans.ttf"

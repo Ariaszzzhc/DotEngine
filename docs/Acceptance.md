@@ -232,3 +232,14 @@ material cases drive the same GUI commands through staging/reset/apply/undo/redo
 save/reopen, Play mutation lock/Stop preview restoration, dirty close/save-close and
 external disk conflicts. CTest names begin `material_document.`,
 `scene_material.owned_preview` and `workspace.material_`.
+
+
+GUI texture GPU acceptance checks exact pixels and ownership through submission,
+error cleanup and foreign-device rejection. Independent material resolution checks
+shared texture validation/cache lifetime. AssetPreviewTests checks real image pixels,
+color-space/edge clamping, aspect, material-sphere draft changes, source preservation,
+HDR/normal errors, framed geometry, thread/move and release boundaries. Native
+AssetBrowserTests drives thumbnail requests, folder/search/list commands, independent
+material form previews/errors, cache/queue limits and explicit failed-source status.
+It compares main viewport pixels, camera and drawing counters before/after previews.
+These native/GPU checks remain compiled only with BUILD_TESTING.

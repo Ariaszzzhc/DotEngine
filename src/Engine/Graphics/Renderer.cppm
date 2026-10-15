@@ -491,6 +491,13 @@ export namespace Dot::Graphics {
      * UI 图像持有目标至提交结束，尺寸使用逻辑像素。 */
     [[nodiscard]] auto guiImage(const RenderTarget& target, float width, float height)
         -> Core::Result<void>;
+    /** Display an owned-device texture during GUI layout, retained through
+     * submission. Linear uploads preserve display-encoded image bytes; Srgb
+     * uploads explicitly request GPU decoding. No implicit encoding conversion.
+     * GUI 布局时显示同设备纹理并持有至提交结束；Linear 上传保留显示编码字节，
+     * Srgb 上传明确请求 GPU 解码，不隐式转换编码。 */
+    [[nodiscard]] auto guiImage(const Texture& texture, float width, float height)
+        -> Core::Result<void>;
     /** Reserve an image during layout, resolving it after layout with retained
      * target ownership. At most sixteen per frame; absent images are omitted.
      * 布局时预留图像，布局后解析并保留目标所有权。每帧至多十六个，缺席图像不绘制。 */

@@ -354,6 +354,17 @@ namespace Dot::Graphics {
         return std::unexpected(description.error());
       }
 
+      return resolveMaterial(*description);
+    }
+
+    auto resolveMaterial(const Assets::MaterialDescription& value) -> Core::Result<MaterialEntry> {
+      auto checked = Assets::validateMaterial(value);
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      const auto* description = &value;
       MaterialEntry result;
       result.material.baseColor = description->baseColor;
       result.material.emissive = description->emissive;
@@ -1007,6 +1018,33 @@ namespace Dot::Graphics {
 
     std::ranges::sort(warnings);
     return warnings;
+  }
+
+  auto SceneRenderer::resolveMaterial(const Assets::MaterialDescription& value)
+      -> Core::Result<Material> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->assets) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Material resolution requires an asset root");
+    }
+
+    try {
+      auto result = m_impl->resolveMaterial(value);
+      return result ? Core::Result<Material>{std::move(result->material)}
+                    : std::unexpected(result.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Resolve material: " + std::string(error.what()));
+    }
   }
 
   auto SceneRenderer::previewMaterial(std::optional<MaterialPreview> preview)

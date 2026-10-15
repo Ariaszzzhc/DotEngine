@@ -87,6 +87,44 @@ TEST_CASE("graphics.gui_packaged_inter_sarasa_glyphs_own_deleted_font_source_and
   CHECK(guiContexts() == before);
 }
 
+TEST_CASE("graphics.gui_texture_pixels_owned_submission_foreign_errors_and_release") {
+  auto gpu = renderer();
+  REQUIRE(gpu.enableGui());
+  std::optional<Texture> texture
+      = gpu.uploadTexture(Image{1, 1, {128, 64, 255, 255}}, {.colorSpace = ColorSpace::Linear})
+            .value();
+  CHECK_FALSE(gpu.guiImage(*texture, 16, 16));
+  auto foreign = renderer();
+  auto other = foreign.uploadTexture(Image{1, 1, {255, 0, 0, 255}}).value();
+  const auto draw = [&]() -> Dot::Core::Result<void> {
+    CHECK_FALSE(gpu.guiImage(other, 16, 16));
+    CHECK_FALSE(gpu.guiImage(Texture{}, 16, 16));
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({64, 64});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+    ImGui::Begin("texture", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+    auto result = gpu.guiImage(*texture, 64, 64);
+    texture.reset();
+    ImGui::End();
+    ImGui::PopStyleVar();
+    return result;
+  };
+  auto image = gpu.renderGui(draw, 64, 64);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(pixel(*image, 32, 32) == std::array<std::uint8_t, 4>{128, 64, 255, 255});
+  CHECK(gpu.resourceStats()->textures == 0);
+  texture = gpu.uploadTexture(Image{1, 1, {255, 255, 255, 255}}).value();
+  CHECK_FALSE(gpu.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        auto result = gpu.guiImage(*texture, -1, 16);
+        texture.reset();
+        return result;
+      },
+      64, 64));
+  CHECK(gpu.resourceStats()->textures == 0);
+}
+
 TEST_CASE("graphics.gui_viewport_resolves_current_dpi_pixels_after_layout_and_retains_targets") {
   auto gpu = renderer();
   std::optional<RenderTarget> retained;

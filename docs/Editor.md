@@ -782,3 +782,53 @@ buffer requires no pending resource changes or explicit discard and invalidates 
 buffer identities. Invalid descriptions/unknown fields/stale requests preserve state.
 Undo/redo require staged fields to be applied or reset first. Texture contents are
 validated at actual preview/Play/export use, rather than silently substituted.
+
+
+## Asset browser and isolated previews / 资产浏览与独立预览
+
+Assets has grid/list modes, folder breadcrumbs and project-wide search when the
+filter is nonempty. Empty search shows the current folder's immediate children.
+Visible PNG/JPEG, DotMesh/OBJ and material tiles request actual previews; other file
+types show their type labels. Mesh tiles frame real geometry with neutral PBR studio
+shading; material tiles shade a UV sphere through the existing five-texture/coverage
+pipeline. Source image aspect/alpha are retained. Missing/invalid sources show an
+error, never a sample thumbnail. Click an asset for Inspector preview, click a
+material for typed editing; text resources still open externally on double-click.
+
+Material Inspector shows a 256px sphere for the current unsaved form even when no
+scene entity uses that material. Previews use a separate offscreen renderer and
+packaged CC0 Studio Small 09 HDRI; they do not modify scene camera, lighting, SSAO,
+HDR targets, draw statistics or files. This is a static studio preview, not a
+material graph or a replacement for judging the material in its scene lighting.
+
+At most one synchronous preview job runs per editor frame, prioritizing the open
+material form. Play pauses generation. GUI caches at most 64 128px thumbnails plus
+one 256px material image (each CPU/GPU image set is at most 4.25 MiB), with least-
+recently-used eviction and bounded queue. Files decode/texture-upload under existing
+limits; the isolated resolver has a 64 MiB logical asset budget. GPU readback and
+upload bridge the two devices only when a preview is generated. No asynchronous,
+zero-copy or stall-free performance claim is made. Visible rows are clipped; cached
+images do not render again every frame. Save/import invalidates previews; Refresh
+files/previews rereads the catalog and invalidates cached images after external edits.
+
+Workspace GUI and automation share these strict commands:
+
+```json
+{"command":"set-assets-view","mode":"grid"}
+{"command":"set-asset-directory","path":"assets"}
+{"command":"select-asset","path":"assets/copper.dotmaterial"}
+{"command":"request-preview","path":"assets/normal.png"}
+{"command":"preview-assets"}
+{"command":"refresh-previews"}
+{"command":"clear-asset-selection"}
+```
+
+`set-assets-view` accepts grid/list; an empty directory path selects the project
+root. Asset selection/directory requests validate against the current catalog.
+`request-preview` queues supported files and does not claim generation succeeded.
+`preview-assets` and `inspect.workspace.previews` report pending count, processed jobs,
+ready/error/warning states, current view/directory, device presence and material
+preview readiness/pending/error matched to the current form. Dirty material forms must be saved/discarded before asset
+selection changes. `captureAssetPreview` returns owned pixels only for completed,
+current cached previews; stale/pending/failed requests return errors. Scene/model
+hierarchy, HDR panorama, audio and script thumbnails are not implemented.

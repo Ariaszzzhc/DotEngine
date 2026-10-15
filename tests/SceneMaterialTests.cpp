@@ -140,6 +140,30 @@ TEST_CASE("scene_material.owned_preview_changes_pixels_without_disk_or_scene_mut
   CHECK(device.resourceStats()->textures == 0);
 }
 
+TEST_CASE("scene_material.resolve_independent_owned_material_uses_real_texture_validation") {
+  Fixture fixture;
+  fixture.texture("surface.png", "color.png");
+  auto gpu = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(gpu, fixture.files).value();
+  Dot::Assets::MaterialDescription value;
+  value.baseColorTexture = Dot::Assets::TextureSource{"color.png"};
+  auto first = drawing.resolveMaterial(value);
+  REQUIRE(first);
+  auto second = drawing.resolveMaterial(value);
+  REQUIRE(second);
+  CHECK(gpu.resourceStats()->textures == 1);
+  auto bad = value;
+  bad.normalTexture = Dot::Assets::TextureSource{"color.png"};
+  CHECK_FALSE(drawing.resolveMaterial(bad));
+  value.baseColorTexture->path = "missing.png";
+  CHECK_FALSE(drawing.resolveMaterial(value));
+  REQUIRE(drawing.clearCache());
+  CHECK(first->baseColorTexture->info());
+  first = Dot::Graphics::Material{};
+  second = Dot::Graphics::Material{};
+  CHECK(gpu.resourceStats()->textures == 0);
+}
+
 TEST_CASE("scene_material.shared_textures_materials_reload_and_prune_with_owned_byte_counters") {
   Fixture fixture;
   fixture.texture("normal.png", "normal.png");

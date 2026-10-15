@@ -699,3 +699,14 @@ the existing bounded texture loading and reports image/normal/budget failures.
 `clearCache` reloads textures while retaining the explicit override. Passing null
 restores disk materials and invalidates only affected material entries. This is
 used by material authoring, not by the game session's saved-asset path.
+
+
+`Renderer::guiImage(Texture)` retains same-device texture ownership until GUI
+submission/error cleanup, matching render-target images. It performs no implicit
+encoding conversion: preview readback bytes are uploaded as Linear GPU textures to
+preserve their existing display encoding. Actual GUI pixel tests verify this path
+and foreign/empty texture rejection/lifetime. `SceneRenderer::resolveMaterial`
+reuses its bounded shared texture loading, color-space/normal checks and complete-
+load publication for independent mesh draws without scene or lighting mutation.
+Editor AssetPreview owns a separate stable renderer/resolver and explicit studio
+lights/optional baked HDRI, returning bounded display-encoded CPU images.

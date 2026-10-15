@@ -63,6 +63,11 @@ export namespace Dot::Editor {
     /** Read actual viewport pixels for diagnostics; requires a rendered preview.
      * 诊断时读取真实视口像素，要求已绘制预览。 */
     [[nodiscard]] auto captureViewport() -> Core::Result<Graphics::Image>;
+    /** Owned CPU copy of a completed cached asset/material preview. No rendering
+     * or file reads; pending, failed or stale material forms return errors.
+     * 复制已完成资产/材质预览的 CPU 像素，不触发渲染或文件读取；待处理、失败或过期
+     * 材质表单均返回错误。 */
+    [[nodiscard]] auto captureAssetPreview(std::string_view path) -> Core::Result<Graphics::Image>;
 
   private:
     struct Impl;

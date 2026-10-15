@@ -141,3 +141,10 @@ contract with shared-scene unsaved preview, independent bounded undo/redo, confl
 checked save and normal Play/export lifecycle. Material graphs, standalone resource
 thumbnails/previews, broader production authoring tools and realistic game content
 remain unfinished; this does not establish mature-editor or large-game readiness.
+
+
+The asset browser now shows actual bounded PNG/JPEG, mesh and material thumbnails,
+folder breadcrumbs, grid/list and project-wide search. Material Inspector has an
+isolated studio sphere for unsaved forms; failure states and scene isolation are
+verified. Asynchronous preview/import work, zero-copy previews, scene/model/audio
+thumbnails, material graphs and broader production authoring remain unfinished.
