@@ -220,3 +220,15 @@ mask-clipped SSAO geometry. ShadowGpuTests checks texture holes/cutoff and blend
 no-shadow policy. Model/Material tests retain factor/vertex/texture alpha and mode /
 cutoff through import/current persistence. Existing native Feature Lab editor/Play/
 export coverage now uses real Glass and Cutout assets.
+
+
+MaterialDocumentTests exercises real filesystem drafts, no-op revisions, stale
+requests, branching bounded history, save/undo/redo, exact-byte disk conflict and
+restoration, owner-thread/move behavior and destruction without save. These are
+integration tests without a window/device. SceneMaterialTests independently checks
+real HDR pixels for owned overrides, invalid descriptions, missing images, cache
+reload/restoration, unchanged disk/scene and texture cleanup. Native WorkspaceTests
+material cases drive the same GUI commands through staging/reset/apply/undo/redo,
+save/reopen, Play mutation lock/Stop preview restoration, dirty close/save-close and
+external disk conflicts. CTest names begin `material_document.`,
+`scene_material.owned_preview` and `workspace.material_`.

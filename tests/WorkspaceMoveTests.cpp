@@ -144,9 +144,15 @@ TEST_CASE("workspace.move_tool_native_pointer_release_escape_focus_loss_and_no_p
   auto windows = SDL_GetWindows(&count);
   REQUIRE(windows);
   REQUIRE(count == 1);
+  REQUIRE(SDL_SyncWindow(windows[0]));
   const auto window = SDL_GetWindowID(windows[0]);
   SDL_free(windows);
+  frame(workspace);
   const auto pointer = [&](float x, float y) {
+    /** Queue already-pending OS events before the synthetic pointer sample.
+     * Keep every event, including focus loss that exercises normal cancellation.
+     * 先泵入已有的待处理系统事件，再排入测试指针采样；保留所有事件，失焦仍走正常取消路径。 */
+    SDL_PumpEvents();
     SDL_Event event{};
     event.motion.type = SDL_EVENT_MOUSE_MOTION;
     event.motion.windowID = window;

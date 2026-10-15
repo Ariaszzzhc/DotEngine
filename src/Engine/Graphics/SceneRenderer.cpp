@@ -16,6 +16,7 @@ module Dot.Graphics.SceneRenderer;
 
 import Dot.Core.Result;
 import Dot.Core.Files;
+import Dot.Core.Paths;
 import Dot.Math;
 import Dot.World.Scene;
 import Dot.Graphics.Renderer;
@@ -122,6 +123,7 @@ namespace Dot::Graphics {
     std::unordered_map<std::string, Entry> cache;
     std::unordered_map<std::string, MaterialEntry> materials;
     std::unordered_map<std::string, TextureEntry> textures;
+    std::optional<MaterialPreview> preview;
 
     struct EnvironmentEntry {
       std::string asset;
@@ -344,7 +346,9 @@ namespace Dot::Graphics {
         return Core::fail(Core::ErrorCode::InvalidState, "Scene material has no asset root");
       }
 
-      auto description = Assets::loadMaterial(*assets, assetPath(path));
+      auto description = preview && preview->path == path
+                             ? Core::Result<Assets::MaterialDescription>{preview->value}
+                             : Assets::loadMaterial(*assets, assetPath(path));
 
       if (!description) {
         return std::unexpected(description.error());
@@ -1003,6 +1007,43 @@ namespace Dot::Graphics {
 
     std::ranges::sort(warnings);
     return warnings;
+  }
+
+  auto SceneRenderer::previewMaterial(std::optional<MaterialPreview> preview)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (preview) {
+      if (!Core::isPortableRelativePath(preview->path)
+          || !preview->path.ends_with(".dotmaterial")) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid preview material path");
+      }
+
+      checked = Assets::validateMaterial(preview->value);
+
+      if (!checked) {
+        return checked;
+      }
+    }
+
+    if (m_impl->preview) {
+      m_impl->materials.erase(m_impl->preview->path);
+    }
+
+    if (preview) {
+      m_impl->materials.erase(preview->path);
+    }
+
+    m_impl->preview = std::move(preview);
+    return {};
   }
 
   auto SceneRenderer::clearCache() -> Core::Result<void> {

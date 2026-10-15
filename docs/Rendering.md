@@ -690,3 +690,12 @@ glTF/GLB import retains texture/vertex/factor alpha and converts all three modes
 Opaque semantics are applied at rendering, so authored alpha survives later edits.
 Rendering/inspection report solid and blended instance/draw quantities only after
 successful submission. Feature Lab has actual Glass and checker Cutout materials.
+
+
+`SceneRenderer::previewMaterial` owns one explicit unsaved material override by
+portable asset path. It applies to every matching scene binding without file/scene
+mutation. Description validation precedes cache invalidation; actual rendering uses
+the existing bounded texture loading and reports image/normal/budget failures.
+`clearCache` reloads textures while retaining the explicit override. Passing null
+restores disk materials and invalidates only affected material entries. This is
+used by material authoring, not by the game session's saved-asset path.

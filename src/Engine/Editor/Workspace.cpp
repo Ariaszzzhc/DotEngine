@@ -11,11 +11,13 @@ module;
 #include <cstdio>
 #include <expected>
 #include <filesystem>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -29,6 +31,7 @@ import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
 import Dot.Editor.Resources;
+import Dot.Editor.MaterialDocument;
 import Dot.Editor.ScriptDiagnostics;
 import Dot.Platform.ExternalFiles;
 import Dot.Script.Compiler;
@@ -262,6 +265,9 @@ namespace Dot::Editor {
     WorkspaceConfig m_config;
     std::optional<ResourceStore> m_resources;
     std::optional<TextDocument> m_text;
+    std::optional<MaterialDocument> m_material;
+    Json m_materialForm;
+    std::string m_materialPreviewKey;
     std::uint64_t m_buffer{};
     Json m_catalog = Json::array();
     std::string m_selectedResource;
@@ -473,12 +479,68 @@ namespace Dot::Editor {
     }
 
     auto pendingText() const -> bool {
+      if (m_material) {
+        const auto material = m_material->snapshot().value();
+        return material.dirty
+               || m_materialForm
+                      != Codec::parseJson(Assets::encodeMaterial(material.value).value());
+      }
+
       if (!m_text) {
         return false;
       }
 
       const auto file = m_text->snapshot().value();
       return file.dirty;
+    }
+
+    auto materialStatus() const -> Json {
+      if (!m_material) {
+        return nullptr;
+      }
+
+      const auto state = m_material->snapshot().value();
+      return {{"buffer", std::to_string(m_buffer)},
+              {"path", state.path},
+              {"value", Codec::parseJson(Assets::encodeMaterial(state.value).value())},
+              {"draft", m_materialForm},
+              {"revision", std::to_string(state.revision)},
+              {"dirty", pendingText()},
+              {"canUndo", state.canUndo},
+              {"canRedo", state.canRedo}};
+    }
+
+    auto resetMaterialForm() -> void {
+      m_materialForm
+          = m_material
+                ? Codec::parseJson(Assets::encodeMaterial(m_material->snapshot()->value).value())
+                : Json(nullptr);
+      m_renderedView.reset();
+      m_previewReady = false;
+    }
+
+    auto saveMaterial() -> Core::Result<void> {
+      auto value = Assets::decodeMaterial(m_materialForm.dump());
+
+      if (!value) {
+        return std::unexpected(value.error());
+      }
+
+      auto edited = m_material->replace(*value, m_material->snapshot()->revision);
+
+      if (!edited) {
+        return edited;
+      }
+
+      resetMaterialForm();
+      auto saved = m_material->save(m_material->snapshot()->revision);
+
+      if (!saved) {
+        return saved;
+      }
+
+      m_assetRefresh = true;
+      return {};
     }
 
     auto textStatus() const -> Json {
@@ -854,6 +916,129 @@ namespace Dot::Editor {
             .dump();
       }
 
+      if (command == "create-material") {
+        Codec::requireFields(parsed, {"command", "path"});
+        const auto name = parsed["path"].get<std::string>();
+
+        if (playing() || !name.starts_with("assets/") || !name.ends_with(".dotmaterial")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Expected assets/*.dotmaterial while stopped");
+        }
+
+        auto created = m_resources->createText(name, Assets::encodeMaterial({}).value());
+
+        if (!created) {
+          return std::unexpected(created.error());
+        }
+
+        auto refreshed = catalog();
+
+        if (!refreshed) {
+          return Core::fail(refreshed.error().code,
+                            "Material created; " + refreshed.error().message);
+        }
+
+        return Json{{"ok", true}, {"path", name}}.dump();
+      }
+
+      if (command == "open-material") {
+        Codec::requireFields(parsed, {"command", "path", "discard"});
+
+        if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
+            || (pendingText() && !parsed["discard"].get<bool>())) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Finish scene/file drafts before opening a material");
+        }
+
+        if (m_buffer == std::numeric_limits<std::uint64_t>::max() - 1) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Resource buffer identities exhausted");
+        }
+
+        const auto name = parsed["path"].get<std::string>();
+        auto opened = MaterialDocument::open(*m_project, name);
+
+        if (!opened) {
+          return std::unexpected(opened.error());
+        }
+
+        m_material.emplace(std::move(*opened));
+        m_text.reset();
+        ++m_buffer;
+        m_selectedResource = name;
+        m_requestedPane = "inspector";
+        resetMaterialForm();
+        return Json{{"ok", true}, {"material", materialStatus()}}.dump();
+      }
+
+      if (command == "edit-material" || command == "stage-material" || command == "undo-material"
+          || command == "redo-material" || command == "save-material" || command == "close-material"
+          || command == "reset-material") {
+        if (command == "edit-material" || command == "stage-material") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
+        } else if (command == "close-material") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "discard"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        }
+
+        if (playing() || !m_material || Codec::id(parsed["buffer"]) != m_buffer
+            || Codec::id(parsed["revision"]) != m_material->snapshot()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Material buffer/revision is stale or Play is active");
+        }
+
+        if (command == "close-material") {
+          if (pendingText() && !parsed["discard"].get<bool>()) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Material has unsaved changes");
+          }
+
+          m_material.reset();
+        } else if (command == "stage-material" || command == "edit-material") {
+          auto value = Assets::decodeMaterial(parsed["value"].dump());
+
+          if (!value) {
+            return std::unexpected(value.error());
+          }
+
+          if (command == "stage-material") {
+            m_materialForm = parsed["value"];
+            m_renderedView.reset();
+            m_previewReady = false;
+            return Json{{"ok", true}, {"material", materialStatus()}}.dump();
+          }
+
+          auto changed = m_material->replace(*value, m_material->snapshot()->revision);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        } else if (command == "save-material") {
+          auto saved = saveMaterial();
+
+          if (!saved) {
+            return std::unexpected(saved.error());
+          }
+        } else if (command == "undo-material" || command == "redo-material") {
+          const auto state = materialStatus();
+
+          if (state["draft"] != state["value"]) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Apply or reset staged material fields first");
+          }
+
+          auto changed = command == "undo-material"
+                             ? m_material->undo(m_material->snapshot()->revision)
+                             : m_material->redo(m_material->snapshot()->revision);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        resetMaterialForm();
+        return Json{{"ok", true}, {"material", materialStatus()}}.dump();
+      }
+
       if (command == "resources") {
         Codec::requireFields(parsed, {"command"});
         auto refreshed = catalog();
@@ -874,6 +1059,7 @@ namespace Dot::Editor {
         return Json{{"ok", true},
                     {"entries", m_catalog},
                     {"file", textStatus()},
+                    {"material", materialStatus()},
                     {"selected", m_selectedResource},
                     {"scripts", {{"message", m_checkMessage}, {"diagnostics", diagnostics}}}}
             .dump();
@@ -1039,6 +1225,8 @@ namespace Dot::Editor {
         }
 
         m_text.emplace(std::move(*opened));
+        m_material.reset();
+        resetMaterialForm();
         m_checkMessage.clear();
         m_scriptDiagnostics.clear();
         ++m_buffer;
@@ -1168,7 +1356,7 @@ namespace Dot::Editor {
         }
 
         if (pendingText()) {
-          auto savedText = saveText();
+          auto savedText = m_material ? saveMaterial() : saveText();
 
           if (!savedText) {
             return std::unexpected(savedText.error());
@@ -1592,6 +1780,7 @@ namespace Dot::Editor {
             {"play", playStatus()},
             {"view", viewStatus()},
             {"message", m_message},
+            {"material", materialStatus()},
             {"file", textStatus()}};
         return response.dump();
       }
@@ -1939,6 +2128,36 @@ namespace Dot::Editor {
         return std::unexpected(view.error());
       }
 
+      const auto previewKey = m_material && !playing()
+                                  ? std::to_string(m_buffer) + m_materialForm.dump()
+                                  : std::string{};
+
+      if (previewKey != m_materialPreviewKey) {
+        std::optional<Graphics::MaterialPreview> material;
+
+        if (m_material && !playing()) {
+          auto value = Assets::decodeMaterial(m_materialForm.dump());
+
+          if (!value) {
+            m_previewReady = false;
+            m_previewError = value.error().message;
+            return {};
+          }
+
+          material = Graphics::MaterialPreview{m_material->snapshot()->path, std::move(*value)};
+        }
+
+        auto changed = m_drawing->previewMaterial(std::move(material));
+
+        if (!changed) {
+          m_previewReady = false;
+          m_previewError = changed.error().message;
+          return {};
+        }
+
+        m_materialPreviewKey = previewKey;
+      }
+
       auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view);
 
       if (drawn) {
@@ -2146,6 +2365,18 @@ namespace Dot::Editor {
             fields(m_edit[component]);
           }
 
+          if (std::string_view(component) == "material") {
+            ImGui::BeginDisabled(pendingInspector());
+
+            if (ImGui::SmallButton("Edit material asset")) {
+              fileAction({{"command", "open-material"},
+                          {"path", m_edit[component]["asset"]},
+                          {"discard", false}});
+            }
+
+            ImGui::EndDisabled();
+          }
+
           if (std::string_view(component) == "script") {
             if (ImGui::SmallButton("Open script externally")) {
               const auto source = m_project->description().value().scriptsDirectory + "/"
@@ -2261,6 +2492,14 @@ namespace Dot::Editor {
     }
 
     auto fileAction(Json request) -> bool {
+      const auto command = request["command"].get<std::string>();
+
+      if (m_material && command != "open-material" && command != "create-material"
+          && command.ends_with("-material")) {
+        request["buffer"] = std::to_string(m_buffer);
+        request["revision"] = std::to_string(m_material->snapshot()->revision);
+      }
+
       if (m_text
           && (request["command"] == "save-text" || request["command"] == "replace-text"
               || request["command"] == "close-text")) {
@@ -2271,6 +2510,271 @@ namespace Dot::Editor {
       auto result = safeExecute(request.dump());
       m_message = result ? "" : result.error().message;
       return result.has_value();
+    }
+
+    /** Structured asset authoring shares the strict material codec and commands;
+     * staged fields preview without file writes, Apply creates one history step.
+     * 结构化资源编辑共用严格材质编解码与命令；字段草稿不写盘即可预览，应用形成一次历史。 */
+    auto materialInspector() -> void {
+      const auto state = materialStatus();
+      ImGui::TextWrapped("Material: %s%s", state["path"].get_ref<const std::string&>().c_str(),
+                         state["dirty"].get<bool>() ? " *" : "");
+      ImGui::TextWrapped("Shared asset. Unsaved fields preview on all matching scene objects.");
+      auto& form = m_materialForm;
+      bool changed{};
+
+      const auto row = [](const char* title) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextWrapped("%s", title);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-1);
+      };
+
+      if (ImGui::BeginTable("material-properties", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 105);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+        row("Shading");
+
+        if (ImGui::BeginCombo("##shading", form["model"].get_ref<const std::string&>().c_str())) {
+          for (const auto* name : {"metallicRoughness", "unlit"}) {
+            if (ImGui::Selectable(name, form["model"] == name)) {
+              form["model"] = name;
+              changed = true;
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        auto base = Codec::numbers<4>(form["baseColor"]);
+
+        row("Base color");
+
+        if (ImGui::ColorEdit4("##base-color", base.data())) {
+          form["baseColor"] = base;
+          changed = true;
+        }
+
+        auto emission = Codec::numbers<3>(form["emissive"]);
+
+        row("Emission");
+
+        if (ImGui::ColorEdit3("##emission", emission.data(),
+                              ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_Float)) {
+          form["emissive"] = emission;
+          changed = true;
+        }
+
+        const auto scalar = [&](const char* title, const char* key, float lower, float upper) {
+          auto value = form[key].get<float>();
+
+          row(title);
+
+          if (ImGui::SliderFloat((std::string("##") + key).c_str(), &value, lower, upper)) {
+            form[key] = value;
+            changed = true;
+          }
+        };
+        scalar("Metallic", "metallic", 0, 1);
+        scalar("Roughness", "roughness", 0, 1);
+        scalar("Normal scale", "normalScale", 0, 4);
+        scalar("Baked occlusion", "occlusionStrength", 0, 1);
+        bool sided = form["doubleSided"].get<bool>();
+
+        row("Double sided");
+
+        if (ImGui::Checkbox("##sided", &sided)) {
+          form["doubleSided"] = sided;
+          changed = true;
+        }
+
+        row("Coverage");
+
+        if (ImGui::BeginCombo("##coverage",
+                              form["alphaMode"].get_ref<const std::string&>().c_str())) {
+          for (const auto* mode : {"opaque", "mask", "blend"}) {
+            if (ImGui::Selectable(mode, form["alphaMode"] == mode)) {
+              form["alphaMode"] = mode;
+              changed = true;
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        if (form["alphaMode"] == "mask") {
+          auto cutoff = form["alphaCutoff"].get<float>();
+
+          row("Alpha cutoff");
+
+          if (ImGui::DragFloat("##cutoff", &cutoff, .01F, 0, 16, "%.3f",
+                               ImGuiSliderFlags_AlwaysClamp)) {
+            form["alphaCutoff"] = cutoff;
+            changed = true;
+          }
+        }
+
+        ImGui::EndTable();
+      }
+
+      ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+
+      for (const auto& [title, key, data] :
+           {std::tuple{"Base color texture", "baseColorTexture", false},
+            std::tuple{"Metallic / roughness texture", "metallicRoughnessTexture", true},
+            std::tuple{"Normal texture", "normalTexture", true},
+            std::tuple{"Emission texture", "emissiveTexture", false},
+            std::tuple{"Occlusion texture", "occlusionTexture", true}}) {
+        ImGui::PushID(key);
+
+        if (ImGui::CollapsingHeader(title)) {
+          bool enabled = !form[key].is_null();
+
+          if (ImGui::Checkbox("Use texture", &enabled)) {
+            Assets::MaterialDescription defaults;
+            defaults.baseColorTexture = Assets::TextureSource{"assets/texture.png"};
+            form[key] = enabled ? Codec::parseJson(
+                                      Assets::encodeMaterial(defaults).value())["baseColorTexture"]
+                                : Json(nullptr);
+
+            if (enabled && data) {
+              form[key]["sampling"]["colorSpace"] = "linear";
+            }
+
+            changed = true;
+          }
+
+          if (enabled) {
+            auto path = form[key]["path"].get<std::string>();
+
+            ImGui::TextUnformatted("Project image");
+            ImGui::SetNextItemWidth(-1);
+
+            if (ImGui::InputText("##image-path", &path)) {
+              form[key]["path"] = path;
+              changed = true;
+            }
+
+            ImGui::SetNextItemWidth(-1);
+
+            if (ImGui::BeginCombo("##image-choice", "Choose project image")) {
+              for (const auto& entry : m_catalog) {
+                const auto candidate = entry["path"].get<std::string>();
+
+                if (candidate.ends_with(".png") || candidate.ends_with(".jpg")
+                    || candidate.ends_with(".jpeg")) {
+                  if (ImGui::Selectable(candidate.c_str(), path == candidate)) {
+                    form[key]["path"] = candidate;
+                    changed = true;
+                  }
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+
+            if (ImGui::BeginTable("sampling", 2, ImGuiTableFlags_SizingStretchProp)) {
+              ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 105);
+              ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+              auto& sampling = form[key]["sampling"];
+              const auto choice = [&](const char* title, const char* field,
+                                      std::initializer_list<const char*> options) {
+                row(title);
+
+                if (ImGui::BeginCombo((std::string("##") + field).c_str(),
+                                      sampling[field].get_ref<const std::string&>().c_str())) {
+                  for (const auto* option : options) {
+                    if (ImGui::Selectable(option, sampling[field] == option)) {
+                      sampling[field] = option;
+                      changed = true;
+                    }
+                  }
+
+                  ImGui::EndCombo();
+                }
+              };
+              ImGui::BeginDisabled(data);
+              choice("Color space", "colorSpace", {"srgb", "linear"});
+              ImGui::EndDisabled();
+              choice("Filtering", "filter", {"nearest", "linear"});
+              choice("Address U", "addressU", {"repeat", "clamp", "mirror"});
+              choice("Address V", "addressV", {"repeat", "clamp", "mirror"});
+              auto mipmaps = sampling["mipmaps"].get<bool>();
+              auto anisotropy = sampling["maxAnisotropy"].get<int>();
+
+              row("Mipmaps");
+
+              if (ImGui::Checkbox("##mipmaps", &mipmaps)) {
+                sampling["mipmaps"] = mipmaps;
+                changed = true;
+              }
+
+              row("Anisotropy");
+
+              if (ImGui::SliderInt("##anisotropy", &anisotropy, 1, 16)) {
+                sampling["maxAnisotropy"] = anisotropy;
+                changed = true;
+              }
+              ImGui::EndTable();
+            }
+          }
+        }
+
+        ImGui::PopID();
+      }
+
+      ImGui::PopStyleColor();
+
+      if (changed && form != state["draft"]) {
+        m_renderedView.reset();
+        m_previewReady = false;
+      }
+
+      ImGui::Separator();
+      const bool staged = form != state["value"];
+      ImGui::BeginDisabled(!staged);
+
+      if (ImGui::Button("Apply material")) {
+        fileAction({{"command", "edit-material"}, {"value", form}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Reset fields")) {
+        fileAction({{"command", "reset-material"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(staged || !state["canUndo"].get<bool>());
+
+      if (ImGui::Button("Undo material")) {
+        fileAction({{"command", "undo-material"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(staged || !state["canRedo"].get<bool>());
+
+      if (ImGui::Button("Redo material")) {
+        fileAction({{"command", "redo-material"}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (ImGui::Button("Save material")) {
+        fileAction({{"command", "save-material"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Close material")) {
+        fileAction({{"command", "close-material"}, {"discard", false}});
+      }
+
+      if (state["dirty"].get<bool>() && ImGui::Button("Discard material changes")) {
+        fileAction({{"command", "close-material"}, {"discard", true}});
+      }
     }
 
     auto environmentPanel() -> void {
@@ -2531,6 +3035,12 @@ namespace Dot::Editor {
           fileAction({{"command", "create-directory"}, {"path", m_newPath}});
         }
 
+        if (ImGui::Button("New material")) {
+          if (fileAction({{"command", "create-material"}, {"path", m_newPath}})) {
+            fileAction({{"command", "open-material"}, {"path", m_newPath}, {"discard", false}});
+          }
+        }
+
         ImGui::InputText("Import source", &m_importSource);
 
         if (ImGui::Button("Import to path")) {
@@ -2596,7 +3106,7 @@ namespace Dot::Editor {
         ImGui::EndPopup();
       }
 
-      ImGui::TextWrapped("Open text resources in the system default application.");
+      ImGui::TextWrapped("Select materials to edit. Open scripts in the default application.");
       ImGui::Separator();
       const auto entries = m_catalog;
       m_visibleResources = Json::array();
@@ -2615,7 +3125,9 @@ namespace Dot::Editor {
                                 ImGuiSelectableFlags_AllowDoubleClick)) {
             m_selectedResource = name;
 
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            if (name.ends_with(".dotmaterial")) {
+              fileAction({{"command", "open-material"}, {"path", name}, {"discard", false}});
+            } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
               fileAction({{"command", "open-external"}, {"path", name}});
             }
           }
@@ -3370,6 +3882,32 @@ namespace Dot::Editor {
       }
     }
 
+    auto historyAvailable(bool redo) const -> bool {
+      if (m_material) {
+        const auto state = materialStatus();
+        return state["draft"] == state["value"] && state[redo ? "canRedo" : "canUndo"].get<bool>();
+      }
+
+      const auto stats = m_document->stats().value();
+      return redo ? stats.canRedo : stats.canUndo;
+    }
+
+    auto focusedSave() -> void {
+      if (m_material) {
+        fileAction({{"command", "save-material"}});
+      } else if (applyInspector()) {
+        action({{"command", "save"}});
+      }
+    }
+
+    auto focusedHistory(bool redo) -> void {
+      if (m_material) {
+        fileAction({{"command", redo ? "redo-material" : "undo-material"}});
+      } else {
+        action({{"command", redo ? "redo" : "undo"}});
+      }
+    }
+
     auto menuBar() -> void {
       if (!ImGui::BeginMenuBar()) {
         return;
@@ -3378,10 +3916,9 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("DotEngine");
 
       if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("Save scene", nullptr, false, !playing())) {
-          if (applyInspector()) {
-            action({{"command", "save"}});
-          }
+        if (ImGui::MenuItem(m_material ? "Save material" : "Save scene", nullptr, false,
+                            !playing())) {
+          focusedSave();
         }
 
         if (ImGui::MenuItem("Export game")) {
@@ -3396,14 +3933,12 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Edit")) {
-        const auto stats = m_document->stats().value();
-
-        if (ImGui::MenuItem("Undo", nullptr, false, !playing() && stats.canUndo)) {
-          action({{"command", "undo"}});
+        if (ImGui::MenuItem("Undo", nullptr, false, !playing() && historyAvailable(false))) {
+          focusedHistory(false);
         }
 
-        if (ImGui::MenuItem("Redo", nullptr, false, !playing() && stats.canRedo)) {
-          action({{"command", "redo"}});
+        if (ImGui::MenuItem("Redo", nullptr, false, !playing() && historyAvailable(true))) {
+          focusedHistory(true);
         }
 
         ImGui::EndMenu();
@@ -3559,31 +4094,29 @@ namespace Dot::Editor {
       if ((ImGui::Button("Save")
            || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)))
           && !playing()) {
-        if (applyInspector()) {
-          action({{"command", "save"}});
-        }
+        focusedSave();
       }
 
       ImGui::SameLine();
-      ImGui::BeginDisabled(!stats.canUndo);
+      ImGui::BeginDisabled(!historyAvailable(false));
 
       if ((ImGui::Button("Undo")
            || (!ImGui::GetIO().WantTextInput
                && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteAlways)))
-          && stats.canUndo && !playing()) {
-        action({{"command", "undo"}});
+          && historyAvailable(false) && !playing()) {
+        focusedHistory(false);
       }
 
       ImGui::EndDisabled();
       ImGui::SameLine();
-      ImGui::BeginDisabled(!stats.canRedo);
+      ImGui::BeginDisabled(!historyAvailable(true));
 
       if ((ImGui::Button("Redo")
            || (!ImGui::GetIO().WantTextInput
                && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z,
                                   ImGuiInputFlags_RouteAlways)))
-          && stats.canRedo && !playing()) {
-        action({{"command", "redo"}});
+          && historyAvailable(true) && !playing()) {
+        focusedHistory(true);
       }
 
       ImGui::EndDisabled();
@@ -3791,7 +4324,11 @@ namespace Dot::Editor {
       if (beginPanel("Inspector", "inspector", "inspector")) {
         ImGui::BeginDisabled(playing() || m_transform.has_value());
         ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
-        inspector();
+        if (m_material) {
+          materialInspector();
+        } else {
+          inspector();
+        }
         ImGui::EndDisabled();
         ImGui::EndDisabled();
       }

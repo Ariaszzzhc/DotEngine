@@ -69,6 +69,7 @@ add_executable(DotTests
     DocumentTests.cpp
     TransformToolTests.cpp
     ResourceTests.cpp
+    MaterialDocumentTests.cpp
     InputHostTests.cpp
     PhysicsHostTests.cpp
     AudioHostTests.cpp

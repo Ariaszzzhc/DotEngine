@@ -101,6 +101,45 @@ TEST_CASE("scene_material.saved_physical_factors_and_hierarchical_light_pose_dri
   CHECK(drawing.stats()->materials == 1);
 }
 
+TEST_CASE("scene_material.owned_preview_changes_pixels_without_disk_or_scene_mutation") {
+  Fixture fixture;
+  auto device = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  auto target = device.createTarget(3, 3).value();
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  const auto baseline = device.readHdrTarget(target)->pixels;
+  const auto source = fixture.files.readText("surface.dotmaterial").value();
+  const auto scene = Dot::World::encodeScene(fixture.scene).value();
+  auto value = Dot::Assets::decodeMaterial(source).value();
+  value.baseColor = {1, 0, 0, 1};
+  REQUIRE(drawing.previewMaterial(Dot::Graphics::MaterialPreview{"surface.dotmaterial", value}));
+  value.baseColor = {0, 1, 0, 1};
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  const auto preview = device.readHdrTarget(target)->pixels;
+  CHECK(preview != baseline);
+  CHECK(preview[16] > preview[17]);
+  CHECK(fixture.files.readText("surface.dotmaterial").value() == source);
+  CHECK(Dot::World::encodeScene(fixture.scene).value() == scene);
+  REQUIRE(drawing.clearCache());
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(device.readHdrTarget(target)->pixels == preview);
+  value.alphaCutoff = -1;
+  CHECK_FALSE(
+      drawing.previewMaterial(Dot::Graphics::MaterialPreview{"surface.dotmaterial", value}));
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(device.readHdrTarget(target)->pixels == preview);
+  value.alphaCutoff = .5F;
+  value.baseColorTexture = Dot::Assets::TextureSource{"missing.png"};
+  REQUIRE(drawing.previewMaterial(Dot::Graphics::MaterialPreview{"surface.dotmaterial", value}));
+  CHECK_FALSE(drawing.renderInto(fixture.scene, target));
+  CHECK(fixture.files.readText("surface.dotmaterial").value() == source);
+  REQUIRE(drawing.previewMaterial(std::nullopt));
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(device.readHdrTarget(target)->pixels == baseline);
+  REQUIRE(drawing.clearCache());
+  CHECK(device.resourceStats()->textures == 0);
+}
+
 TEST_CASE("scene_material.shared_textures_materials_reload_and_prune_with_owned_byte_counters") {
   Fixture fixture;
   fixture.texture("normal.png", "normal.png");

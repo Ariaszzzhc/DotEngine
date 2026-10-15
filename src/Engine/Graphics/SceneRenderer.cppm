@@ -16,6 +16,7 @@ import Dot.Math;
 import Dot.World.Scene;
 import Dot.Graphics.Renderer;
 export import Dot.Graphics.View;
+export import Dot.Assets.Material;
 
 export namespace Dot::Graphics {
   /** Primary game camera, explicit scene camera, or independent editor/tool view.
@@ -30,6 +31,11 @@ export namespace Dot::Graphics {
     std::uint64_t textureBytes{};
     std::size_t environments{};
     std::uint64_t environmentBytes{};
+  };
+
+  struct MaterialPreview {
+    std::string path;
+    Assets::MaterialDescription value;
   };
 
   /** Owns bounded shared mesh/material/texture caches and an optional asset-root
@@ -93,6 +99,14 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto stats() const -> Core::Result<SceneRenderStats>;
     [[nodiscard]] auto warnings() const -> Core::Result<std::vector<std::string>>;
     [[nodiscard]] auto clearCache() -> Core::Result<void>;
+    /** Own one unsaved material override for every matching scene binding.
+     * Validate the description now; normal rendering resolves textures/budgets
+     * and reports failures. Null restores disk rendering. Never writes assets
+     * or mutates the scene. Cache reload retains this explicit override.
+     * 拥有一份未保存材质覆盖并用于所有匹配的场景绑定；立即校验描述，实际渲染负责
+     * 解析贴图/预算并报告错误；空值恢复磁盘材质，不写资源或修改场景，重载缓存保留覆盖。 */
+    [[nodiscard]] auto previewMaterial(std::optional<MaterialPreview> preview)
+        -> Core::Result<void>;
 
   private:
     struct Impl;

@@ -4004,3 +4004,79 @@ Object-center depth sorting is approximate for intersecting/large transparent
 geometry. Refraction/OIT, transparent shadows, animation, streaming, mature production
 editor tooling and polished realistic Prism Relay remain unfinished. The full
 engine/editor/game objective remains active.
+
+
+## Structured material authoring / 结构化材质编辑 (2026-10-15)
+
+Added separate MaterialDocument module interface/implementation as the filesystem
+foundation before consumers. It owns a typed material draft through the existing
+ResourceStore/TextDocument path/metadata/atomic-write contract. Current revisions,
+no-op edits, bounded 128-state branching history, undo/redo after Save, exact initial
+source restoration, disk conflicts, owner-thread/move behavior and destruction
+without saving are covered by 3 integration cases without a device/window (3/3,
+0.27s). Explicit enum/path module imports were required during compilation; fixed
+those errors without changing compiler/linker environment.
+
+SceneRenderer now owns one explicit material preview by portable asset path and
+reuses actual texture loading/normal validation/cache budgets for every matching
+scene binding. Overrides never write files or mutate entities. Clearing caches
+retains this explicit preview; clearing the override restores disk rendering.
+Independent HDR pixel tests cover owned values, invalid descriptions, missing-image
+errors, cache reload/restoration, unchanged disk/scene and texture release. The
+first fixture sampled an uncovered corner; corrected its assertion to the existing
+quad's center, retaining actual red/green pixel evidence.
+
+Assets now creates and opens typed material assets in Inspector; entities can open
+their bound material directly. Fields cover PBR/unlit, RGBA/emission, metallic,
+roughness, normal scale, occlusion, sidedness, Opaque/Mask/Blend/cutoff and five image
+slots with project selection and sampler options. Staged fields preview the actual
+scene without writes; Apply records one history step rather than one per slider
+frame. Reset, independent undo/redo, save, close/discard and project save-close use
+the same strict workspace commands. Buffer identity/revision and pending-draft
+checks preserve content across stale requests/external conflicts. Toolbar/File/Edit
+actions address the open material. Play locks material mutations and uses disk
+assets; Stop restores authoring previews. Scripts remain in the external editor.
+
+Native material workflows initially passed 2/2 (1.94s); focused foundation/GPU/native
+checks passed 6/6 (3.30s). Opened the real release-directory editor with Feature Lab,
+read its actual material Inspector and viewport. Screenshot inspection exposed
+clipped right-side labels; changed properties/sampling to labeled two-column rows,
+full-width image paths and subdued section headers. Reopened and visually confirmed
+complete labels in the actual dark UI. QA commands did not write the project.
+Normal close/control cleanup verified; no QA editor process remained.
+
+Both builds completed before serial full runs. Full Debug passed 953/953 (206.63s).
+Then strengthened the existing native material case to save a different blue disk
+material, render Play's actual blue pixels and recover the red authoring preview on
+Stop without implicit file changes; focused Debug passed 1/1 (1.33s). No production
+implementation changed after that full Debug run.
+
+The first full Release passed 952/953 (43.11s). Its existing move-tool native pointer
+case missed an axis click and cleared selection; isolated reproduction passed.
+Inspection found unsynchronized async window state and synthetic input queued ahead
+of pending OS events. Added explicit SDL_SyncWindow and pumped already-pending OS
+events before test pointer samples, preserving the complete queue and all original
+release/Escape/focus-loss/history/pixel assertions. This strengthens the test
+preconditions; one intermittent failure does not prove a material-rendering defect
+or establish a complete causal diagnosis. The focused Release case passed ten
+consecutive runs (3.28s). Final Debug focused: 7/7 (4.14s), including stronger Play
+and pointer cases. Final Release/NDEBUG full: 953/953 (37.56s).
+
+Inventory: 889 doctest identities plus 64 executable/script checks. Overlapping
+labels: unit 213, integration 631, gpu 179, offscreen 108, native 59, acceptance 109,
+compiler 135, platform 27, process 19, audio-native 32. All 303 C/C++ files pass
+clang-format; all 16 WGSL files pass established spacing/line checks. Reviewed
+ownership, transactional history allocation, exact-byte conflict preservation,
+revision/buffer boundaries, error paths, preview cache/Play transitions, resource
+release, GUI form/command correspondence, source formatting and portable paths.
+
+Refreshed archive through owned metadata-filtered staging: 269 entries, 47,386,765
+bytes, all 238 file/link payloads match signed source. Font/license/HDRIs/material
+assets/cgltf notices, CRC/executable modes/exclusions, 13 regular Mach-O files/3
+relative links, strict app signatures and portable loader/rpath checks pass.
+Owned QA request scratch and staging are absent; caches/latest ZIP/audit evidence,
+private source document and reference artwork are preserved. Only arm64 macOS was
+built/run; Windows/Linux implementation remains locally unverified. Material graphs,
+standalone material spheres/asset thumbnails, broader production authoring/animation/
+streaming and realistic polished Prism Relay remain unfinished. The full engine/
+editor/game objective remains active.

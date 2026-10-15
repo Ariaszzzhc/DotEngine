@@ -134,3 +134,10 @@ HDR composition/depth, masked shadow/AO guides and integer picking. Transparent
 instances use stable object-depth sorting; Feature Lab demonstrates actual alpha
 assets and rendering counters. OIT/refraction/transparent shadow lighting, animation,
 streaming and realistic polished Prism Relay remain unfinished.
+
+
+Structured material Inspector now edits the actual native PBR/texture/coverage
+contract with shared-scene unsaved preview, independent bounded undo/redo, conflict-
+checked save and normal Play/export lifecycle. Material graphs, standalone resource
+thumbnails/previews, broader production authoring tools and realistic game content
+remain unfinished; this does not establish mature-editor or large-game readiness.

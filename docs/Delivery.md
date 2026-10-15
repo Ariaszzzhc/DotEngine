@@ -263,3 +263,23 @@ assets, cgltf notices, exact font/license/HDRI, CRC/modes/exclusions, strict sig
 and portable loader/rpath checks pass (13 regular Mach-O files, 3 relative links).
 No extra screenshot review. Only arm64 macOS validated. The full engine/editor/game
 objective remains active; realistic polished Prism Relay is not complete.
+
+
+The structured material Inspector now edits the actual PBR, five-slot texture and
+coverage contract. Unsaved fields preview matching scene objects without writes;
+Apply creates one independent material history entry. Undo/redo, exact disk-conflict
+checks, save/reopen, dirty close/save-close and saved-asset Play/authoring-preview
+restoration are covered. Real release-directory UI inspection caught/fixed narrow
+Inspector label clipping. Scripts continue to open externally.
+
+Full Debug: 953/953 (206.63s). After test-only Play/pointer strengthening, final Debug
+focused: 7/7 (4.14s); final Release/NDEBUG full: 953/953 (37.56s). An intermittent
+native pointer failure in the first Release run was investigated and its window/
+event preconditions hardened with unchanged assertions; ten focused repetitions pass.
+All 303 C/C++ and 16 WGSL files pass established formatting checks. Latest ZIP:
+269 entries, 47,386,765 bytes; all 238 file/link payloads match signed source. Exact
+font/license/HDRI/material assets, CRC/modes/exclusions, strict signatures and portable
+loader/rpath checks pass (13 regular Mach-O files, 3 relative links). QA instances
+and owned staging/request scratch are closed/removed. Only arm64 macOS validated.
+Material graphs/thumbnails, mature production authoring and realistic polished
+Prism Relay remain incomplete; the full engine/editor/game objective stays active.

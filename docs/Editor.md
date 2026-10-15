@@ -737,3 +737,48 @@ and alphaCutoff fields. Imports retain glTF alpha semantics; referenced files op
 the external editor. Rendering and `workspace.view.draws` show actual `solid`, `blended`,
 `solidDraws` and `blendedDraws` values from the completed GPU pass. Feature Lab includes
 Glass and textured Cutout entities using the actual engine policies.
+
+
+## Structured material authoring / 结构化材质编辑
+
+Select a `.dotmaterial` asset in Assets, or use **Edit material asset** on an entity's
+Material component, to open its Inspector. Assets / Actions / New material creates
+a complete material at a new `assets/*.dotmaterial` path; existing files are never
+replaced. The Inspector provides PBR/unlit shading, base RGBA/emission, metallic,
+roughness, normal scale, occlusion strength, sidedness, Opaque/Mask/Blend and cutoff.
+Five texture sections select project PNG/JPEG images and edit color space, filtering,
+addressing, mipmaps and anisotropy. Data slots retain linear color space. Missing
+images, unsupported normal data and exhausted budgets report actual preview errors.
+
+Fields are an unsaved staging form and preview through the real SceneRenderer on
+all scene objects referencing that shared asset. They do not write the asset or
+change scene history. **Apply material** makes one material history step, avoiding
+one undo entry per slider frame. **Reset fields** restores the current history value;
+**Save material** applies staged fields and atomically saves. Material history keeps
+128 states, retains exact original source bytes and survives Save. Undo after Save
+can make the asset dirty again. Save rejects exact disk-baseline conflicts and
+retains the draft for recovery. Close/discard, project close confirmation, save-close,
+Play and export observe pending material fields/history. Material mutations are
+blocked during Play; Play renders saved assets, and Stop restores authoring preview.
+The toolbar/File/Edit save and undo/redo actions address the open material; scene
+history remains separate. Script editing continues in the external default editor.
+There is no material graph or standalone thumbnail/sphere preview yet.
+
+GUI and live workspace commands use the same codec, document and preview path:
+
+```json
+{"command":"create-material","path":"assets/surface.dotmaterial"}
+{"command":"open-material","path":"assets/surface.dotmaterial","discard":false}
+```
+
+The response contains `material` with decimal-string `buffer` and `revision`, complete
+`value`, staged `draft`, `dirty`, `canUndo` and `canRedo`. `resources` and `inspect` /
+`workspace.material` expose the same state. `stage-material` takes `buffer`, `revision`
+and a complete material `value` and previews it without advancing history.
+`edit-material` takes those same fields and commits one history step. `reset-material`,
+`undo-material`, `redo-material` and `save-material` require current buffer/revision;
+`close-material` additionally requires `discard`. Opening a different material/text
+buffer requires no pending resource changes or explicit discard and invalidates old
+buffer identities. Invalid descriptions/unknown fields/stale requests preserve state.
+Undo/redo require staged fields to be applied or reset first. Texture contents are
+validated at actual preview/Play/export use, rather than silently substituted.

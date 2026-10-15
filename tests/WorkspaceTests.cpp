@@ -493,6 +493,158 @@ TEST_CASE("workspace.saved_resource_mesh_refresh_changes_real_cached_gpu_geometr
   CHECK(workspace.captureViewport()->pixels != before.pixels);
 }
 
+TEST_CASE("workspace.material_staging_preview_history_save_and_reopen_use_real_scene") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  REQUIRE(workspace.dispatch(
+      "{\"command\":\"create-material\",\"path\":\"assets/surface.dotmaterial\"}"));
+  command(workspace,
+          {{"command", "edit"},
+           {"operations", Json::array({{{"op", "component"},
+                                        {"entity", "2"},
+                                        {"component", "material"},
+                                        {"value", {{"asset", "assets/surface.dotmaterial"}}}}})}});
+  auto file = Json::parse(workspace
+                              .dispatch("{\"command\":\"open-material\",\"path\":\"assets/"
+                                        "surface.dotmaterial\",\"discard\":false}")
+                              .value())["material"];
+  auto value = file["value"];
+  value["model"] = "unlit";
+  value["baseColor"] = {1, 0, 0, 1};
+  const auto scene = workspace.snapshot().value();
+  const auto files = fixture.project.files().value();
+  const auto disk = files.readText("assets/surface.dotmaterial").value();
+
+  for (int i = 0; i < 3; ++i) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  const auto baseline = workspace.captureViewport()->pixels;
+  const auto materialCommand = [&](const char* name, std::optional<Json> payload = {}) {
+    auto state = Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value())["material"];
+    Json request{{"command", name}, {"buffer", state["buffer"]}, {"revision", state["revision"]}};
+
+    if (payload) {
+      request["value"] = *payload;
+    }
+
+    auto response = workspace.dispatch(request.dump());
+    REQUIRE_MESSAGE(response, (response ? "" : response.error().message));
+    return Json::parse(*response)["material"];
+  };
+  const auto staged = materialCommand("stage-material", value);
+  CHECK(staged["revision"] == file["revision"]);
+  CHECK(staged["dirty"].get<bool>());
+  REQUIRE(workspace.step(16ms));
+  const auto red = workspace.captureViewport()->pixels;
+  CHECK(red != baseline);
+  CHECK(files.readText("assets/surface.dotmaterial").value() == disk);
+  CHECK(workspace.snapshot().value() == scene);
+  materialCommand("reset-material");
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == baseline);
+  materialCommand("edit-material", value);
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == red);
+  const auto saved = materialCommand("save-material");
+  CHECK_FALSE(saved["dirty"].get<bool>());
+  CHECK(Dot::Assets::loadMaterial(files, "assets/surface.dotmaterial")->baseColor.x == 1);
+  materialCommand("undo-material");
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == baseline);
+  materialCommand("redo-material");
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == red);
+  REQUIRE(workspace.dispatch(Json{
+      {"command", "close-material"},
+      {"buffer", saved["buffer"]},
+      {"revision", materialCommand("reset-material")["revision"]},
+      {"discard", false}}.dump()));
+  const auto reopened
+      = Json::parse(workspace
+                        .dispatch("{\"command\":\"open-material\",\"path\":\"assets/"
+                                  "surface.dotmaterial\",\"discard\":false}")
+                        .value())["material"];
+  CHECK(reopened["buffer"] != file["buffer"]);
+  CHECK(reopened["value"] == value);
+  const auto savedSource = files.readText("assets/surface.dotmaterial").value();
+  auto savedBlue = Dot::Assets::decodeMaterial(savedSource).value();
+  savedBlue.baseColor = {0, 0, 1, 1};
+  REQUIRE(Dot::Assets::saveMaterial(files, "assets/surface.dotmaterial", savedBlue));
+  command(workspace, {{"command", "play"}});
+  REQUIRE(workspace.step(16ms));
+  auto game = workspace.captureViewport().value();
+  bool bluePixel{};
+
+  for (std::size_t i = 0; i < game.pixels.size(); i += 4) {
+    bluePixel = bluePixel
+                || (game.pixels[i + 2] > game.pixels[i] + 50
+                    && game.pixels[i + 2] > game.pixels[i + 1] + 50);
+  }
+
+  CHECK(bluePixel);
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "edit-material"},
+      {"buffer", reopened["buffer"]},
+      {"revision", reopened["revision"]},
+      {"value", value}}.dump()));
+  command(workspace, {{"command", "stop-play"}});
+  REQUIRE(workspace.step(16ms));
+  CHECK(workspace.captureViewport()->pixels == red);
+  REQUIRE(files.writeTextAtomic("assets/surface.dotmaterial", savedSource));
+}
+
+TEST_CASE("workspace.material_failures_dirty_guards_and_close_save_keep_owned_draft") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  REQUIRE(workspace.dispatch(
+      "{\"command\":\"create-material\",\"path\":\"assets/surface.dotmaterial\"}"));
+  CHECK_FALSE(workspace.dispatch(
+      "{\"command\":\"create-material\",\"path\":\"assets/surface.dotmaterial\"}"));
+  CHECK_FALSE(workspace.dispatch(
+      "{\"command\":\"open-material\",\"path\":\"assets/no.dotmaterial\",\"discard\":false}"));
+  auto state = Json::parse(workspace
+                               .dispatch("{\"command\":\"open-material\",\"path\":\"assets/"
+                                         "surface.dotmaterial\",\"discard\":false}")
+                               .value())["material"];
+  auto value = state["value"];
+  value["roughness"] = .15;
+  Json request{{"command", "edit-material"},
+               {"buffer", state["buffer"]},
+               {"revision", state["revision"]},
+               {"value", value}};
+  auto malformed = request;
+  malformed["value"]["alphaMode"] = "invalid";
+  CHECK_FALSE(workspace.dispatch(malformed.dump()));
+  state = Json::parse(workspace.dispatch(request.dump()).value())["material"];
+  CHECK_FALSE(workspace.dispatch(request.dump()));
+  CHECK_FALSE(workspace.dispatch(
+      "{\"command\":\"open-text\",\"path\":\"scripts/mover.ts\",\"discard\":false}"));
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "play"}, {"revision", snapshot(workspace)["revision"]}}.dump()));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "close-material"},
+      {"buffer", state["buffer"]},
+      {"revision", state["revision"]},
+      {"discard", false}}.dump()));
+  auto files = fixture.project.files().value();
+  const auto baseline = files.readText("assets/surface.dotmaterial").value();
+  REQUIRE(files.writeTextAtomic("assets/surface.dotmaterial", baseline + "\n"));
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "save-material"}, {"buffer", state["buffer"]}, {"revision", state["revision"]}}
+                                     .dump()));
+  CHECK(Json::parse(workspace.dispatch("{\"command\":\"resources\"}").value())["material"]["dirty"]
+            .get<bool>());
+  REQUIRE(files.writeTextAtomic("assets/surface.dotmaterial", baseline));
+  auto closing
+      = Json::parse(workspace.dispatch("{\"command\":\"close\",\"discard\":false}").value());
+  CHECK(closing["confirmation"].get<bool>());
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "save-close"}, {"revision", snapshot(workspace)["revision"]}}.dump()));
+  CHECK(Dot::Assets::loadMaterial(files, "assets/surface.dotmaterial")->roughness
+        == doctest::Approx(.15));
+}
+
 TEST_CASE("workspace.resource_import_readonly_sdk_and_strict_requests_preserve_state") {
   Fixture fixture;
   auto source = fixture.storage.files().value();

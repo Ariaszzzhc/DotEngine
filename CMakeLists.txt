@@ -88,6 +88,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/Templates.cpp
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/Resources.cpp
+    src/Engine/Editor/MaterialDocument.cpp
     src/Engine/Editor/Play.cpp
     src/Engine/Editor/Workspace.cpp
     src/Engine/Editor/Home.cpp
@@ -184,6 +185,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/Templates.cppm
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/Resources.cppm
+        src/Engine/Editor/MaterialDocument.cppm
         src/Engine/Editor/Play.cppm
         src/Engine/Editor/Workspace.cppm
         src/Engine/Editor/Home.cppm
