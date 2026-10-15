@@ -156,3 +156,12 @@ coalescing/priority, stale result rejection, explicit initialization errors and 
 shutdown are implemented. Main-thread GUI upload, synchronous model import, broader
 streaming/animation and production content workflows remain unfinished. This is
 not a general asynchronous asset pipeline or large-game readiness claim.
+
+
+Ordered scene multiselection and an active entity now span document history, GUI
+Hierarchy/Inspector and agent operations. Modifier/range selection and transactional
+subtree duplication/deletion retain parent links, native components, fresh IDs and
+undo selection. Native pointer/shortcut and runnable document acceptance exercise
+the workflow. Multi-object transforms/framing, box selection, mixed-value property
+editing and persisted profiles remain unfinished; single-object gizmos are hidden
+for multiple selections to prevent partial group edits.

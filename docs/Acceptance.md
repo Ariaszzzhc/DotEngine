@@ -256,3 +256,14 @@ with deadlines, retain pixel/source/isolation assertions, and exercise rapid for
 changes, refresh/close/reopen generations, joined close and post-close rejection.
 Workspace Play tests assert pause/resume state. Provider-gated integration tests do
 not substitute for those real GPU/native acceptance cases.
+
+
+Document multiselection tests cover ordered/scoped handles, no-op/stale/foreign/
+duplicate rejection, owner/move and history budgets, subtree union/remapping,
+external parents, primary camera/listener demotion, UTF-8 names, opaque script
+properties, exhausted IDs, rollback and single-entry undo/redo/branching. The
+runnable document acceptance additionally selects/duplicates/undoes two entities.
+Native Hierarchy tests use actual SDL mouse and modifier/key events for arrow
+expansion, Command/Ctrl toggles, Shift ranges, Duplicate/Delete and undo selection
+restoration. Agent cases cover reversed/additive ranges and stale requests.
+Multi-object gizmo requests explicitly fail until group transforms are implemented.

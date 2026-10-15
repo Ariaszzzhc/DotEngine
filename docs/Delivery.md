@@ -324,3 +324,23 @@ CRC/modes/exclusions, font/HDRI/license checks, 13 regular Mach-O files/three li
 strict signatures and relative/system loader references verified. Windows/Linux,
 production streaming and the full large-game/mature-editor target remain unvalidated
 or unfinished as documented in the roadmap.
+
+
+The 2026-10-15 scene-production stage adds ordered document multiselection,
+Hierarchy modifier/range input and transactional subtree Duplicate/Delete with
+selection-aware undo/redo. Copies use fresh IDs/remapped parents, preserve native
+components and demote copied primary camera/listener flags. Inspector properties
+remain active-only; group gizmos/framing/bulk properties are unfinished and
+single-object gestures explicitly reject multiple selections.
+
+Full arm64 macOS Debug passes 972/972 (223.16s), Release/NDEBUG 972/972 (56.52s):
+908 doctest identities plus 64 executable/script checks. Native input tests cover
+Command/Ctrl toggles, Shift ranges, keyboard duplication/deletion and undo; runnable
+document acceptance covers group copy/restore. The actual release UI shows three
+selected originals, three selected copies and exact scene/selection restoration on
+one undo, followed by normal clean close. All 310 C/C++ and 16 WGSL files pass
+formatting checks. The latest ZIP has 272 entries/48,646,602 bytes and 240 matching
+payloads; CRC/modes/licenses, strict signatures and portable linkage checks pass
+for 13 regular Mach-O files/three relative links. Windows/Linux remain implemented
+without local validation. Large-game production and mature editor completion are
+still open requirements.

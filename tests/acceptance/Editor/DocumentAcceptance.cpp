@@ -160,6 +160,46 @@ namespace Dot::Editor {
                           "Editor save/reopen did not preserve native scene");
       }
 
+      auto selection = reopened->dispatch(nlohmann::json{
+          {"command", "select-many"},
+          {"revision", std::to_string(reopened->stats()->revision)},
+          {"entities", {"1", "2"}}}.dump());
+
+      if (!selection) {
+        return std::unexpected(selection.error());
+      }
+
+      const auto baseline = nlohmann::json::parse(*selection);
+      auto copied = reopened->dispatch(
+          nlohmann::json{{"command", "duplicate-selection"},
+                         {"revision", std::to_string(reopened->stats()->revision)}}
+              .dump());
+
+      if (!copied) {
+        return std::unexpected(copied.error());
+      }
+
+      auto copy = nlohmann::json::parse(*copied);
+
+      if (copy["created"] != nlohmann::json::array({"3", "4"})
+          || copy["selection"] != copy["created"] || copy["scene"]["entities"].size() != 4) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Group duplication lost scene/selection");
+      }
+
+      auto groupUndo = reopened->undo(reopened->stats()->revision);
+
+      if (!groupUndo) {
+        return groupUndo;
+      }
+
+      auto restored = nlohmann::json::parse(reopened->snapshot().value());
+
+      if (restored["scene"] != baseline["scene"]
+          || restored["selection"] != baseline["selection"]) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Group undo did not restore scene/selection");
+      }
+
       return {};
     }
   }  // namespace
@@ -201,7 +241,7 @@ namespace Dot::Editor {
 
     std::println(
         "Editor document acceptance passed: selection, transactional edit, undo/redo, "
-        "native save/reopen{}",
+        "native save/reopen, group selection/duplicate/undo{}",
         render ? ", actual GPU pixel restoration" : "");
     return 0;
   }

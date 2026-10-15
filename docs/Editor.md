@@ -854,3 +854,54 @@ snapshot references. `inspect.workspace.hierarchyRows` reports the actual render
 row rectangles and expansion state by entity ID for native input automation.
 Selecting a parent, child or the current entity does not mutate scene data or add
 undo history; a changed selection advances the document revision.
+
+
+## Scene multiselection and group edits
+
+The document owns an ordered set of selected entities. `selection` contains unique
+canonical ID strings; `selected` is its last member (the active entity), or null
+for an empty set. Selection changes advance the revision without dirtying the
+scene or adding undo entries. Scene edits/undo/redo retain surviving selections
+and restore the selection stored with each history entry. Selection ID payloads
+count toward the existing bounded history budget. Saved scene files contain no
+editor selection, so opening a project starts with none.
+
+Hierarchy plain clicks replace selection; Command-click on macOS / Ctrl-click on
+Windows/Linux toggles a member. Shift-click selects the inclusive open/filtered
+row range from the anchor; adding Command/Ctrl preserves the prior selection.
+The clicked range endpoint becomes active, including when selecting backwards.
+Expanding an arrow does not select an entity. Highlighting shows every member.
+The Inspector states the selected count and edits only the active entity's
+properties. Viewport picking and Focus currently act on a single active entity.
+Group transform gestures are not implemented in this stage: multi-selection hides
+the single-object gizmo and rejects beginning a gesture rather than changing only
+one member. Group framing, box selection and mixed-value bulk properties remain
+planned.
+
+The toolbar Duplicate (Command/Ctrl+D) and Delete operations act on the whole
+selection in one undo transaction. Descendant unions prevent parent/child overlap
+from duplicating/removing a subtree twice. Duplication assigns new monotonic IDs,
+remaps internal parents, retains external parents/native components/asset bindings,
+adds bounded UTF-8 ` Copy` names and selects the mapped input entities in order.
+Copies of cameras/audio listeners are non-primary; originals remain primary.
+Script properties are opaque and are copied unchanged, without guessing that an
+arbitrary property string/number refers to an entity. Unsupported final scene
+states (such as exceeding the light/entity limit) fail transactionally.
+
+Shared GUI/agent commands require the current canonical decimal revision:
+
+```json
+{"command":"select-many","revision":"7","entities":["2","5"]}
+{"command":"select-hierarchy","revision":"8","entity":"9","mode":"range-add"}
+{"command":"duplicate-selection","revision":"9"}
+{"command":"delete-selection","revision":"10"}
+```
+
+`select-many` replaces the ordered set, accepting an empty array to clear it;
+duplicates, stale/foreign/missing entities and more than 10000 handles fail.
+`select-hierarchy` uses the current displayed hierarchy order and the modes
+replace/toggle/range/range-add; unknown/hidden IDs or modes fail. Explicit document
+selection/edit/undo/redo resets its anchor to the active entity. Raw `edit` batches
+can use `duplicate` or `remove-many` operations with a nonempty `entities` array.
+Group deletion/duplication rejects an empty selection. Scene draft/Play/gesture
+guards apply to GUI and agent paths alike.

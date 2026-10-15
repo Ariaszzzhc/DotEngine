@@ -1204,6 +1204,12 @@ TEST_CASE("workspace.native_hierarchy_parent_child_and_repeated_selection_keep_s
   REQUIRE(count == 1);
   const auto window = SDL_GetWindowID(windows[0]);
   SDL_free(windows);
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  REQUIRE(workspace.step(16ms));
+
   const auto click = [&](const char* id) {
     const auto before = snapshot(workspace);
     const auto inspected = Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value());
@@ -1353,4 +1359,148 @@ TEST_CASE(
   CHECK(snapshot(workspace)["scene"] == original);
   CHECK(snapshot(workspace)["dirty"] == false);
   REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":false}"));
+}
+
+TEST_CASE("workspace.native_hierarchy_multiselect_range_duplicate_delete_and_undo") {
+  Fixture fixture;
+  auto workspace = fixture.open();
+  command(workspace,
+          {{"command", "edit"},
+           {"operations", Json::array({{{"op", "create"}, {"name", "Third"}},
+                                       {{"op", "create"}, {"name", "Fourth"}},
+                                       {{"op", "parent"}, {"entity", "2"}, {"parent", "1"}}})}});
+
+  for (int frame = 0; frame < 3; ++frame) {
+    REQUIRE(workspace.step(16ms));
+  }
+
+  auto inspect
+      = [&] { return Json::parse(workspace.dispatch("{\"command\":\"inspect\"}").value()); };
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "filter-panel"}, {"panel", "hierarchy"}, {"query", ""}}.dump()));
+  // Opening an ancestor is a separate pointer action; the range uses displayed rows only.
+  // 展开祖先使用单独指针操作，范围仅基于实际显示行。
+  int count{};
+  auto windows = SDL_GetWindows(&count);
+  REQUIRE(windows);
+  REQUIRE(count == 1);
+  const auto window = SDL_GetWindowID(windows[0]);
+  SDL_free(windows);
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  REQUIRE(workspace.step(16ms));
+
+  const auto key = [&](SDL_Scancode code, bool down) {
+    SDL_Event event{};
+    event.key.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+    event.key.windowID = window;
+    event.key.scancode = code;
+    event.key.down = down;
+    REQUIRE(SDL_PushEvent(&event));
+    REQUIRE(workspace.step(16ms));
+  };
+#if defined(__APPLE__)
+  constexpr auto modifier = SDL_SCANCODE_LGUI;
+#else
+  constexpr auto modifier = SDL_SCANCODE_LCTRL;
+#endif
+  const auto click
+      = [&](const char* id, bool control = false, bool shift = false, bool arrow = false) {
+          const auto row = inspect()["workspace"]["hierarchyRows"][id];
+          REQUIRE(row.is_object());
+          const float x
+              = row["origin"][0].get<float>() + (arrow ? 6.F : row["size"][0].get<float>() * .65F);
+          const float y = row["origin"][1].get<float>() + row["size"][1].get<float>() * .5F;
+
+          if (control) {
+            key(modifier, true);
+          }
+
+          if (shift) {
+            key(SDL_SCANCODE_LSHIFT, true);
+          }
+
+          SDL_Event motion{};
+          motion.motion.type = SDL_EVENT_MOUSE_MOTION;
+          motion.motion.windowID = window;
+          motion.motion.x = x;
+          motion.motion.y = y;
+          REQUIRE(SDL_PushEvent(&motion));
+
+          for (const bool down : {true, false}) {
+            SDL_Event event{};
+            event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+            event.button.windowID = window;
+            event.button.button = SDL_BUTTON_LEFT;
+            event.button.down = down;
+            event.button.x = x;
+            event.button.y = y;
+            REQUIRE(SDL_PushEvent(&event));
+            auto result = workspace.step(16ms);
+            REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+          }
+
+          if (shift) {
+            key(SDL_SCANCODE_LSHIFT, false);
+          }
+
+          if (control) {
+            key(modifier, false);
+          }
+        };
+  click("1", false, false, true);
+  CHECK(snapshot(workspace)["selection"].empty());
+  REQUIRE(inspect()["workspace"]["hierarchyRows"].contains("2"));
+  const auto before = snapshot(workspace);
+  click("1");
+  click("2", true);
+  CHECK(snapshot(workspace)["selection"] == Json::array({"1", "2"}));
+  CHECK(inspect()["workspace"]["hierarchyRows"]["1"]["selected"].get<bool>());
+  CHECK(inspect()["workspace"]["hierarchyRows"]["2"]["active"].get<bool>());
+  click("1", true);
+  CHECK(snapshot(workspace)["selection"] == Json::array({"2"}));
+  click("1");
+  click("4", false, true);
+  CHECK(snapshot(workspace)["selection"] == Json::array({"1", "2", "3", "4"}));
+  CHECK(snapshot(workspace)["scene"] == before["scene"]);
+  CHECK(snapshot(workspace)["historyEntries"] == before["historyEntries"]);
+  const auto range = snapshot(workspace);
+  CHECK_FALSE(workspace.dispatch(
+      Json{{"command", "select-hierarchy"}, {"revision", "1"}, {"entity", "3"}, {"mode", "replace"}}
+          .dump()));
+  CHECK(snapshot(workspace)["selection"] == range["selection"]);
+  command(workspace, {{"command", "select-hierarchy"}, {"entity", "4"}, {"mode", "replace"}});
+  command(workspace, {{"command", "select-hierarchy"}, {"entity", "2"}, {"mode", "range"}});
+  CHECK(snapshot(workspace)["selection"] == Json::array({"3", "4", "2"}));
+  command(workspace, {{"command", "select-hierarchy"}, {"entity", "1"}, {"mode", "range-add"}});
+  CHECK(snapshot(workspace)["selection"] == Json::array({"3", "4", "2", "1"}));
+  command(workspace, {{"command", "select-many"}, {"entities", {"1", "2", "3", "4"}}});
+  key(modifier, true);
+  key(SDL_SCANCODE_D, true);
+  key(SDL_SCANCODE_D, false);
+  key(modifier, false);
+  const auto duplicated = snapshot(workspace);
+  REQUIRE(duplicated["scene"]["entities"].size() == 8);
+  CHECK(duplicated["selection"] == Json::array({"5", "6", "7", "8"}));
+  CHECK(duplicated["historyEntries"].get<int>() == before["historyEntries"].get<int>() + 1);
+  key(SDL_SCANCODE_DELETE, true);
+  key(SDL_SCANCODE_DELETE, false);
+  CHECK(snapshot(workspace)["scene"] == before["scene"]);
+  CHECK(snapshot(workspace)["selection"].empty());
+  command(workspace, {{"command", "undo"}});
+  CHECK(snapshot(workspace)["selection"] == duplicated["selection"]);
+  command(workspace, {{"command", "undo"}});
+  CHECK(snapshot(workspace)["selection"] == Json::array({"1", "2", "3", "4"}));
+  REQUIRE(workspace.dispatch(
+      Json{{"command", "set-tool"}, {"tool", "move"}, {"space", "world"}, {"snap", 0}}.dump()));
+  REQUIRE(workspace.step(16ms));
+  CHECK(inspect()["workspace"]["tool"]["handles"].empty());
+  CHECK_FALSE(workspace.dispatch(Json{
+      {"command", "begin-transform"},
+      {"revision", snapshot(workspace)["revision"]},
+      {"axis", 0},
+      {"uv", {.5, .5}}}.dump()));
+  REQUIRE(workspace.dispatch("{\"command\":\"close\",\"discard\":true}"));
 }

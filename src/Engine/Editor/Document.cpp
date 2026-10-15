@@ -48,15 +48,134 @@ namespace Dot::Editor {
       return found == entities.end() ? nullptr : &*found;
     }
 
-    auto operation(Json& scene, const Json& command, std::uint64_t& next,
-                   std::vector<std::uint64_t>& created, const Core::FileSystem& files)
+    /** Expand subtrees once, remap internal parents and publish only through apply.
+     * 子树只扩展一次，重映射内部父引用，最终仅通过 apply 事务发布。 */
+    auto groupOperation(Json& scene, const Json& command, std::uint64_t& next,
+                        std::vector<std::uint64_t>& created, std::vector<std::uint64_t>& selection)
         -> Core::Result<void> {
+      Codec::requireFields(command, {"op", "entities"});
+      const auto& requested = command["entities"];
+
+      if (!requested.is_array() || requested.empty() || requested.size() > 10000) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Group edit requires 1..10000 entities");
+      }
+
+      auto& entities = scene["entities"];
+      std::map<std::uint64_t, std::vector<std::uint64_t>> children;
+      std::unordered_set<std::uint64_t> live, included, requestedIds;
+      std::vector<std::uint64_t> roots, pending;
+
+      for (const auto& entity : entities) {
+        const auto id = Codec::id(entity["id"]);
+        live.insert(id);
+
+        if (!entity["parent"].is_null()) {
+          children[Codec::id(entity["parent"])].push_back(id);
+        }
+      }
+
+      for (const auto& value : requested) {
+        const auto id = Codec::id(value);
+
+        if (!live.contains(id) || !requestedIds.insert(id).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Group edit requires unique existing entities");
+        }
+
+        roots.push_back(id);
+        pending.push_back(id);
+      }
+
+      while (!pending.empty()) {
+        const auto id = pending.back();
+        pending.pop_back();
+
+        if (!included.insert(id).second) {
+          continue;
+        }
+
+        if (auto found = children.find(id); found != children.end()) {
+          pending.insert(pending.end(), found->second.begin(), found->second.end());
+        }
+      }
+
+      if (command["op"] == "remove-many") {
+        auto& values = entities.get_ref<Json::array_t&>();
+        std::erase_if(values,
+                      [&](const auto& value) { return included.contains(Codec::id(value["id"])); });
+        return {};
+      }
+
+      if (included.size() > 10000 - entities.size() || included.size() > exhausted - next) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Duplicate exceeds entity/identity capacity");
+      }
+
+      std::map<std::uint64_t, std::uint64_t> mapping;
+      Json copies = Json::array();
+
+      for (const auto& entity : entities) {
+        const auto id = Codec::id(entity["id"]);
+
+        if (included.contains(id)) {
+          mapping.emplace(id, next);
+          created.push_back(next++);
+          copies.push_back(entity);
+        }
+      }
+
+      for (auto& entity : copies) {
+        entity["id"] = std::to_string(mapping.at(Codec::id(entity["id"])));
+
+        if (!entity["parent"].is_null()) {
+          if (auto parent = mapping.find(Codec::id(entity["parent"])); parent != mapping.end()) {
+            entity["parent"] = std::to_string(parent->second);
+          }
+        }
+
+        auto name = entity["name"].get<std::string>();
+        name.resize(std::min(name.size(), std::size_t{251}));
+
+        while (!Core::isValidUtf8(name)) {
+          name.pop_back();
+        }
+
+        entity["name"] = name + " Copy";
+
+        for (const auto* component : {"camera", "audioListener"}) {
+          if (!entity[component].is_null()) {
+            entity[component]["primary"] = false;
+          }
+        }
+      }
+
+      for (auto& entity : copies) {
+        entities.push_back(std::move(entity));
+      }
+
+      selection.clear();
+
+      for (auto id : roots) {
+        selection.push_back(mapping.at(id));
+      }
+
+      return {};
+    }
+
+    auto operation(Json& scene, const Json& command, std::uint64_t& next,
+                   std::vector<std::uint64_t>& created, std::vector<std::uint64_t>& selection,
+                   const Core::FileSystem& files) -> Core::Result<void> {
       if (!command.is_object() || !command.contains("op") || !command["op"].is_string()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Edit operation requires an op string");
       }
 
       const auto op = command["op"].get<std::string>();
       auto& entities = scene["entities"];
+
+      if (op == "duplicate" || op == "remove-many") {
+        return groupOperation(scene, command, next, created, selection);
+      }
 
       if (op == "instantiate-model") {
         Codec::requireFields(command, {"op", "path"});
@@ -221,7 +340,11 @@ namespace Dot::Editor {
   struct Document::Impl {
     struct Entry {
       std::shared_ptr<const std::string> text;
-      std::optional<std::uint64_t> selected;
+      std::vector<std::uint64_t> selection;
+
+      auto bytes() const -> std::uint64_t {
+        return text->size() + selection.size() * sizeof(std::uint64_t);
+      }
     };
 
     Project::Project m_project;
@@ -358,22 +481,35 @@ namespace Dot::Editor {
       return std::unexpected(scene.error());
     }
 
-    const auto& entry = m_impl->m_history[m_impl->m_cursor];
-    std::optional<World::EntityId> selected;
+    try {
+      const auto& entry = m_impl->m_history[m_impl->m_cursor];
+      std::optional<World::EntityId> selected;
 
-    if (entry.selected) {
-      selected = World::EntityId{(*scene)->id(), *entry.selected};
+      std::vector<World::EntityId> selection;
+
+      for (auto id : entry.selection) {
+        selection.push_back({(*scene)->id(), id});
+      }
+
+      if (!selection.empty()) {
+        selected = selection.back();
+      }
+
+      return DocumentStats{
+          m_impl->m_revision,
+          (*scene)->id(),
+          selected,
+          std::move(selection),
+          m_impl->m_next == exhausted ? std::nullopt : std::optional{m_impl->m_next},
+          *entry.text != *m_impl->m_saved,
+          m_impl->m_cursor > 0,
+          m_impl->m_cursor + 1 < m_impl->m_history.size(),
+          m_impl->m_history.size(),
+          m_impl->m_bytes};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Inspect document selection: " + std::string(error.what()));
     }
-
-    return DocumentStats{m_impl->m_revision,
-                         (*scene)->id(),
-                         selected,
-                         m_impl->m_next == exhausted ? std::nullopt : std::optional{m_impl->m_next},
-                         *entry.text != *m_impl->m_saved,
-                         m_impl->m_cursor > 0,
-                         m_impl->m_cursor + 1 < m_impl->m_history.size(),
-                         m_impl->m_history.size(),
-                         m_impl->m_bytes};
   }
 
   auto Document::snapshot() const -> Core::Result<std::string> {
@@ -384,7 +520,14 @@ namespace Dot::Editor {
     }
 
     try {
-      return Json{{"revision", std::to_string(stats->revision)},
+      auto selection = Json::array();
+
+      for (const auto& entity : stats->selection) {
+        selection.push_back(std::to_string(entity.value));
+      }
+
+      return Json{{"selection", std::move(selection)},
+                  {"revision", std::to_string(stats->revision)},
                   {"scope", std::to_string(stats->scene)},
                   {"selected",
                    stats->selected ? Json(std::to_string(stats->selected->value)) : Json(nullptr)},
@@ -431,9 +574,10 @@ namespace Dot::Editor {
       auto candidate = Codec::parseJson(*m_impl->m_history[m_impl->m_cursor].text);
       auto next = m_impl->m_next;
       std::vector<std::uint64_t> created;
+      auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (std::size_t index = 0; index < commands.size(); ++index) {
-        auto result = operation(candidate, commands[index], next, created,
+        auto result = operation(candidate, commands[index], next, created, selection,
                                 m_impl->m_project.files().value());
 
         if (!result) {
@@ -464,26 +608,27 @@ namespace Dot::Editor {
       }
 
       std::erase_if(created, [&](auto id) { return !prepared->findEntity(id); });
-      auto selected = m_impl->m_history[m_impl->m_cursor].selected;
+      std::erase_if(selection, [&](auto id) { return !prepared->findEntity(id); });
 
-      if (selected && !prepared->findEntity(*selected)) {
-        selected.reset();
+      if (encoded->size() + selection.size() * sizeof(std::uint64_t)
+          > m_impl->m_config.historyBytes) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Edited selection exceeds history budget");
       }
 
       auto text = std::make_shared<const std::string>(std::move(*encoded));
       std::vector<Impl::Entry> history(
           m_impl->m_history.begin(),
           m_impl->m_history.begin() + static_cast<std::ptrdiff_t>(m_impl->m_cursor + 1));
-      history.push_back({std::move(text), selected});
+      history.push_back({std::move(text), std::move(selection)});
       std::uint64_t bytes = 0;
 
       for (const auto& entry : history) {
-        bytes += entry.text->size();
+        bytes += entry.bytes();
       }
 
       while (history.size() > m_impl->m_config.historyEntries
              || bytes > m_impl->m_config.historyBytes) {
-        bytes -= history.front().text->size();
+        bytes -= history.front().bytes();
         history.erase(history.begin());
       }
 
@@ -510,6 +655,14 @@ namespace Dot::Editor {
 
   auto Document::select(std::optional<World::EntityId> entity, std::uint64_t revision)
       -> Core::Result<void> {
+    const std::array single{entity.value_or(World::EntityId{})};
+    return selectMany(
+        entity ? std::span<const World::EntityId>{single} : std::span<const World::EntityId>{},
+        revision);
+  }
+
+  auto Document::selectMany(std::span<const World::EntityId> entities, std::uint64_t revision)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
     }
@@ -520,22 +673,49 @@ namespace Dot::Editor {
       return checked;
     }
 
-    if (entity) {
-      auto found = m_impl->m_scene.entity(*entity);
+    if (entities.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Selection exceeds 10000 entities");
+    }
 
-      if (!found) {
-        return std::unexpected(found.error());
+    try {
+      std::vector<std::uint64_t> selection;
+      std::unordered_set<std::uint64_t> seen;
+      selection.reserve(entities.size());
+
+      for (auto entity : entities) {
+        auto found = m_impl->m_scene.entity(entity);
+
+        if (!found) {
+          return std::unexpected(found.error());
+        }
+
+        if (!seen.insert(entity.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Selection contains duplicate entities");
+        }
+
+        selection.push_back(entity.value);
       }
+
+      auto& entry = m_impl->m_history[m_impl->m_cursor];
+
+      if (selection != entry.selection) {
+        const auto bytes = m_impl->m_bytes - entry.selection.size() * sizeof(std::uint64_t)
+                           + selection.size() * sizeof(std::uint64_t);
+
+        if (bytes > m_impl->m_config.historyBytes) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Selection exceeds history budget");
+        }
+
+        entry.selection = std::move(selection);
+        m_impl->m_bytes = bytes;
+        ++m_impl->m_revision;
+      }
+
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Select entities: " + std::string(error.what()));
     }
-
-    auto selected = entity ? std::optional{entity->value} : std::nullopt;
-
-    if (selected != m_impl->m_history[m_impl->m_cursor].selected) {
-      m_impl->m_history[m_impl->m_cursor].selected = selected;
-      ++m_impl->m_revision;
-    }
-
-    return {};
   }
 
   auto Document::undo(std::uint64_t revision) -> Core::Result<void> {
@@ -679,6 +859,10 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "operations"});
         } else if (command == "select") {
           Codec::requireFields(parsed, {"command", "revision", "entity"});
+        } else if (command == "select-many") {
+          Codec::requireFields(parsed, {"command", "revision", "entities"});
+        } else if (command == "duplicate-selection" || command == "delete-selection") {
+          Codec::requireFields(parsed, {"command", "revision"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -688,8 +872,23 @@ namespace Dot::Editor {
 
         const auto revision = Codec::id(parsed["revision"]);
 
-        if (command == "edit") {
-          auto applied = apply(parsed["operations"].dump(), revision);
+        if (command == "edit" || command == "duplicate-selection"
+            || command == "delete-selection") {
+          auto operations = parsed.value("operations", Json::array());
+
+          if (command != "edit") {
+            auto entities = Json::array();
+
+            for (auto id : m_impl->m_history[m_impl->m_cursor].selection) {
+              entities.push_back(std::to_string(id));
+            }
+
+            operations = Json::array(
+                {{{"op", command == "duplicate-selection" ? "duplicate" : "remove-many"},
+                  {"entities", std::move(entities)}}});
+          }
+
+          auto applied = apply(operations.dump(), revision);
 
           if (!applied) {
             return std::unexpected(applied.error());
@@ -697,6 +896,19 @@ namespace Dot::Editor {
 
           committed = applied->changed;
           created = std::move(applied->created);
+        } else if (command == "select-many") {
+          if (!parsed["entities"].is_array() || parsed["entities"].size() > 10000) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Selection requires an array of at most 10000 IDs");
+          }
+
+          std::vector<World::EntityId> entities;
+
+          for (const auto& id : parsed["entities"]) {
+            entities.push_back({(*current)->id(), Codec::id(id)});
+          }
+
+          result = selectMany(entities, revision);
         } else if (command == "select") {
           result = select(
               parsed["entity"].is_null()

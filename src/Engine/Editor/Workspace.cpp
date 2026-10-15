@@ -20,6 +20,7 @@ module;
 #include <string>
 #include <thread>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -335,6 +336,8 @@ namespace Dot::Editor {
     bool m_viewVisible{true};
     Json m_visibleHierarchy = Json::array();
     Json m_hierarchyRows = Json::object();
+    std::unordered_set<std::string> m_selectionIds;
+    std::string m_selectionAnchor;
     Json m_visibleResources = Json::array();
     bool m_assetRefresh{};
     std::string m_checkMessage;
@@ -2144,9 +2147,76 @@ namespace Dot::Editor {
             "Apply or reset pending inspector/environment/AO changes before another operation");
       }
 
-      auto result = m_document->dispatch(request);
+      std::string documentRequest(request);
 
-      if (result && command == "select" && !m_material) {
+      if (command == "select-hierarchy") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "mode"});
+        const auto id = parsed["entity"].get<std::string>();
+        const auto mode = parsed["mode"].get<std::string>();
+        const auto found = std::ranges::find(m_visibleHierarchy, Json(id));
+
+        if (found == m_visibleHierarchy.end()
+            || (mode != "replace" && mode != "toggle" && mode != "range" && mode != "range-add")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Hierarchy selection requires a visible entity and valid mode");
+        }
+
+        auto selection
+            = (mode == "toggle" || mode == "range-add") ? m_snapshot["selection"] : Json::array();
+        auto& values = selection.get_ref<Json::array_t&>();
+
+        if (mode == "toggle") {
+          const auto removed = std::erase(values, Json(id));
+
+          if (!removed) {
+            selection.push_back(id);
+          }
+        } else if (mode == "range" || mode == "range-add") {
+          auto anchor = std::ranges::find(m_visibleHierarchy, Json(m_selectionAnchor));
+
+          if (anchor == m_visibleHierarchy.end()) {
+            anchor = found;
+          }
+
+          const auto first = std::min(anchor, found);
+          const auto last = std::max(anchor, found);
+          std::unordered_set<std::string> included;
+
+          for (const auto& value : selection) {
+            included.insert(value.get<std::string>());
+          }
+
+          for (auto item = first; item <= last; ++item) {
+            if (included.insert(item->get<std::string>()).second) {
+              selection.push_back(*item);
+            }
+          }
+
+          std::erase(values, Json(id));
+          selection.push_back(id);
+        } else {
+          selection.push_back(id);
+        }
+
+        documentRequest = Json{{"command", "select-many"},
+                               {"revision", parsed["revision"]},
+                               {"entities", std::move(selection)}}
+                              .dump();
+      }
+
+      auto result = m_document->dispatch(documentRequest);
+
+      if (result && command == "select-hierarchy") {
+        const auto mode = parsed["mode"].get<std::string>();
+
+        if (mode != "range" && mode != "range-add") {
+          m_selectionAnchor = parsed["entity"].get<std::string>();
+        }
+      }
+
+      if (result
+          && (command == "select" || command == "select-many" || command == "select-hierarchy")
+          && !m_material) {
         m_selectedResource.clear();
       }
 
@@ -2155,6 +2225,15 @@ namespace Dot::Editor {
       if (!updated) {
         return Core::fail(updated.error().code,
                           "Document response may have committed; " + updated.error().message);
+      }
+
+      if (result
+          && (command == "select" || command == "select-many" || command == "edit"
+              || command == "duplicate-selection" || command == "delete-selection"
+              || command == "undo" || command == "redo")) {
+        m_selectionAnchor = m_snapshot["selected"].is_null()
+                                ? std::string{}
+                                : m_snapshot["selected"].get<std::string>();
       }
 
       if (result && command == "inspect") {
@@ -2611,7 +2690,7 @@ namespace Dot::Editor {
 
     /** Defer selection until traversal releases all snapshot references.
      * 遍历释放全部快照引用后再执行选择，避免刷新快照使递归引用失效。 */
-    auto tree(const Json& entities, const Json& parent, std::optional<std::string>& selection,
+    auto tree(const Json& entities, const Json& parent, std::optional<Json>& selection,
               int depth = 0) -> void {
       if (depth > 256) {
         return;
@@ -2628,7 +2707,7 @@ namespace Dot::Editor {
 
         const auto id = entity["id"].get<std::string>();
         const auto name = entity["name"].get<std::string>();
-        const bool selected = m_snapshot["selected"] == entity["id"];
+        const bool selected = m_selectionIds.contains(id);
         const bool children = std::ranges::any_of(
             entities, [&](const auto& child) { return child["parent"] == entity["id"]; });
         auto flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
@@ -2646,10 +2725,16 @@ namespace Dot::Editor {
         const auto end = ImGui::GetItemRectMax();
         m_hierarchyRows[id] = {{"origin", {origin.x, origin.y}},
                                {"size", {end.x - origin.x, end.y - origin.y}},
-                               {"open", open}};
+                               {"open", open},
+                               {"selected", selected},
+                               {"active", m_snapshot["selected"] == id}};
 
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-          selection = id;
+          const auto& io = ImGui::GetIO();
+          const bool additive = io.KeyCtrl || io.KeySuper;
+          const auto mode = io.KeyShift ? (additive ? "range-add" : "range")
+                                        : (additive ? "toggle" : "replace");
+          selection = Json{{"command", "select-hierarchy"}, {"entity", id}, {"mode", mode}};
         }
 
         if (open) {
@@ -2685,6 +2770,11 @@ namespace Dot::Editor {
         m_edit = *found;
         m_propertiesInvalid = false;
         m_propertiesText = m_edit["script"].is_null() ? "" : m_edit["script"]["properties"].dump(2);
+      }
+
+      if (stats.selection.size() > 1) {
+        ImGui::TextWrapped("%zu selected. Properties below edit the active entity only.",
+                           stats.selection.size());
       }
 
       std::string name = m_edit["name"].get<std::string>();
@@ -3796,6 +3886,11 @@ namespace Dot::Editor {
                           "Transform tool is not ready for a gesture");
       }
 
+      if (m_document->stats()->selection.size() != 1) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Transform gestures currently require exactly one selected entity");
+      }
+
       auto world = selectedWorld();
       auto axisDirection = toolBasis(axis);
       auto view = m_editorCamera.view();
@@ -3962,7 +4057,8 @@ namespace Dot::Editor {
     auto drawTransformTool() -> void {
       m_toolGeometry = Json::array();
 
-      if (m_tool == Tool::Select || !m_editorView || playing() || !m_document->stats()->selected) {
+      if (m_tool == Tool::Select || !m_editorView || playing()
+          || m_document->stats()->selection.size() != 1) {
         return;
       }
 
@@ -4707,8 +4803,16 @@ namespace Dot::Editor {
       if ((ImGui::Button("Delete")
            || (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete)))
           && m_document->stats()->selected && !playing()) {
-        edit(Json::array({{{"op", "remove"},
-                           {"entity", std::to_string(m_document->stats()->selected->value)}}}));
+        action({{"command", "delete-selection"}});
+      }
+
+      ImGui::SameLine();
+
+      if ((ImGui::Button("Duplicate")
+           || (!ImGui::GetIO().WantTextInput
+               && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal)))
+          && m_document->stats()->selected && !playing()) {
+        action({{"command", "duplicate-selection"}});
       }
 
       ImGui::EndDisabled();
@@ -4837,6 +4941,12 @@ namespace Dot::Editor {
       ImGui::End();
       m_panelGeometry = Json::object();
 
+      m_selectionIds.clear();
+
+      for (const auto& id : m_snapshot["selection"]) {
+        m_selectionIds.insert(id.get<std::string>());
+      }
+
       m_visibleHierarchy = Json::array();
       m_hierarchyRows = Json::object();
       m_visibleResources = Json::array();
@@ -4846,12 +4956,12 @@ namespace Dot::Editor {
         searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
         ImGui::Separator();
         ImGui::BeginDisabled(playing());
-        std::optional<std::string> selection;
+        std::optional<Json> selection;
         tree(m_snapshot["scene"]["entities"], nullptr, selection);
         ImGui::EndDisabled();
 
         if (selection) {
-          action({{"command", "select"}, {"entity", *selection}});
+          action(std::move(*selection));
         }
       }
 

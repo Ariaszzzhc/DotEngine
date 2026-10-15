@@ -521,3 +521,167 @@ TEST_CASE("document.occlusion_edits_are_atomic_undoable_and_saved") {
   edit(reopened, Json::array({{{"op", "occlusion"}, {"value", nullptr}}}));
   CHECK(state(reopened)["scene"]["occlusion"].is_null());
 }
+
+TEST_CASE("document.multiselection_is_ordered_scoped_atomic_and_budgeted") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto original = state(document);
+  auto selected = request(document, {{"command", "select-many"}, {"entities", {"2", "1"}}});
+  CHECK(selected["selection"] == Json::array({"2", "1"}));
+  CHECK(selected["selected"] == "1");
+  CHECK(selected["scene"] == original["scene"]);
+  CHECK_FALSE(selected["dirty"].get<bool>());
+  CHECK(selected["historyEntries"] == 1);
+  CHECK(document.stats()->historyBytes
+        == std::stoull(original["historyBytes"].get<std::string>()) + 16);
+  const auto revisionBefore = revision(document);
+  REQUIRE(document.selectMany(document.stats()->selection, revisionBefore));
+  CHECK(revision(document) == revisionBefore);
+  const auto before = document.snapshot().value();
+
+  for (const auto& entities : {Json::array({"1", "1"}), Json::array({"1", "999"}),
+                               Json::array({"01"}), Json::array({1}), Json::object()}) {
+    CHECK_FALSE(document.dispatch(Json{
+        {"command", "select-many"},
+        {"revision", std::to_string(revision(document))},
+        {"entities", entities}}.dump()));
+    CHECK(document.snapshot().value() == before);
+  }
+
+  auto handles = document.stats()->selection;
+  handles[0].scene += 1;
+  CHECK_FALSE(document.selectMany(handles, revision(document)));
+  CHECK_FALSE(document.selectMany({}, revision(document) - 1));
+  CHECK(document.snapshot().value() == before);
+  bool rejected{};
+  std::thread foreign([&] { rejected = !document.selectMany({}, revisionBefore); });
+  foreign.join();
+  CHECK(rejected);
+  REQUIRE(document.selectMany({}, revision(document)));
+  CHECK(state(document)["selection"].empty());
+  CHECK_FALSE(document.stats()->selected);
+  const auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  auto bounded = fixture.document({128, bytes});
+  const auto limited = bounded.snapshot().value();
+  CHECK_FALSE(bounded.select(bounded.scene().value()->findEntity(2).value(), 1));
+  CHECK(bounded.snapshot().value() == limited);
+}
+
+TEST_CASE("document.group_duplicate_remaps_overlaps_selection_and_undo_once") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, Json::array({{{"op", "create"}, {"name", "Child"}},
+                              {{"op", "parent"}, {"entity", "3"}, {"parent", "2"}}}));
+  request(document, {{"command", "select-many"}, {"entities", {"3", "2"}}});
+  const auto before = state(document);
+  auto copies = request(document, {{"command", "duplicate-selection"}});
+  CHECK(copies["created"] == Json::array({"4", "5"}));
+  CHECK(copies["selection"] == Json::array({"5", "4"}));
+  CHECK(copies["selected"] == "4");
+  CHECK(copies["historyEntries"].get<int>() == before["historyEntries"].get<int>() + 1);
+  auto scene = document.scene().value();
+  CHECK(scene->entity(scene->findEntity(5).value())->parent->value == 4);
+  CHECK(scene->entity(scene->findEntity(4).value())->mesh.has_value());
+  CHECK(scene->entity(scene->findEntity(4).value())->name == "Cube Copy");
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(state(document)["selection"] == before["selection"]);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["selection"] == copies["selection"]);
+  REQUIRE(document.undo(revision(document)));
+  const auto branch = request(document, {{"command", "duplicate-selection"}});
+  CHECK(branch["created"] == Json::array({"6", "7"}));
+  CHECK_FALSE(document.stats()->canRedo);
+  auto removed = request(document, {{"command", "delete-selection"}});
+  CHECK(removed["selection"].empty());
+  CHECK(removed["scene"]["entities"].size() == 3);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["selection"] == branch["selection"]);
+  CHECK(document.scene().value()->entityCount().value() == 5);
+}
+
+TEST_CASE("document.group_edits_keep_external_parents_demote_primary_and_rollback") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, Json::array({{{"op", "parent"}, {"entity", "2"}, {"parent", "1"}}}));
+  request(document, {{"command", "select"}, {"entity", "2"}});
+  auto child = request(document, {{"command", "duplicate-selection"}});
+  CHECK(document.scene()
+            .value()
+            ->entity(document.scene().value()->findEntity(3).value())
+            ->parent->value
+        == 1);
+  request(document, {{"command", "select"}, {"entity", "1"}});
+  auto root = request(document, {{"command", "duplicate-selection"}});
+  CHECK(root["created"] == Json::array({"4", "5", "6"}));
+  CHECK_FALSE(document.scene()
+                  .value()
+                  ->entity(document.scene().value()->findEntity(4).value())
+                  ->camera->primary);
+  CHECK(document.scene().value()->primaryCamera()->value == 1);
+  const auto before = document.snapshot().value();
+  const auto next = document.stats()->nextEntity;
+
+  for (const auto& bad : {Json{{"op", "remove-many"}, {"entities", {"4", "4"}}},
+                          Json{{"op", "duplicate"}, {"entities", {"4", "999"}}},
+                          Json{{"op", "remove-many"}, {"entities", Json::array()}}}) {
+    CHECK_FALSE(document.apply(
+        Json::array({{{"op", "duplicate"}, {"entities", {"2"}}}, bad}).dump(), revision(document)));
+    CHECK(document.snapshot().value() == before);
+    CHECK(document.stats()->nextEntity == next);
+  }
+
+  auto removed = edit(document, Json::array({{{"op", "remove-many"}, {"entities", {"4", "5"}}}}));
+  CHECK(removed.changed);
+  CHECK(document.scene().value()->entityCount().value() == 3);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["selected"] == "4");
+  REQUIRE(document.save(revision(document)));
+  CHECK(fixture.project().loadStartup()->entityCount().value() == 6);
+}
+
+TEST_CASE("document.group_boundaries_names_capacity_handles_and_opaque_script_data") {
+  Fixture fixture;
+  auto document = fixture.document();
+  std::string name;
+
+  for (int i = 0; i < 85; ++i) {
+    name += "晶";
+  }
+
+  name += "x";
+  edit(document, Json::array({{{"op", "name"}, {"entity", "2"}, {"name", name}},
+                              {{"op", "component"},
+                               {"entity", "1"},
+                               {"component", "audioListener"},
+                               {"value", {{"primary", true}}}}}));
+  request(document, {{"command", "select-many"}, {"entities", {"1", "2"}}});
+  const auto originalScript
+      = document.scene().value()->entity(document.scene().value()->findEntity(2).value())->script;
+  auto copies = request(document, {{"command", "duplicate-selection"}});
+  const auto scene = document.scene().value();
+  auto clonedCamera = scene->entity(scene->findEntity(3).value()).value();
+  auto clonedMesh = scene->entity(scene->findEntity(4).value()).value();
+  CHECK_FALSE(clonedCamera.camera->primary);
+  CHECK_FALSE(clonedCamera.audioListener->primary);
+  CHECK(clonedMesh.name.size() <= 256);
+  CHECK(clonedMesh.name.ends_with(" Copy"));
+  CHECK(clonedMesh.script == originalScript);
+  const auto before = document.snapshot().value();
+  std::vector<Dot::World::EntityId> excessive(10001, scene->findEntity(2).value());
+  CHECK_FALSE(document.selectMany(excessive, revision(document)));
+  CHECK(document.snapshot().value() == before);
+  auto moved = std::move(document);
+  CHECK_FALSE(document.selectMany({}, revision(moved)));
+  CHECK(moved.stats()->selection.size() == 2);
+  auto exhaustedScene = Dot::World::Scene::create().value();
+  REQUIRE(exhaustedScene.createEntityWithId("Last", std::numeric_limits<std::uint64_t>::max() - 1));
+  REQUIRE(fixture.project().saveStartup(exhaustedScene));
+  auto exhausted = fixture.document();
+  request(exhausted, {{"command", "select"}, {"entity", "18446744073709551614"}});
+  const auto exhaustedState = exhausted.snapshot().value();
+  CHECK_FALSE(exhausted.dispatch(
+      Json{{"command", "duplicate-selection"}, {"revision", std::to_string(revision(exhausted))}}
+          .dump()));
+  CHECK(exhausted.snapshot().value() == exhaustedState);
+}

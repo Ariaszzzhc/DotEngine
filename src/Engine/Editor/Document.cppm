@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,6 +25,7 @@ export namespace Dot::Editor {
     std::uint64_t revision;
     std::uint64_t scene;
     std::optional<World::EntityId> selected;
+    std::vector<World::EntityId> selection;
     std::optional<std::uint64_t> nextEntity;
     bool dirty;
     bool canUndo;
@@ -69,7 +71,8 @@ export namespace Dot::Editor {
      * scene before committing all changes, history and selection together.
      * Component/transform values use the native scene format. No-op batches
      * preserve revision/scope/history. Created reports contain surviving values.
-     * History keeps 1..1024 entries under 1 byte..512 MiB; older entries are evicted
+     * History (scene text plus selection ID bytes) keeps 1..1024 entries under
+     * 1 byte..512 MiB; older entries are evicted
      * when needed. The saved baseline may retain one additional <=64 MiB snapshot.
      * 严格 JSON 数组，1..256 操作、至多 1 MiB/64 层；完整准备最终场景后，一起提交修改、
      * 历史及选择。组件/变换使用原生场景格式；无变化批次保留版本/范围/历史，仅报告仍存活
@@ -78,6 +81,14 @@ export namespace Dot::Editor {
     [[nodiscard]] auto apply(std::string_view operations, std::uint64_t revision)
         -> Core::Result<EditReport>;
     [[nodiscard]] auto select(std::optional<World::EntityId> entity, std::uint64_t revision)
+        -> Core::Result<void>;
+    /** Ordered unique live handles, at most 10000; last is the active entity.
+     * Empty clears selection. Selection advances revision only when changed,
+     * never creates undo entries or changes scene dirty state. History includes
+     * selection storage in its byte budget; rejection preserves all state.
+     * 至多 10000 个有序且唯一的有效句柄，末项为主选；空集清空选择。仅变化时推进版本，
+     * 不增加撤销条目或改变场景未保存状态，选择存储计入历史字节预算，失败保留全部状态。 */
+    [[nodiscard]] auto selectMany(std::span<const World::EntityId> entities, std::uint64_t revision)
         -> Core::Result<void>;
     [[nodiscard]] auto undo(std::uint64_t revision) -> Core::Result<void>;
     [[nodiscard]] auto redo(std::uint64_t revision) -> Core::Result<void>;
@@ -88,7 +99,14 @@ export namespace Dot::Editor {
      * 基线，外部修改作为冲突失败；检查及替换不是 OS 比较交换，仍须串行文件编辑。
      * 保存失败保留未保存状态、版本与历史。 */
     [[nodiscard]] auto save(std::uint64_t revision) -> Core::Result<void>;
-    /** Shared automation/UI protocol: inspect, edit, select, undo, redo, save.
+    /** Shared automation/UI protocol: inspect, edit, select/select-many,
+     * duplicate-selection/delete-selection, undo, redo, save.
+     * Group operations expand descendant unions once. Copies retain external
+     * parents/native components, remap internal parents, demote primary camera/
+     * listener flags, and select mapped input IDs. Script properties stay opaque;
+     * arbitrary numbers/strings are not interpreted as entity references.
+     * 成组操作对子树并集只处理一次；副本保留外部父级/原生组件，重映射内部父级，取消
+     * 主相机/监听器标记并选中对应输入 ID。脚本属性保持不透明，不将任意值视为实体引用。
      * Mutations require a canonical decimal revision; stale requests fail before
      * effects. Responses own a full snapshot and created values. If response
      * allocation fails after commit, the revision may already have advanced.

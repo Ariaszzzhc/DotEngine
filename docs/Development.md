@@ -4244,3 +4244,73 @@ Prism Relay remain unfinished. The full engine/editor/game goal remains active.
 Final diff review added only blank separators around two control-flow blocks;
 clang-format/whitespace checks passed and the archive was rebuilt afterward.
 No executable behavior or test assertion changed after full-suite verification.
+
+
+### 2026-10-15 — Scene multiselection and group edits
+
+Document history now owns ordered unique entity selections; the last member is
+active. Changed selection advances revision without scene dirtiness/history-entry
+creation, validates owner/scope/liveness/count and includes selection payloads in
+the bounded history budget. Snapshot/stats own their sets; scene scope changes
+reconstruct fresh handles, removal prunes missing members and undo/redo restores
+each entry's selection. No selection data is written into game scenes.
+
+Transactional duplicate/remove-many operations expand descendant unions once.
+Duplication remaps internal parents, retains external parents/native components/
+asset bindings and opaque script properties, assigns fresh monotonic IDs, applies
+bounded UTF-8 copy names and demotes copied camera/listener primary flags. Input
+selection maps to copies in order. Entity/identity/light/history limits and later
+operation failures leave document/selection/ID allocation unchanged.
+
+Hierarchy plain/Command-or-Ctrl/Shift/combined clicks share replace/toggle/range/
+additive-range operations with the agent protocol. Open/filtered row order drives
+ranges, with the endpoint active and stable anchor semantics. Membership is cached
+for drawing; click requests remain owned and deferred until traversal ends. Native
+row inspection reports actual selected/active flags. Duplicate and Delete buttons/
+shortcuts use one group undo transaction. Inspector states selected count and
+active-only properties. Group transforms/framing/box selection/mixed-value fields
+are still unfinished; multi-selection hides/rejects the single-object gizmo.
+
+Four new device-free integration cases cover set/revision/history/owner/move/byte
+contracts, overlap and parent remapping, primary components, Unicode names, script
+properties, ID exhaustion, rollback and undo/redo branches. Runnable document
+acceptance now also selects/duplicates/undoes two entities. Native mouse/key cases
+cover arrow expansion, platform modifiers, inclusive range/highlighting, shortcut
+duplication/deletion and restored selection. Agent checks add reversed/additive
+ranges, stale rejection and multi-object gesture rejection.
+
+The first native test used Control-click on macOS, which Dear ImGui intentionally
+turns into right-click; platform input now uses Command on macOS and Ctrl elsewhere.
+Both native cases then passed 2/2 (2.39s). A combined focused run passed 27/28 with
+one old mouse regression missing initial selection; its unchanged input sequence
+passed three isolated repetitions (2.95s). Both pointer tests now explicitly supply
+window focus before interaction, retaining every scene/revision/history assertion.
+The acceptance extension initially had a local variable-name collision, corrected
+without compiler/environment overrides; both complete builds subsequently passed.
+
+Both builds finished before serial full validation: Debug 972/972 (223.16s), then
+Release/NDEBUG 972/972 (56.52s), including both native Hierarchy cases and the
+extended document acceptance. No test assertions were relaxed. Inventory is 908
+doctest identities plus 64 executable/script checks; overlapping labels unit 213,
+integration 644, gpu 190, offscreen 113, native 65, acceptance 115, compiler 135,
+platform 27, process 19 and audio-native 32. All 310 C/C++ files and 16 unchanged
+WGSL sources pass established formatting checks. Reviewed snapshot/handle lifetime,
+bounded selection/history accounting, subtree identity remapping, input focus/
+platform modifiers, transaction rollback and preserved single-object behavior.
+
+Actual release-directory Feature Lab inspection shows three highlighted originals
+and the active-only Inspector count; shared live commands duplicate all three,
+show three selected Copy rows and one added undo entry. One undo restores the
+exact original scene and selection, with dirty false. Normal close returns exit 0
+and removes control staging. QA request scratch is removed; response/log evidence
+is retained. Source scene/material files were not saved.
+
+The archive target refreshed the latest ZIP: 272 entries, 48,646,602 bytes and
+240 payloads matching signed source. CRC/modes/exclusions, exact font/license/HDRI
+copies/credit and cgltf notices, 13 regular Mach-O files/three relative links,
+strict signatures and portable loader/rpaths pass. Caches/latest ZIP and private
+untracked document/artwork remain preserved. Only arm64 macOS was built/run;
+Windows/Linux input branches are implemented but not locally validated. Group
+transforms, production animation/streaming and polished realistic Prism Relay are
+still unfinished. This stage advances editor scene production; the full
+large-game/mature-editor objective remains active.
