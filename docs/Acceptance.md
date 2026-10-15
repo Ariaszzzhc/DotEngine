@@ -312,3 +312,15 @@ animation movement from its script without writing the animated transform. Missi
 clips, overlapping writers, physics authority, clock retention/reverse/pause and
 session faults have focused CPU/file integration coverage. Timeline, skinning and
 TypeScript playback controls remain unfinished.
+
+
+Project-home acceptance now separates Open/Create pages and retains staged form
+values across real SDL pointer navigation. Pure CPU callback-mailbox cases verify
+borrowed path/error copying, cancellation, one-shot replies, and worker completion
+after caller retirement without borrowing GUI state. Manual macOS Release-app
+verification additionally clicked Browse, cancelled the real system picker, selected
+a creation parent, created a project, then selected that existing project through
+the picker and observed its workspace title. Parent-picker invocation used the
+shared browse-folder command; project Browse used an actual mouse click. Final
+Create-page columns were visually inspected. Windows/Linux native pickers and
+full window destruction while a picker is pending are not locally validated.

@@ -1,12 +1,28 @@
 # Project home
 
 Starting DotEditor with no arguments opens the native project home. It opens an
-existing project folder or creates a validated project from Camera and cube,
-Prism Relay or the component/SDK laboratory. All three creation choices publish
+existing project folder or creates a validated project from Empty project
+(camera/cube/starter script), Prism Relay or Feature Lab. All three creation choices publish
 one new folder under an existing parent, using the embedded engine modules and packaged compiler.
 Existing directories/files/symlinks are preserved. Select a project to enter the
 normal editor workspace; the home GUI/video resources release before that window
 opens. An open/create failure stays visible in the home for correction.
+
+The graphite launcher separates Open and Create pages with persistent form values.
+Open offers a primary Browse action plus a pasted-folder alternative. Create aligns
+project/folder names, offers parent-location browsing, explains each real template
+and previews the destination. Its content scrolls at smaller window sizes; no
+placeholder recent-project list is shown.
+
+Both Browse actions use [SDL_ShowOpenFolderDialog](https://wiki.libsdl.org/SDL3/SDL_ShowOpenFolderDialog), attached to the current native
+window. Selecting a project runs the same strict open validation as the command;
+selecting a parent only fills Location. Cancellation preserves all form values.
+Only one picker may be pending; form actions, command close and releaseWindow wait
+for its completion. A callback-owned mailbox copies SDL's borrowed UTF-8 strings
+before returning, retains no Home/window pointer, and safely delivers a result from
+another thread. The GUI owner thread consumes it once. Callback failures and invalid
+project folders remain visible for correction; no fake selection is substituted.
+Full destruction while an OS picker is pending has no manual acceptance claim.
 
 ```text
 DotEditor
@@ -53,8 +69,13 @@ the same request/response files as the workspace:
 DotEditor send <home-control> <id> <request-file>
 ```
 
-Inspect returns the three templates, running state and selected root; close ends
-the selection loop. Request IDs use 1..64 ASCII letters/digits/_/- and may not be
+Inspect returns the templates, running state, selected root, staged form,
+dialog pending/target, visible control rectangles and last message. `browse-folder`
+accepts `target: "project" | "parent"` and invokes the same native picker as the GUI.
+`stage-form` accepts a complete `value` with root/parent/folder/name/template/page;
+UTF-8/no-NUL/size/template/page checks precede assignment, while incomplete paths
+may be staged for editing. Actual open/create retains full filesystem validation.
+Close ends the selection loop when no native picker is pending. Request IDs use 1..64 ASCII letters/digits/_/- and may not be
 reused for different content. At most 4096 request files and 256 pending requests
 are allowed, with up to 16 processed per frame in lexical order. Successful
 selection marks the home session selected, rejecting later submissions.
@@ -73,5 +94,11 @@ its response, releases the GUI, opens/renders the chosen workspace and runs Play
 Stop. Other cases cover source preservation/engine module ownership, invalid inputs/compiler
 failures/no overwrite, all three template choices, thread/move/lifetime checks,
 response failure after committed creation and real CLI arguments/budgets. Local
-validation is arm64 macOS; Windows/Linux remain unvalidated. No manual mouse/
-desktop acceptance is claimed.
+validation is arm64 macOS; Windows/Linux remain unvalidated. CPU mailbox cases
+cover copied selection/error strings, cancellation, one-shot consumption and worker
+completion after caller retirement. Native acceptance covers page/form retention
+and actual SDL pointer navigation. Manual Release-app verification opened the system
+picker through the Browse button, cancelled, selected a creation parent, created a
+project and selected that existing folder through the picker to enter its workspace.
+The final Create page was visually inspected for aligned columns. Parent-picker
+invocation used the shared command; project-picker invocation used a GUI click.

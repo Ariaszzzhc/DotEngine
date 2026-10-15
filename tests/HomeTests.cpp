@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -151,4 +152,73 @@ TEST_CASE("home.invalid_native_setup_worker_requests_and_response_failure_are_ex
   CHECK_FALSE(home.step(std::chrono::milliseconds{16}));
   CHECK_FALSE(home.dispatch(fixture.request("blank", "again").dump()));
   CHECK_FALSE(std::filesystem::exists(fixture.files().root() / "again"));
+}
+
+TEST_CASE("home.native_project_pages_keep_forms_and_route_pointer_navigation") {
+  Fixture fixture;
+  auto home = fixture.home();
+  REQUIRE(home.step(std::chrono::milliseconds(16)));
+  const auto inspect
+      = [&] { return Json::parse(home.dispatch("{\"command\":\"inspect\"}").value()); };
+  auto initial = inspect();
+  CHECK(initial["form"]["page"] == "open");
+  REQUIRE(initial["controls"].contains("browseProject"));
+  CHECK_FALSE(initial["dialog"]["pending"].get<bool>());
+  auto form = initial["form"];
+  form["page"] = "create";
+  form["name"] = "中文 Project";
+  form["folder"] = "Demo";
+  form["parent"] = fixture.files().root().generic_string();
+  form["template"] = "lab";
+  REQUIRE(home.dispatch(Json{{"command", "stage-form"}, {"value", form}}.dump()));
+  REQUIRE(home.step(std::chrono::milliseconds(16)));
+  auto created = inspect();
+  CHECK(created["form"] == form);
+  CHECK(created["controls"].contains("browseParent"));
+  CHECK(created["controls"].contains("create"));
+  auto invalid = form;
+  invalid["page"] = "bad";
+  CHECK_FALSE(home.dispatch(Json{{"command", "stage-form"}, {"value", invalid}}.dump()));
+  CHECK(inspect()["form"] == form);
+  CHECK_FALSE(home.dispatch("{\"command\":\"browse-folder\",\"target\":\"bad\"}"));
+  int count{};
+  auto windows = SDL_GetWindows(&count);
+  REQUIRE(windows);
+  REQUIRE(count == 1);
+  const auto window = SDL_GetWindowID(windows[0]);
+  SDL_free(windows);
+  SDL_Event focus{};
+  focus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  focus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&focus));
+  REQUIRE(home.step(std::chrono::milliseconds(16)));
+  SDL_PumpEvents();
+  const auto row = inspect()["controls"]["openPage"];
+  const float x = row["origin"][0].get<float>() + row["size"][0].get<float>() * .5F;
+  const float y = row["origin"][1].get<float>() + row["size"][1].get<float>() * .5F;
+  SDL_Event motion{};
+  motion.motion.type = SDL_EVENT_MOUSE_MOTION;
+  motion.motion.windowID = window;
+  motion.motion.x = x;
+  motion.motion.y = y;
+  REQUIRE(SDL_PushEvent(&motion));
+
+  for (const bool down : {true, false}) {
+    SDL_Event event{};
+    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.windowID = window;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.down = down;
+    event.button.x = x;
+    event.button.y = y;
+    REQUIRE(SDL_PushEvent(&event));
+    REQUIRE(home.step(std::chrono::milliseconds(16)));
+  }
+
+  auto opened = inspect();
+  CHECK(opened["form"]["page"] == "open");
+  CHECK(opened["form"]["name"] == form["name"]);
+  CHECK(opened["form"]["parent"] == form["parent"]);
+  REQUIRE(home.dispatch("{\"command\":\"close\"}"));
+  REQUIRE(home.releaseWindow());
 }

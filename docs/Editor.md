@@ -436,6 +436,11 @@ available through the checkbox.
 
 ## Starting and creating projects
 
+The launcher separates Open/Create pages with aligned fields, persistent form values,
+real template descriptions and a destination preview. SDL native folder pickers
+support opening an existing project and choosing a creation parent. Cancellation
+preserves the form; selection/errors use the shared validated project operations.
+
 DotEditor now opens a [native project home](ProjectHome.md) by default, with open
 and validated creation from the starter project, Prism Relay and Feature Lab.
 The GUI, direct JSON command and live mailbox share the same project operations.

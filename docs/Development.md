@@ -4573,3 +4573,40 @@ uses real macOS resources; Windows/Linux have no local validation claim.
 Final combined-tree Release/NDEBUG passes 1011/1011 (47.78s). Both configurations
 include the actual native animated-model editor and relocated animated-game cases.
 The pending launcher changes are kept separate in the following cohesive commit.
+
+
+## 2026-10-15 — Project launcher and SDL folder dialogs
+
+Replaced the single blue-field form with graphite Open/Create pages, a persistent
+sidebar, aligned identity fields, actual template descriptions and a destination
+preview. Content scrolls at smaller sizes. Open Browse and creation Location Browse
+call SDL_ShowOpenFolderDialog on the GUI owner thread with its native parent window.
+Project selection uses the same strict open operation; parent selection only fills
+Location. Cancellation preserves values and failures remain visible. One outstanding
+dialog disables form mutations and rejects command close/releaseWindow until it
+finishes. Strict stage-form and browse-folder commands share the real GUI operations.
+
+Reviewed callback lifetime/threading, borrowed-string copying, one-shot consumption,
+portable paths, expected errors and ImGui stack/layout balance. Callback userdata
+owns a mailbox independent of Home/window lifetime; no GUI pointer crosses threads.
+Pure CPU cases cover cancel/error/copied UTF-8 paths and late worker completion.
+Native acceptance covers actual pointer navigation, retained forms and invalid
+staging preservation. Combined focused tests pass 13/13 (10.59s). Debug and Release
+builds pass; full Debug passes 1011/1011 (234.55s), Release/NDEBUG 1011/1011 (47.78s),
+run sequentially after both builds completed. Inventory is 944 doctest identities
+plus 67 executable/script checks; all 334 C/C++ and 16 WGSL files pass formatting.
+
+The actual Release app was visually inspected. Clicking Open Browse opened the
+macOS system picker; Cancel returned to Home. The parent browse shared command
+opened that same picker and selected Location. Shared Create entered a real new
+workspace. A fresh app's actual Browse click plus native folder selection reopened
+that project and showed DotEngine — Native Dialog Demo. Both owned app sessions
+closed normally. Final Create identity fields align. Evidence logs and the manual
+verification record remain under build/release. Full destruction during a pending
+OS picker is not manually verified. Windows/Linux rely on SDL implementation and
+have no local validation claim. The large-engine/game objective remains active.
+
+The owned DotEditorArchive target succeeds. ZIP audit passes 272 entries/240 exact
+payloads, 48,839,304 bytes, CRC and executable modes, original font/HDRI/licenses and
+private/source exclusions. Strict signatures and portable loader references pass
+for 13 regular Mach-O files/three relative links; archive staging is removed.

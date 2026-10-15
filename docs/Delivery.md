@@ -410,3 +410,30 @@ Final arm64 macOS Debug passes 1001/1001 (215.74s), Release/NDEBUG 1001/1001
 240 matching payloads with passing CRC/modes/licenses, strict signatures and portable
 loader references for 13 regular Mach-O files/three relative links. Windows/Linux
 remain implementation targets without local validation; the full goal remains active.
+
+
+The latest 2026-10-15 stages add saved animation players through model insertion,
+independent duplication/history/save, Inspector, editor Play/GameSession and native
+relocated games. Clips/bindings and runtime writer/physics authority are validated;
+failed rebinds preserve prior players. Native acceptance checks actual animated
+transforms/pixels, Stop restoration and an exported game after authoring removal.
+Visual binding/timeline tools, TypeScript playback controls, skinning/morphs/blending/
+events, streaming, production scale and realistic polished Prism Relay remain open.
+
+The project launcher now separates Open/Create pages with a coherent graphite
+style, aligned identity fields, template explanations and destination preview. SDL
+native folder pickers open projects or choose creation locations, retain forms on
+cancel and report errors. The callback owns copied results without borrowing Home.
+Manual Release-app verification clicked Browse, used/cancelled the real macOS
+picker, selected a parent, created a project and reopened it into its editor workspace.
+Parent-picker invocation used the shared command; project-picker invocation used
+the GUI. Pending-picker full window destruction is not manually verified.
+
+Both builds succeed. Full arm64 macOS Debug passes 1011/1011 (234.55s),
+Release/NDEBUG 1011/1011 (47.78s): 944 doctest identities plus 67 executable/script
+cases. All 334 C/C++ and 16 WGSL sources pass formatting. The current ZIP is
+48,839,304 bytes/272 entries/240 exact payloads, with passing CRC/modes/licenses,
+original font/HDRI payloads, strict signatures and portable loader references for
+13 regular Mach-O files/three relative links. No private input or shader sources
+are shipped; archive staging is removed. Windows/Linux have implementation support
+without local validation. These stages do not complete the full active goal.

@@ -34,9 +34,13 @@ export namespace Dot::Editor {
 
   /** Main-thread native project selector with shared commands and an owned
    * control directory. Selection stops its loop, but keeps responses alive until
-   * destruction. releaseWindow releases GUI/video before opening a workspace.
+   * destruction. Native folder selection uses an owned asynchronous SDL callback
+   * mailbox. Cancellation preserves the form; selected project folders use the
+   * same strict open operation. releaseWindow requires any dialog to finish.
+   * releaseWindow releases GUI/video before opening a workspace.
    * 主线程原生项目选择器，共享命令并持有控制目录；选择停止循环，但响应保留到销毁。
-   * releaseWindow 在打开工作区前释放 GUI/视频资源。 */
+   * 异步 SDL 文件夹选择使用拥有的回调邮箱，取消保留表单，选择项目复用严格打开操作。
+   * releaseWindow 要求对话框先完成，在打开工作区前释放 GUI/视频资源。 */
   class Home {
   public:
     [[nodiscard]] static auto open(const HomeConfig& config = {}) -> Core::Result<Home>;

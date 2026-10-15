@@ -15,6 +15,7 @@ module;
 #include <vector>
 
 #include "../Serialization/Json.hpp"
+#include "HomeDialog.hpp"
 
 module Dot.Editor.Home;
 
@@ -92,6 +93,12 @@ namespace Dot::Editor {
         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
                || c == '_' || c == '-';
       });
+    }
+
+    auto SDLCALL folderCallback(void* data, const char* const* files, int) -> void {
+      std::unique_ptr<std::shared_ptr<Detail::FolderRequest>> request(
+          static_cast<std::shared_ptr<Detail::FolderRequest>*>(data));
+      (*request)->complete(files, files ? nullptr : SDL_GetError());
     }
   }  // namespace
 
@@ -179,6 +186,10 @@ namespace Dot::Editor {
     std::string m_message;
     int m_template{};
     bool m_active{};
+    bool m_createPage{};
+    std::shared_ptr<Detail::FolderRequest> m_dialog;
+    bool m_dialogProject{};
+    Json m_controls = Json::object();
 
     Impl(Core::FileSystem resources, Core::StagedDirectory control)
         : m_resources(std::move(resources)), m_control(std::move(control)) {
@@ -193,6 +204,53 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto browse(bool project) -> Core::Result<void> {
+      if (m_dialog) {
+        return Core::fail(Core::ErrorCode::InvalidState, "A folder dialog is already open");
+      }
+
+      m_dialog = std::make_shared<Detail::FolderRequest>();
+      m_dialogProject = project;
+      m_message.clear();
+      auto ticket = std::make_unique<std::shared_ptr<Detail::FolderRequest>>(m_dialog);
+      const auto& initial = project ? m_root : m_parent;
+      SDL_ShowOpenFolderDialog(folderCallback, ticket.release(),
+                               static_cast<SDL_Window*>(m_application->window().nativeHandle()),
+                               initial.empty() ? nullptr : initial.c_str(), false);
+      return {};
+    }
+
+    auto folderReply() -> void {
+      if (!m_dialog) {
+        return;
+      }
+
+      auto reply = m_dialog->take();
+
+      if (!reply) {
+        return;
+      }
+
+      m_dialog.reset();
+
+      if (reply->status == Detail::FolderStatus::Failed) {
+        m_message = reply->error;
+      } else if (reply->status == Detail::FolderStatus::Selected) {
+        if (reply->path.empty() || reply->path.size() > 16384 || !Core::isValidUtf8(reply->path)) {
+          m_message = "The selected folder path is invalid";
+          return;
+        }
+
+        if (m_dialogProject) {
+          m_root = std::move(reply->path);
+          auto opened = execute(Json{{"command", "open"}, {"root", m_root}}.dump());
+          m_message = opened ? "Project ready" : opened.error().message;
+        } else {
+          m_parent = std::move(reply->path);
+        }
+      }
+    }
+
     auto execute(std::string_view request) -> Core::Result<std::string> {
       try {
         const auto value = parsed(request);
@@ -204,6 +262,19 @@ namespace Dot::Editor {
               {"ok", true},
               {"templates", catalog()},
               {"running", m_application && m_application->running()},
+              {"form",
+               {{"root", m_root},
+                {"parent", m_parent},
+                {"folder", m_folder},
+                {"name", m_name},
+                {"template", catalog()[static_cast<std::size_t>(m_template)]["id"]},
+                {"page", m_createPage ? "create" : "open"}}},
+              {"dialog",
+               {{"pending", bool(m_dialog)},
+                {"target",
+                 m_dialog ? Json(m_dialogProject ? "project" : "parent") : Json(nullptr)}}},
+              {"controls", m_controls},
+              {"message", m_message},
               {"selected", m_selected ? Json(utf(m_selected->files()->root())) : Json(nullptr)}}
               .dump();
         }
@@ -215,8 +286,69 @@ namespace Dot::Editor {
 
         if (command == "close") {
           Codec::requireFields(value, {"command"});
+
+          if (m_dialog) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Cancel or complete the folder dialog before closing");
+          }
+
           m_application->stop();
           return Json{{"ok", true}, {"running", false}}.dump();
+        }
+
+        if (command == "browse-folder") {
+          Codec::requireFields(value, {"command", "target"});
+          const auto target = value["target"].get<std::string>();
+
+          if (target != "project" && target != "parent") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown folder dialog target");
+          }
+
+          auto shown = browse(target == "project");
+          return shown ? execute("{\"command\":\"inspect\"}") : std::unexpected(shown.error());
+        }
+
+        if (m_dialog) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Complete or cancel the folder dialog first");
+        }
+
+        if (command == "stage-form") {
+          Codec::requireFields(value, {"command", "value"});
+          const auto& form = value["value"];
+          Codec::requireFields(form, {"root", "parent", "folder", "name", "template", "page"});
+
+          for (const auto* key : {"root", "parent", "folder", "name"}) {
+            const auto text = form[key].get<std::string>();
+
+            if (text.size() > 16384 || !Core::isValidUtf8(text)
+                || text.find('\0') != std::string::npos) {
+              return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid project form text");
+            }
+          }
+
+          const auto choices = catalog();
+          int index = -1;
+
+          for (std::size_t i = 0; i < choices.size(); ++i) {
+            if (choices[i]["id"] == form["template"]) {
+              index = static_cast<int>(i);
+            }
+          }
+
+          if (index < 0 || (form["page"] != "open" && form["page"] != "create")) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Unknown project form template/page");
+          }
+
+          m_root = form["root"].get<std::string>();
+          m_parent = form["parent"].get<std::string>();
+          m_folder = form["folder"].get<std::string>();
+          m_name = form["name"].get<std::string>();
+          m_template = index;
+          m_createPage = form["page"] == "create";
+          m_message.clear();
+          return execute("{\"command\":\"inspect\"}");
         }
 
         auto selected = performProjectAction(m_resources, request);
@@ -312,53 +444,229 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto control(const char* id) -> void {
+      const auto begin = ImGui::GetItemRectMin();
+      const auto end = ImGui::GetItemRectMax();
+      m_controls[id]
+          = {{"origin", {begin.x, begin.y}}, {"size", {end.x - begin.x, end.y - begin.y}}};
+    }
+
     auto draw() -> Core::Result<void> {
-      auto& io = ImGui::GetIO();
+      auto& style = ImGui::GetStyle();
+      ImGui::StyleColorsDark();
+      style.WindowPadding = {24, 24};
+      style.FramePadding = {10, 7};
+      style.ItemSpacing = {10, 10};
+      style.FrameRounding = 4;
+      style.ChildRounding = 4;
+      style.FrameBorderSize = 1;
+      style.Colors[ImGuiCol_WindowBg] = {0.125F, 0.133F, 0.149F, 1};
+      style.Colors[ImGuiCol_ChildBg] = style.Colors[ImGuiCol_WindowBg];
+      style.Colors[ImGuiCol_Text] = {.902F, .910F, .929F, 1};
+      style.Colors[ImGuiCol_TextDisabled] = {.592F, .616F, .659F, 1};
+      style.Colors[ImGuiCol_Border] = {.216F, .231F, .263F, 1};
+      style.Colors[ImGuiCol_FrameBg] = {.090F, .098F, .114F, 1};
+      style.Colors[ImGuiCol_Button] = {.157F, .173F, .200F, 1};
+      style.Colors[ImGuiCol_ButtonHovered] = {.208F, .294F, .427F, 1};
+      style.Colors[ImGuiCol_Header] = {.208F, .294F, .427F, 1};
+      style.Colors[ImGuiCol_CheckMark] = {.424F, .620F, 1, 1};
+      m_controls = Json::object();
+      const auto size = ImGui::GetIO().DisplaySize;
       ImGui::SetNextWindowPos({0, 0});
-      ImGui::SetNextWindowSize(io.DisplaySize);
-      ImGui::Begin("DotEngine Projects", nullptr,
-                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+      ImGui::SetNextWindowSize(size);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+      ImGui::Begin(
+          "DotEngine Projects", nullptr,
+          ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+      ImGui::PopStyleVar();
+      ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{.094F, .102F, .118F, 1});
+      ImGui::BeginChild("Navigation", {184, 0}, ImGuiChildFlags_AlwaysUseWindowPadding);
+      const auto logo = ImGui::GetCursorScreenPos();
+      ImGui::GetWindowDrawList()->AddCircleFilled({logo.x + 9, logo.y + 9}, 4,
+                                                  IM_COL32(108, 158, 255, 255));
+      ImGui::Dummy({18, 18});
+      ImGui::SameLine();
       ImGui::TextUnformatted("DotEngine");
-      ImGui::TextWrapped("Create a project or open an existing project folder.");
-      ImGui::Separator();
-      ImGui::InputText("Project folder", &m_root);
+      ImGui::Dummy({0, 26});
+      ImGui::TextDisabled("PROJECTS");
+      ImGui::BeginDisabled(bool(m_dialog));
+
+      if (ImGui::Selectable("Open project", !m_createPage, 0, {0, 32})) {
+        m_createPage = false;
+        m_message.clear();
+      }
+
+      control("openPage");
+
+      if (ImGui::Selectable("Create project", m_createPage, 0, {0, 32})) {
+        m_createPage = true;
+        m_message.clear();
+      }
+
+      control("createPage");
+      ImGui::EndDisabled();
+      ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), size.y - 72));
+      ImGui::TextDisabled("Desktop editor");
+      ImGui::TextDisabled("C++ / TypeScript");
+      ImGui::EndChild();
+      ImGui::PopStyleColor();
+      ImGui::SameLine(0, 0);
+      ImGui::BeginChild("Project content", {0, 0}, ImGuiChildFlags_AlwaysUseWindowPadding);
+      ImGui::SetWindowFontScale(1.5F);
+      ImGui::TextUnformatted(m_createPage ? "Create a project" : "Projects");
+      ImGui::SetWindowFontScale(1);
+      ImGui::TextDisabled(m_createPage ? "Choose a starting point and a location."
+                                       : "Open a project folder, or start something new.");
+      ImGui::Dummy({0, 12});
+      ImGui::BeginDisabled(bool(m_dialog));
+      const auto primary = [&](const char* label, const char* id) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{.208F, .400F, .710F, 1});
+        const bool clicked = ImGui::Button(label, {200, 38});
+        control(id);
+        ImGui::PopStyleColor();
+        return clicked;
+      };
       const auto action = [&](const Json& request) {
         auto result = execute(request.dump());
         m_message = result ? "Project ready" : result.error().message;
       };
+      const auto browseAction = [&](bool project) {
+        auto shown = browse(project);
 
-      if (ImGui::Button("Open project")) {
-        action({{"command", "open"}, {"root", m_root}});
+        if (!shown) {
+          m_message = shown.error().message;
+        }
+      };
+
+      if (!m_createPage) {
+        ImGui::TextUnformatted("Open an existing project");
+        ImGui::TextDisabled("Select the folder containing project.dotproject.");
+
+        if (primary("Browse for project...", "browseProject")) {
+          browseAction(true);
+        }
+
+        ImGui::Dummy({0, 12});
+        ImGui::TextUnformatted("Project folder");
+        ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+        ImGui::InputTextWithHint("##project-path", "Paste a folder path", &m_root);
+        control("projectRoot");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(m_root.empty());
+
+        if (ImGui::Button("Open", {90, 0})) {
+          action({{"command", "open"}, {"root", m_root}});
+        }
+
+        control("open");
+        ImGui::EndDisabled();
+        ImGui::Dummy({0, 20});
+        ImGui::Separator();
+        ImGui::Dummy({0, 12});
+        ImGui::TextUnformatted("Start a new project");
+        ImGui::TextDisabled("A clean scene, an example game, or Feature Lab.");
+
+        if (ImGui::Button("Choose a template", {200, 36})) {
+          m_createPage = true;
+        }
+      } else {
+        if (ImGui::BeginTable("Project identity", 2, ImGuiTableFlags_SizingStretchSame)) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted("Project name");
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted("Folder name");
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::SetNextItemWidth(-1);
+          ImGui::InputText("##project-name", &m_name);
+          control("projectName");
+          ImGui::TableNextColumn();
+          ImGui::SetNextItemWidth(-1);
+          ImGui::InputText("##project-folder", &m_folder);
+          control("projectFolder");
+          ImGui::EndTable();
+        }
+
+        ImGui::TextUnformatted("Location");
+        ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+        ImGui::InputTextWithHint("##parent-path", "Choose a parent folder", &m_parent);
+        control("parentPath");
+        ImGui::SameLine();
+
+        if (ImGui::Button("Browse...", {90, 0})) {
+          browseAction(false);
+        }
+
+        control("browseParent");
+        ImGui::TextUnformatted("Template");
+        constexpr const char* names[]{"Empty project", "Prism Relay", "Feature Lab"};
+        constexpr const char* descriptions[]{"Camera, cube and a starter script",
+                                             "Playable 3D sample project",
+                                             "Engine capabilities and scripting examples"};
+
+        for (int i = 0; i < 3; ++i) {
+          ImGui::PushID(i);
+          const auto cursor = ImGui::GetCursorPos();
+
+          if (ImGui::Selectable("##template", m_template == i, 0, {0, 48})) {
+            m_template = i;
+          }
+
+          const auto id = "template" + std::to_string(i);
+          control(id.c_str());
+          const auto next = ImGui::GetCursorPos();
+          ImGui::SetCursorPos({cursor.x + 10, cursor.y + 3});
+          ImGui::TextUnformatted(names[i]);
+          ImGui::SetCursorPos({cursor.x + 10, cursor.y + 25});
+          ImGui::TextDisabled("%s", descriptions[i]);
+          ImGui::SetCursorPos(next);
+          ImGui::PopID();
+        }
+
+        if (!m_parent.empty() && !m_folder.empty()) {
+          ImGui::TextDisabled("Create in:");
+          ImGui::SameLine();
+          ImGui::TextWrapped("%s / %s", m_parent.c_str(), m_folder.c_str());
+        }
+
+        ImGui::BeginDisabled(m_parent.empty() || m_folder.empty() || m_name.empty());
+
+        if (primary("Create project", "create")) {
+          constexpr const char* ids[]{"blank", "prism", "lab"};
+          action({{"command", "create"},
+                  {"parent", m_parent},
+                  {"folder", m_folder},
+                  {"name", m_name},
+                  {"template", ids[m_template]}});
+        }
+
+        ImGui::EndDisabled();
       }
 
-      ImGui::Separator();
-      ImGui::InputText("Existing parent directory", &m_parent);
-      ImGui::InputText("New folder", &m_folder);
-      ImGui::InputText("Project name", &m_name);
-      constexpr const char* choices[]{"Camera and cube", "Prism Relay game",
-                                      "Component and SDK lab"};
-      ImGui::Combo("Template", &m_template, choices, 3);
+      ImGui::EndDisabled();
 
-      if (ImGui::Button("Create project")) {
-        constexpr const char* ids[]{"blank", "prism", "lab"};
-        action({{"command", "create"},
-                {"parent", m_parent},
-                {"folder", m_folder},
-                {"name", m_name},
-                {"template", ids[m_template]}});
+      if (m_dialog) {
+        ImGui::TextDisabled("Waiting for folder selection...");
       }
 
       if (!m_message.empty()) {
+        ImGui::Spacing();
+        ImGui::TextColored({1, .62F, .52F, 1}, "Unable to continue");
         ImGui::TextWrapped("%s", m_message.c_str());
       }
 
+      ImGui::EndChild();
       ImGui::End();
       return {};
     }
 
     auto callbacks() -> Core::LoopCallbacks {
       Core::LoopCallbacks value;
-      value.prepareFrame = [&](const auto&) { return mailbox(); };
+      value.prepareFrame = [&](const auto&) {
+        folderReply();
+        return mailbox();
+      };
       value.render = [&](const auto& frame) {
         return m_renderer
             ->presentGui([&] { return draw(); },
@@ -579,6 +887,11 @@ namespace Dot::Editor {
 
     if (!checked) {
       return checked;
+    }
+
+    if (m_impl->m_dialog) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Complete or cancel the native folder dialog before releasing the window");
     }
 
     m_impl->m_events = {};

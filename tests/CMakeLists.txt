@@ -41,6 +41,7 @@ add_executable(DotUnitTests
     AxisDragTests.cpp
     AnimationClipTests.cpp
     AnimationPlayerTests.cpp
+    HomeDialogTests.cpp
     SceneAnimatorTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
@@ -341,7 +342,7 @@ add_dependencies(DotTemplateTests DotExamples)
 dotDiscoverTests(DotTemplateTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotHomeTests main.cpp HomeTests.cpp)
-target_link_libraries(DotHomeTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_link_libraries(DotHomeTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json SDL3::SDL3)
 target_compile_definitions(DotHomeTests PRIVATE DOT_EDITOR_RESOURCES="$<TARGET_FILE_DIR:DotEditor>/resources")
 add_dependencies(DotHomeTests DotEditor)
 dotDiscoverTests(DotHomeTests LABELS "acceptance;gpu;native" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
