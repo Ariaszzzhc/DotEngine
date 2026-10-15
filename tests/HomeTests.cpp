@@ -8,6 +8,8 @@
 #include <string>
 #include <thread>
 
+import Dot.Animation.Files;
+import Dot.World.Scene;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -65,7 +67,22 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
     CHECK(result->loadStartup()->entityCount().value()
           == (std::string_view(choice) == "blank"   ? 2
               : std::string_view(choice) == "prism" ? 40
-                                                    : 15));
+                                                    : 16));
+
+    if (std::string_view(choice) == "lab") {
+      const auto startup = result->loadStartup().value();
+      const auto players = startup.animationPlayers().value();
+      REQUIRE(players.size() == 1);
+      CHECK(startup.entity(players[0].entity)->name == "Animated panel");
+      REQUIRE(players[0].properties.clips.size() == 2);
+
+      for (const auto& path : players[0].properties.clips) {
+        auto clip = Animation::loadClip(result->files().value(), path);
+        REQUIRE_MESSAGE(clip, (clip ? "" : clip.error().message));
+        CHECK(clip->duration().value() == 2);
+      }
+    }
+
     CHECK_FALSE(Editor::performProjectAction(resources, request.dump()));
     auto bytes = result->files()->root().generic_u8string();
     REQUIRE(Editor::performProjectAction(

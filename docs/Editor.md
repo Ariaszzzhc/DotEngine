@@ -733,7 +733,7 @@ mesh/material/image/node and animation counts, generated scene and native model
 descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
 Add model to scene retains the animation player and remaps its node targets.
 Inspector supports clip/clock/loop/auto-play settings; Play uses the same native
-GameSession as exported games. Timeline/TypeScript playback controls remain unfinished.
+GameSession as exported games. TypeScript playback controls use the same players; timeline tools remain unfinished.
 Import publishes reusable resources without dirtying the scene; instantiation needs the
 current authoring revision. A failed catalog refresh after publication explicitly
 reports that the bundle was committed. Existing destinations are never overwritten.

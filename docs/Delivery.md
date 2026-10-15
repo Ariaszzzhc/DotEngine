@@ -11,19 +11,19 @@ and its evidence; passing these tests does not establish missing product capabil
 | Required native stack | Pinned vcpkg manifest: SDL3, Dawn, GLM, miniaudio, Jolt, EnTT, Go TypeScript compiler and QuickJS-NG; actual GPU, audio, physics and compiler acceptance |
 | Create/open projects and edit games | [Project home](ProjectHome.md) creates three validated templates; [workspace](Editor.md) edits native scene/hierarchy/components, resources and TypeScript, with undo/redo and conflict-aware saves |
 | Surface image/texture resources | [Rendering](Rendering.md): bounded PNG/JPEG/Radiance import, explicit color spaces, shared GPU textures/samplers/mips and unlit material base-color sampling; native pixel/lifetime checks |
-| Direct physical rendering | Metallic/roughness GGX, normal/emissive/data texture slots, directional/point/spot lights and perspective/orthographic view rays; saved material/light components, shared preview/Play/export, basic inspector/agent authoring and actual gallery/pixel/lifetime checks; dedicated material tooling remains planned |
+| Direct physical rendering | Metallic/roughness GGX, normal/emissive/data texture slots, directional/point/spot lights and perspective/orthographic view rays; saved material/light components, shared preview/Play/export, structured material Inspector, isolated studio/scene preview, asset thumbnails and actual gallery/pixel/lifetime checks; material graphs remain planned |
 | Environment preprocessing foundation | Real HDR panorama GPU conversion, diffuse convolution, GGX reflection mips, correlated-Smith BRDF LUT, shared residency/lifetime and actual Poly Haven input; authored IBL consumption is implemented; async bake/cache/streaming remains planned |
 | HDRI renderer consumption | Explicit shared binding, single-scattering split-sum PBR, mapped normals, roughness reflections, yaw/intensity, camera sky, shared HDR/depth, scene-camera integration and actual HDRI-lit gallery; scene persistence, bounded HDRI caches, editor drafts/undo/Play/export and offline Feature Lab delivery now consume IBL; async baking/streaming remains planned |
 | Authored geometric SSAO | Saved optional settings, depth/world-normal guides, bounded radial search and bilateral filtering, diffuse IBL composition, transactional Rendering pane, preview/Play/relocated exports, actual grayscale/HDR and owned working-map release; temporal quality and scalability remain planned |
 | Directional soft shadows | Saved optional single directional source, stabilized 1..4 cascades, real depth passes, sixteen-tap/hardware PCF, receiver-plane correction, mesh cast/receive, overlap blending, inspector/agent/Play/export and actual hard/soft/disabled images; point/spot/contact-hardening/scalability remains planned |
 | HDR display pipeline | Linear RGBA16F scenes, emissive radiance, raw pre-map readback, exposure, Reinhard/ACES fitted mapping and single sRGB output across immediate/persistent/native scene rendering; camera/editor exposure authoring remains planned |
-| Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio; hot reload retains compatible state |
+| Entity-attached ESM scripting | [Scripting](Scripting.md) compiles TypeScript, attaches lifecycle objects to native entities and exposes scene/components/input/physics/audio/animation; hot reload retains compatible state |
 | Engine-owned script modules | `dot:engine`/`dot:host` registry embedded in the static library; injected matching declarations, extensionless relative resolution, nonexecuting static graph validation and real reload/export/relocation coverage |
 | External source editor | Resources/new-script/Script inspector/diagnostics share validated default-app opening; embedded source UI removed; agent file buffers/check/hot reload preserved; actual macOS TextEdit and Zed file-path verification |
 | Agent control of authoring | GUI and strict JSON commands share implementation; CLI and live mailbox cover creation, inspection, scene/resource/script edits, type checks, Play, saving, export and close |
 | Play and export | Play isolates the authoring scene; [native export](Export.md) includes player, compiled ESM, scene/assets and runtime libraries; relocated player runs after authoring deletion |
 | Playable example | [Prism Relay](Examples.md): collection, collisions, hazards, audio, score, deadline, pause, victory/defeat, restart and reload; real native input/GPU/audio acceptance |
-| Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 81 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
+| Dedicated feature acceptance | [Feature Lab](Acceptance.md) covers every native component and all 93 runtime SDK members; focused subsystem suites add invalid input, boundaries, resource lifetime and failure recovery |
 | Deployable editor | [Portable distribution](Distribution.md) includes compiler/embedded modules/font/templates/player and dependencies; relocated editor creates, checks, previews, runs and exports an independent game |
 
 Development proceeded in reviewed, tested commits from core files/processes/events
@@ -32,18 +32,14 @@ editor. [Development log](Development.md) records actual stage results and earli
 limitations at the time of each entry. Local tests run with both Debug and optimized
 Release/NDEBUG; acceptance includes real services rather than mocked success.
 
-Latest arm64 macOS Debug and Release/NDEBUG suites each pass 883/883 CTest cases
-(822 doctest cases and 61 executable checks), taking 163.10 and 34.00 seconds.
-The [test layers](Testing.md) separate 201 pure CPU unit cases from files/compiler/
-platform integration, 87 offscreen GPU cases and native/acceptance workflows.
-The earlier 184-case unit selection passed with deliberately invalid SDL drivers;
-the current 201-case selection adds pure URI/diagnostic environment, shadow and occlusion checks.
-All 271 engine/application/test C/C++ files pass formatting checks; the fourteen WGSL
-sources are maintained separately with consistent indentation, spacing and blocks. The current 259-entry native zip
-passes CRC/executable-permission checks; all 16 Mach-O files pass strict signatures
-and relative/system loader-reference inspection. Its extracted macOS application
-starts through LaunchServices, also after moving the application alone. Complete
-source/package examples open and compile with embedded engine modules.
+Latest arm64 macOS Debug and Release/NDEBUG each pass 1019/1019 CTest identities
+(952 doctest cases and 67 executable/script checks), taking 228.83s and 45.93s.
+The [test layers](Testing.md) separate 229 pure CPU unit cases from 668 integration,
+117 offscreen GPU, 70 native and 122 acceptance cases; labels overlap. All 334
+current engine/application/test C/C++ files and 16 WGSL files pass formatting.
+The native animation SDK and interactive Feature Lab are covered through actual
+TypeScript, SDL input, GPU/audio, isolated editor Play and relocated game exports.
+Final package evidence for these stages is recorded at the end of this document.
 
 All former acceptance dispatch/implementations are now development-only targets
 under `tests/acceptance`, compiled only with `BUILD_TESTING=ON`. An actual OFF build
@@ -56,16 +52,20 @@ paths. Native processes, files and dependency packaging have platform branches.
 Only arm64 macOS has been built and run locally; no Windows/Linux result is claimed.
 The caller's LLVM/compiler/linker environment is preserved.
 
-The current renderer draws colored meshes with cameras and depth; asset import is
-bounded OBJ/dotmesh retaining authored normals and UVs. Surface attributes are
-persisted and uploaded; the shader samples base-color textures and multiplies
-linear material/vertex/object colors and emission into HDR before exposure/tone
-mapping/display encoding. Renderer API material draws additionally support direct
-physical lighting with persisted material/light authoring and bounded shared asset caches. The editor uses
-component inspectors, external source opening and bounded agent file drafts. These are the delivered feature boundaries, not promises of material/lighting
-systems or a general IDE. Runtime-member coverage is not exhaustive driver/device
-or argument-permutation coverage. macOS copies are ad-hoc signed and locally tested;
-release identity signing/notarization and installer publication have not been performed.
+The renderer retains authored normals/UVs/tangents and imports bounded OBJ, DotMesh
+and static/rigid-animated glTF/GLB content into native PBR meshes/materials/images.
+It consumes direct lights, HDRI IBL, directional soft shadows and geometric SSAO,
+composes HDR radiance and tone maps for display. Scene authoring and shared caches
+span editor preview, Play and exports. The editor has docked panels, an independent
+camera, picking, single/group gizmos, multiselection/history, material/asset tools,
+external source opening and bounded agent drafts. Saved node-animation players and
+script controls now share the native GameSession path. Skinning, blending, visual
+animation authoring, streaming, populated-game performance, broader production
+editor tools and polished realistic Prism Relay remain unfinished. macOS copies
+are ad-hoc signed and locally tested; release identity signing/notarization and
+installer publication have not been performed.
+
+## Earlier delivery stages
 
 
 Independent editor view/navigation, actual opaque GPU picking and transformed mesh
@@ -437,3 +437,33 @@ original font/HDRI payloads, strict signatures and portable loader references fo
 13 regular Mach-O files/three relative links. No private input or shader sources
 are shipped; archive staging is removed. Windows/Linux have implementation support
 without local validation. These stages do not complete the full active goal.
+
+
+The latest native animation control stages add atomic clip replacement using
+original node binding poses, transient play/resume/restart, pause, stop, seek and
+speed/loop configuration. dot:engine exports typed animation state/services and
+Entity conveniences. Script preparation/migration reads are observational; controls
+remain prohibited there. Owned callbacks retain scene/backend lifetime and reject
+foreign/stale/missing/disabled owners, wrong threads and malformed inputs.
+
+Feature Lab includes a saved PBR panel and two native clips: Digit 1/2 switch and
+Space pauses/resumes. Native input checks actual pose changes and retained authoring
+descriptions; editor Play and relocated standalone tests use the same project.
+Its independent inventory verifies 93 SDK members and six extra behavior checks.
+Checks span initialization/first update within unchanged host-call limits, and
+fixed-name resolution is cached per realm without caching native property values.
+The standalone TRS acceptance saves a tenth actual switch image and verifies atomic
+old-channel restoration and final bind-pose pixels. Skinning, blending/state
+machines/events, visual animation tools, streaming/populated-game scale and polished
+realistic Prism Relay remain unfinished; the full objective stays active.
+
+Final Debug passes 1019/1019 (228.83s), Release/NDEBUG 1019/1019 (45.93s), after
+updating the template's entity expectation and adding actual copied-clip checks.
+The first Debug full run's lone stale expectation is recorded in Development.md.
+
+The owned archive target succeeds. The latest ZIP is 48,883,115 bytes, 276 entries
+and 244 exact payloads. Both shipped Feature Lab copies contain the exact two
+source clip files and the saved panel binding. CRC/executable modes, original
+font/HDRI/licenses, private/source exclusions, strict signatures and portable loader
+references pass for 13 regular Mach-O files/three relative links. Private archive
+staging is removed. Only arm64 macOS execution is validated.

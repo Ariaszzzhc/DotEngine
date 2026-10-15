@@ -179,11 +179,12 @@ streaming and realistic polished Prism Relay remain unfinished.
 Native immutable TRS clips now support Step/Linear/CubicSpline, strict native clip
 assets and explicit scene-bound playback with reverse/loop/pause/seek/stop. Sampling
 and local transforms commit atomically with clock state; actual offscreen reference
-pixels, saved clips/nine frames and resource release have acceptance coverage.
+pixels, saved clips/ten frames and resource release have acceptance coverage.
 glTF/GLB TRS animated-node import now retains native clips and persisted model
 node bindings, with independent bundle reload and actual animated reference pixels.
 Saved animation players now span scene insertion/duplication/history/save, Inspector,
-GameSession/editor Play and relocated native exports. SDK playback controls, visual
+GameSession/editor Play and relocated native exports. Native clip switching and SDK
+playback controls are now available, including actual Feature Lab keyboard controls, editor Play and relocated games. Visual
 bindings/timeline, skinning/morphs/blending/state machines/events and animation
 streaming are still unfinished. Production animation and realistic polished
 Prism Relay remain open.

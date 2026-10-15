@@ -443,6 +443,51 @@ export const audio = Object.freeze({
   },
 });
 
+export interface AnimationState {
+  clip: number;
+  asset: string;
+  name: string;
+  durationSeconds: number;
+  timeSeconds: number;
+  speed: number;
+  looping: boolean;
+  playing: boolean;
+}
+
+/**
+ * Native animation controls; saved descriptions remain unchanged. Same-clip play
+ * resumes unless restart; a different clip restores former channels and applies
+ * its directional start atomically. Stop restores original binding poses. Reads
+ * describe the last synchronized player; scripts cannot advance the native clock.
+ * 原生动画控制，不修改保存描述；同片默认恢复、restart 重启，换片原子恢复旧通道并应用
+ * 正/反向起点。停止恢复最初绑定姿态；查询反映最近同步状态，脚本不能推进原生时钟。
+ */
+export const animation = Object.freeze({
+  state(entity: EntityId): AnimationState {
+    return invoke('animation.state', [entity]) as AnimationState;
+  },
+
+  play(entity: EntityId, clip: number|null = null, restart = false): void {
+    invoke('animation.play', [entity, clip, restart]);
+  },
+
+  pause(entity: EntityId): void {
+    invoke('animation.pause', [entity]);
+  },
+
+  stop(entity: EntityId): void {
+    invoke('animation.stop', [entity]);
+  },
+
+  seek(entity: EntityId, seconds: number): void {
+    invoke('animation.seek', [entity, seconds]);
+  },
+
+  configure(entity: EntityId, speed: number, looping: boolean): void {
+    invoke('animation.configure', [entity, speed, looping]);
+  },
+});
+
 export interface EntityInfo {
   readonly id: EntityId;
   name: string;
@@ -576,6 +621,30 @@ export class Entity {
 
   seekAudio(sourceFrame: string): void {
     audio.seek(this.id, sourceFrame);
+  }
+
+  get animationState(): AnimationState {
+    return animation.state(this.id);
+  }
+
+  playAnimation(clip: number|null = null, restart = false): void {
+    animation.play(this.id, clip, restart);
+  }
+
+  pauseAnimation(): void {
+    animation.pause(this.id);
+  }
+
+  stopAnimation(): void {
+    animation.stop(this.id);
+  }
+
+  seekAnimation(seconds: number): void {
+    animation.seek(this.id, seconds);
+  }
+
+  configureAnimation(speed: number, looping: boolean): void {
+    animation.configure(this.id, speed, looping);
   }
 
   get physicsBody(): PhysicsBodyState {

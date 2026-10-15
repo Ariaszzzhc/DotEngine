@@ -1,6 +1,5 @@
+import {animation, audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
-
-import {audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, ScriptComponent, type Transform} from "dot:engine";
 
 /**
  * Equality checks compare DTO contents independently of member order, with native float tolerance.
@@ -33,6 +32,7 @@ function equal(first: unknown, second: unknown): boolean {
  */
 export class Audit extends ScriptComponent<{contract: string}> {
   #checked = new Set<string>();
+  #authored = new Map<string, Entity>();
   #starts = 0;
   #fixed = 0;
   #updates = 0;
@@ -63,7 +63,17 @@ export class Audit extends ScriptComponent<{contract: string}> {
   }
 
   private entity(name: string): Entity {
-    const found = scene.entities().find(entity => entity.name === name);
+    /**
+     * Authored probes keep scene-scoped IDs; resolve names once per script realm.
+     * 固定编辑探针保留场景范围 ID，每个脚本 realm 只解析一次名称。
+     */
+    if (this.#authored.size === 0) {
+      for (const entity of scene.entities()) {
+        this.#authored.set(entity.name, entity);
+      }
+    }
+
+    const found = this.#authored.get(name);
 
     if (!found) {
       throw new Error('Missing authored probe: ' + name);
@@ -262,6 +272,50 @@ export class Audit extends ScriptComponent<{contract: string}> {
     voice.playAudio();
   }
 
+  private animationChecks(): void {
+    const panel = this.entity('Animated panel');
+    const authored = panel.transform;
+    const snapshot = animation.state(panel.id);
+    this.check('animation.state', snapshot.clip === 0 && snapshot.name === 'Panel lift');
+    snapshot.timeSeconds = 10;
+    this.check('Entity.animationState.get', panel.animationState.timeSeconds === 0);
+    animation.play(panel.id, 0, true);
+    this.check('animation.play', panel.animationState.playing);
+    animation.pause(panel.id);
+    this.check('animation.pause', !panel.animationState.playing);
+    animation.seek(panel.id, 1);
+    this.check('animation.seek', panel.transform.position.y === 1.5);
+    animation.configure(panel.id, -1, false);
+    this.check(
+        'animation.configure', panel.animationState.speed === -1 && !panel.animationState.looping);
+    animation.stop(panel.id);
+    this.check('animation.stop', equal(panel.transform, authored) && !panel.animationState.playing);
+    panel.playAnimation(1, true);
+    this.check(
+        'Entity.playAnimation',
+        panel.animationState.clip === 1 && panel.animationState.timeSeconds === 2);
+    panel.pauseAnimation();
+    this.check('Entity.pauseAnimation', !panel.animationState.playing);
+    panel.seekAnimation(1);
+    this.check(
+        'Entity.seekAnimation',
+        panel.animationState.timeSeconds === 1 && Math.abs(panel.transform.rotation.y) > 0.3);
+    panel.configureAnimation(1, true);
+    this.check(
+        'Entity.configureAnimation',
+        panel.animationState.speed === 1 && panel.animationState.looping);
+    panel.stopAnimation();
+    this.check(
+        'Entity.stopAnimation', equal(panel.transform, authored) && !panel.animationState.playing);
+    this.expectedError(() => {
+      panel.playAnimation(2);
+    }, 'InvalidArgument');
+    this.check(
+        'animation.failedControl',
+        panel.animationState.clip === 1 && !panel.animationState.playing);
+    panel.playAnimation(0, true);
+  }
+
   private publish(): void {
     const report = this.entity('Report');
     const description = report.script;
@@ -280,10 +334,12 @@ export class Audit extends ScriptComponent<{contract: string}> {
       input: input.snapshot() as unknown as JsonValue,
       physics: physics.stats() as unknown as JsonValue,
       contacts: physics.contacts as unknown as JsonValue,
-      audio: audio.stats() as unknown as JsonValue
+      audio: audio.stats() as unknown as JsonValue,
+      animation: this.entity('Animated panel').animationState as unknown as JsonValue
     };
     report.script = description;
-    scene.rename('Feature Lab | ' + this.#checked.size + ' checks | D moves body');
+    scene.rename(
+        'Feature Lab | ' + this.#checked.size + ' checks | D move | 1/2 animation | Space pause');
   }
 
   onStart(): void {
@@ -308,7 +364,26 @@ export class Audit extends ScriptComponent<{contract: string}> {
   onUpdate(seconds: number): void {
     ++this.#updates;
     this.check('ScriptComponent.onUpdate', super.onUpdate(seconds) === undefined);
+
+    if (!this.#checked.has('animation.failedControl')) {
+      this.animationChecks();
+    }
+
     this.inputChecks();
+    const panel = this.entity('Animated panel');
+
+    if (input.key('Digit1').pressed || input.key('Digit2').pressed) {
+      panel.playAnimation(input.key('Digit2').pressed ? 1 : 0, true);
+    }
+
+    if (input.key('Space').pressed) {
+      if (panel.animationState.playing) {
+        panel.pauseAnimation();
+      } else {
+        panel.playAnimation();
+      }
+    }
+
     this.publish();
   }
 
@@ -316,6 +391,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     ++this.#stops;
     this.check('ScriptComponent.onStop', super.onStop() === undefined);
     this.entity('Voice').stopAudio();
+    this.entity('Animated panel').stopAnimation();
     this.entity('Dynamic').setVelocity({x: 0, y: 0, z: 0});
     this.publish();
   }

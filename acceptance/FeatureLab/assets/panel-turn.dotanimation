@@ -1,0 +1,30 @@
+{
+  "name": "Panel turn",
+  "tracks": [
+    {
+      "node": 0,
+      "path": "rotation",
+      "interpolation": "linear",
+      "keys": [
+        {
+          "time": 0,
+          "value": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "time": 2,
+          "value": [
+            0,
+            0.70710678,
+            0,
+            0.70710678
+          ]
+        }
+      ]
+    }
+  ]
+}

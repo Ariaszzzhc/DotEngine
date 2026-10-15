@@ -156,6 +156,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Script/InputSource.cpp
     src/Engine/Script/PhysicsSource.cpp
     src/Engine/Script/AudioSession.cpp
+    src/Engine/Script/AnimationSession.cpp
     src/Engine/Script/Source.cpp
     src/Engine/Script/SceneScripts.cpp
     src/Engine/Script/LiveScripts.cpp
@@ -241,6 +242,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/InputSource.cppm
         src/Engine/Script/PhysicsSource.cppm
         src/Engine/Script/AudioSession.cppm
+        src/Engine/Script/AnimationSession.cppm
         src/Engine/Script/Source.cppm
         src/Engine/Script/SceneScripts.cppm
         src/Engine/Script/LiveScripts.cppm

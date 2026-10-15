@@ -639,6 +639,60 @@
       "material": {
         "asset": "assets/cutout.dotmaterial"
       }
+    },
+    {
+      "id": "16",
+      "name": "Animated panel",
+      "parent": null,
+      "transform": {
+        "position": [
+          -2,
+          1,
+          -1
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.8,
+          0.15,
+          0.4
+        ]
+      },
+      "mesh": {
+        "kind": "cube",
+        "asset": "",
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "visible": true
+      },
+      "material": {
+        "asset": "assets/copper.dotmaterial"
+      },
+      "animation": {
+        "clips": [
+          "assets/panel-lift.dotanimation",
+          "assets/panel-turn.dotanimation"
+        ],
+        "targets": [
+          {
+            "node": 0,
+            "entity": "16"
+          }
+        ],
+        "clip": 0,
+        "speed": 1,
+        "looping": true,
+        "playOnStart": false,
+        "enabled": true
+      }
     }
   ],
   "environment": {

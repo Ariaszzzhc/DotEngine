@@ -41,7 +41,7 @@ export namespace Dot::Project {
     std::optional<Script::SceneScriptsStats> scripts;
   };
 
-  /** Owns one freshly loaded project scene and its input, scripts, real physics
+  /** Owns one freshly loaded project scene and its input, scripts, real physics,
    * native animation and offline/native audio. No window or renderer is opened. Operations require
    * the creating thread without reentry; moves keep stable service ownership.
    * Destruction only releases resources; close invokes stop hooks and releases
@@ -91,7 +91,8 @@ export namespace Dot::Project {
      * script failures are isolated/reported, realm/native failures fault the session until close.
      * Invalid deltas have no effects. There is no rollback of completed callbacks or native steps.
      * 要求已启动；固定步使脚本读取上一接触批次，再推进物理 1/fixedHz；update 在全部
-     * 固定步之后分发脚本并同步一次音频，时长须有限 [0,1]；初始输入为已发布空帧。轮询错误保留并
+     * 固定步之后分发脚本、推进原生动画并同步一次音频，时长须有限
+     * [0,1]；初始输入为已发布空帧。轮询错误保留并
      * 报告旧脚本，单脚本错误隔离并报告，realm/原生失败使会话故障直至关闭；无效时长无
      * 副作用，不回滚已完成回调或原生步。 */
     [[nodiscard]] auto fixedUpdate() -> Core::Result<Script::LiveScriptReport>;

@@ -17,10 +17,10 @@ A hierarchy root uses an ID above JavaScript's safe integer range. D moves the
 native dynamic body. The scene name/window title shows the completed check count.
 
 `audit.ts` throws on failed behavior checks. Only successful assertions enter the
-native Report entity's disabled script metadata. `coverage.json` lists the 81
+native Report entity's disabled script metadata. `coverage.json` lists the 93
 current runtime SDK members, including getter/setter distinctions. The inventory
 check reads the actual SDK independently, and execution tests compare it with the
-report only after explicit stop. Five additional checks exercise component removal,
+report only after explicit stop. Six additional checks exercise component removal,
 failed-write/control preservation and exact high-precision identity.
 
 Tests verify all lifecycle phases, real contacts and PCM, owned snapshots/native
@@ -63,3 +63,19 @@ art or a populated-scene performance benchmark.
 Glass demonstrates sorted HDR alpha blending; Cutout uses an actual nearest-filtered
 alpha texture and shared Mask coverage in color, shadows, SSAO and picking. Blend
 materials currently contribute no shadow/SSAO geometry and use object-level sorting.
+
+
+## Native animation
+
+The saved Animated panel has a PBR material and two ordinary .dotanimation clips.
+Digit 1 plays/restarts lift, Digit 2 switches to turn, and Space pauses/resumes.
+Switching restores outgoing channels rather than accumulating transforms; Stop
+restores the original binding pose. The script uses the engine-owned `dot:engine`
+module's animation service and Entity methods, not scripted transform simulation.
+Animation assertions run on the first update, following initialization checks, so
+the full audit stays within the unchanged per-hook host-call limit. Fixed authored
+entity names resolve once per script realm; getters still read actual native state.
+Hot reload preserves completed checks and native playback without replaying start.
+Native acceptance injects real SDL keys and checks selected-clip pose, paused pose
+and resumed motion. The same checks run through editor Play and a relocated export
+after removal of its authoring tree. This is rigid-node animation, not skinning.

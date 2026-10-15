@@ -4632,3 +4632,65 @@ After adding original-file deletion coverage, that strengthened case passes in b
 configurations. The actual tenth PNG was inspected. Formatting and diff checks pass
 for all touched C++ files. No SDK control or production animation completion is
 claimed by this foundation stage; that consumer follows next.
+
+
+## 2026-10-15 — Animation SDK and interactive Feature Lab
+
+Added AnimationSession interface/implementation with an owned native ScenePlayers
+backend and callbacks retaining service lifetime. GameSession prepares animation
+resources/services before script construction; script preparation and migration may
+query state but cannot issue controls. dot:engine exports typed animation state/
+play/pause/stop/seek/configure and Entity conveniences. No script-side clock or
+backend creation is exposed. Strict finite transport, canonical scoped IDs and
+catchable native failures retain established host access controls.
+
+Feature Lab gains a saved PBR panel and two native clips, Digit 1/2 selection and
+Space pause/resume. Its independent inventory now verifies all 93 SDK members plus
+six extra behavior checks. Native SDL input verifies switched/paused/resumed poses
+while the saved selected clip remains unchanged. Editor Play isolation and actual
+relocated standalone execution after authoring removal consume the same project.
+
+The first build needed an explicit Core.Result import in the new test. Initial
+fixtures missed the required mesh visible field and a TypeScript assertion triggered
+control-flow narrowing; corrected both without weakening behavior. Expanded audit
+initialization then hit the actual 256 host-call limit. Resolved repeated fixed-name
+queries once per realm and placed animation assertions in the first update, after
+initialization checks. Completed checks migrate across reload; all assertions remain
+and no production budget was increased. Improved failure diagnostics before realm
+fault assertions. The focused Debug suite passes 10/10 (11.70s), including actual
+native input, GPU/audio, editor and relocated export. Both final builds succeed.
+
+Reviewed callback/scene/clip ownership, moved/retired wrapper lifetime, wrong-thread/
+replaced-scope failure, strict JSON/IDs, ReadOnly preparation, transient controls and
+script/native start/update/close ordering. New SDK cases exercise actual TypeScript
+state/pose/clock, disjoint clip selection, reverse/restart/seek, failures, all write
+prohibitions during constructor/migration, retained clocks and typecheck rejection.
+All 334 current C/C++ files and 16 WGSL files pass established formatting checks.
+Inventory is 1019 checks: 952 doctest identities and 67 executable/script checks;
+labels include 229 unit, 668 integration, 199 GPU, 117 offscreen, 70 native and
+122 acceptance cases. Full final results are recorded below after completion.
+Timeline/binding authoring, skinning, blending/state machines/events, streaming and
+realistic polished Prism Relay remain unfinished; the complete goal stays active.
+
+The first full Debug run completes 1018/1019 (232.12s). Its only failure was the
+Home template acceptance's old 15-entity expectation after adding the saved panel.
+Updated the expected 16 entities and strengthened the case to inspect the actual
+panel player and decode both copied two-second clips. Other template expectations
+and no-overwrite checks are retained. Both builds are completed again before final
+full suites; no runtime assertion or production limit was relaxed.
+
+Final Debug passes 1019/1019 (228.83s), including the strengthened template case.
+The runnable animation acceptance retains actual switch/restoration pixels and
+resource checks; Feature Lab retains native SDL, GPU/audio, Play and export tests.
+Only arm64 macOS is locally validated; Windows/Linux remain implementation targets.
+
+Final Release/NDEBUG passes 1019/1019 (45.93s). Debug/Release full runs remain
+sequential and begin only after both builds finish. The final touched Home test
+also passes clang-format and diff checks. No Windows/Linux execution is claimed.
+
+The owned archive target succeeds. The latest ZIP is 48,883,115 bytes, 276 entries
+and 244 exact payloads. Both shipped Feature Lab copies contain the exact two
+source clip files and the saved panel binding. CRC/executable modes, original
+font/HDRI/licenses, private/source exclusions, strict signatures and portable loader
+references pass for 13 regular Mach-O files/three relative links. Private archive
+staging is removed. Only arm64 macOS execution is validated.

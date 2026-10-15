@@ -5,8 +5,8 @@ loads/saves native `.dotanimation` clips, and `Dot.Animation.SceneAnimator` bind
 logical node indices to live scene-scoped entity handles. This foundation is usable
 by native engine consumers and runnable acceptance. glTF/GLB node animations now
 convert to these clips and native model bindings. Saved animation players now run
-through GameSession, editor Play and native exports. Timeline and TypeScript playback
-controls remain unfinished. Skinning, morph targets, blending/state machines, events/root motion and production animation
+through GameSession, editor Play and native exports. TypeScript playback controls
+are available through the engine-owned SDK. Timeline controls remain unfinished. Skinning, morph targets, blending/state machines, events/root motion and production animation
 streaming remain unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
@@ -75,7 +75,7 @@ ctest --preset debug -R '^(animation\.|runtime.animation$)'
 build/debug/bin/DotRuntimeAcceptance --animation-test build/debug/tests/animation_acceptance
 ```
 
-The acceptance saves a native clip and nine actual GPU PNG frames, exercises parent
+The acceptance saves a native clip and ten actual GPU PNG frames, exercises parent
 translation/child rotation/scale, restores bind-pose pixels and verifies drawing
 resource release. Offscreen tests additionally compare an animated sample against
 an independently constructed native reference pose. CPU unit cases never create a
@@ -115,7 +115,7 @@ The editor import command reports `model`, `animations` and its existing scene/
 geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
 Add model to scene remaps and retains the saved animation player and its node IDs.
 GameSession/editor Play/native exports automatically play the selected clip. Editor
-timeline and TypeScript animation control APIs remain unfinished.
+timeline tools remain unfinished.
 
 ```sh
 ctest --preset debug -R '^(model.animation_|runtime.model_animation$)'
@@ -199,3 +199,49 @@ of the last synchronized description; changed descriptions require synchronizati
 Controls hold no borrowed scene address and remain owner-thread APIs. The runnable
 `runtime.animation` acceptance now saves a tenth image, animation-switch.png, and
 verifies prior-channel restoration and exact bind-pose pixels after switch/stop.
+
+
+## TypeScript playback
+
+`dot:engine` exports `animation` and the owned `AnimationState` snapshot. Entity
+provides `animationState`, `playAnimation`, `pauseAnimation`, `stopAnimation`,
+`seekAnimation` and `configureAnimation` conveniences. Authored enabled players and
+valid clip resources are required; no synthetic player is created for an entity.
+
+| Service call | Behavior |
+| --- | --- |
+| `state(entity)` | Last synchronized clip index/asset/name, duration/time seconds, speed/looping/playing; returned values are owned |
+| `play(entity, clip = null, restart = false)` | Resume current clip or atomically switch to a library index; explicit restart uses its directional start |
+| `pause(entity)` | Hold current clock and pose |
+| `stop(entity)` | Restore original bound animated fields and pause at zero |
+| `seek(entity, seconds)` | Apply a finite [0,duration] sample without changing playing state |
+| `configure(entity, speed, looping)` | Set finite [-16,16] runtime speed and loop mode without rewriting authoring |
+
+A resumed nonlooping endpoint stays at its endpoint; request restart to begin again.
+ReadOnly state is available during constructors/state migration; every control is
+ReadWrite and denied there. `Dot.Script.AnimationSession` owns the native backend
+and shared scene; retained host bindings survive wrapper moves/destruction without
+borrowing it. Foreign/stale/missing/disabled players and malformed arguments become
+catchable DotHostError values. Native scheduling alone advances time. GameSession
+prepares resources/services before script construction, runs start hooks before its
+zero-time animation step, and variable scripts before native animation/audio.
+
+```ts
+import {input, ScriptComponent} from 'dot:engine';
+
+export class Panel extends ScriptComponent {
+  onStart(): void {
+    this.self.configureAnimation(1, false);
+  }
+
+  onUpdate(): void {
+    if (input.key('E').pressed) {
+      this.self.playAnimation(0, true);
+    }
+  }
+}
+```
+
+Feature Lab demonstrates two saved clips, Digit 1/2 selection and Space pause/resume
+with actual SDL input, native poses, editor Play and relocated standalone coverage.
+It does not establish skinning/blending, timeline tooling or populated-game scale.

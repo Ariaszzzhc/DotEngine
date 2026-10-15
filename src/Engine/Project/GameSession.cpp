@@ -19,7 +19,7 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Platform.Input;
 import Dot.Script.AudioSession;
-import Dot.Animation.ScenePlayers;
+import Dot.Script.AnimationSession;
 
 namespace Dot::Project {
   namespace {
@@ -60,7 +60,7 @@ namespace Dot::Project {
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
     std::optional<Script::AudioSession> m_audio;
-    std::optional<Animation::ScenePlayers> m_animations;
+    std::optional<Script::AnimationSession> m_animations;
     /** Script callbacks retain services; destroy the realm before its dependencies.
      * 脚本回调持有服务，先销毁 realm 再销毁依赖。 */
     std::optional<Script::SceneScripts> m_scripts;
@@ -284,10 +284,17 @@ namespace Dot::Project {
       }
 
       impl->m_audio.emplace(std::move(*audio));
+      auto animations = Script::AnimationSession::create(impl->m_scene, assets);
+
+      if (!animations) {
+        return std::unexpected(animations.error());
+      }
+
+      impl->m_animations.emplace(std::move(*animations));
       auto scriptsConfig = config.scripts;
 
-      for (auto bindings :
-           {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_audio->bindings()}) {
+      for (auto bindings : {impl->m_input->bindings(), impl->m_physics->bindings(),
+                            impl->m_audio->bindings(), impl->m_animations->bindings()}) {
         if (!bindings) {
           return std::unexpected(bindings.error());
         }
@@ -339,13 +346,6 @@ namespace Dot::Project {
         impl->m_scripts.emplace(std::move(*scripts));
       }
 
-      auto animations = Animation::ScenePlayers::create(impl->m_scene, assets);
-
-      if (!animations) {
-        return std::unexpected(animations.error());
-      }
-
-      impl->m_animations.emplace(std::move(*animations));
       return GameSession(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

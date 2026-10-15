@@ -71,6 +71,11 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     auto session = std::move(*created);
     auto started = session.start();
     REQUIRE_MESSAGE(started, (started ? "" : started.error().message));
+
+    for (const auto& failure : started->failures) {
+      FAIL_CHECK(failure.error.message);
+    }
+
     REQUIRE(started->failures.empty());
     REQUIRE_FALSE(started->realmFaulted);
     auto scene = session.scene().value();
@@ -86,7 +91,7 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
     CHECK(sceneRenderer.stats()->textures == 2);
     CHECK(renderer.lighting()->lights.size() == 1);
     CHECK(renderer.visibilityStats()->mesh->blendedInstances == 1);
-    CHECK(renderer.visibilityStats()->mesh->solidInstances == 8);
+    CHECK(renderer.visibilityStats()->mesh->solidInstances == 9);
     auto entitiesBefore = scene->entities().value();
     auto orthographic = std::ranges::find(entitiesBefore, "Orthographic", &World::EntityInfo::name);
     REQUIRE(orthographic != entitiesBefore.end());
@@ -128,6 +133,25 @@ TEST_CASE("feature_lab.native_graphics_audio_workspace_and_standalone") {
 
     key(SDL_SCANCODE_D, false);
     REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    key(SDL_SCANCODE_2, true);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    key(SDL_SCANCODE_2, false);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    const auto panel = scene->findEntity(16).value();
+    CHECK(std::abs(scene->transform(panel)->rotation.y) > 0);
+    CHECK(scene->entity(panel)->animation->clip == 0);
+    key(SDL_SCANCODE_SPACE, true);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    key(SDL_SCANCODE_SPACE, false);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    const auto paused = scene->transform(panel)->rotation;
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    CHECK(scene->transform(panel)->rotation == paused);
+    key(SDL_SCANCODE_SPACE, true);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    key(SDL_SCANCODE_SPACE, false);
+    REQUIRE(application.step(std::chrono::nanoseconds{16'666'667}, callbacks));
+    CHECK(scene->transform(panel)->rotation.y > paused.y);
     auto after = sceneRenderer.render(*scene, 192, 144).value();
     CHECK(before.pixels != after.pixels);
     CHECK(presentations > 0);

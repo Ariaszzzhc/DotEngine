@@ -290,7 +290,7 @@ pause/seek/stop, unanimated fields, parent/child batching, stale/foreign/moved/o
 contracts and atomic rollback of poses plus clock after sample/world failure.
 Native codec tests exercise strict schema, rooted regular paths, symlink rejection
 and failed-save preservation. GPU samples match an independent native reference;
-`DotRuntimeAcceptance --animation-test <existing-output-directory>` writes nine
+`DotRuntimeAcceptance --animation-test <existing-output-directory>` writes ten
 real PNG frames/native clip, restores bind-pose pixels and releases resources.
 This acceptance isolates the native TRS animation foundation; consumer coverage is described below.
 
@@ -324,3 +324,15 @@ the picker and observed its workspace title. Parent-picker invocation used the
 shared browse-folder command; project Browse used an actual mouse click. Final
 Create-page columns were visually inspected. Windows/Linux native pickers and
 full window destruction while a picker is pending are not locally validated.
+
+
+Animation SDK integration executes actual TypeScript against native players: owned
+state, clip switching, reverse/restart, pause/seek/stop, malformed/foreign/missing
+controls, ReadOnly preparation/migration and clock retention across reload. Retained
+host callbacks survive moved/retired wrappers while holding scene/backend ownership;
+wrong threads and replaced scopes fail. Typecheck rejects script scheduling APIs.
+Feature Lab's independent SDK inventory now covers 93 actual members and six extra
+behavior checks. Native SDL Digit 2/Space events verify real switched/paused/resumed
+poses without changing the saved selected-clip description. Existing native GPU/
+audio, editor Play isolation and relocated export-after-authoring-removal paths
+exercise these same scripts. No skinning or populated-game scale is inferred.

@@ -875,3 +875,16 @@ map directives and validates against default loader limits before publication.
 membership/counts/sizes and UTF-8/NUL boundaries, then captures ESM into a private
 owned generation without compiler processes. Keep an owner alive for Runtime
 using its borrowed files. Subsequent package changes do not affect captured code.
+
+
+## Animation service
+
+Import `animation` and `AnimationState` from `dot:engine`. The native service
+controls saved scene players using owned IDs and clip library indices, with
+play/resume/restart, pause, stop, second-based seek and speed/loop configuration.
+Entity convenience methods delegate to the same service; controls remain transient
+and leave the authoring description unchanged. Constructors and reload migration
+may read `animation.state` but cannot issue controls. Foreign/stale/disabled/missing
+players and invalid values produce catchable DotHostError values; scripts cannot
+advance the native clock or create a second backend. See [Animation](Animation.md)
+for exact transaction, timing, stop/restoration and clip-selection semantics.
