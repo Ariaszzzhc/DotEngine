@@ -5331,3 +5331,88 @@ owned compiled scene, proving actual capsule landing without source/compiler use
 at runtime. Character SDK controls, realistic humanoid content, camera/input
 integration and the final Prism Relay template remain subsequent work; none is
 claimed complete by this stage.
+
+
+## 2026-10-15 — Character script controls and interactive Feature Lab
+
+The next stage exposes the actual scene controller through the engine-owned
+TypeScript module. components.character and Entity.character share the native
+validated authoring service; EntityInfo includes its owned description. State
+queries return feet/rotation/velocity, ground data and a scene-scoped support ID.
+Entity.moveCharacter/setCharacterYaw and their physics counterparts supply native
+input/facing, without scripted gravity, collisions or hidden simulation stepping.
+PhysicsStats counts characters independently. Queries remain ReadOnly in lifecycle
+preparation/migration; controls/component writes remain ReadWrite and are denied.
+Strict argument and integer validation rejects malformed/oversized values while
+retaining queued motion/jump intent. No module-name fallback, compatibility format,
+new dependency or toolchain setting is added.
+
+Feature Lab adds an ordinary saved controller and child box visualization through
+actual DotEditor document edit/save operations. Its platform is enlarged, and its
+arrow/J script supplies normalized 3 m/s input and grounded jump requests. The SDK
+inventory/audit includes nine new public operations, spread over a separate update
+from animation checks to preserve the per-hook host-call budget. Native canonical
+comparison confirms all sixteen original entities retain semantics apart from the
+intended platform scale; the larger scene diff is ordinary codec normalization.
+IDs above JavaScript's safe integer range remain canonical strings throughout.
+
+Focused native-host and real-TypeScript tests cover queries, malformed arguments,
+owned snapshots, integer overflow rejection, jump/input retention, authoring,
+constructor/checkpoint write denial and retained motion through realm replacement.
+A Feature Lab regression publishes actual native input, jumps, edits movement speed,
+reloads source without resetting physics, applies the changed speed, releases input
+and lands. No window is opened by these tests. The first test compile incorrectly
+refers to ReloadReport.failures; it is corrected to retired.failures. An initial
+21/22 focused result rejects an incorrect expectation that two components produce
+checkpoint migrations: the stateless character uses undefined base checkpoints,
+while only Audit saves state. The original one-checkpoint expectation is restored;
+no lifecycle implementation is changed. The complete focused selection then passes
+23/23 (2.92s), and initial full Debug 993/993 (135.30s) and Release/NDEBUG 993/993
+(19.68s) pass before actual product inspection.
+
+Actual product inspection finds a real showcase layout issue missed by the short
+runs: the preexisting continuously moving kinematic box pushes an idle capsule off
+the platform. A new four-second headless idle regression reproduces x=6.47954 and
+y=-4.00256 instead of x=4/y=-1.5 (3.36s). The controller is moved into the separate
+z=2 showcase lane through the product document commands. The same real editor
+session stops/restarts Play with that authored correction. The fixed idle/input/
+SDK selection passes 19/19 (3.33s), including the new idle case (3.31s). Final full
+runs after rebuilding both configurations are recorded below.
+
+In that actual editor session, live agent operations open/replace/save the character
+script while Play runs, temporarily requesting one native jump and horizontal
+motion, then restore the original source through the same clean buffer. Observed
+feet move from [4,-1.5,2] to [4.133335,-0.798100,2]; after restoring/reloading source,
+physics continues at [4.766677,-0.423249,2] and subsequently lands at
+[4.766677,-1.5,2]. No script/native error is reported, all nine SDK audit operations
+are observed, and stop preserves the saved authoring scene. Data export succeeds;
+clean close exits 0 and retires the owned control directory. Temporary script
+changes are byte-for-byte restored in the disposable project. There is no screenshot
+or human-keyboard acceptance claim. One hot-reload frame reports 199999992 ns of
+dropped time; compilation remains synchronous and background compilation is still
+needed for editor responsiveness. This limitation is not hidden behind green tests.
+
+The previously archived body/character draft patch is removed from ignored storage
+after its reviewed implementation is committed/pushed in 99ef05e. Investigation
+requests/responses/logs stay only under ignored build storage. No interim editor
+archive, new mesh-generation helper or per-stage acceptance executable is added.
+
+
+Final rebuilt, post-fix suites pass serially on arm64 macOS: Debug 994/994
+(135.18s), then Release/NDEBUG 994/994 (19.08s), without concurrent compilation or
+an open manual editor. Matching inventories include 257 unit and 737 integration
+cases, including 123 offscreen GPU, 27 dummy-platform and 27 audio-device cases
+(labels overlap). No desktop-window driver/target is added. All five changed C++
+files pass clang-format --dry-run --Werror; new/changed TypeScript sections are
+formatted, and the real pinned compiler/runtime execute the SDK/example. Diff
+whitespace checks pass. Dependencies/linkage/toolchain environment are unchanged;
+Windows/Linux remain unexecuted locally.
+
+Precommit review covers the eleven registered physics methods and access flags,
+strict DTO/number handling, callback/shared scene ownership, template propagation,
+canonical scene semantics, component exclusivity, motion retained through reload,
+fixed-step input edges, stopped input, sample platform separation and test scope.
+Current code preserves the complete original goal. The new lab visual is a simple
+component showcase; realistic humanoid content, shoulder-camera/input integration,
+Prism Relay quality, background compilation and mature large-project production
+workflows remain unfinished.

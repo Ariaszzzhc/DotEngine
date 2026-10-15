@@ -80,3 +80,19 @@ Hot reload preserves completed checks and native playback without replaying star
 Use the actual editor's Play and agent controls to inspect selected-clip pose,
 pause and resumed motion; computer use can exercise the keyboard bindings. This is
 rigid-node animation, not skinning.
+
+## Character controller
+
+The saved Character controller owns a real Y-up physics capsule; its child box is
+a simple capability visualization. Arrow keys move it at 3 m/s and J requests a
+jump. Diagonal input is normalized. In editor Play, enable Game input first. The
+expanded static platform supports the capsule, and its child follows native scene
+writeback. Collision/gravity/stairs/grounding are native; the script supplies only
+desired horizontal speed, jump edges and yaw. Character state and authoring are
+available through dot:engine and the editor's shared component commands.
+
+The audit exercises the new component/state/control methods on a separate update
+from animation checks to respect the per-hook host-call bound. Headless behavior
+regressions cover real input, jumping, source hot reload without resetting motion,
+and landing. This is a component showcase; the realistic humanoid and shoulder
+camera belong to the unfinished Prism Relay experience.

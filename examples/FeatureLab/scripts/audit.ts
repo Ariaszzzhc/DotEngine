@@ -201,6 +201,29 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('invoke', (invoke('scene.info', []) as {id: string}).id === scene.info().id);
   }
 
+  private characterChecks(): void {
+    const actor = this.entity('Character controller');
+    const description = components.character();
+    this.check('components.character', description.radius === 0.35 && description.mass === 75);
+    actor.character = description;
+    this.check('Entity.character.set', equal(actor.character, description));
+    this.check('Entity.character.get', equal(actor.info().character, description));
+    const state = physics.character(actor.id);
+    this.check('physics.character', Number.isFinite(state.position.y));
+    this.check('Entity.characterState.get', equal(actor.characterState, state));
+    state.position.x = 999;
+    this.check('character.ownedSnapshot', actor.characterState.position.x !== 999);
+    this.check(
+        'physics.setCharacterInput',
+        physics.setCharacterInput(actor.id, {velocity: {x: 0, y: 0, z: 0}, jump: false})
+            === undefined);
+    this.check('Entity.moveCharacter', actor.moveCharacter({x: 0, y: 0, z: 0}) === undefined);
+    physics.setCharacterYaw(actor.id, 90);
+    this.check('physics.setCharacterYaw', actor.characterState.rotation.y > 0.7);
+    actor.setCharacterYaw(0);
+    this.check('Entity.setCharacterYaw', actor.characterState.rotation.w === 1);
+  }
+
   private physicsChecks(): void {
     const dynamic = this.entity('Dynamic');
     const kinematic = this.entity('Kinematic');
@@ -378,6 +401,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
 
     if (!this.#checked.has('animation.failedControl')) {
       this.animationChecks();
+    } else if (!this.#checked.has('Entity.setCharacterYaw')) {
+      this.characterChecks();
     }
 
     this.inputChecks();

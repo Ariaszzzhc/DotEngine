@@ -217,17 +217,103 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   std::vector<float> samples(2048);
   REQUIRE(session.renderAudio(samples));
   CHECK(std::ranges::any_of(samples, [](float value) { return std::abs(value) > 0.0001F; }));
+  report(session.update(1.0 / 60));
   report(session.close());
   snapshot = data(*scene);
   CHECK(snapshot["starts"] == 1);
   CHECK(snapshot["fixed"] == 1);
-  CHECK(snapshot["updates"] == 1);
+  CHECK(snapshot["updates"] == 2);
   CHECK(snapshot["stops"] == 1);
   CHECK(snapshot["errors"] == 6);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);
   CHECK(Audio::Mixer::backendMemory().bytes == mixer);
+}
+
+TEST_CASE("feature_lab.idle_character_stays_supported_beside_moving_body_showcase") {
+  Fixture fixture;
+  auto session = fixture.session();
+  const auto native = session.scene().value();
+  const auto entities = native->entities().value();
+  const auto found = std::ranges::find(entities, "Character controller", &World::EntityInfo::name);
+  REQUIRE(found != entities.end());
+  const auto actor = found->id;
+  const auto before = native->transform(actor).value();
+  report(session.start());
+
+  for (int frame = 0; frame < 240; ++frame) {
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  }
+
+  const auto after = native->transform(actor).value();
+  CHECK(after.position.x == doctest::Approx(before.position.x).epsilon(.01));
+  CHECK(after.position.y == doctest::Approx(before.position.y).epsilon(.04));
+  CHECK(after.position.z == doctest::Approx(before.position.z).epsilon(.01));
+  report(session.close());
+}
+
+TEST_CASE("feature_lab.character_input_jump_and_hot_reload_keep_native_simulation") {
+  Fixture fixture;
+  auto session = fixture.session(true);
+  const auto native = session.scene().value();
+  const auto entities = native->entities().value();
+  const auto found = std::ranges::find(entities, "Character controller", &World::EntityInfo::name);
+  REQUIRE(found != entities.end());
+  const auto actor = found->id;
+  CHECK(actor.value > 9007199254740992ULL);
+  report(session.start());
+
+  for (int frame = 0; frame < 2; ++frame) {
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  }
+
+  const auto initial = native->transform(actor).value();
+  Platform::InputState input;
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::Right, true, false}}));
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::J, true, false}}));
+  REQUIRE(session.publish(input));
+  report(session.fixedUpdate());
+  report(session.update(1.0 / 60));
+  CHECK(native->transform(actor)->position.x > initial.position.x);
+  CHECK(native->transform(actor)->position.y > initial.position.y + .05F);
+  input.beginFrame();
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::J, false, false}}));
+  REQUIRE(session.publish(input));
+
+  for (int frame = 0; frame < 24; ++frame) {
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  }
+
+  auto source = fixture.project.files()->readText("scripts/character.ts").value();
+  const auto speed = source.find("3 / length");
+  REQUIRE(speed != std::string::npos);
+  source.replace(speed, 10, "4 / length");
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/character.ts", source));
+  const auto before = native->transform(actor).value();
+  auto reloaded = session.update(0);
+  report(reloaded);
+  CHECK(reloaded->source.committed);
+  CHECK(native->transform(actor)->position == before.position);
+  report(session.fixedUpdate());
+  report(session.update(1.0 / 60));
+  CHECK(native->transform(actor)->position.x - before.position.x
+        == doctest::Approx(4.0 / 60).epsilon(.01));
+  input.beginFrame();
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::Right, false, false}}));
+  REQUIRE(session.publish(input));
+
+  for (int frame = 0; frame < 90; ++frame) {
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  }
+
+  CHECK(native->transform(actor)->position.y == doctest::Approx(-1.5).epsilon(.04));
+  CHECK(data(*native)["physics"]["characters"] == 1);
+  report(session.close());
 }
 
 TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {

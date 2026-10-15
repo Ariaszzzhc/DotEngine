@@ -25,6 +25,7 @@ import Dot.Core.Text;
 import Dot.World.Scene;
 import Dot.Math;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Audio.Source;
 import Dot.Script.Source;
 
@@ -281,6 +282,35 @@ namespace Dot::Script {
       return result;
     }
 
+    auto characterJson(const World::CharacterController& value) -> Json {
+      return {{"radius", value.radius},
+              {"halfHeight", value.halfHeight},
+              {"maxSlopeDegrees", value.maxSlopeDegrees},
+              {"stepHeight", value.stepHeight},
+              {"stickDistance", value.stickDistance},
+              {"mass", value.mass},
+              {"maxStrength", value.maxStrength},
+              {"jumpSpeed", value.jumpSpeed},
+              {"maxContacts", value.maxContacts}};
+    }
+
+    auto characterValue(const Json& value) -> World::CharacterController {
+      Codec::requireFields(
+          value, {"radius", "halfHeight", "maxSlopeDegrees", "stepHeight", "stickDistance", "mass",
+                  "maxStrength", "jumpSpeed", "maxContacts"});
+
+      if (!value["maxContacts"].is_number_integer() || value["maxContacts"] < 1
+          || value["maxContacts"] > 4096) {
+        throw std::invalid_argument("Character maxContacts must be an integer in [1,4096]");
+      }
+
+      return {Codec::number(value["radius"]),           Codec::number(value["halfHeight"]),
+              Codec::number(value["maxSlopeDegrees"]),  Codec::number(value["stepHeight"]),
+              Codec::number(value["stickDistance"]),    Codec::number(value["mass"]),
+              Codec::number(value["maxStrength"]),      Codec::number(value["jumpSpeed"]),
+              value["maxContacts"].get<std::uint32_t>()};
+    }
+
     auto audioJson(const World::AudioSource& value) -> Json {
       const auto& s = value.spatial;
       const auto attenuation = s.attenuation == Audio::Attenuation::Inverse  ? "inverse"
@@ -370,6 +400,10 @@ namespace Dot::Script {
         return entity.rigidBody ? bodyJson(*entity.rigidBody) : Json(nullptr);
       }
 
+      if (name == "character") {
+        return entity.character ? characterJson(*entity.character) : Json(nullptr);
+      }
+
       if (name == "audioSource") {
         return entity.audioSource ? audioJson(*entity.audioSource) : Json(nullptr);
       }
@@ -403,6 +437,11 @@ namespace Dot::Script {
             id, value.is_null() ? std::nullopt : std::optional{bodyValue(value)}));
       }
 
+      if (name == "character") {
+        return written(scene.setCharacterController(
+            id, value.is_null() ? std::nullopt : std::optional{characterValue(value)}));
+      }
+
       if (name == "audioSource") {
         return written(scene.setAudioSource(
             id, value.is_null() ? std::nullopt : std::optional{audioValue(value)}));
@@ -429,6 +468,7 @@ namespace Dot::Script {
               {"camera", componentJson(entity, "camera").value()},
               {"mesh", componentJson(entity, "mesh").value()},
               {"rigidBody", componentJson(entity, "rigidBody").value()},
+              {"character", componentJson(entity, "character").value()},
               {"audioSource", componentJson(entity, "audioSource").value()},
               {"audioListener", componentJson(entity, "audioListener").value()},
               {"script", componentJson(entity, "script").value()}};

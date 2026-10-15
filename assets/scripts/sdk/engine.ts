@@ -146,6 +146,22 @@ export interface RigidBody {
   sensor: boolean;
 }
 
+/**
+ * Feet-origin Y-up capsule authoring; mutually exclusive with RigidBody.
+ * 脚底原点、Y 向上胶囊编辑描述，与刚体互斥。
+ */
+export interface CharacterController {
+  radius: number;
+  halfHeight: number;
+  maxSlopeDegrees: number;
+  stepHeight: number;
+  stickDistance: number;
+  mass: number;
+  maxStrength: number;
+  jumpSpeed: number;
+  maxContacts: number;
+}
+
 export interface VoiceSettings {
   volume: number;
   pan: number;
@@ -247,6 +263,21 @@ export const components = Object.freeze({
     return {primary};
   },
 
+  character(overrides: Partial<CharacterController> = {}): CharacterController {
+    return {
+      radius: 0.35,
+      halfHeight: 0.55,
+      maxSlopeDegrees: 50,
+      stepHeight: 0.35,
+      stickDistance: 0.3,
+      mass: 75,
+      maxStrength: 100,
+      jumpSpeed: 6,
+      maxContacts: 256,
+      ...overrides
+    };
+  },
+
   script(source: string, className = 'default'): ScriptDescription {
     return {source, className, properties: {}, enabled: true};
   },
@@ -266,11 +297,35 @@ export interface PhysicsBodyState {
 
 export interface PhysicsStats {
   bodies: number;
+  characters: number;
   active: number;
   faulted: boolean;
   contactPairs: number;
   queuedContactEvents: number;
   generation: string;
+}
+
+/**
+ * World horizontal velocity persists; jump is consumed on the next native
+ * substep, even in air. 世界水平速度持续，跳跃在下个原生子步消耗（含空中）。
+ */
+export interface CharacterInput {
+  velocity: Vec3;
+  jump: boolean;
+}
+
+/**
+ * Owned world-space snapshot; support probing contributes to vertical velocity.
+ * 世界空间拥有快照，竖直速度包含支撑探测；不修改返回值以控制仿真。
+ */
+export interface CharacterState {
+  position: Vec3;
+  rotation: Quat;
+  velocity: Vec3;
+  ground: 'grounded'|'steep'|'unsupported'|'airborne';
+  groundNormal: Vec3;
+  groundVelocity: Vec3;
+  groundEntity: EntityId|null;
 }
 
 export interface RayHit {
@@ -313,6 +368,18 @@ export interface ContactBatch {
 export const physics = Object.freeze({
   body(entity: EntityId): PhysicsBodyState {
     return invoke('physics.body', [entity]) as PhysicsBodyState;
+  },
+
+  character(entity: EntityId): CharacterState {
+    return invoke('physics.character', [entity]) as CharacterState;
+  },
+
+  setCharacterInput(entity: EntityId, value: CharacterInput): void {
+    invoke('physics.setCharacterInput', [entity, value]);
+  },
+
+  setCharacterYaw(entity: EntityId, degrees: number): void {
+    invoke('physics.setCharacterYaw', [entity, degrees]);
   },
 
   stats(): PhysicsStats {
@@ -514,6 +581,7 @@ export interface EntityInfo {
   camera: Camera|null;
   mesh: MeshRenderer|null;
   rigidBody: RigidBody|null;
+  character: CharacterController|null;
   audioSource: AudioSource|null;
   audioListener: AudioListener|null;
   script: ScriptDescription|null;
@@ -597,6 +665,14 @@ export class Entity {
     invoke('component.set', [this.id, 'rigidBody', value]);
   }
 
+  get character(): CharacterController|null {
+    return invoke('component.get', [this.id, 'character']) as CharacterController | null;
+  }
+
+  set character(value: CharacterController|null) {
+    invoke('component.set', [this.id, 'character', value]);
+  }
+
   get audioSource(): AudioSource|null {
     return invoke('component.get', [this.id, 'audioSource']) as AudioSource | null;
   }
@@ -671,6 +747,18 @@ export class Entity {
 
   get physicsBody(): PhysicsBodyState {
     return physics.body(this.id);
+  }
+
+  get characterState(): CharacterState {
+    return physics.character(this.id);
+  }
+
+  moveCharacter(velocity: Vec3, jump = false): void {
+    physics.setCharacterInput(this.id, {velocity, jump});
+  }
+
+  setCharacterYaw(degrees: number): void {
+    physics.setCharacterYaw(this.id, degrees);
   }
 
   setVelocity(value: Vec3): void {

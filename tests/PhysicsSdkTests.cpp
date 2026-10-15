@@ -92,6 +92,108 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("character_sdk_real_controls_authoring_and_migration_obey_native_permissions") {
+  Project project;
+  project.write(R"ts(
+import {components, Entity, type HostError, physics, ScriptComponent, type ScriptContext} from 'dot:engine';
+
+function preparing(self: Entity): void {
+  const state = self.characterState;
+
+  if (!Number.isFinite(state.position.y) || self.info().character?.radius !== self.character?.radius) {
+    throw Error('native character read');
+  }
+
+  for (const attempt of [() => self.moveCharacter({x: 9, y: 0, z: 0}, true),
+    () => self.setCharacterYaw(180), () => { self.character = components.character(); }]) {
+    let denied = false;
+
+    try {
+      attempt();
+    } catch (error) {
+      denied = (error as HostError).code === 'InvalidState';
+    }
+
+    if (!denied) {
+      throw Error('character write during preparation');
+    }
+  }
+}
+
+export class Actor extends ScriptComponent {
+  constructor(context: ScriptContext) {
+    super(context);
+    preparing(this.self);
+  }
+
+  onStart(): void {
+    this.self.character = components.character({mass: 80});
+    this.self.moveCharacter({x: 2, y: 0, z: 0}, true);
+    this.self.setCharacterYaw(90);
+  }
+
+  onUpdate(): void {
+    const state = this.self.characterState;
+    state.velocity.x = 99;
+
+    if (physics.character(this.self.id).velocity.x !== 2 || physics.stats().characters !== 1) {
+      throw Error('character snapshot ownership');
+    }
+
+    let rejected = false;
+
+    try {
+      this.self.character = {...this.self.character!, maxContacts: 4294967297};
+    } catch (error) {
+      rejected = (error as HostError).code === 'InvalidArgument';
+    }
+
+    if (!rejected || this.self.character?.maxContacts !== 256) {
+      throw Error('character integer boundary');
+    }
+  }
+
+  onSaveState(): null {
+    preparing(this.self);
+    return null;
+  }
+
+  onLoadState(): void {
+    preparing(this.self);
+  }
+}
+)ts");
+  auto native = scene();
+  const auto actor = native->entities()->front().id;
+  REQUIRE(native->setRigidBody(actor, {}));
+  REQUIRE(native->setCharacterController(actor, Dot::World::CharacterController{}));
+  const auto floor = native->createEntity("Floor").value();
+  Dot::World::RigidBody body;
+  body.motion = Dot::Physics::Motion::Static;
+  body.shape = Dot::Physics::Shape::Box;
+  body.halfExtents = {10, .5F, 10};
+  REQUIRE(native->setTransform(floor, {{0, -.5F, 0}}));
+  REQUIRE(native->setRigidBody(floor, body));
+  auto program = project.compile();
+  auto physics = PhysicsSource::create(native).value();
+  auto scripts = service(native, program, physics);
+  good(scripts.start());
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(1.0 / 60));
+  const auto first = native->transform(actor).value();
+  CHECK(first.position.x > 0);
+  CHECK(first.position.y > .05F);
+  CHECK(first.rotation.y == doctest::Approx(.70710678));
+  CHECK(native->entity(actor)->character->mass == 80);
+  auto reloaded = scripts.reload(program);
+  REQUIRE_MESSAGE(reloaded, (reloaded ? "" : reloaded.error().message));
+  REQUIRE(reloaded->retired.failures.empty());
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(1.0 / 60));
+  CHECK(native->transform(actor)->position.x > first.position.x);
+  good(scripts.stop());
+}
+
 TEST_CASE("physics_sdk_real_typescript_controls_native_motion_rays_and_owned_runtime_state") {
   Project project;
   project.write(R"ts(

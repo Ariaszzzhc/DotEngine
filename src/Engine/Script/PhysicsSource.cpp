@@ -38,7 +38,10 @@ namespace Dot::Script {
                                  "physics.setAngularVelocity",
                                  "physics.addImpulse",
                                  "physics.moveKinematic",
-                                 "physics.contacts"};
+                                 "physics.contacts",
+                                 "physics.character",
+                                 "physics.setCharacterInput",
+                                 "physics.setCharacterYaw"};
 
     auto entity(const Json& value) -> EntityId {
       Codec::requireFields(value, {"scene", "value"});
@@ -95,6 +98,20 @@ namespace Dot::Script {
           {"sensor", event.sensor},
           {"step", std::to_string(event.step)},
           {"geometry", std::move(geometry)}};
+    }
+
+    auto characterJson(const Physics::SceneCharacterState& value) -> Json {
+      const auto ground = value.ground == Physics::GroundState::Grounded      ? "grounded"
+                          : value.ground == Physics::GroundState::Steep       ? "steep"
+                          : value.ground == Physics::GroundState::Unsupported ? "unsupported"
+                                                                              : "airborne";
+      return {{"position", Detail::xyz(value.position)},
+              {"rotation", Detail::xyzw(value.rotation)},
+              {"velocity", Detail::xyz(value.velocity)},
+              {"ground", ground},
+              {"groundNormal", Detail::xyz(value.groundNormal)},
+              {"groundVelocity", Detail::xyz(value.groundVelocity)},
+              {"groundEntity", value.groundEntity ? idJson(*value.groundEntity) : Json(nullptr)}};
     }
 
     auto written(Core::Result<void> value) -> Reply {
@@ -201,7 +218,7 @@ namespace Dot::Script {
     }
 
     auto dispatch(std::string_view method, const Json& args) -> Reply {
-      const auto count = method == "physics.body"                                    ? 1U
+      const auto count = method == "physics.body" || method == "physics.character"   ? 1U
                          : method == "physics.stats" || method == "physics.contacts" ? 0U
                          : method == "physics.moveKinematic"                         ? 4U
                                                                                      : 2U;
@@ -218,6 +235,7 @@ namespace Dot::Script {
         }
 
         return std::optional{Json{{"bodies", stats->bodies},
+                                  {"characters", stats->characters},
                                   {"active", stats->active},
                                   {"faulted", stats->faulted || m_faulted},
                                   {"contactPairs", stats->contactPairs},
@@ -285,10 +303,30 @@ namespace Dot::Script {
         return std::optional{bodyJson(*value).dump()};
       }
 
+      if (method == "physics.character") {
+        auto value = m_simulation.character(id);
+
+        if (!value) {
+          return std::unexpected(value.error());
+        }
+
+        return std::optional{characterJson(*value).dump()};
+      }
+
       auto checked = check(true);
 
       if (!checked) {
         return std::unexpected(checked.error());
+      }
+
+      if (method == "physics.setCharacterInput") {
+        Codec::requireFields(args[1], {"velocity", "jump"});
+        return written(m_simulation.setCharacterInput(
+            id, {Detail::vector<Math::Vec3>(args[1]["velocity"]), args[1]["jump"].get<bool>()}));
+      }
+
+      if (method == "physics.setCharacterYaw") {
+        return written(m_simulation.setCharacterYaw(id, Codec::number(args[1])));
       }
 
       const auto value = Detail::vector<Math::Vec3>(args[1]);
@@ -556,6 +594,7 @@ namespace Dot::Script {
 
       for (const auto* method : methods) {
         const bool read = std::string_view(method) == "physics.body"
+                          || std::string_view(method) == "physics.character"
                           || std::string_view(method) == "physics.stats"
                           || std::string_view(method) == "physics.rayCast"
                           || std::string_view(method) == "physics.contacts";

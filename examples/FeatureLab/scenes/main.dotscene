@@ -1,717 +1,982 @@
 {
-  "version": 1,
-  "name": "Feature Lab",
   "entities": [
     {
-      "id": "1",
-      "name": "Camera",
-      "parent": null,
-      "transform": {
-        "position": [
-          0,
-          1,
-          9
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "camera": {
-        "projection": "perspective",
-        "verticalFovDegrees": 60,
-        "orthographicHeight": 20,
-        "nearPlane": 0.1,
-        "farPlane": 100,
-        "primary": true
-      },
+      "animation": null,
       "audioListener": {
         "primary": true
       },
+      "audioSource": null,
+      "camera": {
+        "farPlane": 100.0,
+        "nearPlane": 0.10000000149011612,
+        "orthographicHeight": 20.0,
+        "primary": true,
+        "projection": "perspective",
+        "verticalFovDegrees": 60.0
+      },
+      "character": null,
+      "id": "1",
       "light": {
-        "kind": "directional",
         "color": [
-          1,
-          0.95,
-          0.9
+          1.0,
+          0.949999988079071,
+          0.8999999761581421
         ],
-        "intensity": 5,
-        "range": 10,
-        "innerConeDegrees": 20,
-        "outerConeDegrees": 30,
         "enabled": true,
+        "innerConeDegrees": 20.0,
+        "intensity": 5.0,
+        "kind": "directional",
+        "outerConeDegrees": 30.0,
+        "range": 10.0,
         "shadows": {
-          "resolution": 512,
           "cascades": 4,
-          "distance": 50,
-          "splitLambda": 0.65,
-          "depthBias": 0.0002,
-          "slopeBias": 0.001,
-          "normalBias": 0.01,
-          "filterRadius": 2
+          "depthBias": 0.00019999999494757503,
+          "distance": 50.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
         }
+      },
+      "material": null,
+      "mesh": null,
+      "name": "Camera",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          9.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "2",
+      "light": null,
+      "material": null,
+      "mesh": null,
       "name": "Auditor",
       "parent": null,
-      "transform": {
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
+      "rigidBody": null,
       "script": {
-        "source": "audit.ts",
         "className": "Audit",
+        "enabled": true,
         "properties": {
           "contract": "feature-lab-v1"
         },
-        "enabled": true
+        "source": "audit.ts"
+      },
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "3",
+      "light": null,
+      "material": null,
+      "mesh": null,
       "name": "Report",
       "parent": null,
+      "rigidBody": null,
+      "script": {
+        "className": "AuditReport",
+        "enabled": false,
+        "properties": {},
+        "source": "audit.ts"
+      },
+      "skin": null,
       "transform": {
         "position": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rotation": [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ],
         "scale": [
-          1,
-          1,
-          1
+          1.0,
+          1.0,
+          1.0
         ]
-      },
-      "script": {
-        "source": "audit.ts",
-        "className": "AuditReport",
-        "properties": {},
-        "enabled": false
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "4",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          0.20000000298023224,
+          0.8999999761581421,
+          0.4000000059604645,
+          1.0
+        ],
+        "visible": true
+      },
       "name": "Dynamic",
       "parent": null,
-      "transform": {
-        "position": [
-          -2,
-          0,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
       "rigidBody": {
-        "motion": "dynamic",
-        "shape": "sphere",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
         "halfExtents": [
           0.5,
           0.5,
           0.5
         ],
-        "radius": 0.5,
         "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "dynamic",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "sphere",
         "velocity": [
-          0,
-          0,
-          0
-        ],
-        "mass": 1,
-        "friction": 0,
-        "restitution": 0,
-        "gravityFactor": 0,
-        "sensor": false
+          0.0,
+          0.0,
+          0.0
+        ]
       },
-      "mesh": {
-        "kind": "cube",
-        "asset": "",
-        "tint": [
-          0.2,
-          0.9,
-          0.4,
-          1
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          0.0,
+          0.0
         ],
-        "visible": true
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "5",
-      "name": "Kinematic",
-      "parent": null,
-      "transform": {
-        "position": [
-          2,
-          0,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "rigidBody": {
-        "motion": "kinematic",
-        "shape": "box",
-        "halfExtents": [
-          0.5,
-          0.5,
-          0.5
-        ],
-        "radius": 0.5,
-        "halfHeight": 0.5,
-        "velocity": [
-          0,
-          0,
-          0
-        ],
-        "mass": 1,
-        "friction": 0,
-        "restitution": 0,
-        "gravityFactor": 0,
-        "sensor": false
-      },
-      "mesh": {
-        "kind": "cube",
-        "asset": "",
-        "tint": [
-          0.3,
-          0.5,
-          1,
-          1
-        ],
-        "visible": true
-      },
+      "light": null,
       "material": {
         "asset": "assets/copper.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          0.30000001192092896,
+          0.5,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Kinematic",
+      "parent": null,
+      "rigidBody": {
+        "friction": 0.0,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "kinematic",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "6",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          0.4000000059604645,
+          0.4000000059604645,
+          0.5,
+          1.0
+        ],
+        "visible": true
+      },
       "name": "Static",
       "parent": null,
-      "transform": {
-        "position": [
-          0,
-          -2,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
       "rigidBody": {
-        "motion": "static",
-        "shape": "box",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
         "halfExtents": [
           0.5,
           0.5,
           0.5
         ],
-        "radius": 0.5,
         "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
         "velocity": [
-          0,
-          0,
-          0
-        ],
-        "mass": 1,
-        "friction": 0,
-        "restitution": 0,
-        "gravityFactor": 0,
-        "sensor": false
+          0.0,
+          0.0,
+          0.0
+        ]
       },
-      "mesh": {
-        "kind": "cube",
-        "asset": "",
-        "tint": [
-          0.4,
-          0.4,
-          0.5,
-          1
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          -2.0,
+          0.0
         ],
-        "visible": true
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          12.0,
+          1.0,
+          6.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "7",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          0.4000000059604645,
+          0.20000000298023224,
+          1.0
+        ],
+        "visible": true
+      },
       "name": "Sensor",
       "parent": null,
-      "transform": {
-        "position": [
-          -1.3,
-          0,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
       "rigidBody": {
-        "motion": "static",
-        "shape": "sphere",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
         "halfExtents": [
           0.5,
           0.5,
           0.5
         ],
-        "radius": 0.5,
         "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": true,
+        "shape": "sphere",
         "velocity": [
-          0,
-          0,
-          0
-        ],
-        "mass": 1,
-        "friction": 0,
-        "restitution": 0,
-        "gravityFactor": 0,
-        "sensor": true
+          0.0,
+          0.0,
+          0.0
+        ]
       },
-      "mesh": {
-        "kind": "cube",
-        "asset": "",
-        "tint": [
-          1,
-          0.4,
-          0.2,
-          1
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.2999999523162842,
+          0.0,
+          0.0
         ],
-        "visible": true
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
-      "id": "8",
-      "name": "Voice",
-      "parent": null,
-      "transform": {
-        "position": [
-          -1,
-          0,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
+      "animation": null,
+      "audioListener": null,
       "audioSource": {
         "asset": "assets/tone.wav",
         "playOnStart": false,
-        "voice": {
-          "volume": 0.35,
-          "pan": 0,
-          "pitch": 1,
-          "looping": false
-        },
         "spatial": {
-          "enabled": true,
           "attenuation": "inverse",
-          "minDistance": 1,
-          "maxDistance": 100,
-          "rolloff": 1,
-          "dopplerFactor": 0,
-          "innerConeDegrees": 360,
-          "outerConeDegrees": 360,
-          "outerConeGain": 0
+          "dopplerFactor": 0.0,
+          "enabled": true,
+          "innerConeDegrees": 360.0,
+          "maxDistance": 100.0,
+          "minDistance": 1.0,
+          "outerConeDegrees": 360.0,
+          "outerConeGain": 0.0,
+          "rolloff": 1.0
+        },
+        "voice": {
+          "looping": false,
+          "pan": 0.0,
+          "pitch": 1.0,
+          "volume": 0.3499999940395355
         }
+      },
+      "camera": null,
+      "character": null,
+      "id": "8",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Voice",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "9",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "assets/probe.obj",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          0.8500000238418579,
+          0.5,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
       "name": "Asset",
       "parent": "9007199254740993",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
       "transform": {
         "position": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rotation": [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ],
         "scale": [
-          1,
-          1,
-          1
+          1.0,
+          1.0,
+          1.0
         ]
-      },
-      "mesh": {
-        "kind": "asset",
-        "asset": "assets/probe.obj",
-        "tint": [
-          0.85,
-          0.5,
-          1,
-          1
-        ],
-        "visible": true
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": {
+        "farPlane": 100.0,
+        "nearPlane": 0.10000000149011612,
+        "orthographicHeight": 8.0,
+        "primary": false,
+        "projection": "orthographic",
+        "verticalFovDegrees": 60.0
+      },
+      "character": null,
       "id": "10",
+      "light": null,
+      "material": null,
+      "mesh": null,
       "name": "Orthographic",
       "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
       "transform": {
         "position": [
-          0,
-          1,
-          9
+          0.0,
+          1.0,
+          9.0
         ],
         "rotation": [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ],
         "scale": [
-          1,
-          1,
-          1
+          1.0,
+          1.0,
+          1.0
         ]
-      },
-      "camera": {
-        "projection": "orthographic",
-        "verticalFovDegrees": 60,
-        "orthographicHeight": 8,
-        "nearPlane": 0.1,
-        "farPlane": 100,
-        "primary": false
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "11",
-      "name": "Quad",
-      "parent": null,
-      "transform": {
-        "position": [
-          0,
-          -0.5,
-          -1
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
+      "light": null,
+      "material": {
+        "asset": "assets/normal-surface.dotmaterial"
       },
       "mesh": {
-        "kind": "asset",
         "asset": "assets/normal-quad.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
         "tint": [
-          1,
-          0.4,
-          0.8,
-          1
+          1.0,
+          0.4000000059604645,
+          0.800000011920929,
+          1.0
         ],
         "visible": true
       },
-      "material": {
-        "asset": "assets/normal-surface.dotmaterial"
+      "name": "Quad",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          -0.5,
+          -1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "12",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          0.699999988079071,
+          0.699999988079071,
+          0.20000000298023224,
+          1.0
+        ],
+        "visible": true
+      },
       "name": "Capsule",
       "parent": null,
-      "transform": {
-        "position": [
-          -3,
-          -1,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
       "rigidBody": {
-        "motion": "static",
-        "shape": "capsule",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
         "halfExtents": [
           0.5,
           0.5,
           0.5
         ],
-        "radius": 0.3,
         "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.30000001192092896,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "capsule",
         "velocity": [
-          0,
-          0,
-          0
-        ],
-        "mass": 1,
-        "friction": 0,
-        "restitution": 0,
-        "gravityFactor": 0,
-        "sensor": false
+          0.0,
+          0.0,
+          0.0
+        ]
       },
-      "mesh": {
-        "kind": "cube",
-        "asset": "",
-        "tint": [
-          0.7,
-          0.7,
-          0.2,
-          1
-        ],
-        "visible": true
-      }
-    },
-    {
-      "id": "9007199254740993",
-      "name": "DisplayRoot",
-      "parent": null,
+      "script": null,
+      "skin": null,
       "transform": {
         "position": [
-          0,
-          1,
-          0
+          -3.0,
+          -1.0,
+          0.0
         ],
         "rotation": [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ],
         "scale": [
-          1,
-          1,
-          1
+          1.0,
+          1.0,
+          1.0
         ]
       }
     },
     {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
       "id": "14",
-      "name": "Glass",
-      "parent": null,
-      "transform": {
-        "position": [
-          -2.2,
-          2.4,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1.4,
-          1.4,
-          1.4
-        ]
-      },
-      "mesh": {
-        "kind": "asset",
-        "asset": "assets/normal-quad.dotmesh",
-        "tint": [
-          1,
-          0.4,
-          0.8,
-          1
-        ],
-        "visible": true
-      },
+      "light": null,
       "material": {
         "asset": "assets/glass.dotmaterial"
-      }
-    },
-    {
-      "id": "15",
-      "name": "Cutout",
-      "parent": null,
-      "transform": {
-        "position": [
-          2.2,
-          2.4,
-          0
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1.4,
-          1.4,
-          1.4
-        ]
       },
       "mesh": {
-        "kind": "asset",
         "asset": "assets/normal-quad.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
         "tint": [
-          1,
-          0.4,
-          0.8,
-          1
+          1.0,
+          0.4000000059604645,
+          0.800000011920929,
+          1.0
         ],
         "visible": true
       },
+      "name": "Glass",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.200000047683716,
+          2.4000000953674316,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.399999976158142,
+          1.399999976158142,
+          1.399999976158142
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "15",
+      "light": null,
       "material": {
         "asset": "assets/cutout.dotmaterial"
-      }
-    },
-    {
-      "id": "16",
-      "name": "Animated panel",
-      "parent": null,
-      "transform": {
-        "position": [
-          -2,
-          1,
-          -1
-        ],
-        "rotation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          0.8,
-          0.15,
-          0.4
-        ]
       },
       "mesh": {
-        "kind": "cube",
-        "asset": "",
+        "asset": "assets/normal-quad.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
         "tint": [
-          1,
-          1,
-          1,
-          1
+          1.0,
+          0.4000000059604645,
+          0.800000011920929,
+          1.0
         ],
         "visible": true
       },
-      "material": {
-        "asset": "assets/copper.dotmaterial"
-      },
+      "name": "Cutout",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.200000047683716,
+          2.4000000953674316,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.399999976158142,
+          1.399999976158142,
+          1.399999976158142
+        ]
+      }
+    },
+    {
       "animation": {
+        "clip": 0,
         "clips": [
           "assets/panel-lift.dotanimation",
           "assets/panel-turn.dotanimation"
         ],
-        "targets": [
-          {
-            "node": 0,
-            "entity": "16"
-          }
-        ],
-        "clip": 0,
-        "speed": 1,
+        "enabled": true,
         "looping": true,
         "playOnStart": false,
-        "enabled": true
+        "speed": 1.0,
+        "targets": [
+          {
+            "entity": "16",
+            "node": 0
+          }
+        ]
+      },
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "16",
+      "light": null,
+      "material": {
+        "asset": "assets/copper.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Animated panel",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          1.0,
+          -1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.800000011920929,
+          0.15000000596046448,
+          0.4000000059604645
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740993",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "DisplayRoot",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": {
+        "halfHeight": 0.550000011920929,
+        "jumpSpeed": 6.0,
+        "mass": 75.0,
+        "maxContacts": 256,
+        "maxSlopeDegrees": 50.0,
+        "maxStrength": 100.0,
+        "radius": 0.3499999940395355,
+        "stepHeight": 0.3499999940395355,
+        "stickDistance": 0.30000001192092896
+      },
+      "id": "9007199254740994",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Character controller",
+      "parent": null,
+      "rigidBody": null,
+      "script": {
+        "className": "CharacterDemo",
+        "enabled": true,
+        "properties": {},
+        "source": "character.ts"
+      },
+      "skin": null,
+      "transform": {
+        "position": [
+          4.0,
+          -1.5,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740995",
+      "light": null,
+      "material": {
+        "asset": "assets/copper.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Character visual",
+      "parent": "9007199254740994",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.8999999761581421,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.699999988079071,
+          1.7999999523162842,
+          0.699999988079071
+        ]
       }
     }
   ],
   "environment": {
     "asset": "assets/studio_small_09_1k.hdr",
-    "intensity": 1.0,
-    "rotationDegrees": 0.0,
     "background": true,
-    "radianceSize": 128,
-    "diffuseSize": 32,
-    "specularSize": 128,
     "brdfSize": 128,
-    "samples": 512
+    "diffuseSize": 32,
+    "intensity": 1.0,
+    "radianceSize": 128,
+    "rotationDegrees": 0.0,
+    "samples": 512,
+    "specularSize": 128
   },
+  "name": "Feature Lab",
   "occlusion": {
-    "radius": 0.5,
-    "bias": 0.02,
-    "strength": 1,
+    "bias": 0.019999999552965164,
     "directions": 8,
+    "filterRadius": 2,
+    "radius": 0.5,
     "steps": 4,
-    "filterRadius": 2
-  }
+    "strength": 1.0
+  },
+  "version": 1
 }

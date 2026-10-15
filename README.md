@@ -56,7 +56,7 @@ shadows, SSAO, HDR/tone mapping, glTF/GLB import, GPU skinning/animation cross-f
 rigid-body physics, native character physics and audio. The docked editor supports
 scene/resource/material authoring, selection/gizmos, undo/redo, isolated Play and
 native export. These features do not establish a mature editor or large-game
-production readiness. Character script controls/humanoid/camera integration, production content
+production readiness. Humanoid content and shoulder-camera integration, production content
 workflows and populated-scene scalability remain unfinished.
 
 Engine development has resumed after cleanup. See

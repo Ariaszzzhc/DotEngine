@@ -73,12 +73,58 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("physics_host_character_controls_keep_snapshots_jump_intent_and_strict_inputs") {
+  auto native = scene();
+  const auto floor = add(native, Dot::Physics::Motion::Static, -.5F);
+  const auto actor = native->createEntity("Character").value();
+  REQUIRE(native->setCharacterController(actor, Dot::World::CharacterController{}));
+  auto physics = PhysicsSource::create(native).value();
+  auto services = physics.bindings().value();
+  const auto args = Json::array({id(actor)});
+  auto before = read(services, "physics.character", args);
+  CHECK(before["ground"] == "grounded");
+  CHECK(before["groundEntity"] == id(floor));
+  CHECK(read(services, "physics.stats")["characters"] == 1);
+  REQUIRE(invoke(services, "physics.setCharacterInput",
+                 Json::array({id(actor), {{"velocity", xyz(2)}, {"jump", true}}})));
+
+  for (const auto& invalid : {Json{{"velocity", xyz(0, 1)}, {"jump", false}},
+                              Json{{"velocity", xyz(51)}, {"jump", false}},
+                              Json{{"velocity", xyz()}}, Json{{"velocity", xyz()}, {"jump", 1}},
+                              Json{{"velocity", xyz()}, {"jump", false}, {"extra", 0}}}) {
+    CHECK_FALSE(invoke(services, "physics.setCharacterInput", Json::array({id(actor), invalid})));
+  }
+
+  CHECK_FALSE(invoke(services, "physics.character"));
+  CHECK_FALSE(invoke(services, "physics.setCharacterYaw", Json::array({id(actor), "90"})));
+  REQUIRE(invoke(services, "physics.setCharacterYaw", Json::array({id(actor), 90})));
+  REQUIRE(physics.step(1.0 / 60));
+  auto after = read(services, "physics.character", args);
+  CHECK(after["position"]["x"].get<float>() > 0);
+  CHECK(after["velocity"]["y"].get<float>() > 5);
+  CHECK(after["rotation"]["y"].get<float>() == doctest::Approx(.70710678));
+  before["velocity"]["x"] = 99;
+  CHECK(read(services, "physics.character", args)["velocity"]["x"] == 2);
+  CHECK(std::ranges::find(services, "physics.character", &HostFunction::name)->access
+        == HostAccess::ReadOnly);
+  CHECK(std::ranges::find(services, "physics.setCharacterInput", &HostFunction::name)->access
+        == HostAccess::ReadWrite);
+  CHECK(std::ranges::find(services, "physics.setCharacterYaw", &HostFunction::name)->access
+        == HostAccess::ReadWrite);
+  REQUIRE(native->setCharacterController(actor, {}));
+  REQUIRE(physics.synchronize());
+  CHECK_FALSE(invoke(services, "physics.character", args));
+  CHECK_FALSE(invoke(services, "physics.setCharacterInput",
+                     Json::array({id(actor), {{"velocity", xyz()}, {"jump", false}}})));
+  CHECK(read(services, "physics.stats")["characters"] == 0);
+}
+
 TEST_CASE("physics_host_real_velocity_impulse_angular_motion_and_owned_state_write_back") {
   auto native = scene();
   auto entity = add(native);
   auto physics = source(native);
   auto services = physics.bindings().value();
-  CHECK(services.size() == 8);
+  CHECK(services.size() == 11);
   auto old = read(services, "physics.body", Json::array({id(entity)}));
   CHECK(old["motion"] == "dynamic");
   REQUIRE(invoke(services, "physics.setVelocity", Json::array({id(entity), xyz(1)})));

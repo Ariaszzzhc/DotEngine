@@ -215,7 +215,7 @@ collide with solid bodies and one another, but ordinary ray casts, rigid-body
 sensor/contact events and fast incoming bodies do not see a capsule in the broad
 phase. Body statistics count rigid bodies; `characters` counts owned capsules.
 Scene persistence, Inspector/agent authoring and shared GameSession simulation now
-use the controller. TypeScript controls, humanoid content and the requested
+use the controller. TypeScript controls use the same service. Humanoid content and the requested
 over-the-shoulder camera remain unfinished. This does not establish a finished
 character template or large-crowd scalability.
 

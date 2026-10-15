@@ -640,6 +640,7 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | Native method | Arguments | Result |
 | --- | --- | --- |
 | `physics.body` | `[entityId]` | owned PhysicsBodyState |
+| `physics.character` | `[entityId]` | owned CharacterState |
 | `physics.stats` | `[]` | native counters, fault state and generation string |
 | `physics.rayCast` | `[origin, displacement]` | owned RayHit or null |
 | `physics.contacts` | `[]` | owned ContactBatch; reads do not consume |
@@ -647,6 +648,8 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.setAngularVelocity` | `[entityId, angularVelocity]` | undefined |
 | `physics.addImpulse` | `[entityId, impulse]` | undefined |
 | `physics.moveKinematic` | `[entityId, position, quaternion, seconds]` | undefined |
+| `physics.setCharacterInput` | `[entityId, {velocity, jump}]` | undefined |
+| `physics.setCharacterYaw` | `[entityId, degrees]` | undefined |
 
 Vectors/quaternions use exact {x,y,z}/{x,y,z,w} fields with finite float-range
 numbers. IDs are canonical positive decimal uint64 strings. Arguments reject
@@ -706,6 +709,42 @@ reported explicitly and do not roll back completed physical advancement. Reset
 prepares its empty encoded batch before replacing the world. A Runtime rejecting
 an otherwise valid published batch does not consume native data; another reader
 with adequate transport capacity can still read it.
+
+# Character authoring and movement
+
+`dot:engine` exports CharacterController, CharacterInput and CharacterState.
+`components.character()` creates the native defaults. Entity.character reads/writes
+the saved component through the same validated scene service as editor/agent edits;
+it is mutually exclusive with Entity.rigidBody. State queries are owned snapshots,
+not live mutable handles. Large/noninteger maxContacts values are rejected before
+conversion. Changed descriptions bind at the next native physics synchronization.
+
+```ts
+import {input, ScriptComponent} from 'dot:engine';
+
+export class Walker extends ScriptComponent {
+  onFixedUpdate(): void {
+    this.self.moveCharacter({x: input.key('D').down ? 3 : 0, y: 0, z: 0},
+        input.key('Space').pressed);
+  }
+}
+```
+
+Entity.characterState and physics.character(id) return world feet/rotation/velocity,
+ground state/normal/velocity and optional scene-scoped groundEntity. PhysicsStats
+counts characters independently from bodies. Entity.moveCharacter and
+physics.setCharacterInput supply persistent world horizontal velocity plus a jump
+edge consumed on the next substep, including in air. Entity.setCharacterYaw and
+physics.setCharacterYaw turn without clearing motion. Native failures throw
+HostError. Queries are ReadOnly during lifecycle preparation/migration; all controls
+and component assignments are ReadWrite and denied in those phases. Scripts cannot
+advance/reset the simulation. Capsule constraints and native collision limitations
+are documented in [physics](Physics.md).
+
+The [Feature Lab](../examples/FeatureLab/README.md) includes an ordinary saved
+controller and arrow/J script. Its tests exercise actual input, native jumping,
+changed-source movement speed, retained physics through hot reload and landing
+without any desktop window or scripted substitute for native physics.
 
 # Runtime audio services
 
