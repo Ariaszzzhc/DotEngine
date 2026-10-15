@@ -335,6 +335,27 @@ export interface RayHit {
   normal: Vec3 | null;
 }
 
+/**
+ * Sensors are excluded by default; ignoreBody must name a synchronized rigid body.
+ * 默认排除传感器，ignoreBody 须指向已同步刚体。
+ */
+export interface SphereCastFilter {
+  includeSensors?: boolean;
+  ignoreBody?: EntityId|null;
+}
+
+/**
+ * Center is the swept sphere center, point is on the obstacle. Fraction zero
+ * reports initial overlap without moving either participant. Normal may be null
+ * for a degenerate overlap; penetrationDepth is nonnegative and zero for later hits.
+ * center 为扫掠球心，point 为障碍表面点；零比例报告初始重叠而不移动任何对象。
+ * 退化重叠可无法确定法线，深度非负且后续碰撞深度为零。
+ */
+export interface SphereHit extends RayHit {
+  center: Vec3;
+  penetrationDepth: number;
+}
+
 export interface ContactGeometry {
   normal: Vec3;
   penetrationDepth: number;
@@ -388,6 +409,12 @@ export const physics = Object.freeze({
 
   rayCast(origin: Vec3, displacement: Vec3): RayHit | null {
     return invoke('physics.rayCast', [origin, displacement]) as RayHit | null;
+  },
+
+  sphereCast(origin: Vec3, radius: number, displacement: Vec3,
+      filter: SphereCastFilter = {}): SphereHit|null {
+    return invoke('physics.sphereCast', [origin, radius, displacement,
+      {includeSensors: false, ignoreBody: null, ...filter}]) as SphereHit|null;
   },
 
   get contacts(): ContactBatch {

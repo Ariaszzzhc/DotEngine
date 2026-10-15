@@ -194,6 +194,52 @@ export class Actor extends ScriptComponent {
   good(scripts.stop());
 }
 
+TEST_CASE("sphere_cast_sdk_typechecks_native_volume_queries_and_preparation_reads") {
+  Project project;
+  project.write(R"ts(
+import {physics, ScriptComponent, type ScriptContext, type SphereHit} from 'dot:engine';
+
+export class Actor extends ScriptComponent {
+  constructor(context: ScriptContext) {
+    super(context);
+    this.query();
+  }
+
+  private query(): void {
+    const hit: SphereHit|null = physics.sphereCast({x: 0, y: 0, z: 3}, 0.25, {x: 0, y: 0, z: -4});
+
+    if (!hit || hit.entity.value !== this.self.id.value || !hit.normal
+        || Math.abs(hit.center.z - 0.75) > 0.01 || hit.normal.z < 0.99) {
+      throw Error('native swept camera volume');
+    }
+
+    hit.center.z = 99;
+
+    if (physics.sphereCast({x: 0, y: 0, z: 3}, 0.25, {x: 0, y: 0, z: -4},
+        {ignoreBody: this.self.id}) !== null) {
+      throw Error('native body filter');
+    }
+  }
+
+  onUpdate(): void {
+    this.query();
+  }
+}
+)ts");
+  auto native = scene();
+  const auto actor = native->entities()->front().id;
+  auto body = native->entity(actor)->rigidBody.value();
+  body.motion = Dot::Physics::Motion::Static;
+  body.shape = Dot::Physics::Shape::Box;
+  REQUIRE(native->setRigidBody(actor, body));
+  auto physics = source(native);
+  auto program = project.compile();
+  auto scripts = service(native, program, physics);
+  good(scripts.start());
+  good(scripts.update(0));
+  good(scripts.stop());
+}
+
 TEST_CASE("physics_sdk_real_typescript_controls_native_motion_rays_and_owned_runtime_state") {
   Project project;
   project.write(R"ts(

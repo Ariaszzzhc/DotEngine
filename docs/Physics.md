@@ -181,6 +181,31 @@ or queue failure after a step faults the world/service and rejects incomplete
 event delivery. Faulted bodies remain available for diagnostic reads/cleanup;
 recreate or reset to resume. There is no silent truncation of event streams.
 
+## Sphere volume sweeps
+
+`World::sphereCast(origin, radius, displacement, filter)` sweeps a real Jolt sphere
+against current rigid bodies. `SceneSimulation::sphereCast` maps contacts and the
+optional ignored body to scene-scoped entities. Radius is [0.001,10000] metres,
+center endpoints are finite within +/-1e6, and displacement length is at least
+0.001. Sensors are excluded by default; includeSensors explicitly enables them.
+ignoreBody must resolve to a current synchronized rigid body, not a virtual capsule.
+Invalid/stale/foreign filters fail instead of silently changing query meaning.
+
+The closest hit includes fraction, sphere center, obstacle surface point, outward
+normal and penetrationDepth. Contact coordinates are world-space. Unlike a center
+ray, the sphere catches nearby corners and narrow obstacles that can clip a camera.
+Initial overlap returns fraction zero and nonnegative depth; a geometrically
+degenerate overlap can have null normal. Later contacts report zero depth. Queries
+do not move/depenetrate/wake bodies, advance physics or publish contacts. A query
+describes the current synchronized world, not future movement of dynamic obstacles.
+
+The backend uses an origin-relative contact offset to retain local precision when
+translating returned surface points. This does not make the single-precision world
+a large-world streaming/origin-rebasing system. Headless regressions check corners,
+overlap, sensor/body filtering, owner/thread/lifetime contracts, curved colliders
+and translated scenes. Virtual capsules retain their documented lack of an inner
+rigid-body proxy and do not participate in these queries.
+
 ## Native character controller foundation
 
 `Dot.Physics.Character` separates CPU-only capsule/configuration/input validation

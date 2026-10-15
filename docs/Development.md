@@ -5416,3 +5416,51 @@ Current code preserves the complete original goal. The new lab visual is a simpl
 component showcase; realistic humanoid content, shoulder-camera/input integration,
 Prism Relay quality, background compilation and mature large-project production
 workflows remain unfinished.
+
+
+## 2026-10-15 — Native sphere sweeps for camera collision
+
+The next camera foundation adds a real Jolt volume sweep, not a center ray used as
+a substitute for camera clearance. World and SceneSimulation expose sphereCast with
+bounded radius/center endpoints/displacement, explicit sensor inclusion and an
+optional ignored current rigid body. Default queries exclude sensors. Scene/script
+results preserve owned center/surface/normal/depth and scene-scoped owner identity.
+Invalid/stale/foreign filters fail explicitly. Native temporary query shapes do not
+occupy body slots, move/wake objects, advance time or publish contact events.
+
+Closest-hit results report initial overlap at fraction zero without pretending to
+depenetrate. Degenerate overlap can lack a unique normal. Contact points use an
+origin-relative Jolt base offset before converting to world coordinates; this is
+not an origin-rebasing/streaming system. Virtual character proxies remain absent.
+Implementation follows the pinned local Jolt ShapeCast/NarrowPhaseQuery contracts;
+no new dependency, versioned format or compiler/linker override is introduced.
+
+The engine-owned TypeScript SDK exposes physics.sphereCast and typed filters/hits.
+The native callback is ReadOnly, including during component preparation. Strict
+argument/DTO validation and stale returned/ignored owner checks match existing
+query contracts. Feature Lab's actual physics audit sweeps onto its authored
+platform and checks owner, center/surface separation and outward normal. Its SDK
+inventory includes the new public method without a standalone visual driver.
+
+Initial native/scene selection passes 6/6 (0.49s). Native/scene/host/real-TypeScript/
+Feature Lab selection passes 26/26 (3.45s). Additional curved-collider and translated
+world coverage brings the final sphere selection to 8/8 (0.57s), including box/
+sphere/rotated-capsule contacts, a center-ray miss caught by sphere radius, initial
+penetration without waking a sleeping body, sensors/ignored owners, malformed
+ranges, moved/foreign/stale handles, worker rejection and scene ownership.
+Both configurations build before full serial suites; final results follow below.
+
+No separate desktop session is opened solely to inspect a volume query. Integrated
+camera/pointer behavior will use the actual editor/runtime product. Shoulder camera,
+continuous mouse capture and realistic humanoid content remain unfinished; the
+broader engine/editor objective is not narrowed to a query API or green tests.
+
+
+Full serial arm64 macOS results pass: Debug 1003/1003 (137.42s), then Release/NDEBUG
+1003/1003 (18.56s), without concurrent compilation. All eight changed/new C++ files
+pass clang-format --dry-run --Werror; changed TypeScript sections are formatted,
+and diff whitespace checks pass. The 257 unit tests initialize no windows/devices;
+new volume/query tests are integration checks. Windows/Linux remain unexecuted.
+Precommit review checks query-shape lifetime, borrowed native filters, body locks,
+contact offset/sign conventions, overlap/normal semantics, explicit error paths,
+scene mapping, host access flags, SDK/template propagation and actual test scope.

@@ -234,6 +234,11 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('physics.contacts.get', Array.isArray(physics.contacts.events));
     const hit = physics.rayCast({x: -2, y: 3, z: 0}, {x: 0, y: -6, z: 0});
     this.check('physics.rayCast', hit !== null && hit.fraction >= 0 && hit.fraction <= 1);
+    const swept = physics.sphereCast({x: 0, y: 3, z: 0}, 0.2, {x: 0, y: -6, z: 0});
+    this.check(
+        'physics.sphereCast',
+        swept?.entity.value === this.entity('Static').id.value && swept.center.y > swept.point.y
+            && (swept.normal?.y ?? 0) > 0.9);
     physics.setVelocity(dynamic.id, {x: 1, y: 0, z: 0});
     this.check('physics.setVelocity', dynamic.physicsBody.velocity.x === 1);
     dynamic.setVelocity({x: 0, y: 0, z: 0});

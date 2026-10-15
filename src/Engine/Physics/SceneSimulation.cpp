@@ -872,4 +872,55 @@ namespace Dot::Physics {
 
     return Core::fail(Core::ErrorCode::External, "Scene ray hit has no entity binding");
   }
+
+  auto SceneSimulation::sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
+                                   const SceneSphereCastFilter& filter) const
+      -> Core::Result<std::optional<SceneSphereHit>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto ready = m_impl->ready();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    SphereCastFilter nativeFilter{filter.includeSensors, {}};
+
+    if (filter.ignoreBody) {
+      auto body = m_impl->resolve(*filter.ignoreBody);
+
+      if (!body) {
+        return std::unexpected(body.error());
+      }
+
+      nativeFilter.ignoreBody = *body;
+    }
+
+    auto result = m_impl->m_world.sphereCast(origin, radius, displacement, nativeFilter);
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    if (!*result) {
+      return std::optional<SceneSphereHit>{};
+    }
+
+    const auto& hit = **result;
+
+    for (const auto& [value, entry] : m_impl->m_entries) {
+      if (entry.body == hit.body) {
+        return std::optional{SceneSphereHit{{m_impl->m_scene, value},
+                                            hit.fraction,
+                                            hit.center,
+                                            hit.point,
+                                            hit.normal,
+                                            hit.penetrationDepth}};
+      }
+    }
+
+    return Core::fail(Core::ErrorCode::External, "Scene sphere sweep hit has no entity binding");
+  }
 }  // namespace Dot::Physics

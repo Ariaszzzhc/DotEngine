@@ -22,6 +22,7 @@ module;
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
@@ -40,6 +41,7 @@ module;
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
@@ -543,6 +545,25 @@ namespace Dot::Physics {
       auto ShouldCollideLocked(const JPH::Body& body) const -> bool override {
         return !body.IsSensor();
       }
+    };
+
+    class SweepBodies final : public JPH::BodyFilter {
+    public:
+      SweepBodies(bool includeSensors, JPH::BodyID ignore)
+          : m_includeSensors(includeSensors), m_ignore(ignore) {
+      }
+
+      auto ShouldCollide(const JPH::BodyID& body) const -> bool override {
+        return body != m_ignore;
+      }
+
+      auto ShouldCollideLocked(const JPH::Body& body) const -> bool override {
+        return m_includeSensors || !body.IsSensor();
+      }
+
+    private:
+      bool m_includeSensors;
+      JPH::BodyID m_ignore;
     };
 
     struct BodyDeleter {
@@ -1843,5 +1864,92 @@ namespace Dot::Physics {
                                 hit.mFraction,
                                 vector(point),
                                 normal}};
+  }
+
+  auto World::sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
+                         const SphereCastFilter& filter) const
+      -> Core::Result<std::optional<SphereHit>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics world has been moved");
+    }
+
+    auto ready = m_impl->ready();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    if (!positionValid(origin) || !Math::isFinite(displacement)
+        || !positionValid(origin + displacement) || Math::length(displacement) < .001
+        || !std::isfinite(radius) || radius < .001F || radius > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Sphere sweep requires bounded endpoints, radius and nonzero displacement");
+    }
+
+    JPH::BodyID ignored;
+
+    if (filter.ignoreBody) {
+      auto body = m_impl->resolve(*filter.ignoreBody);
+
+      if (!body) {
+        return std::unexpected(body.error());
+      }
+
+      ignored = body->nativeId;
+    }
+
+    try {
+      const JPH::SphereShape shape{radius};
+      const JPH::RShapeCast cast{&shape, JPH::Vec3::sReplicate(1),
+                                 JPH::RMat44::sTranslation(native(origin)), native(displacement)};
+      JPH::ShapeCastSettings settings;
+      settings.mUseShrunkenShapeAndConvexRadius = true;
+      settings.mReturnDeepestPoint = true;
+      settings.SetBackFaceMode(JPH::EBackFaceMode::CollideWithBackFaces);
+      JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
+      const SweepBodies bodies{filter.includeSensors, ignored};
+      m_impl->m_system.GetNarrowPhaseQuery().CastShape(cast, settings, native(origin), collector,
+                                                       {}, {}, bodies);
+
+      if (!collector.HadHit()) {
+        return std::optional<SphereHit>{};
+      }
+
+      const auto& hit = collector.mHit;
+      const JPH::BodyLockRead locked{m_impl->m_system.GetBodyLockInterface(), hit.mBodyID2};
+
+      if (!locked.Succeeded()) {
+        return Core::fail(Core::ErrorCode::External, "Sphere sweep hit an unavailable body");
+      }
+
+      const auto point = origin + vector(hit.mContactPointOn2);
+      const auto axis = vector(-hit.mPenetrationAxis);
+
+      if (!std::isfinite(hit.mFraction) || hit.mFraction < 0 || hit.mFraction > 1
+          || !Math::isFinite(point) || !Math::isFinite(axis)
+          || !std::isfinite(hit.mPenetrationDepth)) {
+        return Core::fail(Core::ErrorCode::External, "Sphere sweep returned invalid contact data");
+      }
+
+      std::optional<Math::Vec3> normal;
+      auto unit = Math::normalized(axis);
+
+      if (unit) {
+        normal = *unit;
+      } else if (hit.mFraction > 0) {
+        return Core::fail(Core::ErrorCode::External, "Sphere sweep returned an invalid normal");
+      }
+
+      return std::optional{
+          SphereHit{{m_impl->m_identity, locked.GetBody().GetUserData()},
+                    hit.mFraction,
+                    origin + displacement * hit.mFraction,
+                    point,
+                    normal,
+                    hit.mFraction == 0 ? std::max(0.F, hit.mPenetrationDepth) : 0.F}};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Sphere sweep failed: " + std::string(error.what()));
+    }
   }
 }  // namespace Dot::Physics

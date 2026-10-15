@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 994/994 (135.18s) and Release/NDEBUG
-994/994 (19.08s), including 257 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1003/1003 (137.42s) and Release/NDEBUG
+1003/1003 (18.56s), including 257 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,

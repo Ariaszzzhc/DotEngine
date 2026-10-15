@@ -119,12 +119,47 @@ TEST_CASE("physics_host_character_controls_keep_snapshots_jump_intent_and_strict
   CHECK(read(services, "physics.stats")["characters"] == 0);
 }
 
+TEST_CASE("physics_host_sphere_sweep_returns_owned_volume_hits_and_strict_filters") {
+  auto native = scene();
+  const auto body = add(native, Dot::Physics::Motion::Static);
+  auto physics = source(native);
+  const auto services = physics.bindings().value();
+  const Json filter{{"includeSensors", false}, {"ignoreBody", nullptr}};
+  const auto args = Json::array({xyz(0, 0, 3), .25, xyz(0, 0, -4), filter});
+  const auto hit = read(services, "physics.sphereCast", args);
+  CHECK(hit["entity"] == id(body));
+  CHECK(hit["center"]["z"].get<float>() == doctest::Approx(.75).epsilon(.001));
+  CHECK(hit["point"]["z"].get<float>() == doctest::Approx(.5).epsilon(.001));
+  CHECK(hit["normal"]["z"].get<float>() > .99F);
+  CHECK(hit["penetrationDepth"] == 0);
+
+  for (const auto& invalid :
+       {Json{{"includeSensors", 1}, {"ignoreBody", nullptr}}, Json{{"includeSensors", false}},
+        Json{{"includeSensors", false}, {"ignoreBody", nullptr}, {"extra", 1}},
+        Json{{"includeSensors", false}, {"ignoreBody", id({body.scene + 1, 1})}}}) {
+    auto request = args;
+    request[3] = invalid;
+    CHECK_FALSE(invoke(services, "physics.sphereCast", request));
+  }
+
+  auto request = args;
+  request[3]["ignoreBody"] = id(body);
+  CHECK(read(services, "physics.sphereCast", request).is_null());
+  CHECK(std::ranges::find(services, "physics.sphereCast", &HostFunction::name)->access
+        == HostAccess::ReadOnly);
+  REQUIRE(native->destroyEntity(body));
+  CHECK_FALSE(invoke(services, "physics.sphereCast", args));
+  CHECK_FALSE(invoke(services, "physics.sphereCast", request));
+  REQUIRE(physics.synchronize());
+  CHECK(read(services, "physics.sphereCast", args).is_null());
+}
+
 TEST_CASE("physics_host_real_velocity_impulse_angular_motion_and_owned_state_write_back") {
   auto native = scene();
   auto entity = add(native);
   auto physics = source(native);
   auto services = physics.bindings().value();
-  CHECK(services.size() == 11);
+  CHECK(services.size() == 12);
   auto old = read(services, "physics.body", Json::array({id(entity)}));
   CHECK(old["motion"] == "dynamic");
   REQUIRE(invoke(services, "physics.setVelocity", Json::array({id(entity), xyz(1)})));

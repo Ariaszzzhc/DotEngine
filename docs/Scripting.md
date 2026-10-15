@@ -643,6 +643,7 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.character` | `[entityId]` | owned CharacterState |
 | `physics.stats` | `[]` | native counters, fault state and generation string |
 | `physics.rayCast` | `[origin, displacement]` | owned RayHit or null |
+| `physics.sphereCast` | `[origin, radius, displacement, {includeSensors, ignoreBody}]` | owned SphereHit or null |
 | `physics.contacts` | `[]` | owned ContactBatch; reads do not consume |
 | `physics.setVelocity` | `[entityId, velocity]` | undefined |
 | `physics.setAngularVelocity` | `[entityId, angularVelocity]` | undefined |
@@ -661,6 +662,14 @@ Rays use displacement rather than an unbounded direction; length is at least
 0.001 and both endpoints must fit native position limits. Sensors are included;
 an inside hit may have fraction zero and null normal. Returned poses, velocities,
 ray geometry and contact geometry are world-space metres/seconds.
+
+`physics.sphereCast(origin, radius, displacement, filter = {})` provides a native
+volume sweep for camera/gameplay queries. The wrapper defaults to excluding sensors
+and no ignored body. SphereHit extends RayHit with center and penetrationDepth;
+point is on the obstacle and center is the sphere center at the reported contact.
+Initial overlaps return fraction zero without automatic correction. Filtering,
+range and lifecycle contracts follow [native sweeps](Physics.md). This is ReadOnly
+during component preparation; it does not allocate a gameplay body or step physics.
 
 ```ts
 import {ScriptComponent, physics} from 'dot:engine';

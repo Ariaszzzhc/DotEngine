@@ -41,7 +41,8 @@ namespace Dot::Script {
                                  "physics.contacts",
                                  "physics.character",
                                  "physics.setCharacterInput",
-                                 "physics.setCharacterYaw"};
+                                 "physics.setCharacterYaw",
+                                 "physics.sphereCast"};
 
     auto entity(const Json& value) -> EntityId {
       Codec::requireFields(value, {"scene", "value"});
@@ -218,10 +219,10 @@ namespace Dot::Script {
     }
 
     auto dispatch(std::string_view method, const Json& args) -> Reply {
-      const auto count = method == "physics.body" || method == "physics.character"   ? 1U
-                         : method == "physics.stats" || method == "physics.contacts" ? 0U
-                         : method == "physics.moveKinematic"                         ? 4U
-                                                                                     : 2U;
+      const auto count = method == "physics.body" || method == "physics.character"             ? 1U
+                         : method == "physics.stats" || method == "physics.contacts"           ? 0U
+                         : method == "physics.moveKinematic" || method == "physics.sphereCast" ? 4U
+                                                                                               : 2U;
 
       if (args.size() != count) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Incorrect physics argument count");
@@ -283,6 +284,49 @@ namespace Dot::Script {
                  {"fraction", value.fraction},
                  {"point", Detail::xyz(value.point)},
                  {"normal", value.normal ? Detail::xyz(*value.normal) : Json(nullptr)}}
+                .dump()};
+      }
+
+      if (method == "physics.sphereCast") {
+        Codec::requireFields(args[3], {"includeSensors", "ignoreBody"});
+        Physics::SceneSphereCastFilter filter;
+        filter.includeSensors = args[3]["includeSensors"].get<bool>();
+
+        if (!args[3]["ignoreBody"].is_null()) {
+          filter.ignoreBody = entity(args[3]["ignoreBody"]);
+          auto owner = m_scene->entity(*filter.ignoreBody);
+
+          if (!owner) {
+            return std::unexpected(owner.error());
+          }
+        }
+
+        auto hit
+            = m_simulation.sphereCast(Detail::vector<Math::Vec3>(args[0]), Codec::number(args[1]),
+                                      Detail::vector<Math::Vec3>(args[2]), filter);
+
+        if (!hit) {
+          return std::unexpected(hit.error());
+        }
+
+        if (!*hit) {
+          return std::optional<std::string>{"null"};
+        }
+
+        const auto& value = **hit;
+
+        if (!m_scene->entity(value.entity)) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Sphere sweep hit has a removed owner; synchronize required");
+        }
+
+        return std::optional{
+            Json{{"entity", idJson(value.entity)},
+                 {"fraction", value.fraction},
+                 {"center", Detail::xyz(value.center)},
+                 {"point", Detail::xyz(value.point)},
+                 {"normal", value.normal ? Detail::xyz(*value.normal) : Json(nullptr)},
+                 {"penetrationDepth", value.penetrationDepth}}
                 .dump()};
       }
 
@@ -597,6 +641,7 @@ namespace Dot::Script {
                           || std::string_view(method) == "physics.character"
                           || std::string_view(method) == "physics.stats"
                           || std::string_view(method) == "physics.rayCast"
+                          || std::string_view(method) == "physics.sphereCast"
                           || std::string_view(method) == "physics.contacts";
         result.push_back({method,
                           [impl = m_impl, method](std::string_view args) -> Reply {

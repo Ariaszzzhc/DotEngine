@@ -92,6 +92,7 @@ add_executable(DotTests
     ExternalFileValidationTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
+    SphereCastTests.cpp
     CharacterPhysicsTests.cpp
     CharacterBatchTests.cpp
     PhysicsBatchTests.cpp

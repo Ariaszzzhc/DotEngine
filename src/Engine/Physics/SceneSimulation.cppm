@@ -39,6 +39,20 @@ export namespace Dot::Physics {
     std::optional<Dot::World::EntityId> groundEntity;
   };
 
+  struct SceneSphereCastFilter {
+    bool includeSensors{};
+    std::optional<Dot::World::EntityId> ignoreBody;
+  };
+
+  struct SceneSphereHit {
+    Dot::World::EntityId entity;
+    float fraction;
+    Math::Vec3 center;
+    Math::Vec3 point;
+    std::optional<Math::Vec3> normal;
+    float penetrationDepth;
+  };
+
   /** Owns a physics world and bindings, without retaining a scene reference.
    * Operations require the creating thread; destruction requires quiescence.
    * Moving a scene preserves its identity and bindings. Queries describe the
@@ -103,6 +117,12 @@ export namespace Dot::Physics {
                                      Math::Quat rotation, double seconds) -> Core::Result<void>;
     [[nodiscard]] auto rayCast(Math::Vec3 origin, Math::Vec3 displacement) const
         -> Core::Result<std::optional<SceneRayHit>>;
+    /** Observational volume sweep against last synchronized rigid bodies; filter
+     * owners must be synchronized body entities. 原生体积扫掠只读最近同步刚体，
+     * 过滤所有者须为已同步的刚体实体。 */
+    [[nodiscard]] auto sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
+                                  const SceneSphereCastFilter& filter = {}) const
+        -> Core::Result<std::optional<SceneSphereHit>>;
 
   private:
     struct Impl;

@@ -81,6 +81,26 @@ export namespace Dot::Physics {
     std::optional<Math::Vec3> normal;
   };
 
+  struct SphereCastFilter {
+    bool includeSensors{};
+    std::optional<BodyId> ignoreBody;
+  };
+
+  /** Closest sphere sweep contact. Center and obstacle surface point are world
+   * coordinates; normal points away from the obstacle. Initial overlaps have
+   * fraction zero and nonnegative penetrationDepth; a degenerate overlap may
+   * have no unique normal. No depenetration or simulation advancement is applied.
+   * 最近球体扫掠接触，中心与障碍表面点使用世界坐标，法线指向障碍外。
+   * 初始重叠的比例为零且深度非负，退化重叠可无法确定唯一法线；不脱离重叠或推进仿真。 */
+  struct SphereHit {
+    BodyId body;
+    float fraction;
+    Math::Vec3 center;
+    Math::Vec3 point;
+    std::optional<Math::Vec3> normal;
+    float penetrationDepth;
+  };
+
   enum class ContactPhase { Begin, Stay, Sleep, End };
 
   enum class ContactEndReason { Separated, PoseChanged, Destroyed, Reconfigured };
@@ -251,6 +271,14 @@ export namespace Dot::Physics {
      * 沿长度至少为 0.001、两端均在位置范围内的位移投射射线；包含传感器，未命中返回 nullopt。 */
     [[nodiscard]] auto rayCast(Math::Vec3 origin, Math::Vec3 displacement) const
         -> Core::Result<std::optional<RayHit>>;
+    /** Radius [0.001,10000] metres; finite center endpoints within +/-1e6 and
+     * displacement length >=0.001. Sensors are excluded by default; ignoreBody
+     * must be a current body of this world. Virtual characters are not queried.
+     * 半径为 [0.001,10000] 米，有限中心端点限制在正负一百万内，位移长度至少 0.001。
+     * 默认排除传感器，忽略句柄须为本世界现存刚体；不查询虚拟角色。 */
+    [[nodiscard]] auto sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
+                                  const SphereCastFilter& filter = {}) const
+        -> Core::Result<std::optional<SphereHit>>;
 
   private:
     struct Impl;

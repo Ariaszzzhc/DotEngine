@@ -98,6 +98,7 @@
     "physics.setCharacterInput",
     "physics.setCharacterYaw",
     "physics.setVelocity",
+    "physics.sphereCast",
     "physics.stats",
     "scene.create",
     "scene.entities",
