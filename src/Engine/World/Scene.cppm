@@ -193,6 +193,10 @@ export namespace Dot::World {
      * 按创建 ID 排序的快照，供消费者确定性使用。 */
     [[nodiscard]] auto entities() const -> Core::Result<std::vector<EntityInfo>>;
     [[nodiscard]] auto renameEntity(EntityId entity, std::string_view name) -> Core::Result<void>;
+    /** Owned local pose only, without copying names/scripts/other components.
+     * Same owner/scope/liveness checks as entity().
+     * 仅复制局部姿态，不复制名称/脚本等组件；与 entity() 共用所有者/范围/有效性校验。 */
+    [[nodiscard]] auto transform(EntityId entity) const -> Core::Result<Transform>;
     /** Normalize rotation; reject singular/non-finite transforms or any resulting
      * world-matrix overflow. Failures leave the previous scene state intact.
      * 归一化旋转，拒绝奇异/非有限变换及世界矩阵溢出；失败保留此前状态。

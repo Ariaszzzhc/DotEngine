@@ -4387,3 +4387,83 @@ built/run; Windows/Linux implementation is not locally validated. Shared active
 pivot groups are implemented; group framing, median/individual pivots, box/mixed
 property tools, production animation/streaming and polished realistic Prism Relay
 remain unfinished. The full engine/editor/game goal remains active.
+
+
+### 2026-10-15 — Native TRS animation foundation
+
+Added separate Clip, Files and SceneAnimator module interfaces/implementations.
+Clips own immutable shared channel data with explicit node/path identities, unit
+XYZW rotations, ordered finite key times and bounded tracks/keys. Sampling clamps
+each channel independently, uses Step/vector Linear/shortest-arc quaternion SLERP
+and interval-scaled cubic Hermite with normalized cubic rotations. Cubic signs/
+tangents are retained, including explicit failure when interpolation yields a zero
+quaternion/scale or overflow. Behavior was checked against Khronos glTF Appendix C;
+the model importer still explicitly rejects animated input until integration.
+
+Single strict .dotanimation JSON supports owned native clips with explicit cubic
+tangents, bounded size/depth and duplicate/unknown/type validation. Rooted portable
+regular-file paths reject links/special files; saves encode fully before atomic
+replacement, preserving prior files on invalid input. The codec is independent of
+rendering and does not resolve arbitrary external resources.
+
+SceneAnimator owns clip/binding/rest-pose data, with one-to-one live node/entity
+coverage and scene-scope/owner checks. It uses explicit elapsed seconds, checked
+seeks, forward/reverse speed, loop/nonloop, pause/resume, zero-time/rate and static
+clip handling. Samples and every node's local transform update commit together
+with playback state. Unanimated fields retain current scene values; stop restores
+only authored fields to bind pose. Removed/foreign bindings, singular samples and
+final world overflow preserve every prior transform and clock/state. Scene moves
+preserve scope; animator moves retain ownership and moved-from calls fail.
+
+Added lightweight Scene::transform owned reads so playback does not copy names/
+scripts/unrelated entity components. Animation still allocates sample/pose batches;
+allocation-free caches, parallel evaluation and populated-scene performance remain
+unproven. Native CPU tests cover independent times, exact keys/cubic derivatives,
+short-arc signs, immutable concurrent ownership, clocks/bindings/moves and atomic
+rollback including a valid-local/failing-world batch. File tests cover strict schema,
+rooting, actual symlinks and failed-save preservation. GPU sampling matches an
+independent native pose and restores bind-pose pixels; drawing resources return to
+baseline. Runnable --animation-test saves a clip and nine real hierarchical TRS PNG
+frames; start/mid/end images were inspected. These checks use no desktop window.
+
+First Clip selection passed 5/5. Full initial animation selection passed 14/14
+(2.46s), separating ten CPU unit cases, two file integration cases, one offscreen
+GPU case and one executable acceptance. The lightweight pose getter adds one more
+unit case. Initial compilation identified explicit module/header imports, a signed
+index and renderer test API/designated initializer issues; fixed those sources
+without weakening warning policy or changing compiler/linker environment.
+
+The first full Debug run passed 992/993 (224.00s), with the pre-existing native
+viewport input test failing initial selection and outside-viewport navigation.
+Its deliberate pointer samples could be followed by newly pumped OS motion/focus
+events, unlike the ordering already used by the gizmo fixtures. The test now
+provides initial focus and pumps pending OS events before each deliberate pointer
+sample, preserving every event and every original assertion. Three consecutive
+focused runs pass (2.96s). No engine input/navigation behavior, retry-on-failure
+assertion or production timing budget was changed.
+
+The final Debug suite passes 993/993 (224.56s). Eleven new animation/pose-read unit
+cases additionally pass with deliberately invalid SDL video/audio drivers (0.08s),
+confirming no window/device dependency. Scene animation integration remains a
+separate, explicitly unfinished consumer stage: glTF animated-node import, saved
+GameSession components, editor timeline/Play controls and TypeScript SDK are not
+implemented here; skinning/morph/blending/events/streaming remain open.
+
+Final Release/NDEBUG passes 993/993 (45.96s), alongside final Debug 993/993
+(224.56s): 928 doctest identities plus 65 executable/script cases. All 321 C/C++
+files pass clang-format and 16 WGSL files pass established formatting checks.
+Reviewed module ownership, interpolation failures, scene transaction/state rollback,
+file boundary checks, platform assumptions and behavioral coverage. The atomic
+archive target succeeds; ZIP audit passes CRC, all 240 exact payloads in 272 entries
+(48,656,310 bytes), executable modes, font/HDRI/licenses and excluded private inputs.
+Strict signatures and portable loader references pass for 13 regular Mach-O files
+and three relative links. Only arm64 macOS was validated; Windows/Linux remain
+implementation targets. The overall engine/editor/game goal remains active.
+
+Following the user's hierarchy crash report, rechecked the existing deferred-click
+fix (1f31835) and current packaged executable. No new DotEditor diagnostic report
+was found. Both native hierarchy cases pass three consecutive runs per case in
+Debug (6.73s) and Release/NDEBUG (2.52s), covering parent/child/repeated selection,
+modifier ranges, duplicate/delete and undo. This confirms the current code path;
+the user's launched application path has been requested to distinguish an older
+package from a new failure. No additional production fix is claimed for this check.

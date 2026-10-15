@@ -279,3 +279,17 @@ pixels, unchanged descendant local transforms, cancellation/focus loss and saved
 group scene data. Runnable viewport acceptance additionally moves two roots and
 restores data/selection/pixels with one undo. No bulk-entity test is presented as
 populated-game performance evidence.
+
+
+Animation foundation acceptance separates immutable clip/unit sampling from actual
+file IO and offscreen rendering. Curve cases cover endpoint/independent times,
+interval-scaled cubic tangents, shortest-arc SLERP and normalized authored cubic
+rotations, invalid/singular/overflow results and immutable concurrent ownership.
+Scene playback cases cover forward/reverse looping, endpoints/zero elapsed/speed,
+pause/seek/stop, unanimated fields, parent/child batching, stale/foreign/moved/owner
+contracts and atomic rollback of poses plus clock after sample/world failure.
+Native codec tests exercise strict schema, rooted regular paths, symlink rejection
+and failed-save preservation. GPU samples match an independent native reference;
+`DotRuntimeAcceptance --animation-test <existing-output-directory>` writes nine
+real PNG frames/native clip, restores bind-pose pixels and releases resources.
+This is a native TRS animation foundation, not glTF/skinning/editor/SDK integration.

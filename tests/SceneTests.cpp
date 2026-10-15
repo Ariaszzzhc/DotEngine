@@ -477,3 +477,20 @@ TEST_CASE("scene.occlusion_configuration_validates_retains_and_obeys_thread_move
   REQUIRE(moved.setOcclusion(std::nullopt));
   CHECK_FALSE(moved.occlusion().value());
 }
+
+TEST_CASE("scene.local_transform_read_is_owned_scoped_and_rejects_removed_or_moved_state") {
+  using namespace Dot;
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  REQUIRE(scene.setTransform(entity, {{1, 2, 3}, {}, {2, 3, 4}}));
+  auto pose = scene.transform(entity).value();
+  CHECK(pose.position == Math::Vec3{1, 2, 3});
+  pose.position.x = 8;
+  CHECK(scene.transform(entity)->position.x == 1);
+  CHECK_FALSE(scene.transform({entity.scene + 1, entity.value}));
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.transform(entity));
+  CHECK(moved.transform(entity)->scale == Math::Vec3{2, 3, 4});
+  REQUIRE(moved.destroyEntity(entity));
+  CHECK_FALSE(moved.transform(entity));
+}

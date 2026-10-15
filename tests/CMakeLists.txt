@@ -39,6 +39,8 @@ add_executable(DotUnitTests
     DrawBatchTests.cpp
     RenderQueueTests.cpp
     AxisDragTests.cpp
+    AnimationClipTests.cpp
+    SceneAnimatorTests.cpp
     EnvironmentTests.cpp
     SceneTests.cpp
     SceneComponentTests.cpp
@@ -77,6 +79,7 @@ add_executable(DotTests
     AssetTests.cpp
     ImageTests.cpp
     MaterialTests.cpp
+    AnimationFileTests.cpp
     ModelTests.cpp
     ModuleTests.cpp
     ExternalFileValidationTests.cpp
@@ -207,7 +210,7 @@ set_tests_properties(runtime.audio_spatial PROPERTIES TIMEOUT 15 LABELS "accepta
 add_test(NAME runtime.scene_physics COMMAND DotRuntimeAcceptance --scene-physics-test)
 set_tests_properties(runtime.scene_physics PROPERTIES TIMEOUT 15 LABELS "acceptance")
 
-add_executable(DotGraphicsTests main.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
@@ -385,3 +388,8 @@ set_tests_properties(distribution.archive_excludes_finder_metadata PROPERTIES
 
 add_test(NAME editor.model_import COMMAND DotEditorAcceptance --model-import-test "${CMAKE_CURRENT_BINARY_DIR}/project_acceptance")
 set_tests_properties(editor.model_import PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;native" RUN_SERIAL TRUE)
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
+add_test(NAME runtime.animation COMMAND DotRuntimeAcceptance --animation-test
+    "${CMAKE_CURRENT_BINARY_DIR}/animation_acceptance")
+set_tests_properties(runtime.animation PROPERTIES TIMEOUT 60 LABELS "acceptance;gpu;offscreen" RUN_SERIAL TRUE)

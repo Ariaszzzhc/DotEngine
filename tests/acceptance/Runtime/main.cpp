@@ -26,6 +26,7 @@ import Dot.World.SceneFiles;
 import Dot.Physics.World;
 
 namespace Dot::Runtime {
+  auto testAnimation(const std::filesystem::path& output) -> int;
   auto testOcclusion(const std::filesystem::path& output) -> int;
   auto testShadows(const std::filesystem::path& output) -> int;
   auto testEnvironment(const std::filesystem::path& source, const std::filesystem::path& output)
@@ -730,6 +731,11 @@ auto main(int argc, char** argv) -> int {
 
     if (argc == 3 && std::string_view(argv[1]) == "--scene-audio-test") {
       return Dot::Runtime::testSceneAudio(argv[2]);
+    }
+
+    if (argc == 3 && std::string_view(argv[1]) == "--animation-test") {
+      return Dot::Runtime::testAnimation(std::filesystem::path(
+          std::u8string(argv[2], argv[2] + std::char_traits<char>::length(argv[2]))));
     }
 
     if (argc == 3 && std::string_view(argv[1]) == "--occlusion-test") {

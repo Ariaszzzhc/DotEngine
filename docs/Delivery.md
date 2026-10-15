@@ -367,3 +367,21 @@ strict signatures and portable loader references pass for 13 regular Mach-O file
 three relative links. Windows/Linux remain implementation targets without local
 validation; mature-editor, large-game and realistic polished Prism Relay work
 remains active.
+
+
+The 2026-10-15 native animation foundation adds immutable bounded TRS clips,
+Step/Linear/Cubic sampling, strict .dotanimation files and an explicit-clock scene
+animator with atomic pose/state updates, reverse/loop/nonloop playback and rest
+restoration. CPU cases run with invalid SDL drivers; independent-pose GPU checks
+and nine inspected acceptance frames establish actual native hierarchical playback.
+Model-import, GameSession, editor timeline/Play and TypeScript consumers are still
+unfinished, as are skinning, morphs, blending, events and production streaming.
+
+Full arm64 macOS Debug passes 993/993 (224.56s), Release/NDEBUG 993/993 (45.96s):
+928 doctest identities plus 65 executable/script cases. All 321 C/C++ and 16 WGSL
+files pass formatting checks. The current ZIP has 272 entries/48,656,310 bytes,
+240 exact payloads, passing CRC/modes/licenses, strict signatures and portable
+loader references for 13 regular Mach-O files/three relative links. Native hierarchy
+click regressions additionally pass three consecutive runs each in both builds.
+Windows/Linux remain implemented without local validation. The large-game,
+mature-editor and polished realistic Prism Relay requirements remain active.

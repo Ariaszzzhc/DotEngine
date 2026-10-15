@@ -1287,7 +1287,16 @@ TEST_CASE(
   REQUIRE(count == 1);
   const auto window = SDL_GetWindowID(windows[0]);
   SDL_free(windows);
+  SDL_Event initialFocus{};
+  initialFocus.window.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  initialFocus.window.windowID = window;
+  REQUIRE(SDL_PushEvent(&initialFocus));
+  REQUIRE(workspace.step(16ms));
+
   const auto pointer = [&](float px, float py, float dx = 0, float dy = 0) {
+    /** Preserve queued OS events before the deliberate pointer sample.
+     * 保留已有系统事件并将其排在测试指针采样之前。 */
+    SDL_PumpEvents();
     SDL_Event event{};
     event.motion.type = SDL_EVENT_MOUSE_MOTION;
     event.motion.windowID = window;

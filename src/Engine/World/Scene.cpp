@@ -548,6 +548,16 @@ namespace Dot::World {
     return m_impl->snapshot(*native);
   }
 
+  auto Scene::transform(EntityId entity) const -> Core::Result<Transform> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+    return native ? Core::Result<Transform>{m_impl->registry.get<Transform>(*native)}
+                  : std::unexpected(native.error());
+  }
+
   auto Scene::entities() const -> Core::Result<std::vector<EntityInfo>> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
