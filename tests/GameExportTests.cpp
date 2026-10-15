@@ -13,6 +13,9 @@ import Dot.Core.Process;
 import Dot.Project;
 import Dot.Project.GameExport;
 import Dot.Script.Compiler;
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
+import Dot.World.Scene;
 
 namespace {
   using Json = nlohmann::json;
@@ -231,4 +234,51 @@ TEST_CASE("runtime_distribution.compile_failure_discards_private_output") {
   for (const auto& entry : Fs::directory_iterator(parent.root())) {
     CHECK_FALSE(entry.path().filename().string().starts_with(".dot-stage-"));
   }
+}
+
+TEST_CASE("runtime_distribution.saved_animation_survives_relocation_without_authoring") {
+  using namespace Dot;
+  Fixture fixture;
+  auto parent = fixture.files();
+  auto project = Dot::Project::Project::create(parent, "authoring").value();
+  auto scene = project.loadStartup().value();
+  const auto cube = scene.findEntity(2).value();
+  auto clip = Animation::Clip::create({"Move",
+                                       {{0,
+                                         Animation::Path::Translation,
+                                         Animation::Interpolation::Linear,
+                                         {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                  .value();
+  REQUIRE(Animation::saveClip(project.files().value(), "assets/move.dotanimation", clip));
+  REQUIRE(scene.setAnimationPlayer(cube,
+                                   World::AnimationPlayer{{"assets/move.dotanimation"}, {{0, 2}}}));
+  REQUIRE(project.files()->writeTextAtomic(
+      "scripts/mover.ts",
+      "import {ScriptComponent} from 'dot:engine';\n"
+      "export class Mover extends ScriptComponent {\n"
+      "  private observed = false;\n"
+      "  private started = false;\n"
+      "\n"
+      "  onStart(): void { this.started = true; }\n"
+      "\n"
+      "  onUpdate(): void { if(this.self.transform.position.x > .00001) this.observed = true; }\n"
+      "  onStop(): void { if(this.started && !this.observed) throw Error('Native animation never "
+      "advanced'); }\n"
+      "}\n"));
+  auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto kit = RuntimeKit::open(Core::FileSystem::open(DOT_RUNTIME_KIT).value()).value();
+  auto exported = exportGame(project, scene, compiler, kit, parent, "animated");
+  REQUIRE_MESSAGE(exported, (exported ? "" : exported.error().message));
+  Fs::rename(exported->root(), parent.root() / "relocated animation");
+  Fs::remove_all(project.files()->root());
+#ifdef _WIN32
+  const auto executable = parent.root() / "relocated animation/DotGame.exe";
+#else
+  const auto executable = parent.root() / "relocated animation/DotGame";
+#endif
+  auto played = Core::runProcess({executable, {"--frames", "30"}, parent.root()});
+  REQUIRE_MESSAGE(played, (played ? "" : played.error().message));
+  CHECK_MESSAGE(played->exitCode == 0, played->standardError);
+  CHECK(Core::processResources().children == 0);
+  CHECK(Core::processResources().handles == 0);
 }

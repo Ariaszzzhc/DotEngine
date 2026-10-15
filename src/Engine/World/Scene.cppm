@@ -19,6 +19,7 @@ export import Dot.Graphics.Environment;
 export import Dot.Graphics.Occlusion;
 export import Dot.Audio.Source;
 export import Dot.Script.Source;
+export import Dot.Animation.Source;
 
 export namespace Dot::World {
   /** Scene-scoped handle. Values are never reused within a scene; moving its
@@ -132,6 +133,13 @@ export namespace Dot::World {
   };
 
   using ScriptComponent = Script::ComponentProperties;
+  using AnimationPlayer = Animation::PlayerProperties;
+
+  struct AnimationPlayerInfo {
+    EntityId entity;
+    AnimationPlayer properties;
+    auto operator==(const AnimationPlayerInfo&) const -> bool = default;
+  };
 
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
@@ -148,6 +156,7 @@ export namespace Dot::World {
     std::optional<ScriptComponent> script{};
     std::optional<MaterialBinding> material{};
     std::optional<Light> light{};
+    std::optional<AnimationPlayer> animation{};
   };
 
   /** EnTT-backed scene. Operations require the creating thread; destruction may
@@ -189,6 +198,16 @@ export namespace Dot::World {
     [[nodiscard]] auto destroyEntity(EntityId entity) -> Core::Result<void>;
     [[nodiscard]] auto findEntity(std::uint64_t value) const -> Core::Result<EntityId>;
     [[nodiscard]] auto entity(EntityId entity) const -> Core::Result<EntityInfo>;
+    /** Owned, ID-sorted animation descriptions without unrelated component copies.
+     * 按 ID 排序的动画描述副本，不复制无关组件。 */
+    [[nodiscard]] auto animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>>;
+    /** Validate local live targets without IO. At most 128 players, aggregate
+     * 10000 bindings/1024 clip paths. External-target deletion is rejected until
+     * its player is removed/rebound. Playback checks asset/physics authority.
+     * 不读文件，校验场景内有效目标；至多 128 播放器，合计万绑定/1024 片段路径。
+     * 删除其他播放器引用的目标前须移除/改绑播放器，播放阶段校验资源及物理写入权。 */
+    [[nodiscard]] auto setAnimationPlayer(EntityId entity, std::optional<AnimationPlayer> player)
+        -> Core::Result<void>;
     /** Snapshots sorted by creation ID for deterministic consumers.
      * 按创建 ID 排序的快照，供消费者确定性使用。 */
     [[nodiscard]] auto entities() const -> Core::Result<std::vector<EntityInfo>>;

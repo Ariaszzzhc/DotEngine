@@ -10,6 +10,8 @@
 
 namespace Dot::Editor {
   auto testModelImport(const std::filesystem::path& parent) -> int;
+  auto testSceneAnimation(const std::filesystem::path& compiler,
+                          const std::filesystem::path& parent) -> int;
   auto testViewport(const std::filesystem::path& parent) -> int;
   auto testWorkspace(const std::filesystem::path& parent) -> int;
   auto testGui(const std::filesystem::path& parent) -> int;
@@ -32,6 +34,10 @@ auto main(int argc, char** argv) -> int {
 
     if (argc == 3 && command == "--model-import-test") {
       return Dot::Editor::testModelImport(path(argv[2]));
+    }
+
+    if (argc == 4 && command == "--scene-animation-test") {
+      return Dot::Editor::testSceneAnimation(path(argv[2]), path(argv[3]));
     }
 
     if (argc == 3 && command == "--viewport-test") {

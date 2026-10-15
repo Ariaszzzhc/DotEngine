@@ -1,0 +1,128 @@
+#include <doctest/doctest.h>
+
+#include <filesystem>
+#include <memory>
+#include <thread>
+#include <utility>
+
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
+import Dot.Animation.ScenePlayers;
+import Dot.Core.Files;
+import Dot.Core.StagedDirectory;
+import Dot.Project;
+import Dot.Project.GameSession;
+import Dot.Script.Compiler;
+import Dot.World.Scene;
+import Dot.World.SceneFiles;
+
+namespace {
+  using namespace Dot;
+
+  struct Fixture {
+    Core::StagedDirectory storage
+        = Core::StagedDirectory::create(
+              Core::FileSystem::open(std::filesystem::temp_directory_path()).value())
+              .value();
+    Project::Project project = Project::Project::create(storage.files().value(), "game").value();
+    Core::FileSystem files = project.files().value();
+    std::shared_ptr<World::Scene> scene
+        = std::make_shared<World::Scene>(World::Scene::create().value());
+    World::EntityId owner = scene->createEntity("Player").value();
+    World::EntityId target = scene->createEntity("Target").value();
+    World::AnimationPlayer properties{{"assets/move.dotanimation"}, {{0, target.value}}};
+
+    Fixture() {
+      auto clip = Animation::Clip::create({"Move",
+                                           {{0,
+                                             Animation::Path::Translation,
+                                             Animation::Interpolation::Linear,
+                                             {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                      .value();
+      Animation::saveClip(files, "assets/move.dotanimation", clip).value();
+      scene->setAnimationPlayer(owner, properties).value();
+    }
+  };
+}  // namespace
+
+TEST_CASE("animation.scene_players_retain_clocks_reconfigure_pause_reverse_and_remove") {
+  Fixture fixture;
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1);
+  fixture.properties.speed = -1;
+  fixture.properties.looping = false;
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1.5F);
+  fixture.properties.playOnStart = false;
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1.5F);
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, {}));
+  REQUIRE(players.advance(.5));
+  CHECK(players.stats()->players == 0);
+  CHECK_FALSE(players.advance(-1));
+  bool rejected{};
+  std::thread worker([&] { rejected = !players.stats(); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(players);
+  CHECK_FALSE(players.advance(0));
+  CHECK(moved.stats()->players == 0);
+}
+
+TEST_CASE("animation.scene_players_failed_rebind_overlap_physics_and_missing_files_preserve_pose") {
+  Fixture fixture;
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.advance(.5));
+  auto bad = fixture.properties;
+  bad.clips = {"assets/missing.dotanimation"};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, bad));
+  CHECK_FALSE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1);
+  const auto other = fixture.scene->createEntity("Other").value();
+  REQUIRE(fixture.scene->setAnimationPlayer(other, fixture.properties));
+  CHECK_FALSE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1);
+  REQUIRE(fixture.scene->setAnimationPlayer(other, {}));
+  REQUIRE(fixture.scene->setRigidBody(fixture.target, World::RigidBody{}));
+  CHECK_FALSE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1);
+  REQUIRE(fixture.scene->setRigidBody(fixture.target, {}));
+  REQUIRE(fixture.scene->setParent(fixture.target, other));
+  REQUIRE(fixture.scene->setRigidBody(other, World::RigidBody{}));
+  CHECK_FALSE(Animation::ScenePlayers::create(fixture.scene, fixture.files));
+  REQUIRE(fixture.scene->setRigidBody(other, {}));
+  REQUIRE(fixture.scene->setParent(fixture.target, fixture.owner));
+  REQUIRE(fixture.scene->destroyEntity(fixture.owner));
+  REQUIRE(players.advance(.5));
+  CHECK(players.stats()->players == 0);
+}
+
+TEST_CASE("animation.game_session_saved_clone_fixed_variable_fault_and_close_use_native_players") {
+  Fixture fixture;
+  const auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  REQUIRE(fixture.project.saveStartup(*fixture.scene));
+  auto session = Project::GameSession::create(fixture.project, compiler).value();
+  REQUIRE(session.start());
+  const auto playing = session.scene().value();
+  const auto target = playing->findEntity(fixture.target.value).value();
+  REQUIRE(session.fixedUpdate());
+  CHECK(playing->transform(target)->position.x == 0);
+  REQUIRE(session.update(.5));
+  CHECK(playing->transform(target)->position.x == .5F);
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 0);
+  auto saved = fixture.project.loadStartup().value();
+  CHECK(saved.transform(saved.findEntity(fixture.target.value).value())->position.x == 0);
+  REQUIRE(playing->setRigidBody(target, World::RigidBody{}));
+  CHECK_FALSE(session.update(.5));
+  CHECK(session.stats()->state == Project::SessionState::Faulted);
+  REQUIRE(session.close());
+  CHECK(session.stats()->state == Project::SessionState::Closed);
+}

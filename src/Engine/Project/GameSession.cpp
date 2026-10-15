@@ -19,6 +19,7 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Platform.Input;
 import Dot.Script.AudioSession;
+import Dot.Animation.ScenePlayers;
 
 namespace Dot::Project {
   namespace {
@@ -59,6 +60,7 @@ namespace Dot::Project {
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
     std::optional<Script::AudioSession> m_audio;
+    std::optional<Animation::ScenePlayers> m_animations;
     /** Script callbacks retain services; destroy the realm before its dependencies.
      * 脚本回调持有服务，先销毁 realm 再销毁依赖。 */
     std::optional<Script::SceneScripts> m_scripts;
@@ -119,6 +121,13 @@ namespace Dot::Project {
         }
 
         if (!fixed) {
+          auto animated = m_animations->advance(seconds);
+
+          if (!animated) {
+            m_state = SessionState::Faulted;
+            return std::unexpected(animated.error());
+          }
+
           auto synchronized = m_audio->synchronize(seconds);
 
           if (!synchronized) {
@@ -330,6 +339,13 @@ namespace Dot::Project {
         impl->m_scripts.emplace(std::move(*scripts));
       }
 
+      auto animations = Animation::ScenePlayers::create(impl->m_scene, assets);
+
+      if (!animations) {
+        return std::unexpected(animations.error());
+      }
+
+      impl->m_animations.emplace(std::move(*animations));
       return GameSession(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -411,6 +427,16 @@ namespace Dot::Project {
     auto result = m_impl->m_live ? m_impl->m_live->start() : m_impl->m_scripts->start();
     m_impl->m_state
         = !result || result->realmFaulted ? SessionState::Faulted : SessionState::Running;
+
+    if (m_impl->m_state == SessionState::Running) {
+      auto animated = m_impl->m_animations->advance(0);
+
+      if (!animated) {
+        m_impl->m_state = SessionState::Faulted;
+        return std::unexpected(animated.error());
+      }
+    }
+
     return result;
   }
 
@@ -491,6 +517,7 @@ namespace Dot::Project {
     auto result = m_impl->m_live ? m_impl->m_live->stop() : m_impl->m_scripts->stop();
     m_impl->m_live.reset();
     m_impl->m_scripts.reset();
+    m_impl->m_animations.reset();
     m_impl->m_audio.reset();
     m_impl->m_physics.reset();
     m_impl->m_input.reset();

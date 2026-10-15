@@ -243,6 +243,7 @@ namespace Dot::World {
       const auto* script = registry.try_get<ScriptComponent>(native);
       const auto* material = registry.try_get<MaterialBinding>(native);
       const auto* light = registry.try_get<Light>(native);
+      const auto* animation = registry.try_get<AnimationPlayer>(native);
       return {{identity, value.value},
               value.name,
               registry.get<Transform>(native),
@@ -254,7 +255,8 @@ namespace Dot::World {
               listener ? std::optional{*listener} : std::nullopt,
               script ? std::optional{*script} : std::nullopt,
               material ? std::optional{*material} : std::nullopt,
-              light ? std::optional{*light} : std::nullopt};
+              light ? std::optional{*light} : std::nullopt,
+              animation ? std::optional{*animation} : std::nullopt};
     }
 
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
@@ -558,6 +560,77 @@ namespace Dot::World {
                   : std::unexpected(native.error());
   }
 
+  auto Scene::animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    std::vector<AnimationPlayerInfo> result;
+
+    for (const auto native : m_impl->registry.view<AnimationPlayer>()) {
+      result.push_back({{m_impl->identity, m_impl->registry.get<Identity>(native).value},
+                        m_impl->registry.get<AnimationPlayer>(native)});
+    }
+
+    std::ranges::sort(result, {}, [](const auto& player) { return player.entity.value; });
+    return result;
+  }
+
+  auto Scene::setAnimationPlayer(EntityId entity, std::optional<AnimationPlayer> player)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(entity);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    if (!player) {
+      m_impl->registry.remove<AnimationPlayer>(*native);
+      return {};
+    }
+
+    auto checked = Animation::validatePlayerProperties(*player);
+
+    if (!checked) {
+      return checked;
+    }
+
+    std::size_t count{1}, targets{player->targets.size()}, clips{player->clips.size()};
+
+    for (const auto entry : m_impl->registry.view<AnimationPlayer>()) {
+      if (entry != *native) {
+        const auto& existing = m_impl->registry.get<AnimationPlayer>(entry);
+        ++count;
+        targets += existing.targets.size();
+        clips += existing.clips.size();
+      }
+    }
+
+    if (count > 128 || targets > 10000 || clips > 1024) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Scene animation authoring capacity exceeded");
+    }
+
+    for (const auto& target : player->targets) {
+      if (!m_impl->lookup.contains(target.entity)) {
+        return Core::fail(Core::ErrorCode::NotFound, "Animation target does not exist in scene");
+      }
+    }
+
+    m_impl->registry.emplace_or_replace<AnimationPlayer>(*native, std::move(*player));
+    return {};
+  }
+
   auto Scene::entities() const -> Core::Result<std::vector<EntityInfo>> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
@@ -787,6 +860,21 @@ namespace Dot::World {
 
       if (found != children.end()) {
         removed.insert(removed.end(), found->second.begin(), found->second.end());
+      }
+    }
+
+    const std::unordered_set<std::uint64_t> removedIds(removed.begin(), removed.end());
+
+    for (const auto entry : scene.registry.view<AnimationPlayer>()) {
+      const auto owner = scene.registry.get<Identity>(entry).value;
+
+      if (!removedIds.contains(owner)) {
+        for (const auto& target : scene.registry.get<AnimationPlayer>(entry).targets) {
+          if (removedIds.contains(target.entity)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Entity is referenced by animation player " + std::to_string(owner));
+          }
+        }
       }
     }
 

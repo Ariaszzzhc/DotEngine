@@ -2813,13 +2813,24 @@ namespace Dot::Editor {
       }
 
       for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light"}) {
+                                    "script", "material", "light", "animation"}) {
         ImGui::PushID(component);
         const auto title = label(component);
 
         if (m_edit[component].is_null()) {
           if (ImGui::Button(("Add " + title).c_str())) {
-            m_edit[component] = m_presets[component];
+            if (std::string_view(component) == "animation") {
+              m_edit[component]
+                  = {{"clips", Json::array({"assets/animation.dotanimation"})},
+                     {"targets", Json::array({{{"node", 0}, {"entity", m_edit["id"]}}})},
+                     {"clip", 0},
+                     {"speed", 1.0},
+                     {"looping", true},
+                     {"playOnStart", true},
+                     {"enabled", true}};
+            } else {
+              m_edit[component] = m_presets[component];
+            }
 
             if (std::string_view(component) == "light") {
               auto& light = m_edit[component];
@@ -2866,6 +2877,59 @@ namespace Dot::Editor {
 
             if (m_propertiesInvalid) {
               ImGui::TextWrapped("Properties must be a valid JSON object with unique fields.");
+            }
+          } else if (std::string_view(component) == "animation") {
+            auto& player = m_edit[component];
+            auto settings = player;
+            settings.erase("clips");
+            settings.erase("targets");
+            settings.erase("clip");
+            fields(settings);
+
+            for (const auto& [key, value] : settings.items()) {
+              player[key] = value;
+            }
+
+            const auto& clips = player["clips"];
+            const auto selected = player["clip"].get<std::size_t>();
+            const auto current
+                = selected < clips.size() ? clips[selected].get<std::string>() : "Choose clip";
+
+            if (ImGui::BeginCombo("Clip", current.c_str())) {
+              for (std::size_t i = 0; i < clips.size(); ++i) {
+                if (ImGui::Selectable(clips[i].get_ref<const std::string&>().c_str(),
+                                      selected == i)) {
+                  player["clip"] = i;
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+
+            ImGui::TextDisabled("%zu node bindings", player["targets"].size());
+
+            if (ImGui::TreeNode("Clip library")) {
+              for (std::size_t i = 0; i < player["clips"].size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                std::string path = player["clips"][i].get<std::string>();
+
+                if (ImGui::BeginCombo("Asset", path.c_str())) {
+                  for (const auto& entry : m_catalog) {
+                    const auto asset = entry["path"].get<std::string>();
+
+                    if (asset.ends_with(".dotanimation")
+                        && ImGui::Selectable(asset.c_str(), asset == path)) {
+                      player["clips"][i] = asset;
+                    }
+                  }
+
+                  ImGui::EndCombo();
+                }
+
+                ImGui::PopID();
+              }
+
+              ImGui::TreePop();
             }
           } else {
             fields(m_edit[component]);
@@ -2960,7 +3024,7 @@ namespace Dot::Editor {
       }
 
       for (const auto* component : {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                                    "script", "material", "light"}) {
+                                    "script", "material", "light", "animation"}) {
         if (m_edit[component] != m_original[component]) {
           operations.push_back({{"op", "component"},
                                 {"entity", id},

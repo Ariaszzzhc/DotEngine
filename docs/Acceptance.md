@@ -292,7 +292,7 @@ Native codec tests exercise strict schema, rooted regular paths, symlink rejecti
 and failed-save preservation. GPU samples match an independent native reference;
 `DotRuntimeAcceptance --animation-test <existing-output-directory>` writes nine
 real PNG frames/native clip, restores bind-pose pixels and releases resources.
-This is a native TRS animation foundation, not glTF/skinning/editor/SDK integration.
+This acceptance isolates the native TRS animation foundation; consumer coverage is described below.
 
 
 Model animation acceptance imports GLB TRS channels, publishes/reloads the actual
@@ -301,5 +301,14 @@ rest pixels/resource release. CPU/file integration checks cover glTF and GLB rem
 scene selection with warnings, shared sampler inputs, binary malformed/nonfinite/
 unordered/singular data, unsupported targets, strict descriptor paths/IDs, moves,
 source independence and failed-publication preservation. The native editor model
-acceptance also checks animation import report fields. Automatic authoring-scene/
-GameSession animation playback remains explicitly unfinished.
+acceptance also checks animation import report fields.
+
+`editor.scene_animation` imports an animated model through the real workspace,
+remaps saved player bindings, edits Inspector properties, and verifies actual Play
+pixels/native transforms. Stop restores authored pixels; save/reopen, independent
+duplication, undo and rejected bound-target deletion retain scene contracts. A
+relocated native exported game removes its authoring tree and observes native
+animation movement from its script without writing the animated transform. Missing
+clips, overlapping writers, physics authority, clock retention/reverse/pause and
+session faults have focused CPU/file integration coverage. Timeline, skinning and
+TypeScript playback controls remain unfinished.

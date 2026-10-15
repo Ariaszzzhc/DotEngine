@@ -84,8 +84,8 @@ compatible native slots are supported. Skinned/morph content, compressed
 geometry/textures, cameras/lights, UV transforms/UV sets other
 than zero and mixed sampler filtering currently return explicit errors. They are
 not imported with missing visual semantics. Node TRS animation is supported through
-native clips/bindings as described in [Animation](Animation.md); automatic saved-scene
-playback, skinning and a complete character animation pipeline remain unfinished.
+native clips/bindings and saved scene players as described in [Animation](Animation.md).
+Skinning and a complete character animation pipeline remain unfinished.
 
 Source buffers/images can be GLB views, strict base64 data URIs or percent-escaped
 portable paths under the source-file directory. Remote/absolute/traversal/symlink
@@ -101,6 +101,6 @@ and `model.dotscene`, plus `model.dotmodel` node bindings and any native animati
 clips in an owned sibling directory, then publishes without replacing
 an existing destination. Failures before publication preserve source/project and
 remove staging. Asset import and scene insertion are separate operations: insertion
-remaps entity/parent IDs and commits one document history transaction. Undo retains
+remaps entity/parent/animation-target IDs and commits one document history transaction. Undo retains
 the reusable asset directory. Imported physical models need authored scene lighting
 or an HDR environment to be visible; no substitute illumination is persisted.

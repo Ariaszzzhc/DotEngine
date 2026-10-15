@@ -726,8 +726,10 @@ The current scene's camera/environment/lighting remain authoritative.
 Import optionally accepts an unsigned `scene` index 0..1023. It reports source scene,
 mesh/material/image/node and animation counts, generated scene and native model
 descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
-Add model to scene still inserts geometry only. Saved animation players/timeline
-controls are unfinished. Import publishes reusable resources without dirtying the scene; instantiation needs the
+Add model to scene retains the animation player and remaps its node targets.
+Inspector supports clip/clock/loop/auto-play settings; Play uses the same native
+GameSession as exported games. Timeline/TypeScript playback controls remain unfinished.
+Import publishes reusable resources without dirtying the scene; instantiation needs the
 current authoring revision. A failed catalog refresh after publication explicitly
 reports that the bundle was committed. Existing destinations are never overwritten.
 Native `.gltf`, `.dotmesh`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources

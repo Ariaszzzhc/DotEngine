@@ -78,6 +78,8 @@ target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Animation/Clip.cpp
+    src/Engine/Animation/Source.cpp
+    src/Engine/Animation/ScenePlayers.cpp
     src/Engine/Animation/Files.cpp
     src/Engine/Animation/SceneAnimator.cpp
     src/Engine/Core/Clock.cpp
@@ -178,6 +180,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Result.cppm
         src/Engine/Core/Logging.cppm
         src/Engine/Animation/Clip.cppm
+        src/Engine/Animation/Source.cppm
+        src/Engine/Animation/ScenePlayers.cppm
         src/Engine/Animation/Files.cppm
         src/Engine/Animation/SceneAnimator.cppm
         src/Engine/Core/Clock.cppm

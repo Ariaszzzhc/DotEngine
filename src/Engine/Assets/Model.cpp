@@ -1062,6 +1062,21 @@ namespace Dot::Assets {
 
       const auto descriptorText = descriptor.dump() + "\n";
       require(descriptorText.size() <= 1024 * 1024, "Model descriptor exceeds 1 MiB");
+
+      if (!encodedClips.empty()) {
+        World::AnimationPlayer player;
+
+        for (const auto& path : descriptor["animations"]) {
+          player.clips.push_back(path.get<std::string>());
+        }
+
+        for (std::size_t i = 0; i < nodes.size(); ++i) {
+          player.targets.push_back({static_cast<std::uint32_t>(i), nodes[i].value});
+        }
+
+        take(scene.setAnimationPlayer(nodes.front(), std::move(player)));
+      }
+
       require(std::filesystem::is_empty(staging.root()), "Model staging must be empty");
       take(staging.createDirectories("meshes"));
       take(staging.createDirectories("materials"));

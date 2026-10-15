@@ -35,6 +35,7 @@ target_compile_definitions(DotRuntimeAcceptance PRIVATE
 add_executable(DotEditorAcceptance
     Editor/main.cpp
     Editor/ModelAcceptance.cpp
+    Editor/AnimationAcceptance.cpp
     Editor/DocumentAcceptance.cpp
     Editor/GuiAcceptance.cpp
     Editor/ProjectAcceptance.cpp

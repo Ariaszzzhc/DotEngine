@@ -4,8 +4,9 @@
 loads/saves native `.dotanimation` clips, and `Dot.Animation.SceneAnimator` binds
 logical node indices to live scene-scoped entity handles. This foundation is usable
 by native engine consumers and runnable acceptance. glTF/GLB node animations now
-convert to these clips and native model bindings. GameSession components, the editor
-timeline and TypeScript SDK playback remain unfinished. Skinning, morph targets, blending/state machines, events/root motion and production animation
+convert to these clips and native model bindings. Saved animation players now run
+through GameSession, editor Play and native exports. Timeline and TypeScript playback
+controls remain unfinished. Skinning, morph targets, blending/state machines, events/root motion and production animation
 streaming remain unfinished; this does not establish full animated-model support.
 
 Interpolation follows the [Khronos glTF animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations):
@@ -112,9 +113,9 @@ an existing destination. This does not isolate hostile filesystem races.
 
 The editor import command reports `model`, `animations` and its existing scene/
 geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
-**Add model to scene currently inserts only the geometry hierarchy.** Saved scene
-animation components, automatic GameSession playback, editor timeline controls and
-TypeScript animation APIs are the next consumer stage.
+Add model to scene remaps and retains the saved animation player and its node IDs.
+GameSession/editor Play/native exports automatically play the selected clip. Editor
+timeline and TypeScript animation control APIs remain unfinished.
 
 ```sh
 ctest --preset debug -R '^(model.animation_|runtime.model_animation$)'
@@ -126,3 +127,54 @@ actual offscreen model-animation PNGs. An independent authored-pose GPU referenc
 checks conversion at the cubic midpoint, linear quaternion and exact STEP key;
 stop restores initial pixels and GPU resources return to baseline. The diagnostic
 fixture is test geometry, not production art or evidence of full character animation.
+
+
+## Saved animation players
+
+An entity may own an `animation` description: `clips` (unique assets paths), `targets`
+(unique `{node, entity}` bindings with canonical string scene-local entity IDs),
+`clip` (selected library index), `speed` (-16..16), `looping`, `playOnStart` and
+`enabled`. `Dot.Animation.Source` validates/transports this strict description without
+IO/devices. Scenes allow at most 128 players, aggregate 10000 bindings/1024 clip
+paths. Targets must exist when authoring is published. Removing a referenced target
+requires removing/rebinding its external player; a deletion containing the player
+and all its targets is valid. Description snapshots copy no unrelated components.
+
+Imported models attach a player to the first model node when clips exist. All nodes
+are bound, including non-animated nodes required by other library clips. Insertion
+and subtree duplication remap bindings with entity/parent IDs. Duplication requires
+all of a copied player's targets to be included, ensuring independent instances.
+Undo/redo/save and cloned editor Play preserve descriptions; Stop re-presents the
+unmodified authoring scene. Inspector supports selected clip, speed, loop, auto-play,
+enabled and clip-asset choices. Node bindings come from model import or native/
+automation authoring; there is no visual binding editor/timeline yet.
+
+`Dot.Animation.ScenePlayers` owns a shared scene and playback instances. Each
+synchronize validates additions/changes as candidates before replacing its table;
+unchanged descriptions retain clocks/rest poses, removed/disabled players release
+playback, changed descriptions restart against the current local pose. Same-value
+assignments retain playback. Disk clip edits require a changed description or a new
+session. All library clips are validated, with 30000 aggregate channels/one million
+keys per scene. Active clip data is owned; unselected clips are checked then released.
+
+Actual selected-channel writers must be disjoint across players. Rigid bodies on
+an animated node or ancestor are rejected until explicit animation/physics authority
+integration exists. These checks run before pose updates and include runtime edits.
+Players reserve their selected writers even when paused; disabling releases them.
+Each player's sampled pose/clock transaction is atomic; a later player's sample
+failure does not roll back earlier players or completed scripts/physics callbacks.
+
+GameSession preparation validates animation resources; start applies auto-play's
+initial pose. Negative speed starts at the clip end, forward/zero at zero. Fixed
+updates retain their script/physics order; variable update runs scripts, synchronizes
+and advances animation once, then audio observes final poses. Native animation
+failure faults the session until close, which releases playback while retaining the
+inspectable final scene. No hidden timer, renderer or window is created. Scene
+player synchronization still copies bounded authoring descriptions and checks node
+ancestors; populated-scene frame times/streaming are not established.
+
+`editor.scene_animation` runs actual import/Inspector/Play GPU pixels, stop, save,
+copy/remapping, undo and invalid deletion. The standalone native export case removes
+its authoring tree after relocating the game; its script observes native animation
+motion and fails on stop if animation never advanced. This demonstrates the real
+runtime path, not production skinning/blending/character-animation readiness.

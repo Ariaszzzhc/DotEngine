@@ -4540,3 +4540,36 @@ exclusions. Strict signatures and portable loader references pass for 13 regular
 Mach-O files/three relative symlinks; archive staging is removed. Windows/Linux
 remain implemented targets without local validation. The full large-game/editor/
 realistic Prism Relay objective stays active.
+
+
+## 2026-10-15 — Saved scene animation consumers
+
+Added separate Source and ScenePlayers module interfaces/implementations. Strict
+saved player descriptions and live scene-local bindings persist through scene
+serialization, imported model insertion, independent duplication, undo/save and
+Inspector editing. Bound-target deletion fails before mutation. GameSession validates
+all player libraries during preparation, applies initial poses at start and advances
+native animation after variable script callbacks before audio. Fixed physics order
+is retained. Changed descriptions restart; unchanged descriptions retain clocks.
+Missing clips, shared writers and rigid-body authority conflicts fail explicitly.
+
+Reviewed ownership, moved/foreign/thread checks, canonical IDs, aggregate budgets,
+remapping, error propagation and per-player transaction limits. No hidden clock or
+window is introduced. Native editor acceptance verifies actual import/Inspector/Play
+pixels, Stop, save/reopen and duplicate/undo/deletion behavior. The relocated native
+export case removes authoring sources and its script independently observes actual
+animation motion. Focused animation checks pass 7/7 (6.30s); combined animation/home
+checks pass 13/13 (10.59s). Both Debug and Release builds succeed. Full verification
+of this tree, including the pending launcher stage, is recorded below after completion.
+Skinning, blending, visual binding/timeline tools, SDK controls and production
+streaming/performance remain unfinished.
+
+Final combined-tree Debug passes 1011/1011 (234.55s): 944 doctest identities and
+67 executable/script checks, including the pending launcher tests. No full suite
+runs concurrently with compilation or another configuration. All 334 C/C++ files
+and 16 WGSL files pass their established formatting checks. Native/GPU acceptance
+uses real macOS resources; Windows/Linux have no local validation claim.
+
+Final combined-tree Release/NDEBUG passes 1011/1011 (47.78s). Both configurations
+include the actual native animated-model editor and relocated animated-game cases.
+The pending launcher changes are kept separate in the following cohesive commit.

@@ -129,6 +129,19 @@ namespace Dot::Editor {
       for (auto& entity : copies) {
         entity["id"] = std::to_string(mapping.at(Codec::id(entity["id"])));
 
+        if (entity.contains("animation") && !entity["animation"].is_null()) {
+          for (auto& target : entity["animation"]["targets"]) {
+            const auto mapped = mapping.find(Codec::id(target["entity"]));
+
+            if (mapped == mapping.end()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Duplicate must include all animation player targets");
+            }
+
+            target["entity"] = std::to_string(mapped->second);
+          }
+        }
+
         if (!entity["parent"].is_null()) {
           if (auto parent = mapping.find(Codec::id(entity["parent"])); parent != mapping.end()) {
             entity["parent"] = std::to_string(parent->second);
@@ -218,6 +231,12 @@ namespace Dot::Editor {
 
         for (auto entity : source["entities"]) {
           entity["id"] = ids.at(entity["id"].get<std::string>());
+
+          if (entity.contains("animation") && !entity["animation"].is_null()) {
+            for (auto& target : entity["animation"]["targets"]) {
+              target["entity"] = ids.at(target["entity"].get<std::string>());
+            }
+          }
 
           if (!entity["parent"].is_null()) {
             entity["parent"] = ids.at(entity["parent"].get<std::string>());
@@ -323,8 +342,9 @@ namespace Dot::Editor {
         (*entity)["transform"] = command["value"];
       } else {
         const auto component = command["component"].get<std::string>();
-        constexpr std::array components{"camera",        "mesh",   "rigidBody", "audioSource",
-                                        "audioListener", "script", "material",  "light"};
+        constexpr std::array components{"camera",      "mesh",          "rigidBody",
+                                        "audioSource", "audioListener", "script",
+                                        "material",    "light",         "animation"};
 
         if (std::ranges::find(components, component) == components.end()) {
           return Core::fail(Core::ErrorCode::InvalidArgument,

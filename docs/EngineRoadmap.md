@@ -182,6 +182,8 @@ and local transforms commit atomically with clock state; actual offscreen refere
 pixels, saved clips/nine frames and resource release have acceptance coverage.
 glTF/GLB TRS animated-node import now retains native clips and persisted model
 node bindings, with independent bundle reload and actual animated reference pixels.
-GameSession/editor/SDK playback, skinning/morphs/blending/state machines/events and
-animation streaming are still unfinished. Production animation and realistic polished
+Saved animation players now span scene insertion/duplication/history/save, Inspector,
+GameSession/editor Play and relocated native exports. SDK playback controls, visual
+bindings/timeline, skinning/morphs/blending/state machines/events and animation
+streaming are still unfinished. Production animation and realistic polished
 Prism Relay remain open.

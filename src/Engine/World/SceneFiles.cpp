@@ -266,6 +266,7 @@ namespace Dot::World {
       std::optional<ScriptComponent> script;
       std::optional<MaterialBinding> material;
       std::optional<Light> light;
+      std::optional<AnimationPlayer> animation;
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
@@ -284,7 +285,7 @@ namespace Dot::World {
       for (const auto& value : root["entities"]) {
         Codec::requireFields(value, {"id", "name", "parent", "transform"},
                              {"camera", "mesh", "rigidBody", "audioSource", "audioListener",
-                              "script", "material", "light"});
+                              "script", "material", "light", "animation"});
         Record record;
         record.id = Codec::id(value["id"]);
         record.name = value["name"].get<std::string>();
@@ -329,6 +330,16 @@ namespace Dot::World {
 
         if (value.contains("light") && !value["light"].is_null()) {
           record.light = light(value["light"]);
+        }
+
+        if (value.contains("animation") && !value["animation"].is_null()) {
+          auto animation = Animation::decodePlayerProperties(value["animation"].dump());
+
+          if (!animation) {
+            return std::unexpected(animation.error());
+          }
+
+          record.animation = std::move(*animation);
         }
 
         records.push_back(std::move(record));
@@ -481,6 +492,14 @@ namespace Dot::World {
         }
       }
 
+      for (const auto& record : records) {
+        changed = scene->setAnimationPlayer(handles.at(record.id), record.animation);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+      }
+
       return std::move(*scene);
     }
 
@@ -592,6 +611,18 @@ namespace Dot::World {
 
     for (const auto& entity : *entities) {
       const auto& transform = entity.transform;
+      Json animation = nullptr;
+
+      if (entity.animation) {
+        auto encoded = Animation::encodePlayerProperties(*entity.animation);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        animation = Codec::parseJson(*encoded);
+      }
+
       records.push_back(
           {{"id", std::to_string(entity.id.value)},
            {"name", entity.name},
@@ -610,6 +641,7 @@ namespace Dot::World {
            {"audioSource", entity.audioSource ? sourceJson(*entity.audioSource) : Json(nullptr)},
            {"audioListener", entity.audioListener ? Json{{"primary", entity.audioListener->primary}}
                                                   : Json(nullptr)},
+           {"animation", std::move(animation)},
            {"script", entity.script
                           ? Json{{"source", entity.script->source},
                                  {"className", entity.script->className},
