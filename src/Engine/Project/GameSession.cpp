@@ -280,8 +280,10 @@ namespace Dot::Project {
       }
 
       impl->m_physics.emplace(std::move(*physics));
+      auto playbackConfig = config.audio;
+      playbackConfig.deferredStart = true;
       auto audio = config.audioMode == SessionAudio::Playback
-                       ? Script::AudioSession::createPlayback(impl->m_scene, assets, config.audio,
+                       ? Script::AudioSession::createPlayback(impl->m_scene, assets, playbackConfig,
                                                               config.audioLimits)
                        : Script::AudioSession::create(impl->m_scene, assets, config.audio.mixer,
                                                       config.audioLimits);
@@ -463,6 +465,13 @@ namespace Dot::Project {
         if (!synchronized) {
           m_impl->m_state = SessionState::Faulted;
           return std::unexpected(synchronized.error());
+        }
+
+        auto activated = m_impl->m_audio->startPlayback();
+
+        if (!activated) {
+          m_impl->m_state = SessionState::Faulted;
+          return std::unexpected(activated.error());
         }
       }
     }

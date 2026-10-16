@@ -569,7 +569,7 @@ export interface AudioOutputStats {
 }
 
 export interface AudioPlaybackStats {
-  state: 'running'|'closed'|'faulted';
+  state: 'prepared'|'running'|'closed'|'faulted';
   error: {code: HostErrorCode; message: string}|null;
   output: AudioOutputStats;
 }

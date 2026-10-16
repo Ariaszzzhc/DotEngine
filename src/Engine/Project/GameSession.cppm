@@ -45,10 +45,13 @@ export namespace Dot::Project {
    * native animation and offline/native audio. No window or renderer is opened. Operations require
    * the creating thread without reentry; moves keep stable service ownership.
    * Destruction only releases resources; close invokes stop hooks and releases
-   * services even after faults. The shared scene remains inspectable after close.
+   * services even after faults. Native audio is prepared silently and activated
+   * after the first start dispatch and successful initial pose synchronization.
+   * The shared scene remains inspectable after close.
    * 拥有新加载项目场景及输入、脚本、真实物理和离线/原生音频，不打开窗口或渲染器。
    * 操作限创建线程且不可重入，移动保持服务所有权稳定；销毁仅释放资源，close 执行停止
-   * 钩子且在故障后也释放服务，关闭后仍可检查共享场景。 */
+   * 钩子且在故障后也释放服务；原生音频静默准备，首次启动分发结束且初始位姿同步成功后才激活。
+   * 关闭后仍可检查共享场景。 */
   class GameSession {
   public:
     [[nodiscard]] static auto create(const Project& project,

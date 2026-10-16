@@ -55,6 +55,10 @@ export namespace Dot::Audio {
     auto operator=(SceneAudio&&) noexcept -> SceneAudio&;
     ~SceneAudio();
 
+    /** Activate deferred native playback; offline mode is already ready.
+     * 激活延后启动的原生播放；离线模式已就绪。 */
+    [[nodiscard]] auto startPlayback() -> Core::Result<void>;
+
     /** Prepare a complete candidate before one backend batch. Recoverable file,
      * pose, capacity, and allocation failures retain the last successful binding.
      * Spatial sources require a primary listener and mono clips. World TRS must

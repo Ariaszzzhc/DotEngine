@@ -40,6 +40,10 @@ export namespace Dot::Script {
     auto operator=(AudioSession&&) noexcept -> AudioSession&;
     ~AudioSession();
 
+    /** Native scheduler activation after scene startup; not exposed to scripts.
+     * 场景启动后由原生调度器激活，不向脚本开放。 */
+    [[nodiscard]] auto startPlayback() -> Core::Result<void>;
+
     /** Native scheduling: prepare authoring/poses before backend updates. Retain
      * manual playback/cursor when descriptions are unchanged. Reset reloads assets
      * and authored state; success increments generation and resets master gain.

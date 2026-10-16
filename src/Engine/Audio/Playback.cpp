@@ -43,6 +43,7 @@ namespace Dot::Audio {
     };
 
     PlaybackConfig m_config;
+    bool m_enabled{};
     std::thread::id m_client{std::this_thread::get_id()};
     std::thread m_worker;
     std::mutex m_mutex;
@@ -55,7 +56,7 @@ namespace Dot::Audio {
     OutputInfo m_info{};
     PlaybackStats m_last{PlaybackState::Closed, {}, {}, std::nullopt};
 
-    explicit Impl(PlaybackConfig config) : m_config(config) {
+    explicit Impl(PlaybackConfig config) : m_config(config), m_enabled(!config.deferredStart) {
     }
 
     ~Impl() {
@@ -131,7 +132,7 @@ namespace Dot::Audio {
       }
     }
 
-    static auto snapshot(Mixer& mixer, Output& output) -> Core::Result<PlaybackStats> {
+    auto snapshot(Mixer& mixer, Output& output) const -> Core::Result<PlaybackStats> {
       auto mix = mixer.stats();
       auto out = output.stats();
 
@@ -143,9 +144,11 @@ namespace Dot::Audio {
         return std::unexpected(out.error());
       }
 
-      const auto state = mix->faulted || out->fault != OutputFault::None || !out->running
-                             ? PlaybackState::Faulted
-                             : PlaybackState::Running;
+      const auto state
+          = mix->faulted || out->fault != OutputFault::None || (m_enabled && !out->running)
+                ? PlaybackState::Faulted
+            : m_enabled ? PlaybackState::Running
+                        : PlaybackState::Prepared;
       return PlaybackStats{state, *mix, *out, std::nullopt};
     }
 
@@ -155,6 +158,10 @@ namespace Dot::Audio {
     }
 
     auto fill(Mixer& mixer, Output& output, bool startup = false) -> Core::Result<void> {
+      if (!m_enabled && !startup) {
+        return {};
+      }
+
       const auto batches
           = (m_config.targetFrames + m_config.blockFrames - 1) / m_config.blockFrames;
 
@@ -212,6 +219,11 @@ namespace Dot::Audio {
       }
 
       m_info = std::move(*info);
+
+      if (!m_enabled) {
+        return {};
+      }
+
       auto filled = fill(*mixer, *output, true);
 
       if (!filled) {
@@ -268,6 +280,13 @@ namespace Dot::Audio {
               break;
             }
 
+            if (current->state == PlaybackState::Faulted) {
+              error = Core::Error{Core::ErrorCode::Unavailable,
+                                  "Playback worker observed a faulted mixer/native output",
+                                  std::source_location::current()};
+              break;
+            }
+
             {
               std::lock_guard lock(m_mutex);
               m_last = *current;
@@ -277,8 +296,8 @@ namespace Dot::Audio {
             const auto nanos
                 = std::max<std::uint64_t>(50000, static_cast<std::uint64_t>(queued) * 1000000000
                                                      / m_config.output.sampleRate / 4);
-            const auto wait
-                = std::min(nanos, static_cast<std::uint64_t>(m_config.pollMilliseconds) * 1000000);
+            const auto interval = static_cast<std::uint64_t>(m_config.pollMilliseconds) * 1000000;
+            const auto wait = m_enabled ? std::min(nanos, interval) : interval;
             std::unique_lock lock(m_mutex);
             m_wake.wait_for(lock, std::chrono::nanoseconds{static_cast<std::int64_t>(wait)},
                             [&] { return m_closing || static_cast<bool>(m_pending); });
@@ -522,6 +541,33 @@ namespace Dot::Audio {
     return m_impl->m_info;
   }
 
+  auto Playback::start() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    return m_impl->request<void>(
+        [impl = m_impl.get()](Mixer& mixer, Output& output) -> Core::Result<void> {
+          if (impl->m_enabled) {
+            return output.start();
+          }
+
+          auto filled = impl->fill(mixer, output, true);
+
+          if (!filled) {
+            return filled;
+          }
+
+          auto started = output.start();
+
+          if (started) {
+            impl->m_enabled = true;
+          }
+
+          return started;
+        });
+  }
+
   auto Playback::stats() -> Core::Result<PlaybackStats> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
@@ -541,8 +587,10 @@ namespace Dot::Audio {
       }
     }
 
-    auto result = m_impl->request<PlaybackStats>(
-        [](Mixer& mixer, Output& output) { return Impl::snapshot(mixer, output); });
+    auto result
+        = m_impl->request<PlaybackStats>([impl = m_impl.get()](Mixer& mixer, Output& output) {
+            return impl->snapshot(mixer, output);
+          });
 
     if (!result) {
       std::lock_guard lock(m_impl->m_mutex);

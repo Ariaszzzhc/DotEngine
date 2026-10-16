@@ -424,6 +424,30 @@ namespace Dot::Audio {
                         Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved")};
   }
 
+  auto SceneAudio::startPlayback() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (auto* playback = std::get_if<Playback>(&m_impl->m_backend)) {
+      auto started = playback->start();
+
+      if (!started) {
+        return started;
+      }
+
+      m_impl->m_playbackConfig->deferredStart = false;
+    }
+
+    return {};
+  }
+
   auto SceneAudio::reset(const Scene& scene) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");

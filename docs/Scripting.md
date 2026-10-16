@@ -885,3 +885,10 @@ GameSession establishes a zero-duration audio pose baseline after the first Star
 callbacks and animation sampling. Initial spawn/listener placement is not inferred
 as high-speed motion. Repeating Start does not reset an established audio velocity
 sample. Subsequent variable updates use their actual elapsed duration.
+
+Native GameSession audio remains `prepared` during script construction and Start:
+autoplay/play controls establish voice state without advancing source frames or
+starting the device. After initial animation and audio synchronization succeed,
+GameSession activates playback once. `audio.stats().playback.state` then becomes
+`running`; native output failures remain real errors. Scripts cannot start the
+endpoint. Offline deterministic rendering retains its existing explicit scheduling.

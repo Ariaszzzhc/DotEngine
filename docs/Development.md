@@ -7150,3 +7150,59 @@ source copies/failure fixture, request clients, editing helpers and exported tes
 are removed; ignored screenshots/state/log evidence, caches and prior archives remain.
 Runtime scene composition/streaming, broader authoring/performance systems and the
 finished realistic game remain open; the original engine goal remains unfinished.
+
+### Deferred native audio activation
+
+Runtime scene replacement needs a prepared candidate that cannot play before it is
+accepted. Native GameSession previously started its audio worker/output during
+preparation, allowing authored autoplay voices to advance before Start. Added an
+explicit deferred-start configuration and Prepared playback state. A prepared worker
+accepts owned voice controls but neither mixes PCM nor starts native callbacks;
+start prefills the current graph and activates once. Healthy repeated activation is
+idempotent; moved, foreign-thread, closed and faulted services reject it. Prepared
+workers wait at the configured interval and still detect endpoint/mixer faults,
+retain diagnostics and release resources. There is no null-device fallback.
+
+SceneAudio and the native-only AudioSession scheduler forward activation; resetting
+retains whether playback has been activated. GameSession always prepares native
+audio deferred, dispatches Start, samples animation and establishes initial audio
+poses, then activates. Pre-activation constructor/realm/native failures do not start
+the endpoint. Isolated component callback failures retain their existing reporting
+semantics; activation failures fault the session. The TypeScript observation contract
+includes prepared, with no script operation to activate or replace a device. Offline
+explicit rendering and normal direct Playback startup retain their contracts.
+
+Four enduring native-audio regressions cover prepared autoplay/cursor/zero-frame/
+zero-callback behavior, deferred reset and activation, ownership/move/thread/close
+boundaries, repeated unstarted teardown, partial initialization and actual compiled
+GameSession startup/failure ordering. The GameSession case loads a real published ESM
+generation without invoking a compiler and checks native audio observations from
+component construction/Start/Update. No new executable, unit-test device or automated
+desktop window is introduced.
+
+Actual FeatureLab editor operations complete two Play/Stop cycles in one native
+session: all 116 checks finish, all six deliberately caught invalid operations match
+the example contract, native output consumes PCM, no Play diagnostics/faults appear,
+and revision/dirty state plus project/scene/script bytes remain unchanged. The native
+session exits 0 with empty stderr and its control directory removed. The temporary
+client initially mistook the example's expected-error counter for unexpected errors;
+reading the implementation and resuming the same live session corrected validation.
+Owned temporary app/client/requests are removed; ignored observations/logs, build
+caches, prior archives and untracked user references remain. No delivery bundle is
+created. Runtime scene switching/composition itself remains unfinished.
+
+macOS arm64 builds succeed in Debug and Release with the caller's toolchain and
+linker environment. Full integration-stage CTest runs pass 1139/1139 in Debug
+(176.79s) and Release/NDEBUG (19.72s): 317 unit and 822 integration, including
+overlapping 132 offscreen GPU, 31 native-audio and 28 SDL-dummy platform cases.
+After final worker fault/activation review and a bounded native callback wait,
+rebuilt final sources pass all 110 audio-related cases in both Debug (9.23s) and
+Release/NDEBUG (4.71s). Windows/Linux are not executed. The four new cases remain
+native-audio integration checks, not unit cases. The broad engine/game goal remains
+unfinished; these counts establish the recorded contracts, not production readiness.
+
+Precommit review covers worker-only activation state, initialization/publication
+ordering, callback/voice cursor timing, healthy idempotence and terminal rejection,
+retained fault diagnostics, scene reset state, script access restrictions, RAII and
+foreign-thread teardown, platform-independent API placement and existing offline
+behavior. All ten changed C++ files pass clang-format; whitespace checks pass.

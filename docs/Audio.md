@@ -124,6 +124,27 @@ interval is 1..20 ms. Waits adapt to a quarter of the currently queued duration,
 with a 50 microsecond floor and the configured upper bound. OS scheduling can
 still cause underruns; they remain observable in output statistics.
 
+`PlaybackConfig.deferredStart` prepares the real endpoint and accepts voice controls
+without filling PCM or starting device callbacks. Statistics report `Prepared`,
+zero rendered/submitted frames and a stopped endpoint; a voice marked playing keeps
+its cursor until activation. `start()` prefills the current graph and starts native
+playback, then becomes idempotent. It does not pause/resume or reopen a closed/faulted
+service. Closing or destroying a prepared service releases all resources without
+playing it. A prepared worker waits at the configured poll interval.
+
+`SceneAudio::startPlayback` and the native `AudioSession::startPlayback` scheduler
+operation forward activation (offline mode needs no activation). Reset retains
+whether the service has been activated. Scripts can observe `prepared` through
+`audio.stats().playback.state`, but cannot activate the device. GameSession always
+prepares native audio deferred, runs Start and initial animation/audio pose
+synchronization, then activates it. Loading a scene or constructing its scripts
+therefore cannot play its authored autoplay voices. Recoverable component callback
+failures retain their existing isolation/reporting behavior; realm or native startup
+failures before activation fault the session and leave the endpoint prepared;
+activation failures also propagate to the session. This defines
+the audio preparation boundary needed for forthcoming runtime scene changes; scene
+switching itself is not yet implemented.
+
 Creating client-thread calls synchronously dispatch validated voice operations
 and return the worker's actual results. There is at most one pending command;
 arguments retain owned Clip copies until execution. Startup waits for successful

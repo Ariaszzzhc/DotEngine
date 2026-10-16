@@ -40,6 +40,83 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("audio.playback_deferred_start_preserves_voices_until_explicit_activation") {
+  const auto mixerBefore = Mixer::backendMemory();
+  const auto outputBefore = Output::backendMemory();
+  auto properties = config();
+  properties.deferredStart = true;
+  auto playback = Playback::create(properties);
+  REQUIRE_MESSAGE(playback, (playback ? "" : playback.error().message));
+  auto source = clip(0.25F, 48000);
+  REQUIRE(source);
+  auto id = playback->createVoice(*source);
+  REQUIRE(id);
+  REQUIRE(playback->seek(*id, 100));
+  REQUIRE(playback->play(*id));
+  std::this_thread::sleep_for(std::chrono::milliseconds{40});
+  auto prepared = playback->stats();
+  REQUIRE(prepared);
+  CHECK(prepared->state == PlaybackState::Prepared);
+  CHECK_FALSE(prepared->output.running);
+  CHECK(prepared->mixer.renderedFrames == 0);
+  CHECK(prepared->output.submittedFrames == 0);
+  CHECK(prepared->output.callbacks == 0);
+  CHECK(prepared->output.queuedFrames == 0);
+  CHECK(playback->voice(*id)->sourceFrame == 100);
+  CHECK(playback->voice(*id)->playing);
+  auto foreign = std::async(std::launch::async, [&] { return playback->start(); });
+  CHECK_FALSE(foreign.get());
+  CHECK(playback->stats()->state == PlaybackState::Prepared);
+  auto moved = std::move(*playback);
+  CHECK_FALSE(playback->start());
+  REQUIRE(moved.start());
+  REQUIRE(moved.start());
+  REQUIRE(waitFor([&] { return moved.stats()->output.consumedFrames > 1024; }));
+  CHECK(moved.stats()->state == PlaybackState::Running);
+  CHECK(moved.voice(*id)->sourceFrame > 100);
+  REQUIRE(moved.close());
+  CHECK_FALSE(moved.start());
+  CHECK(moved.stats()->state == PlaybackState::Closed);
+  CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+}
+
+TEST_CASE("audio.playback_prepared_close_never_mixes_and_releases_every_resource") {
+  const auto mixerBefore = Mixer::backendMemory();
+  const auto outputBefore = Output::backendMemory();
+  auto properties = config();
+  properties.deferredStart = true;
+
+  for (int iteration = 0; iteration < 3; ++iteration) {
+    auto playback = Playback::create(properties);
+    REQUIRE(playback);
+    auto source = clip();
+    REQUIRE(source);
+    auto id = playback->createVoice(*source, {1, 0, 1, true});
+    REQUIRE(id);
+    REQUIRE(playback->play(*id));
+    REQUIRE(playback->close());
+    REQUIRE(playback->close());
+    auto closed = playback->stats();
+    REQUIRE(closed);
+    CHECK(closed->state == PlaybackState::Closed);
+    CHECK(closed->mixer.renderedFrames == 0);
+    CHECK(closed->mixer.voices == 0);
+    CHECK(closed->output.callbacks == 0);
+    CHECK(closed->output.submittedFrames == 0);
+    CHECK_FALSE(playback->start());
+    CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+    CHECK(Mixer::backendMemory().allocations == mixerBefore.allocations);
+    CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+    CHECK(Output::backendMemory().allocations == outputBefore.allocations);
+  }
+
+  properties.output.backendBytes = 1;
+  CHECK_FALSE(Playback::create(properties));
+  CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+}
+
 TEST_CASE("audio.playback_continues_real_mixing_while_client_thread_is_idle") {
   auto playback = Playback::create(config());
   auto source = clip(0.75F);

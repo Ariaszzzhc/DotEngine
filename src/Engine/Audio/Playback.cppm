@@ -17,9 +17,12 @@ export namespace Dot::Audio {
     std::uint32_t targetFrames{2048};
     std::uint32_t blockFrames{256};
     std::uint32_t pollMilliseconds{2};
+    /** Prepare the endpoint and voices without mixing or starting callbacks.
+     * 准备端点及声部但不混音，也不启动设备回调。 */
+    bool deferredStart{};
   };
 
-  enum class PlaybackState { Running, Closed, Faulted };
+  enum class PlaybackState { Prepared, Running, Closed, Faulted };
 
   struct PlaybackStats {
     PlaybackState state;
@@ -46,6 +49,11 @@ export namespace Dot::Audio {
     Playback(Playback&&) noexcept;
     auto operator=(Playback&&) noexcept -> Playback&;
     ~Playback();
+
+    /** Activate prepared playback once. Idempotent while running; unavailable
+     * after closure/fault. This is not a pause/resume operation.
+     * 一次性激活已准备的播放，运行时幂等；关闭或故障后不可用，并非暂停/恢复。 */
+    [[nodiscard]] auto start() -> Core::Result<void>;
 
     [[nodiscard]] auto createVoice(const Clip& clip, const VoiceSettings& settings = {})
         -> Core::Result<VoiceId>;

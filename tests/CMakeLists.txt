@@ -146,7 +146,7 @@ add_dependencies(DotCompilerTests DotCompilerFixture DotProcessFixture)
 dotDiscoverTests(DotCompilerTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotAudioTests main.cpp OutputTests.cpp PlaybackTests.cpp SceneAudioNativeTests.cpp)
-target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest)
+target_link_libraries(DotAudioTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 dotDiscoverTests(DotAudioTests LABELS "integration;audio-native" PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
 # Product command contracts are headless; visual QA uses the real editor.
 # 产品命令契约不打开窗口，可视化检查使用真实编辑器。

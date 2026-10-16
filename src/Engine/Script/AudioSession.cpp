@@ -114,9 +114,10 @@ namespace Dot::Script {
       }
 
       const auto& output = value->output;
-      const auto state = value->state == Audio::PlaybackState::Running  ? "running"
-                         : value->state == Audio::PlaybackState::Closed ? "closed"
-                                                                        : "faulted";
+      const auto state = value->state == Audio::PlaybackState::Prepared  ? "prepared"
+                         : value->state == Audio::PlaybackState::Running ? "running"
+                         : value->state == Audio::PlaybackState::Closed  ? "closed"
+                                                                         : "faulted";
       constexpr std::array faults{"none",        "callback", "stopped", "rerouted",
                                   "interrupted", "start",    "stop"};
       return {{"state", state},
@@ -365,6 +366,15 @@ namespace Dot::Script {
     }
 
     return reset;
+  }
+
+  auto AudioSession::startPlayback() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_audio.startPlayback() : checked;
   }
 
   auto AudioSession::render(std::span<float> samples) -> Core::Result<void> {
