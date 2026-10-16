@@ -50,6 +50,7 @@ add_executable(DotUnitTests
     AnimationPlayerTests.cpp
     HomeDialogTests.cpp
     SceneFlowTests.cpp
+    GameStateTests.cpp
     SceneAnimatorTests.cpp
     AnimationTransitionTests.cpp
     SkinTests.cpp
@@ -78,6 +79,7 @@ dotDiscoverTests(DotPlatformTests LABELS "integration;platform" PROPERTIES TIMEO
 add_executable(DotProcessFixture ProcessFixture.cpp)
 target_link_libraries(DotProcessFixture PRIVATE DotBuildOptions nlohmann_json::nlohmann_json)
 add_executable(DotTests
+    SaveTests.cpp
     main.cpp
     FileTests.cpp
     StagedDirectoryTests.cpp

@@ -5,6 +5,7 @@
 #include <expected>
 #include <limits>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <utility>
@@ -22,6 +23,8 @@ import Dot.Platform.Events;
 import Dot.Script.Compiler;
 import Dot.Script.Runtime;
 import Dot.Audio.Mixer;
+import Dot.Game.State;
+import Dot.Game.Saves;
 import Dot.Physics.Body;
 
 namespace {
@@ -94,6 +97,24 @@ namespace {
     CHECK(report->frame.failures.empty());
     CHECK_FALSE(report->frame.realmFaulted);
     return std::move(*report);
+  }
+
+  auto progressBindings(Dot::Game::State state) -> Dot::Script::HostBindings {
+    return {{"progress.get",
+             [state](std::string_view arguments) {
+               const auto values = nlohmann::json::parse(arguments);
+               return state.get(values.at(0).get<std::string>());
+             },
+             Dot::Script::HostAccess::ReadOnly},
+            {"progress.set",
+             [state](std::string_view arguments) mutable
+                 -> Dot::Core::Result<std::optional<std::string>> {
+               const auto values = nlohmann::json::parse(arguments);
+               auto changed = state.set(values.at(0).get<std::string>(), values.at(1).dump());
+               return changed ? Dot::Core::Result<std::optional<std::string>>{std::nullopt}
+                              : Dot::Core::Result<std::optional<std::string>>{
+                                    std::unexpected(changed.error())};
+             }}};
   }
 
   auto actor(const GameSession& session) -> Dot::World::EntityInfo {
@@ -539,4 +560,77 @@ TEST_CASE("game_session_precompiled_validation_and_failed_preparation_release_re
             .value();
   good(session.start());
   good(session.close());
+}
+
+TEST_CASE("game_state.shared_native_service_survives_scene_realms_and_save_reopen") {
+  Fixture fixture(false);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {scene, ScriptComponent} from 'dot:engine';
+import {invoke} from 'dot:host';
+export class Mover extends ScriptComponent {
+  onStart(): void {
+    const visits = (invoke('progress.get', ['visits']) as number|undefined) ?? 0;
+    invoke('progress.set', ['visits', visits + 1]);
+    this.self.name = 'visit-' + (visits + 1);
+  }
+
+  onStop(): void {
+    invoke('progress.set', ['departed', scene.info().name]);
+  }
+}
+)ts"));
+  auto target = fixture.project.loadStartup().value();
+  REQUIRE(target.rename("Destination"));
+  REQUIRE(Dot::World::saveScene(fixture.project.files().value(), "scenes/next.dotscene", target));
+  auto data = Dot::Game::State::create().value();
+  GameSessionConfig config;
+  config.scripts.services = progressBindings(data);
+  auto session = fixture.session(config);
+  good(session.start());
+  CHECK(actor(session).name == "visit-1");
+  auto first = session.scene().value();
+  auto request = session.requestScene("scenes/next.dotscene").value();
+  good(session.update(0));
+  CHECK(session.sceneRequest(request)->committed);
+  CHECK(session.scene().value()->id() != first->id());
+  CHECK(actor(session).name == "visit-2");
+  CHECK(data.get("visits").value().value() == "2");
+  good(session.close());
+  CHECK(data.get("departed").value().value() == R"("Destination")");
+  auto saves = Dot::Game::Saves::open(fixture.directory.files()).value();
+  REQUIRE(saves.write("checkpoint", data.snapshot().value(), false));
+  auto loaded = saves.read("checkpoint").value();
+  auto restored = Dot::Game::State::create(loaded.data).value();
+  CHECK(restored.snapshot()->revision == 1);
+  config.scripts.services = progressBindings(restored);
+  auto restarted = fixture.session(config);
+  good(restarted.start());
+  CHECK(actor(restarted).name == "visit-3");
+  CHECK(data.get("visits").value().value() == "2");
+  good(restarted.close());
+}
+
+TEST_CASE("game_state.readonly_preparation_cannot_publish_into_shared_progress") {
+  Fixture fixture(false);
+  auto data = Dot::Game::State::create(R"({"progress":7})").value();
+  GameSessionConfig config;
+  config.scripts.services = progressBindings(data);
+  auto original = fixture.session(config);
+  good(original.start());
+  auto old = original.scene().value();
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {ScriptComponent} from 'dot:engine';
+import {invoke} from 'dot:host';
+export class Mover extends ScriptComponent {
+  attempted = invoke('progress.set', ['progress', 0]);
+}
+)ts"));
+  auto before = data.snapshot().value();
+  auto rejected = GameSession::create(fixture.project, fixture.compiler(), config);
+  REQUIRE_FALSE(rejected);
+  CHECK(data.snapshot()->data == before.data);
+  CHECK(data.snapshot()->revision == before.revision);
+  good(original.update(0));
+  CHECK(original.scene().value().get() == old.get());
+  good(original.close());
 }

@@ -7303,3 +7303,58 @@ preflight can stall a frame; GPU allocation/render failures remain post-commit r
 errors. GPU staging/background streaming, additive scenes, persistent cross-scene
 state, broader authoring/performance systems and finished realistic game art remain
 open. The complete engine/game objective remains unfinished.
+
+### Gameplay state and save storage foundations
+
+Added Dot.Game.State and Dot.Game.Saves as separate interfaces/implementation units
+in the static engine library. State owns bounded scalar-Unicode JSON independently
+of scene/realm/device lifetime. Copies share the store; observations own bytes.
+Literal root keys, strict duplicates/numeric/depth/size validation and expected
+revision replacement prevent ambiguous input and stale publication. Semantic no-ops
+retain revision. Candidate allocation/encoding completes before the store swaps.
+Methods require the creator thread; moved facades fail explicitly.
+
+Saves explicitly receives an existing game-owned filesystem directory. Portable
+lowercase slot names and strict unversioned envelopes retain data and source
+revision, without assigning that revision into a live store. Reads never mutate
+State. Existing slots require explicit overwrite; the existing flushed temporary
+file/atomic replacement implementation publishes prepared data. File failures retain
+the prior slot under serialized filesystem access. No directory crash durability
+or hostile concurrent mutation protection is claimed. Symlink/special/case aliases,
+malformed envelopes, excessive enumeration and invalid names fail with context.
+Listing does not parse contents, permitting corrupt/oversized saves to be removed;
+capacity reduction still permits existing-slot operations. Lost roots are not
+silently recreated. See GameState.md for the exact native contract and limits.
+
+Thirteen focused regressions reuse existing targets: four pure CPU cases, seven
+filesystem cases and two actual GameSession/compiler cases with application-provided
+custom services. They cover normal/no-op/conflict/invalid-input behavior, copy/move/
+thread/owned observations, persistence/reopen/corruption/capacity, alias/symlink/root
+failure and atomic-write failure without retained scratch files. The POSIX permission
+fixture actually exercises its failure branch on this macOS host; Windows excludes
+that fixture rather than claiming equivalent directory-permission behavior.
+
+The GameSession cases use the real compiler and lifecycle: one shared store records
+visits across realm/scene replacement and Stop, persists, reopens and supplies a new
+session. Another rejects constructor writes during read-only preparation without
+changing the store or the already running session. These are custom application
+bindings, not new built-in dot: APIs. No test opens a desktop window; unit cases
+initialize no devices/filesystem. Focused Debug CTest passes 13/13 (0.78s).
+
+macOS arm64 Debug/Release builds succeed using the caller's environment. Full CTest
+passes Debug 1168/1168 (178.35s) and Release/NDEBUG 1168/1168 (19.46s): 324 unit and
+844 integration, with overlapping 188 compiler, 132 offscreen GPU, 32 native-audio
+and 28 SDL-dummy cases. Windows/Linux are supported in source but not executed.
+
+Precommit review covers shared/owned lifetimes, validate-before-publish and no-
+allocation successful file publication, contextual failures, bounds, canonical
+portable paths and platform guards. Seven changed/new C++ files pass clang-format;
+whitespace checks pass. Existing compiler/linker environment and dependency pins
+are preserved. Build caches/logs and untracked references are retained; no release
+archive is produced.
+
+This is a native foundation, not a complete player/editor save workflow. Stable
+application identity and per-user directories, built-in realm-restricted script
+services, isolated Play state, matching editor/agent controls and actual example
+workflows remain next. Synchronous save I/O, background scheduling and crash
+recovery also remain open. The full engine/game objective is not complete.
