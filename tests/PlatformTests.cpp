@@ -102,6 +102,9 @@ TEST_CASE("window.move_releases_old_resources") {
     CHECK(second.nativeHandle() == nullptr);
     CHECK_FALSE(second.size().has_value());
     CHECK_FALSE(second.show().has_value());
+    CHECK_FALSE(second.setRelativeMouse(true));
+    CHECK_FALSE(second.relativeMouse());
+    CHECK_FALSE(second.focused());
   }
 
   CHECK_FALSE(videoInitialized());
@@ -125,11 +128,33 @@ TEST_CASE("window.reject_worker_thread_operations") {
   bool rejected = false;
   std::jthread worker([&] {
     const auto other = Window::create(hiddenWindow());
-    rejected = !other && !window->resize(640, 480) && !pollEvents();
+    rejected = !other && !window->resize(640, 480) && !pollEvents()
+               && !window->setRelativeMouse(true) && !window->relativeMouse() && !window->focused();
   });
   worker.join();
   CHECK(rejected);
   CHECK(window->size()->width == 320);
+}
+
+TEST_CASE("window.relative_mouse_reports_native_mode_and_focus_with_dummy_video") {
+  auto window = Window::create(hiddenWindow()).value();
+  auto* native = static_cast<SDL_Window*>(window.nativeHandle());
+  CHECK_FALSE(window.relativeMouse().value());
+  CHECK(window.focused().value() == (SDL_GetKeyboardFocus() == native));
+  REQUIRE(window.setRelativeMouse(false));
+  auto captured = window.setRelativeMouse(true);
+
+  if (captured) {
+    CHECK(window.relativeMouse().value());
+    CHECK(SDL_GetWindowRelativeMouseMode(native));
+    REQUIRE(window.setRelativeMouse(true));
+  } else {
+    CHECK(captured.error().code == Dot::Core::ErrorCode::External);
+    CHECK_FALSE(window.relativeMouse().value());
+  }
+
+  REQUIRE(window.setRelativeMouse(false));
+  CHECK_FALSE(window.relativeMouse().value());
 }
 
 #if defined(__APPLE__)

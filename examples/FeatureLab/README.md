@@ -99,5 +99,11 @@ camera belong to the unfinished Prism Relay experience.
 
 The physics audit also sweeps a real sphere onto the saved platform and verifies
 the obstacle identity, center, surface point and normal through physics.sphereCast.
-This query supplies the volume collision needed by a shoulder camera; the camera
-and pointer-capture workflow remain separate implementation work.
+This query supplies the volume collision needed by a shoulder camera.
+
+Enable Game input during Play, then press M to toggle native mouse look. Escape
+or focus loss releases editor capture; re-enable Game input to resume. The Camera
+script rotates only on acknowledged native frames and consumes motion once per
+variable update. The standalone runtime also honors script capture requests while
+focused. This is a free-look input demonstration; the shoulder camera and realistic
+humanoid for Prism Relay remain unfinished.

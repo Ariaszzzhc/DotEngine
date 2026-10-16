@@ -46,13 +46,18 @@ export interface InputFrame {
   pointerDelta: Vec2;
   wheel: Vec2;
   text: string;
+  pointerCaptured: boolean;
 }
 
-/** Observational reads of the last published frame. Returned data is owned;
+/**
+ * Observational reads of the last published frame. Returned data is owned;
  * reads do not consume edges. Fixed steps may share a frame; missing/unpublished
- * native services fail explicitly. The application owns frame publication.
+ * native services fail explicitly. capturePointer requests native capture; only
+ * pointerCaptured acknowledges it after focus/frontend policy is applied.
+ * The application owns frame publication.
  * 只读最近发布帧，返回拥有数据且不消费边沿；固定步可共用帧，未绑定/未发布服务明确
- * 失败，应用负责帧发布。 */
+ * 失败，应用负责帧发布；capturePointer 仅请求捕获，pointerCaptured 才报告前端聚焦策略后的确认。
+ */
 export const input = Object.freeze({
   snapshot(): InputFrame {
     return invoke('input.snapshot', []) as InputFrame;
@@ -84,6 +89,14 @@ export const input = Object.freeze({
 
   get index(): string {
     return invoke('input.index', []) as string;
+  },
+
+  capturePointer(enabled: boolean): void {
+    invoke('input.capturePointer', [enabled]);
+  },
+
+  get pointerCaptured(): boolean {
+    return invoke('input.pointerCaptured', []) as boolean;
   },
 });
 

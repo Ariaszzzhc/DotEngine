@@ -49,12 +49,17 @@ namespace {
   }
 }  // namespace
 
-TEST_CASE("input_host_before_publication_is_unavailable_and_methods_are_observational") {
+TEST_CASE("input_host_queries_are_readonly_and_capture_is_a_write_request") {
   auto input = source();
   auto services = bindings(input);
-  REQUIRE(services.size() == 8);
+  REQUIRE(services.size() == 10);
 
   for (const auto& service : services) {
+    if (service.name == "input.capturePointer") {
+      CHECK(service.access == HostAccess::ReadWrite);
+      continue;
+    }
+
     CHECK(service.access == HostAccess::ReadOnly);
     auto args = service.name == "input.key"      ? Json::array({"A"})
                 : service.name == "input.button" ? Json::array({"Left"})
@@ -63,6 +68,38 @@ TEST_CASE("input_host_before_publication_is_unavailable_and_methods_are_observat
     REQUIRE_FALSE(result);
     CHECK(result.error().code == Dot::Core::ErrorCode::Unavailable);
   }
+}
+
+TEST_CASE("input_host_pointer_capture_request_is_distinct_from_native_acknowledgement") {
+  auto input = source({1});
+  auto services = bindings(input);
+  CHECK_FALSE(input.pointerCaptureRequested().value());
+  REQUIRE(invoke(services, "input.capturePointer", Json::array({true})));
+  CHECK(input.pointerCaptureRequested().value());
+  CHECK_FALSE(invoke(services, "input.pointerCaptured"));
+  InputState native;
+  REQUIRE(input.publish(native));
+  CHECK_FALSE(read(services, "input.pointerCaptured").get<bool>());
+  REQUIRE(input.publish(native, true));
+  CHECK(read(services, "input.pointerCaptured").get<bool>());
+  CHECK(read(services, "input.snapshot")["pointerCaptured"] == true);
+
+  for (const auto& args :
+       {Json::array(), Json::array({1}), Json::array({"true"}), Json::array({false, true})}) {
+    CHECK_FALSE(invoke(services, "input.capturePointer", args));
+    CHECK(input.pointerCaptureRequested().value());
+  }
+
+  REQUIRE(native.consume({0, 0, Text{"xx"}}));
+  CHECK_FALSE(input.publish(native, false));
+  CHECK(read(services, "input.pointerCaptured").get<bool>());
+  CHECK(input.pointerCaptureRequested().value());
+  REQUIRE(invoke(services, "input.capturePointer", Json::array({false})));
+  CHECK_FALSE(input.pointerCaptureRequested().value());
+  CHECK(read(services, "input.pointerCaptured").get<bool>());
+  native.beginFrame();
+  REQUIRE(input.publish(native));
+  CHECK_FALSE(read(services, "input.pointerCaptured").get<bool>());
 }
 
 TEST_CASE("input_host_editor_navigation_keys_publish_exact_native_edges") {
@@ -249,10 +286,13 @@ TEST_CASE("input_host_moves_thread_checks_and_publisher_release_preserve_binding
     auto moved = std::move(input);
     CHECK_FALSE(input.bindings());
     CHECK_FALSE(input.publish(native));
+    CHECK_FALSE(input.pointerCaptureRequested());
     REQUIRE(moved.publish(native));
     bool rejected = false;
     std::thread worker([&] {
-      rejected = !moved.bindings() && !moved.publish(native) && !invoke(services, "input.snapshot");
+      rejected = !moved.bindings() && !moved.publish(native) && !moved.pointerCaptureRequested()
+                 && !invoke(services, "input.snapshot")
+                 && !invoke(services, "input.capturePointer", Json::array({true}));
     });
     worker.join();
     CHECK(rejected);
@@ -260,6 +300,7 @@ TEST_CASE("input_host_moves_thread_checks_and_publisher_release_preserve_binding
   }
 
   CHECK(read(services, "input.index") == "1");
+  REQUIRE(invoke(services, "input.capturePointer", Json::array({true})));
   std::thread release([values = std::move(services)]() mutable { values.clear(); });
   release.join();
 }

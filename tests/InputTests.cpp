@@ -91,6 +91,28 @@ TEST_CASE("input.reject_nonfinite_motion") {
   CHECK(input.wheel().y == 0);
 }
 
+TEST_CASE("input.clear_pointer_delta_preserves_other_current_frame_input") {
+  InputState input;
+  REQUIRE(input.consume({0, 0, PointerMoved{100, 50, 4, -2}}));
+  REQUIRE(input.consume({0, 0, KeyChanged{Key::A, true, false}}));
+  REQUIRE(input.consume({0, 0, ButtonChanged{MouseButton::Right, true}}));
+  REQUIRE(input.consume({0, 0, Wheel{1, 2}}));
+  REQUIRE(input.consume({0, 0, Text{"中文"}}));
+  input.clearPointerDelta();
+  CHECK(input.pointerDelta().x == 0);
+  CHECK(input.pointerDelta().y == 0);
+  CHECK(input.pointer().x == 100);
+  CHECK(input.pointer().y == 50);
+  CHECK(input.key(Key::A).pressed);
+  CHECK(input.button(MouseButton::Right).pressed);
+  CHECK(input.wheel().x == 1);
+  CHECK(input.wheel().y == 2);
+  CHECK(input.text() == "中文");
+  REQUIRE(input.consume({0, 0, PointerMoved{100, 50, 2, 3}}));
+  CHECK(input.pointerDelta().x == 2);
+  CHECK(input.pointerDelta().y == 3);
+}
+
 TEST_CASE("input.text_is_frame_scoped") {
   InputState input;
   CHECK(input.consume({0, 0, Text{"世界"}}));

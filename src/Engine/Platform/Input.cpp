@@ -30,6 +30,10 @@ namespace Dot::Platform {
   InputState::InputState(std::uint32_t windowId) noexcept : m_windowId(windowId) {
   }
 
+  auto InputState::clearPointerDelta() noexcept -> void {
+    m_delta = {};
+  }
+
   auto InputState::beginFrame() noexcept -> void {
     for (auto& key : m_keys) {
       key.pressed = false;

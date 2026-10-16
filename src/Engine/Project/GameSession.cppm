@@ -82,7 +82,12 @@ export namespace Dot::Project {
 
     [[nodiscard]] auto scene() const -> Core::Result<std::shared_ptr<World::Scene>>;
     [[nodiscard]] auto stats() const -> Core::Result<GameSessionStats>;
-    [[nodiscard]] auto publish(const Platform::InputState& input) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false)
+        -> Core::Result<std::uint64_t>;
+    /** Script request only; the native frontend owns focus/capture policy and
+     * publishes its actual acknowledgement with the input frame.
+     * 仅为脚本请求，原生前端拥有聚焦/捕获策略，并随输入帧发布实际确认。 */
+    [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto start() -> Core::Result<Script::ScriptReport>;
     /** Requires start. Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then

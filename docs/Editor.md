@@ -237,11 +237,22 @@ destruction also stop active games; destructor diagnostics go to stderr.
 
 The Game input checkbox uses this same request. Capture starts disabled; it routes
 native keyboard/text to the game, leaving editor shortcuts inactive except F5.
-Pointer coordinates are relative to the viewport in logical pixels. Escape or
-clicking outside the viewport releases capture; focus loss releases native held
-keys. Released capture publishes released edges from the last game input, then
+Pointer coordinates are relative to the viewport in logical pixels. A running game
+can request relative mouse mode with `input.capturePointer(true)`. It takes effect
+only while Game input is enabled and the editor window is focused. Relative mode
+hides/confines the cursor and supports continuous motion beyond window edges;
+pointer buttons/motion/wheel are isolated from editor widgets. Escape, focus loss,
+Stop or closing releases capture. Focus loss disables Game input until explicitly
+enabled again. Outside-viewport clicks release ordinary absolute input capture.
+Released capture publishes released edges from the last game input, then
 empty frames. Capture does not pause simulation/audio. No pause or single-step
 control is provided by this stage. F5 and Escape are reserved editor controls.
+
+`workspace.play.pointerCaptureRequested` reports the running script request;
+`pointerCaptured` reports the last successfully applied native mode. A command
+response can precede the next native frame that applies its request. The script's
+`input.pointerCaptured` acknowledges the state published with that frame. These
+fields also make the real pointer workflow inspectable by AI agents.
 
 ```json
 {"command":"save-close","revision":"4"}

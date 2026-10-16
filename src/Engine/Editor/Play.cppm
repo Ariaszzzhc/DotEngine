@@ -66,8 +66,9 @@ export namespace Dot::Editor {
      * 发布一帧输入，执行配置的至多 1..64 个固定步，然后更新一次脚本/音频，变动时长
      * 至多一秒。额外固定时长报告为 dropped；负时长在输入/计时副作用前失败，不回滚
      * 已完成的回调。 */
-    [[nodiscard]] auto advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed)
-        -> Core::Result<void>;
+    [[nodiscard]] auto advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed,
+                               bool pointerCaptured = false) -> Core::Result<void>;
+    [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto stop() -> Core::Result<Script::ScriptReport>;
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
     [[nodiscard]] auto stats() const -> Core::Result<PlayStats>;

@@ -515,7 +515,7 @@ portable content capture rather than platform notification APIs.
 # Input frames and native services
 
 `Dot.Script.InputSource` owns an explicitly published native input snapshot. Create
-it on the application's owner thread, copy its eight bindings into
+it on the application's owner thread, copy its ten bindings into
 `SceneScriptsConfig.services` (or `LiveScriptsConfig.scripts.services`), and publish
 an initial frame before preparing classes that read input. Moves preserve existing
 bindings; those bindings retain the last data after the publisher is destroyed.
@@ -579,6 +579,18 @@ NotFound through invoke, including with an entirely empty callback registry.
 | `input.wheel` | `[]` | `{x,y}` accumulated frame scroll |
 | `input.text` | `[]` | frame text |
 | `input.index` | `[]` | publication index string |
+| `input.pointerCaptured` | `[]` | last native capture acknowledgement |
+| `input.capturePointer` | `[boolean]` | request relative pointer capture; no return data |
+
+The capture request does not operate a window or forge acknowledgement. The native
+frontend reads `pointerCaptureRequested()`, applies its focus/input policy through
+SDL, and passes the resulting state to `publish(input, pointerCaptured)`. Headless
+publication defaults to false. Requests survive script realm reloads. Reads remain
+observational; capture requests are ReadWrite and forbidden during component
+preparation and state export/import. A failed publication preserves the old frame
+and acknowledgement. Native mode transitions clear only accumulated pointer delta,
+preserving other current-frame input. Consume mouse motion once per variable frame,
+because multiple fixed steps can share the same publication.
 
 The SDK exports frozen `keys` and `mouseButtons` name arrays, matching every
 supported native enum except Unknown/Count. Key names include A..Z, Digit0..9,
@@ -608,7 +620,8 @@ export class Mover extends ScriptComponent {
 observational behavior, while the default ReadWrite methods are denied during
 component preparation and state export/import. The VM does not verify native
 implementations or apply this scheduling policy to a direct Runtime. SceneHost
-marks its reads explicitly; InputSource marks all eight methods ReadOnly. Additional
+marks its reads explicitly; InputSource marks nine queries ReadOnly and the capture
+request ReadWrite. Additional
 services cannot override scene methods, must have canonical unique names, a valid
 classification and nonempty callbacks, and share the total 256-method limit.
 SceneScripts retains original callbacks/dependencies in its configuration and

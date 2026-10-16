@@ -46,6 +46,12 @@ export namespace Dot::Platform {
     [[nodiscard]] auto resize(int width, int height) -> Core::Result<void>;
     [[nodiscard]] auto show() -> Core::Result<void>;
     [[nodiscard]] auto setTextInput(bool enabled) -> Core::Result<void>;
+    /** Relative mode hides/confines the cursor while focused and permits motion
+     * beyond window edges. SDL flushes pending motion when the mode changes.
+     * 相对模式在聚焦时隐藏/限制光标，支持越过窗口边界的连续运动；切换时 SDL 清除待处理移动。 */
+    [[nodiscard]] auto setRelativeMouse(bool enabled) -> Core::Result<void>;
+    [[nodiscard]] auto relativeMouse() const -> Core::Result<bool>;
+    [[nodiscard]] auto focused() const -> Core::Result<bool>;
     /** Borrowed backend handle, valid until destruction. 借用后端句柄，销毁前有效。 */
     [[nodiscard]] auto nativeHandle() const noexcept -> void*;
 

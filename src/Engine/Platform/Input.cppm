@@ -28,6 +28,10 @@ export namespace Dot::Platform {
   public:
     explicit InputState(std::uint32_t windowId = 0) noexcept;
     auto beginFrame() noexcept -> void;
+    /** Clear only motion already consumed before a native pointer-mode change;
+     * preserve button edges, position, wheel and text. 清除原生鼠标模式切换前已消费的位移，
+     * 保留按键边沿、位置、滚轮与文本。 */
+    auto clearPointerDelta() noexcept -> void;
     auto consume(const Event& event) -> bool;
     [[nodiscard]] auto key(Key key) const noexcept -> ButtonState;
     [[nodiscard]] auto button(MouseButton button) const noexcept -> ButtonState;

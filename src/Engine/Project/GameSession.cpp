@@ -405,7 +405,8 @@ namespace Dot::Project {
     return result;
   }
 
-  auto GameSession::publish(const Platform::InputState& input) -> Core::Result<std::uint64_t> {
+  auto GameSession::publish(const Platform::InputState& input, bool pointerCaptured)
+      -> Core::Result<std::uint64_t> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
     }
@@ -416,7 +417,17 @@ namespace Dot::Project {
       return std::unexpected(checked.error());
     }
 
-    return m_impl->m_input->publish(input);
+    return m_impl->m_input->publish(input, pointerCaptured);
+  }
+
+  auto GameSession::pointerCaptureRequested() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_input->pointerCaptureRequested()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto GameSession::start() -> Core::Result<Script::ScriptReport> {

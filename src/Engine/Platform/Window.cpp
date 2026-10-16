@@ -141,6 +141,41 @@ namespace Dot::Platform {
     return {};
   }
 
+  auto Window::setRelativeMouse(bool enabled) -> Core::Result<void> {
+    if (!m_impl || !isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Relative mouse mode requires a live window on the main thread");
+    }
+
+    if (SDL_GetWindowRelativeMouseMode(m_impl->window) == enabled) {
+      return {};
+    }
+
+    if (!SDL_SetWindowRelativeMouseMode(m_impl->window, enabled)) {
+      return windowFailure("Cannot change relative mouse mode");
+    }
+
+    return {};
+  }
+
+  auto Window::relativeMouse() const -> Core::Result<bool> {
+    if (!m_impl || !isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Relative mouse query requires a live window on the main thread");
+    }
+
+    return SDL_GetWindowRelativeMouseMode(m_impl->window);
+  }
+
+  auto Window::focused() const -> Core::Result<bool> {
+    if (!m_impl || !isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Window focus query requires a live window on the main thread");
+    }
+
+    return SDL_GetKeyboardFocus() == m_impl->window;
+  }
+
   auto Window::resize(int width, int height) -> Core::Result<void> {
     if (!m_impl || !isMainThread()) {
       return Core::fail(Core::ErrorCode::InvalidState,

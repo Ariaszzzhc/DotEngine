@@ -188,6 +188,41 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   CHECK(declared(fixture.project) == expected);
 }
 
+TEST_CASE("feature_lab_mouse_look_uses_native_ack_and_rotates_once_per_variable_frame") {
+  Fixture fixture;
+  auto session = fixture.session();
+  report(session.start());
+  auto scene = session.scene().value();
+  const auto camera = scene->entities()->front().id;
+  const auto initial = scene->entity(camera)->transform.rotation;
+  Platform::InputState input;
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::M, true, false}}));
+  REQUIRE(input.consume({0, 0, Platform::PointerMoved{0, 0, 30, 20}}));
+  REQUIRE(session.publish(input));
+  report(session.update(0));
+  CHECK(session.pointerCaptureRequested().value());
+  CHECK(scene->entity(camera)->transform.rotation == initial);
+  input.beginFrame();
+  REQUIRE(input.consume({0, 0, Platform::PointerMoved{0, 0, 30, 20}}));
+  REQUIRE(session.publish(input, true));
+  report(session.fixedUpdate());
+  report(session.fixedUpdate());
+  CHECK(scene->entity(camera)->transform.rotation == initial);
+  report(session.update(0));
+  auto rotated = scene->entity(camera)->transform.rotation;
+  CHECK(rotated.y < 0);
+  CHECK(rotated.x < 0);
+  CHECK(rotated.w == doctest::Approx(std::cos(0.045) * std::cos(0.03)));
+  REQUIRE(session.publish(input));
+  report(session.update(0));
+  CHECK(scene->entity(camera)->transform.rotation == rotated);
+  REQUIRE(session.publish(input, true));
+  report(session.update(0));
+  rotated = scene->entity(camera)->transform.rotation;
+  CHECK(rotated.w == doctest::Approx(std::cos(0.09) * std::cos(0.06)));
+  report(session.close());
+}
+
 TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio") {
   Fixture fixture;
   const auto generations = Script::compilerGenerations();

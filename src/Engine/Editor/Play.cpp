@@ -136,8 +136,8 @@ namespace Dot::Editor {
     }
   }
 
-  auto PlaySession::advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed)
-      -> Core::Result<void> {
+  auto PlaySession::advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed,
+                            bool pointerCaptured) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
@@ -165,7 +165,7 @@ namespace Dot::Editor {
     ActiveScope active{m_impl->m_active};
 
     try {
-      auto published = m_impl->m_session.publish(input);
+      auto published = m_impl->m_session.publish(input, pointerCaptured);
 
       if (!published) {
         return std::unexpected(published.error());
@@ -227,6 +227,16 @@ namespace Dot::Editor {
 
     return m_impl->m_session.scene().transform(
         [](const auto& scene) -> const World::Scene* { return scene.get(); });
+  }
+
+  auto PlaySession::pointerCaptureRequested() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session.pointerCaptureRequested()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto PlaySession::stats() const -> Core::Result<PlayStats> {

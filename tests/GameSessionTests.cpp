@@ -147,6 +147,40 @@ TEST_CASE("game_session_orders_input_scripts_real_physics_audio_and_explicit_shu
   CHECK(scene->entityCount().value() == 2);
 }
 
+TEST_CASE("game_session_pointer_request_and_native_ack_do_not_require_a_window") {
+  Fixture fixture(false);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {ScriptComponent, input} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  onStart(): void { input.capturePointer(true); }
+  onUpdate(): void { this.self.name = input.pointerCaptured ? 'captured' : 'released'; }
+  onStop(): void { input.capturePointer(false); }
+}
+)ts"));
+  GameSessionConfig config;
+  config.audioMode = SessionAudio::Offline;
+  auto session = fixture.session(config);
+  CHECK_FALSE(session.pointerCaptureRequested().value());
+  good(session.start());
+  CHECK(session.pointerCaptureRequested().value());
+  good(session.update(0));
+  CHECK(actor(session).name == "released");
+  REQUIRE(session.publish(held(), true));
+  good(session.update(0));
+  CHECK(actor(session).name == "captured");
+  REQUIRE(session.publish(held()));
+  good(session.update(0));
+  CHECK(actor(session).name == "released");
+  auto moved = std::move(session);
+  CHECK_FALSE(session.pointerCaptureRequested());
+  bool rejected{};
+  std::thread worker([&] { rejected = !moved.pointerCaptureRequested(); });
+  worker.join();
+  CHECK(rejected);
+  good(moved.close());
+  CHECK_FALSE(moved.pointerCaptureRequested());
+}
+
 TEST_CASE("game_session_hot_reload_migrates_scripts_and_retains_native_motion_audio") {
   Fixture fixture;
   fixture.controller();

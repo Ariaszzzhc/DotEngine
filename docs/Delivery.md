@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1003/1003 (137.42s) and Release/NDEBUG
-1003/1003 (18.56s), including 257 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1010/1010 (141.64s) and Release/NDEBUG
+1010/1010 (17.91s), including 258 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -47,3 +47,10 @@ identity signing/notarization and installer publication have not been completed.
 The chronological development log retains historical evidence. It must not be read
 as a current list of tools or an assertion that all original requirements are done.
 The full [goal boundaries](EngineRoadmap.md) remain open.
+
+Native relative mouse capture is now available through dot:engine with distinct
+script requests and frontend acknowledgements. Feature Lab includes M-toggle mouse
+look. A separate actual editor session verifies native capture, pointer-driven
+rotation, Escape and minimized-window release, unchanged authoring after Stop and
+clean process exit. Headless tests cover VM guards, reload and input publication.
+The requested Prism Relay shoulder camera and realistic humanoid remain open.

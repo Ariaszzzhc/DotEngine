@@ -221,6 +221,86 @@ export function run(): string[] { return navigation.filter(key => input.key(key)
         == Json::array({"Delete", "Insert", "Home", "End", "PageUp", "PageDown", "KeypadEnter"}));
 }
 
+TEST_CASE("input_sdk_capture_is_guarded_during_preparation_and_survives_realm_reload") {
+  Project project;
+  project.write(R"ts(
+import {ScriptComponent, input} from 'dot:engine';
+import type {ScriptContext, HostError} from 'dot:engine';
+
+function guarded(): void {
+  const captured: boolean = input.pointerCaptured;
+
+  if (captured !== input.snapshot().pointerCaptured) {
+    throw Error('inconsistent capture acknowledgement');
+  }
+
+  try {
+    input.capturePointer(false);
+  } catch (error) {
+    if ((error as HostError).code === 'InvalidState') {
+      return;
+    }
+
+    throw error;
+  }
+
+  throw Error('capture changed during preparation');
+}
+
+export class Actor extends ScriptComponent {
+  constructor(context: ScriptContext) {
+    super(context);
+    guarded();
+  }
+
+  onStart(): void {
+    input.capturePointer(true);
+  }
+
+  onUpdate(): void {
+    this.self.name = input.pointerCaptured ? 'captured' : 'released';
+  }
+
+  onSaveState(): object {
+    guarded();
+    return {};
+  }
+
+  onLoadState(): void {
+    guarded();
+  }
+
+  onStop(): void {
+    input.capturePointer(false);
+  }
+}
+)ts");
+  auto program = project.compile();
+  auto publisher = input();
+  InputState state;
+  REQUIRE(publisher.publish(state));
+  auto native = scene();
+  const auto id = native->entities()->front().id;
+  auto scripts = SceneScripts::create(native, program, config(publisher)).value();
+  CHECK_FALSE(publisher.pointerCaptureRequested().value());
+  good(scripts.start());
+  CHECK(publisher.pointerCaptureRequested().value());
+  good(scripts.update(0));
+  CHECK(native->entity(id)->name == "released");
+  REQUIRE(publisher.publish(state, true));
+  good(scripts.update(0));
+  CHECK(native->entity(id)->name == "captured");
+  auto reload = scripts.reload(program);
+  REQUIRE(reload);
+  CHECK(reload->migrated == 1);
+  CHECK(publisher.pointerCaptureRequested().value());
+  REQUIRE(publisher.publish(state));
+  good(scripts.update(0));
+  CHECK(native->entity(id)->name == "released");
+  good(scripts.stop());
+  CHECK_FALSE(publisher.pointerCaptureRequested().value());
+}
+
 TEST_CASE("input_sdk_lifecycle_reads_share_edges_across_fixed_steps_and_use_next_published_frame") {
   Project project;
   project.write(actor());

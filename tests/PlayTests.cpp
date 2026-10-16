@@ -94,6 +94,29 @@ TEST_CASE("play.independent_unsaved_scene_fixed_physics_and_stop_hooks") {
   CHECK(Dot::World::encodeScene(authoring).value() == initial);
 }
 
+TEST_CASE("play.pointer_capture_ack_is_published_without_initializing_a_window") {
+  Fixture fixture;
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {ScriptComponent, input} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  onStart(): void { input.capturePointer(true); }
+  onUpdate(): void { this.self.name = input.pointerCaptured ? 'captured' : 'released'; }
+}
+)ts"));
+  auto authoring = fixture.project.loadStartup().value();
+  auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  CHECK(play.pointerCaptureRequested().value());
+  REQUIRE(play.advance(held(), 1ms, true));
+  CHECK(play.scene().value()->entities()->at(1).name == "captured");
+  REQUIRE(play.advance(held(), 1ms));
+  CHECK(play.scene().value()->entities()->at(1).name == "released");
+  auto moved = std::move(play);
+  CHECK_FALSE(play.pointerCaptureRequested());
+  REQUIRE(moved.stop());
+  CHECK_FALSE(moved.pointerCaptureRequested());
+}
+
 TEST_CASE("play.timing_bounds_catchup_reports_and_input_failure_preserve_state") {
   Fixture fixture;
   auto authoring = fixture.project.loadStartup().value();

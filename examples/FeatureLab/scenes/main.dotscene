@@ -44,7 +44,12 @@
       "name": "Camera",
       "parent": null,
       "rigidBody": null,
-      "script": null,
+      "script": {
+        "className": "CameraDemo",
+        "enabled": true,
+        "properties": {},
+        "source": "camera.ts"
+      },
       "skin": null,
       "transform": {
         "position": [

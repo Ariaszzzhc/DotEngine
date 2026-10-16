@@ -372,6 +372,7 @@ namespace Dot::Editor {
     std::optional<PlaySession> m_play;
     Platform::InputState m_gameInput;
     bool m_captureInput{};
+    bool m_pointerCaptured{};
     bool m_resetGuiInput{};
     ImVec2 m_viewOrigin{};
     Json m_playDiagnostics = Json::array();
@@ -519,6 +520,36 @@ namespace Dot::Editor {
         m_captureInput = capture;
         m_resetGuiInput = true;
       }
+    }
+
+    auto synchronizePointerCapture() -> Core::Result<bool> {
+      auto focused = m_application->window().focused();
+      auto relative = m_application->window().relativeMouse();
+
+      if (!focused || !relative) {
+        return std::unexpected(!focused ? focused.error() : relative.error());
+      }
+
+      bool requested{};
+
+      if (m_captureInput && playing() && m_play->stats()->state == PlayState::Running) {
+        auto capture = m_play->pointerCaptureRequested();
+
+        if (!capture) {
+          return std::unexpected(capture.error());
+        }
+
+        requested = *capture && *focused;
+      }
+
+      auto changed = m_application->window().setRelativeMouse(requested);
+
+      if (!changed) {
+        return std::unexpected(changed.error());
+      }
+
+      m_pointerCaptured = requested;
+      return requested != *relative;
     }
 
     auto compiler() const -> Core::Result<Script::TypeScriptCompiler> {
@@ -982,6 +1013,8 @@ namespace Dot::Editor {
     auto playStatus() const -> Json {
       Json status{{"state", "idle"},
                   {"captureInput", m_captureInput},
+                  {"pointerCaptured", m_pointerCaptured},
+                  {"pointerCaptureRequested", nullptr},
                   {"diagnostics", m_playDiagnostics},
                   {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
 
@@ -993,6 +1026,16 @@ namespace Dot::Editor {
         status["frames"] = std::to_string(stats.frames);
         status["fixedSteps"] = std::to_string(stats.fixedSteps);
         status["droppedNanoseconds"] = std::to_string(stats.dropped.count());
+
+        if (stats.state == PlayState::Running) {
+          auto requested = m_play->pointerCaptureRequested();
+
+          if (requested) {
+            status["pointerCaptureRequested"] = *requested;
+          } else {
+            status["pointerCaptureError"] = errorJson(requested.error())["error"];
+          }
+        }
       }
 
       return status;
@@ -5370,8 +5413,20 @@ namespace Dot::Editor {
           captureInput(false);
         }
 
+        auto pointerChanged = synchronizePointerCapture();
+
+        if (!pointerChanged) {
+          return std::unexpected(pointerChanged.error());
+        }
+
         if (m_resetGuiInput) {
-          for (bool focused : {false, true}) {
+          auto actualFocus = m_application->window().focused();
+
+          if (!actualFocus) {
+            return std::unexpected(actualFocus.error());
+          }
+
+          for (bool focused : {false, *actualFocus}) {
             auto forwarded
                 = m_renderer->guiEvent({m_application->window().id(), 0, Platform::Focus{focused}});
 
@@ -5385,6 +5440,11 @@ namespace Dot::Editor {
 
         if (m_captureInput) {
           m_gameInput = input;
+
+          if (*pointerChanged) {
+            m_gameInput.clearPointerDelta();
+          }
+
           auto pointer = input.pointer();
           static_cast<void>(
               m_gameInput.consume({m_application->window().id(), 0,
@@ -5400,7 +5460,7 @@ namespace Dot::Editor {
       };
       callbacks.render = [&](const auto& frame) -> Core::Result<void> {
         if (playing() && m_play->stats()->state == PlayState::Running) {
-          auto advanced = m_play->advance(m_gameInput, frame.elapsed);
+          auto advanced = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured);
           auto remembered = remember();
 
           if (!remembered) {
@@ -5580,41 +5640,54 @@ namespace Dot::Editor {
         return std::unexpected(metadata.error());
       }
 
-      impl->m_events = impl->m_application->events().subscribe([state
-                                                                = impl.get()](const auto& event) {
-        if (state->m_transform && std::holds_alternative<Platform::Focus>(event.data)
-            && !std::get<Platform::Focus>(event.data).focused) {
-          auto cancelled = state->finishTransform(false);
+      impl->m_events
+          = impl->m_application->events().subscribe([state = impl.get()](const auto& event) {
+              if (std::holds_alternative<Platform::Focus>(event.data)
+                  && !std::get<Platform::Focus>(event.data).focused) {
+                state->captureInput(false);
+              }
 
-          if (!cancelled) {
-            state->m_transformError = cancelled.error().message;
-          }
-        }
+              if (state->m_transform && std::holds_alternative<Platform::Focus>(event.data)
+                  && !std::get<Platform::Focus>(event.data).focused) {
+                auto cancelled = state->finishTransform(false);
 
-        if (state->m_captureInput && std::holds_alternative<Platform::ButtonChanged>(event.data)) {
-          const auto pointer = state->m_application->input().pointer();
+                if (!cancelled) {
+                  state->m_transformError = cancelled.error().message;
+                }
+              }
 
-          if (pointer.x < state->m_viewOrigin.x || pointer.y < state->m_viewOrigin.y
-              || pointer.x >= state->m_viewOrigin.x + state->m_viewWidth
-              || pointer.y >= state->m_viewOrigin.y + state->m_viewHeight) {
-            state->captureInput(false);
-          }
-        }
+              if (state->m_captureInput && !state->m_pointerCaptured
+                  && std::holds_alternative<Platform::ButtonChanged>(event.data)) {
+                const auto pointer = state->m_application->input().pointer();
 
-        if (state->m_captureInput
-            && ((std::holds_alternative<Platform::KeyChanged>(event.data)
-                 && std::get<Platform::KeyChanged>(event.data).key != Platform::Key::F5)
-                || std::holds_alternative<Platform::Text>(event.data))) {
-          return;
-        }
+                if (pointer.x < state->m_viewOrigin.x || pointer.y < state->m_viewOrigin.y
+                    || pointer.x >= state->m_viewOrigin.x + state->m_viewWidth
+                    || pointer.y >= state->m_viewOrigin.y + state->m_viewHeight) {
+                  state->captureInput(false);
+                }
+              }
 
-        auto handled = state->m_renderer->guiEvent(event);
+              if (state->m_captureInput
+                  && ((std::holds_alternative<Platform::KeyChanged>(event.data)
+                       && std::get<Platform::KeyChanged>(event.data).key != Platform::Key::F5)
+                      || std::holds_alternative<Platform::Text>(event.data))) {
+                return;
+              }
 
-        if (!handled) {
-          state->m_inputError = handled.error();
-          state->m_application->stop();
-        }
-      });
+              if (state->m_pointerCaptured
+                  && (std::holds_alternative<Platform::PointerMoved>(event.data)
+                      || std::holds_alternative<Platform::ButtonChanged>(event.data)
+                      || std::holds_alternative<Platform::Wheel>(event.data))) {
+                return;
+              }
+
+              auto handled = state->m_renderer->guiEvent(event);
+
+              if (!handled) {
+                state->m_inputError = handled.error();
+                state->m_application->stop();
+              }
+            });
       return Workspace(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

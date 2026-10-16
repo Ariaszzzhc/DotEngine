@@ -5464,3 +5464,69 @@ new volume/query tests are integration checks. Windows/Linux remain unexecuted.
 Precommit review checks query-shape lifetime, borrowed native filters, body locks,
 contact offset/sign conventions, overlap/normal semantics, explicit error paths,
 scene mapping, host access flags, SDK/template propagation and actual test scope.
+
+
+## 2026-10-16 — Native relative pointer input
+
+Added continuous native relative mouse capture for runtime and editor Play, without
+creating windows from scripts or headless game sessions. SDL window operations
+require a live owner on the main thread and propagate backend failures. InputSource
+now separates a ReadWrite capture request from the native publisher's actual
+acknowledgement; nine query bindings remain ReadOnly. Preparation/checkpoint guards
+deny capture writes, requests survive realm reload, and failed input publication
+retains the previous snapshot/acknowledgement. Pointer-mode transitions clear only
+accumulated motion, preserving other current-frame input.
+
+GameSession and Play publish the acknowledgement with the real input frame. Runtime
+honors requests while focused and releases on Escape before exiting. Editor Play
+requires explicit Game input, a running game and native focus; Escape, focus loss,
+Stop and closing release it. Focus loss disables Game input until re-enabled.
+Relative motion/buttons/wheel do not operate editor widgets, and absolute
+outside-viewport release rules do not misinterpret captured pointer coordinates.
+Strict existing AI commands share this policy; Play inspection reports requested
+and actual native state separately rather than claiming immediate command effects.
+
+Feature Lab's ordinary Camera script provides M-toggle mouse look, consumes motion
+once per variable update and rotates only on acknowledged frames. It derives its
+orientation from the real transform, clamps pitch and does not reset the camera
+on source reload. The SDK audit checks the new calls without keeping capture on.
+Native/VM/compiler/Play/scene regressions cover malformed requests, thread/moved
+owners, publication failures, callback ownership, preparation/checkpoint denial,
+reload persistence, fixed-step motion isolation and acknowledgement gating.
+The focused Debug selection passes 53/53 (4.83s), without desktop windows.
+
+A deliberate actual Debug editor session uses the Feature Lab project and normal
+CLI/JSON mailbox for inspect, Play, Game input, Stop and close. Computer use presses
+M, moves the pointer, presses Escape and minimizes the actual window. Native Play
+reports request/capture true after M, and pointer motion changes camera rotation
+from identity to approximately [0.639615, 0.091263, -0.076870, 0.759378]. Escape
+reports Game input false and actual capture false while the script request stays
+true. Re-enabling Game input recaptures; minimizing then reports Game input false
+and actual capture false. Merely selecting another computer-use target did not
+prove focus loss; the minimized-window observation supplies that evidence.
+
+The attempted window raise did not restore native focus, so subsequent Game input
+true still truthfully reports pointerCaptured false. Stop therefore verifies
+stopped execution and unchanged authoring state, not an additional captured-to-
+released OS transition. The stopped scene remains clean at revision 1 with its
+original identity camera rotation; final counters are 7945 frames/9733 fixed steps,
+zero dropped nanoseconds, no diagnostics/error. Close is verified through actual
+process exit 0. Temporary native app linkage and observations live only in ignored
+build storage; no distribution archive or permanent visual driver is produced.
+
+Shoulder-camera collision/following and the realistic animated Prism Relay humanoid
+remain unfinished. This input stage does not satisfy those requirements or the
+broader mature-editor/large-game goal. Windows/Linux implementation is retained,
+but execution evidence is arm64 macOS only. Full serial suite results follow below.
+
+Full serial arm64 macOS suites pass: Debug 1010/1010 (141.64s), then Release/NDEBUG
+1010/1010 (17.91s). Inventory contains 258 unit and 752 integration cases, including
+123 offscreen GPU, 28 SDL-dummy platform and 27 audio-device cases (labels overlap).
+Both configurations built before full suites; a final camera-source whitespace
+formatting pass is propagated through both build resource copies before Release.
+All changed C++ module/test files and the new camera script pass clang-format checks;
+diff whitespace checks pass. Precommit review covers main-thread/window guards,
+requested versus actual state, input edge preservation, realm lifetime/guards,
+editor GUI isolation, error propagation, platform-neutral SDL use, module boundaries
+and permanent behavioral test scope. No temporary helper/app or user planning/design
+input is included in the commit.

@@ -109,8 +109,8 @@ namespace Dot::Script {
         std::pair{"Left", MouseButton::Left}, std::pair{"Middle", MouseButton::Middle},
         std::pair{"Right", MouseButton::Right}, std::pair{"Back", MouseButton::Back},
         std::pair{"Forward", MouseButton::Forward}};
-    constexpr std::array fields{"snapshot",     "key",   "button", "pointer",
-                                "pointerDelta", "wheel", "text",   "index"};
+    constexpr std::array fields{"snapshot", "key",  "button", "pointer",         "pointerDelta",
+                                "wheel",    "text", "index",  "pointerCaptured", "capturePointer"};
 
     template <typename Enum, std::size_t N>
     constexpr auto complete(const std::array<std::pair<const char*, Enum>, N>& entries, Enum count)
@@ -161,6 +161,7 @@ namespace Dot::Script {
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_index{};
     std::optional<Json> m_frame;
+    bool m_captureRequested{};
 
     explicit Impl(InputSourceConfig value) : m_config(value) {
     }
@@ -173,7 +174,7 @@ namespace Dot::Script {
       return {};
     }
 
-    auto read(std::string_view field, std::string_view arguments) const -> Reply {
+    auto invoke(std::string_view field, std::string_view arguments) -> Reply {
       auto checked = check();
 
       if (!checked) {
@@ -188,10 +189,16 @@ namespace Dot::Script {
       try {
         auto args = Serialization::Detail::parseJson(arguments, 8);
         const bool named = field == "key" || field == "button";
+        const bool capture = field == "capturePointer";
 
-        if (!args.is_array() || args.size() != (named ? 1U : 0U)
-            || (named && !args[0].is_string())) {
+        if (!args.is_array() || args.size() != (named || capture ? 1U : 0U)
+            || (named && !args[0].is_string()) || (capture && !args[0].is_boolean())) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid input query argument shape");
+        }
+
+        if (capture) {
+          m_captureRequested = args[0].get<bool>();
+          return std::optional<std::string>{};
         }
 
         std::string name;
@@ -250,7 +257,8 @@ namespace Dot::Script {
     }
   }
 
-  auto InputSource::publish(const Platform::InputState& state) -> Core::Result<std::uint64_t> {
+  auto InputSource::publish(const Platform::InputState& state, bool pointerCaptured)
+      -> Core::Result<std::uint64_t> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Input source was moved");
     }
@@ -278,6 +286,7 @@ namespace Dot::Script {
                  {"pointer", point(state.pointer())},
                  {"pointerDelta", point(state.pointerDelta())},
                  {"wheel", point(state.wheel())},
+                 {"pointerCaptured", pointerCaptured},
                  {"text", std::string(state.text())}};
 
       for (const auto& [name, key] : keyNames) {
@@ -299,6 +308,16 @@ namespace Dot::Script {
     }
   }
 
+  auto InputSource::pointerCaptureRequested() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Input source was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<bool>{m_impl->m_captureRequested}
+                   : Core::Result<bool>{std::unexpected(checked.error())};
+  }
+
   auto InputSource::bindings() const -> Core::Result<HostBindings> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Input source was moved");
@@ -317,9 +336,10 @@ namespace Dot::Script {
       for (const auto* field : fields) {
         result.push_back({"input." + std::string(field),
                           [impl = m_impl, field](std::string_view args) -> Reply {
-                            return impl->read(field, args);
+                            return impl->invoke(field, args);
                           },
-                          HostAccess::ReadOnly});
+                          std::string_view(field) == "capturePointer" ? HostAccess::ReadWrite
+                                                                      : HostAccess::ReadOnly});
       }
 
       return result;

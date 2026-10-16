@@ -137,11 +137,37 @@ namespace Dot::Runtime {
 
       Core::LoopCallbacks callbacks;
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
-        if (input.key(Platform::Key::Escape).pressed) {
+        const bool quitting = input.key(Platform::Key::Escape).pressed;
+
+        if (quitting) {
           application->stop();
         }
 
-        return session->publish(input).transform([](auto) {});
+        auto requested = session->pointerCaptureRequested();
+        auto focused = application->window().focused();
+        auto relative = application->window().relativeMouse();
+
+        if (!requested || !focused || !relative) {
+          return std::unexpected(!requested ? requested.error()
+                                 : !focused ? focused.error()
+                                            : relative.error());
+        }
+
+        const bool capture = *requested && *focused && !quitting;
+
+        if (capture != *relative) {
+          auto changed = application->window().setRelativeMouse(capture);
+
+          if (!changed) {
+            return changed;
+          }
+
+          auto clean = input;
+          clean.clearPointerDelta();
+          return session->publish(clean, capture).transform([](auto) {});
+        }
+
+        return session->publish(input, capture).transform([](auto) {});
       };
 
       callbacks.fixedUpdate = [&](double) { return dispatch(session->fixedUpdate()); };

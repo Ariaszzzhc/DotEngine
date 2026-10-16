@@ -98,6 +98,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('input.wheel.get', equal(input.wheel, frame.wheel));
     this.check('input.text.get', input.text === frame.text);
     this.check('input.index.get', /^(0|[1-9][0-9]*)$/.test(input.index));
+    this.check('input.pointerCaptured.get', input.pointerCaptured === frame.pointerCaptured);
   }
 
   private sceneChecks(): void {
@@ -388,6 +389,10 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('ScriptComponent.properties', this.properties.contract === 'feature-lab-v1');
     this.check('ScriptComponent.onStart', super.onStart() === undefined);
     this.inputChecks();
+    const captured = input.pointerCaptured;
+    input.capturePointer(true);
+    input.capturePointer(false);
+    this.check('input.capturePointer', input.pointerCaptured === captured);
     this.sceneChecks();
     this.physicsChecks();
     this.audioChecks();
