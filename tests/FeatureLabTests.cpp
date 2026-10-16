@@ -497,6 +497,19 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   }
 
   CHECK(source.entity(source.findEntity(2).value())->name == "Copper panel");
+  const auto inspected = document.dispatch(nlohmann::json{{"command", "inspect-scene-overrides"},
+                                                          {"entity", std::to_string(links[0].root)},
+                                                          {"scope", "instance"},
+                                                          {"offset", 0},
+                                                          {"limit", 32}}
+                                               .dump());
+  REQUIRE(inspected);
+  const auto overrides = nlohmann::json::parse(*inspected)["sceneOverrides"];
+  REQUIRE(overrides["total"] == 1);
+  CHECK(overrides["changes"][0]["source"] == "2");
+  CHECK(overrides["changes"][0]["path"] == "/name");
+  CHECK(overrides["changes"][0]["baseline"]["value"] == "Copper panel");
+  CHECK(overrides["changes"][0]["local"]["value"] == "Copper (studio override)");
   std::set<std::string> groupedNames;
 
   for (const auto& entity : entities) {

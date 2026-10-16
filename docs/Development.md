@@ -7867,3 +7867,87 @@ clang-format and whitespace checks pass. Removed 55 owned temporary client/reque
 files, retaining native response/log/PNG evidence in ignored build storage. User
 reference files, build caches and existing archives remain preserved. No distribution
 archive, dependency or caller compiler/linker environment change was introduced.
+
+
+## Applied scene override inspection and revert
+
+Added owned applied-override records and paged inspection to Dot.World.SceneLinks.
+The existing materialized scene and last refreshed native baseline determine
+property changes, deleted inherited nodes and local added nodes; no new persistent
+patch format is introduced. Direct link ownership precedes ancestor ownership,
+including mapped nodes moved outside their placement root. Placement-root properties
+and components stay local. Object keys use escaped JSON Pointers, arrays remain
+atomic and absent differs from JSON null. Pages use stable source/object-key
+traversal followed by added identity order, limit 1..256 and validated offsets.
+Only returned records own serialized values, without building an unbounded diff list.
+
+Selected stored-baseline revert validates 1..256 unique active keys before publishing
+one complete candidate. Properties and deleted nodes restore before added subtrees
+are removed, allowing parent-property restoration and local-group removal in one
+valid transaction. Inherited descendants and dangling references still reject
+removal when unresolved. Full baseline revert restores all inherited nodes and
+removes local additions, while preserving placement roots/unrelated data. Nested
+local instance roots removed with their subtrees retire their metadata. Reverts
+preserve allocation reservations and validate final native/encoded-file bounds.
+They perform no source-file I/O, so stored-baseline recovery works with missing source files.
+
+Document exposes strict inspect-scene-overrides, revert-scene-overrides and
+revert-scene-baseline through the existing query/edit protocol. Queries return
+bounded data and revision/scope/path/selection context without a full scene snapshot;
+read-only requests need no revision. Mutations retain ordinary revision/history/save
+conflict checks and preserve surviving selections. No-op full revert preserves all
+document state. Inspector lists baseline/local values, instance/entity scope,
+pagination and per-row/displayed-page/all revert controls through the same product
+operations. Selected-entity queries update the exposed workspace.sceneOverrides view.
+Applied values remain readable while drafts/Play/previews block mutation. Common
+workspace status construction avoids recursively rebuilding a full inspect response
+for these paged queries. Source refresh and latest-source restoration retain their
+separate existing semantics.
+
+Added nine CPU-only regressions and four file/document regressions. Coverage includes
+stable filtering/paging, escaped/empty object keys, null/absence and arrays, dependent
+deleted-node restoration, nested-link cleanup, compound parent/subtree changes,
+native reference failures, full/no-op revert, invalid/duplicate/stale selectors,
+thread/moved-owner boundaries and snapshot lifetime. Document checks include strict
+read-only shapes, bounded replies, missing source, independent reopen, selection,
+undo/redo, later-batch rollback and history-budget rejection. Feature Lab verifies its
+actual high-precision copper-node name override. Nine initial CPU cases pass (0.57s),
+then fourteen focused cases including the example pass (0.93s). After reply/status
+review, coupled authoring checks pass 73/73 (4.87s). Debug/Release builds succeed.
+New-test initializer syntax and explicit expected-JSON return construction errors
+were corrected before these successful checks.
+
+One actual release editor process completes 30 product requests on Feature Lab.
+It identifies the saved copper override, creates two temporary property edits,
+verifies three one-record pages and selected-node/instance view-cache synchronization,
+reverts selected properties in one transaction and checks undo/redo. Single-name and
+full baseline reverts both undo to the original saved authoring data. A repeated
+clean full revert preserves scope/revision/history/allocation. With an unapplied
+Inspector draft, paged inspection still reports applied data while mutation rejects.
+An invalid selector also leaves the document intact. Final scene and allocation
+match the initial saved data; project metadata, main/LightingStudio scenes and
+MaterialStudies asset hashes are unchanged. The owned process exits 0 with empty
+stderr and retires its control directory. Removed 33 temporary client/request/barrier
+files, retaining native response/result/log evidence in ignored build storage.
+
+Computer Use cannot resolve the directly launched unbundled DotEditor executable by
+display name or full binary path. No mouse/screenshot acceptance is claimed for
+this stage; native agent operations and view-state evidence above remain distinct.
+Recursive linked refresh, variants, apply-to-source, source retargeting and inline
+field markers remain unfinished; the broader engine/editor/game goal stays active.
+
+Final macOS arm64 full suites pass 1239/1239 in Debug (184.79s) and Release
+(19.76s, assertions disabled), each with 361 unit and 878 integration cases. The
+integration suite includes 194 compiler, 132 durable offscreen, 32 native-audio,
+28 platform and 20 process cases. Automated suites open no desktop windows.
+Windows/Linux source targets were not executed. These results verify the specified
+authoring contracts and do not establish completion of the overall engine/game goal.
+
+Final review covers borrowed/owned data lifetimes, root/ancestor ownership,
+deterministic bounded paging, escaped key/null/array semantics, selector validation,
+dependency-aware candidate mutation, reference/file/history budgets, no-op/allocation
+invariants, read-only versus draft behavior and UI snapshot/cache/ImGui stack lifetime.
+All eight changed/new C++ files pass clang-format and whitespace checks pass. No
+example data, dependency, caller compiler/linker setting or distribution archive was
+changed. User references, caches and existing archives remain preserved/untracked
+as applicable; temporary validation helpers are not retained in source control.

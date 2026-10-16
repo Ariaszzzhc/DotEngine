@@ -1,7 +1,10 @@
 module;
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,6 +20,73 @@ export namespace Dot::World {
     EntityId root;
     std::vector<std::uint64_t> created;
   };
+
+  enum class SceneOverrideKind { Property, DeletedNode, AddedNode };
+
+  struct SceneOverrideKey {
+    SceneOverrideKind kind{};
+    std::uint64_t entity{};
+    std::string path;
+    auto operator==(const SceneOverrideKey&) const -> bool = default;
+  };
+
+  /** Values own serialized JSON; absent differs from the JSON literal null.
+   * Property paths escape object keys as JSON Pointers; arrays are atomic.
+   * Deleted-node values refer to reserved, currently absent target identities.
+   * 值拥有序列化 JSON，缺失不同于 JSON null；属性路径使用 JSON Pointer 转义，数组为整体。
+   * 已删除节点仍使用已预留、当前缺失的目标身份。 */
+  struct SceneOverride {
+    SceneOverrideKey key;
+    std::optional<std::uint64_t> source;
+    std::optional<std::string> baseline;
+    std::optional<std::string> local;
+  };
+
+  struct SceneOverridePage {
+    EntityId root;
+    std::string asset;
+    std::optional<std::uint64_t> node;
+    std::size_t offset{};
+    std::size_t limit{};
+    std::size_t total{};
+    std::vector<SceneOverride> changes;
+  };
+
+  /** Direct ownership wins, otherwise search ancestors; no owning link is a
+   * successful empty result. Requires a live current-scene entity. 优先直接归属，
+   * 否则查找祖先；无所属链接成功返回空值，输入须为当前场景存活实体。 */
+  [[nodiscard]] auto findSceneLinkRoot(const Scene& target, EntityId entity)
+      -> Core::Result<std::optional<EntityId>>;
+
+  /** Inspect applied changes against the last refreshed baseline, without I/O.
+   * Optional node filters mapped (including deleted) or added values; placement
+   * roots have no inherited properties. Stable source/object-key traversal, then added-value order.
+   * Limit is 1..256; offset may equal but not exceed total. No selection/history effects.
+   * 无 I/O 查看相对上次刷新基线的已应用修改，可过滤映射值（含已删除）或新增值；放置根
+   * 没有继承属性。按源值/对象键遍历及新增值稳定排序；页长 1..256，偏移不超过总数，不改选择/历史。
+   */
+  [[nodiscard]] auto inspectSceneOverrides(const Scene& target, EntityId root,
+                                           std::optional<std::uint64_t> node = {},
+                                           std::size_t offset = 0, std::size_t limit = 32)
+      -> Core::Result<SceneOverridePage>;
+
+  /** Revert 1..256 unique current override keys atomically to stored baseline.
+   * Added-node reset removes its subtree, rejecting inherited descendants or
+   * dangling references. Restore dependent deleted nodes in one batch. No I/O or
+   * new identity allocation; failures leave the source unchanged.
+   * 原子还原 1..256 个唯一的当前覆盖到存储基线；新增节点还原删除其子树，拒绝继承后代或
+   * 悬空引用；依赖的已删除节点须同批恢复。不读盘或分配新身份，失败不改变源。 */
+  [[nodiscard]] auto prepareSceneOverrideRevert(const Scene& target, EntityId root,
+                                                std::span<const SceneOverrideKey> keys)
+      -> Core::Result<SceneLinkUpdate>;
+
+  /** Revert all inherited properties/deletions and remove local additions;
+   * retain placement and unrelated entities. Uses stored baseline even if the
+   * source file is unavailable. Final native/file limits still apply.
+   * 还原全部继承属性/删除并移除本地新增，保留放置及无关实体；即使源文件不可用仍使用
+   * 存储基线，最终场景及文件限制依旧适用。 */
+  [[nodiscard]] auto prepareSceneBaselineRevert(const Scene& target, EntityId root)
+      -> Core::Result<SceneLinkUpdate>;
 
   /** Link a materialized copy to a project source, with an owned baseline and
    * stable node mapping. Source links are flattened into their saved entities;

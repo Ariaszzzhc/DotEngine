@@ -10,6 +10,7 @@ module;
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -120,6 +121,52 @@ namespace Dot::Editor {
                             : Core::Result<std::filesystem::path>{std::unexpected(store.error())};
       return readable ? World::loadScene(project.files().value(), sceneFile(path))
                       : Core::Result<World::Scene>{std::unexpected(readable.error())};
+    }
+
+    constexpr std::array overrideKinds{"property", "deleted-node", "added-node"};
+
+    auto overrideKey(const Json& value) -> World::SceneOverrideKey {
+      Codec::requireFields(value, {"kind", "entity", "path"});
+      const auto kind = value["kind"].get<std::string>();
+      const auto found = std::ranges::find(overrideKinds, kind);
+
+      if (found == overrideKinds.end()) {
+        throw std::invalid_argument("Unknown scene override kind");
+      }
+
+      return {static_cast<World::SceneOverrideKind>(found - overrideKinds.begin()),
+              Codec::id(value["entity"]), value["path"].get<std::string>()};
+    }
+
+    auto overridePage(const World::SceneOverridePage& page, std::string_view scope) -> Json {
+      Json changes = Json::array();
+      const auto stored = [](const std::optional<std::string>& value) {
+        return Json{{"present", value.has_value()},
+                    {"value", value ? Codec::parseJson(*value) : Json(nullptr)}};
+      };
+
+      for (const auto& change : page.changes) {
+        changes.push_back(
+            {{"kind", overrideKinds.at(static_cast<std::size_t>(change.key.kind))},
+             {"entity", std::to_string(change.key.entity)},
+             {"path", change.key.path},
+             {"source", change.source ? Json(std::to_string(*change.source)) : Json(nullptr)},
+             {"baseline", stored(change.baseline)},
+             {"local", stored(change.local)}});
+      }
+
+      return {{"linked", true},
+              {"root", std::to_string(page.root.value)},
+              {"asset", page.asset},
+              {"node", page.node ? Json(std::to_string(*page.node)) : Json(nullptr)},
+              {"scope", scope},
+              {"offset", page.offset},
+              {"limit", page.limit},
+              {"total", page.total},
+              {"nextOffset", page.offset + page.changes.size() < page.total
+                                 ? Json(page.offset + page.changes.size())
+                                 : Json(nullptr)},
+              {"changes", std::move(changes)}};
     }
 
     auto find(Json& entities, std::uint64_t id) -> Json* {
@@ -391,6 +438,59 @@ namespace Dot::Editor {
 
         if (!encoded) {
           return std::unexpected(encoded.error());
+        }
+
+        scene = Codec::parseJson(*encoded);
+        return {};
+      }
+
+      if (op == "revert-scene-overrides" || op == "revert-scene-baseline") {
+        if (op == "revert-scene-overrides") {
+          Codec::requireFields(command, {"op", "root", "keys"});
+        } else {
+          Codec::requireFields(command, {"op", "root"});
+        }
+
+        auto target = decodeCandidate(scene, next);
+
+        if (!target) {
+          return std::unexpected(target.error());
+        }
+
+        std::vector<World::SceneOverrideKey> keys;
+
+        if (op == "revert-scene-overrides") {
+          if (!command["keys"].is_array() || command["keys"].empty()
+              || command["keys"].size() > 256) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Override revert requires 1..256 keys");
+          }
+
+          for (const auto& value : command["keys"]) {
+            keys.push_back(overrideKey(value));
+          }
+        }
+
+        const World::EntityId root{target->id(), Codec::id(command["root"])};
+        auto updated = op == "revert-scene-overrides"
+                           ? World::prepareSceneOverrideRevert(*target, root, keys)
+                           : World::prepareSceneBaselineRevert(*target, root);
+
+        if (!updated) {
+          return std::unexpected(updated.error());
+        }
+
+        auto encoded = World::encodeScene(updated->scene);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        created.insert(created.end(), updated->created.begin(), updated->created.end());
+        std::erase_if(selection, [&](auto id) { return !updated->scene.findEntity(id); });
+
+        if (selection.empty()) {
+          selection = {root.value};
         }
 
         scene = Codec::parseJson(*encoded);
@@ -1563,10 +1663,69 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
       const auto command = parsed.at("command").get<std::string>();
       std::vector<std::uint64_t> created;
+      Json overrides;
       Core::Result<void> result;
 
       if (command == "inspect") {
         Codec::requireFields(parsed, {"command"});
+      } else if (command == "inspect-scene-overrides") {
+        Codec::requireFields(parsed, {"command", "entity", "scope", "offset", "limit"});
+        const auto mode = parsed["scope"].get<std::string>();
+
+        if ((mode != "auto" && mode != "entity" && mode != "instance")
+            || !parsed["offset"].is_number_unsigned() || !parsed["limit"].is_number_unsigned()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid override scope/page integers");
+        }
+
+        const auto offset = parsed["offset"].get<std::size_t>();
+        const auto limit = parsed["limit"].get<std::size_t>();
+
+        if (limit == 0 || limit > 256) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Override page limit must be 1..256");
+        }
+
+        const World::EntityId entity{(*current)->id(), Codec::id(parsed["entity"])};
+        auto owner = World::findSceneLinkRoot(**current, entity);
+
+        if (!owner) {
+          return std::unexpected(owner.error());
+        }
+
+        if (*owner) {
+          const bool all = mode == "instance" || (mode == "auto" && **owner == entity);
+          auto page = World::inspectSceneOverrides(
+              **current, **owner,
+              all ? std::optional<std::uint64_t>{} : std::optional{entity.value}, offset, limit);
+
+          if (!page) {
+            return std::unexpected(page.error());
+          }
+
+          overrides = overridePage(*page, all ? "instance" : "entity");
+        } else {
+          if (offset != 0) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Override page offset exceeds total");
+          }
+
+          overrides = {{"linked", false},       {"root", nullptr},
+                       {"asset", nullptr},      {"node", std::to_string(entity.value)},
+                       {"scope", "none"},       {"offset", 0},
+                       {"limit", limit},        {"total", 0},
+                       {"nextOffset", nullptr}, {"changes", Json::array()}};
+        }
+
+        const auto& selection = m_impl->m_history[m_impl->m_cursor].selection;
+        return Json{{"ok", true},
+                    {"revision", std::to_string(m_impl->m_revision)},
+                    {"scope", std::to_string((*current)->id())},
+                    {"scenePath", m_impl->m_path},
+                    {"selected",
+                     selection.empty() ? Json(nullptr) : Json(std::to_string(selection.back()))},
+                    {"created", Json::array()},
+                    {"sceneOverrides", std::move(overrides)}}
+            .dump();
       } else {
         if (command == "edit") {
           Codec::requireFields(parsed, {"command", "revision", "operations"});

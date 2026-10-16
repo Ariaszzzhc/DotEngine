@@ -1768,6 +1768,9 @@ inserted into another scene in the same project. Scene instances are independent
 authored copies. [Linked instances](SceneContent.md#linked-instances-and-local-overrides)
 add explicit source refresh, local property/deletion overrides, revert and unlink.
 These edits use the same revision/history implementation in the GUI and agent API.
+The linked override inspector adds paged property/deletion/addition inspection and
+selected/full stored-baseline revert, including operation without the source file.
+See the [query and revert contracts](SceneContent.md#inspecting-and-reverting-applied-overrides).
 
 
 ## Persistent entity allocation

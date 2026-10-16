@@ -73,7 +73,7 @@ namespace {
   }
 
   auto request(Document& document, Json value) -> Json {
-    if (value["command"] != "inspect") {
+    if (value["command"] != "inspect" && value["command"] != "inspect-scene-overrides") {
       value["revision"] = std::to_string(revision(document));
     }
 
@@ -1488,4 +1488,189 @@ TEST_CASE("document.linked_root_duplication_is_independent_and_deletion_retires_
   CHECK(document.scene().value()->sceneLinks()->size() == 1);
   edit(document, Json::array({{{"op", "remove"}, {"entity", "3"}}}));
   CHECK(document.scene().value()->sceneLinks()->empty());
+}
+
+namespace {
+  auto overrideQuery(std::string entity = "3", std::string scope = "auto", std::size_t offset = 0,
+                     std::size_t limit = 32) -> Json {
+    return {{"command", "inspect-scene-overrides"},
+            {"entity", std::move(entity)},
+            {"scope", std::move(scope)},
+            {"offset", offset},
+            {"limit", limit}};
+  }
+
+  auto overrideSelector(std::string entity, std::string path, std::string kind = "property")
+      -> Json {
+    return {{"entity", std::move(entity)}, {"path", std::move(path)}, {"kind", std::move(kind)}};
+  }
+
+  auto overrideRevert(Json keys) -> Json {
+    return {{"op", "revert-scene-overrides"}, {"root", "3"}, {"keys", std::move(keys)}};
+  }
+}  // namespace
+
+TEST_CASE(
+    "document.scene_override_queries_page_committed_data_without_selection_or_history_effects") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  const Json transform{{"position", {1, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {2, 2, 2}}};
+  edit(document, Json::array({linkOperation(),
+                              {{"op", "name"}, {"entity", "4"}, {"name", "Local"}},
+                              {{"op", "transform"}, {"entity", "4"}, {"value", transform}}}));
+  const auto before = state(document);
+  const auto inspected = request(document, overrideQuery("4", "auto", 0, 1));
+  CHECK_FALSE(inspected.contains("scene"));
+  CHECK(inspected["revision"] == before["revision"]);
+  CHECK(inspected["scope"] == before["scope"]);
+  CHECK(inspected["scenePath"] == before["scenePath"]);
+  const auto page = inspected["sceneOverrides"];
+  CHECK(page["linked"] == true);
+  CHECK(page["scope"] == "entity");
+  CHECK(page["root"] == "3");
+  CHECK(page["node"] == "4");
+  CHECK(page["total"] == 3);
+  CHECK(page["nextOffset"] == 1);
+  CHECK(page["changes"][0]["path"] == "/name");
+  CHECK(page["changes"][0]["source"] == "1");
+  CHECK(page["changes"][0]["baseline"] == Json{{"present", true}, {"value", "Source panel"}});
+  CHECK(page["changes"][0]["local"] == Json{{"present", true}, {"value", "Local"}});
+  const auto next = request(document, overrideQuery("3", "instance", 1, 2))["sceneOverrides"];
+  CHECK(next["scope"] == "instance");
+  CHECK(next["node"].is_null());
+  CHECK(next["changes"].size() == 2);
+  CHECK(next["nextOffset"].is_null());
+  const auto unrelated = request(document, overrideQuery("1"))["sceneOverrides"];
+  CHECK(unrelated["linked"] == false);
+  CHECK(unrelated["node"] == "1");
+  CHECK(unrelated["total"] == 0);
+  CHECK(state(document) == before);
+
+  std::vector<Json> invalid{overrideQuery("3", "unknown"),
+                            overrideQuery("3", "auto", 4),
+                            overrideQuery("3", "auto", 0, 0),
+                            overrideQuery("3", "auto", 0, 257),
+                            overrideQuery("999"),
+                            overrideQuery("1", "auto", 1)};
+  auto extra = overrideQuery();
+  extra["revision"] = before["revision"];
+  invalid.push_back(extra);
+  extra = overrideQuery();
+  extra["offset"] = -1;
+  invalid.push_back(extra);
+  extra["offset"] = 0.0;
+  invalid.push_back(extra);
+  extra["offset"] = "0";
+  invalid.push_back(extra);
+  extra = overrideQuery();
+  extra["ignored"] = false;
+  invalid.push_back(extra);
+
+  for (const auto& value : invalid) {
+    CHECK_FALSE(document.dispatch(value.dump()));
+    CHECK(state(document) == before);
+  }
+}
+
+TEST_CASE(
+    "document.scene_override_revert_uses_stored_baseline_without_source_and_retains_selection") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document,
+       Json::array({linkOperation(), {{"op", "name"}, {"entity", "4"}, {"name", "Local"}}}));
+  REQUIRE(document.select(document.scene().value()->findEntity(4).value(), revision(document)));
+  REQUIRE(document.save(revision(document)));
+  CHECK(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  CHECK(request(document, overrideQuery("4"))["sceneOverrides"]["total"] == 1);
+  const auto before = state(document);
+  const auto result = edit(
+      document, Json::array({overrideRevert(Json::array({overrideSelector("4", "/name")}))}));
+  CHECK(result.created.empty());
+  CHECK(state(document)["selected"] == "4");
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 4})->name
+        == "Source panel");
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  REQUIRE(document.redo(revision(document)));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(request(reopened, overrideQuery())["sceneOverrides"]["total"] == 0);
+  const auto clean = state(reopened);
+  CHECK_FALSE(
+      edit(reopened, Json::array({{{"op", "revert-scene-baseline"}, {"root", "3"}}})).changed);
+  CHECK(state(reopened) == clean);
+}
+
+TEST_CASE("document.scene_override_dependency_batches_and_full_revert_share_atomic_history") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), {{"op", "remove"}, {"entity", "4"}}}));
+  const auto before = state(document);
+  const auto child = overrideSelector("5", "", "deleted-node");
+  CHECK_FALSE(document.apply(Json::array({overrideRevert(Json::array({child}))}).dump(),
+                             revision(document)));
+  CHECK(state(document) == before);
+  const auto restored = edit(document, Json::array({overrideRevert(Json::array(
+                                           {child, overrideSelector("4", "", "deleted-node")}))}));
+  CHECK(restored.created == std::vector<std::uint64_t>{4, 5});
+  edit(document, Json::array({{{"op", "create"}, {"name", "Local grouping"}},
+                              {{"op", "parent"}, {"entity", "6"}, {"parent", "3"}},
+                              {{"op", "parent"}, {"entity", "4"}, {"parent", "6"}},
+                              {{"op", "name"}, {"entity", "4"}, {"name", "Local"}}}));
+  const auto overridden = state(document);
+  CHECK(request(document, overrideQuery())["sceneOverrides"]["total"] == 3);
+  edit(document, Json::array({{{"op", "revert-scene-baseline"}, {"root", "3"}}}));
+  CHECK_FALSE(document.scene().value()->findEntity(6));
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 4})->parent->value == 3);
+  CHECK(request(document, overrideQuery())["sceneOverrides"]["total"] == 0);
+  CHECK(document.stats()->nextEntity == 7);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == overridden["scene"]);
+  const auto selected = overrideRevert(
+      Json::array({overrideSelector("6", "", "added-node"), overrideSelector("4", "/parent")}));
+  edit(document, Json::array({selected}));
+  CHECK_FALSE(document.scene().value()->findEntity(6));
+  CHECK(request(document, overrideQuery())["sceneOverrides"]["total"] == 1);
+}
+
+TEST_CASE(
+    "document.scene_override_invalid_selectors_stale_batches_and_history_budget_publish_nothing") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document,
+       Json::array({linkOperation(), {{"op", "name"}, {"entity", "4"}, {"name", "Local"}}}));
+  const auto before = state(document);
+  const auto key = overrideSelector("4", "/name");
+  auto duplicate = overrideRevert(Json::array({key, key}));
+  auto unknown = overrideRevert(Json::array({key, overrideSelector("4", "/id")}));
+  auto wrong = overrideRevert(Json::array({overrideSelector("4", "/name", "unknown")}));
+  auto extra = key;
+  extra["source"] = "1";
+
+  for (const auto& operation :
+       std::vector<Json>{duplicate, unknown, wrong, overrideRevert(Json::array()),
+                         overrideRevert(Json::array({extra}))}) {
+    CHECK_FALSE(document.apply(Json::array({operation}).dump(), revision(document)));
+    CHECK(state(document) == before);
+  }
+
+  CHECK_FALSE(document.apply(Json::array({overrideRevert(Json::array({key}))}).dump(),
+                             revision(document) - 1));
+  CHECK_FALSE(document.apply(
+      Json::array({overrideRevert(Json::array({key})), {{"op", "remove"}, {"entity", "999"}}})
+          .dump(),
+      revision(document)));
+  CHECK(state(document) == before);
+  edit(document, Json::array({{{"op", "remove"}, {"entity", "4"}}}));
+  REQUIRE(document.save(revision(document)));
+  const auto bytes = fixture.document().stats()->historyBytes;
+  auto bounded = fixture.document({128, bytes});
+  const auto compact = state(bounded);
+  CHECK_FALSE(bounded.apply(Json::array({{{"op", "revert-scene-baseline"}, {"root", "3"}}}).dump(),
+                            revision(bounded)));
+  CHECK(state(bounded) == compact);
 }

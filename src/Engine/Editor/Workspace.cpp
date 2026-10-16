@@ -434,6 +434,11 @@ namespace Dot::Editor {
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
     std::string m_contentName{"Scene content"};
+    Json m_overrideQuery;
+    Json m_overridePage;
+    std::string m_overrideRevision;
+    std::string m_overrideContext;
+    std::string m_overrideError;
     std::string m_importSource;
     std::string m_environmentRevision;
     Json m_environmentDraft;
@@ -2458,6 +2463,24 @@ namespace Dot::Editor {
         }
 
         return execute(operation.dump());
+      }
+
+      if (command == "inspect-scene-overrides") {
+        auto result = querySceneOverrides(parsed);
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        auto status = workspaceStatus();
+
+        if (!status) {
+          return std::unexpected(status.error());
+        }
+
+        auto response = Codec::parseJson(*result);
+        response["workspace"] = std::move(*status);
+        return response.dump();
       }
 
       if (m_sceneDialog && !sceneOperation && command != "inspect" && command != "save"
@@ -4892,70 +4915,271 @@ namespace Dot::Editor {
       }
 
       if (result && command == "inspect") {
+        auto status = workspaceStatus();
+
+        if (!status) {
+          return std::unexpected(status.error());
+        }
+
         auto response = Codec::parseJson(*result);
-        auto focused = m_application->window().focused();
-
-        if (!focused) {
-          return std::unexpected(focused.error());
-        }
-
-        auto input = inputStatus();
-
-        if (!input) {
-          return std::unexpected(input.error());
-        }
-
-        response["workspace"] = {
-            {"focused", *focused},
-            {"input", std::move(*input)},
-            {"pendingInspector", pendingInspector()},
-            {"pendingEnvironment", pendingEnvironment()},
-            {"environmentDraft", m_environmentDraft},
-            {"pendingOcclusion", pendingOcclusion()},
-            {"occlusionDraft", m_occlusionDraft},
-            {"pane", m_pane},
-            {"theme", m_lightTheme ? "light" : "dark"},
-            {"tool", toolStatus()},
-            {"filters",
-             {{"hierarchy", m_hierarchyFilter},
-              {"resources", m_assetFilter},
-              {"skeleton", m_skeletonFilter}}},
-            {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
-            {"hierarchyRows", m_hierarchyRows},
-            {"hierarchyExpansion", m_hierarchyExpansion},
-            {"layout",
-             {{"pending", m_resetLayout || m_dockRequest.has_value()},
-              {"error", m_layoutError},
-              {"generation", std::to_string(m_layoutGeneration)},
-              {"panels", m_panelGeometry}}},
-            {"requestedPane", m_requestedPane},
-            {"pendingClose", m_pendingClose},
-            {"sceneDialog", m_sceneDialog ? Json{{"mode", m_sceneDialogMode == 0   ? "open"
-                                                          : m_sceneDialogMode == 1 ? "create"
-                                                                                   : "save-as"},
-                                                 {"path", m_scenePath},
-                                                 {"name", m_sceneName},
-                                                 {"discard", m_discardScene}}
-                                          : Json(nullptr)},
-            {"running", m_application->running()},
-            {"inspector", m_edit},
-            {"propertiesText", m_propertiesText},
-            {"propertiesInvalid", m_propertiesInvalid},
-            {"play", playStatus()},
-            {"animationPreview", animationStatus()},
-            {"animationClip", clipStatus()},
-            {"animationClipboard", clipboardStatus()},
-            {"skeleton", skeletonStatus()},
-            {"view", viewStatus()},
-            {"capture", captureStatus()},
-            {"message", m_message},
-            {"material", materialStatus()},
-            {"previews", previewStatus()},
-            {"file", textStatus()}};
+        response["workspace"] = std::move(*status);
         return response.dump();
       }
 
       return result;
+    }
+
+    auto workspaceStatus() -> Core::Result<Json> {
+      auto focused = m_application->window().focused();
+
+      if (!focused) {
+        return std::unexpected(focused.error());
+      }
+
+      auto input = inputStatus();
+
+      if (!input) {
+        return std::unexpected(input.error());
+      }
+
+      return Json{
+          {"focused", *focused},
+          {"input", std::move(*input)},
+          {"pendingInspector", pendingInspector()},
+          {"pendingEnvironment", pendingEnvironment()},
+          {"environmentDraft", m_environmentDraft},
+          {"pendingOcclusion", pendingOcclusion()},
+          {"occlusionDraft", m_occlusionDraft},
+          {"pane", m_pane},
+          {"theme", m_lightTheme ? "light" : "dark"},
+          {"tool", toolStatus()},
+          {"filters",
+           {{"hierarchy", m_hierarchyFilter},
+            {"resources", m_assetFilter},
+            {"skeleton", m_skeletonFilter}}},
+          {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
+          {"hierarchyRows", m_hierarchyRows},
+          {"hierarchyExpansion", m_hierarchyExpansion},
+          {"layout",
+           {{"pending", m_resetLayout || m_dockRequest.has_value()},
+            {"error", m_layoutError},
+            {"generation", std::to_string(m_layoutGeneration)},
+            {"panels", m_panelGeometry}}},
+          {"requestedPane", m_requestedPane},
+          {"pendingClose", m_pendingClose},
+          {"sceneDialog", m_sceneDialog ? Json{{"mode", m_sceneDialogMode == 0   ? "open"
+                                                        : m_sceneDialogMode == 1 ? "create"
+                                                                                 : "save-as"},
+                                               {"path", m_scenePath},
+                                               {"name", m_sceneName},
+                                               {"discard", m_discardScene}}
+                                        : Json(nullptr)},
+          {"running", m_application->running()},
+          {"inspector", m_edit},
+          {"sceneOverrides",
+           {{"query", m_overrideQuery},
+            {"revision", m_overrideRevision},
+            {"page", m_overridePage},
+            {"error", m_overrideError}}},
+          {"propertiesText", m_propertiesText},
+          {"propertiesInvalid", m_propertiesInvalid},
+          {"play", playStatus()},
+          {"animationPreview", animationStatus()},
+          {"animationClip", clipStatus()},
+          {"animationClipboard", clipboardStatus()},
+          {"skeleton", skeletonStatus()},
+          {"view", viewStatus()},
+          {"capture", captureStatus()},
+          {"message", m_message},
+          {"material", materialStatus()},
+          {"previews", previewStatus()},
+          {"file", textStatus()}};
+    }
+
+    auto querySceneOverrides(const Json& request) -> Core::Result<std::string> {
+      auto result = m_document->dispatch(request.dump());
+
+      if (result && m_snapshot["selected"] == request["entity"]) {
+        const auto response = Codec::parseJson(*result);
+        m_overrideQuery = request;
+        m_overridePage = response["sceneOverrides"];
+        m_overrideRevision = response["revision"].get<std::string>();
+        m_overrideContext
+            = response["scenePath"].get<std::string>() + ':' + request["entity"].get<std::string>();
+        m_overrideError.clear();
+      }
+
+      return result;
+    }
+
+    auto sceneOverrideInspector() -> void {
+      if (!m_editEntity) {
+        return;
+      }
+
+      const auto entity = std::to_string(*m_editEntity);
+      const auto context = m_snapshot["scenePath"].get<std::string>() + ':' + entity;
+
+      if (m_overrideRevision != m_snapshot["revision"].get<std::string>()
+          || m_overrideContext != context) {
+        auto request = m_overrideQuery;
+
+        if (m_overrideContext != context || request.is_null()) {
+          request = {{"command", "inspect-scene-overrides"},
+                     {"entity", entity},
+                     {"scope", "auto"},
+                     {"offset", 0},
+                     {"limit", 32}};
+        } else {
+          request["offset"] = 0;
+        }
+
+        auto result = querySceneOverrides(request);
+
+        if (!result) {
+          m_overrideQuery = request;
+          m_overridePage = nullptr;
+          m_overrideRevision = m_snapshot["revision"].get<std::string>();
+          m_overrideContext = context;
+          m_overrideError = result.error().message;
+        }
+      }
+
+      if (!m_overrideError.empty()) {
+        ImGui::TextWrapped("%s", m_overrideError.c_str());
+
+        if (ImGui::Button("Retry override inspection")) {
+          sessionAction(m_overrideQuery);
+        }
+
+        return;
+      }
+
+      if (m_overridePage.is_null() || !m_overridePage["linked"].get<bool>()) {
+        return;
+      }
+
+      /** Freeze view data until all controls finish; edits may replace snapshots.
+       * 在全部控件结束前冻结视图数据，编辑可能替换快照。 */
+      const auto page = m_overridePage;
+      const auto query = m_overrideQuery;
+      std::optional<Json> requestedView, requestedEdit;
+      std::optional<std::string> requestedSource;
+      ImGui::SeparatorText("Linked scene overrides");
+      ImGui::TextWrapped("Source: %s", page["asset"].get<std::string>().c_str());
+      ImGui::TextWrapped(
+          "Applied changes against the last refresh. Revert all also removes added nodes.");
+      bool all = page["scope"] == "instance";
+
+      if (ImGui::Checkbox("Whole instance", &all)) {
+        requestedView = query;
+        (*requestedView)["scope"] = all ? "instance" : "entity";
+        (*requestedView)["offset"] = 0;
+      }
+
+      ImGui::Text("%zu overrides", page["total"].get<std::size_t>());
+      const bool readOnly = playing() || m_animationPreview || m_transform || pendingInspector()
+                            || pendingEnvironment() || pendingOcclusion();
+      ImGui::BeginDisabled(readOnly);
+
+      if (ImGui::Button("Open source scene")) {
+        requestedSource = page["asset"].get<std::string>();
+      }
+
+      for (const auto& [label, op] : {std::pair{"Refresh source", "refresh-scene-instance"},
+                                      std::pair{"Restore source nodes", "revert-scene-instance"},
+                                      std::pair{"Unlink scene", "unlink-scene-instance"}}) {
+        if (ImGui::Button(label)) {
+          requestedEdit = {{"op", op}, {"entity", page["root"]}};
+        }
+      }
+
+      if (ImGui::Button("Revert all overrides")) {
+        requestedEdit = {{"op", "revert-scene-baseline"}, {"root", page["root"]}};
+      }
+
+      Json pageKeys = Json::array();
+
+      for (const auto& change : page["changes"]) {
+        pageKeys.push_back(
+            {{"kind", change["kind"]}, {"entity", change["entity"]}, {"path", change["path"]}});
+      }
+
+      ImGui::BeginDisabled(pageKeys.empty());
+
+      if (ImGui::Button("Revert displayed changes")) {
+        requestedEdit
+            = {{"op", "revert-scene-overrides"}, {"root", page["root"]}, {"keys", pageKeys}};
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+      std::size_t index{};
+
+      for (const auto& change : page["changes"]) {
+        ImGui::PushID(static_cast<int>(index++));
+        const auto kind = change["kind"].get<std::string>();
+        auto caption = kind + " | " + change["entity"].get<std::string>();
+
+        if (kind == "property") {
+          caption += " | " + change["path"].dump();
+        }
+
+        const bool expanded = ImGui::TreeNodeEx("change", 0, "%s", caption.c_str());
+        ImGui::SameLine();
+        ImGui::BeginDisabled(readOnly);
+
+        if (ImGui::SmallButton(kind == "added-node"     ? "Remove subtree"
+                               : kind == "deleted-node" ? "Restore"
+                                                        : "Revert")) {
+          requestedEdit = {{"op", "revert-scene-overrides"},
+                           {"root", page["root"]},
+                           {"keys", Json::array({pageKeys[index - 1]})}};
+        }
+
+        ImGui::EndDisabled();
+
+        if (expanded) {
+          for (const auto* field : {"baseline", "local"}) {
+            ImGui::TextUnformatted(field);
+            const auto text = change[field]["present"].get<bool>() ? change[field]["value"].dump(2)
+                                                                   : "(absent)";
+            ImGui::TextWrapped("%s", text.c_str());
+          }
+
+          ImGui::TreePop();
+        }
+
+        ImGui::PopID();
+      }
+
+      const auto offset = page["offset"].get<std::size_t>();
+      const auto limit = page["limit"].get<std::size_t>();
+      ImGui::BeginDisabled(offset == 0);
+
+      if (ImGui::Button("Previous overrides")) {
+        requestedView = query;
+        (*requestedView)["offset"] = offset > limit ? offset - limit : 0;
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(page["nextOffset"].is_null());
+
+      if (ImGui::Button("Next overrides")) {
+        requestedView = query;
+        (*requestedView)["offset"] = page["nextOffset"];
+      }
+
+      ImGui::EndDisabled();
+
+      if (requestedView) {
+        sessionAction(*requestedView);
+      } else if (requestedEdit) {
+        edit(Json::array({*requestedEdit}));
+      } else if (requestedSource) {
+        openSceneAsset(*requestedSource);
+      }
     }
 
     auto action(Json request) -> bool {
@@ -9476,39 +9700,7 @@ namespace Dot::Editor {
           ImGui::EndDisabled();
           ImGui::EndDisabled();
 
-          if (m_editEntity) {
-            const auto selected = *m_editEntity;
-            const auto links = m_snapshot["scene"].value("links", Json::array());
-
-            for (const auto& link : links) {
-              if (Codec::id(link["root"]) != selected) {
-                continue;
-              }
-
-              ImGui::SeparatorText("Linked scene");
-              ImGui::TextWrapped("Source: %s", link["asset"].get<std::string>().c_str());
-              ImGui::TextWrapped(
-                  "Refresh preserves local overrides. Revert restores source-owned nodes.");
-              ImGui::BeginDisabled(playing() || m_animationPreview || m_transform
-                                   || pendingInspector() || pendingEnvironment()
-                                   || pendingOcclusion());
-
-              if (ImGui::Button("Open source scene")) {
-                openSceneAsset(link["asset"].get<std::string>());
-              }
-
-              for (const auto& [label, op] :
-                   {std::pair{"Refresh source", "refresh-scene-instance"},
-                    std::pair{"Revert linked properties", "revert-scene-instance"},
-                    std::pair{"Unlink scene", "unlink-scene-instance"}}) {
-                if (ImGui::Button(label)) {
-                  edit({{{"op", op}, {"entity", link["root"]}}});
-                }
-              }
-
-              ImGui::EndDisabled();
-            }
-          }
+          sceneOverrideInspector();
 
           if (!playing() && !m_animationPreview && !m_transform && m_editEntity
               && m_edit.contains("animation") && !m_edit["animation"].is_null()) {

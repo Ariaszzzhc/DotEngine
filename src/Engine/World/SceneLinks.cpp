@@ -3,11 +3,13 @@ module;
 #include <algorithm>
 #include <exception>
 #include <expected>
+#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -112,7 +114,398 @@ namespace Dot::World {
 
       return result;
     }
+
+    struct OverrideData {
+      Json document;
+      SceneLink link;
+      Nodes expected;
+      Values sources;
+      std::set<std::uint64_t> added;
+    };
+
+    auto overrideData(const Scene& target, EntityId root) -> Core::Result<OverrideData> {
+      auto owner = target.entity(root);
+      auto links = target.sceneLinks();
+      auto encoded = encodeScene(target);
+
+      if (!owner || !links || !encoded) {
+        return std::unexpected(!owner ? owner.error() : !links ? links.error() : encoded.error());
+      }
+
+      const auto found = std::ranges::find(*links, root.value, &SceneLink::root);
+
+      if (found == links->end()) {
+        return Core::fail(Core::ErrorCode::NotFound, "Entity is not a linked scene root");
+      }
+
+      OverrideData data{Codec::parseJson(*encoded), *found, {}, {}, {}};
+      Values mapping;
+      std::vector<std::uint64_t> pending{root.value};
+
+      for (const auto& pair : found->mapping) {
+        mapping.emplace(pair.source, pair.target);
+        data.sources.emplace(pair.target, pair.source);
+        pending.push_back(pair.target);
+      }
+
+      data.expected = nodes(Codec::parseJson(found->baseline), mapping, root.value);
+      std::map<std::uint64_t, std::vector<std::uint64_t>> children;
+
+      for (const auto& entity : data.document["entities"]) {
+        if (!entity["parent"].is_null()) {
+          children[Codec::id(entity["parent"])].push_back(Codec::id(entity["id"]));
+        }
+      }
+
+      std::set<std::uint64_t> reached;
+
+      while (!pending.empty()) {
+        const auto id = pending.back();
+        pending.pop_back();
+
+        if (!reached.insert(id).second) {
+          continue;
+        }
+
+        if (const auto child = children.find(id); child != children.end()) {
+          pending.insert(pending.end(), child->second.begin(), child->second.end());
+        }
+
+        if (id != root.value && !data.sources.contains(id)) {
+          data.added.insert(id);
+        }
+      }
+
+      return data;
+    }
+
+    auto escapedToken(std::string_view key) -> std::string {
+      std::string result;
+
+      for (const auto character : key) {
+        if (character == '~') {
+          result += "~0";
+        } else if (character == '/') {
+          result += "~1";
+        } else {
+          result += character;
+        }
+      }
+
+      return result;
+    }
+
+    using DifferenceVisitor = std::function<void(std::string, const Json*, const Json*)>;
+    using OverrideVisitor = std::function<void(
+        const SceneOverrideKey&, std::optional<std::uint64_t>, const Json*, const Json*)>;
+
+    auto propertyDifferences(const Json* before, const Json* after, const std::string& path,
+                             const DifferenceVisitor& visit) -> void {
+      if (before && after && *before == *after) {
+        return;
+      }
+
+      if (!before || !after || !before->is_object() || !after->is_object()) {
+        visit(path, before, after);
+        return;
+      }
+
+      std::set<std::string> keys;
+
+      for (const auto* value : {before, after}) {
+        for (const auto& item : value->items()) {
+          keys.insert(item.key());
+        }
+      }
+
+      for (const auto& key : keys) {
+        if (path.empty() && key == "id") {
+          continue;
+        }
+
+        const auto old = before->find(key), local = after->find(key);
+        propertyDifferences(old == before->end() ? nullptr : &*old,
+                            local == after->end() ? nullptr : &*local,
+                            path + '/' + escapedToken(key), visit);
+      }
+    }
+
+    auto visitOverrides(const OverrideData& data, std::optional<std::uint64_t> node,
+                        const OverrideVisitor& visit) -> void {
+      std::map<std::uint64_t, const Json*> local;
+
+      for (const auto& value : data.document["entities"]) {
+        local.emplace(Codec::id(value["id"]), &value);
+      }
+
+      for (const auto& [source, expected] : data.expected) {
+        const auto id = Codec::id(expected["id"]);
+
+        if (node && *node != id) {
+          continue;
+        }
+
+        const auto found = local.find(id);
+
+        if (found == local.end()) {
+          visit({SceneOverrideKind::DeletedNode, id, {}}, source, &expected, nullptr);
+        } else {
+          propertyDifferences(&expected, found->second, {},
+                              [&](std::string path, const Json* before, const Json* after) {
+                                visit({SceneOverrideKind::Property, id, std::move(path)}, source,
+                                      before, after);
+                              });
+        }
+      }
+
+      for (const auto id : data.added) {
+        if (!node || *node == id) {
+          visit({SceneOverrideKind::AddedNode, id, {}}, {}, nullptr, local.at(id));
+        }
+      }
+    }
+
+    struct OverrideKeyLess {
+      auto operator()(const SceneOverrideKey& left, const SceneOverrideKey& right) const -> bool {
+        return std::tie(left.kind, left.entity, left.path)
+               < std::tie(right.kind, right.entity, right.path);
+      }
+    };
+
+    auto revertOverrides(const Scene& target, EntityId root,
+                         std::optional<std::span<const SceneOverrideKey>> keys)
+        -> Core::Result<SceneLinkUpdate> {
+      auto data = overrideData(target, root);
+
+      if (!data) {
+        return std::unexpected(data.error());
+      }
+
+      struct Selected {
+        SceneOverrideKey key;
+        std::optional<Json> baseline;
+      };
+
+      std::vector<Selected> selected;
+      std::set<std::uint64_t> removed;
+      auto& entities = data->document["entities"];
+      std::vector<std::uint64_t> created;
+
+      if (keys) {
+        if (keys->empty() || keys->size() > 256) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Override revert requires 1..256 keys");
+        }
+
+        std::map<SceneOverrideKey, bool, OverrideKeyLess> requested;
+
+        for (const auto& key : *keys) {
+          if (!requested.emplace(key, false).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate override key");
+          }
+        }
+
+        visitOverrides(
+            *data, {}, [&](const SceneOverrideKey& key, auto, const Json* before, const Json*) {
+              auto found = requested.find(key);
+
+              if (found != requested.end()) {
+                found->second = true;
+                selected.push_back(
+                    {key, before ? std::optional<Json>{*before} : std::optional<Json>{}});
+              }
+            });
+
+        if (std::ranges::any_of(requested, [](const auto& entry) { return !entry.second; })) {
+          return Core::fail(Core::ErrorCode::NotFound,
+                            "Override key is unknown or no longer active");
+        }
+
+        for (const auto& entry : selected) {
+          if (entry.key.kind == SceneOverrideKind::AddedNode) {
+            removed.insert(entry.key.entity);
+          }
+        }
+
+        for (const auto& entry : selected) {
+          if (entry.key.kind == SceneOverrideKind::DeletedNode) {
+            entities.push_back(*entry.baseline);
+            created.push_back(entry.key.entity);
+          } else if (entry.key.kind == SceneOverrideKind::Property) {
+            auto entity = std::ranges::find_if(entities, [&](const auto& value) {
+              return Codec::id(value["id"]) == entry.key.entity;
+            });
+            const Json::json_pointer path(entry.key.path);
+
+            if (entry.baseline) {
+              (*entity)[path] = *entry.baseline;
+            } else {
+              entity->at(path.parent_pointer()).erase(path.back());
+            }
+          }
+        }
+        bool changed = true;
+
+        while (changed) {
+          changed = false;
+
+          for (const auto& entity : entities) {
+            if (!entity["parent"].is_null() && removed.contains(Codec::id(entity["parent"]))) {
+              changed = removed.insert(Codec::id(entity["id"])).second || changed;
+            }
+          }
+        }
+
+        if (std::ranges::any_of(removed, [&](auto id) { return data->sources.contains(id); })) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Move inherited descendants before removing a local subtree");
+        }
+
+      } else {
+        removed = data->added;
+        std::set<std::uint64_t> live;
+
+        for (const auto& entity : entities) {
+          live.insert(Codec::id(entity["id"]));
+        }
+
+        std::erase_if(entities.get_ref<Json::array_t&>(), [&](const auto& entity) {
+          return data->sources.contains(Codec::id(entity["id"]));
+        });
+
+        for (const auto& [source, entity] : data->expected) {
+          entities.push_back(entity);
+          const auto id = Codec::id(entity["id"]);
+
+          if (!live.contains(id)) {
+            created.push_back(id);
+          }
+        }
+      }
+
+      std::erase_if(entities.get_ref<Json::array_t&>(),
+                    [&](const auto& entity) { return removed.contains(Codec::id(entity["id"])); });
+      auto& links = data->document["links"].get_ref<Json::array_t&>();
+      std::erase_if(links,
+                    [&](const auto& link) { return removed.contains(Codec::id(link["root"])); });
+      auto prepared = decodeScene(data->document.dump());
+
+      if (!prepared) {
+        return Core::fail(prepared.error().code,
+                          "Revert scene overrides: " + prepared.error().message);
+      }
+
+      auto bounded = encodeScene(*prepared);
+
+      if (!bounded) {
+        return std::unexpected(bounded.error());
+      }
+
+      const EntityId restoredRoot{prepared->id(), root.value};
+      return SceneLinkUpdate{std::move(*prepared), restoredRoot, std::move(created)};
+    }
   }  // namespace
+
+  auto findSceneLinkRoot(const Scene& target, EntityId entity)
+      -> Core::Result<std::optional<EntityId>> {
+    try {
+      auto current = target.entity(entity);
+      auto links = target.sceneLinks();
+
+      if (!current || !links) {
+        return std::unexpected(!current ? current.error() : links.error());
+      }
+
+      while (true) {
+        for (const auto& link : *links) {
+          if (current->id.value == link.root
+              || std::ranges::any_of(link.mapping, [&](const auto& pair) {
+                   return pair.target == current->id.value;
+                 })) {
+            return std::optional{EntityId{target.id(), link.root}};
+          }
+        }
+
+        if (!current->parent) {
+          return std::optional<EntityId>{};
+        }
+
+        current = target.entity(*current->parent);
+
+        if (!current) {
+          return std::unexpected(current.error());
+        }
+      }
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Find linked scene: " + std::string(error.what()));
+    }
+  }
+
+  auto inspectSceneOverrides(const Scene& target, EntityId root, std::optional<std::uint64_t> node,
+                             std::size_t offset, std::size_t limit)
+      -> Core::Result<SceneOverridePage> {
+    try {
+      if (limit == 0 || limit > 256) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Override page limit must be 1..256");
+      }
+
+      auto data = overrideData(target, root);
+
+      if (!data) {
+        return std::unexpected(data.error());
+      }
+
+      if (node && *node != root.value && !data->sources.contains(*node)
+          && !data->added.contains(*node)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Override filter is outside this instance");
+      }
+
+      SceneOverridePage page{root, data->link.asset, node, offset, limit, 0, {}};
+      visitOverrides(
+          *data, node,
+          [&](const SceneOverrideKey& key, auto source, const Json* before, const Json* after) {
+            const auto index = page.total++;
+
+            if (index >= offset && page.changes.size() < limit) {
+              page.changes.push_back({key, source,
+                                      before ? std::optional{before->dump()} : std::nullopt,
+                                      after ? std::optional{after->dump()} : std::nullopt});
+            }
+          });
+
+      if (offset > page.total) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Override page offset exceeds total");
+      }
+
+      return page;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Inspect scene overrides: " + std::string(error.what()));
+    }
+  }
+
+  auto prepareSceneOverrideRevert(const Scene& target, EntityId root,
+                                  std::span<const SceneOverrideKey> keys)
+      -> Core::Result<SceneLinkUpdate> {
+    try {
+      return revertOverrides(target, root, keys);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Revert scene overrides: " + std::string(error.what()));
+    }
+  }
+
+  auto prepareSceneBaselineRevert(const Scene& target, EntityId root)
+      -> Core::Result<SceneLinkUpdate> {
+    try {
+      return revertOverrides(target, root, {});
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Revert scene baseline: " + std::string(error.what()));
+    }
+  }
 
   auto prepareLinkedScene(const Scene& target, const Scene& source, std::string_view asset,
                           std::uint64_t firstValue, const Transform& placement,

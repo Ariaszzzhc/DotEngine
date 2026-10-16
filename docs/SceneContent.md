@@ -99,7 +99,7 @@ for the linked updates described below.
 
 Choose **Add linked scene** on a scene asset. Its placement root keeps an owned
 source path, baseline and source-to-target value mapping. On that root, Inspector
-provides **Open source scene**, **Refresh source**, **Revert linked properties** and
+provides **Open source scene**, **Refresh source**, **Restore source nodes** and
 **Unlink scene**. Ordinary property edits create overrides by differing from the
 last baseline. The equivalent strict document edits are:
 
@@ -140,7 +140,69 @@ creates independent content, preserving the original link only on its original r
 Runtime/Play/export use materialized entities without reading link source files.
 Source instances are flattened into their saved data when linked: recursive nested
 refresh, variants, applying overrides back to source, source-path retargeting and
-per-property override visualization remain unfinished. `Dot.World.SceneLinks`
+inline field markers remain unfinished. `Dot.World.SceneLinks`
 provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
 owns validated link metadata. Existing target handles remain untouched until callers
 publish the complete candidate.
+
+## Inspecting and reverting applied overrides
+
+Inspector's **Linked scene overrides** section works on instance roots, inherited
+nodes and local additions. It shows changed properties, deleted inherited nodes
+and added local nodes, with owned baseline/local values. **Whole instance** switches
+between instance and selected-entity views; Previous/Next paginate the list. Revert
+works per row or for the displayed page. Missing properties and JSON null remain
+distinct, and arrays appear as one atomic change. Placement-root properties and
+components stay local and are excluded from inherited overrides.
+
+The same read-only query works through `DotEditor document` and the live mailbox:
+
+```json
+{"command":"inspect-scene-overrides","entity":"20","scope":"auto","offset":0,"limit":32}
+```
+
+Scope is `auto`, `instance` or `entity`. Auto chooses the whole instance on its
+placement root and the selected entity otherwise. Direct link ownership takes
+precedence over ancestor links, including inherited nodes reparented outside their
+placement root. An unlinked live entity returns `linked:false` and an empty page.
+Deleted nodes remain visible through their instance root. Limit is 1..256; offset
+can equal total but cannot exceed it. Source-node/object-key traversal followed by
+added-node value order gives stable pages. Queries require no revision and perform
+no source-file I/O or document/history/selection changes.
+
+The response contains document `revision`, `scope`, `scenePath`, `selected`, empty
+`created` and `sceneOverrides`, without a full scene snapshot. The latter provides
+`linked`, `root`, `asset`, `node`, effective `scope`, `offset`, `limit`, `total`,
+`nextOffset` and `changes`. Each change has `kind` (`property`, `deleted-node`,
+`added-node`), target `entity`, `path`, optional source value, and `baseline`/`local`
+objects with `present` and typed JSON `value`. Property paths are escaped JSON
+Pointers; node changes use an empty path. Copy only kind/entity/path into selectors.
+
+```json
+{"command":"edit","revision":"16","operations":[{"op":"revert-scene-overrides","root":"20","keys":[{"kind":"property","entity":"22","path":"/name"}]}]}
+{"command":"edit","revision":"17","operations":[{"op":"revert-scene-baseline","root":"20"}]}
+```
+
+Selected revert accepts 1..256 unique current keys in one atomic edit. Unknown,
+duplicate, invalid or stale selectors fail before publication. Dependent deleted
+nodes can be restored together; source values keep their reserved target identities.
+Added-node revert removes its subtree. Inherited descendants must be moved out,
+either beforehand or through selected parent-property reverts in the same
+transaction. Native references and final components still have to be valid.
+Selection stays on surviving selected entities, falling back to the instance root.
+
+**Revert all overrides** uses the stored baseline, restores inherited nodes and
+removes local additions; placement roots and unrelated entities remain. It can
+also repair local grouping around inherited nodes. **Restore source nodes** reads
+the latest saved source and keeps local additions. **Refresh source** reads the
+latest saved source while preserving local overrides. Stored-baseline reverts keep
+working when the source asset is unavailable. Undo/redo restores all affected data,
+and no-op full reverts preserve document revision/scope/history/allocation.
+
+The live workspace exposes the current inspector page/query/revision/error under
+`workspace.sceneOverrides`. A query for the currently selected entity also updates
+that view, matching pagination/scope controls. Queries for other entities inspect
+without moving selection. Applied overrides remain readable during pending drafts,
+Play and preview; mutation controls use ordinary authoring guards. UI and agent
+operations share the native `findSceneLinkRoot`, `inspectSceneOverrides`,
+`prepareSceneOverrideRevert` and `prepareSceneBaselineRevert` implementations.

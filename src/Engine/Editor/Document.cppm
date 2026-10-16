@@ -156,6 +156,9 @@ export namespace Dot::Editor {
      * link-scene retains source provenance; refresh-scene-instance merges saved
      * source changes with local overrides. revert-scene-instance restores source-owned
      * nodes; unlink-scene-instance retains the materialized authored entities.
+     * inspect-scene-overrides pages applied changes without a revision or source I/O;
+     * revert-scene-overrides restores selected keys from stored baseline, and
+     * revert-scene-baseline also removes local additions. Both use the edit transaction.
      * Hierarchy edits preserve world poses when requested;
      * grouping uses minimal selected roots and ungrouping removes only
      * component-free containers. Selection/history/identity changes commit together.
@@ -166,15 +169,19 @@ export namespace Dot::Editor {
      * 内容保存仅发布新资产文件，不改变文档；场景插入选择新的放置根并在候选中重映射原生引用。
      * link-scene 保留来源；refresh-scene-instance 合并已保存源变化并保留本地覆盖；
      * revert-scene-instance 恢复源拥有节点，unlink-scene-instance 保留展开的编辑实体。
+     * inspect-scene-overrides 无需版本或读源文件，分页查看已应用修改；revert-scene-overrides
+     * 从存储基线还原所选键，revert-scene-baseline 同时移除本地新增，均使用 edit 事务。
      * 层级编辑可显式保持世界姿态；成组处理最小选择根，拆组仅删除无功能组件容器。
      * 选择、历史及标识变更共同提交。复制/删除对子树并集只处理一次；副本保留外部父级/
      * 原生组件，重映射内部父级，取消
      * 主相机/监听器标记并选中对应输入 ID。脚本属性保持不透明，不将任意值视为实体引用。
      * Mutations require a canonical decimal revision; stale requests fail before
-     * effects. Responses own a full snapshot and created values. If response
+     * effects. Mutation responses own a full snapshot and created values; override
+     * inspection owns a bounded page and document context without a full scene. If response
      * allocation fails after commit, the revision may already have advanced.
      * 自动化/UI 共用协议：inspect/edit/select/undo/redo/save；修改须携带规范十进制
-     * 版本，过期请求在副作用前失败。响应拥有完整快照及新实体值；提交后响应分配失败时，
+     * 版本，过期请求在副作用前失败。修改响应拥有完整快照及新实体值；覆盖查询拥有有界
+     * 分页及文档上下文，不附带完整场景。提交后响应分配失败时，
      * 版本可能已推进。 */
     [[nodiscard]] auto dispatch(std::string_view request) -> Core::Result<std::string>;
 
