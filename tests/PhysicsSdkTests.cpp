@@ -512,3 +512,50 @@ export class Actor extends ScriptComponent {
   CHECK(native->entity(actor)->name == "observed character trigger");
   good(scripts.stop());
 }
+
+TEST_CASE("physics_sdk_continuous_authoring_applies_native_mode_and_survives_reload") {
+  Project project;
+  project.write(R"ts(
+import {components, ScriptComponent} from 'dot:engine';
+export class Actor extends ScriptComponent {
+  onStart(): void {
+    this.self.rigidBody = components.rigidBody({collisionDetection: 'continuous', radius: .1,
+      velocity: {x: 240, y: 0, z: 0}, gravityFactor: 0});
+  }
+
+  onUpdate(): void {
+    const native = this.self.physicsBody;
+
+    if (native.collisionDetection !== 'continuous' || native.position.x > -.09) {
+      throw Error('continuous native collision state');
+    }
+
+    this.self.name = 'continuous contact';
+  }
+}
+)ts");
+  auto native = scene();
+  const auto actor = native->entities()->front().id;
+  REQUIRE(native->setTransform(actor, {{-2, 0, 0}}));
+  const auto obstacle = native->createEntity("Thin wall").value();
+  Dot::World::RigidBody wall;
+  wall.motion = Dot::Physics::Motion::Static;
+  wall.shape = Dot::Physics::Shape::Box;
+  wall.halfExtents = {.01F, 2, 2};
+  REQUIRE(native->setRigidBody(obstacle, wall));
+  auto program = project.compile();
+  auto physics = source(native);
+  auto scripts = service(native, program, physics);
+  good(scripts.start());
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(1.0 / 60));
+  CHECK(native->entity(actor)->name == "continuous contact");
+  const auto position = native->transform(actor)->position;
+  auto reloaded = scripts.reload(program);
+  REQUIRE(reloaded);
+  REQUIRE(reloaded->retired.failures.empty());
+  CHECK(native->transform(actor)->position == position);
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(1.0 / 60));
+  good(scripts.stop());
+}

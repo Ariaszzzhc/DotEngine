@@ -15,6 +15,7 @@ import Dot.Core.Result;
 import Dot.Math;
 
 using namespace Dot::World;
+using Dot::Physics::CollisionDetection;
 using Dot::Physics::Motion;
 using Dot::Physics::Shape;
 
@@ -80,6 +81,11 @@ TEST_CASE("rigid_body.invalid_replacement_preserves_previous_properties") {
   };
   append([](auto& body) { body.motion = static_cast<Motion>(99); });
   append([](auto& body) { body.shape = static_cast<Shape>(99); });
+  append([](auto& body) { body.collisionDetection = static_cast<CollisionDetection>(99); });
+  append([](auto& body) {
+    body.collisionDetection = CollisionDetection::Continuous;
+    body.sensor = true;
+  });
   append([](auto& body) { body.mass = 0; });
   append([](auto& body) { body.radius = 0; });
   append([](auto& body) { body.halfHeight = 0; });
@@ -172,7 +178,9 @@ TEST_CASE("rigid_body.files_round_trip_all_motion_and_shape_variants") {
       body.friction = 0.3F;
       body.restitution = 0.5F;
       body.gravityFactor = 2;
-      body.sensor = true;
+      body.sensor = motion != Motion::Dynamic;
+      body.collisionDetection = motion == Motion::Dynamic ? CollisionDetection::Continuous
+                                                          : CollisionDetection::Discrete;
 
       if (motion != Motion::Static) {
         body.velocity = {1, 2, 3};
@@ -197,7 +205,7 @@ TEST_CASE("rigid_body.files_round_trip_all_motion_and_shape_variants") {
   CHECK(encodeScene(*decoded).value() == *encoded);
 }
 
-TEST_CASE("rigid_body.files_absent_null_and_old_documents") {
+TEST_CASE("rigid_body.files_absent_or_null_components") {
   auto value = document();
   value["entities"][0].erase("rigidBody");
   auto decoded = decodeScene(value.dump());
@@ -230,6 +238,9 @@ TEST_CASE("rigid_body.files_strict_fields_types_and_shape_names") {
     CHECK_FALSE(decodeScene(invalid.dump()));
     invalid = value;
     invalid["entities"][0]["rigidBody"]["motion"] = name;
+    CHECK_FALSE(decodeScene(invalid.dump()));
+    invalid = value;
+    invalid["entities"][0]["rigidBody"]["collisionDetection"] = name;
     CHECK_FALSE(decodeScene(invalid.dump()));
   }
 

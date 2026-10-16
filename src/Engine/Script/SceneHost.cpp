@@ -245,6 +245,9 @@ namespace Dot::Script {
                          : value.shape == Physics::Shape::Sphere ? "sphere"
                                                                  : "capsule";
       return {{"motion", motion},
+              {"collisionDetection",
+               value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
+                                                                                   : "discrete"},
               {"shape", shape},
               {"halfExtents", Detail::xyz(value.halfExtents)},
               {"radius", value.radius},
@@ -260,7 +263,7 @@ namespace Dot::Script {
     auto bodyValue(const Json& value) -> World::RigidBody {
       Codec::requireFields(
           value, {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass",
-                  "friction", "restitution", "gravityFactor", "sensor"});
+                  "friction", "restitution", "gravityFactor", "sensor", "collisionDetection"});
       World::RigidBody result;
       result.motion = Detail::named<Physics::Motion>(value["motion"],
                                                      {{"static", Physics::Motion::Static},
@@ -270,6 +273,9 @@ namespace Dot::Script {
           = Detail::named<Physics::Shape>(value["shape"], {{"box", Physics::Shape::Box},
                                                            {"sphere", Physics::Shape::Sphere},
                                                            {"capsule", Physics::Shape::Capsule}});
+      result.collisionDetection = Detail::named<Physics::CollisionDetection>(
+          value["collisionDetection"], {{"discrete", Physics::CollisionDetection::Discrete},
+                                        {"continuous", Physics::CollisionDetection::Continuous}});
       result.halfExtents = Detail::vector<Math::Vec3>(value["halfExtents"]);
       result.radius = Codec::number(value["radius"]);
       result.halfHeight = Codec::number(value["halfHeight"]);

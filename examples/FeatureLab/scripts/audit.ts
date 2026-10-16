@@ -240,9 +240,12 @@ export class Audit extends ScriptComponent<{contract: string}> {
     const dynamic = this.entity('Dynamic');
     const kinematic = this.entity('Kinematic');
     const initial = physics.body(dynamic.id);
-    this.check('physics.body', initial.motion === 'dynamic' && !initial.sensor);
+    this.check(
+        'physics.body',
+        initial.motion === 'dynamic' && initial.collisionDetection === 'continuous'
+            && !initial.sensor);
     this.check('Entity.physicsBody.get', equal(dynamic.physicsBody, initial));
-    this.check('physics.stats', physics.stats().bodies === 5 && !physics.stats().faulted);
+    this.check('physics.stats', physics.stats().bodies === 7 && !physics.stats().faulted);
     this.check('physics.contacts.get', Array.isArray(physics.contacts.events));
     const hit = physics.rayCast({x: -2, y: 3, z: 0}, {x: 0, y: -6, z: 0});
     this.check('physics.rayCast', hit !== null && hit.fraction >= 0 && hit.fraction <= 1);
@@ -390,7 +393,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
     };
     report.script = description;
     scene.rename(
-        'Feature Lab | ' + this.#checked.size + ' checks | D move | 1/2 animation | Space pause');
+        'Feature Lab | ' + this.#checked.size
+        + ' checks | D move | T reset CCD | 1/2 animation | Space pause');
   }
 
   onStart(): void {

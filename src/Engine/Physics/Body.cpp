@@ -27,6 +27,17 @@ namespace Dot::Physics {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown physics shape type");
     }
 
+    if (properties.collisionDetection != CollisionDetection::Discrete
+        && properties.collisionDetection != CollisionDetection::Continuous) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown collision detection mode");
+    }
+
+    if (properties.collisionDetection == CollisionDetection::Continuous
+        && (properties.motion != Motion::Dynamic || properties.sensor)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Continuous collision detection requires a solid dynamic body");
+    }
+
     if (!inRange(properties.halfExtents.x, 0.001F, 10000)
         || !inRange(properties.halfExtents.y, 0.001F, 10000)
         || !inRange(properties.halfExtents.z, 0.001F, 10000)

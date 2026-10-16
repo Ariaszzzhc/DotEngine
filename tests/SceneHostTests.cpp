@@ -387,6 +387,8 @@ TEST_CASE("component_host_native_numeric_asset_and_property_constraints_preserve
   invalid("mesh", "/visible", "yes");
   invalid("rigidBody", "/motion", "automatic");
   invalid("rigidBody", "/shape", "mesh");
+  invalid("rigidBody", "/collisionDetection", "automatic");
+  invalid("rigidBody", "/collisionDetection", true);
   invalid("rigidBody", "/halfExtents/x", 0);
   invalid("rigidBody", "/velocity/y", 501);
   invalid("rigidBody", "/mass", 0);

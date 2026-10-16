@@ -669,6 +669,12 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.setCharacterInput` | `[entityId, {velocity, jump}]` | undefined |
 | `physics.setCharacterYaw` | `[entityId, degrees]` | undefined |
 
+RigidBody authoring includes `collisionDetection: 'discrete'|'continuous'`; the
+factory defaults to discrete. Continuous requires solid Dynamic motion. Native
+PhysicsBodyState reports the applied backend mode using the same field. Changing
+only this authoring property preserves current native linear/angular motion on
+synchronization; malformed/unsupported combinations fail before replacement.
+
 Ray/sphere hits and sensor/native proxy contact events include character-controller
 entities. Sphere filters use `ignoreEntity` for either synchronized collider kind;
 Prism Relay excludes its own capsule while sweeping the shoulder camera. Native

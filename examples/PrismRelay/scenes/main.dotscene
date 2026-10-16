@@ -68,6 +68,7 @@
       "name": "Floor",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -136,6 +137,7 @@
       "name": "WallNorth",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -204,6 +206,7 @@
       "name": "WallSouth",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -272,6 +275,7 @@
       "name": "WallWest",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -340,6 +344,7 @@
       "name": "WallEast",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -446,6 +451,7 @@
       "name": "Power cell 1",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -548,6 +554,7 @@
       "name": "Power cell 2",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -650,6 +657,7 @@
       "name": "Power cell 3",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -752,6 +760,7 @@
       "name": "Power cell 4",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -854,6 +863,7 @@
       "name": "Power cell 5",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -956,6 +966,7 @@
       "name": "Power cell 6",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -1058,6 +1069,7 @@
       "name": "Power cell 7",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -1160,6 +1172,7 @@
       "name": "Power cell 8",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -1420,6 +1433,7 @@
       "name": "Obelisk",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -10196,6 +10210,7 @@
       "name": "Traversal step 1",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -10264,6 +10279,7 @@
       "name": "Traversal step 2",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -10332,6 +10348,7 @@
       "name": "Traversal step 3",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -10400,6 +10417,7 @@
       "name": "Traversal step 4",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [

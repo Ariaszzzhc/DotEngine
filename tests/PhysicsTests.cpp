@@ -557,3 +557,68 @@ TEST_CASE("physics.backend_capacity_failure_faults_mutations") {
   REQUIRE(world->destroyBody(first));
   CHECK(world->stats()->bodies == 255);
 }
+
+TEST_CASE("physics.continuous_shapes_hit_thin_walls_where_discrete_motion_tunnels") {
+  for (const auto shape : {Shape::Box, Shape::Sphere, Shape::Capsule}) {
+    for (const auto mode : {CollisionDetection::Discrete, CollisionDetection::Continuous}) {
+      auto world = World::create({.gravity = {}, .maxCharacters = 0}).value();
+      auto wall = ground();
+      wall.position = {};
+      wall.halfExtents = {.01F, 2, 2};
+      const auto obstacle = world.createBody(wall).value();
+      BodyConfig config;
+      config.shape = shape;
+      config.radius = .1F;
+      config.halfHeight = .15F;
+      config.halfExtents = {.1F, .1F, .1F};
+      config.position = {-2, 0, 0};
+      config.velocity = {240, 0, 0};
+      config.collisionDetection = mode;
+      const auto moving = world.createBody(config).value();
+      REQUIRE(world.step(1.0 / 60));
+      CHECK(world.body(moving)->collisionDetection == mode);
+
+      if (mode == CollisionDetection::Discrete) {
+        CHECK(world.body(moving)->position.x > 1.9F);
+      } else {
+        CHECK(world.body(moving)->position.x < -.09F);
+        CHECK(world.body(moving)->position.x > -.13F);
+        const auto events = world.drainContactEvents().value();
+        REQUIRE_FALSE(events.empty());
+        CHECK(events.front().phase == ContactPhase::Begin);
+        CHECK(events.front().first.collider == ColliderId{obstacle});
+        CHECK(events.front().second.collider == ColliderId{moving});
+        REQUIRE(events.front().geometry);
+        CHECK(events.front().geometry->normal.x < -.99F);
+      }
+
+      CHECK_FALSE(world.stats()->faulted);
+    }
+  }
+}
+
+TEST_CASE("physics.continuous_incoming_body_hits_the_native_character_proxy") {
+  for (const auto workers : {0U, 2U}) {
+    auto world = World::create({.gravity = {}, .workerThreads = workers}).value();
+    const auto character = world.createCharacter().value();
+    BodyConfig config;
+    config.position = {-2, 1, 0};
+    config.velocity = {240, 0, 0};
+    config.radius = .1F;
+    config.collisionDetection = CollisionDetection::Continuous;
+    const auto incoming = world.createBody(config).value();
+    REQUIRE(world.step(1.0 / 60));
+    CHECK(world.body(incoming)->position.x < -.4F);
+    CHECK(world.body(incoming)->position.x > -.5F);
+    CHECK(world.character(character)->position.x == doctest::Approx(0));
+    const auto events = world.drainContactEvents().value();
+    REQUIRE_FALSE(events.empty());
+    CHECK(events.front().phase == ContactPhase::Begin);
+    CHECK(events.front().first.collider == ColliderId{incoming});
+    CHECK(events.front().second.collider == ColliderId{character});
+    CHECK_FALSE(events.front().sensor);
+    REQUIRE(events.front().geometry);
+    CHECK(events.front().geometry->normal.x > .99F);
+    CHECK_FALSE(world.stats()->faulted);
+  }
+}

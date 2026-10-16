@@ -608,6 +608,9 @@ namespace Dot::Physics {
       settings.mRestitution = config.restitution;
       settings.mGravityFactor = config.gravityFactor;
       settings.mIsSensor = config.sensor;
+      settings.mMotionQuality = config.collisionDetection == CollisionDetection::Continuous
+                                    ? JPH::EMotionQuality::LinearCast
+                                    : JPH::EMotionQuality::Discrete;
       settings.mUserData = value;
       settings.mLinearDamping = 0;
       settings.mAngularDamping = 0;
@@ -1327,7 +1330,15 @@ namespace Dot::Physics {
     JPH::RVec3 position;
     JPH::Quat rotation;
     bodies.GetPositionAndRotation(entry->nativeId, position, rotation);
+    const auto quality = bodies.GetMotionQuality(entry->nativeId);
+
+    if (quality != JPH::EMotionQuality::Discrete && quality != JPH::EMotionQuality::LinearCast) {
+      return Core::fail(Core::ErrorCode::External, "Unknown native collision detection mode");
+    }
+
     return BodyState{entry->motion,
+                     quality == JPH::EMotionQuality::LinearCast ? CollisionDetection::Continuous
+                                                                : CollisionDetection::Discrete,
                      vector(position),
                      quaternion(rotation),
                      vector(bodies.GetLinearVelocity(entry->nativeId)),

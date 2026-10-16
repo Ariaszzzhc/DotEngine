@@ -175,6 +175,7 @@
       "name": "Dynamic",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "continuous",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -243,6 +244,7 @@
       "name": "Kinematic",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -309,6 +311,7 @@
       "name": "Static",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -375,6 +378,7 @@
       "name": "Sensor",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -630,6 +634,7 @@
       "name": "Capsule",
       "parent": null,
       "rigidBody": {
+        "collisionDetection": "discrete",
         "friction": 0.0,
         "gravityFactor": 0.0,
         "halfExtents": [
@@ -959,6 +964,151 @@
           0.699999988079071,
           1.7999999523162842,
           0.699999988079071
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740996",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          0.7200000286102295,
+          0.07999999821186066,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "CCD slider",
+      "parent": null,
+      "rigidBody": {
+        "collisionDetection": "continuous",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "dynamic",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          240.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": {
+        "className": "CollisionDemo",
+        "enabled": true,
+        "properties": {
+          "spawn": {
+            "x": -4,
+            "y": 0,
+            "z": 2.2
+          }
+        },
+        "source": "collision.ts"
+      },
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.0,
+          0.0,
+          2.200000047683716
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.20000000298023224,
+          0.20000000298023224,
+          0.20000000298023224
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740997",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          0.25,
+          0.6499999761581421,
+          0.8500000238418579,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Thin wall",
+      "parent": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.0,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          0.0,
+          2.200000047683716
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.019999999552965164,
+          2.0,
+          1.0
         ]
       }
     }

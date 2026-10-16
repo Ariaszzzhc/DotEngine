@@ -39,9 +39,42 @@ trusted solver snapshots avoid being rejected because of limit-rounding drift.
 
 World configuration allows 1..4096 bodies and 0..8 worker threads. Zero workers
 executes synchronously on the owner thread. Gravity must be finite with magnitude
-at most 1000 m/s². Pair and contact capacities are each sixteen times the body
+at most 1000 m/s². Pair and contact capacities are each sixteen times the combined body/character
 capacity. Temporary simulation storage starts at 16 MiB and falls back to heap
 storage when necessary.
+
+## Continuous collision detection
+
+`BodyProperties::collisionDetection` selects Discrete (default) or Continuous.
+Scene files and `dot:engine` snapshots use the required string field
+`collisionDetection`: `discrete` or `continuous`. The Inspector and strict document
+component edits use the same codec/validator. Missing, unknown or wrongly typed
+values fail; there is no legacy-field fallback. Continuous is valid only for a
+solid Dynamic body: Static, Kinematic or sensor combinations fail explicitly rather
+than storing an ineffective flag. The SDK factory supplies the default field.
+
+Continuous maps to Jolt's native LinearCast motion quality. It casts the translating
+shape during integration, preserving native response, contact manifolds and owner
+identity. It can hit thin solids and character proxies at speeds that tunnel in
+Discrete mode. No game-script collision solver, extra window or manual fixed-step
+subdivision implements this behavior. `World::body`, scene body snapshots and
+`physics.body` report the actual backend mode, separately from authoring intent.
+Mode-only scene replacement retains current linear/angular velocity and public
+handles; normal full-capacity preparation/failure guarantees continue to apply.
+
+The native method has limits: it does not sweep angular motion or crossed sensors,
+and may stop at first impact for the rest of that integration step. Contacts are
+pre-solver observations and can include provisional CCD contacts that later end.
+Small penetration follows native tolerances; this is not an arbitrary-speed,
+rotation-proof or sensor-crossing guarantee. See the [native CCD contract](https://jrouwe.github.io/JoltPhysics/#continuous-collision-detection).
+
+Feature Lab's ordinary CCD slider moves at 240m/s toward its 2cm-thick wall. Play
+uses Continuous; T requests a reset of its authored pose/native velocity. While
+stopped, change only Collision detection to Discrete to compare, then undo to
+restore. Fixed-update display-boundary control keeps the passed-through body in
+view; Jolt alone determines whether the wall stops it. Headless regressions cover
+all three solid shapes, character proxies, mode reconfiguration, malformed input,
+scene roundtrips, document history, script reload and multi-step/reset behavior.
 
 ## Bodies and time
 
@@ -254,8 +287,8 @@ A controller's predictive shell can resolve an encounter before the inner proxy
 contacts the other body; those virtual-only encounters are not claimed as rigid
 manifolds/events. Incoming-body regression verifies real native proxy contact and
 physical pushing without passing through the capsule. It does not establish
-continuous collision detection for arbitrary velocities: public per-body CCD control
-and comprehensive virtual-character contact callbacks remain open work.
+continuous collision detection for arbitrary velocities. Solid dynamic bodies can
+select Continuous mode; comprehensive virtual-character contact callbacks remain open.
 
 Character removal, teleport and replacement use the same event-capacity preflight
 as body lifecycle operations. Mixed batches reserve space for the union of affected

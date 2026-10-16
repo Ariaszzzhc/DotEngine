@@ -21,7 +21,7 @@ requirements remain:
 | --- | --- | --- |
 | Rendering | PBR material/texture slots, HDRI IBL, directional cascaded soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, resource streaming and populated-scene performance |
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning and animation cross-fades | Production skeleton/animation authoring, layered/state-machine workflows and scalability |
-| Physics/gameplay | Rigid bodies, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies and script/Inspector/agent controls | Per-body CCD controls, virtual-only character contact events and populated-game character scalability |
+| Physics/gameplay | Rigid bodies with linear CCD, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies and script/Inspector/agent controls | Virtual-only character contact events and populated-game character scalability |
 | Editor | Docked views, scene/resource/material authoring, picking/multiselection/gizmos, undo/redo, isolated Play and export | Consistent production workflows, complex scene organization, background compilation and performance/debugging tools |
 | AI control | Product CLI, strict JSON operations and live mailbox; shared document/resource/Play operations | Audit complete human/agent operation parity as workflows evolve; no test-only substitutes |
 | Example experience | Feature Lab and Prism Relay's rigged character, native traversal and sphere-swept shoulder camera | Finished realistic sci-fi character/environment art, broader workflow and performance evidence |

@@ -520,3 +520,32 @@ TEST_CASE("scene_physics.scaled_sphere_and_capsule_use_actual_geometry") {
     CHECK((*ray)->point.y == doctest::Approx(shape == Shape::Sphere ? 1 : 2));
   }
 }
+
+TEST_CASE("scene_physics_continuous_reconfiguration_preserves_motion_and_native_wall_collision") {
+  auto scene = Scene::create().value();
+  auto obstacle = box(Motion::Static);
+  obstacle.halfExtents = {.01F, 2, 2};
+  addBody(scene, {}, obstacle);
+  RigidBody description;
+  description.radius = .1F;
+  const auto actor = addBody(scene, {{-2, 0, 0}}, description);
+  auto simulation
+      = SceneSimulation::create(scene, {.maxBodies = 2, .gravity = {}, .maxCharacters = 0}).value();
+  REQUIRE(simulation.setVelocity(actor, {240, 0, 0}));
+  REQUIRE(simulation.setAngularVelocity(actor, {0, 2, 0}));
+  description.collisionDetection = Dot::Physics::CollisionDetection::Continuous;
+  REQUIRE(scene.setRigidBody(actor, description));
+  REQUIRE(simulation.synchronize(scene));
+  CHECK(simulation.body(actor)->collisionDetection == Dot::Physics::CollisionDetection::Continuous);
+  CHECK(simulation.body(actor)->velocity.x == 240);
+  CHECK(simulation.body(actor)->angularVelocity.y == 2);
+  REQUIRE(simulation.step(scene, 1.0 / 60));
+  CHECK(scene.transform(actor)->position.x < -.09F);
+  CHECK(scene.transform(actor)->position.x > -.13F);
+  auto restored = decodeScene(encodeScene(scene).value()).value();
+  const auto id = restored.findEntity(actor.value).value();
+  REQUIRE(simulation.reset(restored));
+  CHECK(simulation.body(id)->collisionDetection == Dot::Physics::CollisionDetection::Continuous);
+  CHECK(simulation.body(id)->velocity == Dot::Math::Vec3{});
+  CHECK_FALSE(simulation.stats()->faulted);
+}

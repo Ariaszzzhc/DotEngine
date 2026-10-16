@@ -118,3 +118,26 @@ TEST_CASE("body.unknown_enums_static_velocity_and_inactive_dimensions") {
   properties.halfExtents.x = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(validateBodyProperties(properties));
 }
+
+TEST_CASE("body.continuous_collision_is_valid_only_for_solid_dynamic_shapes") {
+  for (const auto shape : {Shape::Box, Shape::Sphere, Shape::Capsule}) {
+    BodyProperties properties;
+    properties.shape = shape;
+    properties.collisionDetection = CollisionDetection::Continuous;
+    REQUIRE(validateBodyProperties(properties));
+
+    for (const auto motion : {Motion::Static, Motion::Kinematic}) {
+      properties.motion = motion;
+      auto result = validateBodyProperties(properties);
+      REQUIRE_FALSE(result);
+      CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
+    }
+
+    properties.motion = Motion::Dynamic;
+    properties.sensor = true;
+    CHECK_FALSE(validateBodyProperties(properties));
+    properties.sensor = false;
+    properties.collisionDetection = static_cast<CollisionDetection>(99);
+    CHECK_FALSE(validateBodyProperties(properties));
+  }
+}

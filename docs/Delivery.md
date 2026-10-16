@@ -9,7 +9,7 @@ readiness or editor maturity comparable to the requested target.
 | Static C++26 library, separate module interfaces/implementations, pinned native dependencies | Preserve caller compiler/linker environment; no installed public header tree |
 | PBR texture/material slots, HDRI IBL, directional soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, streaming and populated-scene performance remain incomplete |
 | OBJ/glTF/GLB import, native resources, GPU skinning and animation cross-fades | Full production animation/asset tools remain incomplete |
-| Rigid-body physics, contacts/queries, audio, saved character controllers and shared scene simulation/Inspector | Rigged mannequin/shoulder template is implemented; final realistic character art and scalability remain incomplete |
+| Rigid-body physics with linear CCD, contacts/queries, audio, saved character controllers and shared scene simulation/Inspector | Rigged mannequin/shoulder template is implemented; final realistic character art and scalability remain incomplete |
 | TypeScript/QuickJS-NG, hot reload, dot:engine/dot:host and extensionless project imports | Existing script contracts are implemented; new native capabilities still need explicit SDK exposure |
 | Docked editor, scene/resources/materials, picking/gizmos/multiselection/history, isolated Play and native export | Mature content-production workflows and scalability remain incomplete |
 | CLI/strict JSON/live mailbox agent control and external source editing | Full AI control remains a product requirement for every current/future operation |
@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1022/1022 (147.56s) and Release/NDEBUG
-1022/1022 (20.59s), including 258 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1029/1029 (150.24s) and Release/NDEBUG
+1029/1029 (20.88s), including 259 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -66,5 +66,14 @@ keeps character hits distinct from mutable rigid bodies; scene/SDK queries and n
 sensor/rigid proxy events resolve the owning entity. Removal, teleport and mixed
 replacement share event-capacity preflight, including full-capacity replacement.
 Prism Relay excludes itself during camera sweeps, and Feature Lab demonstrates
-character query identity/self-filtering. Per-body CCD controls, virtual-only contact
-callbacks and populated-game/crowd scalability remain unfinished.
+character query identity/self-filtering. Virtual-only contact callbacks and populated-game/crowd scalability remain unfinished.
+
+
+Solid dynamic bodies expose saved discrete/continuous collision detection through
+native configuration, strict scene/component schemas, the Inspector, SDK authoring
+and actual backend state reads. Continuous mode uses native shape casts and rejects
+unsupported Static/Kinematic/sensor combinations. Feature Lab provides a thin wall
+and resettable fast slider with an editable Discrete comparison. Native editor
+agent operations verify both outcomes, invalid input preservation and undo back to
+the clean authoring scene. This does not establish arbitrary angular CCD or
+sensor-crossing detection, final game art or production performance.

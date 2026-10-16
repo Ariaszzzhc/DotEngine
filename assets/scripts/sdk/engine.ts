@@ -212,6 +212,7 @@ export interface MeshRenderer {
 
 export interface RigidBody {
   motion: 'static'|'kinematic'|'dynamic';
+  collisionDetection: 'discrete'|'continuous';
   shape: 'box'|'sphere'|'capsule';
   halfExtents: Vec3;
   radius: number;
@@ -304,6 +305,7 @@ export const components = Object.freeze({
   rigidBody(overrides: Partial<RigidBody> = {}): RigidBody {
     return {
       motion: 'dynamic',
+      collisionDetection: 'discrete',
       shape: 'sphere',
       halfExtents: {x: 0.5, y: 0.5, z: 0.5},
       radius: 0.5,
@@ -367,6 +369,7 @@ export const components = Object.freeze({
  */
 export interface PhysicsBodyState {
   motion: 'static'|'kinematic'|'dynamic';
+  collisionDetection: 'discrete'|'continuous';
   position: Vec3;
   rotation: Quat;
   velocity: Vec3;

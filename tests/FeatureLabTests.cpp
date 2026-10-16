@@ -365,7 +365,7 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   report(reloaded);
   CHECK(reloaded->source.committed);
   REQUIRE(reloaded->source.reload.has_value());
-  CHECK(reloaded->source.reload->migrated == 1);
+  CHECK(reloaded->source.reload->migrated == 2);
   auto after = data(*session.scene().value());
   CHECK(after["starts"] == before["starts"]);
   CHECK(after["fixed"] == before["fixed"]);
@@ -388,5 +388,69 @@ TEST_CASE("feature_lab.authored_normal_map_asset_preserves_baked_tangent_basis")
 
   for (const auto& vertex : mesh->data.vertices) {
     CHECK(vertex.tangent == Math::Vec4{1, 0, 0, -1});
+  }
+}
+
+TEST_CASE("feature_lab.continuous_slider_reset_and_discrete_comparison_use_native_motion") {
+  for (const auto mode : {"continuous", "discrete"}) {
+    Fixture fixture;
+    auto authored = fixture.project.loadStartup().value();
+    auto json = Json::parse(World::encodeScene(authored).value());
+    auto found = std::ranges::find_if(
+        json["entities"], [](const Json& entity) { return entity["name"] == "CCD slider"; });
+    REQUIRE(found != json["entities"].end());
+    (*found)["rigidBody"]["collisionDetection"] = mode;
+    authored = World::decodeScene(json.dump()).value();
+    REQUIRE(fixture.project.saveStartup(authored));
+    auto session = fixture.session(true);
+    report(session.start());
+    auto native = session.scene().value();
+    const auto entities = native->entities().value();
+    const auto slider = std::ranges::find(entities, "CCD slider", &World::EntityInfo::name);
+    REQUIRE(slider != entities.end());
+    Platform::InputState input;
+    REQUIRE(session.publish(input));
+
+    for (int tick = 0; tick < 8; ++tick) {
+      report(session.fixedUpdate());
+    }
+
+    report(session.update(1.0 / 60));
+    const auto contact = native->transform(slider->id)->position;
+
+    if (std::string_view(mode) == "continuous") {
+      CHECK(contact.x < -2.09F);
+      CHECK(contact.x > -2.13F);
+    } else {
+      CHECK(contact.x > -.01F);
+    }
+
+    input.beginFrame();
+    REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::T, true, false}}));
+    REQUIRE(session.publish(input));
+    report(session.update(0));
+    CHECK(native->transform(slider->id)->position.x == -4);
+
+    for (int tick = 0; tick < 8; ++tick) {
+      report(session.fixedUpdate());
+    }
+
+    report(session.update(0));
+    const auto resetContact = native->transform(slider->id)->position;
+
+    if (std::string_view(mode) == "continuous") {
+      CHECK(resetContact.x < -2.09F);
+      CHECK(resetContact.x > -2.13F);
+    } else {
+      CHECK(resetContact.x == doctest::Approx(0).epsilon(.01));
+    }
+
+    auto source = fixture.project.files()->readText("scripts/collision.ts").value();
+    REQUIRE(fixture.project.files()->writeTextAtomic("scripts/collision.ts", source + "\n"));
+    auto reloaded = session.update(0);
+    report(reloaded);
+    REQUIRE(reloaded->source.committed);
+    CHECK(native->transform(slider->id)->position == resetContact);
+    report(session.close());
   }
 }

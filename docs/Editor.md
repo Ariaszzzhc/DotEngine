@@ -75,6 +75,12 @@ an exported game initializes. Invalid world tilt/scale is an explicit binding
 error. Scene parent/pose edits remain ordinary authoring operations; property-only
 reconfiguration preserves runtime motion. See [physics](Physics.md).
 
+Rigid-body Collision detection uses the `discrete`/`continuous` selector and the
+same required `collisionDetection` field in scene/agent component values. Continuous
+requires solid Dynamic motion. Invalid Static/Kinematic/sensor combinations preserve
+the document and remain editable drafts. Native Play and exports consume the saved
+mode; changing it while stopped is ordinary history-aware component authoring.
+
 A batch has 1..256 operations within 1 MiB of UTF-8 JSON, with maximum depth 64.
 Unknown/missing/duplicate fields, malformed/canonical-ID violations and invalid
 native component/transform/hierarchy values fail. Validation checks the final

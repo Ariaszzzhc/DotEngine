@@ -44,6 +44,7 @@ export namespace Dot::Physics {
 
   struct BodyState {
     Motion motion;
+    CollisionDetection collisionDetection;
     Math::Vec3 position;
     Math::Quat rotation;
     Math::Vec3 velocity;

@@ -12,6 +12,11 @@ export namespace Dot::Physics {
 
   enum class Shape { Box, Sphere, Capsule };
 
+  /** Continuous uses native linear shape casting for solid dynamic bodies.
+   * Rotation is not swept, and crossed sensors are not CCD contacts.
+   * 连续模式对实体动态刚体使用原生线性形状投射，不扫掠旋转，不保证跨越传感器的接触。 */
+  enum class CollisionDetection { Discrete, Continuous };
+
   /** Pose-independent authoring properties in metres, kilograms, and seconds.
    * Every field must be finite, including dimensions for inactive shape variants.
    * Shape dimensions are [0.001,10000], mass [0.01,1000000], friction/restitution
@@ -22,6 +27,7 @@ export namespace Dot::Physics {
    */
   struct BodyProperties {
     Motion motion{Motion::Dynamic};
+    CollisionDetection collisionDetection{CollisionDetection::Discrete};
     Shape shape{Shape::Sphere};
     Math::Vec3 halfExtents{0.5F, 0.5F, 0.5F};
     float radius{0.5F};

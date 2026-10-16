@@ -5702,3 +5702,90 @@ observation files are removed; build caches and test logs remain ignored. User
 planning/design inputs stay untracked, and no distribution archive is produced.
 The broader mature-editor/large-game goal, finished realistic art, per-body CCD,
 virtual-only contacts and crowd/scalability evidence remain incomplete.
+
+
+## 2026-10-16 — Native continuous collision detection
+
+Added CollisionDetection::Discrete/Continuous to the shared CPU-only body contract.
+Continuous maps to Jolt LinearCast for solid dynamic bodies. Unsupported motion or
+sensor combinations and invalid enum/input types fail before replacement, rather
+than storing an ignored flag. Body state reads query actual native motion quality.
+The saved required collisionDetection field is shared by scene files, script
+components/default factory, native state DTOs, Inspector selectors and strict agent
+component edits. Current example scene inputs are updated directly; there is no
+old-field fallback, compatibility layer, alternate format version or JS solver.
+
+Mode-only scene replacement retains real linear/angular motion and public IDs,
+including full-capacity batches. Durable regressions check thin-wall collisions for
+box/sphere/capsule at 240m/s versus the actual tunneling Discrete control, native
+character proxy contacts with zero/two workers, malformed/unsupported inputs,
+roundtrip state, document undo/redo/save, shared host authoring and realm reload.
+Native limits are documented: linear shape casting excludes angular sweep and
+crossed sensors, uses backend tolerances/time stealing, and can report provisional
+pre-solver contacts. This does not claim unrestricted CCD correctness.
+
+Feature Lab now contains a thin blue wall and yellow CCD slider authored through
+normal headless document operations, alongside its existing Dynamic body using
+Continuous mode. The ordinary collision.ts project component implements T reset,
+input-publication deduplication and fixed-update display-boundary stopping only.
+Jolt determines wall collision. Checkpoint reload retains reset-edge state and
+native motion. No bespoke executable, runtime debug hook or committed generation
+script is introduced. The SDK inventory remains derived independently; stale README
+member/extra-check counts are replaced with the current inventory contract.
+
+The first focused Debug selection passes 61/61 (4.40s). Adding the saved collision
+component increases state-migrated instances from one to two; the previous exact
+count assertion fails 61/62 and is updated to the actual contract. Corrected focused
+Debug 62/62 (4.50s) and Release/NDEBUG 62/62 (.68s) pass before native product QA.
+
+Actual Release editor QA opens Feature Lab, selects the CCD slider through the
+strict mailbox and observes the Inspector Continuous selector. Play stops the
+240m/s slider at approximately x=-2.090005 against the wall centered at x=-2.
+Only changing the saved mode to Discrete through the same component edit makes it
+pass the wall. That native multi-step frame also exposes a demonstration flaw:
+variable-update boundary stopping runs too late and permits x=32/out-of-view motion.
+The project component moves this boundary policy to fixed update and uses the
+current scene pose so an explicit reset is not confused with the previous native
+pose. Editing the ordinary script in the open project and restarting Play now
+shows Discrete stopping at the display endpoint x=0, while Continuous remains at
+x=-2.090005. This is a genuine native-mode comparison, not scripted wall collision.
+
+The regression now runs eight fixed steps before variable updates/reset. An overly
+strict repeated-contact equality fails on a .00051m change caused by the current
+box orientation/native tolerances; it is replaced with the actual wall-side interval,
+while reload-without-advancement still requires exact pose preservation. Final
+focused Debug 62/62 (4.61s), Release/NDEBUG 62/62 (.60s) pass. T reset is exercised
+through actual InputState publication in headless GameSession; native QA uses Play
+restart and mode edits, not an unverified keyboard/IME claim.
+
+Native Stop/undo restores the original Continuous source at clean authoring revision
+4 with the slider at [-4,0,2.2]. An attempted Continuous edit on the static wall is
+rejected as InvalidArgument without revision/data mutation. The final Continuous
+run reports 951 frames/958 fixed steps, zero dropped time and no script/viewport
+errors; normal close exits 0, removes its owned mailbox and leaves no stderr output.
+The Inspector selector renders correctly; generic long property labels can still
+clip in narrow panels and remain editor-polish work. Source authoring in the actual
+examples and native/agent UI operations share implementation. No automated test
+opens a desktop window, and no distribution archive is produced. Final full-suite
+and cleanup/review results follow below; local evidence is arm64 macOS only.
+
+
+Full arm64 macOS suites pass Debug 1029/1029 (150.24s), then Release/NDEBUG
+1029/1029 (20.88s), after both builds and native-editor closure. Inventory is 259
+unit and 770 integration cases, including 123 offscreen GPU, 28 SDL-dummy platform
+and 27 native audio cases (labels overlap). Host-device access supports offscreen
+GPU/audio integration; no automated case opens a desktop window. A final test-only
+blank-line formatting adjustment is rebuilt in both configurations; the slider
+regression passes again in Debug 1/1 (.62s) and Release 1/1 (.25s).
+
+All 20 changed C++/TypeScript source files pass clang-format checks and staged diff
+whitespace checks pass. Precommit review covers input/mode constraints, actual native
+quality reads, full snapshot/strict schema parity, body replacement ownership and
+motion preservation, native contact identity, root/edge/checkpoint lifetime,
+shared Inspector/agent validation, fixed-step demonstration behavior and portable
+backend use. Compatible reload skips old Stop/new Start, preserving native motion.
+No compiler/linker environment, dependency pin or target-platform scope is changed.
+Temporary authoring requests, native app linkage/control and observation files are
+removed; ignored caches and validation logs remain. User planning/design files stay
+untracked and no distribution archive is created. Finished realistic art, complete
+virtual-character contacts, mature editor workflows and scalability remain open.

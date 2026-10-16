@@ -175,6 +175,8 @@ namespace Dot::Editor {
                                                           : "cube\0quad\0asset\0";
           } else if (item.key() == "motion") {
             options = "static\0kinematic\0dynamic\0";
+          } else if (item.key() == "collisionDetection") {
+            options = "discrete\0continuous\0";
           } else if (item.key() == "shape") {
             options = "box\0sphere\0capsule\0";
           } else if (item.key() == "attenuation") {

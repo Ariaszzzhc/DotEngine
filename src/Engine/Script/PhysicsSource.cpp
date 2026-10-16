@@ -58,6 +58,9 @@ namespace Dot::Script {
                           : value.motion == Physics::Motion::Kinematic ? "kinematic"
                                                                        : "dynamic";
       return {{"motion", motion},
+              {"collisionDetection",
+               value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
+                                                                                   : "discrete"},
               {"position", Detail::xyz(value.position)},
               {"rotation", Detail::xyzw(value.rotation)},
               {"velocity", Detail::xyz(value.velocity)},

@@ -17,11 +17,12 @@ A hierarchy root uses an ID above JavaScript's safe integer range. D moves the
 native dynamic body. The scene name/window title shows the completed check count.
 
 `audit.ts` throws on failed behavior checks. Only successful assertions enter the
-native Report entity's disabled script metadata. `coverage.json` lists the 95
+native Report entity's disabled script metadata. `coverage.json` lists the
 current runtime SDK members, including getter/setter distinctions. The inventory
 check reads the actual SDK independently, and execution tests compare it with the
-report only after explicit stop. Six additional checks exercise component removal,
-failed-write/control preservation and exact high-precision identity.
+report only after explicit stop. Additional checks exercise component removal,
+failed-write/control preservation, owned snapshots, collider queries and exact
+high-precision identity.
 
 Tests verify all lifecycle phases, real contacts and PCM, owned snapshots/native
 failures, reload without replaying start, actual GPU presentation/projections,
@@ -109,3 +110,20 @@ script rotates only on acknowledged native frames and consumes motion once per
 variable update. The standalone runtime also honors script capture requests while
 focused. This is a free-look input demonstration; Prism Relay demonstrates the
 shoulder camera and animated character, with finished realistic humanoid art pending.
+
+
+## Continuous collision detection
+
+The yellow CCD slider moves at 240m/s toward the blue 2cm-thick wall. Its saved
+Collision detection is continuous, so the native engine stops it at the wall.
+Enable Game input and press T to reset. While Play is stopped, change the slider's
+Rigid Body / Collision detection to discrete and Play again: it crosses the wall
+and stops at the display boundary. Undo restores continuous mode. Inspector and
+agent component edits share the same saved property.
+
+`collision.ts` handles reset edges and the fixed-update display boundary only;
+Jolt handles the actual swept collision. Source reload retains the last consumed
+input publication without replaying reset or recreating the native body. The
+existing Dynamic showcase body also uses continuous mode, and its SDK state
+reports the actual backend setting. Continuous mode is valid only for solid dynamic
+bodies; it does not sweep rotation or sensor crossings.

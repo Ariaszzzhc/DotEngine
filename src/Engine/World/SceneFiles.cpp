@@ -142,7 +142,7 @@ namespace Dot::World {
     auto rigidBody(const Json& value) -> RigidBody {
       Codec::requireFields(
           value, {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass",
-                  "friction", "restitution", "gravityFactor", "sensor"});
+                  "friction", "restitution", "gravityFactor", "sensor", "collisionDetection"});
       RigidBody result;
       const auto motion = value["motion"].get<std::string>();
       const auto shape = value["shape"].get<std::string>();
@@ -165,6 +165,16 @@ namespace Dot::World {
         result.shape = Physics::Shape::Capsule;
       } else {
         throw std::invalid_argument("Unknown rigid-body shape");
+      }
+
+      const auto detection = value["collisionDetection"].get<std::string>();
+
+      if (detection == "discrete") {
+        result.collisionDetection = Physics::CollisionDetection::Discrete;
+      } else if (detection == "continuous") {
+        result.collisionDetection = Physics::CollisionDetection::Continuous;
+      } else {
+        throw std::invalid_argument("Unknown collision detection mode");
       }
 
       result.halfExtents = vector3(value["halfExtents"]);
@@ -628,6 +638,9 @@ namespace Dot::World {
                          : value.shape == Physics::Shape::Sphere ? "sphere"
                                                                  : "capsule";
       return {{"motion", motion},
+              {"collisionDetection",
+               value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
+                                                                                   : "discrete"},
               {"shape", shape},
               {"halfExtents", {value.halfExtents.x, value.halfExtents.y, value.halfExtents.z}},
               {"radius", value.radius},

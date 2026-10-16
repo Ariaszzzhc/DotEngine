@@ -25,6 +25,7 @@ TEST_CASE("physics_batch.full_capacity_replacement_retains_handle") {
   replacement.shape = Shape::Box;
   replacement.position = {2, 0, 0};
   replacement.mass = 2;
+  replacement.collisionDetection = CollisionDetection::Continuous;
   replacement.angularVelocity = {0, 1, 0};
   const BodyChange change{*body, replacement};
   auto applied = world->applyChanges(std::span{&change, 1});
@@ -33,6 +34,7 @@ TEST_CASE("physics_batch.full_capacity_replacement_retains_handle") {
   CHECK(applied->front() == *body);
   CHECK(world->stats()->bodies == 1);
   CHECK(world->body(*body)->position == replacement.position);
+  CHECK(world->body(*body)->collisionDetection == CollisionDetection::Continuous);
   CHECK(world->body(*body)->angularVelocity == replacement.angularVelocity);
   REQUIRE(world->addImpulse(*body, {2, 0, 0}));
   CHECK(world->body(*body)->velocity.x == doctest::Approx(1));

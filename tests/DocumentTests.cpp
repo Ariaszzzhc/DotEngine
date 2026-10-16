@@ -758,3 +758,28 @@ TEST_CASE("skin.document_duplicate_instance_and_history_remap_joint_references_t
   auto saved = fixture.project().loadStartup().value();
   CHECK_FALSE(saved.findEntity(3));
 }
+
+TEST_CASE("document_continuous_collision_edits_history_and_save_use_strict_body_contract") {
+  Fixture fixture;
+  auto seed = Dot::World::Scene::create().value();
+  const auto id = seed.createEntity().value();
+  REQUIRE(seed.setRigidBody(id, Dot::World::RigidBody{}));
+  auto body = Json::parse(Dot::World::encodeScene(seed).value())["entities"][0]["rigidBody"];
+  body["collisionDetection"] = "continuous";
+  const Json operation{
+      {"op", "component"}, {"entity", "2"}, {"component", "rigidBody"}, {"value", body}};
+  auto document = fixture.document();
+  auto edited = request(document, {{"command", "edit"}, {"operations", Json::array({operation})}});
+  CHECK(edited["scene"]["entities"][1]["rigidBody"]["collisionDetection"] == "continuous");
+  const auto before = state(document);
+  auto bad = operation;
+  bad["value"]["sensor"] = true;
+  CHECK_FALSE(document.apply(Json::array({bad}).dump(), revision(document)));
+  CHECK(state(document) == before);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"]["entities"][1]["rigidBody"].is_null());
+  REQUIRE(document.redo(revision(document)));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(state(reopened)["scene"]["entities"][1]["rigidBody"]["collisionDetection"] == "continuous");
+}
