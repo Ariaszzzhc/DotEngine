@@ -6459,3 +6459,99 @@ window scoping, finite validation before mutation, native/offscreen forwarding o
 pointer-versus-delta semantics and focused device-free/dummy/offscreen regression scopes.
 No dependency/compiler/linker setting or platform target changes. Formatting and whitespace
 checks pass; the unrelated local specification and visual-reference output stay untracked.
+
+
+## 2026-10-16 — Animation curves and key retiming
+
+Native UpdateKey replaces an existing exact-time key in sorted order using a complete
+new time/value/tangent payload. It never inserts a duplicate or overwrites an occupied
+destination; invalid/missing sources or final native values preserve the original clip.
+Channel interpolation is retained and authored per-second tangents are not automatically
+rescaled. The same operation travels through AnimationDocument revision/history/save
+and the actual editor's strict batched edit and selected-key form operations.
+Clip::sampleTrack evaluates only one immutable-description track using the ordinary
+native evaluator, without allocating samples for unrelated channels. It returns owned
+values with the same clamps, step/linear/cubic behavior, shortest-arc rotation,
+normalization and sampling failures as the complete clip sampler.
+
+The Animation panel adds native sampled XYZ/XYZW curves, authored key markers, value
+range, playhead, hover sample, key selection and click-to-seek. Time range control has
+strict machine-readable parity and does not alter resource history, preview clock or
+key forms. Bounded queries accept 2..1024 samples and 0..86400s with a >=1us span;
+failures return no partial/fake-success curve. The UI caches 256 samples by buffer,
+resource revision, channel and time range, and bounds visible markers to 2048 keys.
+Step discontinuities use actual key times; other lines are sampled approximations,
+not proof of extrema or all valid poses. Numerical tangent editing remains in Inspector.
+
+Inspector explicitly distinguishes insertion/replacement from updating/moving the
+selected source key. The latter keeps key count and rejects destination collisions.
+Horizontal dragging has a ghost time and one revision-checked update on release;
+Escape, focus loss, inactive/stale input, changed channel/view/resource cancel it.
+Final release displacement is included even when no earlier held frame reports a drag.
+This is a code-level correction from the ImGui held-button contract, not proof that
+native computer-use drag input now works. Current native drag acceptance remains open.
+
+Three added pure CPU edit cases cover sorting/retiming without copies, same-time updates,
+changed sample/duration, collision/missing/invalid times and values, atomic batch failure
+and retained cubic tangents. Two single-track cases compare exact full-sampler results
+across step/linear/cubic/rotation and endpoint times; they check independent channel
+failure, invalid indices/times, move/owned-result lifetime and concurrent reads. One
+file-only document case verifies count/history, failed-collision revision/byte retention,
+undo/redo and real save/reload. No new visual acceptance executable or automated desktop
+window is added. The separately committed native input fix adds its own pure CPU case
+and extends existing SDL-dummy/offscreen checks.
+
+Actual product verification uses a copied PrismRelay through the real editor's strict
+mailbox, with its 65-joint character, 195 channels and 14,820 keys. Curve samples match
+actual cloned Head poses at six times for linear, rotation, moved-key, cubic and step
+workflows. Updating the first key to .0125 changes its value/time without adding a key;
+undo/redo restores exact times. Occupied destination, stale revision, malformed/bad
+query bounds, tiny spans and mismatched staged interpolation preserve state. Range
+changes retain resource revision/form and native preview identity/time. A cubic scale
+with valid endpoints but a singular midpoint produces a contextual curve-query error
+without changing the document/preview. An earlier negative-scale candidate is rejected
+by the existing reflected-skin primitive constraint; it is not counted as a successful
+query-error setup. Saving/reopening observes exact moved times in actual bytes. The final
+same-build workflow saves/reopens .02250000089406967 and retains all 14,820 keys, with
+unchanged authoring scene/revision/dirty state.
+
+Computer use verifies curve/key selection, time-fit interaction, the CJK clip name,
+readable values/tangents and dark/light rendering. An earlier Inspector button update
+is observed in the document/history, but later native click attempts are inconsistent,
+including an unexpected close/discard result; those later attempts are not counted as
+successful GUI updates. Drag attempts also produce no confirmed movement in the ordinary
+time slider, so neither successful curve dragging nor its root cause is claimed.
+Investigation independently reproduces dropped native button coordinates, fixed in the
+preceding commit with durable tests. The remaining native pointer acceptance gap is
+explicitly retained in the editor documentation/roadmap. No synthetic test-only GUI
+control path or vendor input workaround is introduced to declare success.
+
+Actual screenshots reveal that the initial extra control rows hide the curve at default
+dock height. Toolbars are compacted, resource identity/status moves to Inspector and the
+default lower dock grows from one quarter to about one third. The final default layout
+shows the graph and named key lists. Light-theme curve colors are darkened after visual
+inspection; native geometry remains unchanged. Bounds/flat-value fitting avoid division
+by tiny time spans or loss of range at large float values. Graph handles, multi-key/
+dope-sheet operations, visual bindings, state/layers and populated-animation scalability
+remain unfinished, as do realistic sci-fi art and the wider engine goal.
+
+Initial restricted full runs fail to acquire native GPU/audio resources; one parallel
+Debug script run also exceeds its deadline. Normal host runs retain the checks and pass.
+Final arm64 macOS Debug passes 1089/1089 (154.30s); Release/NDEBUG passes 1089/1089 (18.52s).
+There are 288 unit and 801 integration cases, with overlapping 125 offscreen GPU,
+27 native audio and 28 SDL-dummy platform subsets. Earlier focused curve/edit checks
+pass 10/10 (.28s); final independent native-coordinate checks pass 3/3 (.69s). Tests
+establish these contracts and do not establish a production-ready engine or accepted
+native dragging. Windows/Linux are not executed; dependencies/compiler/linker settings
+and target platforms are unchanged.
+
+Review covers module interface/implementation separation, immutable snapshot ownership,
+exact-time collision handling, final candidate validation before history publication,
+native sampler reuse, bounded queries/cache/geometry, staged form semantics, stale drag
+cancellation, resource/source isolation and honest native GUI acceptance limits. All eight
+changed animation/editor/test C++ files pass clang-format; whitespace checks pass. The
+final real editor session exits with launcher status 0, empty stderr and retired control
+directory; native app inventory confirms it is stopped. Temporary app shell, project
+copy, requests, clients and insertion snippet are removed. Ignored observations and build
+caches remain; no distribution archive is generated. Local specification/reference output
+remain untracked and outside commits. The full engine goal remains open.

@@ -75,6 +75,31 @@ namespace Dot::Animation {
 
                   if constexpr (std::is_same_v<T, RemoveTrack>) {
                     candidate.tracks.erase(track);
+                  } else if constexpr (std::is_same_v<T, UpdateKey>) {
+                    if (!std::isfinite(edit.time) || edit.time < 0 || edit.time > 86400
+                        || !std::isfinite(edit.key.time) || edit.key.time < 0
+                        || edit.key.time > 86400) {
+                      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid key time");
+                    }
+
+                    auto key = std::ranges::lower_bound(track->keys, edit.time, {}, &Key::time);
+
+                    if (key == track->keys.end() || key->time != edit.time) {
+                      return Core::fail(Core::ErrorCode::NotFound, "Animation key does not exist");
+                    }
+
+                    const auto destination
+                        = std::ranges::lower_bound(track->keys, edit.key.time, {}, &Key::time);
+
+                    if (edit.key.time != edit.time && destination != track->keys.end()
+                        && destination->time == edit.key.time) {
+                      return Core::fail(Core::ErrorCode::InvalidArgument,
+                                        "Animation destination key time is occupied");
+                    }
+
+                    track->keys.erase(key);
+                    key = std::ranges::lower_bound(track->keys, edit.key.time, {}, &Key::time);
+                    track->keys.insert(key, edit.key);
                   } else if constexpr (std::is_same_v<T, RemoveKey>) {
                     if (!std::isfinite(edit.time) || edit.time < 0 || edit.time > 86400) {
                       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid key time");

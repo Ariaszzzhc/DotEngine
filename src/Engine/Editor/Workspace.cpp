@@ -472,6 +472,22 @@ namespace Dot::Editor {
     int m_clipNewPath{};
     bool m_clipTrackScroll{};
     bool m_clipKeyScroll{};
+    double m_curveFrom{};
+    double m_curveTo{1};
+    Json m_curveCache = nullptr;
+    std::string m_curveCacheKey;
+
+    struct CurveKeyDrag {
+      std::uint64_t buffer;
+      std::uint64_t revision;
+      std::uint32_t node;
+      Animation::Path path;
+      Animation::Key key;
+      float target;
+      float mouseStart;
+    };
+
+    std::optional<CurveKeyDrag> m_curveDrag;
     std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
@@ -1727,6 +1743,14 @@ namespace Dot::Editor {
       return value.get<std::uint32_t>();
     }
 
+    static auto curveTime(const Json& value) -> double {
+      if (!value.is_number() || !std::isfinite(value.get<double>())) {
+        throw std::invalid_argument("Curve time requires a finite number");
+      }
+
+      return value.get<double>();
+    }
+
     static auto clipKey(const Json& value) -> Animation::Key {
       Codec::requireFields(value, {"time", "value", "inTangent", "outTangent"});
       const auto vector = [](const Json& item) -> Math::Vec4 {
@@ -1771,6 +1795,11 @@ namespace Dot::Editor {
           result.push_back(Animation::RemoveKey{clipIndex(operation["node"]),
                                                 clipPath(operation["path"]),
                                                 Codec::number(operation["time"])});
+        } else if (op == "update-key") {
+          Codec::requireFields(operation, {"op", "node", "path", "time", "key"});
+          result.push_back(
+              Animation::UpdateKey{clipIndex(operation["node"]), clipPath(operation["path"]),
+                                   Codec::number(operation["time"]), clipKey(operation["key"])});
         } else if (op == "remove-track") {
           Codec::requireFields(operation, {"op", "node", "path"});
           result.push_back(
@@ -1818,8 +1847,55 @@ namespace Dot::Editor {
               {"canRedo", state->canRedo},
               {"historyStates", state->historyStates},
               {"historyBytes", state->historyBytes},
+              {"curve", {{"from", m_curveFrom}, {"to", m_curveTo}}},
               {"form", m_clipForm},
               {"pendingForm", m_clipForm != m_clipOriginal}};
+    }
+
+    /** Curves use the native single-track evaluator, including normalized rotation
+     * and sampling errors. A bounded uniform polyline is a view, not proof that
+     * every intermediate pose is valid. No document/preview state is changed.
+     * 曲线复用原生单轨采样，包括旋转归一化及采样失败；有界均匀折线仅供显示，不能证明
+     * 所有中间姿态有效。不修改文档或预览。 */
+    static auto sampleCurve(const Animation::Clip& clip, std::uint32_t node, Animation::Path path,
+                            double from, double to, std::uint32_t count) -> Core::Result<Json> {
+      if (!std::isfinite(from) || !std::isfinite(to) || from < 0 || to > 86400 || to - from < 1e-6
+          || count < 2 || count > 1024) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Curve requires 0..86400s, a >=1us span and 2..1024 samples");
+      }
+
+      auto source = clip.description();
+
+      if (!source) {
+        return std::unexpected(source.error());
+      }
+
+      const auto& tracks = (*source)->tracks;
+      const auto found = std::ranges::find_if(
+          tracks, [&](const auto& track) { return track.node == node && track.path == path; });
+
+      if (found == tracks.end()) {
+        return Core::fail(Core::ErrorCode::NotFound, "Curve track does not exist");
+      }
+
+      Json points = Json::array();
+      const auto index = static_cast<std::size_t>(found - tracks.begin());
+
+      for (std::uint32_t i = 0; i < count; ++i) {
+        const double time = i == count - 1 ? to : from + (to - from) * i / (count - 1);
+        auto sample = clip.sampleTrack(index, time);
+
+        if (!sample) {
+          return Core::fail(sample.error().code,
+                            "Curve at " + std::to_string(time) + "s: " + sample.error().message);
+        }
+
+        const auto value = sample->value;
+        points.push_back({{"time", time}, {"value", {value.x, value.y, value.z, value.w}}});
+      }
+
+      return Json{{"ok", true}, {"from", from}, {"to", to}, {"points", std::move(points)}};
     }
 
     /** Preflight the candidate native pose before publishing document history.
@@ -1996,6 +2072,11 @@ namespace Dot::Editor {
         m_animationPreview.emplace(std::move(*preview));
         m_clipBindings.swap(bindings);
         m_clipForm = m_clipOriginal = nullptr;
+        m_curveFrom = 0;
+        m_curveTo = std::max(1., draft->value.duration().value());
+        m_curveCacheKey.clear();
+        m_curveCache = nullptr;
+        m_curveDrag.reset();
         ++m_animationSession;
         ++m_buffer;
         m_editorView = true;
@@ -2008,9 +2089,11 @@ namespace Dot::Editor {
       if (command == "inspect-animation-clip" || command == "list-animation-tracks"
           || command == "read-animation-track" || command == "select-animation-key"
           || command == "stage-animation-key" || command == "reset-animation-key"
-          || command == "apply-animation-key" || command == "edit-animation-clip"
-          || command == "undo-animation-clip" || command == "redo-animation-clip"
-          || command == "save-animation-clip" || command == "close-animation") {
+          || command == "apply-animation-key" || command == "move-animation-key"
+          || command == "read-animation-curve" || command == "set-animation-curve-view"
+          || command == "edit-animation-clip" || command == "undo-animation-clip"
+          || command == "redo-animation-clip" || command == "save-animation-clip"
+          || command == "close-animation") {
         if (command == "inspect-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer"});
         } else if (command == "list-animation-tracks") {
@@ -2022,6 +2105,11 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
         } else if (command == "stage-animation-key") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
+        } else if (command == "read-animation-curve") {
+          Codec::requireFields(
+              parsed, {"command", "buffer", "revision", "node", "path", "from", "to", "samples"});
+        } else if (command == "set-animation-curve-view") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "from", "to"});
         } else if (command == "edit-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "operations"});
         } else if (command == "close-animation") {
@@ -2053,6 +2141,29 @@ namespace Dot::Editor {
         const auto* value = state->value.description().value();
         constexpr std::array paths{"translation", "rotation", "scale"};
         constexpr std::array modes{"step", "linear", "cubic"};
+
+        if (command == "read-animation-curve") {
+          auto curve = sampleCurve(state->value, clipIndex(parsed["node"]),
+                                   clipPath(parsed["path"]), curveTime(parsed["from"]),
+                                   curveTime(parsed["to"]), clipIndex(parsed["samples"], 1024));
+          return curve ? Core::Result<std::string>{curve->dump()}
+                       : Core::Result<std::string>{std::unexpected(curve.error())};
+        }
+
+        if (command == "set-animation-curve-view") {
+          const auto from = curveTime(parsed["from"]);
+          const auto to = curveTime(parsed["to"]);
+
+          if (from < 0 || to > 86400 || to - from < 1e-6) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Curve view requires 0..86400s and a >=1us span");
+          }
+
+          m_curveFrom = from;
+          m_curveTo = to;
+          m_curveDrag.reset();
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
 
         if (command == "list-animation-tracks" || command == "read-animation-track") {
           const auto offset = clipIndex(parsed["offset"], 1000000);
@@ -2125,6 +2236,7 @@ namespace Dot::Editor {
           m_clipDocument.reset();
           m_animationPreview.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          m_curveDrag.reset();
           m_previewReady = false;
           return execute("{\"command\":\"inspect\"}");
         }
@@ -2232,7 +2344,8 @@ namespace Dot::Editor {
           return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
         }
 
-        if (command != "apply-animation-key" && m_clipForm != m_clipOriginal) {
+        if (command != "apply-animation-key" && command != "move-animation-key"
+            && m_clipForm != m_clipOriginal) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Apply or reset the key form before editing history");
         }
@@ -2243,15 +2356,32 @@ namespace Dot::Editor {
           candidate
               = m_clipDocument->historyValue(command == "redo-animation-clip", state->revision);
         } else {
-          auto operations = command == "apply-animation-key" ? Json::array() : parsed["operations"];
+          const bool formEdit = command == "apply-animation-key" || command == "move-animation-key";
+          auto operations = formEdit ? Json::array() : parsed["operations"];
 
-          if (command == "apply-animation-key") {
+          if (formEdit) {
             if (m_clipForm.is_null()) {
               return Core::fail(Core::ErrorCode::InvalidState, "Select or stage a key first");
             }
 
             auto put = m_clipForm;
-            put["op"] = "put-key";
+
+            if (command == "move-animation-key") {
+              if (m_clipOriginal.is_null() || m_clipOriginal["node"] != m_clipForm["node"]
+                  || m_clipOriginal["path"] != m_clipForm["path"]
+                  || m_clipOriginal["interpolation"] != m_clipForm["interpolation"]) {
+                return Core::fail(
+                    Core::ErrorCode::InvalidState,
+                    "Move requires an existing selected key on the same channel/mode");
+              }
+
+              put.erase("interpolation");
+              put["op"] = "update-key";
+              put["time"] = m_clipOriginal["key"]["time"];
+            } else {
+              put["op"] = "put-key";
+            }
+
             operations.push_back(std::move(put));
           }
 
@@ -2271,7 +2401,7 @@ namespace Dot::Editor {
         }
 
         if (*before == *after) {
-          if (command == "apply-animation-key") {
+          if (command == "apply-animation-key" || command == "move-animation-key") {
             m_clipOriginal = m_clipForm;
           }
 
@@ -2299,7 +2429,7 @@ namespace Dot::Editor {
         m_previewReady = false;
         m_renderedView.reset();
 
-        if (command == "apply-animation-key") {
+        if (command == "apply-animation-key" || command == "move-animation-key") {
           m_clipOriginal = m_clipForm;
         } else {
           m_clipForm = m_clipOriginal = nullptr;
@@ -6933,6 +7063,10 @@ namespace Dot::Editor {
                            && m_clipForm["path"] == paths.at(static_cast<std::size_t>(track.path));
                   });
       ImGui::TextWrapped("Animation key / %s", value->name.c_str());
+      ImGui::TextWrapped("%s / %s", state->path.c_str(),
+                         m_clipForm != m_clipOriginal ? "Unapplied key"
+                         : state->dirty               ? "Unsaved"
+                                                      : "Saved");
       const auto vectorField = [](const char* label, Math::Vec4& vector, bool rotation) -> bool {
         ImGui::TextUnformatted(label);
         ImGui::PushID(label);
@@ -6985,6 +7119,20 @@ namespace Dot::Editor {
         if (ImGui::Button("Insert / replace key")) {
           clipAction({{"command", "apply-animation-key"}});
         }
+
+        const bool originalExists = selected != value->tracks.end() && !m_clipOriginal.is_null()
+                                    && m_clipOriginal["node"] == m_clipForm["node"]
+                                    && m_clipOriginal["path"] == m_clipForm["path"]
+                                    && std::ranges::any_of(selected->keys, [&](const auto& item) {
+                                         return m_clipOriginal["key"]["time"] == item.time;
+                                       });
+        ImGui::BeginDisabled(!originalExists);
+
+        if (ImGui::Button("Update / move selected key")) {
+          clipAction({{"command", "move-animation-key"}});
+        }
+
+        ImGui::EndDisabled();
 
         if (ImGui::Button("Reset key form")) {
           clipAction({{"command", "reset-animation-key"}});
@@ -7079,6 +7227,266 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
     }
 
+    auto animationCurve(const AnimationSnapshot& state, const Animation::Track& track) -> void {
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      const auto* path = paths.at(static_cast<std::size_t>(track.path));
+      const auto cacheKey
+          = Json::array({m_buffer, state.revision, track.node, path, m_curveFrom, m_curveTo})
+                .dump();
+
+      if (m_curveCacheKey != cacheKey) {
+        auto sampled
+            = sampleCurve(state.value, track.node, track.path, m_curveFrom, m_curveTo, 256);
+        m_curveCache = sampled ? std::move(*sampled) : errorJson(sampled.error());
+        m_curveCacheKey = cacheKey;
+      }
+
+      if (!m_curveCache.value("ok", false)) {
+        ImGui::TextWrapped("Curve sampling failed: %s", m_curveCache.dump().c_str());
+        return;
+      }
+
+      const auto first
+          = std::ranges::lower_bound(track.keys, m_curveFrom, {}, &Animation::Key::time);
+      const auto last = std::ranges::upper_bound(track.keys, m_curveTo, {}, &Animation::Key::time);
+
+      if (last - first > 2048) {
+        ImGui::TextWrapped("More than 2048 visible keys. Narrow the time range to edit the curve.");
+        return;
+      }
+
+      const auto& points = m_curveCache["points"];
+      const auto count = track.path == Animation::Path::Rotation ? 4U : 3U;
+      double low = std::numeric_limits<double>::max();
+      double high = std::numeric_limits<double>::lowest();
+
+      for (const auto& point : points) {
+        for (std::size_t component = 0; component < count; ++component) {
+          const auto value = point["value"][component].get<double>();
+          low = std::min(low, value);
+          high = std::max(high, value);
+        }
+      }
+
+      for (auto key = first; key != last; ++key) {
+        const auto values = std::array{key->value.x, key->value.y, key->value.z, key->value.w};
+
+        for (std::size_t component = 0; component < count; ++component) {
+          low = std::min(low, double(values[component]));
+          high = std::max(high, double(values[component]));
+        }
+      }
+
+      const auto padding = high > low ? (high - low) * .08 : std::max(1e-6, std::abs(high) * .05);
+      low -= padding;
+      high += padding;
+      const auto origin = ImGui::GetCursorScreenPos();
+      const auto size = ImVec2(std::max(80.F, ImGui::GetContentRegionAvail().x),
+                               std::max(60.F, ImGui::GetContentRegionAvail().y));
+      ImGui::InvisibleButton("Native animation curve", size);
+      const bool hovered = ImGui::IsItemHovered();
+      const ImVec2 minimum{origin.x + 8, origin.y + 22};
+      const ImVec2 maximum{origin.x + size.x - 8, origin.y + size.y - 22};
+      const auto x = [&](double time) -> float {
+        return minimum.x
+               + static_cast<float>((time - m_curveFrom) / (m_curveTo - m_curveFrom))
+                     * (maximum.x - minimum.x);
+      };
+      const auto y = [&](double value) -> float {
+        return maximum.y
+               - static_cast<float>((value - low) / (high - low)) * (maximum.y - minimum.y);
+      };
+      auto* draw = ImGui::GetWindowDrawList();
+      draw->AddRectFilled(origin, {origin.x + size.x, origin.y + size.y},
+                          ImGui::GetColorU32(ImGuiCol_FrameBg), 3);
+      const auto colors
+          = m_lightTheme ? std::array{IM_COL32(175, 55, 51, 255), IM_COL32(30, 125, 58, 255),
+                                      IM_COL32(35, 99, 175, 255), IM_COL32(145, 101, 15, 255)}
+                         : std::array{IM_COL32(231, 105, 102, 255), IM_COL32(107, 201, 131, 255),
+                                      IM_COL32(102, 166, 240, 255), IM_COL32(219, 185, 93, 255)};
+      constexpr std::array labels{"X", "Y", "Z", "W"};
+
+      for (std::size_t component = 0; component < count; ++component) {
+        draw->AddText({minimum.x + 24 * static_cast<float>(component), origin.y + 2},
+                      colors[component], labels[component]);
+      }
+
+      char valuesLabel[100];
+      std::snprintf(valuesLabel, sizeof(valuesLabel), "%.4g .. %.4g", low, high);
+      const auto textWidth = ImGui::CalcTextSize(valuesLabel).x;
+      draw->AddText({std::max(minimum.x + 100, maximum.x - textWidth), origin.y + 2},
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled), valuesLabel);
+
+      char range[100];
+      std::snprintf(range, sizeof(range), "%.6g - %.6g s", m_curveFrom, m_curveTo);
+      draw->AddText({minimum.x, maximum.y + 3}, ImGui::GetColorU32(ImGuiCol_Text), range);
+      draw->PushClipRect(minimum, maximum, true);
+
+      for (int line = 0; line <= 4; ++line) {
+        const auto at = minimum.y + (maximum.y - minimum.y) * static_cast<float>(line) / 4;
+        draw->AddLine({minimum.x, at}, {maximum.x, at}, ImGui::GetColorU32(ImGuiCol_Border));
+      }
+
+      for (std::size_t component = 0; component < count; ++component) {
+        for (std::size_t i = 1; i < points.size(); ++i) {
+          const auto& a = points[i - 1];
+          const auto& b = points[i];
+
+          if (track.interpolation != Animation::Interpolation::Step) {
+            draw->AddLine({x(a["time"].get<double>()), y(a["value"][component].get<double>())},
+                          {x(b["time"].get<double>()), y(b["value"][component].get<double>())},
+                          colors[component], 1.5F);
+          }
+        }
+
+        if (track.interpolation == Animation::Interpolation::Step) {
+          const auto value = [&](const Math::Vec4& v) -> float {
+            return std::array{v.x, v.y, v.z, v.w}[component];
+          };
+          float previous = y(points.front()["value"][component].get<double>());
+          float start = minimum.x;
+
+          for (auto key = first; key != last; ++key) {
+            const auto end = x(key->time);
+            const auto next = y(value(key->value));
+            draw->AddLine({start, previous}, {end, previous}, colors[component], 1.5F);
+            draw->AddLine({end, previous}, {end, next}, colors[component], 1.5F);
+            start = end;
+            previous = next;
+          }
+
+          draw->AddLine({start, previous}, {maximum.x, previous}, colors[component], 1.5F);
+        }
+      }
+
+      const Animation::Key* hit{};
+      float distance = 49;
+      const auto mouse = ImGui::GetIO().MousePos;
+
+      for (auto key = first; key != last; ++key) {
+        const auto values = std::array{key->value.x, key->value.y, key->value.z, key->value.w};
+        const bool selected = !m_clipOriginal.is_null() && m_clipOriginal["node"] == track.node
+                              && m_clipOriginal["path"] == path
+                              && m_clipOriginal["key"]["time"] == key->time;
+
+        for (std::size_t component = 0; component < count; ++component) {
+          const ImVec2 point{x(key->time), y(values[component])};
+          draw->AddCircleFilled(point, selected ? 4 : 2.5F, colors[component]);
+          const auto squared = (mouse.x - point.x) * (mouse.x - point.x)
+                               + (mouse.y - point.y) * (mouse.y - point.y);
+
+          if (squared < distance) {
+            distance = squared;
+            hit = &*key;
+          }
+        }
+      }
+
+      const auto preview = m_animationPreview->stats();
+
+      if (preview) {
+        const auto at = x(preview->player.playback.time);
+        draw->AddLine({at, minimum.y}, {at, maximum.y}, ImGui::GetColorU32(ImGuiCol_Text), 1);
+      }
+
+      if (hovered && hit) {
+        ImGui::SetTooltip("%.9g s / drag horizontally to move key", double(hit->time));
+      } else if (hovered && !m_curveDrag) {
+        const auto time = std::clamp(
+            m_curveFrom
+                + (mouse.x - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
+            m_curveFrom, m_curveTo);
+        const auto* description = state.value.description().value();
+        const auto index = static_cast<std::size_t>(&track - description->tracks.data());
+        auto sample = state.value.sampleTrack(index, time);
+
+        if (sample) {
+          const auto v = sample->value;
+          ImGui::SetTooltip("%.9g s\nX %.9g  Y %.9g\nZ %.9g  W %.9g", time, double(v.x),
+                            double(v.y), double(v.z), double(v.w));
+        } else {
+          ImGui::SetTooltip("%s", sample.error().message.c_str());
+        }
+      }
+
+      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (hit
+            && clipAction({{"command", "select-animation-key"},
+                           {"node", track.node},
+                           {"path", path},
+                           {"time", hit->time}})) {
+          m_curveDrag.emplace(m_buffer, state.revision, track.node, track.path, *hit, hit->time,
+                              mouse.x);
+        } else if (!hit && preview) {
+          const auto time = std::clamp(
+              m_curveFrom
+                  + (mouse.x - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
+              m_curveFrom, m_curveTo);
+          sessionAction({{"command", "control-animation-preview"},
+                         {"session", std::to_string(m_animationSession)},
+                         {"action", "seek"},
+                         {"seconds", time}});
+        }
+      }
+
+      if (m_curveDrag) {
+        auto& drag = *m_curveDrag;
+        const auto focused = m_application->window().focused();
+
+        if (!focused || !*focused || drag.buffer != m_buffer || drag.revision != state.revision
+            || drag.node != track.node || drag.path != track.path
+            || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
+                && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+            || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          m_curveDrag.reset();
+        } else {
+          /** A fast drag may first report its displacement on the release frame;
+           * IsMouseDragging requires a held button. Always include that final
+           * position after crossing the threshold, including a return to origin.
+           * 快速拖动的位移可能到松键帧才出现；IsMouseDragging 要求仍按住。跨过阈值后
+           * 必须纳入最终位置，包括拖回起点。 */
+          if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
+               || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+              && (std::abs(mouse.x - drag.mouseStart) >= 3 || drag.target != drag.key.time)) {
+            drag.target = static_cast<float>(
+                std::clamp(double(drag.key.time)
+                               + (mouse.x - drag.mouseStart) / (maximum.x - minimum.x)
+                                     * (m_curveTo - m_curveFrom),
+                           0., 86400.));
+          }
+
+          const auto at = x(drag.target);
+          draw->AddLine({at, minimum.y}, {at, maximum.y}, ImGui::GetColorU32(ImGuiCol_ButtonActive),
+                        2);
+          ImGui::SetTooltip("Move %.9g -> %.9g s / release to commit, Escape to cancel",
+                            double(drag.key.time), double(drag.target));
+
+          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            auto key = drag.key;
+            key.time = drag.target;
+            auto request = Json{{"command", "edit-animation-clip"},
+                                {"buffer", std::to_string(drag.buffer)},
+                                {"revision", std::to_string(drag.revision)},
+                                {"operations", Json::array({{{"op", "update-key"},
+                                                             {"node", drag.node},
+                                                             {"path", path},
+                                                             {"time", drag.key.time},
+                                                             {"key", keyJson(key)}}})}};
+            m_curveDrag.reset();
+
+            if (sessionAction(request)) {
+              clipAction({{"command", "select-animation-key"},
+                          {"node", track.node},
+                          {"path", path},
+                          {"time", key.time}});
+            }
+          }
+        }
+      }
+
+      draw->PopClipRect();
+    }
+
     auto animationPanel() -> void {
       if (!m_clipDocument) {
         ImGui::TextWrapped("Select an animation player in Inspector, then Edit animation clip.");
@@ -7162,12 +7570,9 @@ namespace Dot::Editor {
         }
       }
 
-      ImGui::TextWrapped("%s / %s%s", state->path.c_str(), value->name.c_str(),
-                         pending        ? " / Unapplied key"
-                         : state->dirty ? " / Unsaved"
-                                        : " / Saved");
       float time = static_cast<float>(preview->player.playback.time);
-      ImGui::SetNextItemWidth(-1);
+      const bool compact = ImGui::GetContentRegionAvail().x >= 600;
+      ImGui::SetNextItemWidth(compact ? ImGui::GetContentRegionAvail().x - 320 : -1);
 
       if (ImGui::SliderFloat("##clip-time", &time, 0, static_cast<float>(preview->player.duration),
                              "%.6f s")) {
@@ -7177,17 +7582,43 @@ namespace Dot::Editor {
                        {"seconds", time}});
       }
 
-      if (!ImGui::BeginTable("Animation editor", 2,
+      auto from = m_curveFrom;
+      auto to = m_curveTo;
+
+      if (compact) {
+        ImGui::SameLine();
+      }
+
+      ImGui::SetNextItemWidth(80);
+      bool rangeChanged = ImGui::InputDouble("From##curve", &from, 0, 0, "%.6g",
+                                             ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(80);
+      rangeChanged |= ImGui::InputDouble("To##curve", &to, 0, 0, "%.6g",
+                                         ImGuiInputTextFlags_EnterReturnsTrue);
+
+      if (rangeChanged) {
+        clipAction({{"command", "set-animation-curve-view"}, {"from", from}, {"to", to}});
+      }
+
+      if (nextButton("Fit time")) {
+        clipAction({{"command", "set-animation-curve-view"},
+                    {"from", 0.},
+                    {"to", std::max(1., state->value.duration().value())}});
+      }
+
+      if (!ImGui::BeginTable("Animation editor", 3,
                              ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
         return;
       }
 
       ImGui::TableSetupColumn("Tracks", ImGuiTableColumnFlags_WidthStretch, .25F);
-      ImGui::TableSetupColumn("Keys", ImGuiTableColumnFlags_WidthStretch, .25F);
+      ImGui::TableSetupColumn("Keys", ImGuiTableColumnFlags_WidthStretch, .15F);
+      ImGui::TableSetupColumn("Curves", ImGuiTableColumnFlags_WidthStretch, .6F);
       ImGui::TableHeadersRow();
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
-      const auto height = std::max(100.F, ImGui::GetContentRegionAvail().y);
+      const auto height = std::max(60.F, ImGui::GetContentRegionAvail().y);
       constexpr std::array paths{"translation", "rotation", "scale"};
       ImGui::BeginChild("Animation tracks", {0, height});
 
@@ -7278,6 +7709,15 @@ namespace Dot::Editor {
       }
 
       ImGui::EndChild();
+      ImGui::TableSetColumnIndex(2);
+
+      if (selected != value->tracks.end()) {
+        animationCurve(*state, *selected);
+      } else {
+        ImGui::TextWrapped(
+            "Select a track. Click a curve key to select; drag horizontally to move.");
+      }
+
       ImGui::EndTable();
     }
 
@@ -7445,7 +7885,7 @@ namespace Dot::Editor {
         const auto inspector
             = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22F, nullptr, &center);
         const auto assets
-            = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.25F, nullptr, &center);
+            = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.34F, nullptr, &center);
         const auto hierarchy
             = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.18F / 0.78F, nullptr, &center);
         ImGui::DockBuilderDockWindow("Hierarchy", hierarchy);

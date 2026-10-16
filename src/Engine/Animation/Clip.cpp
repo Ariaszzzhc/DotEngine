@@ -231,4 +231,25 @@ namespace Dot::Animation {
                         "Sample animation clip: " + std::string(error.what()));
     }
   }
+
+  auto Clip::sampleTrack(std::size_t index, double seconds) const -> Core::Result<ChannelSample> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation clip is empty or moved");
+    }
+
+    if (index >= m_data->description.tracks.size() || !std::isfinite(seconds) || seconds < 0) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Animation sample requires a valid track and nonnegative finite seconds");
+    }
+
+    const auto& track = m_data->description.tracks[index];
+    auto value = evaluate(track, seconds);
+
+    if (!value) {
+      return Core::fail(value.error().code, "Animation node " + std::to_string(track.node) + ": "
+                                                + value.error().message);
+    }
+
+    return ChannelSample{track.node, track.path, *value};
+  }
 }  // namespace Dot::Animation

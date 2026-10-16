@@ -8,8 +8,8 @@ convert to these clips and native model bindings. Saved animation players now ru
 through GameSession, editor Play and native exports. TypeScript playback controls
 are available through the engine-owned SDK. Isolated editor audition supports playback
 and time scrubbing; existing library clips now support native keyframe editing,
-preview, save and undo in the editor. Production curve/graph and binding workflows
-remain unfinished.
+preview, save and undo in the editor. Production multi-key/curve-handle, graph and
+binding workflows remain unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
 isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
 offscreen skinned-GPU regression tests. Library/SDK transitions now run in editor Play and
@@ -283,12 +283,25 @@ candidate description and publishes one validated immutable native clip. PutKey 
 logical node/path and exact float seconds: insert in time order, replace an equal-time
 key, or create a track with the specified interpolation. An existing track requires
 matching interpolation; conversion is explicit. RemoveKey removes an empty track;
+UpdateKey requires the existing exact source time and replaces that key in sorted
+order, preserving the channel's interpolation. The complete replacement includes its
+time/value/tangents; moving never creates a copy or overwrites an occupied destination.
+Tangents remain authored derivatives per second, without automatic time rescaling.
 RemoveTrack and RenameClip are explicit. SetInterpolation clears tangents when its
 mode changes and retains them for the same mode. Cubic tangents can subsequently be
 edited through PutKey. Validation occurs on the final clip, so a batch may replace
 all old tracks or create a two-key cubic track without exposing an invalid intermediate
 state. Missing tracks/keys, invalid times, modes, values or final empty channels fail
 without changing the input. It creates no files, scenes or devices.
+
+`Clip::sampleTrack` evaluates one track index from this immutable clip description
+with the exact ordinary native evaluator. It avoids evaluating/allocating samples for
+unrelated channels, and therefore does not certify their current samples. Endpoint
+clamps, shortest-arc rotation, normalized cubic rotation and singular/overflow failures
+match `sample`. Results are owned and concurrent read calls remain safe.
+
+UpdateKey 按精确原时间替换并重排已有键，不增加键数量，不覆盖已占用的新时间；插值模式
+不变，切线保持每秒导数。单轨采样复用普通原生求值器，只验证所选通道，结果独立拥有。
 
 `Dot.Editor.AnimationDocument` opens an assets .dotanimation using the existing resource
 text/path/metadata/conflict implementation. Ordinary resource text defaults remain

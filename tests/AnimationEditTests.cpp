@@ -95,3 +95,64 @@ TEST_CASE("animation_edit.rejects_invalid_handles_times_modes_and_batch_limits")
   edits.push_back(RenameClip{"Too many"});
   CHECK_FALSE(editClip(clip, edits));
 }
+
+TEST_CASE("animation_edit.updates_existing_key_and_reorders_without_inserting_a_copy") {
+  const auto clip = source();
+  auto key = clip.description().value()->tracks[0].keys[0];
+  key.time = 3;
+  key.value.x = 7;
+  const auto changed = edit(clip, {UpdateKey{0, Path::Translation, 0, key}}).value();
+  const auto& keys = changed.description().value()->tracks[0].keys;
+  REQUIRE(keys.size() == 2);
+  CHECK(keys[0].time == 2);
+  CHECK(keys[1].time == 3);
+  CHECK(changed.duration().value() == 3);
+  CHECK(changed.sample(2.5)->at(0).value.x == doctest::Approx(4.5));
+  CHECK(clip.description().value()->tracks[0].keys[0].time == 0);
+  key.time = 1;
+  const auto back = edit(changed, {UpdateKey{0, Path::Translation, 3, key}}).value();
+  CHECK(back.description().value()->tracks[0].keys[0].time == 1);
+  CHECK(back.duration().value() == 2);
+  const auto same = edit(back, {UpdateKey{0, Path::Translation, 1, key}}).value();
+  CHECK(same.sample(1)->at(0).value.x == 7);
+}
+
+TEST_CASE("animation_edit.key_update_rejects_collision_missing_and_invalid_keys_atomically") {
+  const auto clip = source();
+  const auto original = clip.description().value();
+  auto key = original->tracks[0].keys[0];
+  key.time = 2;
+  auto failed = edit(clip, {RenameClip{"Uncommitted"}, UpdateKey{0, Path::Translation, 0, key}});
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().message.find("occupied") != std::string::npos);
+  CHECK_FALSE(edit(clip, {UpdateKey{0, Path::Translation, 1, key}}));
+  CHECK_FALSE(edit(clip, {UpdateKey{3, Path::Translation, 0, key}}));
+  key.time = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(edit(clip, {UpdateKey{0, Path::Translation, 0, key}}));
+  key.time = -1;
+  CHECK_FALSE(edit(clip, {UpdateKey{0, Path::Translation, 0, key}}));
+  key.time = 86401;
+  CHECK_FALSE(edit(clip, {UpdateKey{0, Path::Translation, 0, key}}));
+  key.time = 0;
+  key.value.w = 1;
+  CHECK_FALSE(edit(clip, {UpdateKey{0, Path::Translation, 0, key}}));
+  CHECK_FALSE(
+      edit(clip, {UpdateKey{0, Path::Translation, std::numeric_limits<float>::quiet_NaN(), key}}));
+  CHECK(clip.description().value() == original);
+  CHECK(original->name == "Move");
+}
+
+TEST_CASE("animation_edit.key_update_preserves_authored_cubic_tangents") {
+  auto clip = edit(source(), {SetInterpolation{0, Path::Translation, Interpolation::CubicSpline}})
+                  .value();
+  auto key = clip.description().value()->tracks[0].keys[0];
+  key.time = .5F;
+  key.inTangent = {-2, 0, 0, 0};
+  key.outTangent = {4, 0, 0, 0};
+  const auto changed = edit(clip, {UpdateKey{0, Path::Translation, 0, key}}).value();
+  const auto& actual = changed.description().value()->tracks[0].keys[0];
+  CHECK(actual.time == .5F);
+  CHECK(actual.inTangent == key.inTangent);
+  CHECK(actual.outTangent == key.outTangent);
+  CHECK(changed.sample(1.25)->at(0).value.x == doctest::Approx(1.75));
+}

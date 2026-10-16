@@ -197,3 +197,28 @@ TEST_CASE("animation_document.destruction_never_saves_and_snapshots_outlive_the_
   CHECK(state.value.description().value()->name == "Unsaved");
   CHECK(state.value.sample(1).value()[0].value.x == 1);
 }
+
+TEST_CASE("animation_document.key_move_retains_count_history_and_failed_collision_state") {
+  Fixture f;
+  auto doc = f.open();
+  auto original = doc.snapshot().value();
+  auto key = original.value.description().value()->tracks[0].keys[0];
+  key.time = 1;
+  std::vector<ClipEdit> changes{UpdateKey{0, Path::Translation, 0, key}};
+  REQUIRE(doc.edit(changes, original.revision));
+  auto changed = doc.snapshot().value();
+  CHECK(changed.value.description().value()->tracks[0].keys.size() == 2);
+  CHECK(changed.historyStates == 2);
+  key.time = 2;
+  changes = {UpdateKey{0, Path::Translation, 1, key}};
+  CHECK_FALSE(doc.edit(changes, changed.revision));
+  CHECK(doc.snapshot()->revision == changed.revision);
+  CHECK(doc.snapshot()->historyStates == changed.historyStates);
+  CHECK(doc.snapshot()->historyBytes == changed.historyBytes);
+  REQUIRE(doc.undo(changed.revision));
+  CHECK(doc.snapshot()->value.description().value()->tracks[0].keys[0].time == 0);
+  REQUIRE(doc.redo(doc.snapshot()->revision));
+  REQUIRE(doc.save(doc.snapshot()->revision));
+  CHECK(loadClip(f.files, f.path)->description().value()->tracks[0].keys[0].time == 1);
+  CHECK(original.value.description().value()->tracks[0].keys[0].time == 0);
+}

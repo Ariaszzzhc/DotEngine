@@ -168,3 +168,46 @@ TEST_CASE("animation.clip_shared_immutable_ownership_moves_and_concurrent_sample
   samples[0].value.x = 100;
   CHECK(copy.sample(2)->at(0).value.x == 2);
 }
+
+TEST_CASE("animation.single_track_samples_share_native_step_linear_cubic_and_rotation_evaluation") {
+  for (auto mode : {Interpolation::Step, Interpolation::Linear, Interpolation::CubicSpline}) {
+    auto description = translation(mode);
+    description.tracks.push_back({1, Path::Rotation, mode, {{0, {0, 0, 0, 1}}, {4, {0, 0, 1, 0}}}});
+    auto clip = Clip::create(description).value();
+
+    for (double time : {0., 1., 1.25, 2., 3., 4., 100000.}) {
+      const auto all = clip.sample(time).value();
+
+      for (std::size_t i = 0; i < all.size(); ++i) {
+        auto selected = clip.sampleTrack(i, time).value();
+        CHECK(selected.node == all[i].node);
+        CHECK(selected.path == all[i].path);
+        CHECK(selected.value == all[i].value);
+      }
+    }
+  }
+}
+
+TEST_CASE("animation.single_track_errors_and_owned_lifetime_are_independent_of_other_samples") {
+  auto description = translation();
+  description.tracks.push_back(
+      {1, Path::Scale, Interpolation::Linear, {{0, {-1, 1, 1, 0}}, {2, {1, 1, 1, 0}}}});
+  auto clip = Clip::create(description).value();
+  CHECK_FALSE(clip.sample(1));
+  CHECK(clip.sampleTrack(0, 1));
+  CHECK_FALSE(clip.sampleTrack(1, 1));
+  CHECK_FALSE(clip.sampleTrack(2, 0));
+  CHECK_FALSE(clip.sampleTrack(0, -1));
+  CHECK_FALSE(clip.sampleTrack(0, std::numeric_limits<double>::infinity()));
+  CHECK_FALSE(clip.sampleTrack(0, std::numeric_limits<double>::quiet_NaN()));
+  auto moved = std::move(clip);
+  CHECK_FALSE(clip.sampleTrack(0, 0));
+  CHECK_FALSE(Clip{}.sampleTrack(0, 0));
+  description.tracks.clear();
+  auto owned = moved.sampleTrack(0, 2).value();
+  owned.value.x = 100;
+  bool correct{};
+  std::thread worker([&] { correct = moved.sampleTrack(0, 2)->value.x == 2; });
+  worker.join();
+  CHECK(correct);
+}

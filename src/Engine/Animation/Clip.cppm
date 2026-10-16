@@ -63,6 +63,14 @@ export namespace Dot::Animation {
      * 区间秒数，三次旋转只归一化，不更改作者符号/切线。零四元数/缩放或溢出失败；
      * 线程安全读取，结果独立拥有，无场景/设备/隐藏时钟。 */
     [[nodiscard]] auto sample(double seconds) const -> Core::Result<std::vector<ChannelSample>>;
+    /** Sample one immutable-description track by index using the exact native
+     * evaluator, without visiting/allocating samples for unrelated channels.
+     * Index belongs to this clip description; other channel failures are not
+     * evaluated. Same time/value/error contracts as sample; no scene/device.
+     * 按本片段不可变描述的轨道索引采样，使用同一原生求值器，不遍历或分配无关通道样本。
+     * 索引限本片段，其他通道的采样错误不求值；时间/值约束同 sample，无场景/设备。 */
+    [[nodiscard]] auto sampleTrack(std::size_t track, double seconds) const
+        -> Core::Result<ChannelSample>;
 
   private:
     struct Data;

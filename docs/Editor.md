@@ -1224,6 +1224,12 @@ in/out tangents. Component rows preserve readable float precision in narrow pane
 Track/key selection scrolls into view. The ordinary Scene play/pause, bind-pose and
 frame-model controls remain available; Playback options provides speed/looping.
 
+The Curves column shows the selected channel's native sampled XYZ/XYZW components,
+authored keys, value range and playhead. Hover reads a native sample; click a key to
+select, click empty space to seek. From/To inputs apply the time range on Enter; Fit
+time restores the clip range. The default lower dock now reserves about a third of
+the workspace so the curve remains visible. Narrow docks wrap the time controls.
+
 Insert / replace key explicitly applies the key form: equal float time replaces a
 key, another time inserts without implicitly moving/deleting the former key. Reset
 key form discards unapplied values. Key at playhead prepares a key from that bound
@@ -1232,6 +1238,20 @@ player's real bound nodes. Rotations are unit XYZW quaternions, translation/scal
 use XYZ with W=0. Scale cannot be singular. Changing interpolation explicitly clears
 tangents; cubic needs at least two keys. Delete key removes an empty track; deleting
 the last remaining channel fails because the native clip requires a channel.
+
+Update / move selected key explicitly replaces the originally selected key using the
+staged time/value/tangents. It keeps key count/interpolation and rejects an occupied
+destination. This requires an existing selected source on the same channel/mode;
+preparing a new key at an empty time must use Insert / replace key instead. Tangents
+remain derivatives per second and are not automatically rescaled when moving time.
+Horizontal curve dragging previews a ghost time, then submits one update-key edit on
+release. Values/tangents are retained. Escape, focus loss, changed view, track or
+resource revision cancel the gesture. No history state or posed scene changes during
+the drag; a valid release is one resource undo step. Conflicts retain the old key.
+Native curve-drag acceptance remains outstanding: computer-use drag attempts have not
+produced a confirmed movement, including a comparison with the ordinary time slider.
+The strict update/move resource operations are verified through actual product workflows;
+this observation does not establish that native pointer behavior is fully validated.
 
 Save clip, Undo clip and Redo clip affect the resource document, independently of
 scene authoring history. File/Edit menus and existing save/history shortcuts route
@@ -1254,6 +1274,8 @@ response reports `workspace.animationClip`: buffer/path/name/resource revision,
 duration, channel/key counts, dirty/undo/redo, history states/serialized bytes, key
 form and pendingForm. The ordinary authoring revision/scene/dirty state remains
 unchanged. `workspace.animationPreview.draft` identifies the decoded asset path.
+`animationClip.curve` reports the current time range; changing that view does not alter
+resource revision/history, preview identity/clock, or staged key values.
 Normal audition still supports library switching; close the editing document before
 switching to another clip. Authoring/resource changes and Play are locked until close.
 
@@ -1271,6 +1293,7 @@ the new resource revision/session after mutations instead of reusing earlier IDs
 {"command":"select-animation-key","buffer":"1","revision":"1","node":8,"path":"translation","time":null}
 {"command":"stage-animation-key","buffer":"1","revision":"1","value":{"node":8,"path":"translation","interpolation":"linear","key":{"time":0,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}}
 {"command":"apply-animation-key","buffer":"1","revision":"1"}
+{"command":"move-animation-key","buffer":"1","revision":"1"}
 {"command":"reset-animation-key","buffer":"1","revision":"1"}
 {"command":"undo-animation-clip","buffer":"1","revision":"2"}
 {"command":"redo-animation-clip","buffer":"1","revision":"3"}
@@ -1296,6 +1319,7 @@ operation shapes are:
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"rename","name":"Idle inspection"}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"put-key","node":8,"path":"translation","interpolation":"linear","key":{"time":0.25,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-key","node":8,"path":"translation","time":0.25}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"update-key","node":8,"path":"translation","time":0.25,"key":{"time":0.5,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-track","node":8,"path":"translation"}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"set-interpolation","node":8,"path":"translation","interpolation":"cubic"}]}
 ```
@@ -1319,13 +1343,39 @@ both disk and draft; a post-save catalog failure explicitly reports that saving 
 Close/reopen and later Play load the actual saved clip. Frozen PNG capture remains
 available through the ordinary scene capture operations and survives later edits/close.
 
-This workflow edits existing bound library clips. Curve/dope-sheet editing, visual
-binding/retargeting, state graphs/layers, root motion/events and production animation
-scalability remain unfinished.
+Curve view and bounded sample queries also use the current buffer/resource revision:
+
+```json
+{"command":"set-animation-curve-view","buffer":"1","revision":"1","from":0,"to":2.5}
+{"command":"read-animation-curve","buffer":"1","revision":"1","node":8,"path":"rotation","from":0,"to":2.5,"samples":256}
+```
+
+Times must be finite numbers in 0..86400 seconds, with at least a one-microsecond
+span. Queries require an unsigned count 2..1024 and return owned `points` with exact
+double sample times and native float32 value components, including both endpoints.
+They do not seek the preview, alter the key form, or validate unrelated channels at
+those times. A native singular/overflow sample fails the query with its time; no
+partial/fake-success curve is returned. Invalid view/query requests preserve state.
+
+The GUI caches a 256-sample polyline per resource revision/channel/time range, with
+at most 2048 visible authored keys. Narrow the range for denser tracks. Step lines
+use authored discontinuity times; linear/cubic/rotation lines are sampled approximations,
+with shortest-arc SLERP and normalized quaternion components from native evaluation.
+Component W is shown for rotation only. The graph autofits visible sampled values and
+keys; it is not a proof of all extrema or valid future poses. Curves expose sampling
+errors rather than hiding them. Tangent values remain editable through Inspector.
+
+This workflow edits existing bound library clips. Multi-key/dope-sheet and graphical
+tangent-handle editing, visual binding/retargeting, state graphs/layers, root motion/events
+and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
 值和三次切线。键表单需显式应用/重置；插入与替换按原生 float 时间判断，不隐式移动旧键。
 候选片段和当前蒙皮姿态预检后才提交历史，失败保留旧草稿、姿态、时钟及会话。资源保存/
 撤销独立于场景历史，磁盘冲突不覆盖外部修改；关闭须保存或明确丢弃。所有操作有同源严格
-JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话。曲线、绑定、状态图和大规模
+JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话。图形切线、绑定、状态图和大规模
 动画生产能力仍待完成。
+
+曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
+新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
+多键操作、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
