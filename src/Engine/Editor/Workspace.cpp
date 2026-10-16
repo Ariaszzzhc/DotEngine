@@ -36,6 +36,11 @@ import Dot.Editor.Play;
 import Dot.Editor.PlayInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
+import Dot.Editor.AnimationDocument;
+import Dot.Animation.Files;
+import Dot.Animation.Source;
+import Dot.Animation.ScenePlayers;
+import Dot.Assets.SceneSkins;
 import Dot.Editor.SkeletonView;
 import Dot.Assets.ImageExport;
 import Dot.Platform.Dialog;
@@ -460,6 +465,14 @@ namespace Dot::Editor {
     bool m_exportDialog{};
     bool m_exportDataOnly{};
     std::optional<AnimationPreview> m_animationPreview;
+    std::optional<AnimationDocument> m_clipDocument;
+    Json m_clipForm = nullptr;
+    Json m_clipOriginal = nullptr;
+    int m_clipNewNode{};
+    int m_clipNewPath{};
+    bool m_clipTrackScroll{};
+    bool m_clipKeyScroll{};
+    std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
     std::uint64_t m_playSession{};
@@ -593,7 +606,11 @@ namespace Dot::Editor {
       }
     }
 
-    auto remember() -> Core::Result<void> {
+    auto rememberPlayFrame() -> Core::Result<void> {
+      if (!m_play) {
+        return Core::fail(Core::ErrorCode::InvalidState, "No Play session to read frame reports");
+      }
+
       auto frame = m_play->lastFrame();
 
       if (!frame) {
@@ -673,6 +690,10 @@ namespace Dot::Editor {
     }
 
     auto pendingText() const -> bool {
+      if (m_clipDocument) {
+        return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal;
+      }
+
       if (m_material) {
         const auto material = m_material->snapshot().value();
         return material.dirty
@@ -1096,7 +1117,7 @@ namespace Dot::Editor {
       m_gameInput = Platform::InputState{};
       captureInput(false);
       m_previewReady = false;
-      auto remembered = remember();
+      auto remembered = rememberPlayFrame();
       return remembered ? Core::Result<void>{}
                         : Core::fail(remembered.error().code, "Play started; report read failed: "
                                                                   + remembered.error().message);
@@ -1324,6 +1345,7 @@ namespace Dot::Editor {
               {"speed", player.playback.speed},
               {"looping", player.playback.looping},
               {"bindPose", state->bindPose},
+              {"draft", state->draft ? Json(*state->draft) : Json(nullptr)},
               {"error", state->error ? errorJson(*state->error)["error"] : Json(nullptr)}};
     }
 
@@ -1661,6 +1683,239 @@ namespace Dot::Editor {
       }
     }
 
+    static auto clipPath(const Json& value) -> Animation::Path {
+      const auto name = value.get<std::string>();
+
+      if (name == "translation") {
+        return Animation::Path::Translation;
+      }
+
+      if (name == "rotation") {
+        return Animation::Path::Rotation;
+      }
+
+      if (name == "scale") {
+        return Animation::Path::Scale;
+      }
+
+      throw std::invalid_argument("Unknown animation channel path");
+    }
+
+    static auto clipInterpolation(const Json& value) -> Animation::Interpolation {
+      const auto name = value.get<std::string>();
+
+      if (name == "step") {
+        return Animation::Interpolation::Step;
+      }
+
+      if (name == "linear") {
+        return Animation::Interpolation::Linear;
+      }
+
+      if (name == "cubic") {
+        return Animation::Interpolation::CubicSpline;
+      }
+
+      throw std::invalid_argument("Unknown animation interpolation");
+    }
+
+    static auto clipIndex(const Json& value, std::uint32_t maximum = 9999) -> std::uint32_t {
+      if (!value.is_number_unsigned() || value.get<std::uint64_t>() > maximum) {
+        throw std::invalid_argument("Animation index exceeds bounds");
+      }
+
+      return value.get<std::uint32_t>();
+    }
+
+    static auto clipKey(const Json& value) -> Animation::Key {
+      Codec::requireFields(value, {"time", "value", "inTangent", "outTangent"});
+      const auto vector = [](const Json& item) -> Math::Vec4 {
+        const auto data = Codec::numbers<4>(item);
+        return {data[0], data[1], data[2], data[3]};
+      };
+      return {Codec::number(value["time"]), vector(value["value"]), vector(value["inTangent"]),
+              vector(value["outTangent"])};
+    }
+
+    static auto keyJson(const Animation::Key& key) -> Json {
+      return {
+          {"time", key.time},
+          {"value", {key.value.x, key.value.y, key.value.z, key.value.w}},
+          {"inTangent", {key.inTangent.x, key.inTangent.y, key.inTangent.z, key.inTangent.w}},
+          {"outTangent", {key.outTangent.x, key.outTangent.y, key.outTangent.z, key.outTangent.w}}};
+    }
+
+    static auto clipEdits(const Json& operations) -> std::vector<Animation::ClipEdit> {
+      if (!operations.is_array() || operations.empty() || operations.size() > 256) {
+        throw std::invalid_argument("Animation operations require 1..256 entries");
+      }
+
+      std::vector<Animation::ClipEdit> result;
+
+      for (const auto& operation : operations) {
+        const auto op = operation.at("op").get<std::string>();
+
+        if (op == "rename") {
+          Codec::requireFields(operation, {"op", "name"});
+          result.push_back(Animation::RenameClip{operation["name"].get<std::string>()});
+          continue;
+        }
+
+        if (op == "put-key") {
+          Codec::requireFields(operation, {"op", "node", "path", "interpolation", "key"});
+          result.push_back(Animation::PutKey{
+              clipIndex(operation["node"]), clipPath(operation["path"]),
+              clipInterpolation(operation["interpolation"]), clipKey(operation["key"])});
+        } else if (op == "remove-key") {
+          Codec::requireFields(operation, {"op", "node", "path", "time"});
+          result.push_back(Animation::RemoveKey{clipIndex(operation["node"]),
+                                                clipPath(operation["path"]),
+                                                Codec::number(operation["time"])});
+        } else if (op == "remove-track") {
+          Codec::requireFields(operation, {"op", "node", "path"});
+          result.push_back(
+              Animation::RemoveTrack{clipIndex(operation["node"]), clipPath(operation["path"])});
+        } else if (op == "set-interpolation") {
+          Codec::requireFields(operation, {"op", "node", "path", "interpolation"});
+          result.push_back(
+              Animation::SetInterpolation{clipIndex(operation["node"]), clipPath(operation["path"]),
+                                          clipInterpolation(operation["interpolation"])});
+        } else {
+          throw std::invalid_argument("Unknown animation edit operation");
+        }
+      }
+
+      return result;
+    }
+
+    auto clipStatus() const -> Json {
+      if (!m_clipDocument) {
+        return nullptr;
+      }
+
+      auto state = m_clipDocument->snapshot();
+
+      if (!state) {
+        return errorJson(state.error());
+      }
+
+      const auto* value = state->value.description().value();
+      std::size_t keys{};
+
+      for (const auto& track : value->tracks) {
+        keys += track.keys.size();
+      }
+
+      return {{"buffer", std::to_string(m_buffer)},
+              {"revision", std::to_string(state->revision)},
+              {"path", state->path},
+              {"name", value->name},
+              {"duration", state->value.duration().value()},
+              {"tracks", value->tracks.size()},
+              {"keys", keys},
+              {"dirty", state->dirty},
+              {"canUndo", state->canUndo},
+              {"canRedo", state->canRedo},
+              {"historyStates", state->historyStates},
+              {"historyBytes", state->historyBytes},
+              {"form", m_clipForm},
+              {"pendingForm", m_clipForm != m_clipOriginal}};
+    }
+
+    /** Preflight the candidate native pose before publishing document history.
+     * Recreate only the isolated preview; retain clock/configuration and invalidate
+     * old scoped control sessions after commit. Validate against authored source.
+     * 提交文档历史前预检原生候选姿态；仅重建隔离预览并保留时钟/设置，提交后使旧控制会话
+     * 失效，按编辑源校验权限。 */
+    auto prepareClipPreview(Animation::Clip clip) -> Core::Result<AnimationPreview> {
+      auto state = m_animationPreview->stats();
+      auto document = m_clipDocument->snapshot();
+
+      if (!state || !document) {
+        return std::unexpected(!state ? state.error() : document.error());
+      }
+
+      if (m_animationSession == std::numeric_limits<std::uint64_t>::max()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Animation session identity exhausted");
+      }
+
+      auto preview = AnimationPreview::create(
+          *m_document->scene().value(), m_project->files().value(), state->owner,
+          Animation::ClipAsset{document->path, std::move(clip)});
+
+      if (!preview) {
+        return std::unexpected(preview.error());
+      }
+
+      auto next = preview->stats();
+
+      if (!next) {
+        return std::unexpected(next.error());
+      }
+
+      auto configured
+          = preview->configure(state->player.playback.speed, state->player.playback.looping);
+      auto posed = configured
+                       ? (state->bindPose ? preview->bindPose()
+                                          : preview->seek(std::min(state->player.playback.time,
+                                                                   next->player.duration)))
+                       : configured;
+
+      if (!posed) {
+        return std::unexpected(posed.error());
+      }
+
+      if (state->player.playback.playing) {
+        auto played = preview->play(next->player.clip, false);
+
+        if (!played) {
+          return std::unexpected(played.error());
+        }
+      }
+
+      auto posedScene = preview->scene();
+
+      if (!posedScene) {
+        return std::unexpected(posedScene.error());
+      }
+
+      auto skins = Assets::validateSceneSkins(m_project->files().value(), **posedScene);
+      return skins ? std::move(preview)
+                   : Core::Result<AnimationPreview>{std::unexpected(skins.error())};
+    }
+
+    auto clipAction(Json request) -> bool {
+      request["buffer"] = std::to_string(m_buffer);
+      request["revision"] = std::to_string(m_clipDocument->snapshot()->revision);
+      return sessionAction(request);
+    }
+
+    auto saveClip() -> Core::Result<void> {
+      if (m_clipForm != m_clipOriginal) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Apply or reset the key form before saving");
+      }
+
+      auto state = m_clipDocument->snapshot();
+
+      if (!state) {
+        return std::unexpected(state.error());
+      }
+
+      auto saved = m_clipDocument->save(state->revision);
+
+      if (!saved) {
+        return saved;
+      }
+
+      m_assetRefresh = true;
+      auto refreshed = catalog();
+      return refreshed
+                 ? Core::Result<void>{}
+                 : Core::fail(refreshed.error().code, "Animation saved; resource refresh failed: "
+                                                          + refreshed.error().message);
+    }
+
     auto execute(std::string_view request) -> Core::Result<std::string> {
       auto valid = validRequest(request);
 
@@ -1671,6 +1926,388 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "open-animation") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "clip"});
+
+        if (playing() || m_animationPreview || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+            || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || m_animationSession == std::numeric_limits<std::uint64_t>::max()
+            || m_buffer == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Animation editing requires current authoring revision and no other "
+                            "mode/draft/dialog");
+        }
+
+        auto scene = m_document->scene().value();
+        auto owner = scene->findEntity(Codec::id(parsed["entity"]));
+
+        if (!owner) {
+          return std::unexpected(owner.error());
+        }
+
+        auto info = scene->entity(*owner);
+        const auto index = clipIndex(parsed["clip"], 1023);
+
+        if (!info || !info->animation || !info->animation->enabled
+            || index >= info->animation->clips.size()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Choose an enabled player's library clip");
+        }
+
+        auto document = AnimationDocument::open(*m_project, info->animation->clips[index]);
+
+        if (!document) {
+          return std::unexpected(document.error());
+        }
+
+        auto draft = document->snapshot();
+
+        if (!draft) {
+          return std::unexpected(draft.error());
+        }
+
+        auto preview = AnimationPreview::create(*scene, m_project->files().value(), owner->value,
+                                                Animation::ClipAsset{draft->path, draft->value});
+
+        if (!preview) {
+          return std::unexpected(preview.error());
+        }
+
+        std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> bindings;
+
+        for (const auto& target : info->animation->targets) {
+          auto entity = scene->findEntity(target.entity);
+          auto item = entity ? scene->entity(*entity)
+                             : Core::Result<World::EntityInfo>{std::unexpected(entity.error())};
+
+          if (!item) {
+            return std::unexpected(item.error());
+          }
+
+          bindings.emplace(target.node, std::pair{target.entity, std::move(item->name)});
+        }
+
+        m_text.reset();
+        m_material.reset();
+        resetMaterialForm();
+        m_clipDocument.emplace(std::move(*document));
+        m_animationPreview.emplace(std::move(*preview));
+        m_clipBindings.swap(bindings);
+        m_clipForm = m_clipOriginal = nullptr;
+        ++m_animationSession;
+        ++m_buffer;
+        m_editorView = true;
+        m_flying = m_orbiting = m_panning = false;
+        m_previewReady = false;
+        m_requestedPane = "animation";
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "inspect-animation-clip" || command == "list-animation-tracks"
+          || command == "read-animation-track" || command == "select-animation-key"
+          || command == "stage-animation-key" || command == "reset-animation-key"
+          || command == "apply-animation-key" || command == "edit-animation-clip"
+          || command == "undo-animation-clip" || command == "redo-animation-clip"
+          || command == "save-animation-clip" || command == "close-animation") {
+        if (command == "inspect-animation-clip") {
+          Codec::requireFields(parsed, {"command", "buffer"});
+        } else if (command == "list-animation-tracks") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "offset", "count"});
+        } else if (command == "read-animation-track") {
+          Codec::requireFields(
+              parsed, {"command", "buffer", "revision", "node", "path", "offset", "count"});
+        } else if (command == "select-animation-key") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
+        } else if (command == "stage-animation-key") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
+        } else if (command == "edit-animation-clip") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "operations"});
+        } else if (command == "close-animation") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "discard"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        }
+
+        if (!m_clipDocument || !m_animationPreview || Codec::id(parsed["buffer"]) != m_buffer) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Animation resource buffer is stale");
+        }
+
+        auto state = m_clipDocument->snapshot();
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        if (command == "inspect-animation-clip") {
+          return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+              .dump();
+        }
+
+        if (Codec::id(parsed["revision"]) != state->revision || m_pendingClose) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Animation resource revision is stale or close is pending");
+        }
+
+        const auto* value = state->value.description().value();
+        constexpr std::array paths{"translation", "rotation", "scale"};
+        constexpr std::array modes{"step", "linear", "cubic"};
+
+        if (command == "list-animation-tracks" || command == "read-animation-track") {
+          const auto offset = clipIndex(parsed["offset"], 1000000);
+          const auto count = clipIndex(parsed["count"], 256);
+
+          if (!count) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Animation page count requires 1..256");
+          }
+
+          Json entries = Json::array();
+
+          if (command == "list-animation-tracks") {
+            if (offset > value->tracks.size()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Track page offset exceeds total");
+            }
+
+            for (std::size_t i = offset;
+                 i < std::min(value->tracks.size(), std::size_t(offset) + count); ++i) {
+              const auto& track = value->tracks[i];
+              entries.push_back(
+                  {{"node", track.node},
+                   {"entity", std::to_string(m_clipBindings.at(track.node).first)},
+                   {"name", m_clipBindings.at(track.node).second},
+                   {"path", paths.at(static_cast<std::size_t>(track.path))},
+                   {"interpolation", modes.at(static_cast<std::size_t>(track.interpolation))},
+                   {"keys", track.keys.size()}});
+            }
+
+            return Json{{"ok", true},
+                        {"total", value->tracks.size()},
+                        {"offset", offset},
+                        {"tracks", std::move(entries)}}
+                .dump();
+          }
+
+          const auto node = clipIndex(parsed["node"]);
+          const auto path = clipPath(parsed["path"]);
+          auto track = std::ranges::find_if(value->tracks, [&](const auto& item) {
+            return item.node == node && item.path == path;
+          });
+
+          if (track == value->tracks.end() || offset > track->keys.size()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Animation track/page does not exist");
+          }
+
+          for (std::size_t i = offset;
+               i < std::min(track->keys.size(), std::size_t(offset) + count); ++i) {
+            entries.push_back(keyJson(track->keys[i]));
+          }
+
+          return Json{{"ok", true},
+                      {"node", node},
+                      {"path", paths.at(static_cast<std::size_t>(path))},
+                      {"interpolation", modes.at(static_cast<std::size_t>(track->interpolation))},
+                      {"total", track->keys.size()},
+                      {"offset", offset},
+                      {"keys", std::move(entries)}}
+              .dump();
+        }
+
+        if (command == "close-animation") {
+          if (pendingText() && !parsed["discard"].get<bool>()) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Save or explicitly discard animation changes before closing");
+          }
+
+          m_clipDocument.reset();
+          m_animationPreview.reset();
+          m_clipForm = m_clipOriginal = nullptr;
+          m_previewReady = false;
+          return execute("{\"command\":\"inspect\"}");
+        }
+
+        if (command == "stage-animation-key") {
+          const auto& form = parsed["value"];
+          Codec::requireFields(form, {"node", "path", "interpolation", "key"});
+          const auto node = clipIndex(form["node"]);
+          static_cast<void>(clipPath(form["path"]));
+          static_cast<void>(clipInterpolation(form["interpolation"]));
+          const auto key = clipKey(form["key"]);
+          auto canonical = form;
+          canonical["node"] = node;
+          canonical["key"] = keyJson(key);
+          m_clipForm = std::move(canonical);
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
+
+        if (command == "reset-animation-key") {
+          m_clipForm = m_clipOriginal;
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
+
+        if (command == "select-animation-key") {
+          if (m_clipForm != m_clipOriginal) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Apply or reset the key form before changing selection");
+          }
+
+          const auto node = clipIndex(parsed["node"]);
+          const auto path = clipPath(parsed["path"]);
+          const auto track = std::ranges::find_if(value->tracks, [&](const auto& item) {
+            return item.node == node && item.path == path;
+          });
+          Animation::Key key;
+
+          if (!parsed["time"].is_null()) {
+            const auto time = Codec::number(parsed["time"]);
+            const auto found = track == value->tracks.end()
+                                   ? std::vector<Animation::Key>::const_iterator{}
+                                   : std::ranges::find(track->keys, time, &Animation::Key::time);
+
+            if (track == value->tracks.end() || found == track->keys.end()) {
+              return Core::fail(Core::ErrorCode::NotFound, "Selected animation key does not exist");
+            }
+
+            key = *found;
+          } else {
+            auto preview = m_animationPreview->scene();
+            auto owner = preview ? (*preview)->findEntity(m_animationPreview->stats()->owner)
+                                 : Core::Result<World::EntityId>{std::unexpected(preview.error())};
+            auto info = owner ? (*preview)->entity(*owner)
+                              : Core::Result<World::EntityInfo>{std::unexpected(owner.error())};
+
+            if (!info || !info->animation) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Animation preview owner is unavailable");
+            }
+
+            auto binding
+                = std::ranges::find(info->animation->targets, node, &Animation::Target::node);
+
+            if (binding == info->animation->targets.end()) {
+              return Core::fail(Core::ErrorCode::NotFound,
+                                "Node is not bound to the preview player");
+            }
+
+            auto entity = (*preview)->findEntity(binding->entity);
+            auto pose = entity ? (*preview)->transform(*entity)
+                               : Core::Result<World::Transform>{std::unexpected(entity.error())};
+
+            if (!pose) {
+              return std::unexpected(pose.error());
+            }
+
+            key.time = static_cast<float>(m_animationPreview->stats()->player.playback.time);
+            key.value = path == Animation::Path::Translation
+                            ? Math::Vec4{pose->position.x, pose->position.y, pose->position.z, 0}
+                        : path == Animation::Path::Scale
+                            ? Math::Vec4{pose->scale.x, pose->scale.y, pose->scale.z, 0}
+                            : Math::Vec4{pose->rotation.x, pose->rotation.y, pose->rotation.z,
+                                         pose->rotation.w};
+          }
+
+          m_clipForm
+              = {{"node", node},
+                 {"path", paths.at(static_cast<std::size_t>(path))},
+                 {"interpolation", track == value->tracks.end()
+                                       ? "linear"
+                                       : modes.at(static_cast<std::size_t>(track->interpolation))},
+                 {"key", keyJson(key)}};
+          m_clipOriginal = m_clipForm;
+          m_requestedPane = "inspector";
+          m_clipTrackScroll = m_clipKeyScroll = true;
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
+
+        if (command == "save-animation-clip") {
+          auto saved = saveClip();
+
+          if (!saved) {
+            return std::unexpected(saved.error());
+          }
+
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
+
+        if (command != "apply-animation-key" && m_clipForm != m_clipOriginal) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Apply or reset the key form before editing history");
+        }
+
+        Core::Result<Animation::Clip> candidate = state->value;
+
+        if (command == "undo-animation-clip" || command == "redo-animation-clip") {
+          candidate
+              = m_clipDocument->historyValue(command == "redo-animation-clip", state->revision);
+        } else {
+          auto operations = command == "apply-animation-key" ? Json::array() : parsed["operations"];
+
+          if (command == "apply-animation-key") {
+            if (m_clipForm.is_null()) {
+              return Core::fail(Core::ErrorCode::InvalidState, "Select or stage a key first");
+            }
+
+            auto put = m_clipForm;
+            put["op"] = "put-key";
+            operations.push_back(std::move(put));
+          }
+
+          auto edits = clipEdits(operations);
+          candidate = Animation::editClip(state->value, edits);
+        }
+
+        if (!candidate) {
+          return std::unexpected(candidate.error());
+        }
+
+        auto before = Animation::encodeClip(state->value);
+        auto after = Animation::encodeClip(*candidate);
+
+        if (!before || !after) {
+          return std::unexpected(!before ? before.error() : after.error());
+        }
+
+        if (*before == *after) {
+          if (command == "apply-animation-key") {
+            m_clipOriginal = m_clipForm;
+          }
+
+          return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+              .dump();
+        }
+
+        auto preview = prepareClipPreview(*candidate);
+
+        if (!preview) {
+          return std::unexpected(preview.error());
+        }
+
+        auto changed = command == "undo-animation-clip" ? m_clipDocument->undo(state->revision)
+                       : command == "redo-animation-clip"
+                           ? m_clipDocument->redo(state->revision)
+                           : m_clipDocument->replace(*candidate, state->revision);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        m_animationPreview.emplace(std::move(*preview));
+        ++m_animationSession;
+        m_previewReady = false;
+        m_renderedView.reset();
+
+        if (command == "apply-animation-key") {
+          m_clipOriginal = m_clipForm;
+        } else {
+          m_clipForm = m_clipOriginal = nullptr;
+        }
+
+        return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+            .dump();
+      }
 
       if (command == "set-skeleton" || command == "select-skeleton-joint"
           || command == "focus-skeleton" || command == "inspect-skeleton"
@@ -1815,11 +2452,24 @@ namespace Dot::Editor {
         Core::Result<void> applied;
 
         if (action == "end") {
+          if (m_clipDocument && pendingText()) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Save or explicitly discard animation changes before ending preview");
+          }
+
+          m_clipDocument.reset();
+          m_clipForm = m_clipOriginal = nullptr;
           m_animationPreview.reset();
         } else if (action == "play") {
           if (!parsed["clip"].is_number_unsigned()
               || parsed["clip"].get<std::uint64_t>() > std::numeric_limits<std::uint32_t>::max()) {
             return Core::fail(Core::ErrorCode::InvalidArgument, "Clip must be an unsigned index");
+          }
+
+          if (m_clipDocument
+              && parsed["clip"].get<std::uint32_t>() != m_animationPreview->stats()->player.clip) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Close the animation document before switching library clips");
           }
 
           applied = m_animationPreview->play(parsed["clip"].get<std::uint32_t>(),
@@ -1922,14 +2572,14 @@ namespace Dot::Editor {
       if (m_animationPreview && command != "inspect" && command != "close" && command != "set-theme"
           && command != "filter-panel" && command != "dock-panel" && command != "reset-layout"
           && command != "show-pane" && command != "set-view" && command != "navigate-view"
-          && command != "focus-view") {
+          && command != "focus-view" && command != "save-close" && command != "cancel-close") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "End animation preview before authoring or Play");
       }
 
       if (m_transform && command != "inspect" && command != "update-transform"
           && command != "finish-transform" && command != "close" && command != "set-theme"
-          && command != "filter-panel") {
+          && command != "filter-panel" && command != "cancel-close") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Finish or cancel the transform gesture first");
       }
@@ -2587,6 +3237,32 @@ namespace Dot::Editor {
           return execute("{\"command\":\"inspect\"}");
         }
 
+        if (m_animationPreview) {
+          if (m_clipDocument) {
+            auto saved = saveClip();
+
+            if (!saved) {
+              return std::unexpected(saved.error());
+            }
+          }
+
+          auto saved = m_document->save(m_document->stats()->revision);
+
+          if (!saved) {
+            return std::unexpected(saved.error());
+          }
+
+          auto refreshed = refresh();
+
+          if (!refreshed) {
+            return Core::fail(
+                refreshed.error().code,
+                "Authoring data saved; snapshot refresh failed: " + refreshed.error().message);
+          }
+
+          return execute("{\"command\":\"close\",\"discard\":false}");
+        }
+
         auto stopped = stopPlay();
 
         if (!stopped) {
@@ -2865,8 +3541,8 @@ namespace Dot::Editor {
         const auto pane = parsed["pane"].get<std::string>();
 
         if (pane != "scene" && pane != "environment" && pane != "rendering" && pane != "resources"
-            && pane != "inspector" && pane != "viewport" && pane != "console"
-            && pane != "skeleton") {
+            && pane != "inspector" && pane != "viewport" && pane != "console" && pane != "skeleton"
+            && pane != "animation") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -3041,10 +3717,16 @@ namespace Dot::Editor {
         if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
              || pendingOcclusion() || pendingText() || m_transform)
             && !discard) {
+          if (!m_pendingClose) {
+            m_message.clear();
+          }
+
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
           m_animationPreview.reset();
+          m_clipDocument.reset();
+          m_clipForm = m_clipOriginal = nullptr;
           m_transform.reset();
           m_axisDrag.reset();
           m_rotationDrag.reset();
@@ -3201,6 +3883,7 @@ namespace Dot::Editor {
             {"propertiesInvalid", m_propertiesInvalid},
             {"play", playStatus()},
             {"animationPreview", animationStatus()},
+            {"animationClip", clipStatus()},
             {"skeleton", skeletonStatus()},
             {"view", viewStatus()},
             {"capture", captureStatus()},
@@ -5423,8 +6106,12 @@ namespace Dot::Editor {
 
       ImGui::EndDisabled();
 
-      if (nextButton("End preview")) {
-        command({{"action", "end"}});
+      if (nextButton(m_clipDocument ? "Close clip" : "End preview")) {
+        if (m_clipDocument) {
+          clipAction({{"command", "close-animation"}, {"discard", false}});
+        } else {
+          command({{"action", "end"}});
+        }
         return;
       }
 
@@ -5432,7 +6119,13 @@ namespace Dot::Editor {
         action({{"command", "focus-view"}, {"entity", std::to_string(state->owner)}});
       }
 
+      if (m_clipDocument) {
+        return;
+      }
+
       ImGui::BeginDisabled(state->error.has_value());
+
+      ImGui::BeginDisabled(m_clipDocument.has_value());
 
       if (PropertyRow row{"Play clip"};
           row.visible() && ImGui::BeginCombo("##value", state->player.asset.c_str())) {
@@ -5444,6 +6137,8 @@ namespace Dot::Editor {
 
         ImGui::EndCombo();
       }
+
+      ImGui::EndDisabled();
 
       double time = state->player.playback.time;
       const double zero = 0;
@@ -5833,6 +6528,11 @@ namespace Dot::Editor {
     }
 
     auto historyAvailable(bool redo) const -> bool {
+      if (m_clipDocument) {
+        auto state = m_clipDocument->snapshot();
+        return state && m_clipForm == m_clipOriginal && (redo ? state->canRedo : state->canUndo);
+      }
+
       if (m_material) {
         const auto state = materialStatus();
         return state["draft"] == state["value"] && state[redo ? "canRedo" : "canUndo"].get<bool>();
@@ -5843,7 +6543,9 @@ namespace Dot::Editor {
     }
 
     auto focusedSave() -> void {
-      if (m_material) {
+      if (m_clipDocument) {
+        clipAction({{"command", "save-animation-clip"}});
+      } else if (m_material) {
         fileAction({{"command", "save-material"}});
       } else if (applyInspector()) {
         action({{"command", "save"}});
@@ -5851,7 +6553,9 @@ namespace Dot::Editor {
     }
 
     auto focusedHistory(bool redo) -> void {
-      if (m_material) {
+      if (m_clipDocument) {
+        clipAction({{"command", redo ? "redo-animation-clip" : "undo-animation-clip"}});
+      } else if (m_material) {
         fileAction({{"command", redo ? "redo-material" : "undo-material"}});
       } else {
         action({{"command", redo ? "redo" : "undo"}});
@@ -5866,8 +6570,11 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("DotEngine");
 
       if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem(m_material ? "Save material" : "Save scene", nullptr, false,
-                            !playing() && !m_animationPreview)) {
+        if (ImGui::MenuItem(m_clipDocument ? "Save animation"
+                            : m_material   ? "Save material"
+                                           : "Save scene",
+                            nullptr, false,
+                            !playing() && (!m_animationPreview || m_clipDocument))) {
           focusedSave();
         }
 
@@ -5900,13 +6607,15 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem("Undo", nullptr, false,
-                            !playing() && !m_animationPreview && historyAvailable(false))) {
+        if (ImGui::MenuItem(
+                "Undo", nullptr, false,
+                !playing() && (!m_animationPreview || m_clipDocument) && historyAvailable(false))) {
           focusedHistory(false);
         }
 
-        if (ImGui::MenuItem("Redo", nullptr, false,
-                            !playing() && !m_animationPreview && historyAvailable(true))) {
+        if (ImGui::MenuItem(
+                "Redo", nullptr, false,
+                !playing() && (!m_animationPreview || m_clipDocument) && historyAvailable(true))) {
           focusedHistory(true);
         }
 
@@ -5926,7 +6635,8 @@ namespace Dot::Editor {
              {std::pair{"Hierarchy", "scene"}, std::pair{"Scene", "viewport"},
               std::pair{"Inspector", "inspector"}, std::pair{"Environment", "environment"},
               std::pair{"Rendering", "rendering"}, std::pair{"Assets", "resources"},
-              std::pair{"Skeleton", "skeleton"}, std::pair{"Console", "console"}}) {
+              std::pair{"Skeleton", "skeleton"}, std::pair{"Animation", "animation"},
+              std::pair{"Console", "console"}}) {
           if (ImGui::MenuItem(label)) {
             sessionAction({{"command", "show-pane"}, {"pane", pane}});
           }
@@ -6013,6 +6723,10 @@ namespace Dot::Editor {
 
       if (panel == "skeleton") {
         return "Skeleton";
+      }
+
+      if (panel == "animation") {
+        return "Animation";
       }
 
       return "Assets";
@@ -6200,6 +6914,373 @@ namespace Dot::Editor {
       ImGui::EndChild();
     }
 
+    auto animationKeyProperties() -> void {
+      auto state = m_clipDocument->snapshot();
+
+      if (!state) {
+        ImGui::TextWrapped("%s", state.error().message.c_str());
+        return;
+      }
+
+      const auto* value = state->value.description().value();
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      constexpr std::array modes{"step", "linear", "cubic"};
+      auto selected
+          = m_clipForm.is_null()
+                ? value->tracks.end()
+                : std::ranges::find_if(value->tracks, [&](const auto& track) {
+                    return m_clipForm["node"] == track.node
+                           && m_clipForm["path"] == paths.at(static_cast<std::size_t>(track.path));
+                  });
+      ImGui::TextWrapped("Animation key / %s", value->name.c_str());
+      const auto vectorField = [](const char* label, Math::Vec4& vector, bool rotation) -> bool {
+        ImGui::TextUnformatted(label);
+        ImGui::PushID(label);
+        const std::array components{&vector.x, &vector.y, &vector.z, &vector.w};
+        constexpr std::array labels{"X", "Y", "Z", "W"};
+        bool changed{};
+
+        for (std::size_t i = 0; i < (rotation ? 4U : 3U); ++i) {
+          ImGui::PushID(static_cast<int>(i));
+          ImGui::TextUnformatted(labels[i]);
+          ImGui::SameLine();
+          ImGui::SetNextItemWidth(-1);
+          changed |= ImGui::InputFloat("##component", components[i], 0, 0, "%.9g");
+          ImGui::PopID();
+        }
+
+        ImGui::PopID();
+        return changed;
+      };
+
+      if (!m_clipForm.is_null()) {
+        const auto node = clipIndex(m_clipForm["node"]);
+        const auto binding = m_clipBindings.find(node);
+        const auto jointLabel = binding == m_clipBindings.end()
+                                    ? "Unbound node " + std::to_string(node)
+                                    : binding->second.second + " (" + std::to_string(node) + ")";
+        ImGui::TextWrapped("%s / %s", jointLabel.c_str(),
+                           m_clipForm["path"].get<std::string>().c_str());
+        auto form = m_clipForm;
+        auto key = clipKey(form["key"]);
+        bool changed{};
+        ImGui::TextUnformatted("Time (s)");
+        ImGui::SetNextItemWidth(-1);
+        changed |= ImGui::InputFloat("##key-time", &key.time, 0, 0, "%.9g");
+        const bool rotation = form["path"] == "rotation";
+        changed |= vectorField(rotation ? "Value XYZW" : "Value XYZ", key.value, rotation);
+
+        if (form["interpolation"] == "cubic") {
+          for (auto [label, tangent] : {std::pair{"In tangent", &key.inTangent},
+                                        std::pair{"Out tangent", &key.outTangent}}) {
+            changed |= vectorField(label, *tangent, rotation);
+          }
+        }
+
+        if (changed) {
+          form["key"] = keyJson(key);
+          clipAction({{"command", "stage-animation-key"}, {"value", std::move(form)}});
+        }
+
+        if (ImGui::Button("Insert / replace key")) {
+          clipAction({{"command", "apply-animation-key"}});
+        }
+
+        if (ImGui::Button("Reset key form")) {
+          clipAction({{"command", "reset-animation-key"}});
+        }
+
+        ImGui::BeginDisabled(m_clipForm != m_clipOriginal);
+
+        if (ImGui::Button("Key at playhead")) {
+          clipAction({{"command", "select-animation-key"},
+                      {"node", m_clipForm["node"]},
+                      {"path", m_clipForm["path"]},
+                      {"time", nullptr}});
+        }
+
+        if (selected != value->tracks.end()) {
+          int mode = static_cast<int>(selected->interpolation);
+          ImGui::TextUnformatted("Interpolation");
+          ImGui::SetNextItemWidth(-1);
+
+          if (ImGui::Combo("##key-interpolation", &mode, modes.data(),
+                           static_cast<int>(modes.size()))) {
+            clipAction(
+                {{"command", "edit-animation-clip"},
+                 {"operations",
+                  Json::array({{{"op", "set-interpolation"},
+                                {"node", selected->node},
+                                {"path", m_clipForm["path"]},
+                                {"interpolation", modes.at(static_cast<std::size_t>(mode))}}})}});
+          }
+
+          const bool hasKey = !m_clipOriginal.is_null()
+                              && std::ranges::any_of(selected->keys, [&](const auto& item) {
+                                   return m_clipOriginal["key"]["time"] == item.time;
+                                 });
+          ImGui::BeginDisabled(!hasKey);
+
+          if (ImGui::Button("Delete key")) {
+            clipAction({{"command", "edit-animation-clip"},
+                        {"operations", Json::array({{{"op", "remove-key"},
+                                                     {"node", selected->node},
+                                                     {"path", m_clipForm["path"]},
+                                                     {"time", m_clipOriginal["key"]["time"]}}})}});
+          }
+
+          ImGui::EndDisabled();
+
+          if (ImGui::Button("Delete track")) {
+            clipAction({{"command", "edit-animation-clip"},
+                        {"operations", Json::array({{{"op", "remove-track"},
+                                                     {"node", selected->node},
+                                                     {"path", m_clipForm["path"]}}})}});
+          }
+        }
+
+        ImGui::EndDisabled();
+      }
+
+      ImGui::Separator();
+      ImGui::TextWrapped("New channel from a bound node's current pose");
+      ImGui::TextUnformatted("Node");
+      ImGui::SetNextItemWidth(-1);
+      const auto selectedNode = m_clipBindings.find(static_cast<std::uint32_t>(m_clipNewNode));
+      const auto nodeLabel = selectedNode == m_clipBindings.end() ? std::string("Choose node")
+                                                                  : selectedNode->second.second;
+
+      if (ImGui::BeginCombo("##new-key-node", nodeLabel.c_str())) {
+        for (const auto& [node, binding] : m_clipBindings) {
+          const auto name = std::to_string(node) + " / " + binding.second;
+          ImGui::PushID(static_cast<int>(node));
+
+          if (ImGui::Selectable(name.c_str(), static_cast<int>(node) == m_clipNewNode)) {
+            m_clipNewNode = static_cast<int>(node);
+          }
+
+          ImGui::PopID();
+        }
+
+        ImGui::EndCombo();
+      }
+      ImGui::TextUnformatted("Path");
+      ImGui::SetNextItemWidth(-1);
+      ImGui::Combo("##new-key-path", &m_clipNewPath, paths.data(), static_cast<int>(paths.size()));
+      ImGui::BeginDisabled(m_clipNewNode < 0 || m_clipNewNode > 9999);
+
+      if (ImGui::Button("Prepare new key")) {
+        clipAction({{"command", "select-animation-key"},
+                    {"node", static_cast<std::uint32_t>(m_clipNewNode)},
+                    {"path", paths.at(static_cast<std::size_t>(m_clipNewPath))},
+                    {"time", nullptr}});
+      }
+
+      ImGui::EndDisabled();
+    }
+
+    auto animationPanel() -> void {
+      if (!m_clipDocument) {
+        ImGui::TextWrapped("Select an animation player in Inspector, then Edit animation clip.");
+        return;
+      }
+
+      auto state = m_clipDocument->snapshot();
+      auto preview = m_animationPreview->stats();
+
+      if (!state || !preview) {
+        ImGui::TextWrapped("%s", (!state ? state.error() : preview.error()).message.c_str());
+        return;
+      }
+
+      const auto* value = state->value.description().value();
+      const bool pending = m_clipForm != m_clipOriginal;
+      const auto nextButton = [](const char* label) -> bool {
+        const auto width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
+        ImGui::SameLine();
+
+        if (ImGui::GetContentRegionAvail().x < width) {
+          ImGui::NewLine();
+        }
+
+        return ImGui::Button(label);
+      };
+      ImGui::BeginDisabled(pending);
+
+      if (ImGui::Button("Save clip")) {
+        clipAction({{"command", "save-animation-clip"}});
+      }
+
+      ImGui::BeginDisabled(!state->canUndo);
+
+      if (nextButton("Undo clip")) {
+        clipAction({{"command", "undo-animation-clip"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(!state->canRedo);
+
+      if (nextButton("Redo clip")) {
+        clipAction({{"command", "redo-animation-clip"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+
+      if (nextButton("Playback options")) {
+        ImGui::OpenPopup("Clip playback options");
+      }
+
+      if (ImGui::BeginPopup("Clip playback options")) {
+        double speed = preview->player.playback.speed;
+        bool loop = preview->player.playback.looping;
+        bool changed = ImGui::InputDouble("Speed", &speed, .1, 1, "%.3f");
+        changed |= ImGui::Checkbox("Loop", &loop);
+
+        if (changed) {
+          sessionAction({{"command", "control-animation-preview"},
+                         {"session", std::to_string(m_animationSession)},
+                         {"action", "configure"},
+                         {"speed", speed},
+                         {"looping", loop}});
+        }
+
+        ImGui::EndPopup();
+      }
+
+      if (nextButton("Close clip")) {
+        if (clipAction({{"command", "close-animation"}, {"discard", false}})) {
+          return;
+        }
+      }
+
+      if (state->dirty || pending) {
+        if (nextButton("Discard and close")) {
+          if (clipAction({{"command", "close-animation"}, {"discard", true}})) {
+            return;
+          }
+        }
+      }
+
+      ImGui::TextWrapped("%s / %s%s", state->path.c_str(), value->name.c_str(),
+                         pending        ? " / Unapplied key"
+                         : state->dirty ? " / Unsaved"
+                                        : " / Saved");
+      float time = static_cast<float>(preview->player.playback.time);
+      ImGui::SetNextItemWidth(-1);
+
+      if (ImGui::SliderFloat("##clip-time", &time, 0, static_cast<float>(preview->player.duration),
+                             "%.6f s")) {
+        sessionAction({{"command", "control-animation-preview"},
+                       {"session", std::to_string(m_animationSession)},
+                       {"action", "seek"},
+                       {"seconds", time}});
+      }
+
+      if (!ImGui::BeginTable("Animation editor", 2,
+                             ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+        return;
+      }
+
+      ImGui::TableSetupColumn("Tracks", ImGuiTableColumnFlags_WidthStretch, .25F);
+      ImGui::TableSetupColumn("Keys", ImGuiTableColumnFlags_WidthStretch, .25F);
+      ImGui::TableHeadersRow();
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      const auto height = std::max(100.F, ImGui::GetContentRegionAvail().y);
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      ImGui::BeginChild("Animation tracks", {0, height});
+
+      if (m_clipTrackScroll && !m_clipForm.is_null()) {
+        auto track = std::ranges::find_if(value->tracks, [&](const auto& item) {
+          return m_clipForm["node"] == item.node
+                 && m_clipForm["path"] == paths.at(static_cast<std::size_t>(item.path));
+        });
+
+        if (track != value->tracks.end()) {
+          ImGui::SetScrollY(static_cast<float>(track - value->tracks.begin())
+                            * ImGui::GetTextLineHeightWithSpacing());
+        }
+
+        m_clipTrackScroll = false;
+      }
+
+      ImGuiListClipper tracks;
+      tracks.Begin(static_cast<int>(value->tracks.size()));
+
+      while (tracks.Step()) {
+        for (int i = tracks.DisplayStart; i < tracks.DisplayEnd; ++i) {
+          const auto& track = value->tracks[static_cast<std::size_t>(i)];
+          const auto* path = paths.at(static_cast<std::size_t>(track.path));
+          const auto label = std::to_string(track.node) + " / "
+                             + m_clipBindings.at(track.node).second + " / " + path;
+          const bool selected = !m_clipForm.is_null() && m_clipForm["node"] == track.node
+                                && m_clipForm["path"] == path;
+
+          ImGui::PushID(i);
+
+          if (ImGui::Selectable(label.c_str(), selected)) {
+            clipAction({{"command", "select-animation-key"},
+                        {"node", track.node},
+                        {"path", path},
+                        {"time", track.keys.front().time}});
+          }
+
+          ImGui::PopID();
+        }
+      }
+
+      ImGui::EndChild();
+      ImGui::TableSetColumnIndex(1);
+      auto selected
+          = m_clipForm.is_null()
+                ? value->tracks.end()
+                : std::ranges::find_if(value->tracks, [&](const auto& track) {
+                    return m_clipForm["node"] == track.node
+                           && m_clipForm["path"] == paths.at(static_cast<std::size_t>(track.path));
+                  });
+      ImGui::BeginChild("Animation keys", {0, height});
+
+      if (selected != value->tracks.end()) {
+        if (m_clipKeyScroll && !m_clipOriginal.is_null()) {
+          auto key = std::ranges::find_if(selected->keys, [&](const auto& item) {
+            return m_clipOriginal["key"]["time"] == item.time;
+          });
+
+          if (key != selected->keys.end()) {
+            ImGui::SetScrollY(static_cast<float>(key - selected->keys.begin())
+                              * ImGui::GetTextLineHeightWithSpacing());
+          }
+
+          m_clipKeyScroll = false;
+        }
+
+        ImGuiListClipper keys;
+        keys.Begin(static_cast<int>(selected->keys.size()));
+
+        while (keys.Step()) {
+          for (int i = keys.DisplayStart; i < keys.DisplayEnd; ++i) {
+            const auto& key = selected->keys[static_cast<std::size_t>(i)];
+            char label[64];
+            std::snprintf(label, sizeof(label), "%.6g s##%d", static_cast<double>(key.time), i);
+
+            if (ImGui::Selectable(label, !m_clipOriginal.is_null()
+                                             && m_clipOriginal["key"]["time"] == key.time)) {
+              clipAction({{"command", "select-animation-key"},
+                          {"node", selected->node},
+                          {"path", paths.at(static_cast<std::size_t>(selected->path))},
+                          {"time", key.time}});
+            }
+          }
+        }
+      } else {
+        ImGui::TextWrapped("Select a track to inspect its keys.");
+      }
+
+      ImGui::EndChild();
+      ImGui::EndTable();
+    }
+
     auto draw() -> Core::Result<void> {
       applyTheme();
       const auto stats = m_document->stats().value();
@@ -6210,6 +7291,23 @@ namespace Dot::Editor {
                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
                        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
       menuBar();
+
+      if (m_clipDocument) {
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
+          focusedSave();
+        }
+
+        if (!ImGui::GetIO().WantTextInput
+            && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal)) {
+          focusedHistory(false);
+        }
+
+        if (!ImGui::GetIO().WantTextInput
+            && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z,
+                               ImGuiInputFlags_RouteGlobal)) {
+          focusedHistory(true);
+        }
+      }
 
       ImGui::BeginDisabled(playing() || m_animationPreview.has_value());
 
@@ -6358,6 +7456,7 @@ namespace Dot::Editor {
         ImGui::DockBuilderDockWindow("Skeleton", inspector);
         ImGui::DockBuilderDockWindow("Assets", assets);
         ImGui::DockBuilderDockWindow("Console", assets);
+        ImGui::DockBuilderDockWindow("Animation", assets);
         ImGui::DockBuilderFinish(dock);
         ImGui::DockBuilderGetNode(inspector)->SelectedTabId = ImHashStr("Inspector");
         ImGui::DockBuilderGetNode(assets)->SelectedTabId = ImHashStr("Assets");
@@ -6505,29 +7604,39 @@ namespace Dot::Editor {
       ImGui::End();
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
-        ImGui::BeginDisabled(playing() || m_transform.has_value()
-                             || m_animationPreview.has_value());
-        ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
-        if (m_material) {
-          materialInspector();
-        } else if (!m_selectedResource.empty() && assetPreviewKind(m_selectedResource)) {
-          assetInspector();
+        if (m_clipDocument) {
+          animationKeyProperties();
         } else {
-          inspector();
-        }
-        ImGui::EndDisabled();
-        ImGui::EndDisabled();
-
-        if (!playing() && !m_animationPreview && !m_transform && m_editEntity
-            && m_edit.contains("animation") && !m_edit["animation"].is_null()) {
-          ImGui::BeginDisabled(pendingInspector() || pendingText() || pendingEnvironment()
-                               || pendingOcclusion());
-
-          if (ImGui::Button("Preview animation")) {
-            action({{"command", "preview-animation"}, {"entity", std::to_string(*m_editEntity)}});
+          ImGui::BeginDisabled(playing() || m_transform.has_value()
+                               || m_animationPreview.has_value());
+          ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
+          if (m_material) {
+            materialInspector();
+          } else if (!m_selectedResource.empty() && assetPreviewKind(m_selectedResource)) {
+            assetInspector();
+          } else {
+            inspector();
           }
-
           ImGui::EndDisabled();
+          ImGui::EndDisabled();
+
+          if (!playing() && !m_animationPreview && !m_transform && m_editEntity
+              && m_edit.contains("animation") && !m_edit["animation"].is_null()) {
+            ImGui::BeginDisabled(pendingInspector() || pendingText() || pendingEnvironment()
+                                 || pendingOcclusion());
+
+            if (ImGui::Button("Preview animation")) {
+              action({{"command", "preview-animation"}, {"entity", std::to_string(*m_editEntity)}});
+            }
+
+            if (ImGui::Button("Edit animation clip")) {
+              action({{"command", "open-animation"},
+                      {"entity", std::to_string(*m_editEntity)},
+                      {"clip", m_edit["animation"]["clip"]}});
+            }
+
+            ImGui::EndDisabled();
+          }
         }
       }
 
@@ -6547,6 +7656,12 @@ namespace Dot::Editor {
 
       if (beginPanel("Skeleton", "skeleton", "skeleton")) {
         skeletonPanel();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Animation", "animation", "animation")) {
+        animationPanel();
       }
 
       ImGui::End();
@@ -6620,13 +7735,29 @@ namespace Dot::Editor {
       if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Save changes before closing?");
 
+        if (m_clipDocument) {
+          ImGui::TextWrapped("Animation: %s", m_clipDocument->snapshot()->path.c_str());
+
+          if (m_clipForm != m_clipOriginal) {
+            ImGui::TextWrapped("Cancel to apply or reset the key form before saving.");
+          }
+        }
+
+        if (!m_message.empty()) {
+          ImGui::TextWrapped("%s", m_message.c_str());
+        }
+
         if (!m_pendingClose) {
           ImGui::CloseCurrentPopup();
         }
 
+        ImGui::BeginDisabled(m_clipDocument && m_clipForm != m_clipOriginal);
+
         if (ImGui::Button("Save and close")) {
           action({{"command", "save-close"}});
         }
+
+        ImGui::EndDisabled();
 
         ImGui::SameLine();
 
@@ -6663,8 +7794,13 @@ namespace Dot::Editor {
           return false;
         }
 
+        const bool wasPending = m_pendingClose;
         m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
                          || pendingOcclusion() || pendingText() || m_transform.has_value();
+
+        if (m_pendingClose && !wasPending) {
+          m_message.clear();
+        }
 
         if (!m_pendingClose) {
           auto stopped = stopPlay();
@@ -6752,7 +7888,7 @@ namespace Dot::Editor {
       callbacks.render = [&](const auto& frame) -> Core::Result<void> {
         if (playing() && m_play->stats()->state == PlayState::Running) {
           auto advanced = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured);
-          auto remembered = remember();
+          auto remembered = rememberPlayFrame();
 
           if (!remembered) {
             return remembered;

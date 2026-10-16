@@ -15,6 +15,7 @@ module;
 module Dot.Editor.AnimationPreview;
 
 import Dot.Animation.ScenePlayers;
+import Dot.Assets.SceneSkins;
 import Dot.Core.Result;
 import Dot.World.SceneFiles;
 
@@ -163,6 +164,12 @@ namespace Dot::Editor {
 
       if (!posed) {
         return std::unexpected(posed.error());
+      }
+
+      auto skins = Assets::validateSceneSkins(assets, *scene);
+
+      if (!skins) {
+        return std::unexpected(skins.error());
       }
 
       auto impl = std::make_unique<Impl>(std::move(scene), std::move(*players), handle, source.id(),

@@ -6,8 +6,10 @@ logical node indices to live scene-scoped entity handles. This foundation is usa
 by native engine consumers. glTF/GLB node animations now
 convert to these clips and native model bindings. Saved animation players now run
 through GameSession, editor Play and native exports. TypeScript playback controls
-are available through the engine-owned SDK. Isolated editor audition now supports playback and time scrubbing; keyframe authoring
-remains unfinished.
+are available through the engine-owned SDK. Isolated editor audition supports playback
+and time scrubbing; existing library clips now support native keyframe editing,
+preview, save and undo in the editor. Production curve/graph and binding workflows
+remain unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
 isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
 offscreen skinned-GPU regression tests. Library/SDK transitions now run in editor Play and
@@ -145,8 +147,8 @@ an existing destination. This does not isolate hostile filesystem races.
 The editor import command reports `model`, `animations` and its existing scene/
 geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
 Add model to scene remaps and retains the saved animation player and its node IDs.
-GameSession/editor Play/native exports automatically play the selected clip. Editor
-keyframe timeline authoring remains unfinished.
+GameSession/editor Play/native exports automatically play the selected clip. Existing
+library clips can be edited through the editor's animation track/key workflow.
 
 ## Saved animation players
 
@@ -166,7 +168,7 @@ all of a copied player's targets to be included, ensuring independent instances.
 Undo/redo/save and cloned editor Play preserve descriptions; Stop re-presents the
 unmodified authoring scene. Inspector supports selected clip, speed, loop, auto-play,
 enabled and clip-asset choices. Node bindings come from model import or native/
-automation authoring; visual binding and keyframe editing remain unfinished. See the isolated audition
+automation authoring; visual binding tools remain unfinished. See the isolated audition
 workflow in [editor operations](Editor.md#isolated-animation-audition--独立动画预览).
 
 `Dot.Animation.ScenePlayers` owns a shared scene and playback instances. Each
@@ -271,7 +273,7 @@ channels until completion or explicit cancellation succeeds. Competing players a
 rigid-body ancestors reject controls before mutation. Failed samples retain all
 clocks, poses and reservations. Once retired, outgoing-only entities can be owned
 by other players; stopping the new clip cannot overwrite those released entities.
-Saved player descriptions are unchanged. Visual transition/timeline authoring and
+Saved player descriptions are unchanged. Visual transition/curve authoring and
 populated-game scale remain unfinished.
 
 ## Keyframe editing data and resource drafts
@@ -317,12 +319,15 @@ load their actual disk assets.
 
 AnimationPreview accepts an optional decoded draft from the selected player's library,
 selects that library slot only in its isolated clone, and exposes the draft asset in its
-native snapshot. All other player/library validation remains active. Playback, seeking,
+native snapshot. Enabled skins are CPU-validated at the initial sampled pose before
+publishing a preview. All other player/library validation remains active. Playback, seeking,
 clip switching and skinning use the ordinary native implementation and retain the draft
-after source assets retire. This foundation is available to native consumers; editor
-timeline controls and the integrated save/preview/undo workflow remain to be connected.
+after source animation assets retire. The editor connects these foundations to track/
+key selection, staged values/tangents, atomic candidate preview, save/history and strict
+agent operations; see [animation clip editing](Editor.md#animation-clip-editing).
 
 关键帧编辑按节点/路径/精确 float 时间执行有界原子批次，最终统一通过原生片段校验。
 动画资源草稿复用现有资源保存约束，支持精确字节撤销、版本检查、双重历史预算及磁盘冲突。
-预览通过原生播放器持有不可变解码草稿，不创建临时文件，也不改写编辑场景。当前交付是
-编辑数据、保存和预览底层，时间轴产品界面及完整同源智能体操作仍需接入。
+预览通过原生播放器持有不可变解码草稿，不创建临时文件，也不改写编辑场景。编辑器已
+接入轨道/关键帧选择、值与切线草稿、候选姿态预检、保存/历史及同源智能体操作；曲线/
+状态图、视觉绑定和生产规模验证仍待完成。

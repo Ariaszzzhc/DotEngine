@@ -6340,3 +6340,85 @@ documentation state precisely what assembled versus submitted data means. Format
 and whitespace checks pass for the two renderer files and GUI test. Only arm64 macOS
 is executed, with no dependency/compiler/linker or platform-target changes. Animation
 editor workflow verification continues separately; test counts do not prove its UI.
+
+
+## 2026-10-16 — Integrated animation clip editing
+
+The editor now opens an existing enabled player's library clip as a typed animation
+resource document, with an isolated native draft preview. The docked Animation panel
+provides named tracks, clipped key lists, time scrubbing, save/history, playback options
+and explicit close/discard. Inspector edits local key time/value and cubic tangents,
+prepares a key from a real bound node's current pose and supports channel interpolation/
+removal. Component rows retain readable float precision in narrow panels; selected
+tracks/keys scroll into view. Existing File/Edit menus and save/history shortcuts route
+to the animation document. Visual binding, curve/dope-sheet and state/layer tooling are
+still unfinished; this workflow edits existing bound library assets.
+
+The GUI calls the same strict product operations exposed to agents. Queries use bounded
+pages (1..256); mutations require observed buffer/resource revision and exact shapes.
+Source document revision/history are independent. Staged forms canonicalize float32
+values and require explicit apply/reset before selection/history/save. Invalid candidates
+retain the form, old draft/history/preview/clock/session and disk. Native clip edits and
+undo/redo preflight a new isolated scene against actual bindings, writer/physics authority
+and enabled skins at both initial and retained-current samples before committing history.
+Successful edits retain speed/looping/playing and clamp time to the new duration; new
+scene/session identities invalidate old controls. Semantic no-ops retain session/revision
+without asset reload. Saving reuses resource baseline/conflict checks and reports any
+post-save catalog failure as already saved; destruction never saves.
+
+Actual product verification uses an independent ignored copy of PrismRelay and the real
+editor CLI/JSON mailbox. Its 1,492,781-byte Idle asset, 65-joint character, 195 channels
+and 14,820 keys open without changing source or disk. Editing Head translation changes
+the native cloned pose; undo/redo restores the actual poses, save/reopen reads changed
+bytes, and later Play uses the saved asset. Fifteen product agent W-input frames produce
+measured character displacement; Stop preserves the authoring scene. The earlier physical
+W-input observation was Chinese IME interception, not evidence of a movement failure.
+Bad page limits/offsets, stale buffers/revisions/sessions, unbound nodes, singular scales,
+dirty-close/end, unapplied forms and external-file conflicts preserve the appropriate
+state. Exact .0125 input round-trips to its native float32 key identity. Key insertion/
+removal, cubic conversion/tangents, no-op edits, CJK names, reverse/non-looping clock and
+playing-state retention are exercised. Frozen viewport capture survives later close;
+1480x906 dark/light captures retain identical scene pixels and independent GUI themes.
+Computer-use observations check named track scrolling, readable component/tangent rows
+and the actual unsaved modal. An unchanged computer-use Save-and-close click is not
+counted as successful interaction; product operations provide the verified close path.
+
+Verification reveals and corrects several real issues. Initial compilation catches a
+missing direct ClipAsset import and a shadowed label. An investigation-client assertion
+incorrectly compares a Python double to float32 exactly; corrected with native precision.
+A finite legal clip can exceed supported skin matrix range: initially accepted, now
+rejected before publishing initial/current preview poses. A durable file-only regression
+uses an actual CPU skin binding and verifies prior preview/source preservation, without
+creating a window or rendering device. GUI callback inspection is fixed and tested in
+the separate preceding commit. Animation-mode guards initially block cancel/save-close;
+now Cancel retains the draft/history/form and conflicts remain retryable in the modal.
+
+The first save-close attempt saves data but then mistakenly calls the Play-report helper
+instead of document refresh, so exit fails in a never-Play session. This is corrected to
+refresh the authoring snapshot; the helper is renamed rememberPlayFrame and explicitly
+rejects absent Play state. Final actual verification starts without Play, dirties a real
+floor transform and the animation resource, then uses the shared save-close operation.
+The animation name persists and the saved scene exactly equals the intended authoring
+snapshot, proving that posed preview transforms were not baked. The control directory
+retires and computer-use inventory confirms the application is no longer running.
+The final launcher's exit code is not observed; it is not claimed. Stderr contains one
+macOS IMKCFRunLoopWakeUpReliable mach-port diagnostic, with no product error observed.
+The failed earlier save-close receipt and successful final disk assertions are retained
+only in ignored build observations.
+
+Final current-source arm64 macOS Debug passes 1082/1082 (151.53s), Release/NDEBUG passes
+1082/1082 (22.20s). There are 282 unit and 800 integration cases; overlapping subsets
+include 125 offscreen GPU, 27 native audio and 28 SDL-dummy platform cases. No automated
+check opens a desktop window and no dedicated visual probe executable is added. The
+four changed C++ files pass clang-format and diff whitespace checks pass. Review covers
+ownership/snapshot lifetime, module direction, preflight-before-history publication,
+revision/no-op/conflict behavior, staged forms, source/preview isolation, pending-close
+recovery and shared agent/GUI paths. No dependencies, compiler/linker environment or
+supported platform targets change; Windows/Linux are not executed.
+
+The temporary application shell, copied project and investigation clients are removed;
+ignored observations/PNGs, build caches and existing archives remain. No distribution
+package is generated. The local specification and reference output remain untracked.
+Production animation/skeleton binding, curves, state/layers and scalability, finished
+realistic sci-fi art, streaming and populated-game performance remain open. Passing
+checks establish these contracts, not completion or production readiness of the engine.

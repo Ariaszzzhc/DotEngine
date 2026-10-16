@@ -11,6 +11,8 @@
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
 import Dot.Animation.ScenePlayers;
+import Dot.Animation.SkinFiles;
+import Dot.Math;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AnimationPreview;
@@ -290,4 +292,32 @@ TEST_CASE("scene_players.decoded_asset_boundary_rejects_unused_duplicate_and_inv
   decoded.resize(1025);
   CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
   CHECK(World::encodeScene(*scene).value() == before);
+}
+
+TEST_CASE(
+    "animation_preview.rejects_valid_clip_with_unrenderable_initial_skin_before_publication") {
+  Fixture fixture;
+  const auto mesh = fixture.source.createEntity("Skinned quad").value();
+  REQUIRE(fixture.source.setMeshRenderer(mesh, World::MeshRenderer{World::MeshKind::Quad, {}}));
+  REQUIRE(fixture.source.setSkin(
+      mesh, World::SkinBinding{"assets/quad.dotskin", {fixture.target.value}}));
+  auto skin = Animation::Skin::create(
+                  {std::vector<Math::Mat4>(1), std::vector<Animation::SkinInfluence>(4)})
+                  .value();
+  REQUIRE(Animation::saveSkin(fixture.files, "assets/quad.dotskin", skin));
+  auto original = fixture.create();
+  const auto pose = World::encodeScene(*original.scene().value()).value();
+  const auto source = World::encodeScene(fixture.source).value();
+  auto clip = Animation::Clip::create({"Beyond skin range",
+                                       {{0,
+                                         Animation::Path::Translation,
+                                         Animation::Interpolation::Linear,
+                                         {{0, {1e30F, 0, 0, 0}}, {2, {1e30F, 0, 0, 0}}}}}})
+                  .value();
+  CHECK_FALSE(
+      Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                       Animation::ClipAsset{fixture.properties.clips[0], clip}));
+  CHECK(World::encodeScene(*original.scene().value()).value() == pose);
+  CHECK(World::encodeScene(fixture.source).value() == source);
+  CHECK_FALSE(original.stats()->error);
 }

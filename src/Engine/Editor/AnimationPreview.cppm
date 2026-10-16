@@ -40,8 +40,11 @@ export namespace Dot::Editor {
     /** Require an enabled player. Start paused at the selected directional start.
      * A decoded draft must belong to its library; select it in the clone only and
      * retain it through native ScenePlayers, without temporary files or source writes.
+     * Validate enabled skins at the initial sampled pose on CPU before publication;
+     * later playback poses remain checked by the actual rendering path.
      * 要求启用的播放器，初始暂停在片段正/反向起点。可选解码草稿须属于库，仅在克隆中
-     * 选中它，通过原生播放器持有，不创建临时文件、不修改源场景。 */
+     * 选中它，通过原生播放器持有，不创建临时文件、不修改源场景。发布前以 CPU 校验
+     * 初始采样处的启用蒙皮；后续播放姿态仍由实际渲染路径检查。 */
     [[nodiscard]] static auto create(const World::Scene& source, const Core::FileSystem& assets,
                                      std::uint64_t owner,
                                      std::optional<Animation::ClipAsset> draft = {})

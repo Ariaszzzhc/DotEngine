@@ -1126,8 +1126,9 @@ auto-play disabled; inspect the ordinary document for the untouched authoring da
 
 Invalid controls preserve pose, clock and generation. Native advancement errors retain
 the last valid pose and expose a fault; End preview and recreate to recover. This is
-animation audition, without keyframe editing, visual transitions, skeleton authoring
-or retargeting. It does not pause or step a running Play session.
+animation audition. Existing-clip key editing uses the separate resource workflow
+below; visual transitions, skeleton authoring and retargeting remain unfinished.
+It does not pause or step a running Play session.
 
 Frame model uses the ordinary revision-checked `focus-view` with the player entity.
 Focus now includes visible meshes in the selected subtree, resolving IDs into the
@@ -1147,7 +1148,8 @@ Stale generations cannot be read as a current viewport frame.
 其他播放器保留编辑姿态，同时继续校验资源与写入权限。预览期间锁定编辑和 Play，结束后
 恢复完整编辑场景，选择/历史/修订/保存状态不变。所有操作共用严格 JSON 实现；检查可读取
 实际预览场景、片段、时间及绑定姿态标记，过期会话无法影响新预览。PNG 同时记录该来源，
-结束预览后仍可保存已固定的画面。本功能用于动作检查，关键帧制作、骨架与状态图工具仍待完成。
+结束预览后仍可保存已固定的画面。本功能用于动作检查；现有片段关键帧可通过下述编辑
+流程修改，骨架绑定、曲线和状态图工具仍待完成。
 
 ## Live skeleton inspection
 
@@ -1211,3 +1213,119 @@ cache. No scene data, scripts, physics or audio are started by skeleton inspecti
 关节列表/视口拾取、搜索、全骨架/单骨段取景均有同源严格 JSON 操作；场景范围避免旧请求
 影响新克隆。编辑关节复用普通文档选择和 Inspector/撤销，不代表关键帧或重定向制作工具。
 预览/Play 中保持编辑场景不变，资源失败清除旧几何并报告错误。
+
+## Animation clip editing
+
+Select an enabled animation player in Inspector and choose Edit animation clip.
+This opens its selected existing library asset in a resource document and starts an
+isolated native draft preview. The Animation tab contains named tracks, key selection
+and the playhead. Inspector edits the selected key's local TRS value/time and cubic
+in/out tangents. Component rows preserve readable float precision in narrow panels.
+Track/key selection scrolls into view. The ordinary Scene play/pause, bind-pose and
+frame-model controls remain available; Playback options provides speed/looping.
+
+Insert / replace key explicitly applies the key form: equal float time replaces a
+key, another time inserts without implicitly moving/deleting the former key. Reset
+key form discards unapplied values. Key at playhead prepares a key from that bound
+node's actual current local pose. A new channel can be prepared from any of the
+player's real bound nodes. Rotations are unit XYZW quaternions, translation/scale
+use XYZ with W=0. Scale cannot be singular. Changing interpolation explicitly clears
+tangents; cubic needs at least two keys. Delete key removes an empty track; deleting
+the last remaining channel fails because the native clip requires a channel.
+
+Save clip, Undo clip and Redo clip affect the resource document, independently of
+scene authoring history. File/Edit menus and existing save/history shortcuts route
+to the animation document while it is open. A pending key form must be applied or
+reset before save/history/selection changes. Close clip requires a clean document
+and form; Discard and close explicitly releases unsaved work. Window/project close
+uses the ordinary unsaved confirmation. No destruction implicitly saves.
+
+The unsaved confirmation names the animation resource. Cancel preserves preview,
+history and the form. Save and close uses the same animation save implementation,
+then saves only the authoring document and refreshes its snapshot before closing;
+it never serializes a posed preview as the scene. The global save-close/cancel-close
+requests use the current authoring revision. Pending key forms must first be applied
+or reset after Cancel. File conflicts retain the dialog/draft and remain retryable.
+Saving multiple workspace resources is sequential: a later scene/refresh failure may
+leave an already saved animation clean, with the preview/history retained for review.
+
+Every operation uses the same strict product implementation. The ordinary inspect
+response reports `workspace.animationClip`: buffer/path/name/resource revision,
+duration, channel/key counts, dirty/undo/redo, history states/serialized bytes, key
+form and pendingForm. The ordinary authoring revision/scene/dirty state remains
+unchanged. `workspace.animationPreview.draft` identifies the decoded asset path.
+Normal audition still supports library switching; close the editing document before
+switching to another clip. Authoring/resource changes and Play are locked until close.
+
+Open with the current authoring revision. All subsequent mutations use the observed
+animation buffer and resource revision (canonical decimal strings); inspect requires
+only the current buffer. Each JSON object below is a separate request shape. Observe
+the new resource revision/session after mutations instead of reusing earlier IDs:
+
+```json
+{"command":"open-animation","revision":"1","entity":"281","clip":0}
+{"command":"inspect-animation-clip","buffer":"1"}
+{"command":"list-animation-tracks","buffer":"1","revision":"1","offset":0,"count":64}
+{"command":"read-animation-track","buffer":"1","revision":"1","node":8,"path":"translation","offset":0,"count":64}
+{"command":"select-animation-key","buffer":"1","revision":"1","node":8,"path":"translation","time":0}
+{"command":"select-animation-key","buffer":"1","revision":"1","node":8,"path":"translation","time":null}
+{"command":"stage-animation-key","buffer":"1","revision":"1","value":{"node":8,"path":"translation","interpolation":"linear","key":{"time":0,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}}
+{"command":"apply-animation-key","buffer":"1","revision":"1"}
+{"command":"reset-animation-key","buffer":"1","revision":"1"}
+{"command":"undo-animation-clip","buffer":"1","revision":"2"}
+{"command":"redo-animation-clip","buffer":"1","revision":"3"}
+{"command":"save-animation-clip","buffer":"1","revision":"4"}
+{"command":"close-animation","buffer":"1","revision":"5","discard":false}
+```
+
+Fields are exact; unknown/duplicate/missing fields and wrong numeric types fail.
+`clip` is an unsigned native library index; `node` is a logical integer 0..9999,
+independent of world entity IDs. Track pages include actual bound entity/name, path,
+interpolation and key count. Page offsets are unsigned and cannot exceed the total;
+count is 1..256. Key pages contain exact float32 time/value/tangents. Time input is
+converted to finite native float seconds, and exact equality after conversion selects
+or replaces a key. Staged forms canonicalize those floats so values such as .0125
+round-trip to the same key. `time:null` prepares the current local pose at the playhead,
+rather than choosing an approximate nearby key. Staging checks structure/numbers;
+final key/native pose validation occurs on application and preserves the form on error.
+
+Batched edits use the same native edit layer, with 1..256 ordered operations. Supported
+operation shapes are:
+
+```json
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"rename","name":"Idle inspection"}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"put-key","node":8,"path":"translation","interpolation":"linear","key":{"time":0.25,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-key","node":8,"path":"translation","time":0.25}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-track","node":8,"path":"translation"}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"set-interpolation","node":8,"path":"translation","interpolation":"cubic"}]}
+```
+
+Path is translation/rotation/scale; interpolation is step/linear/cubic. Non-cubic keys
+require zero tangents. Batches validate the final immutable native clip. The product
+preflights the candidate against the actual authoring scene/bindings and native writer/
+physics authority before changing history. Enabled skins are CPU-validated both at the
+new preview's initial sample and the retained current sample, catching poses that are
+finite yet outside the supported skin matrix range. Failed binding/sample/skin checks
+retain the old draft/history/preview/clock/session. This preflight does not prove every
+future cubic sample or populated-scene performance.
+
+Successful content edits and history changes replace only the isolated preview clone,
+retain speed/looping/playing and clamp the old clock to a shorter new duration. Bind
+pose stays explicit. New scene/session identities invalidate old control/capture
+requests. Semantic no-ops retain revision, history/redo and preview session without
+reloading assets. Save checks exact original disk bytes before atomic replacement,
+retains history and leaves the already owned draft preview intact. Conflicts preserve
+both disk and draft; a post-save catalog failure explicitly reports that saving occurred.
+Close/reopen and later Play load the actual saved clip. Frozen PNG capture remains
+available through the ordinary scene capture operations and survives later edits/close.
+
+This workflow edits existing bound library clips. Curve/dope-sheet editing, visual
+binding/retargeting, state graphs/layers, root motion/events and production animation
+scalability remain unfinished.
+
+选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
+值和三次切线。键表单需显式应用/重置；插入与替换按原生 float 时间判断，不隐式移动旧键。
+候选片段和当前蒙皮姿态预检后才提交历史，失败保留旧草稿、姿态、时钟及会话。资源保存/
+撤销独立于场景历史，磁盘冲突不覆盖外部修改；关闭须保存或明确丢弃。所有操作有同源严格
+JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话。曲线、绑定、状态图和大规模
+动画生产能力仍待完成。
