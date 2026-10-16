@@ -4,6 +4,8 @@ module;
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
 
 export module Dot.Project.GamePackage;
 
@@ -36,12 +38,16 @@ export namespace Dot::Project {
      * files/maps/control directories are delivered, no authoring scene is saved.
      * 编译源码，暂存已校验的当前场景和有界普通资源后不替换发布；不交付源码/映射/控制
      * 目录，也不保存编辑场景。 This publishes data; executable bundling is separate.
-     * 此接口发布数据，可执行文件打包是独立步骤。 */
+     * 此接口发布数据，可执行文件打包是独立步骤。
+     * scenePath selects the exported startup path while retaining other scene
+     * files. Without an origin path, the project's startup file receives the clone.
+     * scenePath 指定导出启动路径并保留其他场景；无来源路径时将克隆写到项目启动路径。 */
     [[nodiscard]] static auto publish(const Project& project, const World::Scene& scene,
                                       const Script::TypeScriptCompiler& compiler,
                                       const Core::FileSystem& parent,
                                       const std::filesystem::path& folder,
-                                      const PackageLimits& limits = {})
+                                      const PackageLimits& limits = {},
+                                      std::optional<std::string> scenePath = std::nullopt)
         -> Core::Result<Core::FileSystem>;
     [[nodiscard]] static auto open(const Core::FileSystem& package,
                                    const PackageLimits& limits = {}) -> Core::Result<GamePackage>;

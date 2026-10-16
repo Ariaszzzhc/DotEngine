@@ -107,6 +107,9 @@
     "scene.info",
     "scene.primaryCamera.get",
     "scene.primaryListener.get",
-    "scene.rename"
+    "scene.rename",
+    "scenes.current",
+    "scenes.request",
+    "scenes.status"
   ]
 }

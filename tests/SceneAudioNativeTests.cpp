@@ -10,6 +10,7 @@
 import Dot.Audio.SceneAudio;
 import Dot.Core.Result;
 import Dot.World.Scene;
+import Dot.World.SceneFiles;
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Script.Compiler;
@@ -22,7 +23,7 @@ namespace {
       -> Dot::Script::CompiledProgram {
     REQUIRE(files.createDirectories("program/modules"));
     const auto source
-        = "import {ScriptComponent,audio} from 'dot:engine';import {invoke} from 'dot:host';"
+        = "import {ScriptComponent,audio,scenes} from 'dot:engine';import {invoke} from 'dot:host';"
           "export class Player extends ScriptComponent {prepared=audio.stats();"
           + body + "}";
     REQUIRE(files.writeTextAtomic("program/modules/player.js", source));
@@ -116,9 +117,12 @@ TEST_CASE("audio.game_session_activates_native_audio_after_start_and_releases_pr
   CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
   CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
 
-  program = compiled(files, "constructor(){super();throw new Error('preparation rejected');}");
-  CHECK_FALSE(
-      Dot::Project::GameSession::createCompiled(files, description, scene, program, config));
+  program = compiled(
+      files, "constructor(context){super(context);throw new Error('preparation rejected');}");
+  auto failedPreparation
+      = Dot::Project::GameSession::createCompiled(files, description, scene, program, config);
+  REQUIRE_FALSE(failedPreparation);
+  CHECK(failedPreparation.error().message.find("preparation rejected") != std::string::npos);
   CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
   CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
 
@@ -242,4 +246,77 @@ TEST_CASE("audio.scene_native_failed_asset_initialization_joins_worker_and_relea
     CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
     CHECK(Dot::Audio::Output::backendMemory().allocations == outputBefore.allocations);
   }
+}
+
+TEST_CASE("audio.scene_transition_prepares_new_endpoint_silently_and_releases_retired_playback") {
+  DotTest::Audio::Directory directory;
+  auto files = directory.files();
+  REQUIRE(files.createDirectories("scenes"));
+  DotTest::Audio::writeWave(files, "tone.wav", std::vector<float>(48000, 0.25F));
+  auto initial = Dot::World::Scene::create("Start").value();
+  auto actor = initial.createEntity("Player").value();
+  Dot::World::AudioSource source;
+  source.asset = "tone.wav";
+  source.voice.looping = true;
+  REQUIRE(initial.setAudioSource(actor, source));
+  REQUIRE(initial.setScript(actor, Dot::World::ScriptComponent{"player.ts", "Player"}));
+  auto target = Dot::World::decodeScene(Dot::World::encodeScene(initial).value()).value();
+  REQUIRE(target.rename("Target"));
+  REQUIRE(Dot::World::saveScene(files, "scenes/next.dotscene", target));
+  auto program
+      = compiled(files,
+                 "onStart(){invoke('observe.sample',[{phase:'start',where:scenes.current(),"
+                 "audio:audio.stats(),cursor:this.self.audioVoice.sourceFrame}]);}"
+                 "onUpdate(){invoke('observe.sample',[{phase:'update',audio:audio.stats()}]);}");
+  std::vector<Json> observations;
+  Dot::Project::GameSessionConfig config;
+  config.audioMode = Dot::Project::SessionAudio::Playback;
+  config.audio.output.volume = 0;
+  config.scripts.services.push_back(
+      {"observe.sample",
+       [&](std::string_view arguments) -> Dot::Core::Result<std::optional<std::string>> {
+         observations.push_back(Json::parse(arguments).at(0));
+         return std::nullopt;
+       }});
+  Dot::Project::Description description;
+  description.hotReload = false;
+  const auto mixerBefore = Dot::Audio::Mixer::backendMemory();
+  const auto outputBefore = Dot::Audio::Output::backendMemory();
+  auto session
+      = Dot::Project::GameSession::createCompiled(files, description, initial, program, config)
+            .value();
+  REQUIRE(session.start());
+  auto old = session.scene().value();
+  const auto id = session.requestScene("scenes/next.dotscene").value();
+  auto switched = session.update(0);
+  REQUIRE(switched);
+  REQUIRE(switched->frame.failures.empty());
+  CHECK(session.sceneRequest(id)->committed);
+  CHECK(session.scene().value()->id() != old->id());
+  REQUIRE(observations.size() == 3);
+  const auto& started = observations.back();
+  CHECK(started["where"]["path"] == "scenes/next.dotscene");
+  CHECK(started["audio"]["playback"]["state"] == "prepared");
+  CHECK(started["audio"]["playback"]["output"]["callbacks"] == "0");
+  CHECK(started["cursor"] == "0");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+  while (true) {
+    REQUIRE(session.update(0));
+    const auto& stats = observations.back()["audio"];
+    CHECK(stats["playback"]["state"] == "running");
+
+    if (std::stoull(stats["playback"]["output"]["consumedFrames"].get<std::string>()) > 0) {
+      break;
+    }
+
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  REQUIRE(session.close());
+  CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Dot::Audio::Mixer::backendMemory().allocations == mixerBefore.allocations);
+  CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
+  CHECK(Dot::Audio::Output::backendMemory().allocations == outputBefore.allocations);
 }

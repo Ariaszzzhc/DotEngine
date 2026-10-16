@@ -46,9 +46,16 @@ Lighting Studio contains a primary camera, a neutral PBR floor, copper/dielectri
 normal-mapped cubes, glass and alpha-cutout panels, HDRI IBL, SSAO, directional
 cascades, a cool point light and a warm spot light with shadows. Use Game view/Play
 for the saved camera, or Scene view to navigate and edit materials/lights. It has
-no attached gameplay scripts. Save writes the active file; Save scene as retains
-history while creating a new file. Workspace export publishes the currently open
-scene, independently of the configured startup file.
+a camera script: with Game input enabled in editor Play, L travels to the main
+showcase; L there returns to the studio.
+M toggles native mouse look in either scene. Each switch rebuilds the native game
+services at the frame boundary without changing authoring data. The Play viewport's
+Change game scene menu exposes the same operation to editor users and agents.
+A missing/invalid target keeps the current scene running and reports its failure.
+Save writes the active file; Save scene as retains
+history while creating a new file. Workspace export starts at the currently open scene's own path and preserves the
+other saved scene files, including the original project startup scene. The exported
+game can make the same L-key round trip.
 
 The studio and its floor material were authored through the actual editor's shared
 agent operations. It is a persistent capability example, not a separate rendering

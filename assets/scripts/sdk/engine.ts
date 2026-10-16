@@ -990,3 +990,32 @@ export class ScriptComponent<Properties extends object = Record<string, unknown>
   onStop(): void|Promise<void> {
   }
 }
+
+/** Frame-boundary scene replacement; request acceptance is not completion.
+ * 帧边界场景替换；请求被接受不代表加载完成。 */
+export interface SceneLocation {
+  scope: string;
+  path: string|null;
+}
+
+export interface SceneRequest {
+  id: string;
+  path: string;
+  state: 'pending'|'loading'|'succeeded'|'failed'|'cancelled';
+  committed: boolean;
+  error: {code: HostErrorCode; message: string}|null;
+}
+
+export const scenes = Object.freeze({
+  current(): SceneLocation {
+    return invoke('scenes.current', []) as SceneLocation;
+  },
+
+  request(path: string): string {
+    return invoke('scenes.request', [path]) as string;
+  },
+
+  status(id: string): SceneRequest {
+    return invoke('scenes.status', [id]) as SceneRequest;
+  }
+});

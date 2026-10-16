@@ -5,6 +5,8 @@ module;
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 
 export module Dot.Project.GameSession;
 
@@ -17,6 +19,7 @@ import Dot.Script.Compiler;
 export import Dot.Script.LiveScripts;
 export import Dot.Script.SceneScripts;
 export import Dot.Script.InputSource;
+export import Dot.Script.SceneFlow;
 export import Dot.Script.PhysicsSource;
 export import Dot.Audio.SceneAudio;
 
@@ -39,9 +42,11 @@ export namespace Dot::Project {
     std::uint32_t fixedHz;
     bool hotReload;
     std::optional<Script::SceneScriptsStats> scripts;
+    Script::SceneLocation location{};
+    std::optional<Script::SceneRequest> transition;
   };
 
-  /** Owns one freshly loaded project scene and its input, scripts, real physics,
+  /** Owns the active project scene and its input, scripts, real physics,
    * native animation and offline/native audio. No window or renderer is opened. Operations require
    * the creating thread without reentry; moves keep stable service ownership.
    * Destruction only releases resources; close invokes stop hooks and releases
@@ -60,11 +65,15 @@ export namespace Dot::Project {
         -> Core::Result<GameSession>;
     /** Clone a validated authoring scene into a fresh scope without saving or
      * borrowing it. Project resources/scripts remain rooted at the project.
-     * 克隆已校验的编辑场景到新范围，不保存也不借用源场景；资源/脚本仍以项目为根。 */
+     * A supplied origin keeps an owned initial snapshot for returns during this
+     * session, matching export of unsaved authoring content.
+     * 克隆已校验的编辑场景到新范围，不保存也不借用源场景；资源/脚本仍以项目为根。
+     * 提供来源路径时保留初始快照，返回该路径重建初始内容，与未保存内容的导出一致。 */
     [[nodiscard]] static auto createFromScene(const Project& project,
                                               const Script::TypeScriptCompiler& compiler,
                                               const World::Scene& scene,
-                                              const GameSessionConfig& config = {})
+                                              const GameSessionConfig& config = {},
+                                              std::optional<std::string> scenePath = std::nullopt)
         -> Core::Result<GameSession>;
     /** Start-ready session from an owned compiled generation, without reading
      * TypeScript or invoking a compiler. Description must disable hot reload;
@@ -83,8 +92,18 @@ export namespace Dot::Project {
     auto operator=(GameSession&&) noexcept -> GameSession&;
     ~GameSession();
 
+    /** Reacquire after update: a committed replacement publishes a new scope.
+     * Retained shared scenes stay alive but are no longer the active simulation.
+     * update 后须重新获取；提交替换发布新范围，保留的共享旧场景仍存活但不再参与模拟。 */
     [[nodiscard]] auto scene() const -> Core::Result<std::shared_ptr<World::Scene>>;
     [[nodiscard]] auto stats() const -> Core::Result<GameSessionStats>;
+    /** Queue replacement at the end of the next variable update. Acceptance is
+     * not completion; query the retained request result. Prepare failures keep the
+     * old scene running. A committed stop/start failure faults the new session.
+     * 下一变动帧末尾替换场景；接受不等于完成，须查询请求结果。准备失败保留旧场景；
+     * 提交后的停止/启动失败使新会话故障。 */
+    [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false)
         -> Core::Result<std::uint64_t>;
     /** Script request only; the native frontend owns focus/capture policy and
@@ -94,12 +113,15 @@ export namespace Dot::Project {
     [[nodiscard]] auto start() -> Core::Result<Script::ScriptReport>;
     /** Requires start. Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then
-     * advances animation then synchronizes audio once after all fixed steps; delta is finite [0,1].
+     * advances animation then synchronizes audio once after all fixed steps, then
+     * processes at most one scene request synchronously. New Start requests wait
+     * until the following update. Delta is finite [0,1].
      * Initial input is an empty published frame. Poll errors retain/report old scripts; individual
      * script failures are isolated/reported, realm/native failures fault the session until close.
      * Invalid deltas have no effects. There is no rollback of completed callbacks or native steps.
      * 要求已启动；固定步使脚本读取上一接触批次，再推进物理 1/fixedHz；update 在全部
-     * 固定步之后分发脚本、推进原生动画并同步一次音频，时长须有限
+     * 固定步之后分发脚本、推进原生动画、同步一次音频，再同步处理至多一个场景请求；
+     * 新 Start 请求留待下一 update，时长须有限
      * [0,1]；初始输入为已发布空帧。轮询错误保留并
      * 报告旧脚本，单脚本错误隔离并报告，realm/原生失败使会话故障直至关闭；无效时长无
      * 副作用，不回滚已完成回调或原生步。 */
@@ -109,16 +131,20 @@ export namespace Dot::Project {
     [[nodiscard]] auto close() -> Core::Result<Script::ScriptReport>;
 
   private:
+    struct Origin;
     [[nodiscard]] static auto prepare(const Project& project,
                                       const Script::TypeScriptCompiler& compiler,
-                                      World::Scene scene, const GameSessionConfig& config)
+                                      World::Scene scene, const GameSessionConfig& config,
+                                      std::optional<std::string> scenePath,
+                                      std::optional<std::string> originBytes = std::nullopt)
         -> Core::Result<GameSession>;
-    [[nodiscard]] static auto prepareSession(const Core::FileSystem& assets,
-                                             Description description, World::Scene scene,
-                                             const GameSessionConfig& config,
-                                             const Script::TypeScriptCompiler* compiler,
-                                             const Script::CompiledProgram* program)
+    [[nodiscard]] static auto prepareSession(
+        const Core::FileSystem& assets, Description description, World::Scene scene,
+        const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
+        const Script::CompiledProgram* program, std::optional<std::string> scenePath,
+        const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {})
         -> Core::Result<GameSession>;
+    [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report) -> Core::Result<void>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

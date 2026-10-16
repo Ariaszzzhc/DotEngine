@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -105,7 +106,8 @@ namespace Dot::Project {
   auto GamePackage::publish(const Project& project, const World::Scene& scene,
                             const Script::TypeScriptCompiler& compiler,
                             const Core::FileSystem& parent, const Fs::path& folder,
-                            const PackageLimits& limits) -> Core::Result<Core::FileSystem> {
+                            const PackageLimits& limits, std::optional<std::string> scenePath)
+      -> Core::Result<Core::FileSystem> {
     if (!valid(limits) || folder.filename() != folder
         || !Core::isPortableRelativePath(utf(folder))) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -131,6 +133,22 @@ namespace Dot::Project {
         return std::unexpected(!files         ? files.error()
                                : !description ? description.error()
                                               : encoded.error());
+      }
+
+      if (scenePath) {
+        if (!Core::isPortableRelativePath(*scenePath) || !scenePath->ends_with(".dotscene")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Export scene path requires a portable relative .dotscene file");
+        }
+
+        for (const auto& part : path(*scenePath)) {
+          if (utf(part).starts_with(".dot-stage-")) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Export scene path uses an engine staging directory");
+          }
+        }
+
+        description->startScene = std::move(*scenePath);
       }
 
       auto program = compiler.compileProject(*files, description->scriptsDirectory);

@@ -39,8 +39,10 @@ code/modules/<relative .js/.mjs modules>
 Export compiles real TypeScript, strips trailing source-map directives, omits
 .ts/.mts/.map files, project metadata and owned staging/control
 directories. Other regular files are included with their relative names. It writes
-the supplied scene at the configured startup path and disables hot reload in the
-exported description. The compiler publishes within default load limits: 1024
+the supplied scene at its supplied origin path and uses that path as the exported
+startup scene, preserving other scene files. The editor supplies the active Document
+path for both data and native export. Library callers without an origin path use the
+project's configured startup path. Hot reload is disabled in the exported description. The compiler publishes within default load limits: 1024
 sources, 1 MiB per ESM file, 16 MiB source bytes, 32 MiB output bytes, 8192 entries.
 Default resource bounds are 8192 tree entries, 64 levels, 64 MiB per resource and
 512 MiB total resource bytes. Each manifest is limited to 1 MiB.

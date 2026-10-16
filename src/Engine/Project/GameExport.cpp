@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -292,8 +293,8 @@ namespace Dot::Project {
 
   auto exportGame(const Project& project, const World::Scene& scene,
                   const Script::TypeScriptCompiler& compiler, const RuntimeKit& runtime,
-                  const Core::FileSystem& parent, const Fs::path& folder)
-      -> Core::Result<Core::FileSystem> {
+                  const Core::FileSystem& parent, const Fs::path& folder,
+                  std::optional<std::string> scenePath) -> Core::Result<Core::FileSystem> {
     if (folder.filename() != folder || !Core::isPortableRelativePath(utf(folder))) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Game destination requires one name");
     }
@@ -311,7 +312,8 @@ namespace Dot::Project {
       return std::unexpected(copied.error());
     }
 
-    auto data = GamePackage::publish(project, scene, compiler, *copied, "game");
+    auto data
+        = GamePackage::publish(project, scene, compiler, *copied, "game", {}, std::move(scenePath));
 
     if (!data) {
       return std::unexpected(data.error());

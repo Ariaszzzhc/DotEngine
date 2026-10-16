@@ -20,7 +20,14 @@
       "name": "Studio camera",
       "parent": null,
       "rigidBody": null,
-      "script": null,
+      "script": {
+        "className": "CameraDemo",
+        "enabled": true,
+        "properties": {
+          "targetScene": "scenes/main.dotscene"
+        },
+        "source": "camera.ts"
+      },
       "skin": null,
       "transform": {
         "position": [

@@ -44,7 +44,7 @@ namespace Dot::Editor {
         : m_session(std::move(session)),
           m_stepper(std::chrono::nanoseconds{1'000'000'000 / hz}, maxUpdates),
           m_maxUpdates(maxUpdates),
-          m_stats{PlayState::Running, hz, 0, 0, {}} {
+          m_stats{PlayState::Running, hz, 0, 0, {}, {}, {}} {
     }
 
     auto check() const -> Core::Result<void> {
@@ -89,8 +89,8 @@ namespace Dot::Editor {
 
   auto PlaySession::create(const Project::Project& project,
                            const Script::TypeScriptCompiler& compiler,
-                           const World::Scene& authoring, const PlayConfig& config)
-      -> Core::Result<PlaySession> {
+                           const World::Scene& authoring, const PlayConfig& config,
+                           std::optional<std::string> scenePath) -> Core::Result<PlaySession> {
     if (config.maxUpdates == 0 || config.maxUpdates > 64) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Play update budget must be 1..64");
     }
@@ -102,8 +102,8 @@ namespace Dot::Editor {
         return std::unexpected(description.error());
       }
 
-      auto session
-          = Project::GameSession::createFromScene(project, compiler, authoring, config.session);
+      auto session = Project::GameSession::createFromScene(project, compiler, authoring,
+                                                           config.session, std::move(scenePath));
 
       if (!session) {
         return std::unexpected(session.error());
@@ -229,6 +229,26 @@ namespace Dot::Editor {
         [](const auto& scene) -> const World::Scene* { return scene.get(); });
   }
 
+  auto PlaySession::requestScene(std::string_view path) -> Core::Result<std::uint64_t> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session.requestScene(path)
+                   : Core::Result<std::uint64_t>{std::unexpected(checked.error())};
+  }
+
+  auto PlaySession::sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session.sceneRequest(id)
+                   : Core::Result<Script::SceneRequest>{std::unexpected(checked.error())};
+  }
+
   auto PlaySession::pointerCaptureRequested() const -> Core::Result<bool> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
@@ -245,7 +265,20 @@ namespace Dot::Editor {
     }
 
     auto checked = m_impl->check();
-    return checked ? Core::Result<PlayStats>{m_impl->m_stats} : std::unexpected(checked.error());
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto game = m_impl->m_session.stats();
+
+    if (!game) {
+      return std::unexpected(game.error());
+    }
+
+    auto result = m_impl->m_stats;
+    result.location = std::move(game->location);
+    result.transition = std::move(game->transition);
+    return result;
   }
 
   auto PlaySession::lastFrame() const -> Core::Result<PlayFrame> {

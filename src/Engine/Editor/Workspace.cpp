@@ -58,6 +58,7 @@ import Dot.Editor.ScriptDiagnostics;
 import Dot.Platform.ExternalFiles;
 import Dot.Script.Compiler;
 import Dot.Script.LiveScripts;
+import Dot.Script.SceneFlow;
 import Dot.Platform.Input;
 import Dot.Core.Files;
 import Dot.Core.Paths;
@@ -102,6 +103,15 @@ namespace Dot::Editor {
           {"ok", false},
           {"error",
            {{"code", names.at(static_cast<std::size_t>(error.code))}, {"message", error.message}}}};
+    }
+
+    auto sceneRequestJson(const Script::SceneRequest& value) -> Json {
+      constexpr std::array states{"pending", "loading", "succeeded", "failed", "cancelled"};
+      return {{"id", std::to_string(value.id)},
+              {"path", value.path},
+              {"state", states.at(static_cast<std::size_t>(value.state))},
+              {"committed", value.committed},
+              {"error", value.error ? errorJson(*value.error)["error"] : Json(nullptr)}};
     }
 
     auto validId(std::string_view id) -> bool {
@@ -646,6 +656,7 @@ namespace Dot::Editor {
         auto value = errorJson(failure.error);
         value["phase"] = phases.at(static_cast<std::size_t>(failure.phase));
         value["entity"] = std::to_string(failure.entity.value);
+        value["scene"] = std::to_string(failure.entity.scene);
         diagnostic(std::move(value));
       }
     }
@@ -1140,8 +1151,8 @@ namespace Dot::Editor {
         return std::unexpected(tool.error());
       }
 
-      auto created
-          = PlaySession::create(*m_project, *tool, *m_document->scene().value(), m_config.play);
+      auto created = PlaySession::create(*m_project, *tool, *m_document->scene().value(),
+                                         m_config.play, m_document->stats()->scenePath);
 
       if (!created) {
         return std::unexpected(created.error());
@@ -1222,6 +1233,11 @@ namespace Dot::Editor {
         status["frames"] = std::to_string(stats.frames);
         status["fixedSteps"] = std::to_string(stats.fixedSteps);
         status["droppedNanoseconds"] = std::to_string(stats.dropped.count());
+        status["scene"]
+            = {{"scope", std::to_string(stats.location.scope)},
+               {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)}};
+        status["transition"]
+            = stats.transition ? sceneRequestJson(*stats.transition) : Json(nullptr);
 
         if (stats.state == PlayState::Running) {
           auto requested = m_play->pointerCaptureRequested();
@@ -3511,7 +3527,8 @@ namespace Dot::Editor {
         auto output = [&]() -> Core::Result<Core::FileSystem> {
           if (command == "export-data") {
             return Project::GamePackage::publish(*m_project, *m_document->scene().value(), *tool,
-                                                 *parent, folder);
+                                                 *parent, folder, {},
+                                                 m_document->stats()->scenePath);
           }
 
           auto location = m_config.runtimeKit.empty()
@@ -3526,7 +3543,7 @@ namespace Dot::Editor {
           auto kit = files ? Project::RuntimeKit::open(*files)
                            : Core::Result<Project::RuntimeKit>{std::unexpected(files.error())};
           return kit ? Project::exportGame(*m_project, *m_document->scene().value(), *tool, *kit,
-                                           *parent, folder)
+                                           *parent, folder, m_document->stats()->scenePath)
                      : std::unexpected(kit.error());
         }();
 
@@ -4147,6 +4164,41 @@ namespace Dot::Editor {
         }
 
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "request-play-scene" || command == "play-scene-status") {
+        if (command == "request-play-scene") {
+          Codec::requireFields(parsed, {"command", "session", "revision", "path"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "request"});
+        }
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Scene control requires the current Play session");
+        }
+
+        if (command == "play-scene-status") {
+          auto status = m_play->sceneRequest(Codec::id(parsed["request"]));
+          return status ? Core::Result<std::string>{Json{{"ok", true},
+                                                         {"transition", sceneRequestJson(*status)}}
+                                                        .dump()}
+                        : Core::Result<std::string>{std::unexpected(status.error())};
+        }
+
+        if (m_pendingClose || m_play->stats()->state != PlayState::Running
+            || Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Scene request requires running Play and the current document revision "
+                            "without pending close");
+        }
+
+        auto id = m_play->requestScene(parsed["path"].get<std::string>());
+        return id ? Core::Result<std::string>{Json{
+                        {"ok", true},
+                        {"request", std::to_string(*id)},
+                        {"play", playStatus()}}.dump()}
+                  : Core::Result<std::string>{std::unexpected(id.error())};
       }
 
       if (command == "capture-input") {
@@ -7082,7 +7134,36 @@ namespace Dot::Editor {
       }
 
       if (playing()) {
-        ImGui::TextUnformatted("Running game preview");
+        const auto stats = m_play->stats().value();
+        const auto label = stats.location.path ? stats.location.path->c_str() : "Unsaved scene";
+        const bool busy = stats.transition
+                          && (stats.transition->state == Script::SceneRequestState::Pending
+                              || stats.transition->state == Script::SceneRequestState::Loading);
+        ImGui::BeginDisabled(stats.state != PlayState::Running || busy || m_pendingClose);
+        ImGui::SetNextItemWidth(std::min(360.0F, ImGui::GetContentRegionAvail().x));
+
+        if (ImGui::BeginCombo("Change game scene", label)) {
+          for (const auto& entry : m_catalog) {
+            const auto& path = entry["path"].get_ref<const std::string&>();
+
+            if (entry["type"] != "directory" && path.ends_with(".dotscene")
+                && ImGui::Selectable(path.c_str(), stats.location.path == path)) {
+              sessionAction({{"command", "request-play-scene"},
+                             {"session", std::to_string(m_playSession)},
+                             {"revision", std::to_string(m_document->stats()->revision)},
+                             {"path", path}});
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        ImGui::EndDisabled();
+
+        if (stats.transition && stats.transition->error) {
+          ImGui::TextWrapped("%s", stats.transition->error->message.c_str());
+        }
+
         m_flying = m_orbiting = m_panning = false;
         return;
       }

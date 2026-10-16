@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -28,8 +29,8 @@ namespace Dot::Runtime {
   namespace {
     auto lifecycle(const Script::ScriptReport& report) -> Core::Result<void> {
       for (const auto& failure : report.failures) {
-        std::println(stderr, "Script entity {} phase {}: {}", failure.entity.value,
-                     static_cast<int>(failure.phase), failure.error.message);
+        std::println(stderr, "Script scene {} entity {} phase {}: {}", failure.entity.scene,
+                     failure.entity.value, static_cast<int>(failure.phase), failure.error.message);
       }
 
       if (report.realmFaulted) {
@@ -105,6 +106,7 @@ namespace Dot::Runtime {
       }
 
       std::optional<std::string> lastReloadError;
+      std::uint64_t lastSceneRequest{};
       std::size_t presentations = 0;
       auto lastTitle = description->name;
       bool delayed = false;
@@ -188,12 +190,37 @@ namespace Dot::Runtime {
           delayed = false;
         }
 
-        return dispatch(session->update(std::min(seconds, 1.0)));
+        auto updated = dispatch(session->update(std::min(seconds, 1.0)));
+
+        if (!updated) {
+          return updated;
+        }
+
+        auto stats = session->stats();
+
+        if (!stats) {
+          return Core::Result<void>{std::unexpected(stats.error())};
+        }
+
+        if (stats->transition && stats->transition->error
+            && stats->transition->id != lastSceneRequest) {
+          lastSceneRequest = stats->transition->id;
+          std::println(stderr, "Scene request {} '{}': {}", stats->transition->id,
+                       stats->transition->path, stats->transition->error->message);
+        }
+
+        return Core::Result<void>{};
       };
 
       callbacks.render = [&](const Core::FrameState& frame) -> Core::Result<void> {
         if (frame.dropped.count() > 0) {
           std::println(stderr, "Project fixed updates dropped {} ns", frame.dropped.count());
+        }
+
+        scene = session->scene();
+
+        if (!scene) {
+          return std::unexpected(scene.error());
         }
 
         auto name = (*scene)->name();

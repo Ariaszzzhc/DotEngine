@@ -19,6 +19,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 import Dot.Script.Runtime;
 import Dot.Platform.Input;
@@ -125,7 +126,7 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   const std::regex member(R"(^  (?:(get|set) )?([A-Za-z][A-Za-z0-9_]*)\()", std::regex::multiline);
 
   for (const auto* name : {"input", "components", "physics", "audio", "animation", "scene",
-                           "Entity", "ScriptComponent"}) {
+                           "scenes", "Entity", "ScriptComponent"}) {
     const bool isClass
         = std::string_view(name) == "Entity" || std::string_view(name) == "ScriptComponent";
     const auto prefix = std::string(isClass ? "export class " : "export const ") + name;
@@ -161,8 +162,8 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   }
 
   const std::regex constant(R"(^export const ([A-Za-z][A-Za-z0-9_]*))", std::regex::multiline);
-  const std::set<std::string> namespaces{"input", "components", "physics",
-                                         "audio", "animation",  "scene"};
+  const std::set<std::string> namespaces{"input",     "components", "physics", "audio",
+                                         "animation", "scene",      "scenes"};
 
   for (auto match = std::sregex_iterator(sdk.begin(), sdk.end(), constant);
        match != std::sregex_iterator{}; ++match) {
@@ -261,7 +262,7 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   CHECK(snapshot["fixed"] == 1);
   CHECK(snapshot["updates"] == 2);
   CHECK(snapshot["stops"] == 1);
-  CHECK(snapshot["errors"] == 6);
+  CHECK(snapshot["errors"] == 8);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);
@@ -489,4 +490,50 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   REQUIRE(document.openScene("scenes/main.dotscene", document.stats()->revision));
   CHECK(files.readText("scenes/main.dotscene").value() == startup);
   CHECK(document.stats()->scenePath == "scenes/main.dotscene");
+}
+
+TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changing_saved_scenes") {
+  Fixture fixture;
+  auto files = fixture.project.files().value();
+  auto initial = World::loadScene(files, "scenes/LightingStudio.dotscene").value();
+  auto originalMain = files.readText("scenes/main.dotscene").value();
+  auto originalStudio = files.readText("scenes/LightingStudio.dotscene").value();
+  auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto output = Project::GamePackage::publish(fixture.project, initial, compiler,
+                                              fixture.storage.files().value(), "studio-game", {},
+                                              "scenes/LightingStudio.dotscene");
+  REQUIRE_MESSAGE(output, (output ? "" : output.error().message));
+  auto package = Project::GamePackage::open(*output).value();
+  CHECK(package.description()->startScene == "scenes/LightingStudio.dotscene");
+  auto session
+      = Project::GameSession::createCompiled(package.files().value(), package.description().value(),
+                                             package.scene().value(), package.program().value())
+            .value();
+  report(session.start());
+  Platform::InputState input;
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
+  REQUIRE(session.publish(input));
+  report(session.update(0));
+  CHECK(session.stats()->location.path == "scenes/main.dotscene");
+  auto main = session.scene().value();
+  input.beginFrame();
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, false, false}}));
+
+  for (int frame = 0; frame < 5; ++frame) {
+    REQUIRE(session.publish(input));
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+    input.beginFrame();
+  }
+
+  REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
+  REQUIRE(session.publish(input));
+  report(session.update(0));
+  CHECK(session.stats()->location.path == "scenes/LightingStudio.dotscene");
+  CHECK(session.stats()->transition->committed);
+  complete(fixture.project, *main);
+  CHECK(data(*main)["stops"] == 1);
+  report(session.close());
+  CHECK(files.readText("scenes/main.dotscene").value() == originalMain);
+  CHECK(files.readText("scenes/LightingStudio.dotscene").value() == originalStudio);
 }

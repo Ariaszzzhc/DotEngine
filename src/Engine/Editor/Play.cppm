@@ -4,6 +4,9 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 export module Dot.Editor.Play;
@@ -31,6 +34,8 @@ export namespace Dot::Editor {
     std::uint64_t frames;
     std::uint64_t fixedSteps;
     std::chrono::nanoseconds dropped;
+    Script::SceneLocation location{};
+    std::optional<Script::SceneRequest> transition;
   };
 
   struct PlayFrame {
@@ -52,7 +57,8 @@ export namespace Dot::Editor {
   public:
     [[nodiscard]] static auto create(const Project::Project& project,
                                      const Script::TypeScriptCompiler& compiler,
-                                     const World::Scene& authoring, const PlayConfig& config = {})
+                                     const World::Scene& authoring, const PlayConfig& config = {},
+                                     std::optional<std::string> scenePath = std::nullopt)
         -> Core::Result<PlaySession>;
     PlaySession(const PlaySession&) = delete;
     auto operator=(const PlaySession&) -> PlaySession& = delete;
@@ -68,8 +74,12 @@ export namespace Dot::Editor {
      * 已完成的回调。 */
     [[nodiscard]] auto advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed,
                                bool pointerCaptured = false) -> Core::Result<void>;
+    [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto stop() -> Core::Result<Script::ScriptReport>;
+    /** Borrow expires when a later advance replaces the scene; reacquire each frame.
+     * 后续 advance 替换场景会使借用失效，每帧须重新获取。 */
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
     [[nodiscard]] auto stats() const -> Core::Result<PlayStats>;
     [[nodiscard]] auto lastFrame() const -> Core::Result<PlayFrame>;

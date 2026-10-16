@@ -892,3 +892,53 @@ starting the device. After initial animation and audio synchronization succeed,
 GameSession activates playback once. `audio.stats().playback.state` then becomes
 `running`; native output failures remain real errors. Scripts cannot start the
 endpoint. Offline deterministic rendering retains its existing explicit scheduling.
+
+
+## Scene replacement
+
+GameSession (editor Play, project player and compiled game) supplies `scenes` through
+`dot:engine`. `scenes.current()` returns the calling realm's `{scope,path}`; path is
+null only for a cloned authoring scene whose native caller supplied no origin.
+Preparation reads identify the candidate realm, not the still-running old scene.
+`scenes.request(path)` queues one portable project-relative `.dotscene` path and
+returns a canonical decimal request ID. No loading occurs inside that host callback.
+Constructors/reload migration cannot request a cut. A stale/retired realm or another
+pending/loading request produces catchable DotHostError.
+
+```ts
+import {input, scenes, ScriptComponent} from 'dot:engine';
+
+export class Door extends ScriptComponent {
+  onUpdate(): void {
+    if (input.key('L').pressed) {
+      scenes.request('scenes/next.dotscene');
+    }
+  }
+}
+```
+
+`scenes.status(id)` returns owned `{id,path,state,committed,error}`. IDs are local to
+the GameSession, monotonic across its cuts, with the last 16 retained. Unknown or
+expired IDs fail; errors use stable HostErrorCode names. Acceptance is pending, not
+success. Preparation failures keep the current world running; check the result to
+handle retry/UI. A committed startup failure retains the new scene for inspection
+and faults the session. Closing/faulting cancels uncommitted requests. A fresh scene
+uses fresh services/input and reruns Start; an existing shared native scene reference
+still owns its old scene but is no longer active. A cloned authoring session with an
+origin path retains that initial scene snapshot (at most the scene codec's 64 MiB
+limit), so returns to the origin preserve its unsaved starting content. Runtime scene
+mutations do not change this seed; other target paths read their saved files. Normal
+project sessions read saved scenes and compiled packages read their owned data.
+Scene-specific TypeScript globals
+and component state do not transfer. Hot reload disabled means the existing compiled
+generation is reused across cuts. Compiled packages never invoke a compiler.
+
+The variable update processes at most one request after current callbacks, animation
+and audio. Fixed steps do not cut, invalid deltas have no effects, and Start may queue
+another request for the next update. Native playback is staged silently until Start
+and pose synchronization; graphics data preflight validates actual assets, normals/
+normal-map frames, image encoding and HDR input without creating a device. Preflight
+bounds unique graphics inputs to 32768 and decoded mesh/image data to 512 MiB; native
+subsystems retain their own configured limits. The operation is synchronous; GPU
+allocation/render failures can still happen after commit. There is no additive scene
+composition, background streaming or persistent gameplay-state transfer in this API.

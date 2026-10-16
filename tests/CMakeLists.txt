@@ -49,6 +49,7 @@ add_executable(DotUnitTests
     AnimationKeyMoveTests.cpp
     AnimationPlayerTests.cpp
     HomeDialogTests.cpp
+    SceneFlowTests.cpp
     SceneAnimatorTests.cpp
     AnimationTransitionTests.cpp
     SkinTests.cpp
@@ -136,7 +137,7 @@ dotDiscoverTests(DotProcessTests LABELS "integration;process" PROPERTIES TIMEOUT
 
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
-add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp ScenePlayerSessionTests.cpp AnimationSdkTests.cpp PlayTests.cpp PublishedProgramTests.cpp GamePackageTests.cpp)
+add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp SceneTransitionTests.cpp ScenePlayerSessionTests.cpp AnimationSdkTests.cpp PlayTests.cpp PublishedProgramTests.cpp GamePackageTests.cpp)
 target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"

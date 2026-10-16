@@ -7206,3 +7206,100 @@ ordering, callback/voice cursor timing, healthy idempotence and terminal rejecti
 retained fault diagnostics, scene reset state, script access restrictions, RAII and
 foreign-thread teardown, platform-independent API placement and existing offline
 behavior. All ten changed C++ files pass clang-format; whitespace checks pass.
+
+### Runtime scene replacement and scene-preserving export
+
+Added a scene-scoped request service shared by GameSession's realms. dot:engine
+supplies scenes.current/request/status; the current read identifies the calling
+realm, including prepared candidates. Requests accept portable relative .dotscene
+paths without engine staging components, queue one pending/loading operation and
+retain sixteen owned results. Canonical decimal IDs survive cuts within the session;
+unknown/expired IDs, stale scopes, wrong threads, malformed arguments and busy writes
+fail explicitly. Constructors/migration have read access, not request access. Closing
+or faulting cancels uncommitted work; retained observations remain readable.
+
+Variable Update completes the current scripts/animation/audio, then processes at
+most one request. Fixed updates and invalid deltas do not cut. File spelling/type,
+scene decode, real graphics inputs (including PBR normals/UV frames, normal encoding
+and HDR validation), skins, physics, clips, animation and script construction prepare
+before acceptance. Graphics preflight bounds unique inputs to 32768 and decoded
+mesh/image bytes to 512 MiB; native subsystem limits still apply. Preparation failures
+record an owned diagnostic and keep the old world running. Native audio candidates
+stay prepared/silent. Acceptance precedes irreversible Stop hooks, then old services
+are released and the new scene starts. A committed Stop/Start realm/native failure
+retains the new scene, records the actual cause and faults the session. Start may
+queue the following frame's cut without recursion. Component failures retain their
+existing isolation/reporting behavior; diagnostics now include scene scope so reused
+entity values do not collapse unrelated failures across cuts.
+
+Every replacement owns fresh scene/input/physics/animation/audio/realm state. Shared
+old scenes remain independently owned snapshots, not active services; raw Play scene
+borrows must be reacquired after advance. The standalone player now reacquires the
+active scene for rendering and reports failed scene requests once. Disabled hot
+reload pins the existing compiled generation across cuts; compiled games never call
+a compiler. Close releases retained code/config/service ownership. An authoring clone
+with an origin path owns its initial encoded scene seed (up to the codec's 64 MiB),
+shared across replacements and released on close. Returning to that origin rebuilds
+unsaved starting content, independent of runtime mutations or later disk edits;
+other targets load saved files. This matches exported unsaved startup content.
+
+Play exposes a Change game scene chooser and strict request-play-scene and
+play-scene-status operations through the shared dispatcher. Inspection includes the
+current scope/path and latest request; request acceptance is not completion. Current
+Play token/revision, running state and close guards prevent stale mutation. Stop
+returns to the unchanged authoring document. Native verification caught a missing
+origin-path argument in the workspace factory; the corrected rebuilt editor reports
+the active path immediately and completes the same scene loop.
+
+Data/native export can select the current scene's own startup path. Workspace supplies
+its active Document path, preserving other scene files instead of overwriting the
+original startup. Library callers without an origin use the configured startup.
+FeatureLab's existing camera script now supports L between the main showcase and
+Lighting Studio, with queued-result retry handling; the studio camera attachment was
+authored/saved through the real editor. Its SDK inventory/auditor includes scene
+operations and eight deliberately caught invalid operations. No temporary generation
+script or new acceptance executable is retained.
+
+Two actual native editor sessions verify keyboard-equivalent agent L round trips,
+strict/stale request rejection, missing-target recovery with the studio still running,
+current scene provenance and real saved-camera pixels. The rebuilt session reports
+119 live checks and 120 after Stop, with eight expected caught errors, no Play fault
+or unexpected diagnostics. The viewport capture shows the real studio renderer.
+Exporting Studio starts at scenes/LightingStudio.dotscene, preserves original Main
+bytes, contains compiled camera code and excludes TypeScript/private control files.
+Project metadata/Main hashes remain unchanged; the studio's intended camera script
+is the authored scene change. Both sessions exit 0 with empty stderr and retired
+control directories. Native mouse/keyboard hardware interaction is not claimed.
+
+Added sixteen durable cases: three pure queue/transport/ownership tests, eleven
+session/Play/package regressions, one real native-audio transition case and one
+compiled FeatureLab package L-loop case. They cover normal/error/commit boundaries,
+constructor and Start/Stop faults, malformed/missing/case/symlink paths, graphics/
+audio/animation failures, retained snapshots, service recreation, program pinning,
+source-free package execution, origin-preserving export and unsaved Play returns.
+The actual FeatureLab exported-data case exercises its real assets/scripts and all
+SDK checks without a window. Unit cases initialize no devices; no automated case
+opens a desktop window. Existing compiler/native-audio targets are reused.
+
+macOS arm64 Debug/Release builds succeed with the caller's environment. Integration-
+stage full runs pass Debug 1153/1153 (177.97s) and Release/NDEBUG 1153/1153 (21.13s).
+After final diagnostics/origin/example additions, final Release/NDEBUG full CTest
+passes 1155/1155 (19.43s): 320 unit and 835 integration, with overlapping 132 offscreen
+GPU, 32 native-audio, 28 SDL-dummy and 186 compiler cases. Final Debug targeted checks
+pass 154/154 (39.35s), including all new behavior and the real package loop. Two
+intermediate Debug FeatureLab cases exceeded the unchanged 100 ms script wall budget
+while another build ran; isolated reruns pass, followed by serialized final checks.
+No runtime budgets were raised. Windows/Linux are not executed.
+
+Precommit review covers immutable origin ownership, request/realm access, no-allocation
+acceptance, Stop/Start irreversibility and error provenance, program/service lifetime,
+stale-handle rejection, portable path/type checks, payload/codec limits, frame/input
+ordering, cache/render borrow boundaries, active-file export and authored example
+isolation. Sixteen changed/new C++ files pass clang-format; whitespace checks pass.
+Owned temporary apps, request/client/edit helpers and exported validation data are
+removed. Ignored logs/captures/state evidence, build caches, prior archives and the
+untracked user references remain; no distribution archive is generated. Synchronous
+preflight can stall a frame; GPU allocation/render failures remain post-commit renderer
+errors. GPU staging/background streaming, additive scenes, persistent cross-scene
+state, broader authoring/performance systems and finished realistic game art remain
+open. The complete engine/game objective remains unfinished.

@@ -1,12 +1,27 @@
-import {input, ScriptComponent} from 'dot:engine';
+import {input, scenes, ScriptComponent} from 'dot:engine';
 
 /**
  * M requests native relative mouse look. The frontend owns focus and Escape;
  * only acknowledged frames rotate the camera, independently of fixed-step count.
  * M 请求原生相对鼠标观察；前端负责焦点与 Escape，仅实际确认的帧更新镜头，独立于固定步数。
  */
-export class CameraDemo extends ScriptComponent {
+export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
+  #request: string|null = null;
+
   onUpdate(): void {
+    if (this.#request !== null) {
+      const result = scenes.status(this.#request);
+
+      if (result.state === 'failed' || result.state === 'cancelled') {
+        this.#request = null;
+      }
+    }
+
+    if (this.#request === null && input.key('L').pressed) {
+      this.#request = scenes.request(this.properties.targetScene ?? 'scenes/LightingStudio.dotscene');
+      return;
+    }
+
     if (input.key('M').pressed) {
       input.capturePointer(!input.pointerCaptured);
     }

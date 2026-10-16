@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -394,7 +394,19 @@ export class Audit extends ScriptComponent<{contract: string}> {
     report.script = description;
     scene.rename(
         'Feature Lab | ' + this.#checked.size
-        + ' checks | D move | T reset CCD | 1/2 animation | Space pause');
+        + ' checks | D move | T reset CCD | 1/2 animation | Space pause | L studio');
+  }
+
+  private sceneFlowChecks(): void {
+    this.check('scenes.current', scenes.current().scope === this.self.id.scene);
+    this.expectedError(() => {
+      scenes.request('../invalid.dotscene');
+    }, 'InvalidArgument');
+    this.check('scenes.request', scenes.current().scope === this.self.id.scene);
+    this.expectedError(() => {
+      scenes.status('0');
+    }, 'InvalidArgument');
+    this.check('scenes.status', scenes.current().scope === this.self.id.scene);
   }
 
   onStart(): void {
@@ -408,6 +420,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     input.capturePointer(true);
     input.capturePointer(false);
     this.check('input.capturePointer', input.pointerCaptured === captured);
+    this.sceneFlowChecks();
     this.sceneChecks();
     this.physicsChecks();
     this.audioChecks();

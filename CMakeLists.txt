@@ -97,6 +97,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/StagedDirectory.cpp
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
+    src/Engine/Script/SceneFlow.cpp
     src/Engine/Project/GamePackage.cpp
     src/Engine/Project/GameExport.cpp
     src/Engine/Project/Templates.cpp
@@ -224,6 +225,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/StagedDirectory.cppm
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
+        src/Engine/Script/SceneFlow.cppm
         src/Engine/Project/GamePackage.cppm
         src/Engine/Project/GameExport.cppm
         src/Engine/Project/Templates.cppm

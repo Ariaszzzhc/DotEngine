@@ -2,6 +2,8 @@ module;
 
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
 
 export module Dot.Project.GameExport;
 
@@ -46,10 +48,13 @@ export namespace Dot::Project {
    * directory publication. Authoring data is never implicitly saved. The kit must
    * match this build's native platform; cross-platform exports require native kits.
    * 将原生运行时及当前场景/资源/ESM 包一次独占发布，不隐式保存编辑数据。运行时须匹配
-   * 当前构建平台，跨平台导出需要对应原生构建。 */
+   * 当前构建平台，跨平台导出需要对应原生构建。
+   * scenePath preserves the active scene's origin and the other saved scene files.
+   * scenePath 保留活动场景来源路径及其他已保存场景。 */
   [[nodiscard]] auto exportGame(const Project& project, const World::Scene& scene,
                                 const Script::TypeScriptCompiler& compiler,
                                 const RuntimeKit& runtime, const Core::FileSystem& parent,
-                                const std::filesystem::path& folder)
+                                const std::filesystem::path& folder,
+                                std::optional<std::string> scenePath = std::nullopt)
       -> Core::Result<Core::FileSystem>;
 }  // namespace Dot::Project

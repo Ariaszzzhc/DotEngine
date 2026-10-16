@@ -589,6 +589,8 @@ arm64 macOS; Windows/Linux code is not locally validated.
 
 The toolbar's **Export game** modal uses the strict `export` or `export-data` command to
 publish the current scene and saved resources without saving the authoring scene.
+The exported startup path is the active file path. Other scene files retain their
+paths and contents, including the original startup when another scene is active.
 It requires stopped Play, the current revision and no pending inspector/file
 drafts. See [game data export](Export.md) for the format, CLI, limits and ownership.
 Native export includes the player and runtime libraries; data-only export remains
@@ -1644,3 +1646,43 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
 多键数值编辑、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
+
+
+## Runtime scene changes
+
+While Play is running, the viewport's Change game scene menu queues a project scene
+without changing the authoring Document, selection, history or revision. L in Feature
+Lab demonstrates the script route between its main showcase and Lighting Studio.
+Every cut gets a new scene scope, script realm, input, physics, animation and audio
+services. Retained captures are owned snapshots; prior entity handles cannot address
+the replacement scene. Play retains an owned initial authoring snapshot for its
+origin path, including unsaved edits; returning to that path rebuilds this snapshot,
+matching the exported startup content. Other targets load saved files. Stop returns
+to the original authoring document.
+
+```json
+{"command":"request-play-scene","session":"1","revision":"4","path":"scenes/LightingStudio.dotscene"}
+{"command":"play-scene-status","session":"1","request":"1"}
+```
+
+These are separate strict operations. A request needs the current Play token and
+Document revision, running Play and no pending close. Its `request` field is an
+acceptance ID, not a completed load. The second operation reads the owned result,
+including after Stop, while that Play session remains present. Unknown/expired IDs,
+stale tokens/revisions, malformed fields and busy requests fail. Inspect's `play.scene`
+contains `{scope,path}` and `play.transition` contains the most recently queued
+request or null. Request states are pending/loading/succeeded/failed/cancelled;
+`committed` distinguishes preflight failure (old game remains running) from a failed
+startup after irreversible replacement. The error owns a code/message. The last
+16 request results survive scene changes; new Play creates an independent sequence.
+
+Loading currently runs synchronously at the end of the variable update, after fixed
+steps and current animation/audio synchronization. Only one cut is processed per
+update; a target Start callback may queue the following cut. File spelling/type,
+scene data, referenced CPU graphics data and native/script service initialization
+are prepared before retiring the old game. Native target audio remains prepared
+until startup. Stop/Start callbacks are irreversible; a committed realm/native fault
+is reported and faults Play. Invalid target files, assets or script preparation keep
+the old game and report the failed request. Scene rendering/GPU allocation can still
+fail after commit; GPU staging, background streaming, additive scenes and persistent
+cross-scene gameplay state are not implemented by this operation.
