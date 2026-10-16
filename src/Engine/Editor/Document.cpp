@@ -146,11 +146,22 @@ namespace Dot::Editor {
       };
 
       for (const auto& change : page.changes) {
+        Json sourceKey = nullptr;
+
+        if (change.sourceKey) {
+          sourceKey = Json::array();
+
+          for (auto component : *change.sourceKey) {
+            sourceKey.push_back(std::to_string(component));
+          }
+        }
+
         changes.push_back(
             {{"kind", overrideKinds.at(static_cast<std::size_t>(change.key.kind))},
              {"entity", std::to_string(change.key.entity)},
              {"path", change.key.path},
              {"source", change.source ? Json(std::to_string(*change.source)) : Json(nullptr)},
+             {"sourceKey", std::move(sourceKey)},
              {"baseline", stored(change.baseline)},
              {"local", stored(change.local)}});
       }

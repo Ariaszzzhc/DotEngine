@@ -13,6 +13,7 @@ export module Dot.World.SceneLinks;
 import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.World.SceneContent;
+import Dot.World.SceneSources;
 
 export namespace Dot::World {
   struct SceneLinkUpdate {
@@ -40,6 +41,7 @@ export namespace Dot::World {
     std::optional<std::uint64_t> source;
     std::optional<std::string> baseline;
     std::optional<std::string> local;
+    std::optional<SceneSourceKey> sourceKey;
   };
 
   struct SceneOverridePage {
@@ -99,6 +101,13 @@ export namespace Dot::World {
                                         std::optional<EntityId> parent = {})
       -> Core::Result<SceneContentResult>;
 
+  /** Explicit provenance keeps intermediate materialization IDs separate from
+   * persistent source keys. 显式来源将中间展开 ID 与持久源键分离。 */
+  [[nodiscard]] auto prepareLinkedScene(const Scene& target, const SceneSourceSnapshot& source,
+                                        std::uint64_t firstValue, const Transform& placement = {},
+                                        std::optional<EntityId> parent = {})
+      -> Core::Result<SceneContentResult>;
+
   /** Three-way source refresh preserves local property/deletion overrides and
    * local additions. Arrays are atomic; objects merge by property. Removing an
    * overridden source node fails unless revert is explicit. Revert restores all
@@ -110,4 +119,8 @@ export namespace Dot::World {
   [[nodiscard]] auto prepareSceneLinkUpdate(const Scene& target, const Scene& source, EntityId root,
                                             std::uint64_t firstValue, bool revert = false)
       -> Core::Result<SceneLinkUpdate>;
+
+  [[nodiscard]] auto prepareSceneLinkUpdate(const Scene& target, const SceneSourceSnapshot& source,
+                                            EntityId root, std::uint64_t firstValue,
+                                            bool revert = false) -> Core::Result<SceneLinkUpdate>;
 }  // namespace Dot::World

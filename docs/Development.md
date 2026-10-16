@@ -7951,3 +7951,79 @@ All eight changed/new C++ files pass clang-format and whitespace checks pass. No
 example data, dependency, caller compiler/linker setting or distribution archive was
 changed. User references, caches and existing archives remain preserved/untracked
 as applicable; temporary validation helpers are not retained in source control.
+
+## Layered scene source identities
+
+Separated persistent source provenance from intermediate materialization integers.
+Using an intermediate native ID as source identity could transfer an outer override
+to a different nested node, or collide with a later source-local allocation.
+Dot.World.SceneIdentity now validates bounded logical keys and ancestor-closed
+source namespaces. Dot.World.SceneSources owns independent native captures or
+consumes working scenes with explicit original local identities and physical
+allocation observations. Interfaces and implementation units remain separate;
+these factories perform no file or device I/O.
+
+Linked insertion/refresh matches logical keys, preserving continuing target IDs,
+native references and overrides when working IDs change. A genuinely different key
+receives a fresh target; removing an overridden node still rejects transactionally.
+Namespaces retain source paths, monotonic allocation floors and live physical
+allocations, including saved inherited allocations and nodes hidden by an outer
+override. Hidden source nodes may reappear with fresh target bindings. Explicit
+unlink inside a saved source promotes its inherited physical allocations to local
+identities, retiring former nested bindings. Arbitrary script literals stay opaque.
+
+Flattened baselines use compact values in logical-key order, separating their
+allocator from original source reservations. Equivalent working-ID reorderings
+therefore preserve target/baseline serialization. Strict scene records now require
+mapping keys and namespace metadata; the example asset was replaced in place,
+without a compatibility loader or version terminology. Override queries expose
+sourceKey string arrays alongside canonical-baseline source references. Feature
+Lab's authored entities, transforms and local copper override remain unchanged;
+only LightingStudio link provenance/canonical-baseline metadata changed.
+
+Added twelve CPU-only regression cases for identity/path/capacity/depth/exhaustion
+boundaries, hidden versus retired nodes, native versus working allocation, ownership
+and independent capture, reused intermediate integers, references and local overrides,
+canonical no-op refresh, strict serialization, saved-source unlink and foreign-thread/
+moved-owner rejection. Existing link/example tests retain coverage and verify sourceKey.
+Coupled authoring checks pass 79/79 (4.32s). Initial compilation exposed a missing
+direct standard-header dependency for vector comparison, a shadowed namespace decode
+variable and a missing explicit test-module import; all were corrected before these
+successful checks. Debug and Release builds succeed.
+
+One actual Release editor process completes fourteen product requests on Feature
+Lab: open/save LightingStudio through the product, open main, insert the saved
+nested source, verify a no-op refresh, edit/query a nested copper override, then
+undo/redo and restore clean main content. The query retains the logical key
+[9007199254741009,2] independently of the outer materialized target. Project metadata,
+main and MaterialStudies hashes stay unchanged; Studio's saved authored content also
+matches its original. The process exits 0 with empty stderr and retires its control
+directory. Removed fifteen owned temporary helper/request files while retaining
+native response/result/log evidence in ignored build storage. No mouse/screenshot
+acceptance is claimed for this stage.
+
+This stage supplies identity foundations; recursive dependency loading/refresh,
+cycle handling and graph-wide budgets remain unimplemented. Ordinary editor refresh
+still reads the selected saved source. The overall engine/editor/game goal remains
+active; these checks do not imply production readiness or completed game quality.
+
+The first complete Debug run passes 1250/1251 (184.49s); the existing Feature Lab
+continuous/discrete slider case faults Audit.onUpdate at the runtime's 100ms
+operation deadline. Its isolated rerun passes (0.71s). This is a timeout observation,
+not an established source-identity failure or a confirmed scheduling diagnosis;
+no production/test deadline was relaxed. Complete Release passes 1251/1251
+(19.81s, assertions disabled). The second complete Debug run passes 1251/1251
+(183.59s); the earlier timeout does not recur and its cause remains unconfirmed.
+Both suites contain 373 unit and 878 integration cases, including 194 compiler,
+132 durable offscreen, 32 native-audio, 28 platform and 20 process cases. Automated
+suites open no desktop windows. Validation is macOS arm64 only; Windows/Linux source
+targets were not executed.
+
+Final review covers provenance ownership, namespace closure/live-allocation/depth/
+storage bounds, original versus working reservation semantics, logical-key matching,
+canonical no-op behavior, native reference remapping, transactional rejection,
+strict serialization and module separation. All thirteen changed/new C++ files pass
+clang-format and staged/working whitespace checks pass. No dependency or caller
+compiler/linker environment changed; no new test executable or distribution archive
+was introduced. User references remain untracked; caches and existing archives are
+preserved.

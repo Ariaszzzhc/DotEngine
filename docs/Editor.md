@@ -1771,6 +1771,9 @@ These edits use the same revision/history implementation in the GUI and agent AP
 The linked override inspector adds paged property/deletion/addition inspection and
 selected/full stored-baseline revert, including operation without the source file.
 See the [query and revert contracts](SceneContent.md#inspecting-and-reverting-applied-overrides).
+Override records also expose persistent `sourceKey` provenance. Canonical baseline
+references can change during source materialization; these layered keys retain the
+logical source identity. See [source identity contracts](SceneContent.md#layered-source-identities).
 
 
 ## Persistent entity allocation

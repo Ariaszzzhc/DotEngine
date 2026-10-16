@@ -31,15 +31,26 @@ Native `nextEntityValue` observes it; `reserveEntityValuesBefore` advances it or
 allocation with null, without changing live handles. It cannot rewind or unseal.
 
 Optional `links` is an array of authoring records with exactly `root`, `asset`,
-`baseline` and `mapping`. Root is a live placement value; asset is a portable
-scenes/assets `.dotscene` path. Baseline is a complete native source scene object
-without links; mapping entries contain canonical string `source`/`target` values
-covering every baseline node, including locally deleted targets. Roots and mapped
+`baseline`, `mapping` and `namespaces`. Root is a live placement value; asset is a portable
+scenes/assets `.dotscene` path. Baseline is a native source scene object without
+links. Product insertion/refresh orders nodes by logical key with compact values
+and nextEntity, independently of source/working allocation. Mapping entries contain
+canonical string `source`/`target` values and a `key` array of 1..32 canonical source values. Source
+indexes the canonical baseline; key is the persistent logical identity. Mappings
+cover every baseline node, including locally deleted targets. Roots and mapped
 target values have disjoint ownership; targets must already be reserved. Link and
 mapping counts are bounded by 10000, combined baseline text by 64 MiB, baseline
 JSON depth by 61 to fit within the scene depth limit of 64. Empty sources can remain
 linked after refresh. The complete encoded scene must still fit 64 MiB. Scene
 validates replacement metadata atomically; loading does not read source assets.
+Each namespace contains exactly `prefix`, `asset`, `nextEntity` and `entities`.
+The unique empty-prefix root matches the link asset; nested prefixes append persistent
+instance-root source values. Prefixes have at most 31 values and require live parent
+anchors. nextEntity is the original source allocation floor, or null for exhaustion.
+Entities are canonical source-local live physical allocation strings, including saved
+inherited allocations and values hidden by outer overrides. Node keys must belong
+to these namespaces. At most 10000 namespaces and 100000 observed allocation values
+are retained across a scene's links. Replacement normalizes namespace/mapping order.
 See [linked content](SceneContent.md#linked-instances-and-local-overrides) for merging
 and runtime behavior.
 

@@ -174,7 +174,8 @@ The response contains document `revision`, `scope`, `scenePath`, `selected`, emp
 `created` and `sceneOverrides`, without a full scene snapshot. The latter provides
 `linked`, `root`, `asset`, `node`, effective `scope`, `offset`, `limit`, `total`,
 `nextOffset` and `changes`. Each change has `kind` (`property`, `deleted-node`,
-`added-node`), target `entity`, `path`, optional source value, and `baseline`/`local`
+`added-node`), target `entity`, `path`, canonical-baseline `source` reference and
+persistent `sourceKey` array (both null for local added nodes), and `baseline`/`local`
 objects with `present` and typed JSON `value`. Property paths are escaped JSON
 Pointers; node changes use an empty path. Copy only kind/entity/path into selectors.
 
@@ -206,3 +207,41 @@ without moving selection. Applied overrides remain readable during pending draft
 Play and preview; mutation controls use ordinary authoring guards. UI and agent
 operations share the native `findSceneLinkRoot`, `inspectSceneOverrides`,
 `prepareSceneOverrideRevert` and `prepareSceneBaselineRevert` implementations.
+
+## Layered source identities
+
+A source node's logical key is separate from the integer used to materialize an
+intermediate scene. Local nodes use `[sourceValue]`; nested nodes prefix that key
+with the source instance-root value. An assembly can therefore retain `[root,leaf]`
+while its temporary entity integer changes, or another local node uses the old
+temporary integer. Refresh matches logical keys, preserving target values, native
+references and local overrides for continuing nodes. Different keys receive fresh
+target allocations. Removal of an overridden source node remains a conflict.
+
+Namespace observations retain original asset paths, source allocator floors and
+live physical source allocations. Existing namespace assets/floors cannot change/
+regress; retired values cannot be introduced as new visible origins. Hidden inherited
+nodes remain known in their underlying source namespace and can later reappear with
+fresh target bindings after removal. Source unlinking promotes previously saved
+inherited physical allocations to local identities, retiring the former nested
+bindings. Scope-local handles and arbitrary script property literals are unaffected.
+
+`Dot.World.SceneSources` captures an independent saved/native source with
+`captureSceneSource`. `prepareSceneSourceSnapshot` consumes an explicit working scene,
+original local origins and original physical namespace, so temporary allocations
+cannot become source identity. `SceneSourceSnapshot` includes materialized entities,
+asset path, origins and namespace observations and is validated at preparation
+boundaries. Typed SceneLinks overloads accept these snapshots; raw Scene overloads
+capture ordinary saved/native inputs. All factories are CPU-only and perform no I/O.
+
+Insertion/refresh baselines use compact IDs in logical-key order and demoted primary flags.
+Their allocator belongs to that canonical representation; original source allocation
+is retained in namespaces. Equivalent working-ID reorderings produce identical
+baseline/target serialization and do not cause artificial document edits. Source
+keys remain observable in override queries even when canonical baseline references
+change. Strict scene assets were replaced together with this metadata change;
+missing provenance is rejected without a compatibility loader.
+
+This supplies stable identity for layered source processing. Recursive dependency
+loading/refresh, cycle handling and graph-wide input budgets still require a product
+resolver; ordinary editor refresh currently reads the selected saved source only.

@@ -26,6 +26,7 @@ import Dot.Platform.Input;
 import Dot.Platform.Events;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.World.SceneSources;
 import Dot.Audio.Mixer;
 import Dot.Assets.Mesh;
 import Dot.Graphics.Geometry;
@@ -484,7 +485,12 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   REQUIRE(group->parent);
   CHECK(scene->entity(*group->parent)->parent == placement);
   auto source = World::loadScene(files, links[0].asset).value();
-  CHECK(links[0].baseline == World::encodeScene(source).value());
+  const auto baseline = nlohmann::json::parse(links[0].baseline);
+  CHECK(baseline["entities"]
+        == nlohmann::json::parse(World::encodeScene(source).value())["entities"]);
+  CHECK(baseline["nextEntity"] == "8");
+  REQUIRE(links[0].namespaces.size() == 1);
+  CHECK(links[0].namespaces[0].nextEntity == source.nextEntityValue().value());
 
   for (const auto& mapping : links[0].mapping) {
     auto expected = source.worldTransform(source.findEntity(mapping.source).value()).value();
@@ -507,9 +513,19 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   const auto overrides = nlohmann::json::parse(*inspected)["sceneOverrides"];
   REQUIRE(overrides["total"] == 1);
   CHECK(overrides["changes"][0]["source"] == "2");
+  CHECK(overrides["changes"][0]["sourceKey"] == nlohmann::json::array({"2"}));
   CHECK(overrides["changes"][0]["path"] == "/name");
   CHECK(overrides["changes"][0]["baseline"]["value"] == "Copper panel");
   CHECK(overrides["changes"][0]["local"]["value"] == "Copper (studio override)");
+  auto captured = World::captureSceneSource(*scene, "scenes/LightingStudio.dotscene");
+  REQUIRE(captured);
+  const auto copperMapping = std::ranges::find(links[0].mapping, World::SceneSourceKey{2},
+                                               &World::SceneLinkMapping::key);
+  REQUIRE(copperMapping != links[0].mapping.end());
+  const auto copperOrigin = std::ranges::find(captured->origins, copperMapping->target,
+                                              &World::SceneSourceOrigin::entity);
+  REQUIRE(copperOrigin != captured->origins.end());
+  CHECK(copperOrigin->key == World::SceneSourceKey{links[0].root, 2});
   std::set<std::string> groupedNames;
 
   for (const auto& entity : entities) {

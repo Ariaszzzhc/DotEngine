@@ -574,19 +574,61 @@ namespace Dot::World {
         std::vector<SceneLink> links;
 
         for (const auto& value : root["links"]) {
-          Codec::requireFields(value, {"root", "asset", "baseline", "mapping"});
+          Codec::requireFields(value, {"root", "asset", "baseline", "mapping", "namespaces"});
           SceneLink link{Codec::id(value["root"]),
                          value["asset"].get<std::string>(),
                          value["baseline"].dump(),
+                         {},
                          {}};
+
+          const auto keyFromJson = [](const Json& key, bool prefix) -> SceneSourceKey {
+            if (!key.is_array() || (!prefix && key.empty()) || key.size() > (prefix ? 31U : 32U)) {
+              throw std::invalid_argument("Invalid source key/prefix array");
+            }
+
+            SceneSourceKey result;
+
+            for (const auto& component : key) {
+              result.push_back(Codec::id(component));
+            }
+
+            return result;
+          };
 
           if (!value["mapping"].is_array() || value["mapping"].size() > 10000) {
             return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene link mapping array");
           }
 
           for (const auto& mapping : value["mapping"]) {
-            Codec::requireFields(mapping, {"source", "target"});
-            link.mapping.push_back({Codec::id(mapping["source"]), Codec::id(mapping["target"])});
+            Codec::requireFields(mapping, {"source", "target", "key"});
+            link.mapping.push_back({Codec::id(mapping["source"]), Codec::id(mapping["target"]),
+                                    keyFromJson(mapping["key"], false)});
+          }
+
+          if (!value["namespaces"].is_array() || value["namespaces"].empty()
+              || value["namespaces"].size() > 10000) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid source namespace array");
+          }
+
+          for (const auto& space : value["namespaces"]) {
+            Codec::requireFields(space, {"prefix", "asset", "nextEntity", "entities"});
+
+            if (!space["entities"].is_array() || space["entities"].size() > 100000) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Invalid source namespace live-value array");
+            }
+
+            std::vector<std::uint64_t> live;
+
+            for (const auto& liveValue : space["entities"]) {
+              live.push_back(Codec::id(liveValue));
+            }
+
+            link.namespaces.push_back(
+                {keyFromJson(space["prefix"], true), space["asset"].get<std::string>(),
+                 space["nextEntity"].is_null() ? std::optional<std::uint64_t>{}
+                                               : std::optional{Codec::id(space["nextEntity"])},
+                 std::move(live)});
           }
 
           links.push_back(std::move(link));
@@ -836,16 +878,38 @@ namespace Dot::World {
 
       for (const auto& link : *links) {
         Json mapping = Json::array();
+        const auto keyJson = [](const SceneSourceKey& key) {
+          auto value = Json::array();
+
+          for (auto component : key) {
+            value.push_back(std::to_string(component));
+          }
+
+          return value;
+        };
 
         for (const auto& pair : link.mapping) {
-          mapping.push_back(
-              {{"source", std::to_string(pair.source)}, {"target", std::to_string(pair.target)}});
+          mapping.push_back({{"source", std::to_string(pair.source)},
+                             {"target", std::to_string(pair.target)},
+                             {"key", keyJson(pair.key)}});
+        }
+
+        Json namespaces = Json::array();
+
+        for (const auto& space : link.namespaces) {
+          namespaces.push_back(
+              {{"prefix", keyJson(space.prefix)},
+               {"asset", space.asset},
+               {"entities", keyJson(space.entities)},
+               {"nextEntity",
+                space.nextEntity ? Json(std::to_string(*space.nextEntity)) : Json(nullptr)}});
         }
 
         document["links"].push_back({{"root", std::to_string(link.root)},
                                      {"asset", link.asset},
                                      {"baseline", Codec::parseJson(link.baseline)},
-                                     {"mapping", std::move(mapping)}});
+                                     {"mapping", std::move(mapping)},
+                                     {"namespaces", std::move(namespaces)}});
       }
     }
 

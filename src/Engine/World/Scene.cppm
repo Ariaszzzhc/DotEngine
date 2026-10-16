@@ -12,6 +12,7 @@ module;
 export module Dot.World.Scene;
 
 import Dot.Core.Result;
+export import Dot.World.SceneIdentity;
 import Dot.Math;
 import Dot.Physics.Body;
 import Dot.Physics.Character;
@@ -34,9 +35,13 @@ export namespace Dot::World {
     auto operator==(const EntityId&) const -> bool = default;
   };
 
+  /** source indexes the flattened baseline; key carries persistent logical
+   * provenance, independent of intermediate native IDs. source 索引展平基线，
+   * key 保存不依赖中间原生 ID 的持久逻辑来源。 */
   struct SceneLinkMapping {
     std::uint64_t source{};
     std::uint64_t target{};
+    SceneSourceKey key;
     auto operator==(const SceneLinkMapping&) const -> bool = default;
   };
 
@@ -50,6 +55,7 @@ export namespace Dot::World {
     std::string asset;
     std::string baseline;
     std::vector<SceneLinkMapping> mapping;
+    std::vector<SceneSourceNamespace> namespaces;
     auto operator==(const SceneLink&) const -> bool = default;
   };
 

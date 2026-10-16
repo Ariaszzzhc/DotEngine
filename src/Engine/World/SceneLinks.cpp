@@ -21,6 +21,8 @@ import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.World.SceneContent;
 import Dot.World.SceneFiles;
+import Dot.World.SceneSources;
+import Dot.World.SceneIdentity;
 
 namespace Dot::World {
   namespace {
@@ -49,8 +51,9 @@ namespace Dot::World {
       for (auto entity : source["entities"]) {
         const auto id = Codec::id(entity["id"]);
         entity["id"] = std::to_string(mapping.at(id));
-        entity["parent"] = std::to_string(
-            entity["parent"].is_null() ? root : mapping.at(Codec::id(entity["parent"])));
+        entity["parent"] = entity["parent"].is_null()
+                               ? (root == 0 ? Json(nullptr) : Json(std::to_string(root)))
+                               : Json(std::to_string(mapping.at(Codec::id(entity["parent"]))));
 
         for (const auto* field : {"camera", "audioListener"}) {
           if (!entity[field].is_null()) {
@@ -74,6 +77,48 @@ namespace Dot::World {
       }
 
       return result;
+    }
+
+    struct SourceBaseline {
+      std::string text;
+      std::vector<SceneSourceOrigin> origins;
+    };
+
+    /** Canonical baseline values follow logical keys, never working IDs/floors.
+     * 基线值按逻辑键规范化，不依赖工作 ID/上界，避免无逻辑变化的重排污染历史。 */
+    auto canonicalSource(const SceneSourceSnapshot& source) -> Core::Result<SourceBaseline> {
+      auto text = baseline(source.scene);
+
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+
+      std::map<SceneSourceKey, std::uint64_t> ordered;
+
+      for (const auto& origin : source.origins) {
+        ordered.emplace(origin.key, origin.entity);
+      }
+
+      Values values;
+      SourceBaseline prepared;
+      std::uint64_t next{1};
+
+      for (const auto& [key, entity] : ordered) {
+        values.emplace(entity, next);
+        prepared.origins.push_back({next++, key});
+      }
+
+      auto document = Codec::parseJson(*text);
+      const auto remapped = nodes(document, values, 0);
+      document["entities"] = Json::array();
+
+      for (const auto& [key, entity] : ordered) {
+        document["entities"].push_back(remapped.at(entity));
+      }
+
+      document["nextEntity"] = std::to_string(next);
+      prepared.text = document.dump(2) + '\n';
+      return prepared;
     }
 
     auto member(const Json& object, const std::string& key) -> std::optional<Json> {
@@ -469,9 +514,17 @@ namespace Dot::World {
             const auto index = page.total++;
 
             if (index >= offset && page.changes.size() < limit) {
-              page.changes.push_back({key, source,
-                                      before ? std::optional{before->dump()} : std::nullopt,
-                                      after ? std::optional{after->dump()} : std::nullopt});
+              std::optional<SceneSourceKey> sourceKey;
+
+              if (source) {
+                sourceKey
+                    = std::ranges::find(data->link.mapping, *source, &SceneLinkMapping::source)
+                          ->key;
+              }
+
+              page.changes.push_back(
+                  {key, source, before ? std::optional{before->dump()} : std::nullopt,
+                   after ? std::optional{after->dump()} : std::nullopt, std::move(sourceKey)});
             }
           });
 
@@ -510,18 +563,57 @@ namespace Dot::World {
   auto prepareLinkedScene(const Scene& target, const Scene& source, std::string_view asset,
                           std::uint64_t firstValue, const Transform& placement,
                           std::optional<EntityId> parent) -> Core::Result<SceneContentResult> {
+    auto snapshot = captureSceneSource(source, asset);
+
+    if (!snapshot) {
+      return std::unexpected(snapshot.error());
+    }
+
+    auto result = prepareLinkedScene(target, *snapshot, firstValue, placement, parent);
+
+    if (result) {
+      for (auto& mapping : result->entities) {
+        mapping.source.scene = source.id();
+      }
+    }
+
+    return result;
+  }
+
+  auto prepareLinkedScene(const Scene& target, const SceneSourceSnapshot& snapshot,
+                          std::uint64_t firstValue, const Transform& placement,
+                          std::optional<EntityId> parent) -> Core::Result<SceneContentResult> {
     try {
+      auto valid = validateSceneSourceSnapshot(snapshot);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      const auto& source = snapshot.scene;
       auto result = prepareSceneInstance(target, source, firstValue, placement, parent);
-      auto text = baseline(source);
+      auto text = canonicalSource(snapshot);
 
       if (!result || !text) {
         return std::unexpected(!result ? result.error() : text.error());
       }
 
-      SceneLink link{result->root.value, std::string(asset), std::move(*text), {}};
+      SceneLink link{
+          result->root.value, snapshot.asset, std::move(text->text), {}, snapshot.namespaces};
+      std::map<std::uint64_t, SceneSourceKey> keys;
+      std::map<SceneSourceKey, std::uint64_t> canonical;
+
+      for (const auto& origin : snapshot.origins) {
+        keys.emplace(origin.entity, origin.key);
+      }
+
+      for (const auto& origin : text->origins) {
+        canonical.emplace(origin.key, origin.entity);
+      }
 
       for (const auto& mapping : result->entities) {
-        link.mapping.push_back({mapping.source.value, mapping.target.value});
+        const auto& key = keys.at(mapping.source.value);
+        link.mapping.push_back({canonical.at(key), mapping.target.value, key});
       }
 
       auto links = result->scene.sceneLinks().value();
@@ -543,10 +635,37 @@ namespace Dot::World {
   auto prepareSceneLinkUpdate(const Scene& target, const Scene& source, EntityId root,
                               std::uint64_t firstValue, bool revert)
       -> Core::Result<SceneLinkUpdate> {
+    auto owner = target.entity(root);
+    auto links = target.sceneLinks();
+
+    if (!owner || !links) {
+      return std::unexpected(!owner ? owner.error() : links.error());
+    }
+
+    const auto found = std::ranges::find(*links, root.value, &SceneLink::root);
+
+    if (found == links->end()) {
+      return Core::fail(Core::ErrorCode::NotFound, "Entity is not a linked scene root");
+    }
+
+    auto snapshot = captureSceneSource(source, found->asset);
+    return snapshot ? prepareSceneLinkUpdate(target, *snapshot, root, firstValue, revert)
+                    : Core::Result<SceneLinkUpdate>{std::unexpected(snapshot.error())};
+  }
+
+  auto prepareSceneLinkUpdate(const Scene& target, const SceneSourceSnapshot& snapshot,
+                              EntityId root, std::uint64_t firstValue, bool revert)
+      -> Core::Result<SceneLinkUpdate> {
     try {
+      auto valid = validateSceneSourceSnapshot(snapshot);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
       auto owner = target.entity(root);
       auto links = target.sceneLinks();
-      auto text = baseline(source);
+      auto text = canonicalSource(snapshot);
       auto encoded = encodeScene(target);
       auto floor = target.nextEntityValue();
 
@@ -560,50 +679,53 @@ namespace Dot::World {
 
       auto found = std::ranges::find(*links, root.value, &SceneLink::root);
 
-      if (found == links->end()) {
-        return Core::fail(Core::ErrorCode::NotFound, "Entity is not a linked scene root");
+      if (found == links->end() || found->asset != snapshot.asset) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Linked source asset does not match the instance");
       }
 
       const auto maximum = std::numeric_limits<std::uint64_t>::max();
-      const auto minimum = floor->value_or(maximum);
 
-      if (firstValue < minimum || firstValue == 0) {
+      if (firstValue == 0 || firstValue < floor->value_or(maximum)) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Refresh requires the reserved allocation floor");
       }
 
+      std::vector<SceneSourceOrigin> previousOrigins;
       Values oldMapping, mapping;
+      std::map<SceneSourceKey, SceneLinkMapping> oldKeys;
+      std::map<std::uint64_t, SceneSourceKey> incomingKeys;
+      std::map<SceneSourceKey, std::uint64_t> incomingValues;
 
       for (const auto& pair : found->mapping) {
+        previousOrigins.push_back({pair.source, pair.key});
         oldMapping.emplace(pair.source, pair.target);
+        oldKeys.emplace(pair.key, pair);
       }
 
-      const auto incoming = Codec::parseJson(*text);
-      const auto original = Codec::parseJson(found->baseline);
-      const auto sourceFloor = [](const Json& value) {
-        return value["nextEntity"].is_null() ? std::numeric_limits<std::uint64_t>::max()
-                                             : Codec::id(value["nextEntity"]);
-      };
+      valid = validateSceneSourceUpdate(snapshot.asset, previousOrigins, found->namespaces,
+                                        text->origins, snapshot.namespaces);
 
-      if (sourceFloor(incoming) < sourceFloor(original)) {
-        return Core::fail(Core::ErrorCode::InvalidState, "Linked source allocation regressed");
+      if (!valid) {
+        return std::unexpected(valid.error());
       }
 
+      for (const auto& origin : text->origins) {
+        incomingKeys.emplace(origin.entity, origin.key);
+        incomingValues.emplace(origin.key, origin.entity);
+      }
+
+      const auto incoming = Codec::parseJson(text->text);
       auto next = firstValue;
       std::vector<std::uint64_t> created;
 
       for (const auto& entity : incoming["entities"]) {
         const auto id = Codec::id(entity["id"]);
-        const auto old = oldMapping.find(id);
+        const auto old = oldKeys.find(incomingKeys.at(id));
 
-        if (old != oldMapping.end()) {
-          mapping.emplace(id, old->second);
+        if (old != oldKeys.end()) {
+          mapping.emplace(id, old->second.target);
         } else {
-          if (id < sourceFloor(original)) {
-            return Core::fail(Core::ErrorCode::InvalidState,
-                              "Linked source reused a retired node value");
-          }
-
           if (next == maximum) {
             return Core::fail(Core::ErrorCode::Unavailable,
                               "Linked scene entity allocation is exhausted");
@@ -614,7 +736,7 @@ namespace Dot::World {
         }
       }
 
-      const auto previous = nodes(original, oldMapping, root.value);
+      const auto previous = nodes(Codec::parseJson(found->baseline), oldMapping, root.value);
       const auto current = nodes(incoming, mapping, root.value);
       auto document = Codec::parseJson(*encoded);
       Nodes local;
@@ -623,32 +745,31 @@ namespace Dot::World {
         local.emplace(Codec::id(entity["id"]), entity);
       }
 
-      for (const auto& [id, old] : previous) {
-        const auto value = oldMapping.at(id);
-        const auto entry = local.find(value);
+      for (const auto& pair : found->mapping) {
+        const auto entry = local.find(pair.target);
 
-        if (!current.contains(id)) {
-          if (entry != local.end() && !revert && entry->second != old) {
+        if (!incomingValues.contains(pair.key)) {
+          if (entry != local.end() && !revert && entry->second != previous.at(pair.source)) {
             return Core::fail(Core::ErrorCode::InvalidState,
-                              "Source removed an overridden node: " + std::to_string(id));
+                              "Source removed an overridden node: " + std::to_string(pair.source));
           }
 
-          local.erase(value);
+          local.erase(pair.target);
         }
       }
 
       for (const auto& [id, value] : current) {
-        const auto old = previous.find(id);
+        const auto old = oldKeys.find(incomingKeys.at(id));
         const auto entry = local.find(mapping.at(id));
 
-        if (old == previous.end() || revert) {
-          if (entry == local.end() && old != previous.end()) {
+        if (old == oldKeys.end() || revert) {
+          if (entry == local.end() && old != oldKeys.end()) {
             created.push_back(mapping.at(id));
           }
 
           local[mapping.at(id)] = value;
         } else if (entry != local.end()) {
-          entry->second = *merge(std::optional<Json>{old->second},
+          entry->second = *merge(std::optional<Json>{previous.at(old->second.source)},
                                  std::optional<Json>{entry->second}, std::optional<Json>{value});
         }
       }
@@ -659,11 +780,12 @@ namespace Dot::World {
         document["entities"].push_back(std::move(value));
       }
 
-      found->baseline = std::move(*text);
+      found->baseline = std::move(text->text);
       found->mapping.clear();
+      found->namespaces = snapshot.namespaces;
 
       for (const auto& [sourceValue, targetValue] : mapping) {
-        found->mapping.push_back({sourceValue, targetValue});
+        found->mapping.push_back({sourceValue, targetValue, incomingKeys.at(sourceValue)});
       }
 
       document.erase("links");
@@ -687,10 +809,10 @@ namespace Dot::World {
         return std::unexpected(bounded.error());
       }
 
-      const auto handle = EntityId{prepared->id(), root.value};
+      const EntityId handle{prepared->id(), root.value};
       return SceneLinkUpdate{std::move(*prepared), handle, std::move(created)};
     } catch (const std::exception& error) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
+      return Core::fail(Core::ErrorCode::External,
                         "Refresh linked scene: " + std::string(error.what()));
     }
   }

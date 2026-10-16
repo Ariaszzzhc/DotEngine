@@ -934,38 +934,75 @@
         ],
         "environment": null,
         "name": "Material studies content",
-        "nextEntity": "9007199254741017",
+        "nextEntity": "8",
         "occlusion": null,
         "version": 1
       },
       "mapping": [
         {
+          "key": [
+            "1"
+          ],
           "source": "1",
           "target": "9007199254741010"
         },
         {
+          "key": [
+            "2"
+          ],
           "source": "2",
           "target": "9007199254741011"
         },
         {
+          "key": [
+            "3"
+          ],
           "source": "3",
           "target": "9007199254741012"
         },
         {
+          "key": [
+            "4"
+          ],
           "source": "4",
           "target": "9007199254741013"
         },
         {
+          "key": [
+            "5"
+          ],
           "source": "5",
           "target": "9007199254741014"
         },
         {
+          "key": [
+            "6"
+          ],
           "source": "6",
           "target": "9007199254741015"
         },
         {
+          "key": [
+            "7"
+          ],
           "source": "7",
           "target": "9007199254741016"
+        }
+      ],
+      "namespaces": [
+        {
+          "asset": "assets/MaterialStudies.dotscene",
+          "entities": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7"
+          ],
+          "nextEntity": "9007199254741017",
+          "prefix": []
         }
       ],
       "root": "9007199254741009"

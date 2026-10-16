@@ -15,6 +15,7 @@ module;
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "../Serialization/Json.hpp"
 
@@ -30,6 +31,7 @@ import Dot.Physics.Character;
 import Dot.Audio.Source;
 import Dot.Script.Source;
 import Dot.World.SceneFiles;
+import Dot.World.SceneIdentity;
 
 namespace Dot::World {
   namespace {
@@ -581,7 +583,7 @@ namespace Dot::World {
       }
 
       std::unordered_set<std::uint64_t> owned;
-      std::size_t bytes{}, count{};
+      std::size_t bytes{}, count{}, spaceCount{}, observedCount{};
       std::vector<SceneLink> prepared(links.begin(), links.end());
 
       for (const auto& link : links) {
@@ -594,11 +596,17 @@ namespace Dot::World {
       for (auto& link : prepared) {
         bytes += link.baseline.size();
         count += link.mapping.size();
+        spaceCount += link.namespaces.size();
+
+        for (const auto& space : link.namespaces) {
+          observedCount += space.entities.size();
+        }
 
         if (!Core::isPortableRelativePath(link.asset) || !link.asset.ends_with(".dotscene")
             || (!link.asset.starts_with("assets/") && !link.asset.starts_with("scenes/"))
             || link.asset.find("/.dot-stage-") != std::string::npos || link.baseline.empty()
-            || bytes > 64 * 1024 * 1024 || count > 10000) {
+            || bytes > 64 * 1024 * 1024 || count > 10000 || spaceCount > 10000
+            || observedCount > 100000) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Invalid scene link source or capacity");
         }
@@ -627,6 +635,7 @@ namespace Dot::World {
         }
 
         std::unordered_set<std::uint64_t> sources;
+        std::vector<SceneSourceOrigin> origins;
 
         for (const auto& mapping : link.mapping) {
           if (!baseline->findEntity(mapping.source) || !sources.insert(mapping.source).second
@@ -635,7 +644,22 @@ namespace Dot::World {
             return Core::fail(Core::ErrorCode::InvalidArgument,
                               "Invalid or overlapping scene link mapping");
           }
+
+          origins.push_back({mapping.source, mapping.key});
         }
+
+        auto identity = validateSceneSourceIdentity(link.asset, origins, link.namespaces);
+
+        if (!identity) {
+          return identity;
+        }
+
+        for (auto& space : link.namespaces) {
+          std::ranges::sort(space.entities);
+        }
+
+        std::ranges::sort(link.namespaces, {}, &SceneSourceNamespace::prefix);
+        std::ranges::sort(link.mapping, {}, &SceneLinkMapping::source);
 
         auto canonical = encodeScene(*baseline);
 

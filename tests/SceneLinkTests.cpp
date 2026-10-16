@@ -51,7 +51,7 @@ TEST_CASE("scene_links.native_roundtrip_owns_baseline_and_stable_disjoint_mappin
   const auto first = f.target.sceneLinks().value();
   REQUIRE(first.size() == 1);
   CHECK(first[0].root == 2);
-  CHECK(first[0].mapping == std::vector<SceneLinkMapping>{{1, 3}, {2, 4}});
+  CHECK(first[0].mapping == std::vector<SceneLinkMapping>{{1, 3, {1}}, {2, 4, {2}}});
   auto restored = decodeScene(text(f.target)).value();
   CHECK(restored.sceneLinks().value() == first);
   auto second = prepareLinkedScene(f.target, f.source, "assets/panels.dotscene", 5).value();

@@ -149,6 +149,8 @@ target_sources(DotEngine PRIVATE
     src/Engine/World/SceneFiles.cpp
     src/Engine/World/SceneContent.cpp
     src/Engine/World/SceneLinks.cpp
+    src/Engine/World/SceneIdentity.cpp
+    src/Engine/World/SceneSources.cpp
     src/Engine/Physics/World.cpp
     src/Engine/Physics/Body.cpp
     src/Engine/Physics/Character.cpp
@@ -278,6 +280,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/World/SceneFiles.cppm
         src/Engine/World/SceneContent.cppm
         src/Engine/World/SceneLinks.cppm
+        src/Engine/World/SceneIdentity.cppm
+        src/Engine/World/SceneSources.cppm
         src/Engine/Physics/World.cppm
         src/Engine/Physics/Body.cppm
         src/Engine/Physics/Character.cppm
