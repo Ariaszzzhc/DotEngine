@@ -548,18 +548,26 @@ export namespace Dot::Graphics {
     /** Own an isolated Dear ImGui context and official WebGPU/optional SDL3
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
-     * the callback may call guiImage, but must not replace/change ImGui context
-     * or reenter renderer operations. Input events are explicitly forwarded.
+     * the callback may append GUI images/viewports and read guiStats/visibilityStats,
+     * but must not replace/change ImGui context or reenter other renderer operations.
+     * Input events are explicitly forwarded.
      * Empty font uses the built-in font; an explicit font must load successfully.
      * Frame failures do not roll back widget/native side effects. No ini file or
      * detached viewport is implicitly created. 拥有独立 Dear ImGui 上下文及官方
      * WebGPU/可选 SDL3 后端，GUI 所有权限进程主线程；控件仅在本线程绘制回调内执行，回调可调用
-     * guiImage， 但不得替换/更改 ImGui 上下文或重入渲染操作；输入事件须显式转发。空字体用内置
+     * GUI 图像/视口和读取 guiStats/visibilityStats，但不得替换/更改 ImGui 上下文或
+     * 重入其他渲染器操作；
+     * 输入事件须显式转发。空字体用内置
      * 字体，显式字体须加载成功；帧失败不回滚控件/原生副作用，不隐式创建 ini 文件或
      * 独立视口。 */
     [[nodiscard]] auto enableGui(const GuiConfig& config = {}) -> Core::Result<void>;
     [[nodiscard]] auto closeGui() -> Core::Result<void>;
     [[nodiscard]] auto guiEvent(const Platform::Event& event) -> Core::Result<bool>;
+    /** Owner-thread read, including inside GUI callbacks. Geometry/input describe
+     * the latest assembled GUI data; frames counts successful submissions. Reading
+     * does not complete or replay a frame. Device faults remain expected errors.
+     * 限所有者线程，GUI 回调内也可读取。几何/输入为最近组装的数据，frames 为成功提交数；
+     * 查询不完成或重放帧，设备故障仍以 expected 错误报告。 */
     [[nodiscard]] auto guiStats() const -> Core::Result<GuiStats>;
     /** UI image retains the target through submission; size uses logical pixels.
      * UI 图像持有目标至提交结束，尺寸使用逻辑像素。 */

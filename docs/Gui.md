@@ -144,3 +144,15 @@ skin joint names, world positions and nearest bound ancestors using native skin
 count/palette validation. Multiple roots and unbound intermediate hierarchy nodes
 are preserved explicitly; no connections are inferred from palette order.
 These are foundations for the editor's skeleton viewer, not an implemented bone editor.
+
+`guiStats` and `visibilityStats` are read-only owner-thread snapshots that may also
+be queried inside GUI callbacks. They do not submit, complete or replay drawing.
+GUI geometry/input describe the latest assembled data; `frames` counts successful
+submissions, so a failed/unsubmitted build is not a completed frame. Mutating/rendering
+reentry and GUI shutdown during a callback remain rejected, as do wrong-thread and
+failed-device queries. This permits a real GUI command to return the same product
+inspection response as an agent command without a post-commit query error.
+
+GUI 回调内可以读取同线程的 guiStats/visibilityStats 快照，不触发绘制/提交/重放；
+几何/输入为最近组装数据，frames 只计成功提交。渲染/修改重入、回调内关闭、跨线程及
+设备故障仍拒绝，避免 GUI 操作成功后因只读状态查询被误判为重入。

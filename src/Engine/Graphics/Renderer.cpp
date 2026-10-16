@@ -4521,7 +4521,7 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
 
-    auto checked = m_impl->check();
+    auto checked = m_impl->check(true);
 
     if (!checked) {
       return std::unexpected(checked.error());

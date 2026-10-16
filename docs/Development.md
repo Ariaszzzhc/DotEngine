@@ -6313,3 +6313,30 @@ native decoded-library authority, unchanged default callers and meaningful devic
 behavioral coverage. This stage supplies native editing/save/preview foundations; the
 actual timeline GUI and strict product editor operations remain the next integration.
 Production keyframe authoring is not yet claimed. The complete engine goal remains open.
+
+## 2026-10-16 — GUI command inspection snapshots
+
+Actual editor use exposes a post-command inspection error: GUI-originated actions
+return the same inspection response as agent actions, but guiStats incorrectly
+rejects a read inside its own GUI callback as rendering reentry. A selection may
+already have committed before the frontend then reports bad expected access.
+Renderer::guiStats now uses the same owner-thread/device checks with read-only GUI
+access as visibilityStats. It copies already assembled state, never issues GPU work,
+completes/submits a frame or replays widget effects. Frame count remains successful
+submissions; geometry/input can describe an assembled yet unsubmitted build.
+
+The existing durable offscreen callback-recovery case now requires a valid enabled
+snapshot with zero submitted frames inside its callback, while still rejecting
+closeGui, nested renderGui and createTarget. The new assertion reproduces the failure
+before the fix (1/1 fails, .06s). All 14 offscreen GUI cases then pass Release/NDEBUG
+(0.90s). Combined affected Debug animation/GUI checks pass 33/33 (8.84s), including
+all 14 GUI cases. Existing wrong-thread, budget, ownership, stack-recovery and
+non-replay checks remain. Automatic checks create no desktop window.
+
+Precommit review verifies that only this read gains GUI-callback access, preserving
+thread/device checks and every rendering/mutation/shutdown guard. Snapshot copying
+has no borrowed GUI pointers or ImGui-context mutation. Public contracts and GUI
+documentation state precisely what assembled versus submitted data means. Formatting
+and whitespace checks pass for the two renderer files and GUI test. Only arm64 macOS
+is executed, with no dependency/compiler/linker or platform-target changes. Animation
+editor workflow verification continues separately; test counts do not prove its UI.
