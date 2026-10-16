@@ -71,7 +71,10 @@ TEST_CASE("lighting.shadow_source_type_count_and_settings_validate_transactional
   CHECK(validatedLighting(lighting));
   lighting.lights[0] = light;
   lighting.lights.push_back(light);
-  CHECK_FALSE(validatedLighting(lighting));
+  CHECK(validatedLighting(lighting));
+  lighting.lights.resize(64, light);
+  CHECK(validatedLighting(lighting));
+  lighting.lights.resize(2);
   lighting.lights.pop_back();
   lighting.lights[0].shadows->resolution = 129;
   CHECK_FALSE(validatedLighting(lighting));

@@ -146,6 +146,7 @@ TEST_CASE("shadows.gpu_only_requested_direct_light_is_attenuated_ibl_and_emissio
   const auto frames = fixture.target.info()->frames;
   auto invalid = fixture.lights;
   invalid.lights[0].shadows = sun.shadows;
+  invalid.lights[0].shadows->resolution = 129;
   CHECK_FALSE(fixture.renderer.setLighting(invalid));
   invalid = fixture.lights;
   invalid.lights[1].kind = LightKind::Spot;
@@ -289,14 +290,18 @@ TEST_CASE("shadows.gpu_point_all_faces_and_soft_cube_seams_remain_occluded") {
   light.range = 12;
   light.shadows->normalBias = .01F;
   fixture.draws[1].material.doubleSided = true;
-  const std::array<Dot::Math::Vec3, 8> rays{{{1, 0, 0},
-                                             {-1, 0, 0},
-                                             {0, 1, 0},
-                                             {0, -1, 0},
-                                             {0, 0, 1},
-                                             {0, 0, -1},
-                                             {1, -1, 0},
-                                             {1, -1, 1}}};
+  const std::array<Dot::Math::Vec3, 12> rays{{{1, 0, 0},
+                                              {-1, 0, 0},
+                                              {0, 1, 0},
+                                              {0, -1, 0},
+                                              {0, 0, 1},
+                                              {0, 0, -1},
+                                              {1, -1, 0},
+                                              {1, -1, 1},
+                                              {1, -.97F, 0},
+                                              {1, -1.03F, 0},
+                                              {1, -.97F, .98F},
+                                              {1, -1.03F, 1.02F}}};
   auto wall = fixture.renderer.upload(cube({8, 8, .1F}).value()).value();
   fixture.draws[0].mesh = &wall;
 
@@ -347,4 +352,114 @@ TEST_CASE("shadows.gpu_local_normal_bias_at_source_keeps_finite_lit_receiver") {
     CHECK(std::all_of(image.pixels.begin(), image.pixels.end(),
                       [](float value) { return std::isfinite(value); }));
   }
+}
+
+TEST_CASE("shadows.gpu_multiple_mixed_lights_match_independent_frames_and_reorder") {
+  Fixture fixture;
+  auto sun = fixture.lights.lights[0];
+  sun.shadows->filterRadius = 6;
+  auto point = sun;
+  point.kind = LightKind::Point;
+  point.position = {2, 3, 0};
+  point.intensity = 50;
+  point.color = {0, 1, 0};
+  point.shadows->resolution = 256;
+  auto spot = point;
+  spot.kind = LightKind::Spot;
+  spot.position = {-2, 3, 0};
+  spot.direction = {2, -3, 0};
+  spot.color = {0, 0, 1};
+  spot.innerConeDegrees = 35;
+  spot.outerConeDegrees = 55;
+  spot.shadows->resolution = 128;
+  sun.color = {1, 0, 0};
+  const std::array lights{sun, point, spot};
+  std::vector<HdrImage> references;
+
+  for (const auto& light : lights) {
+    fixture.lights.lights = {light};
+    REQUIRE(fixture.renderer.setLighting(fixture.lights));
+    references.push_back(fixture.render());
+  }
+
+  fixture.lights.lights = {sun, point, spot};
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  auto mixed = fixture.render();
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 7 * 256 * 256 * 4);
+
+  for (std::size_t pixel = 0; pixel < mixed.pixels.size(); pixel += 4) {
+    for (std::size_t channel = 0; channel < 3; ++channel) {
+      const auto expected = references[channel].pixels[pixel + channel];
+      CHECK(mixed.pixels[pixel + channel] == doctest::Approx(expected).epsilon(.003).scale(.001));
+    }
+  }
+
+  std::reverse(fixture.lights.lights.begin(), fixture.lights.lights.end());
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto reordered = fixture.render();
+  CHECK(reordered.pixels == mixed.pixels);
+  fixture.lights.lights.erase(fixture.lights.lights.begin() + 1);
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 7 * 256 * 256 * 4);
+  const auto removed = fixture.render();
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 2 * 128 * 128 * 4);
+  CHECK(fixture.red(removed, {1, 0, 0}) == doctest::Approx(fixture.red(references[0], {1, 0, 0})));
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowInstances < 2 * 7);
+}
+
+TEST_CASE("shadows.gpu_budget_failure_preserves_lights_maps_and_completed_target") {
+  RendererConfig config;
+  config.maxShadowBytes = 128 * 128 * 4;
+  auto renderer = Renderer::create(nullptr, config).value();
+  auto target = renderer.createTarget(4, 4).value();
+  ShadowSettings settings;
+  settings.resolution = 128;
+  settings.cascades = 1;
+  settings.distance = 10;
+  Lighting lighting;
+  lighting.lights = {{.shadows = settings}};
+  REQUIRE(renderer.setLighting(lighting));
+  auto camera = Dot::Math::multiply(Dot::Math::perspective(60, 1, .1F, 10).value(),
+                                    Dot::Math::lookAt({0, 0, 1}, {}).value())
+                    .value();
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  auto image = renderer.readHdrTarget(target).value();
+  const auto bytes = renderer.resourceStats()->shadowBytes;
+  const auto frames = target.info()->frames;
+  lighting.lights.push_back(lighting.lights[0]);
+  CHECK_FALSE(renderer.setLighting(lighting));
+  CHECK(renderer.lighting()->lights.size() == 1);
+  CHECK(renderer.resourceStats()->shadowBytes == bytes);
+  CHECK(target.info()->frames == frames);
+  CHECK(renderer.readHdrTarget(target)->pixels == image.pixels);
+  RendererConfig invalid;
+  invalid.maxShadowBytes = 0;
+  CHECK_FALSE(Renderer::create(nullptr, invalid));
+  invalid.maxShadowBytes = 512 * 1024 * 1024 + 1;
+  CHECK_FALSE(Renderer::create(nullptr, invalid));
+  lighting.lights.clear();
+  REQUIRE(renderer.setLighting(lighting));
+  CHECK(renderer.resourceStats()->shadowBytes == 0);
+}
+
+TEST_CASE("shadows.gpu_all_64_point_sources_pack_and_last_light_keeps_real_occlusion") {
+  Fixture fixture;
+  auto light = fixture.lights.lights[0];
+  light.kind = LightKind::Point;
+  light.position = {-2, 3, 0};
+  light.intensity = 0;
+  light.range = 12;
+  fixture.lights.lights.assign(64, light);
+  fixture.lights.lights.back().intensity = 80;
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto all = fixture.render();
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 24 * 1024 * 1024);
+  CHECK(fixture.red(all, {1, 0, 0}) < .01F);
+  CHECK(fixture.red(all, {-1, 0, 0}) > .3F);
+  light.intensity = 80;
+  fixture.lights.lights.assign(1, light);
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto single = fixture.render();
+  CHECK(single.pixels == all.pixels);
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 6 * 128 * 128 * 4);
 }

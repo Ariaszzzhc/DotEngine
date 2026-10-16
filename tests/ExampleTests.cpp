@@ -407,7 +407,7 @@ TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inp
     }
   }
 
-  CHECK(shadowed == 1);
+  CHECK(shadowed == 4);
   CHECK(surfaces.size() >= 10);
   CHECK(materials.size() >= 8);
   unsigned photographic{};

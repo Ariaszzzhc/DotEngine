@@ -6977,3 +6977,82 @@ removed; ignored capture/state observations and build logs remain. Caches and pr
 archives are preserved, and no distribution archive is generated. Multiple shadow
 sources, scalable local-face culling, temporal quality, complete animation authoring
 and a finished realistic game remain open. The broader engine goal is unfinished.
+
+### Mixed-light shadow atlas and PrismRelay integration
+
+Replaced the single-source restriction with independent shadow requests on all 64
+frame lights. Added a pure CPU ShadowAtlas module, with separate interface and
+implementation, for deterministic largest-first quadtree packing of up to six
+128..2048 square maps per source. Input source/face identities and resolutions are
+preserved; unused face slots remain zero. Page size grows only to satisfy the
+device layer limit. Whole pages/padding count toward RendererConfig.maxShadowBytes
+(1 byte..512 MiB, default 256 MiB). Budget rejection preserves previous renderer
+lighting/maps and completed pixels; no source is silently dropped or downscaled.
+
+The shared Depth32Float array clears each physical layer once. Per-face viewport/
+scissor and independent instance buffers preserve adjacent tiles and avoid queued
+uniform aliasing. Read-only storage contains 64 light-indexed records rather than
+one selected-light uniform. Clamped hardware footprints and remapped point texel
+loads stay inside their own tiles. Caster world bounds validate once per frame;
+local shadow faces conservatively test their own frusta, independent of main-camera
+visibility. Directional fits continue to retain overlapping off-camera casters.
+Zero intensity or zero range/cone attenuation skips unnecessary shadow sampling.
+
+Actual native observation identified a serious performance regression in the first
+multi-source implementation: four-source PrismRelay advanced only 3 Play frames in
+2.5808s with 716666638ns dropped simulation time; the single-directional comparison
+advanced 177 frames in 2.1554s without drops. This was not accepted as a usable
+example. Point interiors now use hardware bilinear PCF; only cube-edge footprints
+perform explicit per-neighbor ray/plane remapping. Both paths share perspective
+receiver-plane bias. Sampling helpers read individual source fields by index instead
+of passing whole six-matrix records by value. Seam checks now include rays just to
+either side of two-/three-face boundaries, as well as exact seams and all six axes.
+
+After rebuilding, a second native session on the same saved project/view measures
+257 frames in 2.1466s for four shadow sources and 256 in 2.1440s for the directional
+comparison, both with zero dropped simulation time and no runtime error. These are
+short local wall-clock/Play-counter observations, not a sustained GPU benchmark or
+large-scene performance claim. Both optimizations were applied together; their
+individual contributions were not profiled separately.
+
+PrismRelay now saves its directional cascades and all three point-light requests,
+using 512px local faces and radial coverage matching their 6/8/8m ranges. These were
+authored through actual Inspector staging/apply and strict component operations,
+with one batch for the two service fills. Undo/redo, save, exact saved-scene reopen,
+static Game view, frozen PNG capture and real Play/Stop were verified. Authoring is
+unchanged by Play and by the temporary comparison, which was undone before close.
+The source scene diff contains only the three local shadow settings. Render reports
+142 input instances, 284 directional-only shadow instances, and 628 with all four
+sources (170 shadow draws), rather than sending all 142 instances to all 20 faces.
+The expected atlas has seven 1024px pages/28 MiB logical depth storage. Both actual
+editor sessions exit 0 with empty stderr and retired control directories. No native
+mouse/keyboard acceptance or computer-use interaction is claimed.
+
+Added two device-free atlas unit cases covering deterministic mixed-size placement,
+non-overlap, identity/ownership, 384-map layer growth, padding/budget boundaries and
+invalid work. Three new offscreen GPU cases compare mixed RGB-separated sources
+against independent reference frames, reorder/remove sources, retain state on
+budget failure, and exercise all 64 point sources/384 maps with real occlusion from
+light 64 and resource resizing. Existing directional/point/spot, mask, skin, IBL,
+SSAO and caster/receiver regressions retain coverage. The authored-project regression
+now requires the four saved shadow sources. No new executable or window test is added.
+
+macOS Release/NDEBUG full checks pass 1127/1127 (24.70s): 317 unit and 810 integration,
+including overlapping 132 offscreen GPU, 27 native audio and 28 SDL-dummy platform
+cases. Focused Debug checks pass 31/31 (29.45s): ten unit and 21 integration, including
+eleven offscreen GPU and ten compiled PrismRelay cases. Both presets build with the
+existing caller toolchain/environment. Windows/Linux are not executed. Early build
+header/optional-value/copy diagnostics and two incorrect new-test assumptions were
+fixed rather than bypassed: soft visibility compares against its actual single-light
+reference, and the expanded seam fixture contains actual boundary rays rather than
+default zero vectors. Final checks pass without changing deadlines or dropping tests.
+
+Precommit review covers packing/limits/ownership, CPU/WGSL storage layout, per-tile
+clearing/filter boundaries, main-camera-independent local culling, dynamic source
+mapping, budget failure atomicity, resource release and example persistence. All ten
+changed/new C++ files pass clang-format; whitespace checks pass. Temporary app,
+requests, clients and editing helper are removed, while ignored captures/timing/state
+observations and logs remain. Build caches and existing archives are preserved; no
+distribution archive is generated. Cached/pooled shadow updates, populated-scene
+profiling/streaming, temporal quality, remaining authoring systems and finished
+realistic game art remain open. The broader engine goal remains unfinished.

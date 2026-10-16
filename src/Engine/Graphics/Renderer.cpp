@@ -29,6 +29,7 @@ module Dot.Graphics.Renderer;
 import Dot.Core.Result;
 import Dot.Math;
 import Dot.Graphics.View;
+import Dot.Graphics.ShadowAtlas;
 import Dot.Graphics.SpatialIndex;
 import Dot.Graphics.RenderQueue;
 import Dot.Platform.Window;
@@ -600,6 +601,7 @@ namespace Dot::Graphics {
     bool occlusionPending{};
     std::uint32_t shadowResolution{};
     std::uint32_t shadowLayers{};
+    std::uint32_t shadowLayerLimit{256};
     std::uint64_t shadowBytes{};
     std::optional<EnvironmentLighting> environment;
     wgpu::RenderPipeline postPipeline;
@@ -916,14 +918,21 @@ namespace Dot::Graphics {
       return device.CreateRenderPipeline(&descriptor);
     }
 
-    auto shadowSource() const -> std::optional<std::size_t> {
-      for (std::size_t index = 0; index < config.lighting.lights.size(); ++index) {
-        if (config.lighting.lights[index].shadows) {
-          return index;
+    auto shadowPlan(const Lighting& lighting) const -> Core::Result<ShadowAtlas> {
+      std::array<ShadowAtlasRequest, 64> requests;
+      std::size_t count{};
+
+      for (const auto& light : lighting.lights) {
+        if (light.shadows) {
+          const auto maps = light.kind == LightKind::Point  ? 6u
+                            : light.kind == LightKind::Spot ? 1u
+                                                            : light.shadows->cascades;
+          requests[count++] = {light.shadows->resolution, maps};
         }
       }
 
-      return std::nullopt;
+      return planShadowAtlas(std::span(requests.data(), count), config.maxShadowBytes,
+                             shadowLayerLimit);
     }
 
     auto ensureShadowPipelines() -> Core::Result<void> {
@@ -985,19 +994,18 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto ensureShadowMaps(const ShadowSettings& settings, std::uint32_t layers)
-        -> Core::Result<void> {
-      if (shadowResolution == settings.resolution && shadowLayers == layers) {
+    auto ensureShadowMaps(const ShadowAtlas& atlas) -> Core::Result<void> {
+      if (shadowResolution == atlas.dimension && shadowLayers == atlas.layers) {
         return {};
       }
 
-      if (settings.resolution > info.maxTextureDimension) {
+      if (atlas.dimension > info.maxTextureDimension) {
         return Core::fail(Core::ErrorCode::Unavailable, "Shadow resolution exceeds device limits");
       }
 
       ErrorScope scope(instance, device);
       wgpu::TextureDescriptor descriptor;
-      descriptor.size = {settings.resolution, settings.resolution, layers};
+      descriptor.size = {atlas.dimension, atlas.dimension, atlas.layers};
       descriptor.format = wgpu::TextureFormat::Depth32Float;
       descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
       auto texture = device.CreateTexture(&descriptor);
@@ -1012,8 +1020,8 @@ namespace Dot::Graphics {
       }
 
       shadowTexture = std::move(texture);
-      shadowResolution = settings.resolution;
-      shadowLayers = layers;
+      shadowResolution = atlas.dimension;
+      shadowLayers = atlas.layers;
       shadowBytes
           = static_cast<std::uint64_t>(shadowResolution) * shadowResolution * shadowLayers * 4;
       return {};
@@ -1887,8 +1895,8 @@ namespace Dot::Graphics {
 
     enum class BatchPass { Surface, Geometry, Shadow, Picking };
 
-    auto batches(std::span<const PreparedDraw> draws, BatchPass pass = BatchPass::Surface)
-        -> Core::Result<DrawBatches> {
+    auto batches(std::span<const PreparedDraw> draws, BatchPass pass = BatchPass::Surface,
+                 const Frustum* frustum = nullptr) -> Core::Result<DrawBatches> {
       std::vector<BatchItem> items;
       items.reserve(draws.size());
 
@@ -1899,6 +1907,16 @@ namespace Dot::Graphics {
             pass == BatchPass::Shadow
                 ? draw.castsShadow
                 : draw.visible && (pass != BatchPass::Geometry || draw.uniform.alpha.x != 2)};
+
+        if (item.enabled && frustum) {
+          auto hit = frustum->intersects(draw.mesh->bounds, draw.uniform.model);
+
+          if (!hit) {
+            return std::unexpected(hit.error());
+          }
+
+          item.enabled = *hit;
+        }
 
         item.textures[0] = draw.uniform.alpha.x == 0
                                ? 0
@@ -2024,12 +2042,18 @@ namespace Dot::Graphics {
       Math::Vec4 forward;
       Math::Vec4 bias;
       Math::Vec4 meta;
+      std::array<Math::Vec4, 6> tiles;
     };
 
-    static_assert(sizeof(ShadowData) == 464);
+    static_assert(sizeof(ShadowData) == 560);
 
-    auto fitShadows(std::span<const PreparedDraw> draws, const Math::Mat4& camera,
-                    std::size_t source) -> Core::Result<ShadowProjection> {
+    struct FrameShadow {
+      std::size_t source;
+      ShadowProjection fit;
+    };
+
+    auto shadowCasterBounds(std::span<const PreparedDraw> draws)
+        -> Core::Result<std::vector<Bounds>> {
       std::vector<Bounds> casters;
       casters.reserve(draws.size());
 
@@ -2073,6 +2097,11 @@ namespace Dot::Graphics {
         casters.push_back(bounds);
       }
 
+      return casters;
+    }
+
+    auto fitShadows(const Math::Mat4& camera, std::size_t source, std::span<const Bounds> casters)
+        -> Core::Result<ShadowProjection> {
       const auto& light = config.lighting.lights[source];
 
       if (light.kind == LightKind::Point) {
@@ -2089,46 +2118,70 @@ namespace Dot::Graphics {
     }
 
     auto encodeShadows(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
-                       const ShadowProjection& fit) -> Core::Result<void> {
-      auto plan = batches(draws, BatchPass::Shadow);
+                       std::span<const FrameShadow> sources, const ShadowAtlas& atlas)
+        -> Core::Result<void> {
+      struct Face {
+        ShadowTile tile;
+        DrawBatches plan;
+        wgpu::Buffer storage;
+      };
 
-      if (!plan) {
-        return std::unexpected(plan.error());
-      }
+      std::vector<Face> faces;
 
-      std::vector<CoverageData> matrices;
-      matrices.reserve(plan->indices.size() * fit.count);
+      for (std::size_t source = 0; source < sources.size(); ++source) {
+        const auto& fit = sources[source].fit;
 
-      for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
-        for (const auto index : plan->indices) {
-          auto matrix = Math::multiply(fit.matrices[cascade], draws[index].uniform.model);
+        for (std::uint32_t layer = 0; layer < fit.count; ++layer) {
+          auto frustum = Frustum::create(fit.matrices[layer]);
 
-          if (!matrix) {
-            return Core::fail(matrix.error().code,
-                              "Shadow instance matrix: " + matrix.error().message);
+          if (!frustum) {
+            return std::unexpected(frustum.error());
           }
 
-          const auto& data = draws[index].uniform;
-          matrices.push_back({*matrix, data.tint, data.flags, data.alpha, {}});
+          auto plan = batches(draws, BatchPass::Shadow,
+                              fit.kind == ShadowProjectionKind::Cascaded ? nullptr : &*frustum);
+
+          if (!plan) {
+            return std::unexpected(plan.error());
+          }
+
+          std::vector<CoverageData> matrices;
+          matrices.reserve(plan->indices.size());
+
+          for (const auto index : plan->indices) {
+            auto matrix = Math::multiply(fit.matrices[layer], draws[index].uniform.model);
+
+            if (!matrix) {
+              return Core::fail(matrix.error().code,
+                                "Shadow instance matrix: " + matrix.error().message);
+            }
+
+            const auto& data = draws[index].uniform;
+            matrices.push_back({*matrix, data.tint, data.flags, data.alpha, {}});
+          }
+
+          wgpu::Buffer storage;
+
+          if (!matrices.empty()) {
+            auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(CoverageData));
+
+            if (!buffer) {
+              return std::unexpected(buffer.error());
+            }
+
+            storage = *buffer;
+          }
+
+          faces.push_back({atlas.sources[source][layer], std::move(*plan), std::move(storage)});
         }
       }
 
-      wgpu::Buffer storage;
-
-      if (!matrices.empty()) {
-        auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(CoverageData));
-
-        if (!buffer) {
-          return std::unexpected(buffer.error());
-        }
-
-        storage = *buffer;
-      }
-
-      for (std::uint32_t cascade = 0; cascade < fit.count; ++cascade) {
+      /** Clear each physical layer once; per-face clears would erase adjacent tiles.
+       * 每个物理图层只清除一次，逐面清除会擦掉相邻图块。 */
+      for (std::uint32_t layer = 0; layer < atlas.layers; ++layer) {
         wgpu::TextureViewDescriptor view;
         view.dimension = wgpu::TextureViewDimension::e2D;
-        view.baseArrayLayer = cascade;
+        view.baseArrayLayer = layer;
         view.arrayLayerCount = 1;
         view.aspect = wgpu::TextureAspect::DepthOnly;
         wgpu::RenderPassDepthStencilAttachment depth;
@@ -2141,16 +2194,26 @@ namespace Dot::Graphics {
         auto pass = encoder.BeginRenderPass(&descriptor);
         pass.SetPipeline(shadowDepthPipeline);
 
-        for (auto batch : plan->batches) {
-          const auto& draw = draws[plan->indices[batch.first]];
-          const auto& mesh = *draw.mesh;
-          pass.SetBindGroup(0,
-                            bindCoverage(shadowDepthPipeline, storage,
-                                         draw.uniform.alpha.x == 0 ? nullptr : draw.textures[0]));
-          batch.first += cascade * static_cast<std::uint32_t>(plan->indices.size());
-          emitInstances(pass, mesh, batch);
-          pendingVisibility.shadowInstances += batch.count;
-          ++pendingVisibility.shadowDraws;
+        for (const auto& face : faces) {
+          const auto& tile = face.tile;
+
+          if (tile.layer != layer) {
+            continue;
+          }
+
+          pass.SetViewport(static_cast<float>(tile.x), static_cast<float>(tile.y),
+                           static_cast<float>(tile.size), static_cast<float>(tile.size), 0, 1);
+          pass.SetScissorRect(tile.x, tile.y, tile.size, tile.size);
+
+          for (const auto& batch : face.plan.batches) {
+            const auto& draw = draws[face.plan.indices[batch.first]];
+            pass.SetBindGroup(0,
+                              bindCoverage(shadowDepthPipeline, face.storage,
+                                           draw.uniform.alpha.x == 0 ? nullptr : draw.textures[0]));
+            emitInstances(pass, *draw.mesh, batch);
+            pendingVisibility.shadowInstances += batch.count;
+            ++pendingVisibility.shadowDraws;
+          }
         }
 
         pass.End();
@@ -2159,22 +2222,37 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto bindShadows(const wgpu::RenderPipeline& pipeline, const ShadowProjection& fit,
-                     std::size_t source) -> wgpu::BindGroup {
-      const auto& settings = *config.lighting.lights[source].shadows;
-      const ShadowData data{
-          fit.matrices,
-          fit.splits,
-          {fit.origin.x, fit.origin.y, fit.origin.z, fit.nearDepth},
-          {fit.forward.x, fit.forward.y, fit.forward.z, 0},
-          {settings.depthBias, settings.slopeBias, settings.filterRadius, settings.normalBias},
-          {static_cast<float>(source), static_cast<float>(settings.resolution),
-           static_cast<float>(fit.count), static_cast<float>(fit.kind)}};
+    auto bindShadows(const wgpu::RenderPipeline& pipeline, std::span<const FrameShadow> sources,
+                     const ShadowAtlas& atlas) -> wgpu::BindGroup {
+      std::array<ShadowData, 64> data{};
+
+      for (std::size_t index = 0; index < sources.size(); ++index) {
+        const auto& frame = sources[index];
+        const auto& fit = frame.fit;
+        const auto& settings = *config.lighting.lights[frame.source].shadows;
+        auto& light = data[frame.source];
+        light
+            = {fit.matrices,
+               fit.splits,
+               {fit.origin.x, fit.origin.y, fit.origin.z, fit.nearDepth},
+               {fit.forward.x, fit.forward.y, fit.forward.z, 0},
+               {settings.depthBias, settings.slopeBias, settings.filterRadius, settings.normalBias},
+               {static_cast<float>(atlas.dimension), static_cast<float>(settings.resolution),
+                static_cast<float>(fit.count), static_cast<float>(fit.kind)},
+               {}};
+
+        for (std::uint32_t face = 0; face < fit.count; ++face) {
+          const auto& tile = atlas.sources[index][face];
+          light.tiles[face] = {static_cast<float>(tile.x), static_cast<float>(tile.y),
+                               static_cast<float>(tile.layer), 0};
+        }
+      }
+
       wgpu::BufferDescriptor descriptor;
       descriptor.size = sizeof(data);
-      descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      descriptor.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
       auto buffer = device.CreateBuffer(&descriptor);
-      queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+      queue.WriteBuffer(buffer, 0, data.data(), sizeof(data));
       wgpu::SamplerDescriptor sampler;
       sampler.compare = wgpu::CompareFunction::LessEqual;
       sampler.minFilter = sampler.magFilter = wgpu::FilterMode::Linear;
@@ -2414,15 +2492,35 @@ namespace Dot::Graphics {
         }
       }
 
-      const auto source = shadowSource();
-      std::optional<ShadowProjection> fit;
+      auto atlas = shadowPlan(config.lighting);
+
+      if (!atlas) {
+        return std::unexpected(atlas.error());
+      }
+
+      const bool source = !atlas->sources.empty();
+      std::vector<FrameShadow> shadows;
       wgpu::CommandEncoder shadowEncoder;
 
       if (source) {
-        auto matrices = fitShadows(draws, viewProjection, *source);
+        auto casters = shadowCasterBounds(draws);
 
-        if (!matrices) {
-          return std::unexpected(matrices.error());
+        if (!casters) {
+          return std::unexpected(casters.error());
+        }
+
+        for (std::size_t light = 0; light < config.lighting.lights.size(); ++light) {
+          if (!config.lighting.lights[light].shadows) {
+            continue;
+          }
+
+          auto fit = fitShadows(viewProjection, light, *casters);
+
+          if (!fit) {
+            return std::unexpected(fit.error());
+          }
+
+          shadows.push_back({light, *fit});
         }
 
         auto checked = ensureShadowPipelines();
@@ -2431,15 +2529,14 @@ namespace Dot::Graphics {
           return std::unexpected(checked.error());
         }
 
-        checked = ensureShadowMaps(*config.lighting.lights[*source].shadows, matrices->count);
+        checked = ensureShadowMaps(*atlas);
 
         if (!checked) {
           return std::unexpected(checked.error());
         }
 
-        fit = *matrices;
         shadowEncoder = device.CreateCommandEncoder();
-        checked = encodeShadows(shadowEncoder, draws, *fit);
+        checked = encodeShadows(shadowEncoder, draws, shadows, *atlas);
 
         if (!checked) {
           return std::unexpected(checked.error());
@@ -2493,9 +2590,9 @@ namespace Dot::Graphics {
         const auto index = (environment ? 4U : 0U) + (source ? 2U : 0U) + (occlusion ? 1U : 0U);
 
         if (!blendPipelines[index]) {
-          blendPipelines[index] = pipeline(wgpu::TextureFormat::RGBA16Float,
-                                           environment.has_value(), source.has_value(),
-                                           occlusion.has_value() && environment.has_value(), true);
+          blendPipelines[index]
+              = pipeline(wgpu::TextureFormat::RGBA16Float, environment.has_value(), source,
+                         occlusion.has_value() && environment.has_value(), true);
         }
 
         blendPipeline = blendPipelines[index];
@@ -2516,8 +2613,8 @@ namespace Dot::Graphics {
                 pass.SetBindGroup(2, bindEnvironment(selected, occlusion.has_value()));
               }
 
-              if (fit) {
-                pass.SetBindGroup(3, bindShadows(selected, *fit, *source));
+              if (source) {
+                pass.SetBindGroup(3, bindShadows(selected, shadows, *atlas));
               }
 
               pass.SetBindGroup(1, bindLighting(selected));
@@ -2834,8 +2931,9 @@ namespace Dot::Graphics {
     if (config.maxTextures == 0 || config.maxTextures > 4096 || config.maxTextureBytes == 0
         || config.maxTextureBytes > 512 * 1024 * 1024 || config.maxSkins == 0
         || config.maxSkins > 1024 || config.maxSkinBytes == 0
-        || config.maxSkinBytes > 512 * 1024 * 1024) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid texture/skin residency budget");
+        || config.maxSkinBytes > 512 * 1024 * 1024 || config.maxShadowBytes == 0
+        || config.maxShadowBytes > 512 * 1024 * 1024) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid renderer resource budget");
     }
 
     auto settings = validatePostProcess(config.postProcess);
@@ -2966,6 +3064,13 @@ namespace Dot::Graphics {
     }
 
     impl->info.maxTextureDimension = limits.maxTextureDimension2D;
+    impl->shadowLayerLimit = limits.maxTextureArrayLayers;
+    auto atlas = impl->shadowPlan(impl->config.lighting);
+
+    if (!atlas) {
+      return std::unexpected(atlas.error());
+    }
+
     impl->maxInstanceBufferBytes
         = std::min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
     ErrorScope scope(impl->instance, impl->device);
@@ -4187,9 +4292,15 @@ namespace Dot::Graphics {
       return std::unexpected(validated.error());
     }
 
+    auto atlas = m_impl->shadowPlan(*validated);
+
+    if (!atlas) {
+      return std::unexpected(atlas.error());
+    }
+
     m_impl->config.lighting = std::move(*validated);
 
-    if (!m_impl->shadowSource()) {
+    if (atlas->sources.empty()) {
       m_impl->shadowTexture = nullptr;
       m_impl->shadowResolution = 0;
       m_impl->shadowLayers = 0;

@@ -5534,7 +5534,16 @@
         "kind": "point",
         "outerConeDegrees": 35.0,
         "range": 6.0,
-        "shadows": null
+        "shadows": {
+          "cascades": 1,
+          "depthBias": 0.00019999999494757503,
+          "distance": 6.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
       },
       "material": null,
       "mesh": null,
@@ -5581,7 +5590,16 @@
         "kind": "point",
         "outerConeDegrees": 35.0,
         "range": 8.0,
-        "shadows": null
+        "shadows": {
+          "cascades": 1,
+          "depthBias": 0.00019999999494757503,
+          "distance": 8.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
       },
       "material": null,
       "mesh": null,
@@ -5628,7 +5646,16 @@
         "kind": "point",
         "outerConeDegrees": 35.0,
         "range": 8.0,
-        "shadows": null
+        "shadows": {
+          "cascades": 1,
+          "depthBias": 0.00019999999494757503,
+          "distance": 8.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
       },
       "material": null,
       "mesh": null,

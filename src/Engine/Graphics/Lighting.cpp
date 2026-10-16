@@ -35,15 +35,8 @@ namespace Dot::Graphics {
         result.viewDirection = *direction;
       }
 
-      std::size_t shadowSources{};
-
       for (auto& light : result.lights) {
         if (light.shadows) {
-          if (++shadowSources > 1) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Shadows require at most one source per frame");
-          }
-
           auto checked = validateShadowSettings(*light.shadows);
 
           if (!checked) {

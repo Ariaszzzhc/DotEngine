@@ -32,6 +32,7 @@ add_executable(DotUnitTests
     PostProcessTests.cpp
     LightingTests.cpp
     ShadowTests.cpp
+    ShadowAtlasTests.cpp
     OcclusionTests.cpp
     ViewTests.cpp
     OverlayTests.cpp

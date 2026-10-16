@@ -55,8 +55,8 @@ export namespace Dot::Graphics {
     std::uint64_t frameBytes{};
     std::uint64_t environments{};
     std::uint64_t environmentBytes{};
-    /** Renderer working depth maps, four bytes per texel, at most 64 MiB.
-     * 渲染器工作深度图每纹素四字节，最多 64 MiB。 */
+    /** Renderer depth atlas, four bytes per texel including page padding.
+     * 渲染器深度图集含页填充，每纹素四字节，受配置预算约束。 */
     std::uint64_t shadowBytes{};
     /** Full-resolution SSAO depth/normal/raw/filtered working storage; logical bytes.
      * 全分辨率 SSAO 深度/法线/原始及过滤结果的工作存储，记录逻辑字节。 */
@@ -418,6 +418,9 @@ export namespace Dot::Graphics {
     Lighting lighting{};
     std::uint32_t maxSkins{256};
     std::uint64_t maxSkinBytes{512 * 1024 * 1024};
+    /** Shadow atlas logical storage budget, 1 byte..512 MiB.
+     * 阴影图集逻辑存储预算，1 字节至 512 MiB。 */
+    std::uint64_t maxShadowBytes{256 * 1024 * 1024};
   };
 
   /** Owns a Dawn device and optional native surface; all operations and destruction
@@ -523,9 +526,9 @@ export namespace Dot::Graphics {
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;
      * no-direct-light frames retain emission and explicitly bound IBL. Explicit
-     * shadows support directional, point and spot lights (one source per frame).
+     * shadows support all light kinds within the configured atlas budget.
      * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
-     * 无直接光帧保留自发光及显式绑定的 IBL；每帧最多一盏方向光、点光或聚光显式投影。 */
+     * 无直接光帧保留自发光及显式绑定的 IBL；方向光、点光及聚光均可在图集预算内显式投影。 */
     [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
     [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 

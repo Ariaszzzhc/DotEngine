@@ -31,9 +31,9 @@ export namespace Dot::Graphics {
     float range{10};
     float innerConeDegrees{20};
     float outerConeDegrees{30};
-    /** Optional single shadow source per frame, of any kind. A shadowed spot's
+    /** Optional shadow maps per light, bounded by the renderer atlas budget. A spot's
      * outer half-cone must be strictly less than 90 degrees.
-     * 每帧可选一盏任意种类的光源投影，投影聚光的外半角须严格小于 90 度。 */
+     * 每盏光可请求阴影，受渲染器图集预算约束；投影聚光的外半角须严格小于 90 度。 */
     std::optional<ShadowSettings> shadows{};
   };
 

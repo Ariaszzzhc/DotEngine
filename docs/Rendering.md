@@ -134,7 +134,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, multiple shadow sources, temporal AO, full animated glTF import,
+the requested project/game visual upgrades, temporal AO, full animated glTF import,
 large-scene performance remains incomplete; the gallery does
 not establish those capabilities.
 
@@ -373,15 +373,16 @@ Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
 This provides authored IBL; directional shadows and the renderer SSAO foundation are
 described below, while temporal AO,
-multiple shadow sources, async baking/streaming and advanced
+async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
 
 ## Directional and local soft shadows
 
-`Light::shadows` explicitly requests at most one shadow source per frame, of any
-light kind. Null means no shadow map; multiple requests fail without selecting or
-dropping a light silently. Shadow coverage shares opaque/masked and skinned geometry
-with the surface pass. Multiple shadow sources, contact-hardening PCSS, temporal
+`Light::shadows` explicitly requests shadows independently for each of the frame's
+at most 64 lights. Null means no maps for that light. A mixed-resolution depth atlas
+retains every requested source/face; exceeding its configured budget fails without
+selecting or dropping lights silently. Shadow coverage shares opaque/masked and
+skinned geometry with the surface pass. Contact-hardening PCSS, temporal
 filtering and GPU-driven culling remain planned. CPU batching/instancing is implemented.
 Immediate unlit vertex rendering is independent of mesh shadow rendering.
 
@@ -397,11 +398,10 @@ matrices fail before submission, preserving the previous target frame.
 Defaults: resolution 1024, four cascades, distance 100 m, splitLambda .65, normalized
 depthBias .0002/slopeBias .001, normalBias .01 m and filterRadius 2 texels. Resolution
 is power-of-two 128..2048, cascades 1..4, distance .1..10000 (directional coverage must
-exceed camera near),
-splitLambda [0,1], depth/slope biases [0,.02], normalBias [0,.2] and radius [0,8].
+exceed camera near), splitLambda [0,1], depth/slope biases [0,.02], normalBias [0,.2] and radius [0,8].
 A fixed-radius sixteen-tap PCF kernel plus bilinear depth comparisons produces soft
-edges; directional/spot radius zero uses one hardware comparison sample. World-space softness grows
-with cascade texel size; this is not a physical contact-hardening area-light model.
+edges; directional/spot radius zero uses one hardware comparison sample. World-space
+softness grows with cascade texel size; this is not a physical contact-hardening area-light model.
 
 Receiver-plane gradients come from world-position derivatives computed before
 nonuniform fragment control flow. Each tap's reference depth follows the receiving
@@ -411,20 +411,37 @@ self-shadowed sloping floor found by the initial native tests. Only the selected
 direct light is attenuated; IBL, emission and other lights retain their contributions.
 MeshDraw castsShadow/receivesShadow are independent and default true.
 
-The renderer caches validated shader variants and Depth32Float array storage;
-independent caster uniforms prevent queue-write aliasing. Caster passes precede the
-HDR scene in one command buffer. Map dimensions are reused, reallocated on change
-and released when no source requests shadows. resourceStats.shadowBytes records
-working texels at four bytes each, at most 96 MiB of logical current map storage
-(2048² × six point faces); replacement/in-flight driver allocations can overlap. These are working buffers,
-separate from asset texture/cache budgets. Current CPU submission needs further
-pooling/culling and per-face local-light visibility for populated-scene scalability.
+The renderer caches validated shader variants and a Depth32Float array atlas.
+`Dot.Graphics.ShadowAtlas` plans this storage on CPU without a device.
+Largest-first quadtree packing retains each face's requested 128..2048 resolution.
+Pages start at the largest requested resolution and grow only when needed to fit
+the device's array-layer limit. Integral tiles do not overlap; hardware comparison
+footprints clamp inside their own tile and point texel loads remap cube faces before
+adding the destination tile offset. Each physical layer clears once, then each
+projection uses its own viewport/scissor, avoiding later lights erasing earlier ones.
+Independent per-face instance storage prevents queue-write aliasing. Read-only GPU
+storage holds 64 light records, indexed by the actual light index; unshadowed slots
+have zero map count. Reordering/removing lights rebuilds their current mapping.
+
+`RendererConfig.maxShadowBytes` is 1 byte..512 MiB, default 256 MiB, counting whole
+allocated pages/padding at four bytes per texel. `resourceStats.shadowBytes` records
+current logical storage, rather than the sum of occupied tile areas or driver
+memory. Matching page dimensions/count reuse storage; changing those reallocates it,
+and removing all requests releases it. Driver replacement/in-flight allocations can
+overlap. Budget failures in setLighting preserve the previous lights, maps and
+completed target. These working buffers remain separate from asset residency.
+
+World caster bounds are validated once per frame. Local faces conservatively cull
+transformed mesh bounds against their own frustum, independently of main-camera
+visibility; directional fits retain off-camera overlapping casters. Every face has
+independent batch/instance storage. Large scenes still need pooled submission,
+cached updates and GPU-driven/spatial local-light work. Range/cone attenuation of
+zero, or zero intensity, skips shadow filtering without changing light contribution.
 
 Saved scene lights retain the strict shadows object with all eight settings; mesh
 components retain castsShadow/receivesShadow. The inspector can enable shadows on
 all three light kinds and edit the nested settings; integral work controls retain
-integer JSON.
-Document transactions/undo/saving, preview, Play and export use the same scene path.
+integer JSON. Document transactions/undo/saving, preview, Play and export use the same scene path.
 Feature Lab's saved directional headlight now requests cascades.
 
 CPU tests cover fits/splits/texel stability/occluders;
@@ -438,23 +455,26 @@ outer half-cone, which must be strictly less than 90 degrees when shadows are en
 Both use radial coverage `min(light.range, shadows.distance)`; the perspective near
 plane is `min(.05, coverage*.01)` meters. `cascades` and `splitLambda` apply only to
 directional projection. Resolutions, PCF radius and bias controls retain their common
-bounds; changing kind also resizes the layer count (6/1/1..4), while disabling the
-source releases the depth texture.
+bounds. Each point source contributes six tiles, each spot one, and each directional
+source one through four. The atlas uses the current requested set on every frame.
 
-Spot receiver-plane derivatives use the perspective quotient rule. Point filtering
-remaps every bilinear neighbor across cube faces, intersects its actual texel ray
-with the geometric receiver plane, and compares in that face's projected depth.
-This avoids clamping the filter footprint at cube seams and avoids treating
-perspective depth as affine. Point hard filtering uses four depth loads; soft
-filtering uses sixteen bilinear taps (64 depth loads). This is explicit bounded
-work, with optimization/multiple-source budgeting still outstanding. Radial coverage
+Spot and point receiver-plane derivatives use the perspective quotient rule.
+Point footprints wholly inside a cube face use hardware bilinear comparisons (one
+sample at radius zero, sixteen soft taps). Only cube-edge footprints remap each
+bilinear neighbor across faces, intersect its actual texel ray with the receiving
+geometric plane and compare that face's depth (four/64 depth loads). Both paths
+retain receiver-plane bias. This avoids clamped cube seams and expensive neighbor
+reconstruction across the whole image. Shaders access individual light records by
+index, rather than passing full matrix arrays by value through sampling helpers.
+Filtering/submission optimization remains unfinished. Radial coverage
 limits affect shadowing only; the light's existing smooth range/cone attenuation
 continues independently. IBL, emission and other lights are not shadowed by this map.
 
 点光使用独立于相机的六面透视阴影，聚光使用外半角两倍的透视视角（投影时半角须小于
 90 度）。局部阴影径向覆盖不超过光源 range 与 shadows.distance 的较小值；级数及
-分段混合仅用于方向光。点光过滤逐纹素跨面重映射，并与接收平面求交后比较真实投影
-深度，避免立方体面接缝漏光。当前每帧仍最多一盏光源投影，多光源预算与性能优化待完成。
+分段混合仅用于方向光。点光内部使用硬件 PCF；仅跨面边缘逐纹素重映射，与接收平面
+求交后比较真实投影深度，避免接缝漏光及全画面重建邻点的开销。每帧最多 64 盏光按各自分辨率排入共享图集，默认逻辑
+预算 256 MiB，超限明确失败；图集含页填充，局部面独立裁剪，性能优化仍待继续。
 
 ## Geometric ambient occlusion foundation
 

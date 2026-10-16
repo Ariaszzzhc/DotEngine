@@ -195,7 +195,7 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
 
     var visibility = 1.0;
 
-    if (camera.material.w != 0.0) {
+    if (camera.material.w != 0.0 && attenuation > 0.0 && light.colorIntensity.w > 0.0) {
       visibility = lightVisibility(index, input.worldPosition, shadowNormal,
         max(dot(shadowNormal, l), 0.0), dp1, dp2);
     }

@@ -161,6 +161,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Script/Modules.cpp
     src/Engine/Graphics/Environment.cpp
     src/Engine/Graphics/Shadows.cpp
+    src/Engine/Graphics/ShadowAtlas.cpp
     src/Engine/Graphics/Occlusion.cpp
     src/Engine/Graphics/View.cpp
     src/Engine/Graphics/Overlay.cpp
@@ -289,6 +290,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/Modules.cppm
         src/Engine/Graphics/Environment.cppm
         src/Engine/Graphics/Shadows.cppm
+        src/Engine/Graphics/ShadowAtlas.cppm
         src/Engine/Graphics/Occlusion.cppm
         src/Engine/Graphics/View.cppm
         src/Engine/Graphics/Overlay.cppm

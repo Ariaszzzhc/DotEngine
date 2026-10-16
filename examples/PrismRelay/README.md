@@ -39,7 +39,8 @@ editor workflow. Hot reload retains movement intent, pending jump and orbit stat
 without restarting the native character, skeleton or animation clocks.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
-directional cascaded soft shadows, SSAO and HDR tone mapping. The adapted Quaternius
+directional cascades and three local point-light shadow sources, SSAO and HDR tone
+mapping. Local maps use 512px faces within the shared depth-atlas budget. The adapted Quaternius
 CC0 mannequin includes idle, walk, jog, sprint, jump start, airborne and landing
 clips without root motion. The editable source GLB, native resources and license
 stay with the project. [Sources and hashes](assets/Sources.md) record provenance.

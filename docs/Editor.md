@@ -612,10 +612,11 @@ settings. Expand shadows to choose resolution/count/coverage/splitting/bias and
 filter radius; the integer controls preserve the strict work types. Directional
 lights use cascades/count/splitting. Point lights use six faces; spots use one map
 and require outerConeDegrees <90. Local distance is radial coverage capped by range.
-Mesh inspectors expose independent casting and receiving flags. Apply/undo/save, agent component edits, Play and exported players
-share the scene configuration. One enabled shadow source of any light kind is
-supported per frame; additional sources report a contextual error rather than losing shadows.
-Advanced light gizmos, projection previews and multiple shadow sources remain planned.
+Mesh inspectors expose independent casting and receiving flags. Apply/undo/save,
+agent component edits, Play and exported players share the scene configuration. Multiple mixed light kinds share the renderer's
+bounded atlas, preserving each light's resolution; excess work reports a contextual
+budget error instead of losing shadows. Advanced light gizmos and projection
+previews remain planned.
 
 ## Saved ambient occlusion
 
