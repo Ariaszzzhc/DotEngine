@@ -82,6 +82,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/SceneSkin.cpp
     src/Engine/Animation/Skeleton.cpp
     src/Engine/Animation/Edit.cpp
+    src/Engine/Animation/KeyGroup.cpp
     src/Engine/Assets/SceneSkins.cpp
     src/Engine/Animation/SkinSource.cpp
     src/Engine/Graphics/Skinning.cpp
@@ -109,6 +110,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/AnimationPreview.cpp
     src/Engine/Editor/AnimationDocument.cpp
+    src/Engine/Editor/AnimationClipboard.cpp
     src/Engine/Editor/AnimationKeyMove.cpp
     src/Engine/Editor/SkeletonView.cpp
     src/Engine/Editor/Workspace.cpp
@@ -203,6 +205,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/SceneSkin.cppm
         src/Engine/Animation/Skeleton.cppm
         src/Engine/Animation/Edit.cppm
+        src/Engine/Animation/KeyGroup.cppm
         src/Engine/Assets/SceneSkins.cppm
         src/Engine/Animation/SkinSource.cppm
         src/Engine/Graphics/Skinning.cppm
@@ -233,6 +236,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/AnimationPreview.cppm
         src/Engine/Editor/AnimationDocument.cppm
+        src/Engine/Editor/AnimationClipboard.cppm
         src/Engine/Editor/AnimationKeyMove.cppm
         src/Engine/Editor/SkeletonView.cppm
         src/Engine/Editor/Workspace.cppm

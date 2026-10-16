@@ -254,3 +254,32 @@ TEST_CASE("animation_document.group_retime_is_one_history_step_and_exact_undo_pr
   REQUIRE(doc.save(doc.snapshot()->revision));
   CHECK(f.files.readText(f.path).value() == f.original);
 }
+
+TEST_CASE("animation_document.paste_has_one_history_step_noop_redo_and_exact_saved_undo") {
+  Fixture f;
+  auto doc = f.open();
+  const std::vector<KeyReference> selection{{0, Path::Translation, 0}, {0, Path::Translation, 2}};
+  const auto copied = KeyGroup::create(f.value, selection).value();
+  const std::vector<ClipEdit> paste{PasteKeys{copied, 1}};
+  REQUIRE(doc.edit(paste, doc.snapshot()->revision));
+  CHECK(doc.snapshot()->historyStates == 2);
+  CHECK(doc.snapshot()->value.description().value()->tracks[0].keys.size() == 4);
+  CHECK(f.files.readText(f.path).value() == f.original);
+  REQUIRE(doc.undo(doc.snapshot()->revision));
+  auto before = doc.snapshot().value();
+  REQUIRE(before.canRedo);
+  const std::vector<ClipEdit> occupied{PasteKeys{copied, 0}};
+  CHECK_FALSE(doc.edit(occupied, before.revision));
+  CHECK(doc.snapshot()->revision == before.revision);
+  CHECK(doc.snapshot()->historyBytes == before.historyBytes);
+  const std::vector<ClipEdit> noop{PasteKeys{copied, 0, KeyCollision::Replace}};
+  REQUIRE(doc.edit(noop, before.revision));
+  CHECK(doc.snapshot()->revision == before.revision);
+  CHECK(doc.snapshot()->canRedo);
+  REQUIRE(doc.redo(before.revision));
+  REQUIRE(doc.save(doc.snapshot()->revision));
+  CHECK(loadClip(f.files, f.path)->description().value()->tracks[0].keys.size() == 4);
+  REQUIRE(doc.undo(doc.snapshot()->revision));
+  REQUIRE(doc.save(doc.snapshot()->revision));
+  CHECK(f.files.readText(f.path).value() == f.original);
+}

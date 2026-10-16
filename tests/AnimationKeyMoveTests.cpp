@@ -194,7 +194,7 @@ TEST_CASE("animation_key_move.rejects_empty_duplicate_oversized_and_float_collap
   const std::array<KeyReference, 2> duplicate{
       {{4, Path::Translation, 0}, {4, Path::Translation, -0.F}}};
   CHECK_FALSE(Editor::AnimationKeyMove::begin(clip(), duplicate));
-  std::vector<KeyReference> tooMany(MaxRetimeKeys + 1, duplicate[0]);
+  std::vector<KeyReference> tooMany(MaxSelectedKeys + 1, duplicate[0]);
   CHECK_FALSE(Editor::AnimationKeyMove::begin(clip(), tooMany));
   const auto tiny = std::numeric_limits<float>::denorm_min();
   auto source = Clip::create({"Tiny",
@@ -221,7 +221,7 @@ TEST_CASE("animation_key_move.full_bounded_group_has_no_intermediate_collisions_
   Track track{0, Path::Translation, Interpolation::Linear, {}};
   std::vector<KeyReference> keys;
 
-  for (std::size_t i = 0; i < MaxRetimeKeys; ++i) {
+  for (std::size_t i = 0; i < MaxSelectedKeys; ++i) {
     const auto time = static_cast<float>(i) * .5F;
     track.keys.push_back({time, {time, 0, 0, 0}});
     keys.push_back({0, Path::Translation, time});
@@ -233,7 +233,7 @@ TEST_CASE("animation_key_move.full_bounded_group_has_no_intermediate_collisions_
   CHECK_FALSE(move.snapshot()->occupied);
   const std::array<ClipEdit, 1> edits{move.edit().value()};
   auto changed = editClip(source, edits).value();
-  CHECK(changed.description().value()->tracks[0].keys.size() == MaxRetimeKeys);
+  CHECK(changed.description().value()->tracks[0].keys.size() == MaxSelectedKeys);
   CHECK(changed.description().value()->tracks[0].keys.front().time == .5F);
   CHECK(changed.description().value()->tracks[0].keys.back().value == track.keys.back().value);
   CHECK(source.description().value()->tracks[0].keys.front().time == 0);

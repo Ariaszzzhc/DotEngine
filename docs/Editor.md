@@ -1437,9 +1437,10 @@ key; time:null prepares a pose form and clears authored-key selection. The stric
 select-all-animation-keys request builds the same bounded selection in the product,
 without requiring a large request body. An oversized clip is rejected without partial
 selection. Explicit arrays also remain subject to the ordinary 1 MiB request bound.
-Selection does not change resource history, preview or disk; ordinary changed edits/
-undo/redo clear it, while no-ops retain it. Multi-selection locks single-key value/
-tangent form edits; select one key to use those controls.
+Selection does not change resource history, preview or disk; ordinary changed edit
+batches/undo/redo clear it, while no-op batches retain it. Paste explicitly selects its
+destination keys even if replacing identical content. Multi-selection locks single-key
+value/tangent form edits; select one key to use those controls.
 
 Begin consumes the current nonempty selection and requires current resource IDs,
 a clean form and no other move/dialog. It returns an independent move session.
@@ -1493,7 +1494,79 @@ the observed SDL/macOS coordinate behavior, separately from product-operation ch
 支持 Ctrl/Cmd 增减、Shift 范围及全选/清空，智能体使用同源严格操作。活动操作参与关闭
 确认，旧会话不能影响重开的资源；智能体无需系统焦点，原生鼠标拖动另有焦点丢失取消。
 
-This workflow edits existing bound library clips. Dope-sheet, multi-key value/copy and
+Copy and paste reuse selected key groups within the current authoring scene/player:
+
+```json
+{"command":"copy-animation-keys","buffer":"1","revision":"1"}
+{"command":"inspect-animation-clipboard"}
+{"command":"read-animation-clipboard","clipboard":"1","offset":0,"count":64}
+{"command":"paste-animation-keys","buffer":"2","revision":"1","clipboard":"1","time":0.25,"overwrite":false}
+{"command":"clear-animation-clipboard","clipboard":"1"}
+```
+
+Observe clipboard IDs from successful copy/inspect rather than reusing an old example
+ID. Copy requires current resource IDs, a nonempty authored-key selection, a clean form
+and no active move/close/capture dialog. It changes only the workspace's typed clipboard;
+selection, resource history, preview and files remain unchanged. Failed copies retain
+previous content and its ID. The clipboard survives resource edits, undo/redo, save,
+source discard and resource close/reopen. It owns copied values/tangents and modes, so
+it does not reread the source animation file. Candidate preview preflight still checks
+the actual destination player's complete library and referenced assets. The clipboard
+is separate from the OS clipboard and is not persisted across workspace/project closure.
+
+Ordinary inspect exposes workspace.animationClipboard, null when empty. Metadata has
+canonical id/source/entity/buffer/revision strings, the source asset path, key/channel
+counts, from/to (minimum/maximum copied time), and compatible for the currently open
+animation document. Read pages require the current clipboard ID, an unsigned offset
+up to key count, and unsigned count 1..256. Entries retain copy selection order and
+contain node/path/interpolation/key (time/value/inTangent/outTangent). An offset at the
+end returns an empty page. Inspect/read/clear are independent of an open resource or
+Play; stale clear/read requests cannot affect a newly copied group. Clear retires the
+ID, and later successful copies issue a new ID.
+
+Pasting requires the same live authoring scene identity, player entity and complete
+logical-node/entity binding map as the copy. Matching node numbers alone do not imply
+matching skeletons. A different clip in the same player's library is supported; a
+different player/scene or changed authoring scene requires copying again in that
+context. No implicit bone mapping or retargeting is performed. compatible:false after
+resource close means there is no current destination, not that owned data was lost.
+Source buffer/revision/path remain provenance rather than destination requirements.
+
+Time places the earliest copied key, independently of the last-selected move anchor.
+All copied times add the same double offset before native float rounding and must
+remain within 0..86400. Same-channel float-collapsed destinations fail. Values, tangent
+derivatives and channel modes remain unchanged. Existing destination channels require
+the same interpolation mode; absent channels inherit the copied mode. A partial cubic
+selection is valid clipboard content, but its final destination channel must still
+contain at least two valid keys. Mode conversion is an explicit ordinary edit.
+
+Overwrite is a required boolean. False rejects every occupied exact native-float time;
+true replaces only equal-time keys and leaves neighboring/unselected keys intact.
+The whole paste uses one native edit plus the ordinary initial/current pose and skin
+preflight, and publishes one resource history step. Preparation/preflight/history
+failures retain clipboard, document/history/preview/selection and files. Successful paste selects all destinations
+in copy order. Identical explicit replacements retain revision, redo and preview
+identity; destination selection is still explicit. Saving uses the ordinary conflict-
+checked resource save, and later preview/Play load the actual saved data. A rare
+post-publication selection failure explicitly reports that keys were pasted and clears
+stale selection; it does not claim rollback.
+
+The Animation panel's Copy keys and Paste keys controls use these same operations.
+The paste popup shows source/count/range, a destination time and Replace matching key
+times (off after each new copy). It reports errors without closing the popup or discarding
+copied content. Clear copied keys is available there and when no animation document is
+open. Clipboard snapshots are owned and remain safe if content is cleared while the
+GUI is drawing. Native computer-use mouse acceptance remains subject to the recorded
+SDL/macOS input boundary; visible controls do not by themselves prove pointer delivery.
+
+复制/粘贴复用同一编辑场景、同一人物播放器及完整节点绑定；可跨其库内不同动作，不把相同
+节点编号当成骨架兼容，也不隐式重定向。复制保留选择顺序、值/切线/模式，与源草稿及文件
+生命周期无关；失败保留旧内容，清空/替换后的旧标识不能影响新内容。粘贴把最早键放到指定
+时间，各键经同一 double 偏移后转 float，默认拒绝占用，显式允许才替换同时间键，绝不自动
+改变目标通道插值。三次部分键可复制，粘贴结果仍须合法。整次通过原生姿态/蒙皮预检后提交
+一步历史，成功选择目标，失败不改草稿/预览/文件；系统剪贴板不受影响。
+
+This workflow edits existing bound library clips. Dope-sheet, multi-key value and
 graphical tangent-handle editing, visual binding/retargeting, state graphs/layers,
 root motion/events and production animation scalability remain unfinished.
 
@@ -1506,4 +1579,4 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键复制/数值编辑、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
+多键数值编辑、图形切线手柄、绑定和状态图等生产制作能力仍待完成。

@@ -6805,3 +6805,107 @@ source/resource/preview isolation and balanced GUI scopes. All eight changed C++
 pass clang-format and diff whitespace checks pass. Specification/reference output
 remain untracked. Broader animation authoring, finished realistic game content,
 rendering/streaming/performance and the full production engine goal remain open.
+
+
+## 2026-10-17 — Owned animation copy and paste
+
+Native KeyGroup owns an immutable 1..16384-key selection with original values,
+tangents, modes, record order and minimum/maximum times. It outlives source clip
+retirement or later edits and supports partial cubic selections without pretending
+they are standalone valid clips. Placement aligns the earliest time, adds one double
+offset before float rounding, checks every target and rejects same-channel collapse.
+Origin placement retains source float representations. Shared KeyReference/selection
+bounds now belong to clip data; no compatibility alias or new asset format is added.
+
+PasteKeys merges selected records into affected candidate tracks in sorted order,
+creating missing channels with the source mode and requiring matching existing modes.
+Default Reject refuses occupied times; explicit Replace changes only equal-time keys.
+The final ordinary batch validates cubic key counts and all native clip constraints.
+Values/tangents are copied unchanged, without implicit mode conversion or retargeting.
+The source clip and key group remain unchanged on any failed batch.
+
+The window/file/device-free AnimationClipboard service validates portable provenance,
+source IDs and the full bounded unique node/entity map, including selected nodes,
+before replacing copied content. Failed copies retain content and ID. Successful copy
+and clear retire IDs without reuse; immutable shared snapshots outlive clear, replace
+or service destruction. Same scene/player/full mapping and current clipboard ID are
+required to prepare a native candidate plus destination selection. The service is
+noncopyable/nonmovable and has explicit mutation synchronization contracts. It touches
+neither OS clipboard nor resources/history/preview; the product performs actual pose/
+skin preflight and one ordinary resource publication after preparation.
+
+The actual editor exposes strict copy-animation-keys, inspect-animation-clipboard,
+read-animation-clipboard, clear-animation-clipboard and paste-animation-keys operations.
+Inspect metadata includes source identities/path/revision, range, counts and current
+destination compatibility; owned key pages retain copy order and use 1..256 entries.
+Read/clear remain available without an open clip and during other modes/dialogs.
+Copy/paste require a clean form and no active move/close/capture dialog. Cross-clip
+reuse within the same player's library is supported; matching node numbers in another
+player or changed authoring scene never silently imply compatible bindings. Save/
+close/source discard do not destroy owned copied data; workspace retirement does.
+
+The Animation panel adds Copy keys and a Paste keys popup with time, source/range/count,
+explicit Replace matching key times and clear controls. Both use the same native
+clipboard/preparation/publication path as agents. A cheap shared snapshot owns GUI data
+through the frame, including a clear action. Selection hints move to a tooltip so
+controls remain visible at the normal window size. Paste success selects destinations
+in copy order; identical explicit replacements retain revision, redo and preview
+identity. Failures retain existing draft/history/pose/clock/selection and clipboard;
+a rare post-publication selection failure explicitly reports the committed edit and
+clears stale selection instead of claiming rollback.
+
+Six new pure key-group cases cover ownership/moves, ordered placement, invalid/empty/
+duplicate/oversized sources, partial cubic payloads, float collapse and the 16384-key
+bound with concurrent owned placements. Three native paste cases cover sorted merge,
+explicit replacement, channel creation/mode mismatch, partial cubic final validation
+and atomic later-batch failures. Five pure clipboard cases cover provenance, all
+context dimensions, retired IDs, failed-copy/prepare retention, snapshot lifetime and
+read-only concurrent preparation. One file-only document case checks single history,
+no-op redo preservation and exact-byte saved undo. Existing single/group move cases
+retain their coverage under the shared native selection type. No new test executable
+or desktop-window automatic test is introduced.
+
+Release/NDEBUG full checks pass 1117/1117 (18.34s): 313 unit and 804 integration, with
+overlapping 126 offscreen GPU, 27 native audio and 28 SDL-dummy platform cases. Focused
+Debug animation/edit/group/clipboard/move/document/preview checks pass 86/86 (2.59s):
+56 unit and 30 integration, including one offscreen GPU case. Earlier focused native
+foundations pass 32/32 (.68s). Dependency pins, compiler/linker environment and platform
+targets are unchanged; Windows/Linux are not executed.
+
+One real editor session on a PrismRelay copy verifies 14820 keys/195 channels copied
+and pasted into 29640 keys with one history step, one undo, and an identical explicit
+replacement that retains redo/preview identity. Owned pages survive source draft
+closure/discard and temporary source asset retirement. An actual unsaved five-centimeter
+Head adjustment is copied from Idle into Walk, with source discard, contextual missing-
+library preflight failure/retry, actual native pose change, save/close/reopen and exact
+saved value comparison. The authoring scene remains unchanged through these key edits.
+Only the intended copied Walk asset changes; original source Idle bytes do not.
+
+A partial cubic key retains its .2 tangent; pasting into a linear destination is
+rejected unchanged, then succeeds after explicit conversion with actual pose evidence.
+Both edits undo to the clean saved destination. Close-modal read/cancel and independent
+clear retain their stated ownership contracts. A deliberate normal scene duplication
+in the QA draft then proves stale-scene rejection, rejection for the separate actual
+player 355, and successful fresh local copy/no-op paste for that player. Clear and
+replacement reject old IDs. The temporary authoring duplication is explicitly discarded.
+All nine original scene/animation files retain initial hashes, and the editor exits 0
+with empty stderr and retired control directory.
+
+Screenshots confirm visible Copy/Paste controls and normal layout. A computer-use
+virtual click requests the Paste button, but native press/release report (0,0), so
+popup pointer acceptance is not claimed. The previously recorded SDL/macOS input
+boundary remains separate from product-operation results. Window selection in the
+observation tool stalls even with a bounded JavaScript wait; the same live launcher/
+control is revalidated after return, without restarting on timeout. Later screenshots
+through the already bound window are available. No input bypass/vendor patch or
+synthetic test hook is added.
+
+Precommit review covers module/interface separation, immutable payload/snapshot
+ownership, exact source/target scope, monotonic IDs, float/mode/collision boundaries,
+linear merging, source/preview/disk isolation, failed-publication recovery and GUI
+lifetime/disabled scopes. All fourteen changed/new C++ files pass clang-format and
+whitespace checks pass. Temporary app/project, requests, clients and editing helpers
+are removed; ignored observations/build logs, caches and existing archives remain.
+No distribution archive is generated. Specification/reference output remain untracked.
+Dope-sheet, bulk value/tangent-handle/binding/state/layer authoring, finished realistic
+game art, rendering/streaming/performance and the overall production engine remain open.

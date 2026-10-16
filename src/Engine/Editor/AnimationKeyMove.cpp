@@ -49,7 +49,7 @@ namespace Dot::Editor {
       return std::unexpected(description.error());
     }
 
-    if (keys.empty() || keys.size() > Animation::MaxRetimeKeys) {
+    if (keys.empty() || keys.size() > Animation::MaxSelectedKeys) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Key move requires 1..16384 source keys");
     }
 

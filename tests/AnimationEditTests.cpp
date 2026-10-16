@@ -189,3 +189,69 @@ TEST_CASE(
     CHECK(original.description().value()->tracks[0].keys[1].time == 2);
   }
 }
+
+TEST_CASE("animation_edit.paste_merges_sorted_keys_and_replacement_is_explicit") {
+  const auto original = source();
+  const std::array<KeyReference, 2> selection{
+      {{0, Path::Translation, 2}, {0, Path::Translation, 0}}};
+  const auto group = KeyGroup::create(original, selection).value();
+  const auto pasted = edit(original, {PasteKeys{group, 1}}).value();
+  const auto& keys = pasted.description().value()->tracks[0].keys;
+  REQUIRE(keys.size() == 4);
+  CHECK(keys[0].time == 0);
+  CHECK(keys[1].time == 1);
+  CHECK(keys[2].time == 2);
+  CHECK(keys[3].time == 3);
+  CHECK_FALSE(edit(original, {PasteKeys{group, 0}}));
+  auto changedSource
+      = edit(original, {PutKey{0, Path::Translation, Interpolation::Linear, {0, {9, 8, 7, 0}}}})
+            .value();
+  const auto copied = KeyGroup::create(changedSource, selection).value();
+  auto replaced = edit(original, {PasteKeys{copied, 0, KeyCollision::Replace}}).value();
+  CHECK(replaced.description().value()->tracks[0].keys.size() == 2);
+  CHECK(replaced.description().value()->tracks[0].keys[0].value.x == 9);
+  CHECK(original.description().value()->tracks[0].keys[0].value.x == 0);
+}
+
+TEST_CASE("animation_edit.paste_creates_matching_channels_and_validates_partial_cubic_results") {
+  const auto cubic
+      = Clip::create(
+            {"Cubic",
+             {{3,
+               Path::Translation,
+               Interpolation::CubicSpline,
+               {{0, {0, 0, 0, 0}, {}, {2, 0, 0, 0}}, {2, {2, 0, 0, 0}, {1, 0, 0, 0}, {}}}}}})
+            .value();
+  const std::array<KeyReference, 1> one{{{3, Path::Translation, 0}}};
+  const auto partial = KeyGroup::create(cubic, one).value();
+  CHECK_FALSE(edit(source(), {PasteKeys{partial, 1}}));
+  const std::array<KeyReference, 2> both{{{3, Path::Translation, 0}, {3, Path::Translation, 2}}};
+  const auto group = KeyGroup::create(cubic, both).value();
+  auto pasted = edit(source(), {PasteKeys{group, 1}}).value();
+  const auto& track = pasted.description().value()->tracks[1];
+  CHECK(track.node == 3);
+  CHECK(track.interpolation == Interpolation::CubicSpline);
+  REQUIRE(track.keys.size() == 2);
+  CHECK(track.keys[0].time == 1);
+  CHECK(track.keys[1].time == 3);
+  CHECK(track.keys[0].outTangent.x == 2);
+  CHECK(track.keys[1].inTangent.x == 1);
+  CHECK_FALSE(edit(
+      source(), {SetInterpolation{0, Path::Translation, Interpolation::Step},
+                 PasteKeys{KeyGroup::create(
+                               source(), std::array<KeyReference, 1>{{{0, Path::Translation, 0}}})
+                               .value(),
+                           0, KeyCollision::Replace}}));
+}
+
+TEST_CASE("animation_edit.invalid_paste_and_later_batch_failure_preserve_source_and_group") {
+  const auto original = source();
+  const std::array<KeyReference, 1> selection{{{0, Path::Translation, 0}}};
+  const auto group = KeyGroup::create(original, selection).value();
+  CHECK_FALSE(edit(original, {PasteKeys{{}, 0}}));
+  CHECK_FALSE(edit(original, {PasteKeys{group, -1}}));
+  CHECK_FALSE(edit(original, {PasteKeys{group, 1, static_cast<KeyCollision>(99)}}));
+  CHECK_FALSE(edit(original, {PasteKeys{group, 1}, RemoveKey{0, Path::Translation, 99}}));
+  CHECK(original.description().value()->tracks[0].keys.size() == 2);
+  CHECK(group.description().value()->keys[0].key.time == 0);
+}

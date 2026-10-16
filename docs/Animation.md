@@ -369,10 +369,52 @@ discards the ghost. Independent tools share clips; synchronize mutable access. T
 editor scopes the selection/gesture to current document identity/revision and native
 preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
 for shared GUI/agent selection and move operations. Complete dope-sheet, multi-key
-copy/value editing, tangent handles and state/layer authoring remain unfinished.
+value editing, tangent handles and state/layer authoring remain unfinished.
 
 多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
 同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。
 组内同时腾位，原位恢复精确保留 float 表示；值/切线/模式和数量不变。RetimeKeys 在
 普通有序批次中同时解析全部源键，统一重排受影响轨道，最终片段仍须完整校验；失败不改源。
 工具不涉及场景/文件/设备/历史，编辑器校验身份/版本及原生姿态后提交一步历史。
+
+
+## Owned key groups and clipboard preparation
+
+KeyReference and the shared MaxSelectedKeys bound (16384) belong to native clip data.
+Dot.Animation.KeyGroup copies ordered selected records into immutable owned storage,
+with original channel modes and minimum/maximum source time. Copies share that data;
+default/moved handles report errors. Source clip retirement or later edits cannot
+change the group. Partial cubic selections are valid groups even when they would not
+form a valid standalone clip. at(time) returns owned translated records with one double
+offset from the earliest source key, before native float rounding. Every target must
+fit 0..86400 and remain unique within node/path; failures preserve the group and origin
+placement retains original float representations. It touches no scene, file or device.
+
+Native PasteKeys merges those records into each affected candidate track in time order.
+Existing channels require matching interpolation; absent ones inherit source modes.
+Reject refuses occupied times, and explicit Replace replaces only equal-time keys.
+No mode conversion, tangent rescaling or binding remap is implicit. The final clip,
+including cubic minimum key counts, still validates after the complete ordinary edit
+batch. Failures retain the source clip and owned group.
+
+Dot.Editor.AnimationClipboard owns a workspace clipboard without an OS clipboard,
+window, renderer, file access or hidden clock. Copy validates portable asset provenance,
+canonical source identities and unique bounded node/entity bindings, including every
+selected node, before replacing content and advancing its ID. Failed copies retain
+content and ID; clear retires an ID without reusing it. Immutable shared snapshots
+retain source metadata and KeyGroup data after replacement, clear or service retirement.
+The service is noncopyable/nonmovable; synchronize mutations with other calls.
+
+Preparation requires the exact original authoring scene/player/full binding map and
+current clipboard ID. It reuses native PasteKeys and returns a candidate plus ordered
+target references, without changing the clipboard or any resource/preview/history.
+The editor performs its actual native pose/skin preflight before one publication;
+source/destination resources remain distinct from the authoring scene. Every UI action
+has the same strict [editor operation](Editor.md#animation-clip-editing). Retargeting,
+complete dope-sheet, bulk value authoring and layered/state-machine tools remain open.
+
+KeyGroup 拥有不可变、有序的所选记录及原模式/时间范围，可包含部分三次键；源片段销毁/
+修改不影响它，放置结果独立拥有，时间越界或 float 重叠时不改原组。PasteKeys 按时间归并，
+默认拒绝占用，显式替换只覆盖同时间键；模式转换、切线缩放和绑定重定向均不隐式发生。
+AnimationClipboard 在无窗口/文件/设备环境中校验来源与节点绑定、管理单调标识及拥有快照；
+同场景/播放器/完整映射才可准备候选，实际姿态/蒙皮及一步历史由编辑器统一处理。

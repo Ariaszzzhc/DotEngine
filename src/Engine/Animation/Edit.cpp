@@ -10,6 +10,7 @@ module;
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 module Dot.Animation.Edit;
 
@@ -39,8 +40,77 @@ namespace Dot::Animation {
             [&](const auto& edit) -> Core::Result<void> {
               using T = std::decay_t<decltype(edit)>;
 
-              if constexpr (std::is_same_v<T, RetimeKeys>) {
-                if (edit.keys.empty() || edit.keys.size() > MaxRetimeKeys) {
+              if constexpr (std::is_same_v<T, PasteKeys>) {
+                if (edit.collision != KeyCollision::Reject
+                    && edit.collision != KeyCollision::Replace) {
+                  return Core::fail(Core::ErrorCode::InvalidArgument,
+                                    "Invalid paste collision policy");
+                }
+
+                auto placed = edit.group.at(edit.time);
+
+                if (!placed) {
+                  return std::unexpected(placed.error());
+                }
+
+                std::map<std::pair<std::uint32_t, Path>, std::size_t> channels;
+
+                for (std::size_t i = 0; i < candidate.tracks.size(); ++i) {
+                  channels.emplace(std::pair{candidate.tracks[i].node, candidate.tracks[i].path},
+                                   i);
+                }
+
+                std::map<std::size_t, std::vector<Key>> additions;
+
+                for (const auto& item : *placed) {
+                  const auto identity = std::pair{item.node, item.path};
+                  auto channel = channels.find(identity);
+
+                  if (channel == channels.end()) {
+                    const auto index = candidate.tracks.size();
+                    candidate.tracks.push_back({item.node, item.path, item.interpolation, {}});
+                    channel = channels.emplace(identity, index).first;
+                  }
+
+                  if (candidate.tracks[channel->second].interpolation != item.interpolation) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument,
+                                      "Paste interpolation differs from target channel");
+                  }
+
+                  additions[channel->second].push_back(item.key);
+                }
+
+                for (auto& [channel, keys] : additions) {
+                  std::ranges::sort(keys, {}, &Key::time);
+                  auto& track = candidate.tracks[channel];
+                  std::vector<Key> merged;
+                  merged.reserve(track.keys.size() + keys.size());
+                  auto old = track.keys.begin();
+                  auto added = keys.begin();
+
+                  while (old != track.keys.end() || added != keys.end()) {
+                    if (added == keys.end()
+                        || (old != track.keys.end() && old->time < added->time)) {
+                      merged.push_back(*old++);
+                    } else if (old == track.keys.end() || added->time < old->time) {
+                      merged.push_back(*added++);
+                    } else {
+                      if (edit.collision == KeyCollision::Reject) {
+                        return Core::fail(Core::ErrorCode::InvalidArgument,
+                                          "Paste destination key time is occupied");
+                      }
+
+                      merged.push_back(*added++);
+                      ++old;
+                    }
+                  }
+
+                  track.keys = std::move(merged);
+                }
+
+                return {};
+              } else if constexpr (std::is_same_v<T, RetimeKeys>) {
+                if (edit.keys.empty() || edit.keys.size() > MaxSelectedKeys) {
                   return Core::fail(Core::ErrorCode::InvalidArgument,
                                     "Retime requires 1..16384 source keys");
                 }

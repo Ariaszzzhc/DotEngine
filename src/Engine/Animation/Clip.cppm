@@ -15,6 +15,14 @@ export namespace Dot::Animation {
   enum class Path { Translation, Rotation, Scale };
   enum class Interpolation { Step, Linear, CubicSpline };
 
+  inline constexpr std::size_t MaxSelectedKeys = 16384;
+
+  struct KeyReference {
+    std::uint32_t node;
+    Path path;
+    float time;
+  };
+
   struct Key {
     float time{};
     Math::Vec4 value{};

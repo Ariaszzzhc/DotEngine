@@ -40,6 +40,7 @@ import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
 import Dot.Editor.AnimationKeyMove;
+import Dot.Editor.AnimationClipboard;
 import Dot.Animation.Files;
 import Dot.Animation.Source;
 import Dot.Animation.ScenePlayers;
@@ -469,6 +470,11 @@ namespace Dot::Editor {
     bool m_exportDataOnly{};
     std::optional<AnimationPreview> m_animationPreview;
     std::optional<AnimationDocument> m_clipDocument;
+
+    AnimationClipboard m_animationClipboard;
+    AnimationClipboardContext m_clipContext;
+    float m_clipPasteTime{};
+    bool m_clipPasteOverwrite{};
     Json m_clipForm = nullptr;
     Json m_clipOriginal = nullptr;
     std::vector<Animation::KeyReference> m_clipSelection;
@@ -1785,7 +1791,7 @@ namespace Dot::Editor {
     }
 
     static auto clipReferences(const Json& values) -> std::vector<Animation::KeyReference> {
-      if (!values.is_array() || values.size() > Animation::MaxRetimeKeys) {
+      if (!values.is_array() || values.size() > Animation::MaxSelectedKeys) {
         throw std::invalid_argument("Key selection requires at most 16384 references");
       }
 
@@ -1905,7 +1911,7 @@ namespace Dot::Editor {
           Codec::requireFields(operation, {"op", "keys"});
           const auto& keys = operation["keys"];
 
-          if (!keys.is_array() || keys.empty() || keys.size() > Animation::MaxRetimeKeys) {
+          if (!keys.is_array() || keys.empty() || keys.size() > Animation::MaxSelectedKeys) {
             throw std::invalid_argument("Retime requires 1..16384 keys");
           }
 
@@ -1934,6 +1940,36 @@ namespace Dot::Editor {
       }
 
       return result;
+    }
+
+    auto clipboardCompatible() const -> bool {
+      return m_clipDocument && m_animationPreview && m_animationClipboard.compatible(m_clipContext);
+    }
+
+    auto clipboardStatus() const -> Json {
+      const auto copied = m_animationClipboard.snapshot();
+
+      if (!copied) {
+        return nullptr;
+      }
+
+      const auto value = copied->keys.description();
+
+      if (!value) {
+        return errorJson(value.error());
+      }
+
+      return {{"id", std::to_string(copied->id)},
+              {"source", std::to_string(copied->source.context.scene)},
+              {"entity", std::to_string(copied->source.context.owner)},
+              {"buffer", std::to_string(copied->source.buffer)},
+              {"revision", std::to_string(copied->source.revision)},
+              {"path", copied->source.path},
+              {"keys", (*value)->keys.size()},
+              {"channels", (*value)->channels},
+              {"from", (*value)->start},
+              {"to", (*value)->end},
+              {"compatible", clipboardCompatible()}};
     }
 
     auto keyMoveStatus() const -> Json {
@@ -2283,6 +2319,72 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (command == "inspect-animation-clipboard" || command == "read-animation-clipboard"
+          || command == "clear-animation-clipboard") {
+        if (command == "inspect-animation-clipboard") {
+          Codec::requireFields(parsed, {"command"});
+          return Json{{"ok", true}, {"clipboard", clipboardStatus()}}.dump();
+        }
+
+        if (command == "read-animation-clipboard") {
+          Codec::requireFields(parsed, {"command", "clipboard", "offset", "count"});
+        } else {
+          Codec::requireFields(parsed, {"command", "clipboard"});
+        }
+
+        const auto copied = m_animationClipboard.read(Codec::id(parsed["clipboard"]));
+
+        if (!copied) {
+          return std::unexpected(copied.error());
+        }
+
+        if (command == "clear-animation-clipboard") {
+          auto cleared = m_animationClipboard.clear(Codec::id(parsed["clipboard"]));
+
+          if (!cleared) {
+            return std::unexpected(cleared.error());
+          }
+
+          m_clipPasteTime = 0;
+          m_clipPasteOverwrite = false;
+          return Json{{"ok", true}, {"clipboard", nullptr}}.dump();
+        }
+
+        const auto value = (*copied)->keys.description();
+
+        if (!value) {
+          return std::unexpected(value.error());
+        }
+
+        const auto offset
+            = clipIndex(parsed["offset"], static_cast<std::uint32_t>(Animation::MaxSelectedKeys));
+        const auto count = clipIndex(parsed["count"], 256);
+
+        if (count == 0 || offset > (*value)->keys.size()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Clipboard page requires valid offset and 1..256 keys");
+        }
+
+        auto keys = Json::array();
+        constexpr std::array paths{"translation", "rotation", "scale"};
+        constexpr std::array modes{"step", "linear", "cubic"};
+
+        for (std::size_t i = offset;
+             i < std::min((*value)->keys.size(), std::size_t(offset) + count); ++i) {
+          const auto& item = (*value)->keys[i];
+          keys.push_back({{"node", item.node},
+                          {"path", paths.at(static_cast<std::size_t>(item.path))},
+                          {"interpolation", modes.at(static_cast<std::size_t>(item.interpolation))},
+                          {"key", keyJson(item.key)}});
+        }
+
+        return Json{{"ok", true},
+                    {"clipboard", clipboardStatus()},
+                    {"offset", offset},
+                    {"keys", std::move(keys)}}
+            .dump();
+      }
+
       if (command == "open-animation") {
         Codec::requireFields(parsed, {"command", "revision", "entity", "clip"});
 
@@ -2331,6 +2433,13 @@ namespace Dot::Editor {
           return std::unexpected(preview.error());
         }
 
+        const auto audition = preview->stats();
+
+        if (!audition) {
+          return std::unexpected(audition.error());
+        }
+
+        AnimationClipboardContext context{audition->source, audition->owner, {}};
         std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> bindings;
 
         for (const auto& target : info->animation->targets) {
@@ -2343,6 +2452,7 @@ namespace Dot::Editor {
           }
 
           bindings.emplace(target.node, std::pair{target.entity, std::move(item->name)});
+          context.bindings.emplace(target.node, target.entity);
         }
 
         m_text.reset();
@@ -2351,6 +2461,7 @@ namespace Dot::Editor {
         m_clipDocument.emplace(std::move(*document));
         m_animationPreview.emplace(std::move(*preview));
         m_clipBindings.swap(bindings);
+        m_clipContext = std::move(context);
         m_clipForm = m_clipOriginal = nullptr;
         setClipSelection({});
         m_curveFrom = 0;
@@ -2468,6 +2579,7 @@ namespace Dot::Editor {
       if (command == "inspect-animation-clip" || command == "list-animation-tracks"
           || command == "read-animation-track" || command == "select-animation-key"
           || command == "select-animation-keys" || command == "select-all-animation-keys"
+          || command == "copy-animation-keys" || command == "paste-animation-keys"
           || command == "stage-animation-key" || command == "reset-animation-key"
           || command == "apply-animation-key" || command == "move-animation-key"
           || command == "read-animation-curve" || command == "set-animation-curve-view"
@@ -2481,6 +2593,9 @@ namespace Dot::Editor {
         } else if (command == "read-animation-track") {
           Codec::requireFields(
               parsed, {"command", "buffer", "revision", "node", "path", "offset", "count"});
+        } else if (command == "paste-animation-keys") {
+          Codec::requireFields(parsed,
+                               {"command", "buffer", "revision", "clipboard", "time", "overwrite"});
         } else if (command == "select-animation-keys") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "keys"});
         } else if (command == "select-animation-key") {
@@ -2532,6 +2647,67 @@ namespace Dot::Editor {
               "Finish or cancel the key move before changing resource, form or time range");
         }
 
+        if (command == "copy-animation-keys" || command == "paste-animation-keys") {
+          if (m_clipForm != m_clipOriginal || m_captureDialog) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Copy/paste requires a clean key form without a pending dialog");
+          }
+
+          const auto preview = m_animationPreview->stats();
+
+          if (!preview) {
+            return std::unexpected(preview.error());
+          }
+
+          if (command == "copy-animation-keys") {
+            auto copied = m_animationClipboard.copy(
+                state->value, m_clipSelection,
+                AnimationClipboardSource{m_clipContext, m_buffer, state->revision, state->path});
+
+            if (!copied) {
+              return std::unexpected(copied.error());
+            }
+
+            m_clipPasteTime = static_cast<float>(preview->player.playback.time);
+            m_clipPasteOverwrite = false;
+            return Json{{"ok", true}, {"clipboard", clipboardStatus()}}.dump();
+          }
+
+          const auto time = Codec::number(parsed["time"]);
+          const bool overwrite = parsed["overwrite"].get<bool>();
+          auto prepared = m_animationClipboard.prepare(
+              state->value, m_clipContext, Codec::id(parsed["clipboard"]), time,
+              overwrite ? Animation::KeyCollision::Replace : Animation::KeyCollision::Reject);
+
+          if (!prepared) {
+            return std::unexpected(prepared.error());
+          }
+
+          auto published = publishClipValue(*state, prepared->value);
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+
+          auto selected
+              = selectClipKeys(m_clipDocument->snapshot().value(), std::move(prepared->selection));
+
+          if (!selected) {
+            m_clipForm = m_clipOriginal = nullptr;
+            setClipSelection({});
+            return Core::fail(selected.error().code,
+                              "Keys pasted; selection failed: " + selected.error().message);
+          }
+
+          m_clipPasteTime = time;
+          m_clipPasteOverwrite = overwrite;
+          return Json{{"ok", true},
+                      {"animationClip", clipStatus()},
+                      {"preview", animationStatus()},
+                      {"clipboard", clipboardStatus()}}
+              .dump();
+        }
+
         if (command == "select-animation-keys" || command == "select-all-animation-keys") {
           if (m_clipForm != m_clipOriginal) {
             return Core::fail(Core::ErrorCode::InvalidState,
@@ -2542,7 +2718,7 @@ namespace Dot::Editor {
 
           if (command == "select-all-animation-keys") {
             for (const auto& track : value->tracks) {
-              if (track.keys.size() > Animation::MaxRetimeKeys - keys.size()) {
+              if (track.keys.size() > Animation::MaxSelectedKeys - keys.size()) {
                 return Core::fail(Core::ErrorCode::InvalidArgument,
                                   "Selection exceeds 16384 keys; select a smaller group");
               }
@@ -2663,6 +2839,7 @@ namespace Dot::Editor {
           }
 
           m_clipDocument.reset();
+          m_clipContext = {};
           m_animationPreview.reset();
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
@@ -2997,6 +3174,7 @@ namespace Dot::Editor {
           }
 
           m_clipDocument.reset();
+          m_clipContext = {};
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
           cancelKeyMove();
@@ -4267,6 +4445,7 @@ namespace Dot::Editor {
           m_pendingClose = false;
           m_animationPreview.reset();
           m_clipDocument.reset();
+          m_clipContext = {};
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
           cancelKeyMove();
@@ -4434,6 +4613,7 @@ namespace Dot::Editor {
             {"play", playStatus()},
             {"animationPreview", animationStatus()},
             {"animationClip", clipStatus()},
+            {"animationClipboard", clipboardStatus()},
             {"skeleton", skeletonStatus()},
             {"view", viewStatus()},
             {"capture", captureStatus()},
@@ -7671,7 +7851,7 @@ namespace Dot::Editor {
           const auto last = std::ranges::upper_bound(track->keys, std::max(anchor, time), {},
                                                      &Animation::Key::time);
 
-          if (static_cast<std::size_t>(last - first) > Animation::MaxRetimeKeys) {
+          if (static_cast<std::size_t>(last - first) > Animation::MaxSelectedKeys) {
             m_message = "Selection exceeds 16384 keys; narrow the range";
             return;
           }
@@ -7988,8 +8168,22 @@ namespace Dot::Editor {
     }
 
     auto animationPanel() -> void {
+      const auto clipboard = m_animationClipboard.snapshot();
+
       if (!m_clipDocument) {
         ImGui::TextWrapped("Select an animation player in Inspector, then Edit animation clip.");
+
+        if (clipboard) {
+          ImGui::TextWrapped("%zu copied keys retained from %s",
+                             clipboard->keys.description().value()->keys.size(),
+                             clipboard->source.path.c_str());
+
+          if (ImGui::Button("Clear copied keys")) {
+            sessionAction({{"command", "clear-animation-clipboard"},
+                           {"clipboard", std::to_string(clipboard->id)}});
+          }
+        }
+
         return;
       }
 
@@ -8117,6 +8311,18 @@ namespace Dot::Editor {
           clipAction({{"command", "begin-animation-key-move"}});
         }
 
+        if (nextButton("Copy keys")) {
+          clipAction({{"command", "copy-animation-keys"}});
+        }
+
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(pending || !clipboard);
+
+        if (nextButton("Paste keys...")) {
+          m_clipPasteTime = static_cast<float>(preview->player.playback.time);
+          ImGui::OpenPopup("Paste animation keys");
+        }
+
         ImGui::EndDisabled();
         ImGui::BeginDisabled(pending);
 
@@ -8130,7 +8336,56 @@ namespace Dot::Editor {
 
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::Text("%zu selected / Ctrl-Cmd toggle / Shift range", m_clipSelection.size());
+        ImGui::Text("%zu selected", m_clipSelection.size());
+        ImGui::SetItemTooltip(
+            "Ctrl/Cmd toggles keys across tracks; Shift selects a range. Last selected key anchors "
+            "a move.");
+      }
+
+      if (ImGui::BeginPopup("Paste animation keys")) {
+        if (clipboard) {
+          const auto copied = clipboard->keys.description().value();
+          ImGui::TextWrapped("%zu keys / %zu channels / %.9g to %.9g s", copied->keys.size(),
+                             copied->channels, double(copied->start), double(copied->end));
+          ImGui::TextWrapped("From %s", clipboard->source.path.c_str());
+          ImGui::SetNextItemWidth(140);
+          ImGui::InputFloat("Paste at (s)", &m_clipPasteTime, 0, 0, "%.9g");
+          ImGui::Checkbox("Replace matching key times", &m_clipPasteOverwrite);
+          const bool compatible = clipboardCompatible();
+
+          if (!compatible) {
+            ImGui::TextWrapped(
+                "Copied keys belong to a different scene or animation player. Copy again from this "
+                "player.");
+          }
+
+          ImGui::BeginDisabled(!compatible || m_clipMove.has_value());
+
+          if (ImGui::Button("Paste")) {
+            if (clipAction({{"command", "paste-animation-keys"},
+                            {"clipboard", std::to_string(clipboard->id)},
+                            {"time", m_clipPasteTime},
+                            {"overwrite", m_clipPasteOverwrite}})) {
+              ImGui::CloseCurrentPopup();
+            }
+          }
+
+          ImGui::EndDisabled();
+
+          if (!m_message.empty()) {
+            ImGui::TextWrapped("%s", m_message.c_str());
+          }
+
+          if (ImGui::Button("Clear copied keys")) {
+            sessionAction({{"command", "clear-animation-clipboard"},
+                           {"clipboard", std::to_string(clipboard->id)}});
+            ImGui::CloseCurrentPopup();
+          }
+        } else {
+          ImGui::TextUnformatted("No copied keys.");
+        }
+
+        ImGui::EndPopup();
       }
 
       if (m_clipMove) {
