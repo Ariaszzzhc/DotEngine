@@ -6034,3 +6034,97 @@ callback ownership/main-thread submission and close guards, exact PNG row/alpha
 preservation and UTF-8 Windows path construction. Compiler/linker settings, dependency
 pins and platform targets remain unchanged. Windows/Linux have not been executed.
 No distribution archive is generated. The broader engine goal remains incomplete.
+
+## 2026-10-16 — Isolated native animation audition
+
+The editor now auditions saved animation players without starting a game. The
+Inspector launcher clones the current unsaved scene and the Scene panel offers
+native clip playback/pause, time scrubbing, speed/looping, bind pose, model framing
+and End preview. Strict preview-animation, control-animation-preview and
+inspect-animation-preview operations share the GUI implementation. Session identities
+change independently of document revisions; old/ended sessions cannot control newer
+previews. Inspection returns actual playback metadata and the posed clone scene.
+
+The AnimationPreview service owns its scene, native ScenePlayers and immutable
+loaded clips. All cloned auto-play flags are disabled, and only the selected player
+is controlled. Other players remain at authored poses while native writer/library
+and rigid/character authority checks still apply. No compiler, scripts, simulation,
+audio or hidden timer is initialized. Control failures preserve pose/clock/generation.
+Native sample failure retains the last valid pose and faults audition until recreation;
+End preview remains available. Moves retain borrowed scene addresses; worker-thread
+and moved-handle operations are rejected. Source scenes and animation files can be
+retired after preparation without losing owned poses/clip samples.
+
+Starting preview requires an enabled player, current revision, no conflicting mode,
+pending draft, close confirmation or native save dialog. Authoring/resource writes,
+selection, scene save/export and Play are locked during audition. Camera navigation,
+framing, layout/theme, inspection, PNG capture and close remain available. End/close
+retire the clone without changing authoring/history/selection/revision/dirty state.
+Bind pose is separately observable from a paused clip at time zero; playing from it
+restarts the directional clip. Seeking preserves playing/paused state.
+
+The displayed-scene source is shared by rendering, capture and focus. Model framing
+now merges actual visible mesh bounds in a selected subtree, including posed skins,
+instead of framing only a skeleton/group root's default cube. Empty groups retain
+their own bounds. Frame model uses the existing revision-checked focus-view operation.
+The capture service records audition source/session and entity/generation/clip/time/
+bindPose metadata with frozen pixels. Stale generations cannot be read as current;
+frozen frames remain saveable after End preview and later game execution.
+
+Five new enduring filesystem regressions cover native seeking/playback/reverse/bind
+pose, invalid inputs preserving state, thread/move lifetime, retired source/files,
+other players retaining authored poses, missing/disabled/conflicting inputs, physics
+ownership and native singular-sample fault/recreation. One new pure CPU capture case
+covers animation metadata/context validation and ownership. No new test executable,
+window/device unit initialization or desktop-window integration test is added.
+An initial fixture build found a signed vector index; it is corrected to size_t.
+Focused Debug passes 13/13 (.65s); focused Release/NDEBUG passes 13/13 (.08s).
+
+The first native UI observation found an oversized control child and a distant
+character. The child now fits real content under a bounded height and buttons wrap;
+current native clip names are shown. A separate final Release editor session selects
+Surveyor in Prism Relay and starts paused at Idle_Loop time zero. Real subtree bounds
+frame its meshes. All seven authored idle/walk/jog/sprint/jump-start/airborne/landing
+clips switch, pause and seek successfully. Walk time .5000000149011612 remains fixed
+across observation frames; saved PNGs show real deformation and carry exact clip/time
+metadata. Idle/walk pixels differ. Bind-pose exports identify that state explicitly.
+Reverse nonlooping playback reaches zero and pauses. No script/game session starts;
+the character root remains at its authored position.
+
+Actual product requests reject invalid times/indices/extra fields, stale sessions,
+concurrent Play and authoring/selection changes without altering the paused generation.
+Repeated audition uses distinct session identities 1/2/3 at authoring revision 2.
+Native screenshots show the actual controls at normal and narrowed widths; narrow
+export is 570x592, while ordinary audition export is 1480x650. Frame metadata and PNG
+sizes match. A frozen capture saves after End preview with unchanged provenance.
+Subsequent actual Play starts normally, consumes ten W frames and moves the character
+to approximately [-3,0,1.55204]; Stop restores exactly the pre-preview authoring scene,
+revision and clean state. Close while a third audition is active exits 0 with empty
+stderr. Temporary app shells, clients and requests are removed, control directories
+are retired, and observations remain only in ignored build storage.
+
+Precommit error-path review adds an explicit expected-result check before reading
+preview stats in the render loop. This avoids assuming a potentially allocating
+snapshot succeeded. No dependency pins, compiler/linker settings or platform targets
+change. Keyframe/skeleton authoring, visual transition/state-machine tools, finished
+realistic game art and populated-game performance remain unfinished.
+
+本轮交付独立动画预览及真实模型子树取景，支持同源 GUI/智能体操作和带来源的 PNG。
+已经验证真实人物蒙皮与运行隔离；没有将动作预览描述为完整动画制作器，也没有据测试数量
+宣称大型游戏生产就绪。自动化检查不打开桌面窗口，实际窗口检查使用产品操作与视觉观察。
+
+Full arm64 macOS Debug passes 1053/1053 (147.36s). After final expected-result and
+member-naming review, both configurations rebuild, focused final Debug passes
+13/13 (.62s), and final Release/NDEBUG passes 1053/1053 (20.08s). The suite has 270
+unit and 783 integration cases; labelled subsets include 123 offscreen GPU, 27 native
+audio and 28 SDL-dummy platform cases (labels overlap). Automated checks open no
+desktop windows. All seven changed C++ source/interface/test files pass clang-format;
+diff whitespace checks pass. No new distribution archive is produced.
+
+Precommit review covers module interface/implementation separation and dependency
+direction, source/clone and clip ownership, thread/move/resource lifetime, runtime
+writer authority, strict bounded command fields and session/generation freshness,
+failed-operation preservation and native fault recovery, read-only authoring guards,
+GUI/agent parity, subtree skin bounds and frame metadata, portable standard-library
+code, formatting and focused behavioral coverage. Windows/Linux remain supported in
+code without local execution claims. The complete engine goal remains open.

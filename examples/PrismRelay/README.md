@@ -47,3 +47,10 @@ stay with the project. [Sources and hashes](assets/Sources.md) record provenance
 The current mannequin is a functional animation/template asset. Finished realistic
 character art, a cohesive sci-fi suit, environment polish and populated-game
 performance remain work; this is not the final requested visual-quality claim.
+
+To inspect the imported character without running gameplay, select Surveyor and use
+Preview animation in the Inspector. The Scene controls provide Frame model, clip
+playback, pause, time scrubbing, speed/loop settings and bind pose. End preview restores
+the untouched authoring scene. These operations use the same native animation players
+as Play; they do not run player/camera scripts, physics or audio. Agent commands and
+viewport PNG provenance are documented in [editor operations](../../docs/Editor.md).

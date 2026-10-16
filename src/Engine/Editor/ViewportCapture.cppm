@@ -20,7 +20,16 @@ export namespace Dot::Editor {
     std::uint64_t session{};
     ViewportMode mode{ViewportMode::Editor};
     bool transform{};
+    bool animation{};
     auto operator==(const CaptureContext&) const -> bool = default;
+  };
+
+  struct AnimationCapture {
+    std::uint64_t owner{};
+    std::uint64_t generation{};
+    std::uint32_t clip{};
+    double time{};
+    bool bindPose{};
   };
 
   struct CaptureFrame {
@@ -31,6 +40,7 @@ export namespace Dot::Editor {
     std::uint32_t height{};
     Math::Mat4 viewProjection{};
     bool materialPreview{};
+    std::optional<AnimationCapture> animation{};
   };
 
   struct ViewportCaptureStats {

@@ -6,7 +6,8 @@ logical node indices to live scene-scoped entity handles. This foundation is usa
 by native engine consumers. glTF/GLB node animations now
 convert to these clips and native model bindings. Saved animation players now run
 through GameSession, editor Play and native exports. TypeScript playback controls
-are available through the engine-owned SDK. Timeline controls remain unfinished.
+are available through the engine-owned SDK. Isolated editor audition now supports playback and time scrubbing; keyframe authoring
+remains unfinished.
 [Native GPU skinning](Skinning.md) now includes glTF/GLB import, scene/editor bindings,
 isolated Play and owned exports. Native SceneAnimator cross-fades now have CPU and
 offscreen skinned-GPU regression tests. Library/SDK transitions now run in editor Play and
@@ -145,7 +146,7 @@ The editor import command reports `model`, `animations` and its existing scene/
 geometry fields. Native `.dotmodel`/`.dotanimation` assets can open externally.
 Add model to scene remaps and retains the saved animation player and its node IDs.
 GameSession/editor Play/native exports automatically play the selected clip. Editor
-timeline tools remain unfinished.
+keyframe timeline authoring remains unfinished.
 
 ## Saved animation players
 
@@ -165,7 +166,8 @@ all of a copied player's targets to be included, ensuring independent instances.
 Undo/redo/save and cloned editor Play preserve descriptions; Stop re-presents the
 unmodified authoring scene. Inspector supports selected clip, speed, loop, auto-play,
 enabled and clip-asset choices. Node bindings come from model import or native/
-automation authoring; there is no visual binding editor/timeline yet.
+automation authoring; visual binding and keyframe editing remain unfinished. See the isolated audition
+workflow in [editor operations](Editor.md#isolated-animation-audition--独立动画预览).
 
 `Dot.Animation.ScenePlayers` owns a shared scene and playback instances. Each
 synchronize validates additions/changes as candidates before replacing its table;

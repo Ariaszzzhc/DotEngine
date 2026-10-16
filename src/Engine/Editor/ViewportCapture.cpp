@@ -1,5 +1,6 @@
 module;
 
+#include <cmath>
 #include <expected>
 #include <limits>
 #include <utility>
@@ -24,8 +25,9 @@ namespace Dot::Editor {
     if (!context.scene || !context.revision
         || (context.mode != ViewportMode::Editor && context.mode != ViewportMode::Game
             && context.mode != ViewportMode::Play)
-        || (context.mode == ViewportMode::Play) != (context.session != 0)
-        || (context.transform && context.mode != ViewportMode::Editor)) {
+        || (context.mode == ViewportMode::Play || context.animation) != (context.session != 0)
+        || (context.transform && (context.mode != ViewportMode::Editor || context.animation))
+        || (context.animation && context.mode == ViewportMode::Play)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid viewport capture context");
     }
 
@@ -49,7 +51,12 @@ namespace Dot::Editor {
 
     if (frame.width != image.width || frame.height != image.height
         || !Math::isFinite(frame.viewProjection)
-        || (frame.context.mode != ViewportMode::Play && frame.playFrame)) {
+        || (frame.context.mode != ViewportMode::Play && frame.playFrame)
+        || frame.context.animation != frame.animation.has_value()
+        || (frame.animation
+            && (!frame.animation->owner || !frame.animation->generation
+                || !std::isfinite(frame.animation->time) || frame.animation->time < 0
+                || frame.animation->time > 86400))) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Capture metadata does not match pixels");
     }
 

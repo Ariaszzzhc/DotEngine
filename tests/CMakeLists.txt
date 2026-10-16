@@ -85,6 +85,7 @@ add_executable(DotTests
     AssetTests.cpp
     ImageTests.cpp
     ImageExportTests.cpp
+    AnimationPreviewTests.cpp
     MaterialTests.cpp
     AnimationFileTests.cpp
     SkinFileTests.cpp

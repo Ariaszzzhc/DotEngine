@@ -781,7 +781,8 @@ mesh/material/image/node and animation counts, generated scene and native model
 descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
 Add model to scene retains the animation player and remaps its node targets.
 Inspector supports clip/clock/loop/auto-play settings; Play uses the same native
-GameSession as exported games. TypeScript playback controls use the same players; timeline tools remain unfinished.
+GameSession as exported games. TypeScript playback controls use the same players.
+Isolated editor audition is available below; keyframe authoring remains unfinished.
 Import publishes reusable resources without dirtying the scene; instantiation needs the
 current authoring revision. A failed catalog refresh after publication explicitly
 reports that the bundle was committed. Existing destinations are never overwritten.
@@ -978,7 +979,7 @@ used by native mouse input. `inspect.workspace.tool` reports frozen `entities`,
 topmost `roots`, active `entity` and `pivot: "active"` during a gesture. The typed
 Document transform transaction supports up to 10000 current-scene handles without
 the generic JSON edit operation-count/transport bound; existing scene/history
-limits still apply. Median/individual-origin pivot modes and group framing remain
+limits still apply. Median/individual-origin pivot modes and multiselection group framing remain
 unimplemented.
 
 Saved [skin bindings](Skinning.md) render automatically in preview and isolated Play.
@@ -987,8 +988,8 @@ edits ordered live joint entities; a mesh is required. Applying uses ordinary na
 component/history validation. Duplicate requires all joints in the selected subtree
 union, remaps their IDs and rejects external references without partial edits.
 Model-scene instantiation remaps the same references. Bounds/framing/picking use the
-current deformed mesh. Skeleton visualization and a visual
-animation timeline remain unfinished.
+current deformed mesh. Skeleton visualization and keyframe timeline authoring remain
+unfinished; isolated animation playback/scrubbing is available below.
 
 Move a character root that contains its joints, or edit the joint transforms, to
 pose a skinned mesh. Its mesh-owner world transform cancels through the skin palette;
@@ -1041,7 +1042,8 @@ Finish or discard it before requesting another. IDs are canonical decimal string
 monotonically increasing for this workspace; stale IDs cannot save/discard newer images.
 
 `workspace.capture.frame` records the actual frame serial, authoring revision, scene
-scope, Play session/frame (zero outside Play), mode/source, pixel dimensions, column-major
+scope, Play or animation-preview session (zero otherwise), Play frame (zero outside Play),
+mode/source, pixel dimensions, column-major
 view-projection matrix and material-preview flag. These describe a completed capture
 only in `ready`/`saved`; queued metadata describes the requested context and prior serial.
 Later rendering, camera movement, Stop and document edits do not change retained pixels
@@ -1070,3 +1072,78 @@ retry. Agent clients normally use `dialog:false` and direct `save-capture`, with
 不改变已捕获图像，也不影响场景历史或保存状态。失败可重试，成功后释放像素并报告绝对路径
 与字节数。已有目标须明确允许覆盖，拒绝链接、特殊/只读文件及大小写别名；原子替换前校验
 字节基线。系统对话框打开时保留父窗口并拒绝冲突操作；智能体通常直接指定路径保存。
+
+## Isolated animation audition / 独立动画预览
+
+Select an entity with an enabled Animation player and use Preview animation in the
+Inspector. Scene controls provide Play/Pause, Play clip, a time slider, speed [-16,16],
+looping, Bind pose, Frame model and End preview. The controls resize with their content
+and scroll within a bounded height in narrow panels. Current native clip names are
+shown alongside the asset library. Selecting a clip starts it from its directional
+start. Seeking preserves playing/paused state; pause first for a stationary sample.
+Bind pose restores original animated fields and pauses. Playing from bind pose starts
+the directional clip again. These runtime controls never save player settings or poses.
+
+The editor clones the complete unsaved authoring scene into a separate scope. It uses
+Dot.Animation.ScenePlayers, exactly as game sessions do, with all cloned auto-play
+flags disabled. Only the chosen player is controlled; others retain authored poses.
+Their writer reservations, library validation and rigid/character authority checks
+still apply. Missing or conflicting resources fail instead of showing a substitute.
+No scripts, physics simulation, audio device, compiler or independent animation timer
+is started. Native elapsed time advances the chosen animation explicitly. Clip data
+is owned after loading; external clip changes require ending and starting audition.
+
+Start requires the current authoring revision, an enabled player, no other preview/
+transform/Play mode, no pending scene/file drafts, close confirmation or save dialog.
+Authoring and resource changes, hierarchy selection, scene save/export and Play are
+locked until End preview. Navigation, camera focus, layout/theme, capture/PNG export,
+inspection and close remain available. Authoring selection/history/revision/dirty state
+are unchanged. Close can retire an active preview without running game stop hooks.
+
+Strict product requests share the GUI implementation:
+
+```json
+{"command":"preview-animation","revision":"2","entity":"281"}
+{"command":"inspect-animation-preview","session":"1"}
+{"command":"control-animation-preview","session":"1","action":"play","clip":1,"restart":true}
+{"command":"control-animation-preview","session":"1","action":"pause"}
+{"command":"control-animation-preview","session":"1","action":"seek","seconds":0.5}
+{"command":"control-animation-preview","session":"1","action":"configure","speed":-1,"looping":false}
+{"command":"control-animation-preview","session":"1","action":"bind-pose"}
+{"command":"control-animation-preview","session":"1","action":"end"}
+```
+
+Each line is a separate object with exactly its listed fields. Entity/revision/session
+are canonical decimal strings; clip is a nonnegative integer within the native library.
+Seconds must be finite within [0,duration]. Session identities increase even at the
+same authoring revision. Old/ended session requests cannot affect a newer preview.
+`inspect` reports `workspace.animationPreview`: session, entity, source scene scope,
+generation, current clip/path/name, library paths, duration/time, speed, looping,
+playing, bindPose and an optional native fault. `inspect-animation-preview` additionally
+returns the actual posed clone scene. Saved player descriptions in that clone have
+auto-play disabled; inspect the ordinary document for the untouched authoring data.
+
+Invalid controls preserve pose, clock and generation. Native advancement errors retain
+the last valid pose and expose a fault; End preview and recreate to recover. This is
+animation audition, without keyframe editing, visual transitions, skeleton authoring
+or retargeting. It does not pause or step a running Play session.
+
+Frame model uses the ordinary revision-checked `focus-view` with the player entity.
+Focus now includes visible meshes in the selected subtree, resolving IDs into the
+displayed scene and measuring real posed skin bounds. A selected empty group falls
+back to its own bounds; null entity still frames the complete visible scene.
+
+Viewport PNG capture remains available. Its frame source is `animation`, session
+identifies the audition and `animation` records entity/generation/clip/time/bindPose.
+Binding pose is explicitly distinct from a paused clip at time zero. Pixel/provenance
+snapshots remain fixed after seeking, clip changes, End preview and later Play.
+Stale generations cannot be read as a current viewport frame.
+
+选择启用动画的实体，在 Inspector 中启动 Preview animation，再通过 Scene 控件选片、
+播放/暂停、拖动时间、调整速度/循环、恢复绑定姿态及结束预览。Frame model 按实际蒙皮
+子树边界取景。控件随内容收缩，窄面板自动换行并在有界区域滚动。
+预览克隆未保存场景并使用与游戏相同的原生动画播放器，不启动脚本、物理模拟或音频。
+其他播放器保留编辑姿态，同时继续校验资源与写入权限。预览期间锁定编辑和 Play，结束后
+恢复完整编辑场景，选择/历史/修订/保存状态不变。所有操作共用严格 JSON 实现；检查可读取
+实际预览场景、片段、时间及绑定姿态标记，过期会话无法影响新预览。PNG 同时记录该来源，
+结束预览后仍可保存已固定的画面。本功能用于动作检查，关键帧制作、骨架与状态图工具仍待完成。

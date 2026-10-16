@@ -130,3 +130,30 @@ TEST_CASE("viewport_capture.validates_metadata_and_recovers_after_explicit_failu
   CHECK_FALSE(capture.stats().error);
   REQUIRE(capture.complete(id, frame(), pixels()));
 }
+
+TEST_CASE("viewport_capture.freezes_animation_provenance_and_validates_its_context") {
+  using namespace Dot::Editor;
+  ViewportCapture capture;
+  auto animated = context;
+  animated.animation = true;
+  CHECK_FALSE(capture.request(animated, 10));
+  animated.session = 4;
+  auto id = capture.request(animated, 10).value();
+  auto value = frame();
+  value.context = animated;
+  CHECK_FALSE(capture.complete(id, value, pixels()));
+  value.animation = AnimationCapture{3, 12, 1, .25};
+  auto invalid = value;
+  invalid.animation->time = std::numeric_limits<double>::quiet_NaN();
+  CHECK_FALSE(capture.complete(id, invalid, pixels()));
+  REQUIRE(capture.complete(id, value, pixels()));
+  value.animation->time = 1;
+  CHECK(capture.stats().frame.animation->time == .25);
+  CHECK(capture.stats().frame.context.session == 4);
+  REQUIRE(capture.discard(id));
+  animated.mode = ViewportMode::Play;
+  CHECK_FALSE(capture.request(animated, 11));
+  animated.mode = ViewportMode::Editor;
+  animated.transform = true;
+  CHECK_FALSE(capture.request(animated, 11));
+}

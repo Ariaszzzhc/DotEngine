@@ -8,7 +8,7 @@ readiness or editor maturity comparable to the requested target.
 | --- | --- |
 | Static C++26 library, separate module interfaces/implementations, pinned native dependencies | Preserve caller compiler/linker environment; no installed public header tree |
 | PBR texture/material slots, HDRI IBL, directional soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, streaming and populated-scene performance remain incomplete |
-| OBJ/glTF/GLB import, native resources, GPU skinning and animation cross-fades | Full production animation/asset tools remain incomplete |
+| OBJ/glTF/GLB import, native resources, GPU skinning, animation cross-fades and isolated editor audition | Full production animation/asset tools remain incomplete |
 | Rigid-body physics with linear CCD, contacts/queries, audio, saved character controllers and shared scene simulation/Inspector | Rigged mannequin/shoulder template is implemented; final realistic character art and scalability remain incomplete |
 | TypeScript/QuickJS-NG, hot reload, dot:engine/dot:host and extensionless project imports | Existing script contracts are implemented; new native capabilities still need explicit SDK exposure |
 | Docked editor, scene/resources/materials, picking/gizmos/multiselection/history, isolated Play and native export | Mature content-production workflows and scalability remain incomplete |
@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1039/1039 (148.39s) and Release/NDEBUG
-1039/1039 (20.12s), including 265 unit tests and 123 offscreen GPU regressions. These
+The latest full macOS arm64 suites pass Debug 1053/1053 (147.36s) and Release/NDEBUG
+1053/1053 (20.08s), including 270 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -93,3 +93,11 @@ capture. Native focus requests report observed focus. The temporary development
 app must own its executable and use standard bundle resources for that focus check.
 The simulated Name-click coordinate discrepancy remains a separate SDL/global-pointer
 validation limitation; agent property operations remain verified.
+
+Actual viewport PNG export now shares File-menu and strict agent operations, with
+owned frame provenance and native save dialogs. Isolated animation audition uses
+real native players without gameplay scripts, physics simulation or audio. The
+editor verifies all seven Prism Relay clips, fixed paused poses, bind/seek/reverse
+controls, source-safe exit and subsequent normal Play. Model framing includes real
+posed subtree bounds. Keyframe/skeleton/transition authoring remains incomplete;
+these workflows do not establish final realistic game art or populated-game performance.

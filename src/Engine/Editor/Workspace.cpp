@@ -35,6 +35,7 @@ import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
 import Dot.Editor.PlayInput;
 import Dot.Editor.ViewportCapture;
+import Dot.Editor.AnimationPreview;
 import Dot.Assets.ImageExport;
 import Dot.Platform.Dialog;
 import Dot.Graphics.View;
@@ -455,6 +456,8 @@ namespace Dot::Editor {
     std::string m_exportFolder{"game-export"};
     bool m_exportDialog{};
     bool m_exportDataOnly{};
+    std::optional<AnimationPreview> m_animationPreview;
+    std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
     std::uint64_t m_playSession{};
     PlayInput m_agentInput;
@@ -1280,21 +1283,63 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto displayedScene() const -> Core::Result<const World::Scene*> {
+      if (playing()) {
+        return m_play->scene();
+      }
+
+      if (m_animationPreview) {
+        return m_animationPreview->scene();
+      }
+
+      return m_transform ? m_transform->scene() : m_document->scene();
+    }
+
+    auto animationStatus() const -> Json {
+      if (!m_animationPreview) {
+        return nullptr;
+      }
+
+      auto state = m_animationPreview->stats();
+
+      if (!state) {
+        return errorJson(state.error());
+      }
+
+      const auto& player = state->player;
+      return {{"session", std::to_string(m_animationSession)},
+              {"entity", std::to_string(state->owner)},
+              {"source", std::to_string(state->source)},
+              {"generation", std::to_string(state->generation)},
+              {"clip", player.clip},
+              {"asset", player.asset},
+              {"name", player.name},
+              {"clips", state->clips},
+              {"duration", player.duration},
+              {"time", player.playback.time},
+              {"playing", player.playback.playing},
+              {"speed", player.playback.speed},
+              {"looping", player.playback.looping},
+              {"bindPose", state->bindPose},
+              {"error", state->error ? errorJson(*state->error)["error"] : Json(nullptr)}};
+    }
+
     auto captureContext() const -> Core::Result<CaptureContext> {
-      auto scene = playing()     ? m_play->scene()
-                   : m_transform ? m_transform->scene()
-                                 : m_document->scene();
+      auto scene = displayedScene();
 
       if (!scene) {
         return std::unexpected(scene.error());
       }
 
-      return CaptureContext{m_document->stats()->revision, (*scene)->id(),
-                            playing() ? m_playSession : 0,
-                            playing()      ? ViewportMode::Play
-                            : m_editorView ? ViewportMode::Editor
-                                           : ViewportMode::Game,
-                            m_transform.has_value()};
+      return CaptureContext{
+          m_document->stats()->revision,
+          (*scene)->id(),
+          playing() ? m_playSession : (m_animationPreview ? m_animationSession : 0),
+          playing()      ? ViewportMode::Play
+          : m_editorView ? ViewportMode::Editor
+                         : ViewportMode::Game,
+          m_transform.has_value(),
+          m_animationPreview.has_value()};
     }
 
     auto captureStatus() const -> Json {
@@ -1315,12 +1360,20 @@ namespace Dot::Editor {
                 {"session", std::to_string(frame.context.session)},
                 {"playFrame", std::to_string(frame.playFrame)},
                 {"mode", modes.at(static_cast<std::size_t>(frame.context.mode))},
-                {"source", frame.context.transform                    ? "transform"
+                {"source", frame.context.animation                    ? "animation"
+                           : frame.context.transform                  ? "transform"
                            : frame.context.mode == ViewportMode::Play ? "play"
                                                                       : "document"},
                 {"size", {frame.width, frame.height}},
                 {"viewProjection", frame.viewProjection.data},
-                {"materialPreview", frame.materialPreview}}}};
+                {"materialPreview", frame.materialPreview},
+                {"animation",
+                 frame.animation ? Json{{"entity", std::to_string(frame.animation->owner)},
+                                        {"generation", std::to_string(frame.animation->generation)},
+                                        {"clip", frame.animation->clip},
+                                        {"time", frame.animation->time},
+                                        {"bindPose", frame.animation->bindPose}}
+                                 : Json(nullptr)}}}};
     }
 
     auto readViewport() -> Core::Result<Graphics::Image> {
@@ -1337,6 +1390,15 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::InvalidState,
                           m_previewError.empty() ? "Viewport has no current completed frame"
                                                  : "Viewport preview: " + m_previewError);
+      }
+
+      if (m_animationPreview) {
+        auto animation = m_animationPreview->stats();
+
+        if (!animation || !m_renderedFrame->animation
+            || animation->generation != m_renderedFrame->animation->generation) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Animation preview frame is stale");
+        }
       }
 
       return m_renderer->readTarget(*m_target);
@@ -1493,6 +1555,106 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (command == "preview-animation") {
+        Codec::requireFields(parsed, {"command", "revision", "entity"});
+
+        if (playing() || m_animationPreview || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+            || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || m_animationSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Animation preview requires current revision without another mode/draft/dialog");
+        }
+
+        auto preview = AnimationPreview::create(
+            *m_document->scene().value(), m_project->files().value(), Codec::id(parsed["entity"]));
+
+        if (!preview) {
+          return std::unexpected(preview.error());
+        }
+
+        m_animationPreview.emplace(std::move(*preview));
+        ++m_animationSession;
+        m_editorView = true;
+        m_flying = m_orbiting = m_panning = false;
+        m_previewReady = false;
+        m_requestedPane = "viewport";
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "control-animation-preview" || command == "inspect-animation-preview") {
+        if (command == "inspect-animation-preview") {
+          Codec::requireFields(parsed, {"command", "session"});
+        } else {
+          const auto action = parsed.at("action").get<std::string>();
+
+          if (action == "play") {
+            Codec::requireFields(parsed, {"command", "session", "action", "clip", "restart"});
+          } else if (action == "seek") {
+            Codec::requireFields(parsed, {"command", "session", "action", "seconds"});
+          } else if (action == "configure") {
+            Codec::requireFields(parsed, {"command", "session", "action", "speed", "looping"});
+          } else if (action == "pause" || action == "bind-pose" || action == "end") {
+            Codec::requireFields(parsed, {"command", "session", "action"});
+          } else {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown animation preview action");
+          }
+        }
+
+        if (!m_animationPreview || Codec::id(parsed["session"]) != m_animationSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Animation preview session is stale");
+        }
+
+        if (command == "inspect-animation-preview") {
+          auto encoded = World::encodeScene(*m_animationPreview->scene().value());
+          return encoded ? Core::Result<std::string>{Json{{"ok", true},
+                                                          {"preview", animationStatus()},
+                                                          {"scene", Codec::parseJson(*encoded)}}
+                                                         .dump()}
+                         : std::unexpected(encoded.error());
+        }
+
+        const auto action = parsed.at("action").get<std::string>();
+        Core::Result<void> applied;
+
+        if (action == "end") {
+          m_animationPreview.reset();
+        } else if (action == "play") {
+          if (!parsed["clip"].is_number_unsigned()
+              || parsed["clip"].get<std::uint64_t>() > std::numeric_limits<std::uint32_t>::max()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Clip must be an unsigned index");
+          }
+
+          applied = m_animationPreview->play(parsed["clip"].get<std::uint32_t>(),
+                                             parsed["restart"].get<bool>());
+        } else if (action == "pause") {
+          applied = m_animationPreview->pause();
+        } else if (action == "bind-pose") {
+          applied = m_animationPreview->bindPose();
+        } else if (action == "seek") {
+          if (!parsed["seconds"].is_number()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Seek seconds must be numeric");
+          }
+
+          applied = m_animationPreview->seek(parsed["seconds"].get<double>());
+        } else {
+          if (!parsed["speed"].is_number()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Animation speed must be numeric");
+          }
+
+          applied = m_animationPreview->configure(parsed["speed"].get<double>(),
+                                                  parsed["looping"].get<bool>());
+        }
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
+        m_previewReady = false;
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (command == "capture-viewport" || command == "save-capture" || command == "browse-capture"
           || command == "discard-capture") {
         if (command == "capture-viewport") {
@@ -1559,6 +1721,14 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command"});
         auto raised = m_application->window().raise();
         return raised ? execute("{\"command\":\"inspect\"}") : std::unexpected(raised.error());
+      }
+
+      if (m_animationPreview && command != "inspect" && command != "close" && command != "set-theme"
+          && command != "filter-panel" && command != "dock-panel" && command != "reset-layout"
+          && command != "show-pane" && command != "set-view" && command != "navigate-view"
+          && command != "focus-view") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "End animation preview before authoring or Play");
       }
 
       if (m_transform && command != "inspect" && command != "update-transform"
@@ -2674,6 +2844,7 @@ namespace Dot::Editor {
           m_pendingClose = true;
         } else {
           m_pendingClose = false;
+          m_animationPreview.reset();
           m_transform.reset();
           m_axisDrag.reset();
           m_rotationDrag.reset();
@@ -2826,6 +2997,7 @@ namespace Dot::Editor {
             {"propertiesText", m_propertiesText},
             {"propertiesInvalid", m_propertiesInvalid},
             {"play", playStatus()},
+            {"animationPreview", animationStatus()},
             {"view", viewStatus()},
             {"capture", captureStatus()},
             {"message", m_message},
@@ -2993,9 +3165,10 @@ namespace Dot::Editor {
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
           {"textInput", m_renderer->guiStats().value().text},
-          {"source", playing()     ? "play"
-                     : m_transform ? "transform"
-                                   : "document"},
+          {"source", m_animationPreview ? "animation"
+                     : playing()        ? "play"
+                     : m_transform      ? "transform"
+                                        : "document"},
           {"flying", m_flying},
           {"viewport",
            {{"origin", {m_viewOrigin.x, m_viewOrigin.y}}, {"size", {m_viewWidth, m_viewHeight}}}},
@@ -3045,54 +3218,91 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown editor navigation action");
     }
 
+    /** Frame visible selected-subtree meshes in the displayed scene, including
+     * posed skin bounds. Resolve values into the clone scope; empty groups use
+     * their own bounds. Imported model roots must not frame a placeholder cube.
+     * 对显示场景内选中子树的可见网格取景，包括蒙皮姿态边界；将数值 ID 解析到克隆范围，
+     * 无网格组使用自身边界，导入模型根不能只对占位立方体取景。 */
     auto focusView(std::optional<World::EntityId> entity) -> Core::Result<void> {
-      auto scene = m_document->scene();
+      auto scene = displayedScene();
 
       if (!scene) {
         return std::unexpected(scene.error());
       }
 
-      Core::Result<Graphics::Bounds> bounds = Graphics::Bounds{};
+      auto entities = (*scene)->entities();
+
+      if (!entities) {
+        return std::unexpected(entities.error());
+      }
+
+      std::unordered_set<std::uint64_t> subtree;
 
       if (entity) {
-        bounds = m_drawing->bounds(**scene, *entity);
-      } else {
-        auto entities = (*scene)->entities();
+        auto root = (*scene)->findEntity(entity->value);
 
-        if (!entities) {
-          return std::unexpected(entities.error());
+        if (!root) {
+          return std::unexpected(root.error());
         }
 
-        bool first = true;
+        std::map<std::uint64_t, std::vector<std::uint64_t>> children;
 
         for (const auto& info : *entities) {
-          if (!info.mesh || !info.mesh->visible) {
+          if (info.parent) {
+            children[info.parent->value].push_back(info.id.value);
+          }
+        }
+
+        std::vector<std::uint64_t> pending{entity->value};
+
+        while (!pending.empty()) {
+          const auto current = pending.back();
+          pending.pop_back();
+
+          if (!subtree.insert(current).second) {
             continue;
           }
 
-          auto next = m_drawing->bounds(**scene, info.id);
-
-          if (!next) {
-            return std::unexpected(next.error());
+          if (auto found = children.find(current); found != children.end()) {
+            pending.insert(pending.end(), found->second.begin(), found->second.end());
           }
+        }
+      }
 
-          if (first) {
-            bounds = *next;
-            first = false;
-          } else {
-            auto& merged = *bounds;
-            merged.minimum = {std::min(merged.minimum.x, next->minimum.x),
-                              std::min(merged.minimum.y, next->minimum.y),
-                              std::min(merged.minimum.z, next->minimum.z)};
-            merged.maximum = {std::max(merged.maximum.x, next->maximum.x),
-                              std::max(merged.maximum.y, next->maximum.y),
-                              std::max(merged.maximum.z, next->maximum.z)};
-          }
+      Core::Result<Graphics::Bounds> bounds = Graphics::Bounds{};
+      bool first = true;
+
+      for (const auto& info : *entities) {
+        if (!info.mesh || !info.mesh->visible || (entity && !subtree.contains(info.id.value))) {
+          continue;
+        }
+
+        auto next = m_drawing->bounds(**scene, info.id);
+
+        if (!next) {
+          return std::unexpected(next.error());
         }
 
         if (first) {
+          bounds = *next;
+          first = false;
+        } else {
+          auto& merged = *bounds;
+          merged.minimum = {std::min(merged.minimum.x, next->minimum.x),
+                            std::min(merged.minimum.y, next->minimum.y),
+                            std::min(merged.minimum.z, next->minimum.z)};
+          merged.maximum = {std::max(merged.maximum.x, next->maximum.x),
+                            std::max(merged.maximum.y, next->maximum.y),
+                            std::max(merged.maximum.z, next->maximum.z)};
+        }
+      }
+
+      if (first) {
+        if (!entity) {
           return Core::fail(Core::ErrorCode::NotFound, "Scene has no visible meshes to frame");
         }
+
+        bounds = m_drawing->bounds(**scene, (*scene)->findEntity(entity->value).value());
       }
 
       if (!bounds) {
@@ -3111,6 +3321,10 @@ namespace Dot::Editor {
     /** A pick must refer to the displayed view/current document, not a stale image.
      * 选择必须对应已显示视图及当前文档，不能用过期图像悄悄选择新场景。 */
     auto pickView(Math::Vec2 uv) -> Core::Result<void> {
+      if (m_animationPreview) {
+        return Core::fail(Core::ErrorCode::InvalidState, "End animation preview before selecting");
+      }
+
       if (pendingInspector() || pendingEnvironment() || pendingOcclusion()) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Apply or reset scene drafts before selecting");
@@ -3165,9 +3379,7 @@ namespace Dot::Editor {
         m_target.emplace(std::move(*created));
       }
 
-      auto scene = playing()     ? m_play->scene()
-                   : m_transform ? m_transform->scene()
-                                 : m_document->scene();
+      auto scene = displayedScene();
 
       if (!scene) {
         return std::unexpected(scene.error());
@@ -3230,6 +3442,19 @@ namespace Dot::Editor {
         return {};
       }
 
+      std::optional<AnimationCapture> animation;
+
+      if (m_animationPreview) {
+        auto state = m_animationPreview->stats();
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        animation = AnimationCapture{state->owner, state->generation, state->player.clip,
+                                     state->player.playback.time, state->bindPose};
+      }
+
       auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view);
 
       if (drawn) {
@@ -3241,7 +3466,8 @@ namespace Dot::Editor {
                                        width,
                                        height,
                                        *projection,
-                                       !previewKey.empty()};
+                                       !previewKey.empty(),
+                                       animation};
       }
 
       m_previewReady = drawn.has_value();
@@ -4032,7 +4258,8 @@ namespace Dot::Editor {
         m_environmentRevision = revision;
       }
 
-      ImGui::BeginDisabled(playing() || pendingInspector() || pendingOcclusion());
+      ImGui::BeginDisabled(playing() || m_animationPreview || pendingInspector()
+                           || pendingOcclusion());
       ImGui::TextWrapped("Scene HDR environment");
       auto asset = m_environmentDraft["asset"].get<std::string>();
 
@@ -4148,7 +4375,8 @@ namespace Dot::Editor {
         m_occlusionRevision = revision;
       }
 
-      ImGui::BeginDisabled(playing() || pendingInspector() || pendingEnvironment());
+      ImGui::BeginDisabled(playing() || m_animationPreview || pendingInspector()
+                           || pendingEnvironment());
       ImGui::TextWrapped("Ambient occlusion");
       bool enabled = !m_occlusionDraft.is_null();
       const Json defaults{{"radius", 0.5F},  {"bias", 0.02F}, {"strength", 1.0F},
@@ -4610,10 +4838,10 @@ namespace Dot::Editor {
     }
 
     auto beginTransform(int axis, Math::Vec2 uv, std::uint64_t revision) -> Core::Result<void> {
-      if (m_tool == Tool::Select || !m_editorView || playing() || m_transform || !m_viewVisible
-          || !viewStatus()["ready"].get<bool>() || pendingInspector() || pendingEnvironment()
-          || pendingOcclusion() || pendingText() || m_pendingClose || m_flying || m_orbiting
-          || m_panning) {
+      if (m_tool == Tool::Select || !m_editorView || playing() || m_animationPreview || m_transform
+          || !m_viewVisible || !viewStatus()["ready"].get<bool>() || pendingInspector()
+          || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+          || m_flying || m_orbiting || m_panning) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Transform tool is not ready for a gesture");
       }
@@ -4783,7 +5011,7 @@ namespace Dot::Editor {
     auto drawTransformTool() -> void {
       m_toolGeometry = Json::array();
 
-      if (m_tool == Tool::Select || !m_editorView || playing()
+      if (m_tool == Tool::Select || !m_editorView || playing() || m_animationPreview
           || m_document->stats()->selection.empty()) {
         return;
       }
@@ -4949,7 +5177,107 @@ namespace Dot::Editor {
       return result;
     }
 
+    auto animationControls() -> void {
+      auto state = m_animationPreview->stats();
+
+      if (!state) {
+        ImGui::TextWrapped("%s", state.error().message.c_str());
+        return;
+      }
+
+      const auto command = [&](Json request) {
+        request["command"] = "control-animation-preview";
+        request["session"] = std::to_string(m_animationSession);
+        return sessionAction(request);
+      };
+
+      ImGui::TextWrapped("%s — %s", state->bindPose ? "Bind pose" : "Animation preview",
+                         state->player.name.c_str());
+
+      const auto nextButton = [](const char* label) -> bool {
+        ImGui::SameLine();
+        const auto width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
+
+        if (ImGui::GetContentRegionAvail().x < width) {
+          ImGui::NewLine();
+        }
+
+        return ImGui::Button(label);
+      };
+
+      ImGui::BeginDisabled(state->error.has_value());
+
+      if (ImGui::Button(state->player.playback.playing ? "Pause animation" : "Play animation")) {
+        if (state->player.playback.playing) {
+          command({{"action", "pause"}});
+        } else {
+          command({{"action", "play"}, {"clip", state->player.clip}, {"restart", false}});
+        }
+      }
+
+      if (nextButton("Bind pose")) {
+        command({{"action", "bind-pose"}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (nextButton("End preview")) {
+        command({{"action", "end"}});
+        return;
+      }
+
+      if (nextButton("Frame model")) {
+        action({{"command", "focus-view"}, {"entity", std::to_string(state->owner)}});
+      }
+
+      ImGui::BeginDisabled(state->error.has_value());
+
+      if (PropertyRow row{"Play clip"};
+          row.visible() && ImGui::BeginCombo("##value", state->player.asset.c_str())) {
+        for (std::size_t i = 0; i < state->clips.size(); ++i) {
+          if (ImGui::Selectable(state->clips[i].c_str(), i == state->player.clip)) {
+            command({{"action", "play"}, {"clip", i}, {"restart", true}});
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      double time = state->player.playback.time;
+      const double zero = 0;
+      const double duration = state->player.duration;
+
+      if (PropertyRow row{"Time (s)"}; row.visible()
+                                       && ImGui::SliderScalar("##value", ImGuiDataType_Double,
+                                                              &time, &zero, &duration, "%.3f")) {
+        command({{"action", "seek"}, {"seconds", time}});
+      }
+
+      double speed = state->player.playback.speed;
+      bool looping = state->player.playback.looping;
+
+      if (PropertyRow row{"Speed"};
+          row.visible() && ImGui::InputDouble("##value", &speed, .1, 1, "%.2f")) {
+        command({{"action", "configure"}, {"speed", speed}, {"looping", looping}});
+      }
+
+      if (ImGui::Checkbox("Loop animation", &looping)) {
+        command({{"action", "configure"}, {"speed", speed}, {"looping", looping}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (state->error) {
+        ImGui::TextWrapped("%s", state->error->message.c_str());
+      }
+    }
+
     auto viewportControls() -> void {
+      if (m_animationPreview) {
+        animationControls();
+        return;
+      }
+
       if (playing()) {
         ImGui::TextUnformatted("Running game preview");
         m_flying = m_orbiting = m_panning = false;
@@ -5106,7 +5434,8 @@ namespace Dot::Editor {
       const bool alt
           = input.key(Platform::Key::LeftAlt).down || input.key(Platform::Key::RightAlt).down;
 
-      if (hovered && left.pressed && !alt && m_tool != Tool::Select && m_editorView) {
+      if (hovered && left.pressed && !alt && m_tool != Tool::Select && m_editorView
+          && !m_animationPreview) {
         auto hit = hitTransformTool(pointer);
 
         if (hit) {
@@ -5127,7 +5456,7 @@ namespace Dot::Editor {
       }
 
       if (!m_editorView) {
-        if (hovered && left.pressed) {
+        if (hovered && left.pressed && !m_animationPreview) {
           auto selected = pickView({(pointer.x - m_viewOrigin.x) / m_viewWidth,
                                     (pointer.y - m_viewOrigin.y) / m_viewHeight});
           m_message = selected ? "" : selected.error().message;
@@ -5183,7 +5512,7 @@ namespace Dot::Editor {
         remember(m_editorCamera.dolly(input.wheel().y));
       }
 
-      if (hovered && left.pressed && !alt && !m_flying) {
+      if (hovered && left.pressed && !alt && !m_flying && !m_animationPreview) {
         remember(pickView({(pointer.x - m_viewOrigin.x) / m_viewWidth,
                            (pointer.y - m_viewOrigin.y) / m_viewHeight}));
       }
@@ -5319,7 +5648,7 @@ namespace Dot::Editor {
 
       if (ImGui::BeginMenu("File")) {
         if (ImGui::MenuItem(m_material ? "Save material" : "Save scene", nullptr, false,
-                            !playing())) {
+                            !playing() && !m_animationPreview)) {
           focusedSave();
         }
 
@@ -5340,7 +5669,7 @@ namespace Dot::Editor {
           sessionAction({{"command", "discard-capture"}, {"capture", std::to_string(capture.id)}});
         }
 
-        if (ImGui::MenuItem("Export game")) {
+        if (ImGui::MenuItem("Export game", nullptr, false, !m_animationPreview)) {
           m_exportDialog = true;
         }
 
@@ -5352,11 +5681,13 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem("Undo", nullptr, false, !playing() && historyAvailable(false))) {
+        if (ImGui::MenuItem("Undo", nullptr, false,
+                            !playing() && !m_animationPreview && historyAvailable(false))) {
           focusedHistory(false);
         }
 
-        if (ImGui::MenuItem("Redo", nullptr, false, !playing() && historyAvailable(true))) {
+        if (ImGui::MenuItem("Redo", nullptr, false,
+                            !playing() && !m_animationPreview && historyAvailable(true))) {
           focusedHistory(true);
         }
 
@@ -5364,7 +5695,7 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Build")) {
-        if (ImGui::MenuItem("Export game")) {
+        if (ImGui::MenuItem("Export game", nullptr, false, !m_animationPreview)) {
           m_exportDialog = true;
         }
 
@@ -5508,7 +5839,7 @@ namespace Dot::Editor {
                        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
       menuBar();
 
-      ImGui::BeginDisabled(playing());
+      ImGui::BeginDisabled(playing() || m_animationPreview.has_value());
 
       if ((ImGui::Button("Save")
            || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)))
@@ -5566,9 +5897,10 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      ImGui::BeginDisabled(
-          !playing()
-          && (pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()));
+      ImGui::BeginDisabled(m_animationPreview
+                           || (!playing()
+                               && (pendingInspector() || pendingEnvironment() || pendingOcclusion()
+                                   || pendingText())));
 
       if (ImGui::Button(playing() ? "Stop" : "Play")
           || ImGui::Shortcut(ImGuiKey_F5, ImGuiInputFlags_RouteGlobal)) {
@@ -5605,10 +5937,14 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
+      ImGui::BeginDisabled(m_animationPreview.has_value());
+
       if (ImGui::Button("Export game")) {
         m_exportDialog = true;
         m_message.clear();
       }
+
+      ImGui::EndDisabled();
 
       ImGui::SameLine();
       const bool unsaved = m_snapshot["dirty"].get<bool>() || pendingInspector()
@@ -5715,7 +6051,7 @@ namespace Dot::Editor {
         ImGui::SetNextItemWidth(-1);
         searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
         ImGui::Separator();
-        ImGui::BeginDisabled(playing());
+        ImGui::BeginDisabled(playing() || m_animationPreview.has_value());
         std::optional<Json> selection;
         tree(m_snapshot["scene"]["entities"], nullptr, selection);
         ImGui::EndDisabled();
@@ -5735,7 +6071,16 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
-        ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 5});
+        if (m_animationPreview) {
+          const auto maxHeight = std::max(ImGui::GetFrameHeightWithSpacing() * 2,
+                                          ImGui::GetContentRegionAvail().y * .6F);
+          ImGui::SetNextWindowSizeConstraints({0, 0},
+                                              {std::numeric_limits<float>::max(), maxHeight});
+          ImGui::BeginChild("Viewport controls", {0, 0}, ImGuiChildFlags_AutoResizeY);
+        } else {
+          ImGui::BeginChild("Viewport controls", {0, ImGui::GetFrameHeightWithSpacing() * 5});
+        }
+
         ImGui::BeginDisabled(m_transform.has_value());
         viewportControls();
         ImGui::EndDisabled();
@@ -5773,7 +6118,8 @@ namespace Dot::Editor {
       ImGui::End();
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
-        ImGui::BeginDisabled(playing() || m_transform.has_value());
+        ImGui::BeginDisabled(playing() || m_transform.has_value()
+                             || m_animationPreview.has_value());
         ImGui::BeginDisabled(pendingEnvironment() || pendingOcclusion());
         if (m_material) {
           materialInspector();
@@ -5784,6 +6130,18 @@ namespace Dot::Editor {
         }
         ImGui::EndDisabled();
         ImGui::EndDisabled();
+
+        if (!playing() && !m_animationPreview && !m_transform && m_editEntity
+            && m_edit.contains("animation") && !m_edit["animation"].is_null()) {
+          ImGui::BeginDisabled(pendingInspector() || pendingText() || pendingEnvironment()
+                               || pendingOcclusion());
+
+          if (ImGui::Button("Preview animation")) {
+            action({{"command", "preview-animation"}, {"entity", std::to_string(*m_editEntity)}});
+          }
+
+          ImGui::EndDisabled();
+        }
       }
 
       ImGui::End();
@@ -5801,7 +6159,9 @@ namespace Dot::Editor {
       ImGui::End();
 
       if (beginPanel("Assets", "resources", "resources")) {
+        ImGui::BeginDisabled(m_animationPreview.has_value());
         resourcesPanel();
+        ImGui::EndDisabled();
       }
 
       ImGui::End();
@@ -6011,6 +6371,23 @@ namespace Dot::Editor {
             m_agentInput.reset();
             m_inputSource = "none";
             captureInput(false);
+          }
+        }
+
+        if (m_animationPreview) {
+          auto state = m_animationPreview->stats();
+
+          if (!state) {
+            return std::unexpected(state.error());
+          }
+
+          if (!state->error) {
+            auto advanced = m_animationPreview->advance(
+                std::min(std::chrono::duration<double>(frame.elapsed).count(), 1.0));
+
+            if (!advanced) {
+              m_message = advanced.error().message;
+            }
           }
         }
 
