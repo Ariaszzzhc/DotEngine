@@ -342,5 +342,22 @@ agent operations; see [animation clip editing](Editor.md#animation-clip-editing)
 关键帧编辑按节点/路径/精确 float 时间执行有界原子批次，最终统一通过原生片段校验。
 动画资源草稿复用现有资源保存约束，支持精确字节撤销、版本检查、双重历史预算及磁盘冲突。
 预览通过原生播放器持有不可变解码草稿，不创建临时文件，也不改写编辑场景。编辑器已
-接入轨道/关键帧选择、值与切线草稿、候选姿态预检、保存/历史及同源智能体操作；曲线/
+接入轨道/关键帧选择、值与切线草稿、候选姿态预检、保存/历史及同源智能体操作；图形切线/
 状态图、视觉绑定和生产规模验证仍待完成。
+
+`Dot.Editor.AnimationKeyMove` owns an immutable source clip and an absolute-time ghost
+for one exact existing node/path/key. It creates no scene/files/device/clock. Updates
+validate finite native float seconds in 0..86400 and preserve the preceding target on
+failure; snapshots own source/target/key payload and changed/occupied flags. Source
+values/tangents and channel interpolation are unchanged. Occupied destinations remain
+visible; edit rejects them without losing the ghost and otherwise returns one ordinary
+UpdateKey. Returning to the source restores its original float representation. Copies
+are disabled; moves retire the source handle, destruction discards the ghost, and
+independent instances may share source data. Synchronize access to a mutable instance.
+The editor scopes this tool to a document identity/revision, preflights a candidate with
+the current native preview, and publishes once through the ordinary resource history.
+The GUI and agent transaction protocol are described in [clip editing](Editor.md#animation-clip-editing).
+
+移键工具持有不可变片段，纯时间草稿不涉及场景/文件/设备；占用目标可见且可恢复，返回
+原时间恢复原始 float 表示。提交仅返回普通 UpdateKey，资源身份/版本、姿态预检和单步历史
+由编辑器统一处理；销毁丢弃草稿，移动使源句柄失效，独立工具可共享片段。

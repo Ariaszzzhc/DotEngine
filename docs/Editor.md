@@ -1314,8 +1314,8 @@ leave an already saved animation clean, with the preview/history retained for re
 Every operation uses the same strict product implementation. The ordinary inspect
 response reports `workspace.animationClip`: buffer/path/name/resource revision,
 duration, channel/key counts, dirty/undo/redo, history states/serialized bytes, key
-form and pendingForm. The ordinary authoring revision/scene/dirty state remains
-unchanged. `workspace.animationPreview.draft` identifies the decoded asset path.
+form, pendingForm and the optional move transaction. The ordinary authoring
+revision/scene/dirty state remains unchanged. `workspace.animationPreview.draft` identifies the decoded asset path.
 `animationClip.curve` reports the current time range; changing that view does not alter
 resource revision/history, preview identity/clock, or staged key values.
 Normal audition still supports library switching; close the editing document before
@@ -1406,6 +1406,51 @@ with shortest-arc SLERP and normalized quaternion components from native evaluat
 Component W is shown for rotation only. The graph autofits visible sampled values and
 keys; it is not a proof of all extrema or valid future poses. Curves expose sampling
 errors rather than hiding them. Tangent values remain editable through Inspector.
+
+Key movement has a scoped product transaction shared by GUI dragging and agents:
+
+```json
+{"command":"begin-animation-key-move","buffer":"1","revision":"1","node":8,"path":"translation","time":0}
+{"command":"update-animation-key-move","session":"1","time":0.0125}
+{"command":"finish-animation-key-move","session":"1","commit":true}
+{"command":"finish-animation-key-move","session":"1","commit":false}
+```
+
+The begin request requires an existing exact-time source key, current resource IDs,
+a clean form and no other move/dialog. It selects that source key and returns an
+independent move session. Observe `workspace.animationClip.move` (null when absent):
+canonical session/buffer/revision strings, node/path, sourceTime, current time, changed
+and occupied. Sessions increase across resource reopen; retired IDs cannot affect a
+new gesture. Update takes an absolute finite native-float time in 0..86400 seconds.
+It moves only the curve ghost, without copying/publishing the clip, changing the
+preview pose/clock/session, changing history, or writing files. Occupied destinations
+remain inspectable; commit rejects them and retains the gesture for adjustment/cancel.
+Invalid requests retain the preceding target. Returning to the source time is a no-op.
+
+Commit uses the ordinary native UpdateKey edit, initial/current pose and skin preflight,
+and document publication boundary. A changed successful commit creates one history
+step regardless of update count, retains key count/value/tangents/interpolation, selects
+the new time and retires the move. No-op commits retain revision, redo and preview
+identity. Preflight/history failures retain the move and previous resource/preview.
+Cancel simply discards the ghost. Preview playback/seek/configuration and read queries
+remain available; commit validates the current sample at that moment. Competing edits,
+form/selection/range changes, save/history and clean resource close are blocked. Explicit
+resource discard retires the transaction. An active move is pending work even when
+unchanged: window close prompts, save-close is rejected, and cancel-close or move
+cancellation preserves recovery without an implicit save.
+
+The Animation panel shows the same ghost and exposes Move time, Apply move and Cancel
+move, including occupied-time feedback. A pointer drag includes the final release
+position, commits on release, and cancels on Escape, lost focus or a changed graph width.
+A failed commit keeps the ghost for correction. Agent-created gestures have no pointer
+binding and remain available without OS focus; native focus/Escape cancellation applies
+only to a pointer-bound drag. Computer-use virtual mouse acceptance remains limited by
+the observed SDL/macOS coordinate behavior, separately from product-operation checks.
+
+移键使用同源开始/绝对时间更新/提交/取消协议；更新只移动曲线标记，不修改片段、姿态、
+历史或磁盘。目标时间占用及预检失败保留操作，允许调整/取消；成功提交只产生一步撤销，
+原键数量、值、切线及插值不变。返回原时间不改变版本、重做或预览身份。活动操作参与关闭
+确认，旧会话不能影响重开后的资源；智能体操作无需系统焦点，鼠标拖动另有焦点丢失取消。
 
 This workflow edits existing bound library clips. Multi-key/dope-sheet and graphical
 tangent-handle editing, visual binding/retargeting, state graphs/layers, root motion/events

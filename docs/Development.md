@@ -6629,3 +6629,83 @@ clang-format and diff whitespace checks pass. Workspace documentation also corre
 bottom-dock proportions and obsolete planned-gizmo/preview wording to match current
 behavior. The specification/reference output remain untracked. Native physical-pointer
 acceptance and the wider production engine/game requirements remain open.
+
+
+## 2026-10-16 — Scoped animation key moves
+
+The pure native AnimationKeyMove tool owns an immutable clip and one exact source
+node/path/key, with absolute-time ghost updates and owned snapshots. It preserves
+values, tangents and interpolation; occupied targets remain visible and recoverable.
+Invalid samples retain the previous target. Returning to the source restores its
+original float representation, including signed zero. Move construction/assignment
+retire the source handle; independent instances may share the clip. It owns no
+scene, file, device, clock or history. Module interface and implementation are separate.
+
+The actual editor now exposes begin-animation-key-move, update-animation-key-move and
+finish-animation-key-move through its ordinary strict JSON/mailbox product interface.
+Begin selects the exact source with current document identity/revision and a clean
+form; the monotonically scoped move session survives updates and resource reopen
+cannot reuse a retired session. Status reports source/target, changed and occupied.
+Updates change only the curve ghost, never document revision/history, preview pose/
+clock/session or disk. Commit uses the ordinary native UpdateKey, candidate initial/
+current pose and enabled-skin preflight, then one shared resource/history publication
+boundary also used by ordinary edits/undo/redo. Failed preflight/history retains the
+move and previous resource/preview; no-op commits retain revision, redo and preview
+identity. Successful changed commits preserve key count and create one history step.
+Animation session exhaustion now stops before generating the reserved maximum ID.
+
+The GUI uses those same operations for curve dragging and displays the same ghost,
+Move time, Apply move and Cancel move. Occupied targets are red and cannot be applied;
+a failed commit retains the gesture for correction. Competing form/track/key selection,
+range changes, save and history are locked while moving, with the lists still scrollable.
+Native pointer binding includes the final release position, cancels on Escape/lost
+focus/changed graph span, and commits once on release. Agent moves have no native
+pointer binding and do not depend on operating-system focus. Active moves participate
+in unsaved close handling; save-close refuses them, cancellation is available during
+the modal, and explicit discard retires them without writing a posed scene.
+
+Five durable window/device-free unit cases cover owned absolute samples, source
+isolation, collision recovery, return-to-origin/negative-zero no-op, invalid source/
+path/key/time inputs, finite boundary, cubic payload/mode retention, moved-handle
+retirement, independent ownership and synchronized transfer to a joined worker.
+Release/NDEBUG final full checks pass 1095/1095 (21.50s): 293 unit and 802 integration,
+with overlapping 126 offscreen GPU, 27 native audio and 28 SDL-dummy platform cases.
+Focused final Debug animation/clip/document/preview checks pass 57/57 (2.16s), including
+29 unit and 28 integration cases (one offscreen GPU case). Earlier equivalent full
+Release and focused Debug runs also pass; no automatic case opens a desktop window.
+
+Real native editor operations on a copied PrismRelay project verify its 65-joint,
+195-channel, 14,820-key clip: repeated absolute updates leave the actual cloned scene,
+preview identity, history and all nine disk scene/animation files unchanged. Occupied
+commit, malformed samples/fields/IDs, stale sessions and competing mutations fail
+without losing the ghost. Removing another real library asset makes candidate native
+preflight fail; restoring it permits the same move to commit. A changed commit at
+current time .02 changes the actual cloned Head pose, and a single undo restores it.
+No-op return-to-origin retains redo and preview; cancel discards only the ghost.
+Pending key forms reject begin without losing their form. Read-track/curve requests
+remain available during a gesture. Pending close/save guards, either cancellation
+order, explicit resource discard, retired IDs and changed reopen buffers are checked
+through the same product operations without injected keyboard/mouse events.
+
+Saving and reopening retains .02250000089406967 and all 14,820 keys; only the intended
+copied animation file changes. Actual screenshots show the occupied warning/disabled
+Apply action, recovery to an available target and locked competing Inspector/track/key
+controls. A final same-build native run again commits/undoes the real pose, preserves
+authored scene and clean resource, closes normally with exit 0/empty stderr, retires
+its control directory and is confirmed stopped by native app inventory. All nine
+original project scene/animation files remain unchanged. This does not claim native
+physical-pointer dragging acceptance; the previous SDL/macOS virtual-coordinate
+limitation remains separate. The earlier single W press was intercepted by the user's
+Chinese IME and is not evidence of a movement defect.
+
+Precommit review covers immutable ownership/lifetime, identity/revision and numeric
+validation, no-op/redo semantics, shared publication/preflight failure recovery,
+source/preview/disk isolation, modal cancellation, bounded curve work and balanced GUI
+disabled scopes. All four changed/new C++ files pass clang-format and diff whitespace
+checks pass. Temporary native app/project, investigation clients/requests and insertion
+snippets are removed; ignored observations/build logs, caches and existing archives
+remain. Compiler/linker environment and dependency pins are unchanged. No distribution
+archive is generated; Windows/Linux are not executed. Specification/reference output
+remain untracked. Multi-key/tangent-handle/binding/state/layer animation authoring,
+finished realistic game art, rendering scale/streaming/performance and the broader
+production engine goal remain unfinished.

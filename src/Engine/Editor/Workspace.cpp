@@ -37,6 +37,7 @@ import Dot.Editor.PlayInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
+import Dot.Editor.AnimationKeyMove;
 import Dot.Animation.Files;
 import Dot.Animation.Source;
 import Dot.Animation.ScenePlayers;
@@ -477,16 +478,23 @@ namespace Dot::Editor {
     Json m_curveCache = nullptr;
     std::string m_curveCacheKey;
 
-    struct CurveKeyDrag {
+    struct ClipKeyMove {
+      AnimationKeyMove move;
       std::uint64_t buffer;
       std::uint64_t revision;
-      std::uint32_t node;
-      Animation::Path path;
-      Animation::Key key;
-      float target;
-      float mouseStart;
+      std::uint64_t session;
     };
 
+    struct CurveKeyDrag {
+      std::uint64_t session;
+      float sourceTime;
+      float mouseStart;
+      float minX;
+      float maxX;
+    };
+
+    std::optional<ClipKeyMove> m_clipMove;
+    std::uint64_t m_keyMoveSession{};
     std::optional<CurveKeyDrag> m_curveDrag;
     std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
@@ -710,7 +718,7 @@ namespace Dot::Editor {
 
     auto pendingText() const -> bool {
       if (m_clipDocument) {
-        return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal;
+        return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal || m_clipMove;
       }
 
       if (m_material) {
@@ -1820,6 +1828,29 @@ namespace Dot::Editor {
       return result;
     }
 
+    auto keyMoveStatus() const -> Json {
+      if (!m_clipMove) {
+        return nullptr;
+      }
+
+      const auto value = m_clipMove->move.snapshot();
+
+      if (!value) {
+        return errorJson(value.error());
+      }
+
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      return {{"session", std::to_string(m_clipMove->session)},
+              {"buffer", std::to_string(m_clipMove->buffer)},
+              {"revision", std::to_string(m_clipMove->revision)},
+              {"node", value->node},
+              {"path", paths.at(static_cast<std::size_t>(value->path))},
+              {"sourceTime", value->sourceTime},
+              {"time", value->key.time},
+              {"changed", value->changed},
+              {"occupied", value->occupied}};
+    }
+
     auto clipStatus() const -> Json {
       if (!m_clipDocument) {
         return nullptr;
@@ -1851,6 +1882,7 @@ namespace Dot::Editor {
               {"historyStates", state->historyStates},
               {"historyBytes", state->historyBytes},
               {"curve", {{"from", m_curveFrom}, {"to", m_curveTo}}},
+              {"move", keyMoveStatus()},
               {"form", m_clipForm},
               {"pendingForm", m_clipForm != m_clipOriginal}};
     }
@@ -1914,7 +1946,7 @@ namespace Dot::Editor {
         return std::unexpected(!state ? state.error() : document.error());
       }
 
-      if (m_animationSession == std::numeric_limits<std::uint64_t>::max()) {
+      if (m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
         return Core::fail(Core::ErrorCode::InvalidState, "Animation session identity exhausted");
       }
 
@@ -1969,7 +2001,59 @@ namespace Dot::Editor {
       return sessionAction(request);
     }
 
+    auto cancelKeyMove() noexcept -> void {
+      m_clipMove.reset();
+      m_curveDrag.reset();
+    }
+
+    enum class ClipPublication { Edit, Undo, Redo };
+
+    /** Publish one validated resource/history change only after native preview
+     * preflight. No-ops retain revision, redo and preview identity. Both ordinary
+     * edits and key-move transactions use this same publication boundary.
+     * 原生预览预检后才发布一次资源/历史修改；无变化保留版本、重做及预览身份。普通编辑
+     * 与移键事务共用此发布边界。 */
+    auto publishClipValue(const AnimationSnapshot& state, const Animation::Clip& candidate,
+                          ClipPublication operation = ClipPublication::Edit) -> Core::Result<bool> {
+      auto before = Animation::encodeClip(state.value);
+      auto after = Animation::encodeClip(candidate);
+
+      if (!before || !after) {
+        return std::unexpected(!before ? before.error() : after.error());
+      }
+
+      if (*before == *after) {
+        return false;
+      }
+
+      auto preview = prepareClipPreview(candidate);
+
+      if (!preview) {
+        return std::unexpected(preview.error());
+      }
+
+      auto changed = operation == ClipPublication::Undo ? m_clipDocument->undo(state.revision)
+                     : operation == ClipPublication::Redo
+                         ? m_clipDocument->redo(state.revision)
+                         : m_clipDocument->replace(candidate, state.revision);
+
+      if (!changed) {
+        return std::unexpected(changed.error());
+      }
+
+      m_animationPreview.emplace(std::move(*preview));
+      ++m_animationSession;
+      m_previewReady = false;
+      m_renderedView.reset();
+      return true;
+    }
+
     auto saveClip() -> Core::Result<void> {
+      if (m_clipMove) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Finish or cancel the key move before saving");
+      }
+
       if (m_clipForm != m_clipOriginal) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Apply or reset the key form before saving");
@@ -2088,7 +2172,7 @@ namespace Dot::Editor {
         if (playing() || m_animationPreview || m_transform || pendingInspector()
             || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
             || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
-            || m_animationSession == std::numeric_limits<std::uint64_t>::max()
+            || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1
             || m_buffer == std::numeric_limits<std::uint64_t>::max()) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Animation editing requires current authoring revision and no other "
@@ -2155,7 +2239,7 @@ namespace Dot::Editor {
         m_curveTo = std::max(1., draft->value.duration().value());
         m_curveCacheKey.clear();
         m_curveCache = nullptr;
-        m_curveDrag.reset();
+        cancelKeyMove();
         ++m_animationSession;
         ++m_buffer;
         m_editorView = true;
@@ -2163,6 +2247,119 @@ namespace Dot::Editor {
         m_previewReady = false;
         m_requestedPane = "animation";
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "begin-animation-key-move" || command == "update-animation-key-move"
+          || command == "finish-animation-key-move") {
+        const bool begin = command == "begin-animation-key-move";
+        const bool finish = command == "finish-animation-key-move";
+
+        if (begin) {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", finish ? "commit" : "time"});
+        }
+
+        const bool cancel = finish && !parsed["commit"].get<bool>();
+
+        if (!m_clipDocument || !m_animationPreview
+            || ((m_pendingClose || m_captureDialog) && !cancel)) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Key move requires a live animation document without a pending dialog");
+        }
+
+        auto state = m_clipDocument->snapshot();
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        if (begin) {
+          if (m_clipMove || Codec::id(parsed["buffer"]) != m_buffer
+              || Codec::id(parsed["revision"]) != state->revision || m_clipForm != m_clipOriginal
+              || m_keyMoveSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
+            return Core::fail(
+                Core::ErrorCode::InvalidState,
+                "Key move requires current resource identity, a clean form and no active move");
+          }
+
+          auto move
+              = AnimationKeyMove::begin(state->value, clipIndex(parsed["node"]),
+                                        clipPath(parsed["path"]), Codec::number(parsed["time"]));
+
+          if (!move) {
+            return std::unexpected(move.error());
+          }
+
+          auto selected = execute(Json{
+              {"command", "select-animation-key"},
+              {"buffer", parsed["buffer"]},
+              {"revision", parsed["revision"]},
+              {"node", parsed["node"]},
+              {"path", parsed["path"]},
+              {"time",
+               parsed["time"]}}.dump());
+
+          if (!selected) {
+            return std::unexpected(selected.error());
+          }
+
+          m_clipMove.emplace(std::move(*move), m_buffer, state->revision, ++m_keyMoveSession);
+        } else {
+          if (!m_clipMove || Codec::id(parsed["session"]) != m_clipMove->session
+              || m_clipMove->buffer != m_buffer || m_clipMove->revision != state->revision) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Animation key move session is stale");
+          }
+
+          if (cancel) {
+            cancelKeyMove();
+          } else if (!finish) {
+            auto updated = m_clipMove->move.update(Codec::number(parsed["time"]));
+
+            if (!updated) {
+              return std::unexpected(updated.error());
+            }
+          } else {
+            auto edit = m_clipMove->move.edit();
+
+            if (!edit) {
+              return std::unexpected(edit.error());
+            }
+
+            const std::array<Animation::ClipEdit, 1> edits{*edit};
+            auto candidate = Animation::editClip(state->value, edits);
+
+            if (!candidate) {
+              return std::unexpected(candidate.error());
+            }
+
+            auto published = publishClipValue(*state, *candidate);
+
+            if (!published) {
+              return std::unexpected(published.error());
+            }
+
+            const auto value = m_clipMove->move.snapshot().value();
+            cancelKeyMove();
+            constexpr std::array paths{"translation", "rotation", "scale"};
+            auto selected = execute(Json{
+                {"command", "select-animation-key"},
+                {"buffer", std::to_string(m_buffer)},
+                {"revision", std::to_string(m_clipDocument->snapshot()->revision)},
+                {"node", value.node},
+                {"path", paths.at(static_cast<std::size_t>(value.path))},
+                {"time",
+                 value.key.time}}.dump());
+
+            if (!selected) {
+              return Core::fail(selected.error().code, "Key move committed; selection failed: "
+                                                           + selected.error().message);
+            }
+          }
+        }
+
+        return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+            .dump();
       }
 
       if (command == "inspect-animation-clip" || command == "list-animation-tracks"
@@ -2220,6 +2417,14 @@ namespace Dot::Editor {
         const auto* value = state->value.description().value();
         constexpr std::array paths{"translation", "rotation", "scale"};
         constexpr std::array modes{"step", "linear", "cubic"};
+
+        if (m_clipMove && command != "read-animation-curve" && command != "list-animation-tracks"
+            && command != "read-animation-track"
+            && !(command == "close-animation" && parsed["discard"].get<bool>())) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Finish or cancel the key move before changing resource, form or time range");
+        }
 
         if (command == "read-animation-curve") {
           auto curve = sampleCurve(state->value, clipIndex(parsed["node"]),
@@ -2315,7 +2520,7 @@ namespace Dot::Editor {
           m_clipDocument.reset();
           m_animationPreview.reset();
           m_clipForm = m_clipOriginal = nullptr;
-          m_curveDrag.reset();
+          cancelKeyMove();
           m_previewReady = false;
           return execute("{\"command\":\"inspect\"}");
         }
@@ -2472,45 +2677,19 @@ namespace Dot::Editor {
           return std::unexpected(candidate.error());
         }
 
-        auto before = Animation::encodeClip(state->value);
-        auto after = Animation::encodeClip(*candidate);
+        auto published
+            = publishClipValue(*state, *candidate,
+                               command == "undo-animation-clip"   ? ClipPublication::Undo
+                               : command == "redo-animation-clip" ? ClipPublication::Redo
+                                                                  : ClipPublication::Edit);
 
-        if (!before || !after) {
-          return std::unexpected(!before ? before.error() : after.error());
+        if (!published) {
+          return std::unexpected(published.error());
         }
-
-        if (*before == *after) {
-          if (command == "apply-animation-key" || command == "move-animation-key") {
-            m_clipOriginal = m_clipForm;
-          }
-
-          return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
-              .dump();
-        }
-
-        auto preview = prepareClipPreview(*candidate);
-
-        if (!preview) {
-          return std::unexpected(preview.error());
-        }
-
-        auto changed = command == "undo-animation-clip" ? m_clipDocument->undo(state->revision)
-                       : command == "redo-animation-clip"
-                           ? m_clipDocument->redo(state->revision)
-                           : m_clipDocument->replace(*candidate, state->revision);
-
-        if (!changed) {
-          return std::unexpected(changed.error());
-        }
-
-        m_animationPreview.emplace(std::move(*preview));
-        ++m_animationSession;
-        m_previewReady = false;
-        m_renderedView.reset();
 
         if (command == "apply-animation-key" || command == "move-animation-key") {
           m_clipOriginal = m_clipForm;
-        } else {
+        } else if (*published) {
           m_clipForm = m_clipOriginal = nullptr;
         }
 
@@ -2603,7 +2782,7 @@ namespace Dot::Editor {
         if (playing() || m_animationPreview || m_transform || pendingInspector()
             || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
             || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
-            || m_animationSession == std::numeric_limits<std::uint64_t>::max()) {
+            || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Animation preview requires current revision without another mode/draft/dialog");
@@ -2668,6 +2847,7 @@ namespace Dot::Editor {
 
           m_clipDocument.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          cancelKeyMove();
           m_animationPreview.reset();
         } else if (action == "play") {
           if (!parsed["clip"].is_number_unsigned()
@@ -3936,6 +4116,7 @@ namespace Dot::Editor {
           m_animationPreview.reset();
           m_clipDocument.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          cancelKeyMove();
           m_transform.reset();
           m_axisDrag.reset();
           m_rotationDrag.reset();
@@ -6746,7 +6927,8 @@ namespace Dot::Editor {
     auto historyAvailable(bool redo) const -> bool {
       if (m_clipDocument) {
         auto state = m_clipDocument->snapshot();
-        return state && m_clipForm == m_clipOriginal && (redo ? state->canRedo : state->canUndo);
+        return state && !m_clipMove && m_clipForm == m_clipOriginal
+               && (redo ? state->canRedo : state->canUndo);
       }
 
       if (m_material) {
@@ -7477,7 +7659,7 @@ namespace Dot::Editor {
 
       if (hovered && hit) {
         ImGui::SetTooltip("%.9g s / drag horizontally to move key", double(hit->time));
-      } else if (hovered && !m_curveDrag) {
+      } else if (hovered && !m_clipMove) {
         const auto time = std::clamp(
             m_curveFrom
                 + (mouse.x - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
@@ -7495,14 +7677,13 @@ namespace Dot::Editor {
         }
       }
 
-      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !m_clipMove) {
         if (hit
-            && clipAction({{"command", "select-animation-key"},
+            && clipAction({{"command", "begin-animation-key-move"},
                            {"node", track.node},
                            {"path", path},
                            {"time", hit->time}})) {
-          m_curveDrag.emplace(m_buffer, state.revision, track.node, track.path, *hit, hit->time,
-                              mouse.x);
+          m_curveDrag.emplace(m_clipMove->session, hit->time, mouse.x, minimum.x, maximum.x);
         } else if (!hit && preview) {
           const auto time = std::clamp(
               m_curveFrom
@@ -7516,56 +7697,63 @@ namespace Dot::Editor {
       }
 
       if (m_curveDrag) {
-        auto& drag = *m_curveDrag;
+        const auto drag = *m_curveDrag;
         const auto focused = m_application->window().focused();
 
-        if (!focused || !*focused || drag.buffer != m_buffer || drag.revision != state.revision
-            || drag.node != track.node || drag.path != track.path
-            || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
-                && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-            || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (!m_clipMove || m_clipMove->session != drag.session) {
           m_curveDrag.reset();
+        } else if (!focused || !*focused || minimum.x != drag.minX || maximum.x != drag.maxX
+                   || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
+                       && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+                   || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          sessionAction({{"command", "finish-animation-key-move"},
+                         {"session", std::to_string(drag.session)},
+                         {"commit", false}});
         } else {
-          /** A fast drag may first report its displacement on the release frame;
-           * IsMouseDragging requires a held button. Always include that final
-           * position after crossing the threshold, including a return to origin.
-           * 快速拖动的位移可能到松键帧才出现；IsMouseDragging 要求仍按住。跨过阈值后
-           * 必须纳入最终位置，包括拖回起点。 */
+          const auto value = m_clipMove->move.snapshot().value();
+
+          /** Include final release displacement even without an earlier held
+           * motion frame. Returning to origin restores a semantic no-op.
+           * 即使没有更早的按住移动帧，也纳入释放位置；回到起点恢复语义无变化。 */
           if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
                || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-              && (std::abs(mouse.x - drag.mouseStart) >= 3 || drag.target != drag.key.time)) {
-            drag.target = static_cast<float>(
-                std::clamp(double(drag.key.time)
-                               + (mouse.x - drag.mouseStart) / (maximum.x - minimum.x)
+              && (std::abs(mouse.x - drag.mouseStart) >= 3 || value.changed)) {
+            const auto target = static_cast<float>(
+                std::clamp(double(drag.sourceTime)
+                               + (mouse.x - drag.mouseStart) / (drag.maxX - drag.minX)
                                      * (m_curveTo - m_curveFrom),
                            0., 86400.));
+
+            if (target != value.key.time) {
+              sessionAction({{"command", "update-animation-key-move"},
+                             {"session", std::to_string(drag.session)},
+                             {"time", target}});
+            }
           }
 
-          const auto at = x(drag.target);
-          draw->AddLine({at, minimum.y}, {at, maximum.y}, ImGui::GetColorU32(ImGuiCol_ButtonActive),
-                        2);
-          ImGui::SetTooltip("Move %.9g -> %.9g s / release to commit, Escape to cancel",
-                            double(drag.key.time), double(drag.target));
-
           if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            auto key = drag.key;
-            key.time = drag.target;
-            auto request = Json{{"command", "edit-animation-clip"},
-                                {"buffer", std::to_string(drag.buffer)},
-                                {"revision", std::to_string(drag.revision)},
-                                {"operations", Json::array({{{"op", "update-key"},
-                                                             {"node", drag.node},
-                                                             {"path", path},
-                                                             {"time", drag.key.time},
-                                                             {"key", keyJson(key)}}})}};
             m_curveDrag.reset();
+            sessionAction({{"command", "finish-animation-key-move"},
+                           {"session", std::to_string(drag.session)},
+                           {"commit", true}});
+          }
+        }
+      }
 
-            if (sessionAction(request)) {
-              clipAction({{"command", "select-animation-key"},
-                          {"node", track.node},
-                          {"path", path},
-                          {"time", key.time}});
-            }
+      if (m_clipMove) {
+        const auto value = m_clipMove->move.snapshot().value();
+
+        if (value.node == track.node && value.path == track.path) {
+          const auto at = x(value.key.time);
+          draw->AddLine({at, minimum.y}, {at, maximum.y},
+                        value.occupied ? IM_COL32(230, 75, 75, 255)
+                                       : ImGui::GetColorU32(ImGuiCol_ButtonActive),
+                        2);
+
+          if (m_curveDrag) {
+            ImGui::SetTooltip("Move %.9g -> %.9g s%s / release to commit, Escape to cancel",
+                              double(value.sourceTime), double(value.key.time),
+                              value.occupied ? " (occupied)" : "");
           }
         }
       }
@@ -7599,7 +7787,7 @@ namespace Dot::Editor {
 
         return ImGui::Button(label);
       };
-      ImGui::BeginDisabled(pending);
+      ImGui::BeginDisabled(pending || m_clipMove.has_value());
 
       if (ImGui::Button("Save clip")) {
         clipAction({{"command", "save-animation-clip"}});
@@ -7648,7 +7836,7 @@ namespace Dot::Editor {
         }
       }
 
-      if (state->dirty || pending) {
+      if (state->dirty || pending || m_clipMove) {
         if (nextButton("Discard and close")) {
           if (clipAction({{"command", "close-animation"}, {"discard", true}})) {
             return;
@@ -7675,6 +7863,7 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
+      ImGui::BeginDisabled(m_clipMove.has_value());
       ImGui::SetNextItemWidth(80);
       bool rangeChanged = ImGui::InputDouble("From##curve", &from, 0, 0, "%.6g",
                                              ImGuiInputTextFlags_EnterReturnsTrue);
@@ -7691,6 +7880,39 @@ namespace Dot::Editor {
         clipAction({{"command", "set-animation-curve-view"},
                     {"from", 0.},
                     {"to", std::max(1., state->value.duration().value())}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (m_clipMove) {
+        const auto move = m_clipMove->move.snapshot().value();
+        const auto session = std::to_string(m_clipMove->session);
+        float moveTime = move.key.time;
+        ImGui::SetNextItemWidth(110);
+
+        if (ImGui::InputFloat("Move time (s)", &moveTime, 0, 0, "%.9g",
+                              ImGuiInputTextFlags_EnterReturnsTrue)) {
+          sessionAction(
+              {{"command", "update-animation-key-move"}, {"session", session}, {"time", moveTime}});
+        }
+
+        ImGui::BeginDisabled(move.occupied);
+
+        if (nextButton("Apply move")) {
+          sessionAction(
+              {{"command", "finish-animation-key-move"}, {"session", session}, {"commit", true}});
+        }
+
+        ImGui::EndDisabled();
+
+        if (nextButton("Cancel move")) {
+          sessionAction(
+              {{"command", "finish-animation-key-move"}, {"session", session}, {"commit", false}});
+        }
+
+        if (move.occupied) {
+          ImGui::TextUnformatted("Destination time is occupied; choose another time or cancel.");
+        }
       }
 
       if (!ImGui::BeginTable("Animation editor", 3,
@@ -7736,6 +7958,8 @@ namespace Dot::Editor {
 
           ImGui::PushID(i);
 
+          ImGui::BeginDisabled(m_clipMove.has_value());
+
           if (ImGui::Selectable(label.c_str(), selected)) {
             clipAction({{"command", "select-animation-key"},
                         {"node", track.node},
@@ -7743,6 +7967,7 @@ namespace Dot::Editor {
                         {"time", track.keys.front().time}});
           }
 
+          ImGui::EndDisabled();
           ImGui::PopID();
         }
       }
@@ -7781,6 +8006,8 @@ namespace Dot::Editor {
             char label[64];
             std::snprintf(label, sizeof(label), "%.6g s##%d", static_cast<double>(key.time), i);
 
+            ImGui::BeginDisabled(m_clipMove.has_value());
+
             if (ImGui::Selectable(label, !m_clipOriginal.is_null()
                                              && m_clipOriginal["key"]["time"] == key.time)) {
               clipAction({{"command", "select-animation-key"},
@@ -7788,6 +8015,8 @@ namespace Dot::Editor {
                           {"path", paths.at(static_cast<std::size_t>(selected->path))},
                           {"time", key.time}});
             }
+
+            ImGui::EndDisabled();
           }
         }
       } else {
@@ -8131,7 +8360,9 @@ namespace Dot::Editor {
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
         if (m_clipDocument) {
+          ImGui::BeginDisabled(m_clipMove.has_value());
           animationKeyProperties();
+          ImGui::EndDisabled();
         } else {
           ImGui::BeginDisabled(playing() || m_transform.has_value()
                                || m_animationPreview.has_value());
@@ -8264,7 +8495,9 @@ namespace Dot::Editor {
         if (m_clipDocument) {
           ImGui::TextWrapped("Animation: %s", m_clipDocument->snapshot()->path.c_str());
 
-          if (m_clipForm != m_clipOriginal) {
+          if (m_clipMove) {
+            ImGui::TextWrapped("Cancel to finish or cancel the key move before saving.");
+          } else if (m_clipForm != m_clipOriginal) {
             ImGui::TextWrapped("Cancel to apply or reset the key form before saving.");
           }
         }
@@ -8277,7 +8510,7 @@ namespace Dot::Editor {
           ImGui::CloseCurrentPopup();
         }
 
-        ImGui::BeginDisabled(m_clipDocument && m_clipForm != m_clipOriginal);
+        ImGui::BeginDisabled(m_clipDocument && (m_clipForm != m_clipOriginal || m_clipMove));
 
         if (ImGui::Button("Save and close")) {
           action({{"command", "save-close"}});
@@ -8353,6 +8586,10 @@ namespace Dot::Editor {
         if (input.key(Platform::Key::Escape).pressed || m_pendingClose) {
           captureInput(false);
           m_agentInput.cancel();
+
+          if (m_curveDrag) {
+            cancelKeyMove();
+          }
         }
 
         auto pointerChanged = synchronizePointerCapture();
@@ -8632,6 +8869,10 @@ namespace Dot::Editor {
               if (std::holds_alternative<Platform::Focus>(event.data)
                   && !std::get<Platform::Focus>(event.data).focused) {
                 state->captureInput(false);
+
+                if (state->m_curveDrag) {
+                  state->cancelKeyMove();
+                }
               }
 
               if (state->m_transform && std::holds_alternative<Platform::Focus>(event.data)
