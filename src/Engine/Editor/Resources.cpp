@@ -263,7 +263,7 @@ namespace Dot::Editor {
 
   auto ResourceStore::open(const Project::Project& project, const ResourceLimits& limits)
       -> Core::Result<ResourceStore> {
-    if (limits.textBytes == 0 || limits.textBytes > 1024 * 1024 || limits.binaryBytes == 0
+    if (limits.textBytes == 0 || limits.textBytes > 64 * 1024 * 1024 || limits.binaryBytes == 0
         || limits.binaryBytes > 64 * 1024 * 1024 || limits.entries == 0 || limits.entries > 65536
         || limits.depth == 0 || limits.depth > 128) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid resource limits");

@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <expected>
@@ -27,6 +28,7 @@ namespace Dot::Editor {
     std::vector<std::string> m_clips;
     std::optional<Core::Error> m_error;
     bool m_bindPose{};
+    std::optional<std::string> m_draft;
     std::thread::id m_thread{std::this_thread::get_id()};
 
     Impl(std::shared_ptr<World::Scene> value, Animation::ScenePlayers playback,
@@ -85,7 +87,8 @@ namespace Dot::Editor {
   AnimationPreview::~AnimationPreview() = default;
 
   auto AnimationPreview::create(const World::Scene& source, const Core::FileSystem& assets,
-                                std::uint64_t owner) -> Core::Result<AnimationPreview> {
+                                std::uint64_t owner, std::optional<Animation::ClipAsset> draft)
+      -> Core::Result<AnimationPreview> {
     auto entity = source.findEntity(owner);
 
     if (!entity) {
@@ -121,6 +124,19 @@ namespace Dot::Editor {
 
       for (auto& description : *descriptions) {
         description.properties.playOnStart = false;
+
+        if (draft && description.entity.value == owner) {
+          auto selected = std::ranges::find(description.properties.clips, draft->asset);
+
+          if (selected == description.properties.clips.end()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Draft is not in the preview player's library");
+          }
+
+          description.properties.clip
+              = static_cast<std::uint32_t>(selected - description.properties.clips.begin());
+        }
+
         auto changed = scene->setAnimationPlayer(description.entity, description.properties);
 
         if (!changed) {
@@ -128,7 +144,9 @@ namespace Dot::Editor {
         }
       }
 
-      auto players = Animation::ScenePlayers::create(scene, assets);
+      const std::vector<Animation::ClipAsset> decoded
+          = draft ? std::vector{*draft} : std::vector<Animation::ClipAsset>{};
+      auto players = Animation::ScenePlayers::create(scene, assets, decoded);
 
       if (!players) {
         return std::unexpected(players.error());
@@ -147,8 +165,10 @@ namespace Dot::Editor {
         return std::unexpected(posed.error());
       }
 
-      return AnimationPreview(std::make_unique<Impl>(std::move(scene), std::move(*players), handle,
-                                                     source.id(), info->animation->clips));
+      auto impl = std::make_unique<Impl>(std::move(scene), std::move(*players), handle, source.id(),
+                                         info->animation->clips);
+      impl->m_draft = draft ? std::optional{draft->asset} : std::nullopt;
+      return AnimationPreview(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Create animation preview: " + std::string(error.what()));
@@ -266,7 +286,7 @@ namespace Dot::Editor {
       return state ? Core::Result<AnimationPreviewStats>{{m_impl->m_owner.value, m_impl->m_source,
                                                           m_impl->m_generation, std::move(*state),
                                                           m_impl->m_clips, m_impl->m_error,
-                                                          m_impl->m_bindPose}}
+                                                          m_impl->m_bindPose, m_impl->m_draft}}
                    : std::unexpected(state.error());
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

@@ -9,6 +9,7 @@ module;
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <thread>
 #include <utility>
@@ -18,6 +19,8 @@ module Dot.Animation.ScenePlayers;
 
 import Dot.Animation.Files;
 import Dot.Animation.SceneAnimator;
+import Dot.Core.Paths;
+import Dot.Core.Text;
 
 namespace Dot::Animation {
   namespace {
@@ -49,6 +52,7 @@ namespace Dot::Animation {
     std::uint64_t scope;
     std::thread::id thread{std::this_thread::get_id()};
     std::map<std::uint64_t, std::shared_ptr<Player>> players;
+    std::map<std::string, Clip> m_decoded;
 
     Impl(std::shared_ptr<World::Scene> value, Core::FileSystem files)
         : scene(std::move(value)), assets(std::move(files)), scope(scene->id()) {
@@ -247,8 +251,11 @@ namespace Dot::Animation {
 
             for (std::size_t i = 0; i < properties.clips.size(); ++i) {
               const auto& path = properties.clips[i];
-              auto clip = take(
-                  loadClip(assets, std::filesystem::path(std::u8string(path.begin(), path.end()))));
+              const auto decoded = m_decoded.find(path);
+              auto clip = decoded != m_decoded.end()
+                              ? decoded->second
+                              : take(loadClip(assets, std::filesystem::path(std::u8string(
+                                                          path.begin(), path.end()))));
               const auto& tracks = take(clip.description())->tracks;
               playerChannels += tracks.size();
 
@@ -357,16 +364,52 @@ namespace Dot::Animation {
   auto ScenePlayers::operator=(ScenePlayers&&) noexcept -> ScenePlayers& = default;
   ScenePlayers::~ScenePlayers() = default;
 
-  auto ScenePlayers::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& assets)
-      -> Core::Result<ScenePlayers> {
+  auto ScenePlayers::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& assets,
+                            std::span<const ClipAsset> decoded) -> Core::Result<ScenePlayers> {
     if (!scene) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Animation players require a scene");
     }
 
-    auto impl = std::make_unique<Impl>(std::move(scene), assets);
-    auto ready = impl->synchronize();
-    return ready ? Core::Result<ScenePlayers>{ScenePlayers(std::move(impl))}
-                 : std::unexpected(ready.error());
+    if (decoded.size() > 1024) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Decoded animation asset budget exceeded");
+    }
+
+    try {
+      auto descriptions = scene->animationPlayers();
+
+      if (!descriptions) {
+        return std::unexpected(descriptions.error());
+      }
+
+      auto impl = std::make_unique<Impl>(std::move(scene), assets);
+
+      for (const auto& value : decoded) {
+        bool used{};
+
+        for (const auto& player : *descriptions) {
+          used = used
+                 || (player.properties.enabled
+                     && std::ranges::find(player.properties.clips, value.asset)
+                            != player.properties.clips.end());
+        }
+
+        if (!used || value.asset.size() > 1024 || !value.asset.starts_with("assets/")
+            || !value.asset.ends_with(".dotanimation") || !Core::isPortableRelativePath(value.asset)
+            || !Core::isValidUtf8(value.asset) || !value.value.description()
+            || !impl->m_decoded.emplace(value.asset, value.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid, duplicate or unused decoded animation asset");
+        }
+      }
+
+      auto ready = impl->synchronize();
+      return ready ? Core::Result<ScenePlayers>{ScenePlayers(std::move(impl))}
+                   : std::unexpected(ready.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Create animation players: " + std::string(error.what()));
+    }
   }
 
   auto ScenePlayers::advance(double seconds) -> Core::Result<void> {

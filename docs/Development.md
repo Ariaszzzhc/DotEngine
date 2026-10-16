@@ -6256,3 +6256,60 @@ ignored build storage; build caches and existing archives are preserved. All fou
 changed C++ interface/implementation/test files pass clang-format; diff whitespace
 checks pass. No distribution package is generated. The unrelated local specification
 and visual-reference output remain untracked and are not included in commits.
+
+## 2026-10-16 — Animation edit transactions and drafts
+
+A native pure CPU edit layer now applies <=256 ordered key/channel/name operations
+by logical node/path and exact float time. Insert/replacement preserves key ordering;
+removal and explicit interpolation conversion have defined tangent behavior. The final
+immutable Clip validates once before publication, allowing complete channel replacement
+or creation of two-key cubic tracks without exposing invalid intermediate data. Errors
+preserve the source. No scene, filesystem or device is used by these unit contracts.
+
+AnimationDocument owns a typed clip resource draft, cheap immutable snapshots, exact
+source-byte history, current resource revision and saved baseline. It reuses existing
+resource path/metadata/conflict and atomic-write checks. Semantic no-ops preserve
+revision/redo; invalid revisions including zero fail. Save retains history, failed saves
+retain the draft and destruction never writes. History is bounded by both state count
+and serialized bytes (defaults 128 states/128 MiB), evicting oldest entries. Oversized
+individual states fail unchanged. Counters explicitly exclude shared clip/current text/
+disk-baseline storage. Candidate history values can be inspected before a same-revision
+preview/undo transaction. Ordinary resource text remains 1 MiB by default; explicit
+native-data consumers may request up to the animation codec's 64 MiB maximum. This
+addresses real imported clips already larger than the ordinary default.
+
+ScenePlayers now owns optional immutable decoded asset handles keyed by exact portable
+library paths. Duplicate, invalid or initially unused entries and >1024 assets fail.
+All native binding, samples, aggregate budgets and writer/physics authority still apply;
+other libraries still load actual disk data. AnimationPreview can select and own a draft
+library entry only in its clone, reporting its draft asset, without temporary files or
+source writes. The ordinary native playback/seek/switch path evaluates that data after
+the original asset is removed. Failed candidates preserve an existing preview.
+
+Four new pure CPU edit cases cover sorted upsert, exact times, sampling changes,
+explicit step/linear/cubic conversion/tangents, ordered atomic removal/replacement,
+invalid native values/modes/time/handles and batch bounds. Six file-only document cases
+cover edit/save/undo/redo/branch, semantic no-ops and redo retention, exact source bytes,
+revision/conflict preservation, state/byte eviction and oversized rejection, >1 MiB
+resources with unchanged default capacity, path/move/thread/lifetime rules and no save
+on destruction. Three added preview/decoded-library cases cover real draft samples,
+source/disk isolation, missing overridden files, ownership, invalid/unused/duplicate
+entries, bad targets and unchanged physics authority. No automated case opens a desktop
+window and no visual acceptance executable is added.
+
+Initial builds identify missing direct module imports in tests/the decoded-asset
+interface and a nested-comment token in Doxygen path notation; corrected before tests.
+Focused Debug checks pass 18/18 (.94s). Final full arm64 macOS Debug passes 1081/1081
+(150.77s), Release/NDEBUG passes 1081/1081 (18.61s). There are 282 unit and 799 integration
+cases; overlapping subsets include 125 offscreen GPU, 27 native audio and 28 SDL-dummy
+platform cases. All thirteen changed C++ source/interface/test files pass clang-format;
+diff whitespace checks pass. No compiler/linker settings, dependency pins or supported
+platforms change; Windows/Linux are not executed. No distribution package is generated.
+
+Review covers module direction/interface separation, immutable ownership and thread/move
+lifetime, final-state edit validation, history bounds and revision/baseline synchronization,
+source-byte undo and no-op preservation, expected failures, resource path/conflict guards,
+native decoded-library authority, unchanged default callers and meaningful device-free
+behavioral coverage. This stage supplies native editing/save/preview foundations; the
+actual timeline GUI and strict product editor operations remain the next integration.
+Production keyframe authoring is not yet claimed. The complete engine goal remains open.

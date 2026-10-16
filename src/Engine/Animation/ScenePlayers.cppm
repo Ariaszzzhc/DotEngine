@@ -4,16 +4,23 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 
 export module Dot.Animation.ScenePlayers;
 
 import Dot.Core.Result;
 import Dot.Core.Files;
+import Dot.Animation.Clip;
 import Dot.World.Scene;
 export import Dot.Animation.SceneAnimator;
 
 export namespace Dot::Animation {
+  struct ClipAsset {
+    std::string asset;
+    Clip value;
+  };
+
   struct ScenePlayerStats {
     std::size_t players{};
     std::size_t channels{};
@@ -39,8 +46,18 @@ export namespace Dot::Animation {
    * 时钟原子提交，后者失败不回滚此前播放器。API 限创建线程。 */
   class ScenePlayers {
   public:
+    /** Optional immutable decoded assets replace disk loads by exact path for this
+     * service lifetime. At most 1024 unique portable .dotanimation paths under assets;
+     * each must occur in an enabled player's initial library. Native binding,
+     * sampling, aggregate and writer-authority checks remain unchanged. No files
+     * are created or changed; the service owns copies of the shared clip handles.
+     * 可选不可变解码资源按精确路径替代本服务生命周期内的磁盘加载。至多 1024 个唯一
+     * 可移植 assets 下 .dotanimation，均须用于初始启用播放器库；保留原生绑定、采样、
+     * 总量和写入权限校验，不创建/修改文件，服务拥有共享片段句柄的副本。 */
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
-                                     const Core::FileSystem& assets) -> Core::Result<ScenePlayers>;
+                                     const Core::FileSystem& assets,
+                                     std::span<const ClipAsset> decoded = {})
+        -> Core::Result<ScenePlayers>;
     ScenePlayers(const ScenePlayers&) = delete;
     auto operator=(const ScenePlayers&) -> ScenePlayers& = delete;
     ScenePlayers(ScenePlayers&&) noexcept;

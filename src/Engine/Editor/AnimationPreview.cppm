@@ -22,6 +22,7 @@ export namespace Dot::Editor {
     std::vector<std::string> clips;
     std::optional<Core::Error> error;
     bool bindPose{};
+    std::optional<std::string> draft{};
   };
 
   /** Isolated animation audition using the same native players as game sessions.
@@ -37,9 +38,14 @@ export namespace Dot::Editor {
   class AnimationPreview {
   public:
     /** Require an enabled player. Start paused at the selected directional start.
-     * 要求启用的播放器，初始暂停在所选片段正/反向起点。 */
+     * A decoded draft must belong to its library; select it in the clone only and
+     * retain it through native ScenePlayers, without temporary files or source writes.
+     * 要求启用的播放器，初始暂停在片段正/反向起点。可选解码草稿须属于库，仅在克隆中
+     * 选中它，通过原生播放器持有，不创建临时文件、不修改源场景。 */
     [[nodiscard]] static auto create(const World::Scene& source, const Core::FileSystem& assets,
-                                     std::uint64_t owner) -> Core::Result<AnimationPreview>;
+                                     std::uint64_t owner,
+                                     std::optional<Animation::ClipAsset> draft = {})
+        -> Core::Result<AnimationPreview>;
     AnimationPreview(const AnimationPreview&) = delete;
     auto operator=(const AnimationPreview&) -> AnimationPreview& = delete;
     AnimationPreview(AnimationPreview&&) noexcept;

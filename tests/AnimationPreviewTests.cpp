@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -9,6 +10,7 @@
 
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
+import Dot.Animation.ScenePlayers;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AnimationPreview;
@@ -201,4 +203,91 @@ TEST_CASE("animation_preview.native_sample_failure_retains_pose_and_faults_until
   CHECK_FALSE(recreated.stats()->error);
   REQUIRE(recreated.play(1, true));
   REQUIRE(recreated.advance(.25));
+}
+
+TEST_CASE(
+    "animation_preview.decoded_draft_selects_real_library_clip_without_disk_or_source_writes") {
+  Fixture fixture;
+  const auto before = World::encodeScene(fixture.source).value();
+  const auto disk = fixture.files.readText(fixture.properties.clips[1]).value();
+  auto draft = Animation::Clip::create({"Draft",
+                                        {{0,
+                                          Animation::Path::Translation,
+                                          Animation::Interpolation::Linear,
+                                          {{0, {30, 0, 0, 0}}, {2, {34, 0, 0, 0}}}}}})
+                   .value();
+  auto preview
+      = Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                         Animation::ClipAsset{fixture.properties.clips[1], draft})
+            .value();
+  CHECK(preview.stats()->draft == fixture.properties.clips[1]);
+  CHECK(preview.stats()->player.clip == 1);
+  CHECK(preview.stats()->player.name == "Draft");
+  CHECK_FALSE(preview.stats()->player.playback.playing);
+  CHECK(fixture.x(preview) == 30);
+  REQUIRE(preview.seek(1));
+  CHECK(fixture.x(preview) == 32);
+  CHECK(fixture.files.readText(fixture.properties.clips[1]).value() == disk);
+  CHECK(World::encodeScene(fixture.source).value() == before);
+  REQUIRE(preview.play(0, true));
+  CHECK(fixture.x(preview) == 0);
+  REQUIRE(std::filesystem::remove(fixture.files.root() / fixture.properties.clips[1]));
+  REQUIRE(preview.play(1, true));
+  REQUIRE(preview.seek(1));
+  CHECK(fixture.x(preview) == 32);
+  auto another
+      = Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                         Animation::ClipAsset{fixture.properties.clips[1], draft});
+  REQUIRE(another);
+  CHECK(fixture.x(*another) == 30);
+  CHECK_FALSE(Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value));
+}
+
+TEST_CASE("animation_preview.decoded_drafts_keep_native_target_and_authority_validation") {
+  Fixture fixture;
+  auto preview = fixture.create();
+  const auto before = World::encodeScene(*preview.scene().value()).value();
+  auto draft = Animation::Clip::create({"Invalid binding",
+                                        {{9,
+                                          Animation::Path::Translation,
+                                          Animation::Interpolation::Linear,
+                                          {{0, {1, 0, 0, 0}}}}}})
+                   .value();
+  CHECK_FALSE(
+      Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                       Animation::ClipAsset{fixture.properties.clips[0], draft}));
+  CHECK_FALSE(
+      Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                       Animation::ClipAsset{"assets/missing.dotanimation", draft}));
+  CHECK_FALSE(
+      Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                       Animation::ClipAsset{fixture.properties.clips[0], {}}));
+  CHECK(World::encodeScene(*preview.scene().value()).value() == before);
+  auto valid = Animation::loadClip(fixture.files, fixture.properties.clips[0]).value();
+  REQUIRE(fixture.source.setRigidBody(fixture.target, World::RigidBody{}));
+  CHECK_FALSE(
+      Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                       Animation::ClipAsset{fixture.properties.clips[0], valid}));
+}
+
+TEST_CASE("scene_players.decoded_asset_boundary_rejects_unused_duplicate_and_invalid_handles") {
+  Fixture fixture;
+  auto source = World::decodeScene(World::encodeScene(fixture.source).value()).value();
+  auto scene = std::make_shared<World::Scene>(std::move(source));
+  const auto before = World::encodeScene(*scene).value();
+  auto value = Animation::loadClip(fixture.files, fixture.properties.clips[0]).value();
+  std::vector<Animation::ClipAsset> decoded{{fixture.properties.clips[0], value}};
+  REQUIRE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  CHECK(World::encodeScene(*scene).value() == before);
+  decoded.push_back(decoded.front());
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  decoded = {{"assets/unused.dotanimation", value}};
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  decoded = {{fixture.properties.clips[0], {}}};
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  decoded = {{"assets/../assets/move.dotanimation", value}};
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  decoded.resize(1025);
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  CHECK(World::encodeScene(*scene).value() == before);
 }

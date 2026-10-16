@@ -469,9 +469,10 @@ Resource operations are restricted to assets and the configured scripts subtree.
 The protected `scripts/dot` path also checks filesystem directory identity. Paths follow shared
 lexical [portable naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
 including Windows superscript device names, and reject symlinks/special files and
-ASCII case aliases/collisions. The limits are 1 MiB per editable text, 64 MiB per
+ASCII case aliases/collisions. The defaults are 1 MiB per editable text, 64 MiB per
 binary import, 8192 catalog/lookup entries and 64 levels by default. Native callers
-may lower limits; bounds are enforced before writes. Lexical validity does not
+may explicitly raise text capacity up to 64 MiB for native data or lower limits;
+bounds are enforced before writes. Lexical validity does not
 promise every filesystem accepts the path. Callers serialize project filesystem
 changes: the baseline check plus replacement is not an OS compare-and-swap, hostile
 race isolation or crash-durability promise.

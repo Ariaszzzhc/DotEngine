@@ -273,3 +273,56 @@ clocks, poses and reservations. Once retired, outgoing-only entities can be owne
 by other players; stopping the new clip cannot overwrite those released entities.
 Saved player descriptions are unchanged. Visual transition/timeline authoring and
 populated-game scale remain unfinished.
+
+## Keyframe editing data and resource drafts
+
+`Dot.Animation.Edit::editClip` applies an ordered <=256-operation batch to an owned
+candidate description and publishes one validated immutable native clip. PutKey uses
+logical node/path and exact float seconds: insert in time order, replace an equal-time
+key, or create a track with the specified interpolation. An existing track requires
+matching interpolation; conversion is explicit. RemoveKey removes an empty track;
+RemoveTrack and RenameClip are explicit. SetInterpolation clears tangents when its
+mode changes and retains them for the same mode. Cubic tangents can subsequently be
+edited through PutKey. Validation occurs on the final clip, so a batch may replace
+all old tracks or create a two-key cubic track without exposing an invalid intermediate
+state. Missing tracks/keys, invalid times, modes, values or final empty channels fail
+without changing the input. It creates no files, scenes or devices.
+
+`Dot.Editor.AnimationDocument` opens an assets .dotanimation using the existing resource
+text/path/metadata/conflict implementation. Ordinary resource text defaults remain
+1 MiB; this typed native-data editor explicitly requests 64 MiB, matching the animation
+codec cap. Source bytes are preserved exactly for undo. Snapshots share immutable clip
+handles and report revision, dirty/undo/redo, retained state count and serialized byte
+count without repeatedly decoding the whole clip. All calls are owner-thread operations;
+mutations require the current resource revision, including no-ops. Successful semantic
+no-ops preserve revision and redo. Invalid edits/failed saves preserve the draft.
+
+History defaults to 128 states and 128 MiB of serialized history text. Callers may
+choose 2..128 states and a positive byte budget up to 128 MiB. Oldest states evict until
+both limits fit; a single state larger than the budget fails without mutation. Shared
+immutable clip data, current text and saved disk baseline are additional owned storage;
+these counters are not a claim about total process memory. Undo/redo restore exact
+retained state text; save retains history and checks the exact original disk bytes
+before atomic replacement. External byte changes conflict even on a clean draft.
+Destruction never saves. historyValue reads the next undo/redo candidate without moving
+cursor or revision, permitting preview preflight before a same-revision transaction.
+
+Native ScenePlayers can accept up to 1024 unique decoded ClipAsset entries at creation.
+Each portable assets .dotanimation path must occur in an initially enabled player's
+library, and its immutable clip must be valid. Exact path matches replace disk loading
+for that service lifetime; ordinary binding, sample, aggregate-channel/key and writer/
+physics authority checks still apply. Copies of the shared clip handles are retained;
+no temporary resource files or source writes are used. Existing default callers still
+load their actual disk assets.
+
+AnimationPreview accepts an optional decoded draft from the selected player's library,
+selects that library slot only in its isolated clone, and exposes the draft asset in its
+native snapshot. All other player/library validation remains active. Playback, seeking,
+clip switching and skinning use the ordinary native implementation and retain the draft
+after source assets retire. This foundation is available to native consumers; editor
+timeline controls and the integrated save/preview/undo workflow remain to be connected.
+
+关键帧编辑按节点/路径/精确 float 时间执行有界原子批次，最终统一通过原生片段校验。
+动画资源草稿复用现有资源保存约束，支持精确字节撤销、版本检查、双重历史预算及磁盘冲突。
+预览通过原生播放器持有不可变解码草稿，不创建临时文件，也不改写编辑场景。当前交付是
+编辑数据、保存和预览底层，时间轴产品界面及完整同源智能体操作仍需接入。

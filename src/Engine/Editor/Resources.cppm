@@ -16,6 +16,8 @@ import Dot.Project;
 
 export namespace Dot::Editor {
   struct ResourceLimits {
+    /** Default 1 MiB, explicit callers may request up to 64 MiB for native data.
+     * 默认 1 MiB，原生数据调用方可显式请求至多 64 MiB。 */
     std::size_t textBytes{1024 * 1024};
     std::size_t binaryBytes{64 * 1024 * 1024};
     std::size_t entries{8192};
