@@ -25,6 +25,7 @@ add_executable(DotUnitTests
     ScriptDiagnosticTests.cpp
     EventTests.cpp
     InputTests.cpp
+    PlayInputTests.cpp
     MathTests.cpp
     GeometryTests.cpp
     PostProcessTests.cpp

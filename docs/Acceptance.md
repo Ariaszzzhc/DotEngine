@@ -21,8 +21,10 @@ strict JSON operations and live mailbox for these workflows:
 1. Open Feature Lab from examples/, inspect its real scene/resources and diagnostics.
 2. Create a writable project from a template, author entities/components/materials
    and scripts, and verify selection/history/save behavior.
-3. Check scripts, start isolated Play, inspect runtime diagnostics and stop. Verify
-   that authoring remains intact and externally saved source edits reach hot reload.
+3. Check scripts, start isolated Play, drive gameplay through bounded agent input,
+   inspect runtime diagnostics and stop. Verify automatic input release, stale-session
+   rejection, unchanged authoring and externally saved source edits reaching hot reload.
+   Relative camera checks must observe actual native capture, rather than assuming it.
 4. Reopen saved data, export a native game, relocate it and check actual playback
    independently of the authoring tree and compiler.
 

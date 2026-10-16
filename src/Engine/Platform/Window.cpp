@@ -205,6 +205,19 @@ namespace Dot::Platform {
     return {};
   }
 
+  auto Window::raise() -> Core::Result<void> {
+    if (!m_impl || !isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Raising a window requires a live window on the main thread");
+    }
+
+    if (!SDL_RaiseWindow(m_impl->window)) {
+      return windowFailure("Cannot raise window");
+    }
+
+    return {};
+  }
+
   auto Window::setTextInput(bool enabled) -> Core::Result<void> {
     if (!m_impl || !isMainThread()) {
       return Core::fail(Core::ErrorCode::InvalidState,

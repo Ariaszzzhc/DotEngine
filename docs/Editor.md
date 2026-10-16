@@ -300,6 +300,53 @@ inspect authoring, start Play, inspect game state, stop and confirm authoring
 isolation. Use computer use for F5/Escape, focus, pointer capture and visual behavior
 when needed. Validation is on arm64 macOS.
 
+## Agent gameplay input
+
+Live Play inspection exposes a canonical decimal `play.session` identity. It changes
+on each successful Play start even when the authoring revision stays unchanged.
+A bounded request drives the ordinary InputState -> script -> native simulation
+path; it does not change the scene directly or advance time outside the native loop.
+
+```json
+{"command":"input-play","session":"1","value":{"frames":30,"keys":["W"],"buttons":[],"pointer":[0,0],"pointerDelta":[0,0],"wheel":[0,0],"text":""}}
+```
+
+All fields are required. `value` is strict UTF-8 JSON within 64 KiB/depth 8. `frames`
+is an integer in 1..600 and counts actual Play frames, rather than a duration or
+fixed physics steps. Names match `dot:engine` input names exactly; unknown/duplicate
+names and reserved editor keys Escape/F5 are rejected. Position and per-frame delta
+are finite within +/-1e6, wheel within +/-1000, and text is UTF-8 within 16 KiB without
+NUL. Pointer/wheel deltas repeat per held frame; text and press edges publish once.
+The first input compares held keys/buttons against the last published frame. One
+extra frame releases held keys/buttons and clears motion/wheel/text. A request is
+accepted asynchronously; inspect the runtime scene and `play.agentInput` to verify
+actual effects. `active`, `remaining` and `published` report its progression; the
+published count includes its release frame. `play.inputSource` reports the latest
+prepared input frame's `agent`, `native` or `none` source.
+
+Only one request may be active, including its pending release frame. Cancel uses
+exactly `command` and the current `session`:
+
+```json
+{"command":"cancel-play-input","session":"1"}
+```
+
+The GUI Release control button and Escape use this same cancellation mechanism.
+Cancellation before first publication does not fabricate unseen presses/releases.
+Stop, Play failure and destruction discard the controller; stale session identities
+cannot inject into or cancel a restarted game. Pending close rejects new requests.
+
+Agent input temporarily owns gameplay publication, independently of OS focus or
+IME. It does not inject into the editor GUI or modify authoring history.
+`focus-window` (only `command`) requests activation of the visible, non-minimized
+editor through SDL; `inspect.workspace.focused` reports actual focus, which may
+arrive asynchronously or be refused by the window manager. Native
+input capture resumes afterward when enabled. Pointer capture remains an actual
+frontend acknowledgement: an input request never claims OS pointer capture. Use the
+existing `capture-input` operation when native relative capture is needed; focus loss
+still releases that native mode. Agent deltas can be inspected without capture, but
+scripts requiring acknowledged capture (such as the shoulder camera) obey that flag.
+
 ## Resources and external source editing
 
 The Resources tab lists assets and the configured script directory in sorted

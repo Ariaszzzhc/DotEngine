@@ -28,120 +28,10 @@ import Dot.Platform.Events;
 namespace Dot::Script {
   namespace {
     using Json = Serialization::Detail::Json;
-    using Platform::Key;
-    using Platform::MouseButton;
     using Reply = Core::Result<std::optional<std::string>>;
 
-    constexpr std::array keyNames{std::pair{"A", Key::A},
-                                  std::pair{"B", Key::B},
-                                  std::pair{"C", Key::C},
-                                  std::pair{"D", Key::D},
-                                  std::pair{"E", Key::E},
-                                  std::pair{"F", Key::F},
-                                  std::pair{"G", Key::G},
-                                  std::pair{"H", Key::H},
-                                  std::pair{"I", Key::I},
-                                  std::pair{"J", Key::J},
-                                  std::pair{"K", Key::K},
-                                  std::pair{"L", Key::L},
-                                  std::pair{"M", Key::M},
-                                  std::pair{"N", Key::N},
-                                  std::pair{"O", Key::O},
-                                  std::pair{"P", Key::P},
-                                  std::pair{"Q", Key::Q},
-                                  std::pair{"R", Key::R},
-                                  std::pair{"S", Key::S},
-                                  std::pair{"T", Key::T},
-                                  std::pair{"U", Key::U},
-                                  std::pair{"V", Key::V},
-                                  std::pair{"W", Key::W},
-                                  std::pair{"X", Key::X},
-                                  std::pair{"Y", Key::Y},
-                                  std::pair{"Z", Key::Z},
-                                  std::pair{"Digit1", Key::Digit1},
-                                  std::pair{"Digit2", Key::Digit2},
-                                  std::pair{"Digit3", Key::Digit3},
-                                  std::pair{"Digit4", Key::Digit4},
-                                  std::pair{"Digit5", Key::Digit5},
-                                  std::pair{"Digit6", Key::Digit6},
-                                  std::pair{"Digit7", Key::Digit7},
-                                  std::pair{"Digit8", Key::Digit8},
-                                  std::pair{"Digit9", Key::Digit9},
-                                  std::pair{"Digit0", Key::Digit0},
-                                  std::pair{"Enter", Key::Enter},
-                                  std::pair{"Escape", Key::Escape},
-                                  std::pair{"Backspace", Key::Backspace},
-                                  std::pair{"Tab", Key::Tab},
-                                  std::pair{"Space", Key::Space},
-                                  std::pair{"Left", Key::Left},
-                                  std::pair{"Right", Key::Right},
-                                  std::pair{"Up", Key::Up},
-                                  std::pair{"Down", Key::Down},
-                                  std::pair{"F1", Key::F1},
-                                  std::pair{"F2", Key::F2},
-                                  std::pair{"F3", Key::F3},
-                                  std::pair{"F4", Key::F4},
-                                  std::pair{"F5", Key::F5},
-                                  std::pair{"F6", Key::F6},
-                                  std::pair{"F7", Key::F7},
-                                  std::pair{"F8", Key::F8},
-                                  std::pair{"F9", Key::F9},
-                                  std::pair{"F10", Key::F10},
-                                  std::pair{"F11", Key::F11},
-                                  std::pair{"F12", Key::F12},
-                                  std::pair{"LeftControl", Key::LeftControl},
-                                  std::pair{"RightControl", Key::RightControl},
-                                  std::pair{"LeftShift", Key::LeftShift},
-                                  std::pair{"RightShift", Key::RightShift},
-                                  std::pair{"LeftAlt", Key::LeftAlt},
-                                  std::pair{"RightAlt", Key::RightAlt},
-                                  std::pair{"LeftSuper", Key::LeftSuper},
-                                  std::pair{"RightSuper", Key::RightSuper},
-                                  std::pair{"Delete", Key::Delete},
-                                  std::pair{"Insert", Key::Insert},
-                                  std::pair{"Home", Key::Home},
-                                  std::pair{"End", Key::End},
-                                  std::pair{"PageUp", Key::PageUp},
-                                  std::pair{"PageDown", Key::PageDown},
-                                  std::pair{"KeypadEnter", Key::KeypadEnter}};
-
-    constexpr std::array buttonNames{
-        std::pair{"Left", MouseButton::Left}, std::pair{"Middle", MouseButton::Middle},
-        std::pair{"Right", MouseButton::Right}, std::pair{"Back", MouseButton::Back},
-        std::pair{"Forward", MouseButton::Forward}};
     constexpr std::array fields{"snapshot", "key",  "button", "pointer",         "pointerDelta",
                                 "wheel",    "text", "index",  "pointerCaptured", "capturePointer"};
-
-    template <typename Enum, std::size_t N>
-    constexpr auto complete(const std::array<std::pair<const char*, Enum>, N>& entries, Enum count)
-        -> bool {
-      if (N + 1 != static_cast<std::size_t>(count)) {
-        return false;
-      }
-
-      std::array<bool, N + 1> seen{};
-
-      for (const auto& [name, value] : entries) {
-        for (const auto& previous : entries) {
-          if (previous.second != value && std::string_view(previous.first) == name) {
-            return false;
-          }
-        }
-
-        const auto index = static_cast<std::size_t>(value);
-
-        if (index == 0 || index >= seen.size() || seen[index]) {
-          return false;
-        }
-
-        seen[index] = true;
-      }
-
-      return true;
-    }
-
-    static_assert(complete(keyNames, Key::Count));
-    static_assert(complete(buttonNames, MouseButton::Count));
 
     auto point(Platform::Point value) -> Json {
       return {{"x", value.x}, {"y", value.y}};
@@ -206,8 +96,8 @@ namespace Dot::Script {
         if (named) {
           name = args[0].get<std::string>();
           const auto matches = [&name](const auto& entry) { return name == entry.first; };
-          const bool known = field == "key" ? std::ranges::any_of(keyNames, matches)
-                                            : std::ranges::any_of(buttonNames, matches);
+          const bool known = field == "key" ? std::ranges::any_of(Platform::keyNames(), matches)
+                                            : std::ranges::any_of(Platform::buttonNames(), matches);
 
           if (!known) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -289,11 +179,11 @@ namespace Dot::Script {
                  {"pointerCaptured", pointerCaptured},
                  {"text", std::string(state.text())}};
 
-      for (const auto& [name, key] : keyNames) {
+      for (const auto& [name, key] : Platform::keyNames()) {
         frame["keys"][name] = button(state.key(key));
       }
 
-      for (const auto& [name, value] : buttonNames) {
+      for (const auto& [name, value] : Platform::buttonNames()) {
         frame["buttons"][name] = button(state.button(value));
       }
 

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <expected>
 #include <limits>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <utility>
@@ -13,6 +14,7 @@
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Editor.Play;
+import Dot.Editor.PlayInput;
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.World.Scene;
@@ -262,4 +264,47 @@ TEST_CASE("play.scene_environment_is_copied_and_isolated_from_authoring_changes"
   CHECK_FALSE(authoring.environment().value());
   CHECK(play.scene().value()->occlusion().value() == occlusion);
   CHECK_FALSE(authoring.occlusion().value());
+}
+
+TEST_CASE("play.agent_input_drives_shared_scripts_physics_then_releases_without_authoring_edits") {
+  Fixture fixture;
+  fixture.controller();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto actor = authoring.entities()->at(1).id;
+  REQUIRE(authoring.setRigidBody(actor, Dot::World::RigidBody{}));
+  const auto before = Dot::World::encodeScene(authoring).value();
+  auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  PlayInput input;
+  const auto request = nlohmann::json{
+      {"frames", 3},       {"keys", {"D"}},          {"buttons", nlohmann::json::array()},
+      {"pointer", {0, 0}}, {"pointerDelta", {0, 0}}, {"wheel", {0, 0}},
+      {"text", ""}};
+  REQUIRE(input.submit(request.dump()));
+  auto scene = play.scene().value();
+  const auto runtime = scene->findEntity(actor.value).value();
+
+  auto previous = scene->entity(runtime)->transform.position.x;
+
+  for (int frame = 0; frame < 3; ++frame) {
+    auto next = input.next();
+    REQUIRE(next);
+    REQUIRE(next->has_value());
+    REQUIRE(play.advance(**next, 40ms));
+    const auto position = scene->entity(runtime)->transform.position.x;
+    CHECK(position > previous);
+    previous = position;
+  }
+
+  const auto moved = scene->entity(runtime)->transform.position.x;
+  CHECK(moved > authoring.entity(actor)->transform.position.x + .1F);
+  auto release = input.next();
+  REQUIRE(release);
+  REQUIRE(release->has_value());
+  CHECK((**release).key(Dot::Platform::Key::D).released);
+  REQUIRE(play.advance(**release, 40ms));
+  CHECK(scene->entity(runtime)->transform.position.x == doctest::Approx(moved));
+  CHECK_FALSE(input.next().value());
+  CHECK(Dot::World::encodeScene(authoring).value() == before);
+  REQUIRE(play.stop());
 }

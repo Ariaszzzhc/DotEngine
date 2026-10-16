@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1032/1032 (145.56s) and Release/NDEBUG
-1032/1032 (20.69s), including 259 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1039/1039 (148.39s) and Release/NDEBUG
+1039/1039 (20.12s), including 265 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -84,3 +84,12 @@ Document preparation and atomic primary transfers with the GUI. Actual editor ag
 checks cover drafts, rejection, apply/history, independent text drafts and clean close.
 Native layout and Chinese staged text are inspected at multiple widths/themes;
 simulated Name-field click focus remains unconfirmed.
+
+The live agent interface now drives bounded keyboard/button/text/pointer input
+through ordinary Play frames with automatic release and session identity checks.
+Prism Relay product checks verify movement, one-shot jumping during a hold,
+cancellation, restart isolation and shoulder-camera rotation under actual native
+capture. Native focus requests report observed focus. The temporary development
+app must own its executable and use standard bundle resources for that focus check.
+The simulated Name-click coordinate discrepancy remains a separate SDL/global-pointer
+validation limitation; agent property operations remain verified.

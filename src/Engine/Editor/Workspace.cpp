@@ -33,6 +33,7 @@ import Dot.Core.Application;
 import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
+import Dot.Editor.PlayInput;
 import Dot.Editor.Resources;
 import Dot.Editor.MaterialDocument;
 import Dot.Editor.AssetPreview;
@@ -451,6 +452,9 @@ namespace Dot::Editor {
     bool m_exportDialog{};
     bool m_exportDataOnly{};
     std::optional<PlaySession> m_play;
+    std::uint64_t m_playSession{};
+    PlayInput m_agentInput;
+    std::string m_inputSource{"none"};
     Platform::InputState m_gameInput;
     bool m_captureInput{};
     bool m_pointerCaptured{};
@@ -1044,6 +1048,10 @@ namespace Dot::Editor {
                           "Play requires no pending scene/file edits or active game");
       }
 
+      if (m_playSession == std::numeric_limits<std::uint64_t>::max()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Play session identities exhausted");
+      }
+
       auto tool = compiler();
 
       if (!tool) {
@@ -1058,6 +1066,9 @@ namespace Dot::Editor {
       }
 
       m_play.emplace(std::move(*created));
+      ++m_playSession;
+      m_agentInput.reset();
+      m_inputSource = "none";
 
       if (m_previewWorker) {
         m_previewWorker->setPaused(true).value();
@@ -1080,6 +1091,8 @@ namespace Dot::Editor {
       }
 
       auto stopped = m_play->stop();
+      m_agentInput.reset();
+      m_inputSource = "none";
       captureInput(false);
       m_previewReady = false;
 
@@ -1098,12 +1111,20 @@ namespace Dot::Editor {
     }
 
     auto playStatus() const -> Json {
-      Json status{{"state", "idle"},
-                  {"captureInput", m_captureInput},
-                  {"pointerCaptured", m_pointerCaptured},
-                  {"pointerCaptureRequested", nullptr},
-                  {"diagnostics", m_playDiagnostics},
-                  {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
+      const auto agent = m_agentInput.stats();
+      Json status{
+          {"state", "idle"},
+          {"session", m_playSession == 0 ? Json(nullptr) : Json(std::to_string(m_playSession))},
+          {"inputSource", m_inputSource},
+          {"agentInput",
+           {{"active", agent.active},
+            {"remaining", agent.remaining},
+            {"published", agent.published}}},
+          {"captureInput", m_captureInput},
+          {"pointerCaptured", m_pointerCaptured},
+          {"pointerCaptureRequested", nullptr},
+          {"diagnostics", m_playDiagnostics},
+          {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
       auto text = m_application->window().textInputActive();
       status["textInputActive"] = text ? Json(*text) : Json(nullptr);
 
@@ -1258,6 +1279,12 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "focus-window") {
+        Codec::requireFields(parsed, {"command"});
+        auto raised = m_application->window().raise();
+        return raised ? execute("{\"command\":\"inspect\"}") : std::unexpected(raised.error());
+      }
 
       if (m_transform && command != "inspect" && command != "update-transform"
           && command != "finish-transform" && command != "close" && command != "set-theme"
@@ -1993,6 +2020,33 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "input-play" || command == "cancel-play-input") {
+        if (command == "input-play") {
+          Codec::requireFields(parsed, {"command", "session", "value"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session"});
+        }
+
+        if (!playing() || m_play->stats()->state != PlayState::Running
+            || Codec::id(parsed["session"]) != m_playSession || m_pendingClose) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Input requires the current running Play session without pending close");
+        }
+
+        if (command == "input-play") {
+          auto staged = m_agentInput.submit(parsed["value"].dump(), m_gameInput);
+
+          if (!staged) {
+            return std::unexpected(staged.error());
+          }
+        } else {
+          m_agentInput.cancel();
+        }
+
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (command == "inspect-play") {
         Codec::requireFields(parsed, {"command"});
 
@@ -2461,7 +2515,14 @@ namespace Dot::Editor {
 
       if (result && command == "inspect") {
         auto response = Codec::parseJson(*result);
+        auto focused = m_application->window().focused();
+
+        if (!focused) {
+          return std::unexpected(focused.error());
+        }
+
         response["workspace"] = {
+            {"focused", *focused},
             {"pendingInspector", pendingInspector()},
             {"pendingEnvironment", pendingEnvironment()},
             {"environmentDraft", m_environmentDraft},
@@ -5206,6 +5267,18 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
+      if (m_agentInput.stats().active) {
+        ImGui::TextUnformatted("Agent control");
+        ImGui::SameLine();
+
+        if (ImGui::Button("Release control")) {
+          sessionAction(
+              {{"command", "cancel-play-input"}, {"session", std::to_string(m_playSession)}});
+        }
+
+        ImGui::SameLine();
+      }
+
       if (ImGui::Button("Export game")) {
         m_exportDialog = true;
         m_message.clear();
@@ -5531,8 +5604,9 @@ namespace Dot::Editor {
           return processed;
         }
 
-        if (m_captureInput && (input.key(Platform::Key::Escape).pressed || m_pendingClose)) {
+        if (input.key(Platform::Key::Escape).pressed || m_pendingClose) {
           captureInput(false);
+          m_agentInput.cancel();
         }
 
         auto pointerChanged = synchronizePointerCapture();
@@ -5560,8 +5634,18 @@ namespace Dot::Editor {
           m_resetGuiInput = false;
         }
 
-        if (m_captureInput) {
+        auto agent = m_agentInput.next();
+
+        if (!agent) {
+          return std::unexpected(agent.error());
+        }
+
+        if (*agent) {
+          m_gameInput = std::move(**agent);
+          m_inputSource = "agent";
+        } else if (m_captureInput) {
           m_gameInput = input;
+          m_inputSource = "native";
 
           if (*pointerChanged) {
             m_gameInput.clearPointerDelta();
@@ -5573,6 +5657,7 @@ namespace Dot::Editor {
                                    Platform::PointerMoved{pointer.x - m_viewOrigin.x,
                                                           pointer.y - m_viewOrigin.y, 0, 0}}));
         } else {
+          m_inputSource = "none";
           m_gameInput.beginFrame();
           static_cast<void>(
               m_gameInput.consume({m_application->window().id(), 0, Platform::Focus{false}}));
@@ -5592,6 +5677,8 @@ namespace Dot::Editor {
           if (!advanced) {
             m_playError = advanced.error();
             diagnostic(errorJson(advanced.error()));
+            m_agentInput.reset();
+            m_inputSource = "none";
             captureInput(false);
           }
         }

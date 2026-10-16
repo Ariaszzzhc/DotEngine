@@ -44,6 +44,8 @@ TEST_CASE("window.create_resize_title_and_release") {
     CHECK(size->height == 480);
     CHECK(window->setTitle("测试 🌏").has_value());
     CHECK(window->show().has_value());
+    CHECK(window->raise().has_value());
+    CHECK(window->focused().value() == (SDL_GetKeyboardFocus() == window->nativeHandle()));
     CHECK_FALSE(window->textInputActive().value());
     CHECK(window->setTextInput(true).has_value());
     CHECK(window->textInputActive().value());
@@ -108,6 +110,7 @@ TEST_CASE("window.move_releases_old_resources") {
     CHECK(second.nativeHandle() == nullptr);
     CHECK_FALSE(second.size().has_value());
     CHECK_FALSE(second.show().has_value());
+    CHECK_FALSE(second.raise());
     CHECK_FALSE(second.setRelativeMouse(true));
     CHECK_FALSE(second.relativeMouse());
     CHECK_FALSE(second.focused());
@@ -138,7 +141,8 @@ TEST_CASE("window.reject_worker_thread_operations") {
     const auto other = Window::create(hiddenWindow());
     rejected = !other && !window->resize(640, 480) && !pollEvents()
                && !window->setRelativeMouse(true) && !window->relativeMouse() && !window->focused();
-    rejected = rejected && !window->setTextInput(true) && !window->textInputActive();
+    rejected
+        = rejected && !window->setTextInput(true) && !window->textInputActive() && !window->raise();
   });
   worker.join();
   CHECK(rejected);

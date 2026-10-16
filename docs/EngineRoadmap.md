@@ -23,7 +23,7 @@ requirements remain:
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning and animation cross-fades | Production skeleton/animation authoring, layered/state-machine workflows and scalability |
 | Physics/gameplay | Rigid bodies with linear CCD, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies and script/Inspector/agent controls | Virtual-only character contact events and populated-game character scalability |
 | Editor | Docked views, scene/resource/material authoring, picking/multiselection/gizmos, undo/redo, isolated Play and export | Consistent production workflows, complex scene organization, background compilation and performance/debugging tools |
-| AI control | Product CLI, strict JSON operations and live mailbox; shared document/resource/Play operations | Audit complete human/agent operation parity as workflows evolve; no test-only substitutes |
+| AI control | Product CLI, strict JSON operations and live mailbox; shared document/resource/Play operations, bounded gameplay input and native focus requests | Audit complete human/agent operation parity as workflows evolve; no test-only substitutes |
 | Example experience | Feature Lab and Prism Relay's rigged character, native traversal and sphere-swept shoulder camera | Finished realistic sci-fi character/environment art, broader workflow and performance evidence |
 | Production evidence | Focused headless behavior/GPU tests and past macOS product checks | Real project workflow, stress/performance and shipping evidence beyond test counts |
 

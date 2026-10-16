@@ -45,6 +45,11 @@ export namespace Dot::Platform {
     [[nodiscard]] auto setTitle(std::string_view title) -> Core::Result<void>;
     [[nodiscard]] auto resize(int width, int height) -> Core::Result<void>;
     [[nodiscard]] auto show() -> Core::Result<void>;
+    /** Request activation/raising of a visible, non-minimized window. The window
+     * manager may defer or deny focus; query focused() for the actual state.
+     * 请求激活并置前已显示且未最小化的窗口；窗口管理器可能延迟或拒绝聚焦，实际状态须查询
+     * focused()。 */
+    [[nodiscard]] auto raise() -> Core::Result<void>;
     [[nodiscard]] auto setTextInput(bool enabled) -> Core::Result<void>;
     /** Actual native text/IME mode; disabling it leaves physical key events
      * available for gameplay. Query requires the main thread and a live owner.

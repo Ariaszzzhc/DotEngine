@@ -5863,3 +5863,85 @@ and existing distributions remain. User planning/design files stay untracked. No
 distribution archive is produced. Evidence is arm64 macOS only. Mature editor
 workflows, the outstanding simulated text-click check, finished realistic game art
 and populated-scene performance remain incomplete.
+
+
+## 2026-10-16 — Agent gameplay input and native focus
+
+Added a CPU-only PlayInput controller with a strict bounded JSON request. It
+publishes the ordinary InputState consumed by PlaySession, scripts and native
+simulation for 1..600 native Play frames, followed by a release frame. It does not
+advance a separate simulation or edit runtime transforms. Keyboard/button names
+move into one immutable platform vocabulary shared with the existing script input
+source. Press/hold/release edges compare against the last published frame; cancelling
+a queued request does not invent unseen edges. Text publishes once, pointer/wheel
+deltas repeat per held frame and stop on release. Invalid input or active replacement
+fails before state mutation. Frame preparation returns owned snapshots and preserves
+controller state on allocation failure.
+
+The actual editor exposes input-play and cancel-play-input using a Play session
+identity, independent of scene revision. New Play sessions get new identities;
+stopped/faulted sessions, stale requests and pending close reject injection. Escape
+and the GUI Release control button use the same cancellation path. Stop/fault clear
+the controller. Native input capture resumes after an agent request when enabled.
+Inspection reports actual input source and remaining/published progress. Pointer
+capture acknowledgement remains native; submitting deltas alone never claims it.
+Window.raise and the strict focus-window operation request foreground activation;
+inspection reports actual focus, including deferred/denied requests.
+
+Six new CPU regressions cover held/edge/text/delta lifetime, owned snapshots,
+cancellation before/after publication, source handoff, exact frame budgets, canonical
+name coverage, malformed/duplicate/reserved inputs and bounds. One headless Play
+integration drives real script/native-body motion and verifies stopping on release
+without changing authoring. Existing SDL-dummy window checks add raise/focus and
+moved/worker rejection coverage. No automated case creates a desktop window.
+An initial integration build used a nonexistent velocity getter; the subsequent
+assertion confused authored body velocity with live state. The regression now checks
+real pose progression and stopping, rather than reading a static configuration field.
+Focused Debug passes 30/30 (1.10s), then 42/42 (1.14s) after adding native focus checks.
+
+Temporary mouse sampling isolates the earlier simulated Name-click discrepancy
+before Inspector layout: SDL emits boundary positions such as (0,0)/(1279,0) while
+its global pointer query stays at the physical screen edge. The pinned Cocoa backend's
+macOS 26+ branch uses global pointer coordinates instead of event-local coordinates.
+All sampling code is restored byte-for-byte and no platform-coordinate compensation
+is added. A symlinked temporary app also fails to obtain native focus; repeating QA
+with an owned executable and SDL's standard bundle resources obtains actual focus
+and pointer capture. The product packaging already uses that layout. A simulated
+Name click remains unconfirmed even in the proper app; it is not counted as a
+successful human-style text-edit check. Agent property editing remains independently
+verified by the preceding stage.
+
+Actual Release Prism Relay operations verify W movement of 1.62635m over a 30-frame
+request (31 publications including release), and a 120-frame Space hold reaches
+approximately 1.78433m then lands while still held without jumping again. Cancellation
+releases after 7 publications instead of completing the 600-frame budget. Stale
+injection/cancel requests are rejected across session identities 2/3/4 at unchanged
+authoring revision, and restart restores the original [-3,0,2] spawn without held
+input. No OS key injection or IME switch is used for these operations.
+
+Without acknowledged capture, nonzero agent deltas preserve camera orientation.
+Product focus-window then obtains actual keyboard focus; capture-input obtains
+native relative mode and disables text input. Five input frames rotate the shoulder
+camera with quaternion distance .0474281. Capture release and Stop restore the
+editor with unchanged authoring, no drafts or viewport error. Recorded runtime
+snapshots have zero dropped time, no diagnostics or Play errors. Clean close exits 0
+and stderr is empty. These are local arm64 macOS observations, not a general
+performance or finished-game-quality claim.
+
+Final focused Release/NDEBUG checks pass 42/42 (.40s). Full arm64 macOS suites pass
+Debug 1039/1039 (148.39s), then Release/NDEBUG 1039/1039 (20.12s), with 265 unit and
+774 integration cases. Hardware-labelled subsets include 123 offscreen GPU and
+27 native audio cases; 28 platform cases use SDL dummy video (labels overlap).
+No automated case opens a desktop window. All 11 changed C++ source/interface/test
+files pass clang-format checks, and diff whitespace checks pass.
+
+Precommit review covers module direction and interface/implementation separation,
+canonical-name lifetime, strict numeric/name/text/schema bounds, transactional input
+preparation and owned frame copies, source handoff and queued cancellation edges,
+session identity exhaustion/restart, fault/Stop/close cleanup, actual focus/capture
+reporting and platform-neutral SDL use. Compiler/linker environment and dependency
+pins are unchanged. Temporary diagnostic instrumentation, native app shells, control
+scripts and observation/request files are removed. Ignored caches, verification logs
+and the existing distribution remain; user design/planning inputs stay untracked.
+No release archive is produced. Complete editor operation parity, finished realistic
+sci-fi art, complex game authoring and populated-scene performance remain open.

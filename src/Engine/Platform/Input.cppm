@@ -3,14 +3,25 @@ module;
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 export module Dot.Platform.Input;
 
 import Dot.Platform.Events;
 
 export namespace Dot::Platform {
+  using KeyName = std::pair<std::string_view, Key>;
+  using ButtonName = std::pair<std::string_view, MouseButton>;
+
+  /** Canonical input names shared by scripts and product agent operations.
+   * Returned views refer to immutable process-lifetime storage; Unknown is excluded.
+   * 脚本与产品智能体操作共用的标准输入名称；返回进程全生命周期的只读视图，不含 Unknown。 */
+  [[nodiscard]] auto keyNames() noexcept -> std::span<const KeyName>;
+  [[nodiscard]] auto buttonNames() noexcept -> std::span<const ButtonName>;
+
   struct ButtonState {
     bool down{false};
     bool pressed{false};
