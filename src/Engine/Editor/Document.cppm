@@ -67,6 +67,15 @@ export namespace Dot::Editor {
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
     [[nodiscard]] auto stats() const -> Core::Result<DocumentStats>;
     [[nodiscard]] auto snapshot() const -> Core::Result<std::string>;
+    /** Validate a complete existing-entity draft and return strict edit operations,
+     * without changing scene, selection, revision or history. Primary camera/listener
+     * transfers demote the previous owner in the same prepared transaction.
+     * An unchanged draft returns []; otherwise apply the owned plan with the same revision.
+     * 校验现有实体的完整草稿并返回严格编辑操作，不改变场景、选择、版本或历史。
+     * 主相机/听者切换在同一预备事务内取消此前所有者的主标记。
+     * 无变化返回 []；否则须使用同一版本应用独立持有的操作计划。 */
+    [[nodiscard]] auto prepareEntityEdit(std::string_view entity, std::uint64_t revision) const
+        -> Core::Result<std::string>;
     /** Strict JSON array, 1..256 operations, <=1 MiB/depth 64. Prepare the final
      * scene before committing all changes, history and selection together.
      * Component/transform values use the native scene format. No-op batches

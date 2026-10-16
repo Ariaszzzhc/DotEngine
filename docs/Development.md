@@ -5789,3 +5789,77 @@ Temporary authoring requests, native app linkage/control and observation files a
 removed; ignored caches and validation logs remain. User planning/design files stay
 untracked and no distribution archive is created. Finished realistic art, complete
 virtual-character contacts, mature editor workflows and scalability remain open.
+
+
+## 2026-10-16 — Inspector fields and agent drafts
+
+Replaced right-hand generic property labels with wrapped label/value rows. Ordinary
+fields use two columns at useful widths; narrow panels stack labels above controls.
+Numeric vectors keep their full row and reduce their axis column count as needed.
+Name/parent, skin and animation asset selectors use the same layout. Scalar edits
+preserve signed/unsigned 64-bit kinds, and vector edits change only the edited
+element instead of narrowing and rewriting all components through float. Float
+display stays concise, with full double precision available on hover. Script JSON
+uses the full panel width. Existing directional lights now expose their shadow
+toggle while editing, rather than only inside the Add-light button branch.
+
+Added complete-entity preparation to Document and strict live stage-inspector
+control using that same implementation as GUI Apply. Preparation validates the final
+scene without changing document state, scope, selection, revision or history.
+Primary camera and listener transfers demote the prior owner atomically. Staging
+requires the current selected ID/revision, rejects malformed/unknown fields and
+conflicting drafts, and can replace the current Inspector draft. Apply creates one
+history entry. Reset and successful Apply immediately publish canonical fields and
+script properties text; inspection no longer depends on first drawing that panel.
+Three enduring headless document regressions cover primary transfers, undo/redo/save,
+no-op ownership, stale plans, malformed/bounded input, thread/move ownership and
+unchanged state after failure. No additional executable or visual probe is retained.
+
+The initial build caught a doctest message-expression precedence error and an
+incompatible ranges projection; both are corrected. Focused document suites pass
+Debug 26/26 (1.52s) and Release/NDEBUG 26/26 before native workflow validation.
+Actual Feature Lab agent operations verify strict staging, rejection without draft
+mutation, blocked selection, Apply, undo/redo, Reset, large unsigned/nested JSON
+preservation, Play locking and environment-draft exclusivity. Existing-light shadow
+removal applies and undoes through this same flow. Document revision/dirty state stay unchanged during
+drafts and return clean after undo/reset. Native close exits 0 and removes its
+owned mailbox; stderr is empty.
+
+Computer-use inspection covers actual 278px default, 491px wide and 131px narrow
+logical Inspector panels, dark/light themes and a Chinese name staged through the
+product agent interface. The first layout was too tall at default width, and
+vector axes had unequal text baselines; layout thresholds and axis baseline
+alignment are corrected. One native scalar edit is confirmed to change only X,
+leaving exact Y/Z unchanged, then reset. Later coordinate-based text attempts
+reach other controls instead of the intended Name field; the cause is unconfirmed
+and these attempts are not counted as successful name-input validation. Chinese
+name staging/rendering is verified separately through the product interface.
+The user clarified that an earlier unconfirmed W press triggered the Chinese IME;
+that observation is not evidence of a movement failure.
+
+Final parity review removes an unnecessary pending-text guard: GUI entity drafts
+can coexist with separate agent text-file drafts. The final Release editor verifies
+this coexistence, independent buffer/document revisions, Inspector Apply and undo,
+explicit text discard and unchanged script bytes on disk. Its final stopped scene
+is clean, with no Inspector/file draft or viewport error. Normal close exits 0,
+removes the mailbox and leaves stderr empty. Final native inspection confirms
+aligned vector axes. Rebinding the computer-use app does not confirm Name-field
+click focus; that human-style input check remains open without an asserted cause.
+
+After the final source change, full suites pass Debug 1032/1032 (145.56s), then
+Release/NDEBUG 1032/1032 (20.69s). Inventory is 259 unit / 773 integration cases,
+including 123 offscreen GPU, 28 SDL-dummy platform and 27 native audio cases
+(labels overlap). The earlier full Debug run before the pending-text parity
+correction also passes 1032/1032 (142.63s). No automated case opens a desktop
+window. Changed C++ sources pass clang-format checks and diff whitespace checks.
+
+Precommit review covers strict schemas/revisions, owner-thread/move checks, owned
+plans and failed-preparation lifetime, atomic primary transfers/history, scalar
+precision/type preservation, balanced ImGui row/ID ownership, immediate canonical
+draft publication and native/agent parity. No compiler/linker environment, dependency
+pin or target-platform assumptions change. Temporary native app linkage, request/
+observation files and control helpers are removed; ignored build caches/test logs
+and existing distributions remain. User planning/design files stay untracked. No
+distribution archive is produced. Evidence is arm64 macOS only. Mature editor
+workflows, the outstanding simulated text-click check, finished realistic game art
+and populated-scene performance remain incomplete.

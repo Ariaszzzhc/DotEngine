@@ -135,6 +135,79 @@ namespace Dot::Editor {
       return result;
     }
 
+    /** Labels stay visible beside wide controls, or above them in narrow panels.
+     * 宽面板采用双列，窄面板上下排列，确保标签和输入框均可阅读。 */
+    class PropertyRow {
+    public:
+      explicit PropertyRow(const char* title, bool stacked = false) {
+        ImGui::PushID(title);
+        const float width = ImGui::GetContentRegionAvail().x;
+        stacked = stacked || width < ImGui::GetFontSize() * 16.F;
+        m_open = ImGui::BeginTable("##property", stacked ? 1 : 2,
+                                   ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_NoPadOuterX);
+
+        if (m_open) {
+          if (!stacked) {
+            ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed,
+                                    std::min(width * .4F, ImGui::GetFontSize() * 10.F));
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+          }
+
+          ImGui::TableNextColumn();
+          ImGui::AlignTextToFramePadding();
+          ImGui::TextWrapped("%s", title);
+          ImGui::TableNextColumn();
+          ImGui::SetNextItemWidth(-std::numeric_limits<float>::min());
+        }
+      }
+
+      PropertyRow(const PropertyRow&) = delete;
+      auto operator=(const PropertyRow&) -> PropertyRow& = delete;
+
+      ~PropertyRow() {
+        if (m_open) {
+          ImGui::EndTable();
+        }
+
+        ImGui::PopID();
+      }
+
+      [[nodiscard]] auto visible() const -> bool {
+        return m_open;
+      }
+
+    private:
+      bool m_open{};
+    };
+
+    /** Edit one scalar without narrowing or rewriting untouched vector elements.
+     * 逐项编辑标量，不窄化数值，也不重写向量中未编辑的分量。 */
+    auto scalar(Json& value) -> void {
+      if (value.is_number_unsigned()) {
+        auto current = value.get<std::uint64_t>();
+
+        if (ImGui::InputScalar("##value", ImGuiDataType_U64, &current)) {
+          value = current;
+        }
+      } else if (value.is_number_integer()) {
+        auto current = value.get<std::int64_t>();
+
+        if (ImGui::InputScalar("##value", ImGuiDataType_S64, &current)) {
+          value = current;
+        }
+      } else {
+        auto current = value.get<double>();
+
+        if (ImGui::InputDouble("##value", &current, 0, 0, "%.6g")) {
+          value = current;
+        }
+
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("%.17g", current);
+        }
+      }
+    }
+
     auto fields(Json& object, int depth = 0) -> void {
       if (depth > 32) {
         ImGui::TextUnformatted("Properties exceed inspector depth");
@@ -145,82 +218,88 @@ namespace Dot::Editor {
         ImGui::PushID(item.key().c_str());
         auto title = label(item.key());
         auto& value = item.value();
+        const bool vector = value.is_array() && !value.empty() && value.size() <= 4
+                            && std::ranges::all_of(
+                                value, [](const auto& element) { return element.is_number(); });
 
-        if (value.is_boolean()) {
-          bool current = value.get<bool>();
-
-          if (ImGui::Checkbox(title.c_str(), &current)) {
-            value = current;
-          }
-        } else if (value.is_number_integer()) {
-          std::int64_t current = value.get<std::int64_t>();
-
-          if (ImGui::InputScalar(title.c_str(), ImGuiDataType_S64, &current)) {
-            value = current;
-          }
-        } else if (value.is_number()) {
-          double current = value.get<double>();
-
-          if (ImGui::InputDouble(title.c_str(), &current, 0, 0, "%.6g")) {
-            value = current;
-          }
-        } else if (value.is_string()) {
-          std::string current = value.get<std::string>();
-          const char* options = nullptr;
-
-          if (item.key() == "projection") {
-            options = "perspective\0orthographic\0";
-          } else if (item.key() == "kind") {
-            options = object.contains("outerConeDegrees") ? "directional\0point\0spot\0"
-                                                          : "cube\0quad\0asset\0";
-          } else if (item.key() == "motion") {
-            options = "static\0kinematic\0dynamic\0";
-          } else if (item.key() == "collisionDetection") {
-            options = "discrete\0continuous\0";
-          } else if (item.key() == "shape") {
-            options = "box\0sphere\0capsule\0";
-          } else if (item.key() == "attenuation") {
-            options = "inverse\0linear\0exponential\0";
-          }
-
-          if (options) {
-            std::vector<const char*> values;
-
-            for (auto* option = options; *option;
-                 option += std::char_traits<char>::length(option) + 1) {
-              values.push_back(option);
-            }
-
-            auto found = std::ranges::find(values, current,
-                                           [](auto* option) { return std::string_view(option); });
-            int selected = found == values.end() ? -1 : static_cast<int>(found - values.begin());
-
-            if (ImGui::Combo(title.c_str(), &selected, values.data(),
-                             static_cast<int>(values.size()))) {
-              value = values.at(static_cast<std::size_t>(selected));
-            }
-          } else if (ImGui::InputText(title.c_str(), &current)) {
-            value = current;
-          }
-        } else if (value.is_array() && !value.empty() && value.size() <= 4
-                   && std::ranges::all_of(
-                       value, [](const auto& element) { return element.is_number(); })) {
-          std::array<float, 4> numbers{};
-
-          for (std::size_t index = 0; index < value.size(); ++index) {
-            numbers[index] = value[index].get<float>();
-          }
-
-          if (ImGui::InputScalarN(title.c_str(), ImGuiDataType_Float, numbers.data(),
-                                  static_cast<int>(value.size()))) {
-            for (std::size_t index = 0; index < value.size(); ++index) {
-              value[index] = numbers[index];
-            }
-          }
-        } else if (value.is_object()) {
+        if (value.is_object()) {
           if (ImGui::TreeNode(title.c_str())) {
             fields(value, depth + 1);
             ImGui::TreePop();
+          }
+        } else if (PropertyRow row{title.c_str(), vector}; row.visible()) {
+          if (value.is_boolean()) {
+            bool current = value.get<bool>();
+
+            if (ImGui::Checkbox("##value", &current)) {
+              value = current;
+            }
+          } else if (value.is_number()) {
+            scalar(value);
+          } else if (value.is_string()) {
+            std::string current = value.get<std::string>();
+            const char* options = nullptr;
+
+            if (item.key() == "projection") {
+              options = "perspective\0orthographic\0";
+            } else if (item.key() == "kind") {
+              options = object.contains("outerConeDegrees") ? "directional\0point\0spot\0"
+                                                            : "cube\0quad\0asset\0";
+            } else if (item.key() == "motion") {
+              options = "static\0kinematic\0dynamic\0";
+            } else if (item.key() == "collisionDetection") {
+              options = "discrete\0continuous\0";
+            } else if (item.key() == "shape") {
+              options = "box\0sphere\0capsule\0";
+            } else if (item.key() == "attenuation") {
+              options = "inverse\0linear\0exponential\0";
+            }
+
+            if (options) {
+              std::vector<const char*> values;
+
+              for (auto* option = options; *option;
+                   option += std::char_traits<char>::length(option) + 1) {
+                values.push_back(option);
+              }
+
+              auto found = std::ranges::find(values, current,
+                                             [](auto* option) { return std::string_view(option); });
+              int selected = found == values.end() ? -1 : static_cast<int>(found - values.begin());
+
+              if (ImGui::Combo("##value", &selected, values.data(),
+                               static_cast<int>(values.size()))) {
+                value = values.at(static_cast<std::size_t>(selected));
+              }
+            } else if (ImGui::InputText("##value", &current)) {
+              value = current;
+            }
+
+            if (ImGui::IsItemHovered()) {
+              ImGui::SetTooltip("%s", current.c_str());
+            }
+          } else if (vector) {
+            const auto count = static_cast<int>(value.size());
+            const int columns = std::clamp(
+                static_cast<int>(ImGui::GetContentRegionAvail().x / (ImGui::GetFontSize() * 4.F)),
+                1, count);
+
+            if (ImGui::BeginTable("##axes", columns,
+                                  ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_NoPadOuterX)) {
+              const char* axes = item.key() == "color" || item.key() == "tint" ? "RGBA" : "XYZW";
+
+              for (int index = 0; index < count; ++index) {
+                ImGui::TableNextColumn();
+                ImGui::PushID(index);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%c", axes[index]);
+                ImGui::SetNextItemWidth(-std::numeric_limits<float>::min());
+                scalar(value[static_cast<std::size_t>(index)]);
+                ImGui::PopID();
+              }
+
+              ImGui::EndTable();
+            }
           }
         }
 
@@ -1130,6 +1209,33 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto syncInspector() -> void {
+      const auto stats = m_document->stats().value();
+
+      if (!stats.selected) {
+        m_editEntity.reset();
+        m_edit = m_original = nullptr;
+        m_propertiesText.clear();
+        m_propertiesInvalid = false;
+        return;
+      }
+
+      if (m_editEntity == stats.selected->value && m_editRevision == stats.revision) {
+        return;
+      }
+
+      const auto found
+          = std::ranges::find_if(m_snapshot["scene"]["entities"], [&](const auto& entity) {
+              return entity["id"] == std::to_string(stats.selected->value);
+            });
+      m_editEntity = stats.selected->value;
+      m_editRevision = stats.revision;
+      m_original = *found;
+      m_edit = *found;
+      m_propertiesInvalid = false;
+      m_propertiesText = m_edit["script"].is_null() ? "" : m_edit["script"]["properties"].dump(2);
+    }
+
     auto refresh() -> Core::Result<void> {
       auto text = m_document->snapshot();
 
@@ -1138,6 +1244,7 @@ namespace Dot::Editor {
       }
 
       m_snapshot = Codec::parseJson(*text);
+      syncInspector();
       return {};
     }
 
@@ -2169,6 +2276,38 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "stage-inspector") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "value"});
+        const auto stats = m_document->stats().value();
+        const auto entity = Codec::id(parsed["entity"]);
+
+        if (Codec::id(parsed["revision"]) != stats.revision || !stats.selected
+            || stats.selected->value != entity || pendingEnvironment() || pendingOcclusion()
+            || m_material) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Inspector staging requires current selection/revision and clean other drafts");
+        }
+
+        if (!parsed["value"].is_object()
+            || parsed["value"].value("id", Json{}) != parsed["entity"]) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Inspector draft must describe the selected entity");
+        }
+
+        auto prepared = m_document->prepareEntityEdit(parsed["value"].dump(), stats.revision);
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        syncInspector();
+        m_edit = parsed["value"];
+        m_propertiesInvalid = false;
+        m_propertiesText = m_edit["script"].is_null() ? "" : m_edit["script"]["properties"].dump(2);
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (command == "apply-inspector" || command == "reset-inspector") {
         Codec::requireFields(parsed, {"command", "revision"});
 
@@ -2184,9 +2323,8 @@ namespace Dot::Editor {
             return std::unexpected(applied.error());
           }
         } else {
-          m_edit = m_original;
           m_editRevision = 0;
-          m_propertiesInvalid = false;
+          syncInspector();
         }
 
         return execute("{\"command\":\"inspect\"}");
@@ -2841,23 +2979,6 @@ namespace Dot::Editor {
         return;
       }
 
-      auto found = std::ranges::find_if(m_snapshot["scene"]["entities"], [&](const auto& entity) {
-        return entity["id"] == std::to_string(stats.selected->value);
-      });
-
-      if (found == m_snapshot["scene"]["entities"].end()) {
-        return;
-      }
-
-      if (m_editEntity != stats.selected->value || m_editRevision != stats.revision) {
-        m_editEntity = stats.selected->value;
-        m_editRevision = stats.revision;
-        m_original = *found;
-        m_edit = *found;
-        m_propertiesInvalid = false;
-        m_propertiesText = m_edit["script"].is_null() ? "" : m_edit["script"]["properties"].dump(2);
-      }
-
       if (stats.selection.size() > 1) {
         ImGui::TextWrapped("%zu selected. Properties below edit the active entity only.",
                            stats.selection.size());
@@ -2865,31 +2986,39 @@ namespace Dot::Editor {
 
       std::string name = m_edit["name"].get<std::string>();
 
-      if (ImGui::InputText("Name", &name)) {
-        m_edit["name"] = name;
+      {
+        PropertyRow row{"Name"};
+
+        if (row.visible() && ImGui::InputText("##value", &name)) {
+          m_edit["name"] = name;
+        }
       }
 
       std::string parent
           = m_edit["parent"].is_null() ? "None" : m_edit["parent"].get<std::string>();
 
-      if (ImGui::BeginCombo("Parent", parent.c_str())) {
-        if (ImGui::Selectable("None", m_edit["parent"].is_null())) {
-          m_edit["parent"] = nullptr;
-        }
+      {
+        PropertyRow row{"Parent"};
 
-        for (const auto& entity : m_snapshot["scene"]["entities"]) {
-          if (entity["id"] == m_edit["id"]) {
-            continue;
+        if (row.visible() && ImGui::BeginCombo("##value", parent.c_str())) {
+          if (ImGui::Selectable("None", m_edit["parent"].is_null())) {
+            m_edit["parent"] = nullptr;
           }
 
-          auto text = entity["name"].get<std::string>() + "##" + entity["id"].get<std::string>();
+          for (const auto& entity : m_snapshot["scene"]["entities"]) {
+            if (entity["id"] == m_edit["id"]) {
+              continue;
+            }
 
-          if (ImGui::Selectable(text.c_str(), entity["id"] == m_edit["parent"])) {
-            m_edit["parent"] = entity["id"];
+            auto text = entity["name"].get<std::string>() + "##" + entity["id"].get<std::string>();
+
+            if (ImGui::Selectable(text.c_str(), entity["id"] == m_edit["parent"])) {
+              m_edit["parent"] = entity["id"];
+            }
           }
-        }
 
-        ImGui::EndCombo();
+          ImGui::EndCombo();
+        }
       }
 
       if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -2927,22 +3056,6 @@ namespace Dot::Editor {
               m_edit[component] = m_presets[component];
             }
 
-            if (std::string_view(component) == "light") {
-              auto& light = m_edit[component];
-              bool shadows = light.contains("shadows") && !light["shadows"].is_null();
-              ImGui::BeginDisabled(light["kind"] != "directional" && !shadows);
-
-              if (ImGui::Checkbox("Cast directional shadows", &shadows)) {
-                light["shadows"] = shadows ? Json{{"resolution", 1024},   {"cascades", 4},
-                                                  {"distance", 100.0F},   {"splitLambda", 0.65F},
-                                                  {"depthBias", 0.0002F}, {"slopeBias", 0.001F},
-                                                  {"normalBias", 0.01F},  {"filterRadius", 2.0F}}
-                                           : Json(nullptr);
-              }
-
-              ImGui::EndDisabled();
-            }
-
             if (std::string_view(component) == "script") {
               m_propertiesText = m_edit[component]["properties"].dump(2);
               m_propertiesInvalid = false;
@@ -2957,7 +3070,8 @@ namespace Dot::Editor {
             m_edit[component] = std::move(description);
             ImGui::TextUnformatted("Properties (JSON object)");
 
-            if (ImGui::InputTextMultiline("##properties", &m_propertiesText, {0, 120})) {
+            if (ImGui::InputTextMultiline("##properties", &m_propertiesText,
+                                          {-std::numeric_limits<float>::min(), 120})) {
               try {
                 auto properties = Codec::parseJson(m_propertiesText);
                 m_propertiesInvalid = !properties.is_object();
@@ -2973,6 +3087,30 @@ namespace Dot::Editor {
             if (m_propertiesInvalid) {
               ImGui::TextWrapped("Properties must be a valid JSON object with unique fields.");
             }
+          } else if (std::string_view(component) == "light") {
+            auto description = m_edit[component];
+            description.erase("shadows");
+            fields(description);
+            description["shadows"] = m_edit[component]["shadows"];
+            m_edit[component] = std::move(description);
+            auto& light = m_edit[component];
+            bool shadows = light.contains("shadows") && !light["shadows"].is_null();
+            ImGui::BeginDisabled(light["kind"] != "directional" && !shadows);
+
+            if (PropertyRow row{"Cast directional shadows"};
+                row.visible() && ImGui::Checkbox("##value", &shadows)) {
+              light["shadows"] = shadows ? Json{{"resolution", 1024},   {"cascades", 4},
+                                                {"distance", 100.0F},   {"splitLambda", 0.65F},
+                                                {"depthBias", 0.0002F}, {"slopeBias", 0.001F},
+                                                {"normalBias", 0.01F},  {"filterRadius", 2.0F}}
+                                         : Json(nullptr);
+            }
+
+            ImGui::EndDisabled();
+
+            if (shadows) {
+              fields(light["shadows"]);
+            }
           } else if (std::string_view(component) == "skin") {
             auto& skin = m_edit[component];
             bool enabled = skin["enabled"].get<bool>();
@@ -2983,7 +3121,8 @@ namespace Dot::Editor {
 
             const auto asset = skin["asset"].get<std::string>();
 
-            if (ImGui::BeginCombo("Skin asset", asset.c_str())) {
+            if (PropertyRow row{"Skin asset"};
+                row.visible() && ImGui::BeginCombo("##value", asset.c_str())) {
               for (const auto& entry : m_catalog) {
                 const auto path = entry["path"].get<std::string>();
 
@@ -3011,7 +3150,8 @@ namespace Dot::Editor {
                   }
                 }
 
-                if (ImGui::BeginCombo(("Joint " + std::to_string(i)).c_str(), current.c_str())) {
+                if (PropertyRow row{("Joint " + std::to_string(i)).c_str()};
+                    row.visible() && ImGui::BeginCombo("##value", current.c_str())) {
                   for (const auto& entity : m_snapshot["scene"]["entities"]) {
                     const auto id = entity["id"].get<std::string>();
 
@@ -3071,7 +3211,8 @@ namespace Dot::Editor {
             const auto current
                 = selected < clips.size() ? clips[selected].get<std::string>() : "Choose clip";
 
-            if (ImGui::BeginCombo("Clip", current.c_str())) {
+            if (PropertyRow row{"Clip"};
+                row.visible() && ImGui::BeginCombo("##value", current.c_str())) {
               for (std::size_t i = 0; i < clips.size(); ++i) {
                 if (ImGui::Selectable(clips[i].get_ref<const std::string&>().c_str(),
                                       selected == i)) {
@@ -3089,7 +3230,8 @@ namespace Dot::Editor {
                 ImGui::PushID(static_cast<int>(i));
                 std::string path = player["clips"][i].get<std::string>();
 
-                if (ImGui::BeginCombo("Asset", path.c_str())) {
+                if (PropertyRow row{"Asset"};
+                    row.visible() && ImGui::BeginCombo("##value", path.c_str())) {
                   for (const auto& entry : m_catalog) {
                     const auto asset = entry["path"].get<std::string>();
 
@@ -3184,57 +3326,23 @@ namespace Dot::Editor {
         return {};
       }
 
-      const auto id = m_edit["id"].get<std::string>();
-      Json operations = Json::array();
+      auto prepared = m_document->prepareEntityEdit(m_edit.dump(), m_editRevision);
 
-      if (m_edit["name"] != m_original["name"]) {
-        operations.push_back({{"op", "name"}, {"entity", id}, {"name", m_edit["name"]}});
+      if (!prepared) {
+        m_message = prepared.error().message;
+        return std::unexpected(prepared.error());
       }
 
-      if (m_edit["parent"] != m_original["parent"]) {
-        operations.push_back({{"op", "parent"}, {"entity", id}, {"parent", m_edit["parent"]}});
-      }
+      auto operations = Codec::parseJson(*prepared);
 
-      if (m_edit["transform"] != m_original["transform"]) {
-        operations.push_back({{"op", "transform"}, {"entity", id}, {"value", m_edit["transform"]}});
-      }
-
-      for (const auto* component :
-           {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script", "material",
-            "light", "animation", "skin", "character"}) {
-        if (m_edit[component] != m_original[component]) {
-          operations.push_back({{"op", "component"},
-                                {"entity", id},
-                                {"component", component},
-                                {"value", m_edit[component]}});
-        }
-      }
-
-      /** Switch primary cameras as one atomic document/history operation.
-       * 切换主相机作为一个原子文档/历史操作。 */
-
-      if (!m_edit["camera"].is_null() && m_edit["camera"]["primary"] == true) {
-        for (const auto& entity : m_snapshot["scene"]["entities"]) {
-          if (entity["id"] != id && !entity["camera"].is_null()
-              && entity["camera"]["primary"] == true) {
-            auto camera = entity["camera"];
-            camera["primary"] = false;
-            operations.push_back({{"op", "component"},
-                                  {"entity", entity["id"]},
-                                  {"component", "camera"},
-                                  {"value", camera}});
-          }
-        }
+      if (operations.empty()) {
+        m_editRevision = 0;
+        syncInspector();
+        return {};
       }
 
       ActiveScope applying{m_applying};
       const bool applied = edit(std::move(operations));
-
-      if (applied) {
-        m_original = m_edit;
-        m_editRevision = 0;
-      }
-
       return applied ? Core::Result<void>{} : std::unexpected(*m_actionError);
     }
 

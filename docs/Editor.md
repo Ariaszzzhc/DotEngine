@@ -174,9 +174,23 @@ request string in `source` (null for unreadable/non-UTF-8 input) and the native
 result/error in `response`. Document
 commands are the same inspect/edit/select/undo/redo/save protocol above. Inspect
 also returns `workspace` with running/close/inspector status, buffered entity fields,
-properties text and validation status. `apply-inspector` and `reset-inspector` require
-a current canonical decimal `revision`, share the GUI implementation and return
-an updated inspection. Close uses this strict request without a revision:
+properties text and validation status. `stage-inspector` takes exactly `command`,
+`revision`, `entity` and `value`. `entity` must be the current selected decimal ID;
+`value` is its complete native entity object from the inspected scene (including
+null components). It validates the final scene before replacing the pending draft,
+without changing document revision, dirty state or history. Staging can replace the
+current entity draft; stale revisions, pending environment/AO drafts, an open material
+editor, Play and active transform gestures reject it without mutation. Separate text-file
+drafts can coexist with entity drafts, matching the GUI. Unknown/missing fields and invalid components
+are errors. Choosing a primary camera/listener prepares demotion of the previous
+owner in the same transaction.
+
+`apply-inspector` and `reset-inspector` require a current canonical decimal `revision`,
+share the GUI implementation and return an updated inspection. Apply commits one
+history step; Reset restores canonical fields and script properties text immediately.
+The native Inspector keeps wrapped labels beside controls, stacks them in narrow
+panels and edits numeric vector elements independently without narrowing other values.
+Close uses this strict request without a revision:
 
 ```json
 {"command":"close","discard":false}

@@ -639,6 +639,115 @@ namespace Dot::Editor {
     }
   }
 
+  auto Document::prepareEntityEdit(std::string_view entity, std::uint64_t revision) const
+      -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto valid = input(entity);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    try {
+      const auto draft = Codec::parseJson(entity);
+      Codec::requireFields(draft, {"id", "name", "parent", "transform", "camera", "mesh",
+                                   "rigidBody", "character", "audioSource", "audioListener",
+                                   "script", "material", "light", "animation", "skin"});
+      const auto id = Codec::id(draft["id"]);
+      auto candidate = Codec::parseJson(*m_impl->m_history[m_impl->m_cursor].text);
+      const auto* original = find(candidate["entities"], id);
+
+      if (!original) {
+        return Core::fail(Core::ErrorCode::NotFound, "Inspector entity no longer exists");
+      }
+
+      Json operations = Json::array();
+
+      for (const auto* field : {"name", "parent"}) {
+        if (draft[field] != (*original)[field]) {
+          operations.push_back({{"op", field}, {"entity", draft["id"]}, {field, draft[field]}});
+        }
+      }
+
+      if (draft["transform"] != (*original)["transform"]) {
+        operations.push_back(
+            {{"op", "transform"}, {"entity", draft["id"]}, {"value", draft["transform"]}});
+      }
+
+      for (const auto* component :
+           {"camera", "mesh", "rigidBody", "character", "audioSource", "audioListener", "script",
+            "material", "light", "animation", "skin"}) {
+        if (draft[component] != (*original)[component]) {
+          operations.push_back({{"op", "component"},
+                                {"entity", draft["id"]},
+                                {"component", component},
+                                {"value", draft[component]}});
+        }
+      }
+
+      for (const auto* component : {"camera", "audioListener"}) {
+        if (!draft[component].is_object() || !draft[component].contains("primary")
+            || draft[component]["primary"] != true) {
+          continue;
+        }
+
+        for (const auto& other : candidate["entities"]) {
+          if (other["id"] != draft["id"] && other[component].is_object()
+              && other[component]["primary"] == true) {
+            auto description = other[component];
+            description["primary"] = false;
+            operations.push_back({{"op", "component"},
+                                  {"entity", other["id"]},
+                                  {"component", component},
+                                  {"value", std::move(description)}});
+          }
+        }
+      }
+
+      auto next = m_impl->m_next;
+      std::vector<std::uint64_t> created;
+      auto selection = m_impl->m_history[m_impl->m_cursor].selection;
+
+      for (const auto& operationValue : operations) {
+        auto applied = operation(candidate, operationValue, next, created, selection,
+                                 m_impl->m_project.files().value());
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+      }
+
+      auto prepared = World::decodeScene(candidate.dump());
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      auto result = operations.dump();
+      auto bounded = input(result);
+      return bounded ? Core::Result<std::string>{std::move(result)}
+                     : std::unexpected(bounded.error());
+    } catch (const Json::exception& error) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Inspector entity JSON: " + std::string(error.what()));
+    } catch (const std::invalid_argument& error) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Inspector entity: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare inspector entity: " + std::string(error.what()));
+    }
+  }
+
   auto Document::apply(std::string_view operations, std::uint64_t revision)
       -> Core::Result<EditReport> {
     if (!m_impl) {

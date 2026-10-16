@@ -78,6 +78,110 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("document_inspector_prepare_preserves_state_and_commits_primary_transfers_once") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document, Json::array({{{"op", "component"},
+                               {"entity", "1"},
+                               {"component", "audioListener"},
+                               {"value", {{"primary", true}}}}}));
+  REQUIRE(document.select(document.scene().value()->findEntity(2).value(), revision(document)));
+  const auto before = state(document);
+  const auto scope = document.stats()->scene;
+  auto draft = before["scene"]["entities"][1];
+  draft["name"] = "属性草稿";
+  draft["transform"]["position"] = Json::array({1.25, 2.5, -3.75});
+  draft["camera"] = before["scene"]["entities"][0]["camera"];
+  draft["audioListener"] = {{"primary", true}};
+  auto prepared = document.prepareEntityEdit(draft.dump(), revision(document));
+  REQUIRE_MESSAGE(prepared, (prepared ? "" : prepared.error().message));
+  CHECK(state(document) == before);
+  CHECK(document.stats()->scene == scope);
+  REQUIRE(document.apply(*prepared, revision(document)));
+  const auto after = state(document);
+  CHECK(after["historyEntries"].get<unsigned>() == before["historyEntries"].get<unsigned>() + 1);
+  CHECK(after["scene"]["entities"][1] == draft);
+  CHECK(after["scene"]["entities"][0]["camera"]["primary"] == false);
+  CHECK(after["scene"]["entities"][0]["audioListener"]["primary"] == false);
+  CHECK(after["selected"] == "2");
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+  REQUIRE(document.save(revision(document)));
+  CHECK(state(fixture.document())["scene"] == after["scene"]);
+}
+
+TEST_CASE("document_inspector_prepare_rejects_invalid_drafts_without_mutation") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto before = state(document);
+  const auto scope = document.stats()->scene;
+  const auto draft = before["scene"]["entities"][1];
+  std::vector<Json> invalid;
+  auto bad = draft;
+  bad["id"] = "999";
+  invalid.push_back(bad);
+  bad = draft;
+  bad.erase("camera");
+  invalid.push_back(bad);
+  bad = draft;
+  bad["unexpected"] = true;
+  invalid.push_back(bad);
+  bad = draft;
+  bad["parent"] = "2";
+  invalid.push_back(bad);
+  bad = draft;
+  bad["transform"]["position"][0] = "zero";
+  invalid.push_back(bad);
+  bad = draft;
+  bad["transform"]["scale"][0] = 0;
+  invalid.push_back(bad);
+  bad = draft;
+  bad["audioListener"] = {{"primary", true}, {"unknown", false}};
+  invalid.push_back(bad);
+
+  for (const auto& value : invalid) {
+    INFO(value.dump());
+    CHECK_FALSE(document.prepareEntityEdit(value.dump(), revision(document)));
+    CHECK(state(document) == before);
+    CHECK(document.stats()->scene == scope);
+  }
+
+  CHECK_FALSE(document.prepareEntityEdit(draft.dump(), revision(document) + 1));
+  CHECK_FALSE(document.prepareEntityEdit("{\"id\":\"2\",\"id\":\"2\"}", revision(document)));
+  CHECK_FALSE(document.prepareEntityEdit(std::string(1024 * 1024 + 1, ' '), revision(document)));
+  bool rejected = false;
+  const auto version = revision(document);
+  std::thread foreign([&] { rejected = !document.prepareEntityEdit(draft.dump(), version); });
+  foreign.join();
+  CHECK(rejected);
+  CHECK(state(document) == before);
+  auto moved = std::move(document);
+  CHECK_FALSE(document.prepareEntityEdit(draft.dump(), version));
+  CHECK(state(moved) == before);
+}
+
+TEST_CASE("document_inspector_noop_and_stale_prepared_plan_preserve_history") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto before = state(document);
+  auto draft = before["scene"]["entities"][1];
+  auto noop = document.prepareEntityEdit(draft.dump(), revision(document));
+  REQUIRE(noop);
+  CHECK(Json::parse(*noop).empty());
+  CHECK(state(document) == before);
+  draft["name"] = "Prepared";
+  const auto version = revision(document);
+  auto prepared = document.prepareEntityEdit(draft.dump(), version);
+  REQUIRE(prepared);
+  edit(document, rename("Intervening edit"));
+  const auto newer = state(document);
+  CHECK_FALSE(document.apply(*prepared, version));
+  CHECK(state(document) == newer);
+  CHECK(Json::parse(*prepared)[0]["name"] == "Prepared");
+}
+
 TEST_CASE("document_character_agent_edits_history_and_save_share_strict_components") {
   Fixture fixture;
   auto document = fixture.document();

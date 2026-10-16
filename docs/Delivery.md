@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1029/1029 (150.24s) and Release/NDEBUG
-1029/1029 (20.88s), including 259 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1032/1032 (145.56s) and Release/NDEBUG
+1032/1032 (20.69s), including 259 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -77,3 +77,10 @@ and resettable fast slider with an editable Discrete comparison. Native editor
 agent operations verify both outcomes, invalid input preservation and undo back to
 the clean authoring scene. This does not establish arbitrary angular CCD or
 sensor-crossing detection, final game art or production performance.
+
+Inspector labels now wrap beside controls or stack in narrow panels. Numeric vector
+edits preserve untouched components; strict stage-inspector / Apply / Reset share
+Document preparation and atomic primary transfers with the GUI. Actual editor agent
+checks cover drafts, rejection, apply/history, independent text drafts and clean close.
+Native layout and Chinese staged text are inspected at multiple widths/themes;
+simulated Name-field click focus remains unconfirmed.
