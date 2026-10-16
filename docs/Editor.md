@@ -1774,6 +1774,9 @@ See the [query and revert contracts](SceneContent.md#inspecting-and-reverting-ap
 Override records also expose persistent `sourceKey` provenance. Canonical baseline
 references can change during source materialization; these layered keys retain the
 logical source identity. See [source identity contracts](SceneContent.md#layered-source-identities).
+Insertion and source refresh now resolve saved nested sources from the leaves upward,
+preserving intermediate overrides and rejecting cycles, missing dependencies and graph
+budget failures atomically. See [resolution contracts](SceneContent.md#recursive-source-resolution).
 
 
 ## Persistent entity allocation

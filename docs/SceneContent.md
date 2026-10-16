@@ -138,9 +138,9 @@ Unlink placement roots before ungrouping. Duplicating or extracting linked subtr
 creates independent content, preserving the original link only on its original root.
 
 Runtime/Play/export use materialized entities without reading link source files.
-Source instances are flattened into their saved data when linked: recursive nested
-refresh, variants, applying overrides back to source, source-path retargeting and
-inline field markers remain unfinished. `Dot.World.SceneLinks`
+Editor insertion/refresh resolves saved linked sources recursively before flattening
+the resulting materialization. Variants, applying overrides back to source,
+source-path retargeting and inline field markers remain unfinished. `Dot.World.SceneLinks`
 provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
 owns validated link metadata. Existing target handles remain untouched until callers
 publish the complete candidate.
@@ -242,6 +242,39 @@ keys remain observable in override queries even when canonical baseline referenc
 change. Strict scene assets were replaced together with this metadata change;
 missing provenance is rejected without a compatibility loader.
 
-This supplies stable identity for layered source processing. Recursive dependency
-loading/refresh, cycle handling and graph-wide input budgets still require a product
-resolver; ordinary editor refresh currently reads the selected saved source only.
+## Recursive source resolution
+
+`Dot.World.SceneResolver` resolves saved source dependencies before editor
+`link-scene`, `instantiate-scene`, `refresh-scene-instance` and `revert-scene-instance`.
+Every intermediate source refreshes its own links before its parent is merged.
+Intermediate property/deletion/addition overrides remain in effect, even when the
+outer operation restores source nodes. Removing a node overridden in an intermediate
+source is a conflict; an outer restore never erases another source's authoring edits.
+Independent insertion resolves the same graph, then discards imported link metadata.
+
+Sources are read once per distinct portable asset path within one operation and
+shared dependencies are materialized independently at each placement. Instances
+process in root-value order, making temporary allocations deterministic. Original
+local identities and physical reservations are captured before processing links;
+working allocations never become source-local origins. Each operation has a fresh
+cache; explicit refresh observes newly saved files, without stale persistent caches.
+
+Cycles and any reference back to the active linked document reject. Missing,
+malformed, aliased/symlink or inaccessible dependencies also reject; embedded
+baselines are not used as silent fallbacks. Errors carry the traversed source chain.
+Resolution performs no source writes and publishes no intermediate document/history/
+selection/allocation changes. It reads saved assets, without applying unsaved source
+documents or providing a filesystem-wide snapshot against concurrent external edits.
+Stored-baseline revert, unlink, loading, Play and export retain their source-independent
+behavior. Existing saved materializations are not implicitly refreshed on open.
+
+Defaults bound one graph to 32 source levels, 256 distinct sources, 4096 saved links,
+64 MiB aggregate input text, 128 MiB aggregate resolved scene serialization and 100000
+entity visits. Entity visits count each decoded scene and every refreshed candidate,
+including repeated placements; encoded storage counts cached unique resolved scenes.
+Native per-scene entity/provenance/serialization limits still apply. Shared cached
+subtrees must fit at every placement depth, including deeper cache hits. Native
+callers may lower these limits; higher/zero limits reject before reading. The loader
+receives the remaining input quota and returned text is checked before decoding.
+Resolution is synchronous; background authoring I/O and incremental dependency
+tracking remain future work.

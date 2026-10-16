@@ -8027,3 +8027,78 @@ clang-format and staged/working whitespace checks pass. No dependency or caller
 compiler/linker environment changed; no new test executable or distribution archive
 was introduced. User references remain untracked; caches and existing archives are
 preserved.
+
+## Recursive linked source resolution
+
+Added Dot.World.SceneResolver with separate interface/implementation units. It reads
+saved source graphs bottom-up through an owned-text callback, resolving instances in
+root-value order and caching each distinct portable asset once per operation. Shared
+dependencies retain independent placements. Cached subtree heights are checked at
+every placement, preventing an earlier shallow cache hit from bypassing a later
+depth limit. Original source-local identities and physical allocation reservations
+are captured before working refreshes, keeping temporary allocations out of provenance.
+
+Editor link/copy insertion, refresh and latest-source restoration now share this
+resolver through the existing GUI/strict document operations and resource path guards.
+Intermediate source overrides remain applied; outer restoration does not discard
+another source's conflicting edits. Cycles, active-document references, missing/
+malformed/inaccessible dependencies, merge conflicts and input/work/storage budgets
+reject without publication or source writes. Loading/opening, Play/export, unlink and
+stored-baseline recovery remain independent of source availability. The resolver is
+synchronous and does not provide an atomic cross-file snapshot against external edits.
+
+Graph defaults are 32 source levels, 256 sources, 4096 links, 64 MiB input, 128 MiB
+resolved serialization and 100000 entity visits (decoded plus refreshed candidates).
+Native callers may lower limits. Source loaders receive the remaining byte quota;
+oversized returned text rejects before decode. Per-scene storage/provenance/reference
+validation still applies. No new dependency, platform backend or test executable.
+
+Added twelve CPU-only graph cases and three file/document regressions. Coverage
+includes bottom-up changes without intermediate saves, layered overrides/references,
+working/local ID collisions, shared dependencies, cached-depth limits, empty sources,
+cycles/active references, exact budgets, malformed/missing/throwing/oversized loaders,
+intermediate conflicts, exhausted allocation and deterministic link processing.
+Document coverage includes history/no-op/save/reopen, later local-source allocations,
+failed-batch reservations, missing/cyclic/active sources, intermediate conflicts even
+on outer restore, and latest-source independent copies. The prior 79 coupled cases
+pass (4.25s); the expanded coupled set passes 94/94 (5.31s). Test compilation initially
+compared expected objects with non-comparable error payloads; comparisons now inspect
+successful values. Two cycle fixtures incorrectly tried to instantiate empty content;
+they now contain a real baseline node and preserve the product's nonempty-insertion
+contract. Empty saved-source resolution is tested separately. Debug/Release builds pass.
+
+Actual Release DotEditor document commands complete twenty requests across seven
+processes on an isolated copy of Feature Lab, opening no desktop windows. The product
+links LightingStudio into main, edits/saves the deepest MaterialStudies asset, then
+refreshes main without saving Studio. Its copper transform and new descendant arrive
+through the intermediate source while the Studio copper-name override survives.
+Outer override inspection retains layered sourceKey; undo/redo restores the expected
+authored content, save/reopen retains the result, and repeat refresh preserves revision/
+scope. Missing nested input and a new indirect active-document cycle both reject.
+Studio and project metadata hashes remain unchanged; failed operations preserve main
+and the edited source. An initial helper assertion looked for product error JSON on
+stderr; the CLI correctly emits it on stdout, and the helper was corrected. No engine
+failure is inferred from that helper assertion. The isolated copy is removed after
+the workflow; original example assets remain unchanged. Native response/log/result
+evidence stays in ignored build storage.
+
+This implements recursive authoring source processing; variants, apply-to-source,
+retargeting, background resolution and broader production/game-quality work remain.
+The full engine/editor/game objective stays active.
+
+Final complete macOS arm64 suites pass 1266/1266 in Debug (185.82s) and Release
+(19.75s, assertions disabled): 385 unit and 881 integration cases each. Integration
+includes 194 compiler, 132 durable offscreen, 32 native-audio, 28 platform and 20
+process cases. Automated suites open no desktop windows. Windows/Linux source
+targets were not executed; these results do not establish overall production/game
+readiness. The prior stage's isolated script timeout does not recur in these runs.
+
+Final review covers callback/result ownership, cache/stack lifetimes and subtree
+depth, deterministic placement ordering, original versus virtual allocation,
+monotonic namespace observations, graph budget arithmetic, contextual failures,
+transaction/history rollback, source-path guards and shared GUI/agent implementation.
+All five changed/new C++ files pass clang-format and staged/working whitespace checks
+pass. Removed eight owned helper/request files and the isolated example copy;
+retained only response/log/result evidence in ignored build storage. Original examples,
+user references, caches and existing archives are preserved; reference files remain
+untracked. No caller compiler/linker setting, dependency or distribution archive changed.

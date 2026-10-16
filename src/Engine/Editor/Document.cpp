@@ -31,6 +31,8 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.World.SceneContent;
 import Dot.World.SceneLinks;
+import Dot.World.SceneResolver;
+import Dot.World.SceneSources;
 
 namespace Dot::Editor {
   namespace {
@@ -110,17 +112,29 @@ namespace Dot::Editor {
     }
 
     auto loadContent(const Project::Project& project, std::string_view path,
-                     std::string_view activePath = {}) -> Core::Result<World::Scene> {
+                     std::string_view activePath = {}) -> Core::Result<World::SceneSourceSnapshot> {
       if (!sceneAssetPath(path) || path == activePath) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Linked content requires a distinct portable scene/assets path");
       }
 
       auto store = ResourceStore::open(project, {.textBytes = 64 * 1024 * 1024});
-      auto readable = store ? store->externalTextPath(path)
-                            : Core::Result<std::filesystem::path>{std::unexpected(store.error())};
-      return readable ? World::loadScene(project.files().value(), sceneFile(path))
-                      : Core::Result<World::Scene>{std::unexpected(readable.error())};
+      auto files = project.files();
+
+      if (!store || !files) {
+        return std::unexpected(!store ? store.error() : files.error());
+      }
+
+      auto resolved = World::resolveSceneSource(
+          path,
+          [&](std::string_view asset, std::size_t maximum) -> Core::Result<std::string> {
+            auto readable = store->externalTextPath(asset);
+            return readable ? files->readText(sceneFile(asset), maximum)
+                            : Core::Result<std::string>{std::unexpected(readable.error())};
+          },
+          {}, activePath);
+      return resolved ? Core::Result<World::SceneSourceSnapshot>{std::move(resolved->source)}
+                      : Core::Result<World::SceneSourceSnapshot>{std::unexpected(resolved.error())};
     }
 
     constexpr std::array overrideKinds{"property", "deleted-node", "added-node"};
@@ -593,8 +607,8 @@ namespace Dot::Editor {
                   : std::optional{World::EntityId{target->id(), Codec::id(command["parent"])}};
         auto instance
             = op == "link-scene"
-                  ? World::prepareLinkedScene(*target, *content, path, next, placement, parent)
-                  : World::prepareSceneInstance(*target, *content, next, placement, parent);
+                  ? World::prepareLinkedScene(*target, *content, next, placement, parent)
+                  : World::prepareSceneInstance(*target, content->scene, next, placement, parent);
 
         if (!instance) {
           return std::unexpected(instance.error());

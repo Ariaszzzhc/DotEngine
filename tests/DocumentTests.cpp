@@ -17,6 +17,8 @@ import Dot.Project;
 import Dot.Editor.Document;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.World.SceneContent;
+import Dot.World.SceneLinks;
 
 namespace {
   using namespace Dot::Editor;
@@ -1471,6 +1473,150 @@ TEST_CASE("document.linked_scene_failures_and_later_batch_failure_publish_no_sta
   auto unknown = Json{{"op", "refresh-scene-instance"}, {"entity", "3"}, {"ignored", true}};
   CHECK_FALSE(document.apply(Json::array({unknown}).dump(), revision(document)));
   CHECK(state(document) == before);
+}
+
+namespace {
+  auto nestedContent(Fixture& fixture) -> std::pair<Dot::World::Scene, Dot::World::Scene> {
+    using namespace Dot::World;
+    auto leaf = linkedContent(fixture);
+    auto assembly = Scene::create("Reusable assembly").value();
+    REQUIRE(assembly.createEntity("Assembly local"));
+    auto linked = prepareLinkedScene(assembly, leaf, "assets/panels.dotscene", 2);
+    REQUIRE(linked);
+    assembly = std::move(linked->scene);
+    REQUIRE(assembly.renameEntity({assembly.id(), 3}, "Assembly override"));
+    REQUIRE(saveScene(fixture.project().files().value(), "assets/assembly.dotscene", assembly));
+    return {std::move(leaf), std::move(assembly)};
+  }
+
+  auto nestedOperation() -> Json {
+    auto operation = linkOperation();
+    operation["path"] = "assets/assembly.dotscene";
+    return operation;
+  }
+}  // namespace
+
+TEST_CASE("document.recursive_sources_preserve_history_overrides_and_later_local_identity") {
+  using namespace Dot::World;
+  Fixture fixture;
+  auto [leaf, assembly] = nestedContent(fixture);
+  auto files = fixture.project().files().value();
+  const auto storedAssembly = files.readText("assets/assembly.dotscene").value();
+  auto document = fixture.document();
+  edit(document, Json::array({nestedOperation()}));
+  REQUIRE(leaf.createEntity("Latest nested node"));
+  MeshRenderer hidden;
+  hidden.visible = false;
+  REQUIRE(leaf.setMeshRenderer({leaf.id(), 1}, hidden));
+  REQUIRE(saveScene(files, "assets/panels.dotscene", leaf));
+  const auto storedLeaf = files.readText("assets/panels.dotscene").value();
+  const auto before = state(document);
+  const Json refresh{{"op", "refresh-scene-instance"}, {"entity", "3"}};
+  CHECK(edit(document, Json::array({refresh})).created == std::vector<std::uint64_t>{8});
+  auto scene = document.scene().value();
+  CHECK(scene->entity({scene->id(), 6})->name == "Assembly override");
+  CHECK_FALSE(scene->entity({scene->id(), 6})->mesh->visible);
+  CHECK(scene->entity({scene->id(), 8})->name == "Latest nested node");
+  CHECK(scene->sceneLinks()->front().namespaces[0].nextEntity == 5);
+  CHECK(scene->sceneLinks()->front().namespaces[1].nextEntity == 4);
+  const auto after = state(document);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+  const auto repeated = state(document);
+  CHECK_FALSE(edit(document, Json::array({refresh})).changed);
+  CHECK(state(document) == repeated);
+  edit(document, Json::array({{{"op", "name"}, {"entity", "8"}, {"name", "Outer override"}}}));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK_FALSE(edit(reopened, Json::array({refresh})).changed);
+  REQUIRE(assembly.createEntity("New assembly local"));
+  REQUIRE(saveScene(files, "assets/assembly.dotscene", assembly));
+  CHECK(edit(reopened, Json::array({refresh})).created == std::vector<std::uint64_t>{9});
+  scene = reopened.scene().value();
+  CHECK(scene->entity({scene->id(), 8})->name == "Outer override");
+  CHECK(scene->entity({scene->id(), 9})->name == "New assembly local");
+  const auto mapping = scene->sceneLinks()->front().mapping;
+  const auto inherited = std::ranges::find(mapping, SceneSourceKey{2, 3}, &SceneLinkMapping::key);
+  REQUIRE(inherited != mapping.end());
+  CHECK(inherited->target == 8);
+  CHECK(files.readText("assets/panels.dotscene").value() == storedLeaf);
+  CHECK(storedAssembly != files.readText("assets/assembly.dotscene").value());
+  CHECK(files.readText("assets/assembly.dotscene").value() == encodeScene(assembly).value());
+}
+
+TEST_CASE("document.recursive_source_failures_leave_scene_history_and_reservations_unchanged") {
+  using namespace Dot::World;
+  Fixture fixture;
+  auto [leaf, assembly] = nestedContent(fixture);
+  auto files = fixture.project().files().value();
+  auto document = fixture.document();
+  edit(document, Json::array({nestedOperation()}));
+  const auto before = state(document);
+  const Json refresh{{"op", "refresh-scene-instance"}, {"entity", "3"}};
+  const auto storedAssembly = files.readText("assets/assembly.dotscene").value();
+  const auto originalLeaf = encodeScene(leaf).value();
+  REQUIRE(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  auto missing
+      = document.apply(Json::array({{{"op", "create"}, {"name", "Unpublished"}}, refresh}).dump(),
+                       revision(document));
+  REQUIRE_FALSE(missing);
+  CHECK(missing.error().message.find("assets/panels.dotscene") != std::string::npos);
+  CHECK(state(document) == before);
+  REQUIRE(files.writeTextAtomic("assets/panels.dotscene", "{}"));
+  CHECK_FALSE(document.apply(Json::array({refresh}).dump(), revision(document)));
+  CHECK(state(document) == before);
+  auto cyclic = prepareLinkedScene(leaf, assembly, "assets/assembly.dotscene", 3).value();
+  REQUIRE(saveScene(files, "assets/panels.dotscene", cyclic.scene));
+  auto cycle = document.apply(Json::array({refresh}).dump(), revision(document));
+  REQUIRE_FALSE(cycle);
+  CHECK(cycle.error().message.find("cycle") != std::string::npos);
+  CHECK(state(document) == before);
+  auto empty = Scene::create().value();
+  REQUIRE(empty.createEntity("Active-document baseline"));
+  auto active = prepareLinkedScene(leaf, empty, "scenes/main.dotscene", 3);
+  REQUIRE_MESSAGE(active, (active ? "" : active.error().message));
+  REQUIRE(saveScene(files, "assets/panels.dotscene", active->scene));
+  CHECK_FALSE(document.apply(Json::array({refresh}).dump(), revision(document)));
+  CHECK(state(document) == before);
+  REQUIRE(files.writeTextAtomic("assets/panels.dotscene", originalLeaf));
+  REQUIRE(leaf.destroyEntity({leaf.id(), 1}));
+  REQUIRE(saveScene(files, "assets/panels.dotscene", leaf));
+
+  for (const auto* operation : {"refresh-scene-instance", "revert-scene-instance"}) {
+    const Json command{{"op", operation}, {"entity", "3"}};
+    auto conflict = document.apply(Json::array({command}).dump(), revision(document));
+    REQUIRE_FALSE(conflict);
+    CHECK(conflict.error().message.find("overridden node") != std::string::npos);
+    CHECK(state(document) == before);
+  }
+
+  CHECK(files.readText("assets/assembly.dotscene").value() == storedAssembly);
+}
+
+TEST_CASE("document.independent_scene_copy_resolves_latest_nested_content_and_flattens_links") {
+  using namespace Dot::World;
+  Fixture fixture;
+  auto [leaf, assembly] = nestedContent(fixture);
+  auto files = fixture.project().files().value();
+  const auto storedAssembly = files.readText("assets/assembly.dotscene").value();
+  REQUIRE(leaf.createEntity("Latest copied nested node"));
+  REQUIRE(saveScene(files, "assets/panels.dotscene", leaf));
+  auto document = fixture.document();
+  auto operation = nestedOperation();
+  operation["op"] = "instantiate-scene";
+  CHECK(edit(document, Json::array({operation})).created.size() == 6);
+  const auto scene = document.scene().value();
+  CHECK(scene->entityCount().value() == 8);
+  CHECK(scene->sceneLinks()->empty());
+  const auto entities = scene->entities().value();
+  CHECK(std::ranges::find(entities, "Latest copied nested node", &EntityInfo::name)
+        != entities.end());
+  CHECK(files.readText("assets/assembly.dotscene").value() == storedAssembly);
+  REQUIRE(document.save(revision(document)));
+  REQUIRE(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  CHECK(fixture.document().scene().value()->entityCount().value() == 8);
 }
 
 TEST_CASE("document.linked_root_duplication_is_independent_and_deletion_retires_only_its_link") {
