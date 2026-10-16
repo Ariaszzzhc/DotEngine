@@ -14,6 +14,7 @@ module;
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "ComponentJson.hpp"
 
@@ -48,6 +49,9 @@ namespace Dot::Script {
       SetTransform,
       WorldTransform,
       SetParent,
+      Reparent,
+      Group,
+      Ungroup,
       GetComponent,
       SetComponent,
       Exists,
@@ -66,6 +70,9 @@ namespace Dot::Script {
                                  std::pair{"transform.set", Operation::SetTransform},
                                  std::pair{"transform.world", Operation::WorldTransform},
                                  std::pair{"hierarchy.setParent", Operation::SetParent},
+                                 std::pair{"hierarchy.reparent", Operation::Reparent},
+                                 std::pair{"scene.group", Operation::Group},
+                                 std::pair{"scene.ungroup", Operation::Ungroup},
                                  std::pair{"component.get", Operation::GetComponent},
                                  std::pair{"component.set", Operation::SetComponent},
                                  std::pair{"entity.exists", Operation::Exists},
@@ -567,10 +574,53 @@ namespace Dot::Script {
         return std::optional{idJson(*result).dump()};
       }
 
+      if (operation == Operation::Group || operation == Operation::Ungroup) {
+        const auto count = operation == Operation::Group ? 2U : 1U;
+
+        if (args.size() != count || !args[0].is_array() || args[0].empty() || args[0].size() > 10000
+            || (operation == Operation::Group && !args[1].is_string())) {
+          return Core::fail(ErrorCode::InvalidArgument, "Invalid group operation arguments");
+        }
+
+        std::vector<World::EntityId> entities;
+        entities.reserve(args[0].size());
+
+        for (const auto& value : args[0]) {
+          auto entity = entityId(value);
+
+          if (!entity) {
+            return std::unexpected(entity.error());
+          }
+
+          entities.push_back(*entity);
+        }
+
+        if (operation == Operation::Group) {
+          auto grouped = scene.groupEntities(entities, args[1].get<std::string>());
+          return grouped ? Reply{std::optional{idJson(*grouped).dump()}}
+                         : Reply{std::unexpected(grouped.error())};
+        }
+
+        auto ungrouped = scene.ungroupEntities(entities);
+
+        if (!ungrouped) {
+          return std::unexpected(ungrouped.error());
+        }
+
+        auto result = Json::array();
+
+        for (const auto entity : *ungrouped) {
+          result.push_back(idJson(entity));
+        }
+
+        return std::optional{result.dump()};
+      }
+
       const bool two = operation == Operation::RenameEntity || operation == Operation::SetTransform
                        || operation == Operation::SetParent;
 
-      const auto count = operation == Operation::SetComponent   ? 3U
+      const auto count = (operation == Operation::SetComponent || operation == Operation::Reparent)
+                             ? 3U
                          : operation == Operation::GetComponent ? 2U
                                                                 : (two ? 2U : 1U);
 
@@ -643,7 +693,7 @@ namespace Dot::Script {
         return written(scene.setTransform(*entity, *value));
       }
 
-      if (operation == Operation::SetParent) {
+      if (operation == Operation::SetParent || operation == Operation::Reparent) {
         std::optional<World::EntityId> parent;
 
         if (!args[1].is_null()) {
@@ -656,7 +706,17 @@ namespace Dot::Script {
           parent = *value;
         }
 
-        return written(scene.setParent(*entity, parent));
+        auto space = World::ParentSpace::Local;
+
+        if (operation == Operation::Reparent) {
+          if (!args[2].is_string() || (args[2] != "local" && args[2] != "world")) {
+            return Core::fail(ErrorCode::InvalidArgument, "Reparent space must be local or world");
+          }
+
+          space = args[2] == "world" ? World::ParentSpace::World : World::ParentSpace::Local;
+        }
+
+        return written(scene.setParent(*entity, parent, space));
       }
 
       if (operation == Operation::WorldTransform) {

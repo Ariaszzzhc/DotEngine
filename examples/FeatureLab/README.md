@@ -61,6 +61,15 @@ The studio and its floor material were authored through the actual editor's shar
 agent operations. It is a persistent capability example, not a separate rendering
 probe executable. Open `scenes/main.dotscene` to return to the runtime SDK showcase.
 
+The saved **Material studies** container organizes the five surface examples.
+Group/ungroup and hierarchy drag/drop preserve world poses; Edit provides Group
+selection and Ungroup selection (Cmd/Ctrl+G and Cmd/Ctrl+Shift+G). The Inspector's
+Parent (local pose) field explicitly retains local transforms instead. These
+operations share the document transaction and strict agent interface described in
+[editor hierarchy editing](../../docs/Editor.md#hierarchy-organization).
+The runtime auditor also exercises the native `Entity.reparent`, `scene.group`
+and `scene.ungroup` SDK operations without a scene/physics substitute.
+
 ## HDR environment
 
 The saved scene uses Studio Small 09 HDRI for material illumination and the sky.

@@ -1079,3 +1079,101 @@ TEST_CASE("document.scene_load_budget_thread_and_metadata_failures_preserve_stat
   CHECK_FALSE(document.saveAs("scenes/moved-copy.dotscene", version));
   CHECK(moved.snapshot().value() == before);
 }
+
+TEST_CASE(
+    "document.hierarchy_group_and_ungroup_preserve_world_selection_history_and_saved_content") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(
+      document,
+      Json::array({{{"op", "create"}, {"name", "Parent"}},
+                   {{"op", "transform"},
+                    {"entity", "3"},
+                    {"value",
+                     {{"position", {10, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}},
+                   {{"op", "parent"}, {"entity", "2"}, {"parent", "3"}}}));
+  request(document, {{"command", "select-many"}, {"entities", {"1", "2"}}});
+  const auto before = state(document);
+  const auto history = document.stats()->historyEntries;
+  const auto oldScope = document.stats()->scene;
+  auto grouped = request(document, {{"command", "group-selection"}, {"name", "Gameplay 组"}});
+  REQUIRE(grouped["created"].size() == 1);
+  const auto group = grouped["created"][0].get<std::string>();
+  CHECK(grouped["selection"] == Json::array({group}));
+  CHECK(document.stats()->historyEntries == history + 1);
+  CHECK(document.stats()->scene != oldScope);
+  auto current = document.scene().value();
+  CHECK(current->worldTransform(current->findEntity(2).value())->data[12] == 10);
+  CHECK(current->worldTransform(current->findEntity(1).value())->data[14] == 4);
+  CHECK(current->entity(current->findEntity(1).value())->camera->primary);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(state(document)["selection"] == before["selection"]);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["selection"] == Json::array({group}));
+  auto ungrouped = request(document, {{"command", "ungroup-selection"}});
+  CHECK(ungrouped["selection"] == Json::array({"1", "2"}));
+  CHECK_FALSE(document.scene().value()->findEntity(std::stoull(group)));
+  current = document.scene().value();
+  CHECK(current->worldTransform(current->findEntity(2).value())->data[12] == 10);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["selection"] == Json::array({group}));
+  REQUIRE(document.save(revision(document)));
+  auto saved = fixture.project().loadStartup().value();
+  CHECK(saved.entity(saved.findEntity(std::stoull(group)).value())->name == "Gameplay 组");
+  CHECK(saved.worldTransform(saved.findEntity(2).value())->data[12] == 10);
+  REQUIRE(document.undo(revision(document)));
+  auto branched = request(document, {{"command", "group-selection"}, {"name", "New group"}});
+  CHECK(std::stoull(branched["created"][0].get<std::string>()) > std::stoull(group));
+}
+
+TEST_CASE("document.hierarchy_reparent_minimal_roots_noops_and_failure_preserve_state") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document,
+       Json::array(
+           {{{"op", "create"}, {"name", "Child"}},
+            {{"op", "parent"}, {"entity", "3"}, {"parent", "2"}},
+            {{"op", "transform"},
+             {"entity", "2"},
+             {"value",
+              {{"position", {5, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}}));
+  const auto move = Json::array(
+      {{{"op", "reparent"}, {"entities", {"2", "3"}}, {"parent", "1"}, {"space", "world"}}});
+  auto edited = edit(document, move);
+  CHECK(edited.changed);
+  auto native = document.scene().value();
+  CHECK(native->entity(native->findEntity(3).value())->parent->value == 2);
+  CHECK(native->worldTransform(native->findEntity(2).value())->data[12] == 5);
+  CHECK(native->worldTransform(native->findEntity(3).value())->data[12] == 5);
+  CHECK_FALSE(edit(document, move).changed);
+  const auto before = state(document);
+  CHECK_FALSE(document.apply(
+      Json::array(
+          {{{"op", "reparent"}, {"entities", {"2", "3"}}, {"parent", "3"}, {"space", "world"}}})
+          .dump(),
+      revision(document)));
+  CHECK_FALSE(document.apply(
+      Json::array({{{"op", "group"}, {"entities", {"2", "2"}}, {"name", "Invalid"}}}).dump(),
+      revision(document)));
+  CHECK_FALSE(document.apply(Json::array({{{"op", "ungroup"}, {"entities", {"2"}}}}).dump(),
+                             revision(document)));
+  CHECK_FALSE(document.dispatch(
+      Json{{"command", "group-selection"}, {"revision", "1"}, {"name", "Stale"}}.dump()));
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.hierarchy_history_budget_failure_does_not_consume_identity_or_selection") {
+  Fixture fixture;
+  const auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  auto document = fixture.document({128, bytes + 128});
+  request(document, {{"command", "select-many"}, {"entities", {"1", "2"}}});
+  const auto before = state(document);
+  auto rejected = document.dispatch(Json{{"command", "group-selection"},
+                                         {"revision", std::to_string(revision(document))},
+                                         {"name", "Beyond history"}}
+                                        .dump());
+  CHECK_FALSE(rejected);
+  CHECK(state(document) == before);
+  CHECK(document.stats()->nextEntity == 3);
+}

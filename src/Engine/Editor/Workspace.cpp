@@ -9,6 +9,7 @@ module;
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <expected>
 #include <filesystem>
@@ -469,6 +470,7 @@ namespace Dot::Editor {
     bool m_viewVisible{true};
     Json m_visibleHierarchy = Json::array();
     Json m_hierarchyRows = Json::object();
+    Json m_hierarchyExpansion = Json::object();
     std::unordered_set<std::string> m_selectionIds;
     std::string m_selectionAnchor;
     Json m_visibleResources = Json::array();
@@ -1376,7 +1378,22 @@ namespace Dot::Editor {
         return std::unexpected(text.error());
       }
 
-      m_snapshot = Codec::parseJson(*text);
+      auto next = Codec::parseJson(*text);
+
+      if (m_snapshot.is_object() && m_snapshot.contains("scenePath")
+          && m_snapshot["scenePath"] != next["scenePath"] && m_snapshot["scope"] != next["scope"]) {
+        m_hierarchyExpansion = Json::object();
+      }
+
+      std::unordered_set<std::string> live;
+
+      for (const auto& entity : next["scene"]["entities"]) {
+        live.insert(entity["id"].get<std::string>());
+      }
+
+      auto& expansion = m_hierarchyExpansion.get_ref<Json::object_t&>();
+      std::erase_if(expansion, [&](const auto& entry) { return !live.contains(entry.first); });
+      m_snapshot = std::move(next);
       syncInspector();
       return {};
     }
@@ -4307,6 +4324,35 @@ namespace Dot::Editor {
                        : std::unexpected(encoded.error());
       }
 
+      if (command == "set-hierarchy-expanded") {
+        Codec::requireFields(parsed, {"command", "revision", "scope", "entity", "expanded"});
+        const auto stats = m_document->stats().value();
+
+        if (playing() || m_animationPreview || m_transform || m_pendingClose
+            || Codec::id(parsed["revision"]) != stats.revision
+            || Codec::id(parsed["scope"]) != stats.scene) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Hierarchy expansion requires the current stopped authoring scene");
+        }
+
+        const auto id = Codec::id(parsed["entity"]);
+        auto found = m_document->scene().value()->findEntity(id);
+
+        if (!found) {
+          return std::unexpected(found.error());
+        }
+
+        const bool expanded = parsed["expanded"].get<bool>();
+
+        if (!expanded && !m_hierarchyFilter.empty()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Clear hierarchy search before collapsing matching branches");
+        }
+
+        m_hierarchyExpansion[std::to_string(id)] = expanded;
+        return execute(R"({"command":"inspect"})");
+      }
+
       if (command == "filter-panel") {
         Codec::requireFields(parsed, {"command", "panel", "query"});
         const auto panel = parsed["panel"].get<std::string>();
@@ -4807,6 +4853,10 @@ namespace Dot::Editor {
         }
       }
 
+      if (result && command == "group-selection" && m_document->stats()->selected) {
+        m_hierarchyExpansion[std::to_string(m_document->stats()->selected->value)] = true;
+      }
+
       if (result
           && (command == "select" || command == "select-many" || command == "select-hierarchy")
           && !m_material) {
@@ -4816,7 +4866,8 @@ namespace Dot::Editor {
       if (result
           && (command == "select" || command == "select-many" || command == "edit"
               || command == "duplicate-selection" || command == "delete-selection"
-              || command == "undo" || command == "redo")) {
+              || command == "group-selection" || command == "ungroup-selection" || command == "undo"
+              || command == "redo")) {
         m_selectionAnchor = m_snapshot["selected"].is_null()
                                 ? std::string{}
                                 : m_snapshot["selected"].get<std::string>();
@@ -4853,6 +4904,7 @@ namespace Dot::Editor {
               {"skeleton", m_skeletonFilter}}},
             {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
             {"hierarchyRows", m_hierarchyRows},
+            {"hierarchyExpansion", m_hierarchyExpansion},
             {"layout",
              {{"pending", m_resetLayout || m_dockRequest.has_value()},
               {"error", m_layoutError},
@@ -5384,8 +5436,45 @@ namespace Dot::Editor {
       });
     }
 
-    /** Defer selection until traversal releases all snapshot references.
-     * 遍历释放全部快照引用后再执行选择，避免刷新快照使递归引用失效。 */
+    /** Defer hierarchy actions until traversal releases all snapshot references.
+     * 遍历释放全部快照引用后再执行层级操作，避免刷新快照使递归引用失效。 */
+    auto hierarchyDrop(const Json& parent, std::optional<Json>& action) -> void {
+      if (!ImGui::BeginDragDropTarget()) {
+        return;
+      }
+
+      if (const auto* payload = ImGui::AcceptDragDropPayload("DOT_SCENE_ENTITIES")) {
+        const auto bytes = static_cast<std::size_t>(payload->DataSize);
+
+        if (!payload->Data || bytes < 3 * sizeof(std::uint64_t)
+            || bytes > 10002 * sizeof(std::uint64_t) || bytes % sizeof(std::uint64_t) != 0) {
+          m_message = "Invalid hierarchy drag payload";
+        } else {
+          std::vector<std::uint64_t> values(bytes / sizeof(std::uint64_t));
+          std::memcpy(values.data(), payload->Data, bytes);
+          const auto stats = m_document->stats().value();
+
+          if (values[0] != stats.scene || values[1] != stats.revision) {
+            m_message = "Hierarchy drag belongs to an obsolete scene or revision";
+          } else {
+            auto entities = Json::array();
+
+            for (std::size_t index = 2; index < values.size(); ++index) {
+              entities.push_back(std::to_string(values[index]));
+            }
+
+            action = Json{{"command", "edit"},
+                          {"operations", Json::array({{{"op", "reparent"},
+                                                       {"entities", std::move(entities)},
+                                                       {"parent", parent},
+                                                       {"space", "world"}}})}};
+          }
+        }
+      }
+
+      ImGui::EndDragDropTarget();
+    }
+
     auto tree(const Json& entities, const Json& parent, std::optional<Json>& selection,
               int depth = 0) -> void {
       if (depth > 256) {
@@ -5413,6 +5502,8 @@ namespace Dot::Editor {
 
         if (!m_hierarchyFilter.empty() && children) {
           ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        } else if (m_hierarchyExpansion.contains(id)) {
+          ImGui::SetNextItemOpen(m_hierarchyExpansion[id].get<bool>(), ImGuiCond_Always);
         }
 
         ImGui::PushID(id.c_str());
@@ -5425,13 +5516,54 @@ namespace Dot::Editor {
                                {"selected", selected},
                                {"active", m_snapshot["selected"] == id}};
 
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-          const auto& io = ImGui::GetIO();
-          const bool additive = io.KeyCtrl || io.KeySuper;
+        if (ImGui::IsItemToggledOpen()) {
+          selection = Json{{"command", "set-hierarchy-expanded"},
+                           {"scope", m_snapshot["scope"]},
+                           {"entity", id},
+                           {"expanded", open}};
+        }
+
+        const auto& io = ImGui::GetIO();
+        const bool additive = io.KeyCtrl || io.KeySuper;
+        const bool deferReplace
+            = selected && m_selectionIds.size() > 1 && !additive && !io.KeyShift;
+
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && !deferReplace) {
           const auto mode = io.KeyShift ? (additive ? "range-add" : "range")
                                         : (additive ? "toggle" : "replace");
           selection = Json{{"command", "select-hierarchy"}, {"entity", id}, {"mode", mode}};
         }
+
+        /** Keep the multi-selection until a click releases without a drag.
+         * 多选保持至无拖动的单击释放，避免开始拖动时丢失其他选项。 */
+        if (deferReplace && ImGui::IsItemHovered()
+            && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+          const auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+
+          if (delta.x == 0 && delta.y == 0) {
+            selection = Json{{"command", "select-hierarchy"}, {"entity", id}, {"mode", "replace"}};
+          }
+        }
+
+        if (ImGui::BeginDragDropSource()) {
+          const auto stats = m_document->stats().value();
+          std::vector<std::uint64_t> payload{stats.scene, stats.revision};
+
+          if (selected) {
+            for (const auto member : stats.selection) {
+              payload.push_back(member.value);
+            }
+          } else {
+            payload.push_back(Codec::id(entity["id"]));
+          }
+
+          ImGui::SetDragDropPayload("DOT_SCENE_ENTITIES", payload.data(),
+                                    payload.size() * sizeof(std::uint64_t), ImGuiCond_Once);
+          ImGui::Text("Move %zu selected subtree(s)", payload.size() - 2);
+          ImGui::EndDragDropSource();
+        }
+
+        hierarchyDrop(entity["id"], selection);
 
         if (open) {
           tree(entities, entity["id"], selection, depth + 1);
@@ -5470,7 +5602,7 @@ namespace Dot::Editor {
           = m_edit["parent"].is_null() ? "None" : m_edit["parent"].get<std::string>();
 
       {
-        PropertyRow row{"Parent"};
+        PropertyRow row{"Parent (local pose)"};
 
         if (row.visible() && ImGui::BeginCombo("##value", parent.c_str())) {
           if (ImGui::Selectable("None", m_edit["parent"].is_null())) {
@@ -7739,6 +7871,20 @@ namespace Dot::Editor {
           focusedHistory(true);
         }
 
+        ImGui::Separator();
+        const bool hierarchy = !playing() && !m_animationPreview && !m_transform
+                               && !pendingInspector() && !pendingEnvironment()
+                               && !pendingOcclusion() && !pendingText()
+                               && m_document->stats()->selected.has_value();
+
+        if (ImGui::MenuItem("Group selection", "Cmd/Ctrl+G", false, hierarchy)) {
+          action({{"command", "group-selection"}, {"name", "Group"}});
+        }
+
+        if (ImGui::MenuItem("Ungroup selection", "Cmd/Ctrl+Shift+G", false, hierarchy)) {
+          action({{"command", "ungroup-selection"}});
+        }
+
         ImGui::EndMenu();
       }
 
@@ -9010,6 +9156,15 @@ namespace Dot::Editor {
         action({{"command", "duplicate-selection"}});
       }
 
+      if (!ImGui::GetIO().WantTextInput && !playing() && !m_animationPreview && !m_transform) {
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_G,
+                            ImGuiInputFlags_RouteGlobal)) {
+          action({{"command", "ungroup-selection"}});
+        } else if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_G, ImGuiInputFlags_RouteGlobal)) {
+          action({{"command", "group-selection"}, {"name", "Group"}});
+        }
+      }
+
       ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::SameLine();
@@ -9170,8 +9325,15 @@ namespace Dot::Editor {
         ImGui::SetNextItemWidth(-1);
         searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
         ImGui::Separator();
-        ImGui::BeginDisabled(playing() || m_animationPreview.has_value());
+        ImGui::BeginDisabled(playing() || m_animationPreview.has_value() || m_transform.has_value()
+                             || m_pendingClose);
         std::optional<Json> selection;
+
+        if (ImGui::Selectable("Scene root (drop to detach)", false)) {
+          selection = Json{{"command", "select-many"}, {"entities", Json::array()}};
+        }
+
+        hierarchyDrop(nullptr, selection);
         tree(m_snapshot["scene"]["entities"], nullptr, selection);
         ImGui::EndDisabled();
 

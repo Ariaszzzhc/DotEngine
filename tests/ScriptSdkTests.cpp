@@ -389,3 +389,69 @@ TEST_CASE("component_sdk_typecheck_rejects_incomplete_unknown_and_non_json_descr
     CHECK(result.error().message.find("TS") != std::string::npos);
   }
 }
+
+TEST_CASE("script_sdk.hierarchy_group_reparent_and_ungroup_share_native_world_preservation") {
+  Project project;
+  project.write(R"ts(
+import {scene} from 'dot:engine';
+export function run(): number[] {
+  const p = scene.create('Parent');
+  const a = scene.create('A');
+  const b = scene.create('B');
+  const pose = p.transform;
+  pose.position.x = 10;
+  p.transform = pose;
+  const position = a.transform;
+  position.position.x = 2;
+  a.transform = position;
+  a.reparent(p, 'world');
+  const before = a.worldMatrix()[12]!;
+  const group = scene.group([a, b], 'Assembly');
+  const same = a.worldMatrix()[12] === before;
+  const children = scene.ungroup([group]);
+  return [before, a.worldMatrix()[12]!, same ? 1 : 0, group.exists ? 1 : 0,
+          children.length, scene.info().entities];
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto vm = runtime(program, scene);
+  auto result = vm.call(module(vm), "run");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->value() == "[2,2,1,0,2,3]");
+}
+
+TEST_CASE("script_sdk.hierarchy_rejected_arguments_leave_native_entities_unchanged") {
+  Project project;
+  project.write(R"ts(
+import {scene, type HostError} from 'dot:engine';
+export function run(): number {
+  const a = scene.create('A');
+  const before = JSON.stringify(a.info());
+  let rejected = 0;
+
+  for (const action of [() => scene.group([]), () => scene.group([a, a]),
+      () => a.reparent(null, 'invalid' as any), () => scene.ungroup([a, a])]) {
+    try {
+      action();
+    } catch (error) {
+      if ((error as HostError).code === 'InvalidArgument') {
+        ++rejected;
+      }
+    }
+  }
+
+  if (JSON.stringify(a.info()) !== before || scene.info().entities !== 1) {
+    throw new Error('Partial mutation');
+  }
+
+  return rejected;
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto vm = runtime(program, scene);
+  CHECK(vm.call(module(vm), "run").value().value() == "4");
+  project.write("import {scene} from 'dot:engine';scene.group([1]);");
+  CHECK_FALSE(tool().compileProject(project.files()));
+}

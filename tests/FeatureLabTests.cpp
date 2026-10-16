@@ -468,7 +468,21 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   CHECK(document.stats()->scenePath == "scenes/LightingStudio.dotscene");
   auto scene = document.scene().value();
   auto entities = scene->entities().value();
-  CHECK(entities.size() == 10);
+  CHECK(entities.size() == 11);
+  const auto group = std::ranges::find(entities, "Material studies", &World::EntityInfo::name);
+  REQUIRE(group != entities.end());
+  CHECK_FALSE(group->parent);
+  std::set<std::string> groupedNames;
+
+  for (const auto& entity : entities) {
+    if (entity.parent == group->id) {
+      groupedNames.insert(entity.name);
+    }
+  }
+
+  CHECK(groupedNames
+        == std::set<std::string>{"Copper", "Normal mapped surface", "Dielectric", "Glass",
+                                 "Alpha cutout"});
   CHECK(scene->environment()->has_value());
   CHECK(scene->occlusion()->has_value());
   std::size_t shadowSources{}, meshes{};

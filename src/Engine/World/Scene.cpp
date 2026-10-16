@@ -4,6 +4,7 @@ module;
 #include <atomic>
 #include <cmath>
 #include <entt/entity/registry.hpp>
+#include <exception>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -155,6 +156,28 @@ namespace Dot::World {
     std::optional<Graphics::OcclusionSettings> occlusion;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
     mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
+
+    struct HierarchyChange {
+      entt::entity native;
+      std::optional<std::uint64_t> oldParent;
+      std::optional<std::uint64_t> newParent;
+      Transform oldTransform;
+      Transform newTransform;
+    };
+
+    auto applyHierarchy(std::span<const HierarchyChange> changes) -> Core::Result<void> {
+      for (const auto& change : changes) {
+        registry.get<Hierarchy>(change.native).parent = change.newParent;
+        registry.get<Transform>(change.native) = change.newTransform;
+      }
+
+      return verifyMutation([&] {
+        for (const auto& change : changes) {
+          registry.get<Hierarchy>(change.native).parent = change.oldParent;
+          registry.get<Transform>(change.native) = change.oldTransform;
+        }
+      });
+    }
 
     auto add(std::string_view label, std::optional<std::uint64_t> requested)
         -> Core::Result<EntityId> {
@@ -754,9 +777,10 @@ namespace Dot::World {
     return setTransforms(std::span{&update, 1});
   }
 
-  auto Scene::setParent(EntityId entity, std::optional<EntityId> parent) -> Core::Result<void> {
+  auto Scene::setParent(EntityId entity, std::optional<EntityId> parent, ParentSpace space)
+      -> Core::Result<void> {
     const ParentUpdate update{entity, parent};
-    return setParents(std::span{&update, 1});
+    return setParents(std::span{&update, 1}, space);
   }
 
   auto Scene::setTransforms(std::span<const TransformUpdate> updates) -> Core::Result<void> {
@@ -828,7 +852,8 @@ namespace Dot::World {
     });
   }
 
-  auto Scene::setParents(std::span<const ParentUpdate> updates) -> Core::Result<void> {
+  auto Scene::setParents(std::span<const ParentUpdate> updates, ParentSpace space)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
@@ -839,57 +864,375 @@ namespace Dot::World {
       return checked;
     }
 
-    if (updates.size() > 10000) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Parent batch exceeds scene capacity");
+    if (updates.size() > 10000 || (space != ParentSpace::Local && space != ParentSpace::World)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid parent batch size/space");
     }
 
-    if (updates.empty()) {
-      return {};
+    try {
+      std::vector<Impl::HierarchyChange> changes;
+      changes.reserve(updates.size());
+      std::unordered_set<std::uint64_t> seen;
+
+      for (const auto& update : updates) {
+        auto native = m_impl->resolve(update.entity);
+
+        if (!native) {
+          return std::unexpected(native.error());
+        }
+
+        if (!seen.insert(update.entity.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Parent batch contains a duplicate entity");
+        }
+
+        if (update.parent) {
+          auto parent = m_impl->resolve(*update.parent);
+
+          if (!parent) {
+            return std::unexpected(parent.error());
+          }
+        }
+
+        const auto oldParent = m_impl->registry.get<Hierarchy>(*native).parent;
+        const auto newParent = update.parent ? std::optional{update.parent->value} : std::nullopt;
+        const auto previous = m_impl->registry.get<Transform>(*native);
+        auto next = previous;
+
+        if (space == ParentSpace::World && oldParent != newParent) {
+          auto matrix = m_impl->world(update.entity.value);
+
+          if (!matrix) {
+            return std::unexpected(matrix.error());
+          }
+
+          if (newParent) {
+            auto parent = m_impl->world(*newParent);
+            auto inverse = parent ? Math::inverse(*parent)
+                                  : Core::Result<Math::Mat4>{std::unexpected(parent.error())};
+
+            if (!inverse) {
+              return std::unexpected(inverse.error());
+            }
+
+            matrix = Math::multiply(*inverse, *matrix);
+
+            if (!matrix) {
+              return std::unexpected(matrix.error());
+            }
+          }
+
+          auto pose = Math::decomposeTrs(*matrix);
+
+          if (!pose) {
+            return Core::fail(pose.error().code, "Cannot preserve world pose while reparenting: "
+                                                     + pose.error().message);
+          }
+
+          next = {pose->position, pose->rotation, pose->scale};
+        }
+
+        changes.push_back({*native, oldParent, newParent, previous, next});
+      }
+
+      return changes.empty() ? Core::Result<void>{} : m_impl->applyHierarchy(changes);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Reparent scene entities: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::groupEntities(std::span<const EntityId> entities, std::string_view name,
+                            std::optional<std::uint64_t> value) -> Core::Result<EntityId> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
 
-    struct Prepared {
-      entt::entity native;
-      std::optional<std::uint64_t> previous;
-      std::optional<std::uint64_t> next;
-    };
+    auto checked = m_impl->check();
 
-    std::vector<Prepared> prepared;
-    prepared.reserve(updates.size());
-    std::unordered_set<std::uint64_t> seen;
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
 
-    for (const auto& update : updates) {
-      auto native = m_impl->resolve(update.entity);
+    checked = validateName(name);
 
-      if (!native) {
-        return std::unexpected(native.error());
-      }
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
 
-      if (!seen.insert(update.entity.value).second) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Parent batch contains a duplicate entity");
-      }
+    if (entities.empty() || entities.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Group requires 1..10000 entities");
+    }
 
-      if (update.parent) {
-        auto parent = m_impl->resolve(*update.parent);
+    if (m_impl->lookup.size() >= 10000) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Group exceeds scene capacity");
+    }
 
-        if (!parent) {
-          return std::unexpected(parent.error());
+    try {
+      std::unordered_set<std::uint64_t> selected;
+      std::vector<std::uint64_t> roots;
+
+      for (const auto entity : entities) {
+        auto native = m_impl->resolve(entity);
+
+        if (!native) {
+          return std::unexpected(native.error());
+        }
+
+        if (!selected.insert(entity.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Group contains duplicate entities");
         }
       }
 
-      prepared.push_back({*native, m_impl->registry.get<Hierarchy>(*native).parent,
-                          update.parent ? std::optional{update.parent->value} : std::nullopt});
-    }
+      for (const auto entity : entities) {
+        auto parent = m_impl->registry.get<Hierarchy>(m_impl->lookup.at(entity.value)).parent;
+        bool covered{};
 
-    for (const auto& entry : prepared) {
-      m_impl->registry.get<Hierarchy>(entry.native).parent = entry.next;
-    }
+        while (parent) {
+          if (selected.contains(*parent)) {
+            covered = true;
+            break;
+          }
 
-    return m_impl->verifyMutation([&] {
-      for (const auto& entry : prepared) {
-        m_impl->registry.get<Hierarchy>(entry.native).parent = entry.previous;
+          parent = m_impl->registry.get<Hierarchy>(m_impl->lookup.at(*parent)).parent;
+        }
+
+        if (!covered) {
+          roots.push_back(entity.value);
+        }
       }
-    });
+
+      auto common = m_impl->registry.get<Hierarchy>(m_impl->lookup.at(roots.front())).parent;
+      bool sameParent = true;
+
+      for (const auto root : roots) {
+        if (m_impl->registry.get<Hierarchy>(m_impl->lookup.at(root)).parent != common) {
+          common.reset();
+          sameParent = false;
+          break;
+        }
+      }
+
+      auto active = m_impl->world(entities.back().value);
+
+      if (!active) {
+        return std::unexpected(active.error());
+      }
+
+      Math::Vec3 pivot{active->data[12], active->data[13], active->data[14]};
+
+      if (common) {
+        auto parent = m_impl->world(*common);
+        auto inverse = parent ? Math::inverse(*parent)
+                              : Core::Result<Math::Mat4>{std::unexpected(parent.error())};
+        auto local = inverse ? Math::transformPoint(*inverse, pivot)
+                             : Core::Result<Math::Vec3>{std::unexpected(inverse.error())};
+
+        if (!local) {
+          return std::unexpected(local.error());
+        }
+
+        pivot = *local;
+      }
+
+      std::vector<Impl::HierarchyChange> changes;
+      changes.reserve(roots.size());
+
+      for (const auto root : roots) {
+        const auto native = m_impl->lookup.at(root);
+        const auto oldParent = m_impl->registry.get<Hierarchy>(native).parent;
+        const auto previous = m_impl->registry.get<Transform>(native);
+        auto next = previous;
+
+        if (sameParent) {
+          next.position = next.position - pivot;
+        } else {
+          auto matrix = m_impl->world(root);
+
+          if (!matrix) {
+            return std::unexpected(matrix.error());
+          }
+
+          matrix->data[12] -= pivot.x;
+          matrix->data[13] -= pivot.y;
+          matrix->data[14] -= pivot.z;
+          auto pose = Math::decomposeTrs(*matrix);
+
+          if (!pose) {
+            return Core::fail(pose.error().code,
+                              "Cannot preserve grouped world pose: " + pose.error().message);
+          }
+
+          next = {pose->position, pose->rotation, pose->scale};
+        }
+
+        changes.push_back({native, oldParent, {}, previous, next});
+      }
+
+      const auto previousNext = m_impl->nextEntity;
+      auto group = m_impl->add(name, value);
+
+      if (!group) {
+        return std::unexpected(group.error());
+      }
+
+      /** Only an unpublished container may return its reserved ID on rollback.
+       * 仅未发布容器可在回滚时归还预留 ID。 */
+      struct PendingGroup {
+        Impl& m_scene;
+        EntityId m_group;
+        std::uint64_t m_previousNext;
+        bool m_committed{};
+
+        ~PendingGroup() {
+          if (!m_committed) {
+            m_scene.registry.destroy(m_scene.lookup.at(m_group.value));
+            m_scene.lookup.erase(m_group.value);
+            m_scene.nextEntity = m_previousNext;
+            m_scene.worldCache.clear();
+          }
+        }
+      } pending{*m_impl, *group, previousNext};
+
+      const auto native = m_impl->lookup.at(group->value);
+      m_impl->registry.get<Hierarchy>(native).parent = common;
+      m_impl->registry.get<Transform>(native).position = pivot;
+
+      for (auto& change : changes) {
+        change.newParent = group->value;
+      }
+
+      auto applied = m_impl->applyHierarchy(changes);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      pending.m_committed = true;
+      return *group;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Group scene entities: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::ungroupEntities(std::span<const EntityId> entities)
+      -> Core::Result<std::vector<EntityId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (entities.empty() || entities.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Ungroup requires 1..10000 containers");
+    }
+
+    try {
+      std::unordered_set<std::uint64_t> removed;
+
+      for (const auto entity : entities) {
+        auto native = m_impl->resolve(entity);
+
+        if (!native) {
+          return std::unexpected(native.error());
+        }
+
+        if (!removed.insert(entity.value).second
+            || m_impl->registry.any_of<Camera, MeshRenderer, MaterialBinding, Light, RigidBody,
+                                       CharacterController, AudioSource, AudioListener,
+                                       ScriptComponent, AnimationPlayer, SkinBinding>(*native)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Ungroup requires unique component-free containers");
+        }
+      }
+
+      for (const auto native : m_impl->registry.view<AnimationPlayer>()) {
+        for (const auto& target : m_impl->registry.get<AnimationPlayer>(native).targets) {
+          if (removed.contains(target.entity)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Cannot ungroup a referenced animation target");
+          }
+        }
+      }
+
+      for (const auto native : m_impl->registry.view<SkinBinding>()) {
+        for (const auto joint : m_impl->registry.get<SkinBinding>(native).joints) {
+          if (removed.contains(joint)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Cannot ungroup a referenced skin joint");
+          }
+        }
+      }
+
+      std::vector<Impl::HierarchyChange> changes;
+      std::vector<EntityId> affected;
+
+      for (const auto& [id, native] : m_impl->lookup) {
+        const auto oldParent = m_impl->registry.get<Hierarchy>(native).parent;
+
+        if (removed.contains(id) || !oldParent || !removed.contains(*oldParent)) {
+          continue;
+        }
+
+        const auto previous = m_impl->registry.get<Transform>(native);
+        auto matrix = Math::compose(previous.position, previous.rotation, previous.scale);
+        auto parent = oldParent;
+
+        while (parent && removed.contains(*parent)) {
+          const auto owner = m_impl->lookup.at(*parent);
+          const auto& transform = m_impl->registry.get<Transform>(owner);
+          auto local = Math::compose(transform.position, transform.rotation, transform.scale);
+
+          if (!local) {
+            return std::unexpected(local.error());
+          }
+
+          if (!matrix) {
+            return std::unexpected(matrix.error());
+          }
+
+          matrix = Math::multiply(*local, *matrix);
+          parent = m_impl->registry.get<Hierarchy>(owner).parent;
+        }
+
+        if (!matrix) {
+          return std::unexpected(matrix.error());
+        }
+
+        auto pose = Math::decomposeTrs(*matrix);
+
+        if (!pose) {
+          return Core::fail(pose.error().code,
+                            "Cannot preserve ungrouped world pose: " + pose.error().message);
+        }
+
+        changes.push_back(
+            {native, oldParent, parent, previous, {pose->position, pose->rotation, pose->scale}});
+        affected.push_back({m_impl->identity, id});
+      }
+
+      std::ranges::sort(affected, {}, &EntityId::value);
+      auto applied = changes.empty() ? Core::Result<void>{} : m_impl->applyHierarchy(changes);
+
+      if (!applied) {
+        return std::unexpected(applied.error());
+      }
+
+      for (const auto id : removed) {
+        m_impl->registry.destroy(m_impl->lookup.at(id));
+        m_impl->lookup.erase(id);
+      }
+
+      m_impl->worldCache.clear();
+      return affected;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Ungroup scene entities: " + std::string(error.what()));
+    }
   }
 
   auto Scene::worldTransform(EntityId entity) const -> Core::Result<Math::Mat4> {

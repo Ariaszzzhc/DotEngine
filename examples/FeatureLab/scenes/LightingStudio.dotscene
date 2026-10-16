@@ -121,13 +121,13 @@
         "visible": true
       },
       "name": "Copper",
-      "parent": null,
+      "parent": "9007199254741008",
       "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
         "position": [
-          -2.0,
+          -4.0,
           0.0,
           0.0
         ],
@@ -169,13 +169,13 @@
         "visible": true
       },
       "name": "Normal mapped surface",
-      "parent": null,
+      "parent": "9007199254741008",
       "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
         "position": [
-          0.0,
+          -2.0,
           0.0,
           0.0
         ],
@@ -217,13 +217,13 @@
         "visible": true
       },
       "name": "Dielectric",
-      "parent": null,
+      "parent": "9007199254741008",
       "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
         "position": [
-          2.0,
+          0.0,
           0.0,
           0.0
         ],
@@ -265,13 +265,13 @@
         "visible": true
       },
       "name": "Glass",
-      "parent": null,
+      "parent": "9007199254741008",
       "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
         "position": [
-          -2.0,
+          -4.0,
           1.25,
           -2.0
         ],
@@ -313,13 +313,13 @@
         "visible": true
       },
       "name": "Alpha cutout",
-      "parent": null,
+      "parent": "9007199254741008",
       "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
         "position": [
-          1.0,
+          -1.0,
           1.25,
           -2.0
         ],
@@ -496,6 +496,40 @@
           0.3535533845424652,
           0.1464466154575348,
           0.8535534143447876
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741008",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Material studies",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ],
         "scale": [
           1.0,

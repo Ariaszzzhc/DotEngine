@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -547,5 +548,38 @@ TEST_CASE("scene_physics_continuous_reconfiguration_preserves_motion_and_native_
   REQUIRE(simulation.reset(restored));
   CHECK(simulation.body(id)->collisionDetection == Dot::Physics::CollisionDetection::Continuous);
   CHECK(simulation.body(id)->velocity == Dot::Math::Vec3{});
+  CHECK_FALSE(simulation.stats()->faulted);
+}
+
+TEST_CASE("scene_physics.hierarchy_world_edits_keep_motion_ray_identity_and_scope") {
+  auto scene = Scene::create().value();
+  const auto body = addBody(scene, {{1, 3, 0}}, box());
+  const auto marker = scene.createEntity("Marker").value();
+  REQUIRE(scene.setTransform(marker, {{5, 0, 0}}));
+  auto simulation = SceneSimulation::create(scene, {8, {}, 0}).value();
+  REQUIRE(simulation.setVelocity(body, {2, 0, 0}));
+  REQUIRE(simulation.setAngularVelocity(body, {0, .5F, 0}));
+  const auto initial = simulation.body(body).value();
+  const auto scope = scene.id();
+  const auto group = scene.groupEntities(std::array{body, marker}, "Moving assembly").value();
+  REQUIRE(simulation.synchronize(scene));
+  CHECK(scene.id() == scope);
+  CHECK(simulation.body(body)->position == initial.position);
+  CHECK(simulation.body(body)->velocity == initial.velocity);
+  CHECK(simulation.body(body)->angularVelocity == initial.angularVelocity);
+  REQUIRE(simulation.step(scene, 1.0 / 60));
+  const auto moving = simulation.body(body).value();
+  CHECK(moving.position.x > initial.position.x);
+  REQUIRE(scene.ungroupEntities(std::array{group}));
+  REQUIRE(simulation.synchronize(scene));
+  CHECK(simulation.body(body)->velocity == moving.velocity);
+  CHECK(simulation.body(body)->angularVelocity == moving.angularVelocity);
+  CHECK(simulation.body(body)->position.x == doctest::Approx(moving.position.x));
+  const auto position = worldPosition(scene, body);
+  auto hit = simulation.rayCast({position.x, position.y + 3, position.z}, {0, -6, 0});
+  REQUIRE(hit);
+  REQUIRE(hit->has_value());
+  CHECK((*hit)->entity == body);
+  CHECK(simulation.stats()->bodies == 1);
   CHECK_FALSE(simulation.stats()->faulted);
 }

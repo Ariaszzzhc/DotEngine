@@ -216,6 +216,118 @@ namespace Dot::Editor {
         return groupOperation(scene, command, next, created, selection);
       }
 
+      if (op == "group" || op == "ungroup" || op == "reparent") {
+        if (op == "group") {
+          Codec::requireFields(command, {"op", "entities", "name"});
+        } else if (op == "ungroup") {
+          Codec::requireFields(command, {"op", "entities"});
+        } else {
+          Codec::requireFields(command, {"op", "entities", "parent", "space"});
+        }
+
+        if (!command["entities"].is_array() || command["entities"].empty()
+            || command["entities"].size() > 10000) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Hierarchy edit requires 1..10000 entities");
+        }
+
+        auto prepared = World::decodeScene(scene.dump());
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        std::vector<World::EntityId> requested;
+
+        for (const auto& value : command["entities"]) {
+          requested.push_back({prepared->id(), Codec::id(value)});
+        }
+
+        if (op == "group") {
+          if (next == exhausted) {
+            return Core::fail(Core::ErrorCode::Unavailable, "Group identity capacity exhausted");
+          }
+
+          auto group = prepared->groupEntities(requested, command["name"].get<std::string>(), next);
+
+          if (!group) {
+            return std::unexpected(group.error());
+          }
+
+          created.push_back(group->value);
+          next = group->value + 1;
+          selection = {group->value};
+        } else if (op == "ungroup") {
+          auto children = prepared->ungroupEntities(requested);
+
+          if (!children) {
+            return std::unexpected(children.error());
+          }
+
+          selection.clear();
+
+          for (const auto child : *children) {
+            selection.push_back(child.value);
+          }
+        } else {
+          const auto space = command["space"].get<std::string>();
+
+          if (space != "local" && space != "world") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown parent space");
+          }
+
+          std::optional<World::EntityId> parent;
+
+          if (!command["parent"].is_null()) {
+            parent = World::EntityId{prepared->id(), Codec::id(command["parent"])};
+          }
+
+          std::unordered_set<std::uint64_t> selected;
+
+          for (const auto entity : requested) {
+            auto found = prepared->entity(entity);
+
+            if (!found) {
+              return std::unexpected(found.error());
+            }
+
+            if (!selected.insert(entity.value).second) {
+              return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate reparent entity");
+            }
+          }
+
+          std::vector<World::ParentUpdate> roots;
+
+          for (const auto entity : requested) {
+            auto ancestor = prepared->entity(entity)->parent;
+
+            while (ancestor && !selected.contains(ancestor->value)) {
+              ancestor = prepared->entity(*ancestor)->parent;
+            }
+
+            if (!ancestor) {
+              roots.push_back({entity, parent});
+            }
+          }
+
+          auto changed = prepared->setParents(
+              roots, space == "world" ? World::ParentSpace::World : World::ParentSpace::Local);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        auto encoded = World::encodeScene(*prepared);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        scene = Codec::parseJson(*encoded);
+        return {};
+      }
+
       if (op == "instantiate-model") {
         Codec::requireFields(command, {"op", "path"});
         const auto path = command["path"].get<std::string>();
@@ -1281,7 +1393,10 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "entity"});
         } else if (command == "select-many") {
           Codec::requireFields(parsed, {"command", "revision", "entities"});
-        } else if (command == "duplicate-selection" || command == "delete-selection") {
+        } else if (command == "group-selection") {
+          Codec::requireFields(parsed, {"command", "revision", "name"});
+        } else if (command == "duplicate-selection" || command == "delete-selection"
+                   || command == "ungroup-selection") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else if (command == "open-scene") {
           Codec::requireFields(parsed, {"command", "revision", "path", "discard"});
@@ -1298,8 +1413,8 @@ namespace Dot::Editor {
 
         const auto revision = Codec::id(parsed["revision"]);
 
-        if (command == "edit" || command == "duplicate-selection"
-            || command == "delete-selection") {
+        if (command == "edit" || command == "duplicate-selection" || command == "delete-selection"
+            || command == "group-selection" || command == "ungroup-selection") {
           auto operations = parsed.value("operations", Json::array());
 
           if (command != "edit") {
@@ -1309,9 +1424,17 @@ namespace Dot::Editor {
               entities.push_back(std::to_string(id));
             }
 
-            operations = Json::array(
-                {{{"op", command == "duplicate-selection" ? "duplicate" : "remove-many"},
-                  {"entities", std::move(entities)}}});
+            const auto op = command == "duplicate-selection" ? "duplicate"
+                            : command == "delete-selection"  ? "remove-many"
+                            : command == "group-selection"   ? "group"
+                                                             : "ungroup";
+            Json operation{{"op", op}, {"entities", std::move(entities)}};
+
+            if (command == "group-selection") {
+              operation["name"] = parsed["name"];
+            }
+
+            operations = Json::array({std::move(operation)});
           }
 
           auto applied = apply(operations.dump(), revision);

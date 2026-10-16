@@ -176,7 +176,13 @@ TEST_CASE("components_preparation_forbids_native_constructor_initializer_and_get
         "import {scene} from 'dot:engine';scene.rename('BAD');export class Actor{}",
         "import {Entity} from 'dot:engine';export class "
         "Actor{self:Entity;constructor(c:any){this.self=new Entity(c.entity);}"
-        "get onUpdate():any{this.self.name='BAD';return ()=>{};}}"}) {
+        "get onUpdate():any{this.self.name='BAD';return ()=>{};}}",
+        "import {ScriptComponent,scene} from 'dot:engine';export class Actor extends "
+        "ScriptComponent{attempt=scene.group([this.self]);}",
+        "import {ScriptComponent,scene} from 'dot:engine';export class Actor extends "
+        "ScriptComponent{attempt=scene.ungroup([this.self]);}",
+        "import {ScriptComponent} from 'dot:engine';export class Actor extends "
+        "ScriptComponent{constructor(c:any){super(c);this.self.reparent(null,'world');}}"}) {
     Project project;
     project.write(code);
     auto program = project.compile();

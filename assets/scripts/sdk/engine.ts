@@ -905,6 +905,14 @@ export class Entity {
   }
 
   /**
+   * Preserve local or world pose explicitly; unrepresentable shear fails atomically.
+   * 显式保留局部或世界姿态；无法表示的剪切导致事务失败。
+   */
+  reparent(parent: Entity|null, space: 'local'|'world'): void {
+    invoke('hierarchy.reparent', [this.id, parent === null ? null : parent.id, space]);
+  }
+
+  /**
    * Right-handed column-major world matrix with 16 float values.
    * 右手、列主序世界矩阵，含 16 个浮点值。
    */
@@ -944,6 +952,18 @@ export const scene = Object.freeze({
 
   create(name = 'Entity'): Entity {
     return new Entity(invoke('entity.create', [name]) as EntityId);
+  },
+
+  /** Group selected subtree roots at the active (last) entity while preserving world poses.
+   * 将所选子树根围绕活动（末项）实体成组，保持世界姿态。 */
+  group(entities: readonly Entity[], name = 'Group'): Entity {
+    return new Entity(invoke('scene.group', [entities.map(e => e.id), name]) as EntityId);
+  },
+
+  /** Remove only component-free containers; returns surviving exposed children.
+   * 仅拆除无功能组件容器，返回露出的存活子项。 */
+  ungroup(entities: readonly Entity[]): Entity[] {
+    return (invoke('scene.ungroup', [entities.map(e => e.id)]) as EntityId[]).map(id => new Entity(id));
   },
 
   /** Deterministic creation-ID order; wrappers do not own native entities.

@@ -149,3 +149,33 @@ Only directional shadow requests are supported; invalid types/work fail scene
 validation. Meshes optionally store boolean castsShadow/receivesShadow (default
 true). Encoding writes these fields explicitly. [Shadow contracts](Rendering.md)
 describe bounds, finite frustums and the frame's single directional-source limit.
+
+
+## Native hierarchy editing
+
+`Scene::setParent`/`setParents` default to `ParentSpace::Local`, preserving local
+TRS. `ParentSpace::World` preserves each original world matrix, including when
+multiple parents change in one batch. The final hierarchy is validated once;
+cycles, depth overflow, foreign/stale/duplicate handles and unrepresentable local
+TRS fail without publishing changes. Setting the same parent retains the exact
+local pose. Float decomposition can introduce rounding and rejects shear; it does
+not approximate an unrepresentable transform.
+
+`groupEntities` accepts 1..10000 unique live entities and creates one plain
+container. Only minimal selected roots move: selecting both an ancestor and its
+child does not transform the child twice. A shared immediate parent is retained;
+otherwise the group is placed at scene root. Its origin is the last selected
+entity's world origin, with identity local rotation/scale. Grouping under a shared
+parent retains the children's original local basis, including an outer sheared
+world matrix. Mixed-parent grouping must admit local TRS. Capacity, validation or
+allocation failure leaves the original graph and external ID allocator intact.
+
+`ungroupEntities` removes only containers without functional components; it never
+implicitly deletes a mesh, camera, light, body, character, script, audio, animation
+player or skin binding. Nested container selections are supported. Surviving
+children retain world poses and attach to their nearest surviving ancestor. Nodes
+referenced by native skin joints or animation targets cannot be removed. Opaque
+script properties are not interpreted as entity references. Returned affected
+children are owned and sorted by entity value. Live handles retain their scene
+scope; committed removed IDs are never reused. See [editor operations](Editor.md#hierarchy-organization)
+for selection/history/save behavior and [SDK operations](Scripting.md#hierarchy-operations).

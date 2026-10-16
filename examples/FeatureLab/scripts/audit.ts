@@ -451,8 +451,34 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.publish();
   }
 
+  private hierarchyChecks(): void {
+    const parent = scene.create('Hierarchy example parent');
+    const a = scene.create('Hierarchy example A');
+    const b = scene.create('Hierarchy example B');
+    const pose = parent.transform;
+    pose.position.x = 10;
+    parent.transform = pose;
+    const before = a.worldMatrix();
+    a.reparent(parent, 'world');
+    this.check('Entity.reparent', equal(a.worldMatrix(), before));
+    const group = scene.group([a, b], 'Hierarchy example assembly');
+    this.check(
+        'scene.group', a.parent?.id.value === group.id.value && equal(a.worldMatrix(), before));
+    const children = scene.ungroup([group]);
+    this.check(
+        'scene.ungroup', children.length === 2 && !group.exists && equal(a.worldMatrix(), before));
+    a.destroy();
+    b.destroy();
+    parent.destroy();
+  }
+
   onFixedUpdate(seconds: number): void {
     ++this.#fixed;
+
+    if (!this.#checked.has('scene.group')) {
+      this.hierarchyChecks();
+    }
+
     this.check('ScriptComponent.onFixedUpdate', super.onFixedUpdate(seconds) === undefined);
     this.entity('Dynamic').setVelocity({x: input.key('D').down ? 1 : 0, y: 0, z: 0});
   }

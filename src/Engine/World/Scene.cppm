@@ -116,6 +116,8 @@ export namespace Dot::World {
     std::optional<EntityId> parent;
   };
 
+  enum class ParentSpace { Local, World };
+
   /** Stored body properties, with pose taken from the entity transform. Setting
    * this description does not initialize a physics backend or allocate a body.
    * Initial velocity is world-space. Hierarchy/scale suitability is a separate
@@ -242,19 +244,41 @@ export namespace Dot::World {
      */
     [[nodiscard]] auto setTransform(EntityId entity, const Transform& transform)
         -> Core::Result<void>;
-    /** Keep local transform when reparenting. Reject cycles, foreign/stale handles,
+    /** Reparent in local space by default; World preserves the old world matrix
+     * and rejects unrepresentable shear/singularity. Reject cycles, foreign/stale handles,
      * excessive depth, and world overflow; failure is transactional.
-     * 重新指定父实体时保留局部变换；拒绝环、跨场景/失效句柄、过深层级及世界溢出。
+     * 默认保留局部变换；World 保持原世界矩阵并拒绝无法表示的剪切/奇异变换。
+     * 拒绝环、跨场景/失效句柄、过深层级及世界溢出。
      * 失败不改变状态。
      */
-    [[nodiscard]] auto setParent(EntityId entity, std::optional<EntityId> parent)
-        -> Core::Result<void>;
+    [[nodiscard]] auto setParent(EntityId entity, std::optional<EntityId> parent,
+                                 ParentSpace space = ParentSpace::Local) -> Core::Result<void>;
     /** Batch updates reject duplicate handles and validate the final scene once.
      * All changes roll back together on failure; intermediate states are private.
      * 批量更新拒绝重复句柄，并一次校验最终场景；失败时全部回滚，中间状态不对外暴露。 */
     [[nodiscard]] auto setTransforms(std::span<const TransformUpdate> updates)
         -> Core::Result<void>;
-    [[nodiscard]] auto setParents(std::span<const ParentUpdate> updates) -> Core::Result<void>;
+    [[nodiscard]] auto setParents(std::span<const ParentUpdate> updates,
+                                  ParentSpace space = ParentSpace::Local) -> Core::Result<void>;
+    /** Group minimal selected roots without changing world poses or internal
+     * references. Shared immediate parent is retained, otherwise use scene root;
+     * pivot is the last selected entity's world origin. Ancestor/descendant
+     * overlap is processed once. An authoring allocator may supply a monotonic ID.
+     * Failures publish neither hierarchy nor identity consumption.
+     * 将选择的最小子树根成组，保持世界姿态和内部引用；相同直接父级保留，否则置于场景根。
+     * 枢轴为末项实体的世界原点，祖孙重叠只处理一次；编辑分配器可提供单调 ID。
+     * 失败不发布层级变更或消耗标识。 */
+    [[nodiscard]] auto groupEntities(std::span<const EntityId> entities, std::string_view name,
+                                     std::optional<std::uint64_t> value = std::nullopt)
+        -> Core::Result<EntityId>;
+    /** Remove component-free containers while preserving every surviving world
+     * pose, including nested selections. Referenced skin joints/animation targets
+     * cannot be removed. Returned affected children are owned and ID-sorted;
+     * existing handles retain their scope, removed values are never reused.
+     * 拆除无功能组件的容器，保持所有存活实体的世界姿态，支持嵌套选择；被蒙皮/动画
+     * 引用的节点不可删除。返回拥有且按 ID 排序的受影响子项，存活句柄范围不变，删除值不复用。 */
+    [[nodiscard]] auto ungroupEntities(std::span<const EntityId> entities)
+        -> Core::Result<std::vector<EntityId>>;
     [[nodiscard]] auto worldTransform(EntityId entity) const -> Core::Result<Math::Mat4>;
     /** At most one camera may be primary. Views use the full world inverse,
      * which must remain representable. 最多一个主相机；视图使用可表示的完整世界逆矩阵。 */

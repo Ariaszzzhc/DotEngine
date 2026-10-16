@@ -1700,3 +1700,52 @@ Terminal close retires the private control directory, so a supervising agent mus
 verify the owned editor process exits rather than waiting indefinitely for a response
 file that may already have been removed. Rejected/pending close remains observable
 through the live mailbox. This does not make `queued:true` an applied-success receipt.
+
+
+## Hierarchy organization
+
+Edit → Group selection (Cmd/Ctrl+G) creates a plain container at the active
+(last selected) entity's world origin. Edit → Ungroup selection
+(Cmd/Ctrl+Shift+G) removes only component-free containers, exposing their children.
+Both preserve world poses. Drag selected hierarchy rows onto another entity to
+reparent their minimal selected roots, or onto **Scene root (drop to detach)**
+to detach them while preserving world poses. The Inspector's **Parent (local pose)**
+field retains local TRS. Neither mode silently approximates shear that cannot be
+represented by local TRS; failures leave the document intact.
+
+These operations use the shared document transaction. Group selects the new
+container; Ungroup selects affected surviving children in entity-value order.
+Undo/redo restores hierarchy, transforms and ordered selection together. Save
+persists ordinary scene entities, without prefab/link semantics. No operation is
+available during Play/animation audition/transform interaction or conflicting
+pending edits. Grouping is scene organization, not reusable linked content.
+
+```json
+{"command":"group-selection","revision":"12","name":"Material studies"}
+{"command":"ungroup-selection","revision":"13"}
+{"command":"edit","revision":"14","operations":[{"op":"reparent","entities":["2","3"],"parent":"4","space":"world"}]}
+```
+
+For explicit selections, edit operations also include
+`{"op":"group","entities":["2","3"],"name":"Group"}` and
+`{"op":"ungroup","entities":["5"]}`. Reparent requires `space` equal to
+`local` or `world`, and `parent` is a live entity value or null. Duplicate or stale
+IDs, cycles, functional-container removal and invalid transforms fail atomically.
+Use the revision returned by the preceding operation, not literal example numbers.
+A drag freezes its scene scope, revision and ordered IDs when it starts; an old
+payload cannot address a replacement scene or revised selection. GUI mutations
+are deferred until tree traversal releases its borrowed snapshot.
+
+Tree arrows and agents use the same strict view operation:
+
+```json
+{"command":"set-hierarchy-expanded","revision":"15","scope":"8","entity":"5","expanded":true}
+```
+
+This requires the current authoring scene scope/revision and a live entity. It
+changes view state without adding history, advancing revision or dirtying the
+scene. A nonempty hierarchy search forces matching branches open and rejects
+collapse requests. Inspect exposes requested `workspace.hierarchyExpansion` and
+actual rendered `workspace.hierarchyRows` states; wait for a later rendered frame
+to observe the view update. Opening another scene resets expansion; save-as of the
+same scene retains it. Deleted IDs are pruned. Group selection opens its new group.

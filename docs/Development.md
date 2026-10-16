@@ -7449,3 +7449,76 @@ Owned temporary client/request helpers and exported validation data are removed.
 Ignored actual-result JSON/log evidence and build caches remain, as do the untracked
 user references and existing archives. No distribution archive is generated. The
 complete engine/game goal remains active and unfinished.
+
+
+## World-preserving hierarchy organization
+
+Added native world/local reparenting, grouping minimal selected roots and atomic
+ungrouping of component-free containers. Shared immediate parents retain the
+original local basis; mixed parents use scene root. The active entity supplies
+the group origin. Nested selections, full graph/camera validation, singular/shear
+rejection, skin/animation references, scene scope and monotonic identity allocation
+are explicit contracts. A failed unpublished group returns its reservation; IDs
+of committed removed containers remain retired. Pure scene operations initialize
+no device. Existing physics binding retains motion and ray-hit identity across
+world-preserving group/ungroup edits.
+
+The SDK's Entity.reparent/scene.group/scene.ungroup use these same native operations
+and remain forbidden in read-only constructor/migration phases. Editor document
+transactions publish selection, scene, identity allocation and undo/redo together.
+Edit menus/shortcuts, hierarchy multi-drag and root detach route through this
+implementation. Drag payloads freeze scene/revision/IDs, and GUI actions run after
+traversal releases borrowed snapshot data. Inspector parent changes explicitly
+retain local pose. Tree expansion now has a strict shared scope/revision checked
+agent operation and owned view-state inspection without document mutations.
+
+Feature Lab's persistent Lighting Studio now contains the Material studies group,
+authored and saved through the real editor. Original model IDs/world poses remain;
+project metadata and startup scene are unchanged. Its runtime auditor demonstrates
+the three new SDK methods without a scene or physics substitute. This stage does
+not implement prefabs, linked scene instances, additive scenes or streaming.
+
+Verification uses the existing CPU unit/document/script/physics targets; no new
+acceptance executable or desktop-window test was added. Boundary checks include
+10000-entity capacity, depth 256, uint64 identity exhaustion, lifetime/thread and
+foreign handles, duplicate/overlapping selections, rejected transforms/references,
+history budgets, save/reopen and branch undo/redo.
+
+Actual macOS release editor validation completed 73 product requests: open Studio,
+group five models, undo/redo, collapse/expand, reject stale scope/search collapse,
+save, reject functional ungroup/cycle, world-detach and undo, ungroup and undo,
+Play and change to the main scene, inspect runtime SDK report, Stop and close.
+All original world matrices agree within 1e-5. Before/after 1480x574 captures are
+byte-identical, from distinct rendered serials 1537/1909, revisions 2/14 and scene
+scopes 4/17. The actual viewport image was inspected. The live main-scene report
+contains 132 completed checks and eight deliberately caught errors, without
+unexpected diagnostics. Editor stderr is empty and its owned process exits 0.
+Native physical mouse drag/shortcut interaction was not exercised; those GUI paths
+were reviewed but the product-operation results do not establish mouse acceptance.
+
+
+The first full Debug run passed 1189/1190 cases (180.66s). Its sole failure was an
+existing Lighting Studio fixture asserting ten entities before the new authored
+container. Updated that persistent example regression to expect eleven and verify
+the five intended members, retaining material/light checks. Both configurations
+then rebuilt successfully; the focused 22-case Debug run passed in 3.97s.
+Review covered publication/rollback ownership, scope and stale payloads, references,
+world/local transform semantics, resource lifetime, error propagation, formatting,
+platform assumptions and GUI/agent parity. Fourteen changed/new C++/TypeScript
+files pass clang-format and whitespace checks pass. Dependencies and caller
+compiler/linker settings are unchanged.
+
+
+Final macOS arm64 checks pass: Debug 1190/1190 (179.17s), Release/NDEBUG
+1190/1190 (19.74s). Each suite has 334 unit and 856 integration cases, including
+132 durable offscreen rendering cases, 32 native-audio and 28 platform cases.
+Neither suite opens desktop windows. Windows/Linux source targets remain supported
+but were not executed locally. The editor workflow above is separate product
+validation and does not imply complete GUI interaction or engine/game readiness.
+
+Removed 77 owned ignored client/request/counter/PID helpers; retained actual
+response/result JSON, captures/logs and build caches. User references remain
+untracked and existing archives remain intact. No distribution archive was made.
+The broader engine/game goal remains active, including reusable content authoring,
+streaming/performance, mature animation tools and finished Prism Relay art/game
+workflows. Test totals do not establish that these requirements are finished.

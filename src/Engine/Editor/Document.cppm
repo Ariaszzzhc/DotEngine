@@ -139,12 +139,17 @@ export namespace Dot::Editor {
      * 保存失败保留未保存状态、版本与历史。 */
     [[nodiscard]] auto save(std::uint64_t revision) -> Core::Result<void>;
     /** Shared automation/UI protocol: inspect, edit, select/select-many,
-     * duplicate-selection/delete-selection, undo, redo, save.
-     * Group operations expand descendant unions once. Copies retain external
+     * duplicate-selection/delete-selection, group-selection/ungroup-selection,
+     * undo, redo, save. Hierarchy edits preserve world poses when requested;
+     * grouping uses minimal selected roots and ungrouping removes only
+     * component-free containers. Selection/history/identity changes commit together.
+     * Duplicate/delete operations expand descendant unions once. Copies retain external
      * parents/native components, remap internal parents, demote primary camera/
      * listener flags, and select mapped input IDs. Script properties stay opaque;
      * arbitrary numbers/strings are not interpreted as entity references.
-     * 成组操作对子树并集只处理一次；副本保留外部父级/原生组件，重映射内部父级，取消
+     * 层级编辑可显式保持世界姿态；成组处理最小选择根，拆组仅删除无功能组件容器。
+     * 选择、历史及标识变更共同提交。复制/删除对子树并集只处理一次；副本保留外部父级/
+     * 原生组件，重映射内部父级，取消
      * 主相机/监听器标记并选中对应输入 ID。脚本属性保持不透明，不将任意值视为实体引用。
      * Mutations require a canonical decimal revision; stale requests fail before
      * effects. Responses own a full snapshot and created values. If response

@@ -952,3 +952,32 @@ Constructors/migration only observe in-memory state; all disk access requires an
 active lifecycle phase. No implicit save, load, scene switch or entity restoration
 is performed. The native player uses stable application identity/user directories;
 editor Play uses isolated disposable storage.
+
+
+## Hierarchy operations
+
+The built-in `dot:engine` module shares native hierarchy implementation with the
+editor. `Entity.parent = value` preserves local TRS; `reparent(parent, 'world')`
+preserves the world matrix explicitly. The alternative space is `'local'`. For
+example, inside a lifecycle callback:
+
+```ts
+import {scene} from 'dot:engine';
+
+const a = scene.create('A');
+const b = scene.create('B');
+a.reparent(b, 'world');
+const assembly = scene.group([a, b], 'Assembly');
+const exposed = scene.ungroup([assembly]);
+```
+
+Group accepts 1..10000 unique live entities, groups minimal selected roots at the
+last entity's world origin, and returns the new container. Ungroup accepts plain
+containers, preserving surviving poses and returning affected children sorted by
+ID. It rejects functional components or nodes referenced by native skin/animation
+bindings. Unrepresentable shear, foreign/stale/duplicate handles and invalid
+hierarchies produce catchable host errors without partial native scene changes.
+These three operations mutate native state and are unavailable during read-only
+constructor/reload preparation. Surviving handles keep their scope; removed IDs
+stay stale. See [native contracts](Scenes.md#native-hierarchy-editing) for limits
+and shared-parent behavior. Grouping does not provide linked instances or prefabs.
