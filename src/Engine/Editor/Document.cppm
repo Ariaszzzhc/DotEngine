@@ -153,6 +153,9 @@ export namespace Dot::Editor {
      * save-selection-scene, undo, redo, save. Scene-content save publishes a new
      * assets file without changing document state. instantiate-scene edits select
      * a new placement root and remap native references through a prepared candidate.
+     * link-scene retains source provenance; refresh-scene-instance merges saved
+     * source changes with local overrides. revert-scene-instance restores source-owned
+     * nodes; unlink-scene-instance retains the materialized authored entities.
      * Hierarchy edits preserve world poses when requested;
      * grouping uses minimal selected roots and ungrouping removes only
      * component-free containers. Selection/history/identity changes commit together.
@@ -161,6 +164,8 @@ export namespace Dot::Editor {
      * listener flags, and select mapped input IDs. Script properties stay opaque;
      * arbitrary numbers/strings are not interpreted as entity references.
      * 内容保存仅发布新资产文件，不改变文档；场景插入选择新的放置根并在候选中重映射原生引用。
+     * link-scene 保留来源；refresh-scene-instance 合并已保存源变化并保留本地覆盖；
+     * revert-scene-instance 恢复源拥有节点，unlink-scene-instance 保留展开的编辑实体。
      * 层级编辑可显式保持世界姿态；成组处理最小选择根，拆组仅删除无功能组件容器。
      * 选择、历史及标识变更共同提交。复制/删除对子树并集只处理一次；副本保留外部父级/
      * 原生组件，重映射内部父级，取消

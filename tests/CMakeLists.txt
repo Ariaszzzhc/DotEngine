@@ -60,6 +60,7 @@ add_executable(DotUnitTests
     SceneTests.cpp
     HierarchyTests.cpp
     SceneContentTests.cpp
+    SceneLinkTests.cpp
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
     BodyTests.cpp

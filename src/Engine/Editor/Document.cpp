@@ -29,6 +29,7 @@ import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.World.SceneContent;
+import Dot.World.SceneLinks;
 
 namespace Dot::Editor {
   namespace {
@@ -95,6 +96,32 @@ namespace Dot::Editor {
       return decodeCandidate(content, next);
     }
 
+    auto removeLinks(Json& scene, const std::unordered_set<std::uint64_t>& removed) -> void {
+      if (scene.contains("links")) {
+        std::erase_if(scene["links"].get_ref<Json::array_t&>(), [&](const auto& value) {
+          return removed.contains(Codec::id(value["root"]));
+        });
+
+        if (scene["links"].empty()) {
+          scene.erase("links");
+        }
+      }
+    }
+
+    auto loadContent(const Project::Project& project, std::string_view path,
+                     std::string_view activePath = {}) -> Core::Result<World::Scene> {
+      if (!sceneAssetPath(path) || path == activePath) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Linked content requires a distinct portable scene/assets path");
+      }
+
+      auto store = ResourceStore::open(project, {.textBytes = 64 * 1024 * 1024});
+      auto readable = store ? store->externalTextPath(path)
+                            : Core::Result<std::filesystem::path>{std::unexpected(store.error())};
+      return readable ? World::loadScene(project.files().value(), sceneFile(path))
+                      : Core::Result<World::Scene>{std::unexpected(readable.error())};
+    }
+
     auto find(Json& entities, std::uint64_t id) -> Json* {
       auto found = std::ranges::find_if(
           entities, [id](const auto& value) { return Codec::id(value["id"]) == id; });
@@ -157,6 +184,7 @@ namespace Dot::Editor {
         auto& values = entities.get_ref<Json::array_t&>();
         std::erase_if(values,
                       [&](const auto& value) { return included.contains(Codec::id(value["id"])); });
+        removeLinks(scene, included);
         return {};
       }
 
@@ -244,7 +272,8 @@ namespace Dot::Editor {
 
     auto operation(Json& scene, const Json& command, std::uint64_t& next,
                    std::vector<std::uint64_t>& created, std::vector<std::uint64_t>& selection,
-                   const Project::Project& project) -> Core::Result<void> {
+                   const Project::Project& project, std::string_view activePath)
+        -> Core::Result<void> {
       if (!command.is_object() || !command.contains("op") || !command["op"].is_string()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Edit operation requires an op string");
       }
@@ -368,7 +397,61 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (op == "instantiate-scene") {
+      if (op == "refresh-scene-instance" || op == "revert-scene-instance"
+          || op == "unlink-scene-instance") {
+        Codec::requireFields(command, {"op", "entity"});
+        const auto id = Codec::id(command["entity"]);
+        auto target = decodeCandidate(scene, next);
+
+        if (!target) {
+          return std::unexpected(target.error());
+        }
+
+        auto links = target->sceneLinks().value();
+        const auto link = std::ranges::find(links, id, &World::SceneLink::root);
+
+        if (link == links.end()) {
+          return Core::fail(Core::ErrorCode::NotFound, "Entity is not a linked scene root");
+        }
+
+        if (op == "unlink-scene-instance") {
+          links.erase(link);
+          auto changed = target->setSceneLinks(links);
+
+          if (!changed) {
+            return changed;
+          }
+        } else {
+          auto source = loadContent(project, link->asset, activePath);
+
+          if (!source) {
+            return std::unexpected(source.error());
+          }
+
+          auto updated = World::prepareSceneLinkUpdate(*target, *source, {target->id(), id}, next,
+                                                       op == "revert-scene-instance");
+
+          if (!updated) {
+            return std::unexpected(updated.error());
+          }
+
+          created.insert(created.end(), updated->created.begin(), updated->created.end());
+          next = updated->scene.nextEntityValue()->value_or(exhausted);
+          target = std::move(updated->scene);
+        }
+
+        auto encoded = World::encodeScene(*target);
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        scene = Codec::parseJson(*encoded);
+        selection = {id};
+        return {};
+      }
+
+      if (op == "instantiate-scene" || op == "link-scene") {
         Codec::requireFields(command, {"op", "path", "parent", "transform"});
         const auto path = command["path"].get<std::string>();
 
@@ -377,15 +460,8 @@ namespace Dot::Editor {
                             "Scene content requires a portable scene/assets path");
         }
 
-        auto store = ResourceStore::open(project, {.textBytes = 64 * 1024 * 1024});
-        auto readable = store ? store->externalTextPath(path)
-                              : Core::Result<std::filesystem::path>{std::unexpected(store.error())};
-
-        if (!readable) {
-          return std::unexpected(readable.error());
-        }
-
-        auto content = World::loadScene(project.files().value(), sceneFile(path));
+        auto content
+            = loadContent(project, path, op == "link-scene" ? activePath : std::string_view{});
         auto target = decodeCandidate(scene, next);
 
         if (!content || !target) {
@@ -404,7 +480,10 @@ namespace Dot::Editor {
             = command["parent"].is_null()
                   ? std::optional<World::EntityId>{}
                   : std::optional{World::EntityId{target->id(), Codec::id(command["parent"])}};
-        auto instance = World::prepareSceneInstance(*target, *content, next, placement, parent);
+        auto instance
+            = op == "link-scene"
+                  ? World::prepareLinkedScene(*target, *content, path, next, placement, parent)
+                  : World::prepareSceneInstance(*target, *content, next, placement, parent);
 
         if (!instance) {
           return std::unexpected(instance.error());
@@ -511,6 +590,7 @@ namespace Dot::Editor {
         auto& values = entities.get_ref<Json::array_t&>();
         std::erase_if(values,
                       [&](const auto& value) { return removed.contains(Codec::id(value["id"])); });
+        removeLinks(scene, removed);
       } else if (op == "name") {
         (*entity)["name"] = command["name"];
       } else if (op == "parent") {
@@ -999,8 +1079,8 @@ namespace Dot::Editor {
       auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (const auto& operationValue : operations) {
-        auto applied
-            = operation(candidate, operationValue, next, created, selection, m_impl->m_project);
+        auto applied = operation(candidate, operationValue, next, created, selection,
+                                 m_impl->m_project, m_impl->m_path);
 
         if (!applied) {
           return std::unexpected(applied.error());
@@ -1060,8 +1140,8 @@ namespace Dot::Editor {
       auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (std::size_t index = 0; index < commands.size(); ++index) {
-        auto result
-            = operation(candidate, commands[index], next, created, selection, m_impl->m_project);
+        auto result = operation(candidate, commands[index], next, created, selection,
+                                m_impl->m_project, m_impl->m_path);
 
         if (!result) {
           return Core::fail(result.error().code, "Edit operation " + std::to_string(index) + ": "

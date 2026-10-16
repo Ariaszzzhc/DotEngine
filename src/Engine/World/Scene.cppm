@@ -34,6 +34,25 @@ export namespace Dot::World {
     auto operator==(const EntityId&) const -> bool = default;
   };
 
+  struct SceneLinkMapping {
+    std::uint64_t source{};
+    std::uint64_t target{};
+    auto operator==(const SceneLinkMapping&) const -> bool = default;
+  };
+
+  /** Persisted authoring provenance. Baseline is an owned native source scene
+   * without links; mappings also retain locally deleted, reserved target values.
+   * Runtime consumes materialized entities without reading source files.
+   * 持久化编辑来源；基线拥有不含链接的原生源场景文本，映射保留本地已删除的预留目标值。
+   * 运行时直接使用已展开实体，不读取源文件。 */
+  struct SceneLink {
+    std::uint64_t root{};
+    std::string asset;
+    std::string baseline;
+    std::vector<SceneLinkMapping> mapping;
+    auto operator==(const SceneLink&) const -> bool = default;
+  };
+
   struct Transform {
     Math::Vec3 position{};
     Math::Quat rotation{};
@@ -200,6 +219,13 @@ export namespace Dot::World {
     [[nodiscard]] auto occlusion() const
         -> Core::Result<std::optional<Graphics::OcclusionSettings>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
+    [[nodiscard]] auto sceneLinks() const -> Core::Result<std::vector<SceneLink>>;
+    /** Atomically replace validated authoring links. Roots must be live; mapping
+     * ownership is disjoint and all target values must already be reserved.
+     * Baselines use the native codec and cannot recursively contain links.
+     * 原子替换经校验的编辑链接，根须存活，映射所有权不重叠且目标值已预留；
+     * 基线使用原生编解码，不能递归包含链接。 */
+    [[nodiscard]] auto setSceneLinks(std::span<const SceneLink> links) -> Core::Result<void>;
     /** Next unused value, or null when allocation is permanently exhausted.
      * Values survive serialization independently of live entities; querying does
      * not reserve one. 下一个未使用值，分配永久耗尽时为空；与存活实体分别持久化，查询不预留。 */

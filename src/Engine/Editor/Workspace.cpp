@@ -6564,6 +6564,14 @@ namespace Dot::Editor {
                   {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
         }
 
+        if (m_selectedResource.ends_with(".dotscene") && ImGui::Button("Add linked scene")) {
+          edit({{{"op", "link-scene"},
+                 {"path", m_selectedResource},
+                 {"parent", nullptr},
+                 {"transform",
+                  {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
+        }
+
         ImGui::InputText("Content name", &m_contentName);
         ImGui::BeginDisabled(!m_document->stats()->selected);
 
@@ -9467,6 +9475,40 @@ namespace Dot::Editor {
           }
           ImGui::EndDisabled();
           ImGui::EndDisabled();
+
+          if (m_editEntity) {
+            const auto selected = *m_editEntity;
+            const auto links = m_snapshot["scene"].value("links", Json::array());
+
+            for (const auto& link : links) {
+              if (Codec::id(link["root"]) != selected) {
+                continue;
+              }
+
+              ImGui::SeparatorText("Linked scene");
+              ImGui::TextWrapped("Source: %s", link["asset"].get<std::string>().c_str());
+              ImGui::TextWrapped(
+                  "Refresh preserves local overrides. Revert restores source-owned nodes.");
+              ImGui::BeginDisabled(playing() || m_animationPreview || m_transform
+                                   || pendingInspector() || pendingEnvironment()
+                                   || pendingOcclusion());
+
+              if (ImGui::Button("Open source scene")) {
+                openSceneAsset(link["asset"].get<std::string>());
+              }
+
+              for (const auto& [label, op] :
+                   {std::pair{"Refresh source", "refresh-scene-instance"},
+                    std::pair{"Revert linked properties", "revert-scene-instance"},
+                    std::pair{"Unlink scene", "unlink-scene-instance"}}) {
+                if (ImGui::Button(label)) {
+                  edit({{{"op", op}, {"entity", link["root"]}}});
+                }
+              }
+
+              ImGui::EndDisabled();
+            }
+          }
 
           if (!playing() && !m_animationPreview && !m_transform && m_editEntity
               && m_edit.contains("animation") && !m_edit["animation"].is_null()) {

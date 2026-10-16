@@ -301,7 +301,7 @@ namespace Dot::World {
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
       Codec::requireFields(root, {"version", "name", "nextEntity", "entities"},
-                           {"environment", "occlusion"});
+                           {"environment", "occlusion", "links"});
 
       if (!root["version"].is_number_integer() || root["version"] != 1
           || !root["entities"].is_array() || root["entities"].size() > 10000) {
@@ -565,6 +565,40 @@ namespace Dot::World {
         }
       }
 
+      if (root.contains("links")) {
+        if (!root["links"].is_array() || root["links"].size() > 10000) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene links must be a bounded array");
+        }
+
+        std::vector<SceneLink> links;
+
+        for (const auto& value : root["links"]) {
+          Codec::requireFields(value, {"root", "asset", "baseline", "mapping"});
+          SceneLink link{Codec::id(value["root"]),
+                         value["asset"].get<std::string>(),
+                         value["baseline"].dump(),
+                         {}};
+
+          if (!value["mapping"].is_array() || value["mapping"].size() > 10000) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene link mapping array");
+          }
+
+          for (const auto& mapping : value["mapping"]) {
+            Codec::requireFields(mapping, {"source", "target"});
+            link.mapping.push_back({Codec::id(mapping["source"]), Codec::id(mapping["target"])});
+          }
+
+          links.push_back(std::move(link));
+        }
+
+        auto linked = scene->setSceneLinks(links);
+
+        if (!linked) {
+          return std::unexpected(linked.error());
+        }
+      }
+
       return std::move(*scene);
     }
 
@@ -785,14 +819,37 @@ namespace Dot::World {
                        {"steps", settings.steps},       {"filterRadius", settings.filterRadius}};
     }
 
-    auto encoded = Json{{"version", 1},
-                        {"name", *name},
-                        {"nextEntity", *next ? Json(std::to_string(**next)) : Json(nullptr)},
-                        {"entities", std::move(records)},
-                        {"environment", std::move(environmentJson)},
-                        {"occlusion", std::move(occlusionJson)}}
-                       .dump(2)
-                   + '\n';
+    auto document = Json{{"version", 1},
+                         {"name", *name},
+                         {"nextEntity", *next ? Json(std::to_string(**next)) : Json(nullptr)},
+                         {"entities", std::move(records)},
+                         {"environment", std::move(environmentJson)},
+                         {"occlusion", std::move(occlusionJson)}};
+    auto links = scene.sceneLinks();
+
+    if (!links) {
+      return std::unexpected(links.error());
+    }
+
+    if (!links->empty()) {
+      document["links"] = Json::array();
+
+      for (const auto& link : *links) {
+        Json mapping = Json::array();
+
+        for (const auto& pair : link.mapping) {
+          mapping.push_back(
+              {{"source", std::to_string(pair.source)}, {"target", std::to_string(pair.target)}});
+        }
+
+        document["links"].push_back({{"root", std::to_string(link.root)},
+                                     {"asset", link.asset},
+                                     {"baseline", Codec::parseJson(link.baseline)},
+                                     {"mapping", std::move(mapping)}});
+      }
+    }
+
+    auto encoded = document.dump(2) + '\n';
 
     if (encoded.size() > maxFileBytes) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Encoded scene exceeds 64 MiB");

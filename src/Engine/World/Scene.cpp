@@ -10,10 +10,13 @@ module;
 #include <format>
 #include <limits>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+
+#include "../Serialization/Json.hpp"
 
 module Dot.World.Scene;
 
@@ -26,6 +29,7 @@ import Dot.Physics.Body;
 import Dot.Physics.Character;
 import Dot.Audio.Source;
 import Dot.Script.Source;
+import Dot.World.SceneFiles;
 
 namespace Dot::World {
   namespace {
@@ -154,6 +158,7 @@ namespace Dot::World {
     entt::registry registry;
     std::optional<Environment> environment;
     std::optional<Graphics::OcclusionSettings> occlusion;
+    std::vector<SceneLink> links;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
     mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
 
@@ -546,6 +551,118 @@ namespace Dot::World {
     return m_impl->nextEntity == std::numeric_limits<std::uint64_t>::max()
                ? std::optional<std::uint64_t>{}
                : std::optional{m_impl->nextEntity};
+  }
+
+  auto Scene::sceneLinks() const -> Core::Result<std::vector<SceneLink>> {
+    auto ready = entityCount();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    try {
+      return m_impl->links;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Read scene links: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::setSceneLinks(std::span<const SceneLink> links) -> Core::Result<void> {
+    auto ready = entityCount();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    try {
+      if (links.size() > 10000) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Too many scene links");
+      }
+
+      std::unordered_set<std::uint64_t> owned;
+      std::size_t bytes{}, count{};
+      std::vector<SceneLink> prepared(links.begin(), links.end());
+
+      for (const auto& link : links) {
+        if (!m_impl->lookup.contains(link.root) || !owned.insert(link.root).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene link root is missing or shared");
+        }
+      }
+
+      for (auto& link : prepared) {
+        bytes += link.baseline.size();
+        count += link.mapping.size();
+
+        if (!Core::isPortableRelativePath(link.asset) || !link.asset.ends_with(".dotscene")
+            || (!link.asset.starts_with("assets/") && !link.asset.starts_with("scenes/"))
+            || link.asset.find("/.dot-stage-") != std::string::npos || link.baseline.empty()
+            || bytes > 64 * 1024 * 1024 || count > 10000) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid scene link source or capacity");
+        }
+
+        /** The file embeds baselines three JSON levels below the scene root.
+         * 文件将基线嵌入场景根之下三层，预留相应解析深度。 */
+        const auto data = Serialization::Detail::parseJson(link.baseline, 61);
+
+        if (data.contains("links")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene link baselines cannot nest links");
+        }
+
+        auto baseline = decodeScene(link.baseline);
+
+        if (!baseline) {
+          return Core::fail(baseline.error().code,
+                            "Scene link baseline: " + baseline.error().message);
+        }
+
+        const auto nodes = baseline->entities().value();
+
+        if (nodes.size() != link.mapping.size()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene link mapping must cover its baseline");
+        }
+
+        std::unordered_set<std::uint64_t> sources;
+
+        for (const auto& mapping : link.mapping) {
+          if (!baseline->findEntity(mapping.source) || !sources.insert(mapping.source).second
+              || mapping.target == 0 || mapping.target >= m_impl->nextEntity
+              || !owned.insert(mapping.target).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid or overlapping scene link mapping");
+          }
+        }
+
+        auto canonical = encodeScene(*baseline);
+
+        if (!canonical) {
+          return std::unexpected(canonical.error());
+        }
+
+        bytes -= link.baseline.size();
+        link.baseline = std::move(*canonical);
+        bytes += link.baseline.size();
+
+        if (bytes > 64 * 1024 * 1024) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Scene link baselines exceed 64 MiB");
+        }
+      }
+
+      m_impl->links.swap(prepared);
+      return {};
+    } catch (const std::invalid_argument& error) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Set scene links: " + std::string(error.what()));
+    } catch (const Serialization::Detail::Json::exception& error) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Set scene links: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Set scene links: " + std::string(error.what()));
+    }
   }
 
   auto Scene::reserveEntityValuesBefore(std::optional<std::uint64_t> next) -> Core::Result<void> {
@@ -1180,6 +1297,12 @@ namespace Dot::World {
           return std::unexpected(native.error());
         }
 
+        if (std::ranges::any_of(m_impl->links,
+                                [&](const auto& link) { return link.root == entity.value; })) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Unlink a scene instance before ungrouping it");
+        }
+
         if (!removed.insert(entity.value).second
             || m_impl->registry.any_of<Camera, MeshRenderer, MaterialBinding, Light, RigidBody,
                                        CharacterController, AudioSource, AudioListener,
@@ -1353,6 +1476,7 @@ namespace Dot::World {
       scene.lookup.erase(*iterator);
     }
 
+    std::erase_if(scene.links, [&](const auto& link) { return removedIds.contains(link.root); });
     scene.worldCache.clear();
     return {};
   }

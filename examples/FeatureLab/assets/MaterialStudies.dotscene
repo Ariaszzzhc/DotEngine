@@ -10,7 +10,7 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Surfaces",
+      "name": "Shared material study set",
       "parent": null,
       "rigidBody": null,
       "script": null,
@@ -58,7 +58,7 @@
         ],
         "visible": true
       },
-      "name": "Copper",
+      "name": "Copper panel",
       "parent": "7",
       "rigidBody": null,
       "script": null,
@@ -311,7 +311,7 @@
   ],
   "environment": null,
   "name": "Material studies content",
-  "nextEntity": "9007199254741000",
+  "nextEntity": "9007199254741017",
   "occlusion": null,
   "version": 1
 }

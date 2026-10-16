@@ -474,10 +474,29 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   CHECK(document.stats()->scenePath == "scenes/LightingStudio.dotscene");
   auto scene = document.scene().value();
   auto entities = scene->entities().value();
-  CHECK(entities.size() == 11);
+  CHECK(entities.size() == 13);
   const auto group = std::ranges::find(entities, "Material studies", &World::EntityInfo::name);
   REQUIRE(group != entities.end());
-  CHECK_FALSE(group->parent);
+  const auto links = scene->sceneLinks().value();
+  REQUIRE(links.size() == 1);
+  CHECK(links[0].asset == "assets/MaterialStudies.dotscene");
+  const auto placement = scene->findEntity(links[0].root).value();
+  REQUIRE(group->parent);
+  CHECK(scene->entity(*group->parent)->parent == placement);
+  auto source = World::loadScene(files, links[0].asset).value();
+  CHECK(links[0].baseline == World::encodeScene(source).value());
+
+  for (const auto& mapping : links[0].mapping) {
+    auto expected = source.worldTransform(source.findEntity(mapping.source).value()).value();
+    expected.data[12] += 2;
+    const auto actual = scene->worldTransform(scene->findEntity(mapping.target).value()).value();
+
+    for (std::size_t index = 0; index < expected.data.size(); ++index) {
+      CHECK(actual.data[index] == doctest::Approx(expected.data[index]));
+    }
+  }
+
+  CHECK(source.entity(source.findEntity(2).value())->name == "Copper panel");
   std::set<std::string> groupedNames;
 
   for (const auto& entity : entities) {
@@ -487,8 +506,8 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
   }
 
   CHECK(groupedNames
-        == std::set<std::string>{"Copper", "Normal mapped surface", "Dielectric", "Glass",
-                                 "Alpha cutout"});
+        == std::set<std::string>{"Copper (studio override)", "Normal mapped surface", "Dielectric",
+                                 "Glass", "Alpha cutout"});
   CHECK(scene->environment()->has_value());
   CHECK(scene->occlusion()->has_value());
   std::size_t shadowSources{}, meshes{};
@@ -507,6 +526,13 @@ TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_
 
   CHECK(shadowSources == 3);
   CHECK(meshes == 6);
+  auto refreshed = document.apply(
+      nlohmann::json::array(
+          {{{"op", "refresh-scene-instance"}, {"entity", std::to_string(links[0].root)}}})
+          .dump(),
+      document.stats()->revision);
+  REQUIRE(refreshed);
+  CHECK_FALSE(refreshed->changed);
   REQUIRE(document.saveAs("scenes/studio-copy.dotscene", document.stats()->revision));
   REQUIRE(document.openScene("scenes/main.dotscene", document.stats()->revision));
   CHECK(files.readText("scenes/main.dotscene").value() == startup);

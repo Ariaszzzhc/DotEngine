@@ -1765,7 +1765,9 @@ agent operations. See [content contracts and examples](SceneContent.md).
 Feature Lab includes `assets/MaterialStudies.dotscene`, saved and edited through
 these product operations. It shares the original materials/meshes and can be
 inserted into another scene in the same project. Scene instances are independent
-authored copies; linked updates and override editing remain unfinished.
+authored copies. [Linked instances](SceneContent.md#linked-instances-and-local-overrides)
+add explicit source refresh, local property/deletion overrides, revert and unlink.
+These edits use the same revision/history implementation in the GUI and agent API.
 
 
 ## Persistent entity allocation

@@ -7,7 +7,8 @@ Decoding builds an independent scene, preserving entity values while assigning a
 fresh scene identity. Existing live scenes and their handles remain independent.
 
 The root requires `version` (integer 1), `name`, `nextEntity`, and `entities`, and allows optional
-`environment` (null/absent means no environment). Unknown fields are rejected. Every
+`environment`, `occlusion` and `links` (null/absent environment means no environment).
+Unknown fields are rejected. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
 `rigidBody`, `character`, `audioSource`, `audioListener`, `script`, `material`, `light`,
 `animation` and `skin` are optional and may be null.
@@ -28,6 +29,19 @@ floor from surviving entities. Save/load preserves retired and explicitly reserv
 values. Allocation metadata does not identify a scene scope or create an entity.
 Native `nextEntityValue` observes it; `reserveEntityValuesBefore` advances it or seals
 allocation with null, without changing live handles. It cannot rewind or unseal.
+
+Optional `links` is an array of authoring records with exactly `root`, `asset`,
+`baseline` and `mapping`. Root is a live placement value; asset is a portable
+scenes/assets `.dotscene` path. Baseline is a complete native source scene object
+without links; mapping entries contain canonical string `source`/`target` values
+covering every baseline node, including locally deleted targets. Roots and mapped
+target values have disjoint ownership; targets must already be reserved. Link and
+mapping counts are bounded by 10000, combined baseline text by 64 MiB, baseline
+JSON depth by 61 to fit within the scene depth limit of 64. Empty sources can remain
+linked after refresh. The complete encoded scene must still fit 64 MiB. Scene
+validates replacement metadata atomically; loading does not read source assets.
+See [linked content](SceneContent.md#linked-instances-and-local-overrides) for merging
+and runtime behavior.
 
 ```json
 {

@@ -7777,3 +7777,93 @@ allocation metadata. Removed 30 owned temporary client/request files, preserving
 actual product response/log evidence, build caches and existing archives. No
 distribution archive was generated. EngineDoc.md and output/ remain untracked;
 dependencies and caller compiler/linker settings are unchanged.
+
+
+## Linked scene source refresh and overrides
+
+Added persisted SceneLink authoring provenance with a project source path, owned
+native baseline and disjoint stable source/target value mapping. Native Scene
+validates replacement metadata atomically, including owner lifetime, reserved IDs,
+source coverage, bounded aggregate storage and nonrecursive baseline framing. The
+scene codec owns strict optional links records; source assets are not read on load.
+Runtime consumes the materialized entities. Interface and implementation units stay
+separate; native baseline validation reuses the existing codec from implementation
+units instead of introducing another component schema.
+
+Dot.World.SceneLinks prepares linked insertion and three-way refresh candidates.
+Unmodified properties follow saved source changes; local property/deletion overrides
+persist. Objects merge by property, arrays atomically, missing separately from null.
+Native parent/skin/animation references remap before comparison. Existing source
+nodes retain target values; additions respect reservations/exhaustion. Source floors
+cannot regress and retired source values cannot reappear. Removing overridden nodes
+is a conflict unless revert explicitly discards those overrides. Final native
+validation rejects dangling local references, cycles and incompatible components
+before publication. Empty sources can remain linked. Revert restores source-owned
+nodes while keeping placement roots/local additions; unlink retains materialized data.
+
+Document edit operations link-scene, refresh-scene-instance, revert-scene-instance
+and unlink-scene-instance share revision checks, candidate publication and one-entry
+undo/redo with ordinary authoring. No-op refresh and failed batches preserve all
+published state/IDs. Source reads use the existing guarded resource path; active-file
+self-links reject. Root deletion retires its link; duplication/extraction produce
+independent copies, and ungroup requires explicit unlink. Assets provides Add linked
+scene; root Inspector provides Open source, Refresh, Revert and Unlink through these
+same product operations. Recursive nested refresh, variants, apply-to-source,
+retargeting and per-property override visualization remain unfinished.
+
+Added eleven pure CPU regressions and three file/document regressions for merge,
+local deletion/revert, empty/deleted source conflicts, dangling local children,
+stable native references/primary flags, shared-source isolation, incompatible merged
+components, allocation regression/reuse/exhaustion, strict metadata and moved/thread
+ownership. Document coverage includes independent reopen, undo/redo, no-op refresh,
+missing source, stale/unknown requests, later-batch rollback, duplication and root
+deletion. Initial new-code compile errors (optional JSON conversion and a partial
+designated initializer) were corrected. The first twelve focused cases pass (0.70s);
+after two added boundary cases the coupled suite passes 101/101 (7.24s), including
+two existing offscreen model regressions. Debug and Release builds succeed.
+
+Actual release editor operations replace Lighting Studio's original material group
+with a linked MaterialStudies instance at the same world placement. The original
+five material/mesh records keep their properties and world transforms. The saved
+source now names its shared set and copper panel explicitly; the studio retains
+Copper (studio override) as a real local override. Source refresh updates the shared
+set while preserving that override. Native revert/unlink both undo back to the
+complete linked scene. Lighting Studio now has thirteen nodes, six meshes and the
+same three shadow sources; its durable example check verifies world matrices,
+canonical baseline and no-op source refresh. Main scene/project metadata remain
+unchanged. An independently launched editor reopens clean and refreshes without
+changing scope/revision/allocation/history/content.
+
+The first temporary client raced control-directory retirement while trying to read
+a close response; saved edits and capture evidence were already complete. Subsequent
+clients observe close through the owned process result and retired control path.
+The following two native sessions complete 18 and 4 product requests and exit 0 with
+empty stderr. A further seven-request view check also exits 0/empty stderr. Opening
+another scene resets view mode, so the initial before/after captures used different
+cameras; they were not presented as equivalent frames. The corrected game-camera
+capture has exactly the same PNG bytes as the pre-insertion game-camera capture.
+These are real product agent operations and native viewport evidence, not physical
+mouse/IME acceptance or proof of mature prefab tooling.
+
+The first full suites pass 1226/1226 in Debug (183.22s) and Release (19.56s).
+Final review then added complete encoded-file budget checks before either native
+link preparation API returns: individually valid source/target/baseline data can
+exceed the 64 MiB file cap when combined. Document publication already checked this;
+native candidate callers now receive the same failure directly. Both configurations
+rebuild successfully for that final guard before final full-suite verification.
+
+Final post-review suites pass 1226/1226 in Debug (182.04s) and Release (19.74s,
+assertions disabled), each with 352 unit and 874 integration cases. Integration
+includes 194 compiler, 132 offscreen, 32 native-audio, 28 platform and 20 process
+cases. Automated suites open no desktop windows. Verification is macOS arm64 only;
+Windows/Linux source support was not executed. The full engine/editor/game goal
+remains active and is not inferred complete from these results.
+
+Final review covers metadata ownership and recursion/storage bounds, stable and
+reserved mappings, transactional merge/publication, native reference validation,
+source-path guards, history/no-op/lifetime behavior, GUI snapshot ownership during
+mutations and module interface separation. All eleven changed/new C++ files pass
+clang-format and whitespace checks pass. Removed 55 owned temporary client/request
+files, retaining native response/log/PNG evidence in ignored build storage. User
+reference files, build caches and existing archives remain preserved. No distribution
+archive, dependency or caller compiler/linker environment change was introduced.

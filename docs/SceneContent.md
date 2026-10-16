@@ -4,8 +4,8 @@ Selected authoring subtrees can be saved as an ordinary `.dotscene` asset and
 inserted into other scenes in the same project. Meshes, materials, clips, skins,
 audio and scripts keep project-root paths; they are shared rather than copied into
 a new package. The content file alone does not bundle those dependencies. This
-provides independent authored copies; linked updates, overrides and prefab editing
-are not implemented by these operations.
+supports independent authored copies and explicitly linked instances. Links use
+saved source data; they do not automatically reload files during gameplay.
 
 ## Authoring and agent operations
 
@@ -93,4 +93,54 @@ Deleting the highest source node, saving and reopening does not make that value
 available for a replacement node. Scene extraction creates a new compact identity
 namespace; insertion respects the target's existing reservations and writes the
 advanced floor into the prepared candidate. This is necessary identity groundwork
-for linked updates, not an implementation of links or overrides.
+for the linked updates described below.
+
+## Linked instances and local overrides
+
+Choose **Add linked scene** on a scene asset. Its placement root keeps an owned
+source path, baseline and source-to-target value mapping. On that root, Inspector
+provides **Open source scene**, **Refresh source**, **Revert linked properties** and
+**Unlink scene**. Ordinary property edits create overrides by differing from the
+last baseline. The equivalent strict document edits are:
+
+```json
+{"command":"edit","revision":"12","operations":[{"op":"link-scene","path":"assets/MaterialStudies.dotscene","parent":null,"transform":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}}]}
+{"command":"edit","revision":"13","operations":[{"op":"refresh-scene-instance","entity":"20"}]}
+{"command":"edit","revision":"14","operations":[{"op":"revert-scene-instance","entity":"20"}]}
+{"command":"edit","revision":"15","operations":[{"op":"unlink-scene-instance","entity":"20"}]}
+```
+
+Each operation uses the existing document transaction/history, scope invalidation,
+revision checks and selection rules. Root IDs in the examples are illustrative;
+use `created` and the returned snapshot. Refresh/revert/unlink select the root.
+Same-source no-op refresh preserves scope/revision/history. Batch failure publishes
+neither allocation nor partial link/scene changes. Save/reopen retains baselines,
+mappings and overrides; undo/redo restores them while entity allocation stays
+monotonic. Save source edits before refreshing. Missing, aliased or malformed sources
+fail without replacing the document. Linking the active file to itself is rejected.
+
+Refresh performs a three-way merge of previous source, current local data and
+incoming saved source. Unchanged properties follow source changes; local differences
+win. Objects merge by property, arrays are atomic, and missing differs from null.
+Native parent/skin/animation references are remapped before comparison. Script data
+retains its literal values and is never interpreted as entity references. Existing
+source nodes keep target values; new nodes allocate above the target reservation
+floor. Locally deleted source nodes stay deleted on refresh. Source allocation must
+not regress or reuse retired values. Imported primary flags remain demoted.
+
+Removing a source node with local overrides is a conflict. Revert explicitly replaces
+source-owned nodes with their current source values and restores local deletions;
+placement roots, unrelated entities and local additions remain. Local children or
+other references to removed nodes can still make the final scene invalid: repair
+those relationships first. Invalid merged components and dangling references reject
+the whole candidate. Unlink discards provenance while retaining materialized data.
+Unlink placement roots before ungrouping. Duplicating or extracting linked subtrees
+creates independent content, preserving the original link only on its original root.
+
+Runtime/Play/export use materialized entities without reading link source files.
+Source instances are flattened into their saved data when linked: recursive nested
+refresh, variants, applying overrides back to source, source-path retargeting and
+per-property override visualization remain unfinished. `Dot.World.SceneLinks`
+provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
+owns validated link metadata. Existing target handles remain untouched until callers
+publish the complete candidate.

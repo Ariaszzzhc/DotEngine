@@ -1367,3 +1367,125 @@ TEST_CASE("document.unpublished_noop_and_failed_batch_do_not_consume_persistent_
   REQUIRE(document.save(revision(document)));
   CHECK(fixture.project().loadStartup()->nextEntityValue().value() == 3);
 }
+
+namespace {
+  auto linkedContent(Fixture& fixture) -> Dot::World::Scene {
+    auto source = Dot::World::Scene::create("Reusable panels").value();
+    const auto panel = source.createEntity("Source panel").value();
+    REQUIRE(source.setMeshRenderer(panel, Dot::World::MeshRenderer{}));
+    REQUIRE(source.createEntity("Source child"));
+    REQUIRE(source.setParent({source.id(), 2}, panel));
+    REQUIRE(
+        Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+    return source;
+  }
+
+  auto linkOperation() -> Json {
+    return {{"op", "link-scene"},
+            {"path", "assets/panels.dotscene"},
+            {"parent", nullptr},
+            {"transform",
+             {{"position", {10, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}};
+  }
+}  // namespace
+
+TEST_CASE("document.linked_scene_refresh_overrides_save_reopen_undo_and_unlink_share_history") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  const auto inserted = edit(document, Json::array({linkOperation()}));
+  CHECK(inserted.created == std::vector<std::uint64_t>{3, 4, 5});
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", "Local panel name"}}}));
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(reopened.scene().value()->sceneLinks()->size() == 1);
+  REQUIRE(source.createEntity("New source node"));
+  auto mesh = source.entity({source.id(), 1})->mesh.value();
+  mesh.visible = false;
+  REQUIRE(source.setMeshRenderer({source.id(), 1}, mesh));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  const auto before = state(reopened);
+  auto updated = edit(reopened, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}}));
+  CHECK(updated.created == std::vector<std::uint64_t>{6});
+  auto panel = reopened.scene().value()->entity({reopened.scene().value()->id(), 4}).value();
+  CHECK(panel.name == "Local panel name");
+  CHECK_FALSE(panel.mesh->visible);
+  const auto after = state(reopened);
+  REQUIRE(reopened.undo(revision(reopened)));
+  CHECK(authored(state(reopened)["scene"]) == authored(before["scene"]));
+  CHECK(reopened.stats()->nextEntity == 7);
+  REQUIRE(reopened.redo(revision(reopened)));
+  CHECK(state(reopened)["scene"] == after["scene"]);
+  const auto repeated = state(reopened);
+  CHECK_FALSE(
+      edit(reopened, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}})).changed);
+  CHECK(state(reopened) == repeated);
+  edit(reopened, Json::array({{{"op", "revert-scene-instance"}, {"entity", "3"}}}));
+  CHECK(reopened.scene().value()->entity({reopened.scene().value()->id(), 4})->name
+        == "Source panel");
+  REQUIRE(reopened.undo(revision(reopened)));
+  edit(reopened, Json::array({{{"op", "unlink-scene-instance"}, {"entity", "3"}}}));
+  CHECK(reopened.scene().value()->sceneLinks()->empty());
+  CHECK(reopened.scene().value()->entityCount().value() == 6);
+  REQUIRE(reopened.undo(revision(reopened)));
+  REQUIRE(reopened.save(revision(reopened)));
+  auto final = fixture.document();
+  CHECK(final.scene().value()->sceneLinks()->front().mapping.size() == 3);
+  CHECK(final.scene().value()->entity({final.scene().value()->id(), 4})->name
+        == "Local panel name");
+  CHECK(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  CHECK(fixture.project().loadStartup());
+  CHECK_FALSE(final.apply(Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}}).dump(),
+                          revision(final)));
+}
+
+TEST_CASE("document.linked_scene_failures_and_later_batch_failure_publish_no_state_or_ids") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  const auto initial = state(document);
+  auto invalid = linkOperation();
+  invalid["path"] = "scenes/main.dotscene";
+  CHECK_FALSE(document.apply(Json::array({invalid}).dump(), revision(document)));
+  invalid["path"] = "../panels.dotscene";
+  CHECK_FALSE(document.apply(Json::array({invalid}).dump(), revision(document)));
+  CHECK_FALSE(
+      document.apply(Json::array({linkOperation(), {{"op", "remove"}, {"entity", "999"}}}).dump(),
+                     revision(document)));
+  CHECK(state(document) == initial);
+  edit(document, Json::array({linkOperation()}));
+  const auto before = state(document);
+  REQUIRE(source.createEntity("Not published by a failed batch"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  CHECK_FALSE(document.apply(Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}},
+                                          {{"op", "parent"}, {"entity", "1"}, {"parent", "999"}}})
+                                 .dump(),
+                             revision(document)));
+  CHECK(state(document) == before);
+  CHECK_FALSE(
+      document.apply(Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}}).dump(),
+                     revision(document) - 1));
+  CHECK(state(document) == before);
+  auto unknown = Json{{"op", "refresh-scene-instance"}, {"entity", "3"}, {"ignored", true}};
+  CHECK_FALSE(document.apply(Json::array({unknown}).dump(), revision(document)));
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.linked_root_duplication_is_independent_and_deletion_retires_only_its_link") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  edit(document, Json::array({{{"op", "duplicate"}, {"entities", {"3"}}}}));
+  CHECK(document.scene().value()->sceneLinks()->size() == 1);
+  CHECK(document.scene().value()->entityCount().value() == 8);
+  edit(document, Json::array({{{"op", "remove-many"}, {"entities", {"3"}}}}));
+  CHECK(document.scene().value()->sceneLinks()->empty());
+  CHECK(document.scene().value()->entityCount().value() == 5);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(document.scene().value()->sceneLinks()->size() == 1);
+  edit(document, Json::array({{{"op", "remove"}, {"entity", "3"}}}));
+  CHECK(document.scene().value()->sceneLinks()->empty());
+}
