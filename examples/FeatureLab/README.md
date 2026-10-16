@@ -94,16 +94,18 @@ available through dot:engine and the editor's shared component commands.
 The audit exercises the new component/state/control methods on a separate update
 from animation checks to respect the per-hook host-call bound. Headless behavior
 regressions cover real input, jumping, source hot reload without resetting motion,
-and landing. This is a component showcase; the realistic humanoid and shoulder
-camera belong to the unfinished Prism Relay experience.
+and landing. This is a component showcase; Prism Relay separately provides the
+rigged humanoid and shoulder-camera template, with final realistic art unfinished.
 
 The physics audit also sweeps a real sphere onto the saved platform and verifies
 the obstacle identity, center, surface point and normal through physics.sphereCast.
-This query supplies the volume collision needed by a shoulder camera.
+The character audit also queries the real native capsule through ray/sphere casts
+and excludes its own entity. Native proxies make characters visible to trigger
+sensors and rigid-body contacts while controller motion stays in Jolt.
 
 Enable Game input during Play, then press M to toggle native mouse look. Escape
 or focus loss releases editor capture; re-enable Game input to resume. The Camera
 script rotates only on acknowledged native frames and consumes motion once per
 variable update. The standalone runtime also honors script capture requests while
-focused. This is a free-look input demonstration; the shoulder camera and realistic
-humanoid for Prism Relay remain unfinished.
+focused. This is a free-look input demonstration; Prism Relay demonstrates the
+shoulder camera and animated character, with finished realistic humanoid art pending.

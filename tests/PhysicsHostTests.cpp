@@ -124,7 +124,7 @@ TEST_CASE("physics_host_sphere_sweep_returns_owned_volume_hits_and_strict_filter
   const auto body = add(native, Dot::Physics::Motion::Static);
   auto physics = source(native);
   const auto services = physics.bindings().value();
-  const Json filter{{"includeSensors", false}, {"ignoreBody", nullptr}};
+  const Json filter{{"includeSensors", false}, {"ignoreEntity", nullptr}};
   const auto args = Json::array({xyz(0, 0, 3), .25, xyz(0, 0, -4), filter});
   const auto hit = read(services, "physics.sphereCast", args);
   CHECK(hit["entity"] == id(body));
@@ -134,16 +134,16 @@ TEST_CASE("physics_host_sphere_sweep_returns_owned_volume_hits_and_strict_filter
   CHECK(hit["penetrationDepth"] == 0);
 
   for (const auto& invalid :
-       {Json{{"includeSensors", 1}, {"ignoreBody", nullptr}}, Json{{"includeSensors", false}},
-        Json{{"includeSensors", false}, {"ignoreBody", nullptr}, {"extra", 1}},
-        Json{{"includeSensors", false}, {"ignoreBody", id({body.scene + 1, 1})}}}) {
+       {Json{{"includeSensors", 1}, {"ignoreEntity", nullptr}}, Json{{"includeSensors", false}},
+        Json{{"includeSensors", false}, {"ignoreEntity", nullptr}, {"extra", 1}},
+        Json{{"includeSensors", false}, {"ignoreEntity", id({body.scene + 1, 1})}}}) {
     auto request = args;
     request[3] = invalid;
     CHECK_FALSE(invoke(services, "physics.sphereCast", request));
   }
 
   auto request = args;
-  request[3]["ignoreBody"] = id(body);
+  request[3]["ignoreEntity"] = id(body);
   CHECK(read(services, "physics.sphereCast", request).is_null());
   CHECK(std::ranges::find(services, "physics.sphereCast", &HostFunction::name)->access
         == HostAccess::ReadOnly);

@@ -106,7 +106,7 @@ export class Probe extends ScriptComponent {
     const Json args = Json::array({{{"x", point.x}, {"y", point.y}, {"z", point.z}},
                                    .22,
                                    {{"x", 0}, {"y", 0}, {"z", .001}},
-                                   {{"includeSensors", false}, {"ignoreBody", nullptr}}});
+                                   {{"includeSensors", false}, {"ignoreEntity", nullptr}}});
     auto result = found->callback(args.dump());
     REQUIRE(result);
     REQUIRE(result->has_value());

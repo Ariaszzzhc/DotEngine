@@ -5,6 +5,7 @@ module;
 #include <memory>
 #include <optional>
 #include <span>
+#include <variant>
 #include <vector>
 
 export module Dot.Physics.World;
@@ -27,6 +28,11 @@ export namespace Dot::Physics {
     std::uint64_t value{};
     auto operator==(const CharacterId&) const -> bool = default;
   };
+
+  /** Collider identity preserves its native owner kind; character proxies are
+   * never exposed as mutable rigid bodies. 碰撞体身份保留所有者类型，角色代理不伪装成可修改刚体。
+   */
+  using ColliderId = std::variant<BodyId, CharacterId>;
 
   struct WorldConfig {
     std::uint32_t maxBodies{1024};
@@ -55,10 +61,8 @@ export namespace Dot::Physics {
     std::size_t characters{};
   };
 
-  /** Last observed capsule state; groundBody is absent for character support or
-   * removed bodies. Character contacts are separate from rigid-body contact events.
-   * 最近观测的胶囊状态；其他角色或已删除刚体支撑时无 groundBody。
-   * 角色接触不进入刚体接触事件流。 */
+  /** Last observed capsule state; removed support has no identity.
+   * 最近观测的胶囊状态；已删除支撑不返回身份。 */
   struct CharacterState {
     Math::Vec3 position;
     Math::Quat rotation;
@@ -69,11 +73,11 @@ export namespace Dot::Physics {
     GroundState ground;
     Math::Vec3 groundNormal;
     Math::Vec3 groundVelocity;
-    std::optional<BodyId> groundBody;
+    std::optional<ColliderId> groundCollider;
   };
 
   struct RayHit {
-    BodyId body;
+    ColliderId collider;
     float fraction;
     Math::Vec3 point;
     /** Fraction zero may be inside the shape and has no surface normal.
@@ -83,7 +87,7 @@ export namespace Dot::Physics {
 
   struct SphereCastFilter {
     bool includeSensors{};
-    std::optional<BodyId> ignoreBody;
+    std::optional<ColliderId> ignoreCollider;
   };
 
   /** Closest sphere sweep contact. Center and obstacle surface point are world
@@ -93,7 +97,7 @@ export namespace Dot::Physics {
    * 最近球体扫掠接触，中心与障碍表面点使用世界坐标，法线指向障碍外。
    * 初始重叠的比例为零且深度非负，退化重叠可无法确定唯一法线；不脱离重叠或推进仿真。 */
   struct SphereHit {
-    BodyId body;
+    ColliderId collider;
     float fraction;
     Math::Vec3 center;
     Math::Vec3 point;
@@ -106,7 +110,7 @@ export namespace Dot::Physics {
   enum class ContactEndReason { Separated, PoseChanged, Destroyed, Reconfigured };
 
   struct ContactParty {
-    BodyId body;
+    ColliderId collider;
     std::uint64_t userTag;
   };
 
@@ -116,8 +120,10 @@ export namespace Dot::Physics {
   };
 
   /** Last observed pre-solver manifold for the step, with normal from the lower
-   * public body value toward the higher. Negative depth denotes speculative contact.
-   * 此步最近观测的求解前接触流形，法线从较小公开刚体值指向较大值，负深度表示预测接触。 */
+   * collider key toward the higher (bodies precede characters). Negative depth denotes speculative
+   * contact.
+   * 此步最近观测的求解前接触流形，法线从较小碰撞体键指向较大键（刚体在角色之前），负深度表示预测接触。
+   */
   struct ContactGeometry {
     Math::Vec3 normal;
     float penetrationDepth;
@@ -209,13 +215,11 @@ export namespace Dot::Physics {
         -> Core::Result<WorldChangeResult>;
     [[nodiscard]] auto destroyBody(BodyId body) -> Core::Result<void>;
     [[nodiscard]] auto body(BodyId body) const -> Core::Result<BodyState>;
-    /** Own a feet-origin Y-up virtual capsule in this world's real body simulation.
-     * Requires vertical nonpositive gravity. Characters collide with solid bodies
-     * and each other, but have no inner rigid-body proxy: rayCast, sensors and rigid
-     * body events do not see them. Capacity is independent of maxBodies.
-     * 在本世界刚体仿真内拥有脚底原点、Y 向上的虚拟胶囊；要求重力竖直向下或为零。
-     * 与实体刚体及其他角色碰撞，无内部刚体代理，故射线、传感器与刚体事件不感知角色。
-     * 容量独立于 maxBodies。 */
+    /** Own a feet-origin Y-up virtual capsule and native kinematic query/contact
+     * proxy. Requires vertical nonpositive gravity. Proxies share the world but
+     * retain CharacterId identity; public body capacity and mutations remain separate.
+     * 拥有脚底原点、Y 向上的虚拟胶囊及原生运动学查询/接触代理，要求重力竖直向下或为零。
+     * 代理保留 CharacterId 身份，公开刚体容量及修改操作保持独立。 */
     [[nodiscard]] auto createCharacter(const CharacterConfig& config = {})
         -> Core::Result<CharacterId>;
     [[nodiscard]] auto destroyCharacter(CharacterId character) -> Core::Result<void>;
@@ -272,10 +276,10 @@ export namespace Dot::Physics {
     [[nodiscard]] auto rayCast(Math::Vec3 origin, Math::Vec3 displacement) const
         -> Core::Result<std::optional<RayHit>>;
     /** Radius [0.001,10000] metres; finite center endpoints within +/-1e6 and
-     * displacement length >=0.001. Sensors are excluded by default; ignoreBody
-     * must be a current body of this world. Virtual characters are not queried.
+     * displacement length >=0.001. Sensors are excluded by default; ignoreCollider
+     * must be a current body or character of this world.
      * 半径为 [0.001,10000] 米，有限中心端点限制在正负一百万内，位移长度至少 0.001。
-     * 默认排除传感器，忽略句柄须为本世界现存刚体；不查询虚拟角色。 */
+     * 默认排除传感器，忽略句柄须为本世界现存刚体或角色。 */
     [[nodiscard]] auto sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
                                   const SphereCastFilter& filter = {}) const
         -> Core::Result<std::optional<SphereHit>>;

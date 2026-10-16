@@ -660,7 +660,7 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.character` | `[entityId]` | owned CharacterState |
 | `physics.stats` | `[]` | native counters, fault state and generation string |
 | `physics.rayCast` | `[origin, displacement]` | owned RayHit or null |
-| `physics.sphereCast` | `[origin, radius, displacement, {includeSensors, ignoreBody}]` | owned SphereHit or null |
+| `physics.sphereCast` | `[origin, radius, displacement, {includeSensors, ignoreEntity}]` | owned SphereHit or null |
 | `physics.contacts` | `[]` | owned ContactBatch; reads do not consume |
 | `physics.setVelocity` | `[entityId, velocity]` | undefined |
 | `physics.setAngularVelocity` | `[entityId, angularVelocity]` | undefined |
@@ -668,6 +668,12 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.moveKinematic` | `[entityId, position, quaternion, seconds]` | undefined |
 | `physics.setCharacterInput` | `[entityId, {velocity, jump}]` | undefined |
 | `physics.setCharacterYaw` | `[entityId, degrees]` | undefined |
+
+Ray/sphere hits and sensor/native proxy contact events include character-controller
+entities. Sphere filters use `ignoreEntity` for either synchronized collider kind;
+Prism Relay excludes its own capsule while sweeping the shoulder camera. Native
+support identity maps both rigid bodies and live peer characters to groundEntity.
+Rigid-body mutation methods still reject character entities.
 
 Vectors/quaternions use exact {x,y,z}/{x,y,z,w} fields with finite float-range
 numbers. IDs are canonical positive decimal uint64 strings. Arguments reject

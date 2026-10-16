@@ -6,6 +6,7 @@
 #include <span>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 import Dot.Physics.World;
@@ -52,8 +53,8 @@ TEST_CASE("contacts.begin_stay_owned_geometry_and_runtime_tags") {
   auto event = events->front();
   CHECK(event.phase == ContactPhase::Begin);
   CHECK(event.step == 1);
-  CHECK(event.first.body == fixture.floor);
-  CHECK(event.second.body == fixture.ball);
+  CHECK(event.first.collider == ColliderId{fixture.floor});
+  CHECK(event.second.collider == ColliderId{fixture.ball});
   CHECK(event.first.userTag == 111);
   CHECK(event.second.userTag == 222);
   CHECK_FALSE(event.sensor);
@@ -129,7 +130,7 @@ TEST_CASE("contacts.destroyed_body_event_retains_owned_handles_and_tags") {
   REQUIRE(events->size() == 1);
   CHECK(events->front().phase == ContactPhase::End);
   CHECK(events->front().endReason == ContactEndReason::Destroyed);
-  CHECK(events->front().second.body == fixture.ball);
+  CHECK(events->front().second.collider == ColliderId{fixture.ball});
   CHECK(events->front().second.userTag == 222);
   CHECK_FALSE(events->front().geometry);
   CHECK_FALSE(fixture.world.body(fixture.ball));
@@ -158,7 +159,7 @@ TEST_CASE("contacts.reconfiguration_ends_old_association_and_begins_new_one") {
   REQUIRE_FALSE(began->empty());
   CHECK(began->front().phase == ContactPhase::Begin);
   CHECK(began->front().second.userTag == 333);
-  CHECK(began->front().second.body == fixture.ball);
+  CHECK(began->front().second.collider == ColliderId{fixture.ball});
 }
 
 TEST_CASE("contacts.pose_edit_preflight_is_transactional_and_unchanged_pose_keeps_pair") {
@@ -242,7 +243,8 @@ TEST_CASE("contacts.worker_capture_pair_order_and_owned_stream_across_move") {
   auto events = moved.drainContactEvents();
   REQUIRE(events);
   REQUIRE(events->size() == 1);
-  CHECK(events->front().first.body.value < events->front().second.body.value);
+  CHECK(std::get<BodyId>(events->front().first.collider).value
+        < std::get<BodyId>(events->front().second.collider).value);
   CHECK(events->front().first.userTag == 111);
   REQUIRE(moved.step(1.0 / 60));
   CHECK(events->front().geometry->points.size() > 0);
@@ -271,9 +273,9 @@ TEST_CASE("contacts.native_id_churn_cannot_alias_public_pair_identity") {
   REQUIRE(events);
   REQUIRE_FALSE(events->empty());
   CHECK(events->front().phase == ContactPhase::Begin);
-  CHECK(events->front().second.body == *replacement);
+  CHECK(events->front().second.collider == ColliderId{*replacement});
   CHECK(events->front().second.userTag == 999);
-  CHECK(events->front().second.body != fixture.ball);
+  CHECK(events->front().second.collider != ColliderId{fixture.ball});
 }
 
 TEST_CASE("contacts.invalid_capacity_and_invalid_step_preserve_queued_events") {
@@ -313,8 +315,8 @@ TEST_CASE("contacts.public_pair_order_controls_normal_and_point_orientation") {
   auto events = world->drainContactEvents();
   REQUIRE(events);
   REQUIRE(events->size() == 1);
-  CHECK(events->front().first.body == *ball);
-  CHECK(events->front().second.body == *floor);
+  CHECK(events->front().first.collider == ColliderId{*ball});
+  CHECK(events->front().second.collider == ColliderId{*floor});
   REQUIRE(events->front().geometry);
   CHECK(events->front().geometry->normal.y == doctest::Approx(-1));
   CHECK(events->front().first.userTag == 22);
@@ -334,7 +336,7 @@ TEST_CASE("contacts.worker_pair_order_is_deterministic_with_multiple_contacts") 
   auto events = fixture.world.drainContactEvents();
   REQUIRE(events);
   REQUIRE(events->size() == 2);
-  CHECK((*events)[0].second.body == fixture.ball);
-  CHECK((*events)[1].second.body == *other);
+  CHECK((*events)[0].second.collider == ColliderId{fixture.ball});
+  CHECK((*events)[1].second.collider == ColliderId{*other});
   CHECK(fixture.world.stats()->contactPairs == 2);
 }

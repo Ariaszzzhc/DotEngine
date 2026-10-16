@@ -288,13 +288,13 @@ namespace Dot::Script {
       }
 
       if (method == "physics.sphereCast") {
-        Codec::requireFields(args[3], {"includeSensors", "ignoreBody"});
+        Codec::requireFields(args[3], {"includeSensors", "ignoreEntity"});
         Physics::SceneSphereCastFilter filter;
         filter.includeSensors = args[3]["includeSensors"].get<bool>();
 
-        if (!args[3]["ignoreBody"].is_null()) {
-          filter.ignoreBody = entity(args[3]["ignoreBody"]);
-          auto owner = m_scene->entity(*filter.ignoreBody);
+        if (!args[3]["ignoreEntity"].is_null()) {
+          filter.ignoreEntity = entity(args[3]["ignoreEntity"]);
+          auto owner = m_scene->entity(*filter.ignoreEntity);
 
           if (!owner) {
             return std::unexpected(owner.error());

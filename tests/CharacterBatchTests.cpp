@@ -6,6 +6,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 import Dot.Physics.World;
@@ -44,7 +45,7 @@ TEST_CASE("character_batch.full_capacity_replacements_retain_both_handle_kinds")
   CHECK(world.stats()->characters == 1);
   CHECK(world.body(body)->position == floor.position);
   CHECK(world.character(character)->position == config.position);
-  CHECK(world.character(character)->groundBody == body);
+  CHECK(world.character(character)->groundCollider == std::optional<ColliderId>{body});
   CHECK_FALSE(world.stats()->faulted);
 }
 
@@ -226,4 +227,43 @@ TEST_CASE("character_batch_move_and_owner_thread_preserve_world_scope") {
   REQUIRE(moved.character(character));
   REQUIRE(moved.applyChanges({}, changes));
   CHECK(moved.stats()->characters == 0);
+}
+
+TEST_CASE("character_batch.contact_preflight_is_shared_with_body_lifetimes") {
+  auto world
+      = World::create({.maxBodies = 2, .gravity = {}, .maxContactEvents = 3, .maxCharacters = 1})
+            .value();
+  auto sensor = floorConfig();
+  sensor.position = {0, 1, 0};
+  sensor.halfExtents = {1, 1, 1};
+  sensor.sensor = true;
+  const auto first = world.createBody(sensor).value();
+  sensor.position.x = .5F;
+  REQUIRE(world.createBody(sensor));
+  const auto character = world.createCharacter().value();
+  REQUIRE(world.step(1.0 / 60));
+  REQUIRE(world.stats()->queuedContactEvents == 2);
+  const auto before = world.character(character)->position;
+  CHECK_FALSE(world.teleportCharacter(character, {5, 0, 0}));
+  CHECK_FALSE(world.destroyCharacter(character));
+  CharacterConfig replacement;
+  replacement.position = {5, 0, 0};
+  const std::array bodies{BodyChange{first, std::nullopt}};
+  const std::array characters{CharacterChange{character, replacement}};
+  CHECK_FALSE(world.applyChanges(bodies, characters));
+  CHECK(world.character(character)->position == before);
+  CHECK(world.stats()->characters == 1);
+  CHECK(world.stats()->bodies == 2);
+  CHECK(world.stats()->queuedContactEvents == 2);
+  CHECK_FALSE(world.stats()->faulted);
+  CHECK_FALSE(world.rayCast({5, 1, 3}, {0, 0, -6})->has_value());
+  REQUIRE(world.drainContactEvents()->size() == 2);
+  REQUIRE(world.applyChanges(bodies, characters));
+  auto events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 2);
+  CHECK(events[0].phase == ContactPhase::End);
+  CHECK(events[1].phase == ContactPhase::End);
+  CHECK(events[0].endReason == ContactEndReason::Destroyed);
+  CHECK(events[1].endReason == ContactEndReason::Reconfigured);
+  CHECK(world.rayCast({5, 1, 3}, {0, 0, -6})->value().collider == ColliderId{character});
 }

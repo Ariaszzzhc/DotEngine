@@ -1,4 +1,4 @@
-import {Entity, type InputFrame, physics, type Vec3} from 'dot:engine';
+import {Entity, type EntityId, type InputFrame, physics, type Vec3} from 'dot:engine';
 
 export interface CameraState {
   yaw: number;
@@ -18,13 +18,15 @@ const clearance = 0.035;
 export class ShoulderCamera {
   #state: CameraState = {yaw: 0, pitch: -0.12, distance: 3.2, boom: 3.2};
   readonly camera: Entity;
+  readonly #ignore: EntityId|null;
 
-  constructor(camera: Entity) {
+  constructor(camera: Entity, ignore: EntityId|null = null) {
     if (!camera.camera || camera.parent !== null) {
       throw Error('Shoulder camera requires a root camera entity');
     }
 
     this.camera = camera;
+    this.#ignore = ignore;
   }
 
   get yaw(): number {
@@ -74,7 +76,7 @@ export class ShoulderCamera {
         throw Error('Shoulder camera has no valid sweep direction');
       }
 
-      const hit = physics.sphereCast(pivot, radius, offset);
+      const hit = physics.sphereCast(pivot, radius, offset, {ignoreEntity: this.#ignore});
 
       if (hit && hit.fraction === 0 && hit.penetrationDepth > 0) {
         if (!hit.normal) {

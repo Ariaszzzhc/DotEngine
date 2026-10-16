@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1015/1015 (145.98s) and Release/NDEBUG
-1015/1015 (20.17s), including 258 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1022/1022 (147.56s) and Release/NDEBUG
+1022/1022 (20.59s), including 258 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -59,3 +59,12 @@ input method: relative gameplay suspends SDL text input, and Escape/Stop restore
 Native Play inspection exposes actual text mode. The stopped authoring scene stays
 clean; normal close exits successfully. Finished realistic humanoid/suit art and
 populated-game performance remain open.
+
+
+Native characters now own broad-phase query/contact proxies. Typed collider identity
+keeps character hits distinct from mutable rigid bodies; scene/SDK queries and native
+sensor/rigid proxy events resolve the owning entity. Removal, teleport and mixed
+replacement share event-capacity preflight, including full-capacity replacement.
+Prism Relay excludes itself during camera sweeps, and Feature Lab demonstrates
+character query identity/self-filtering. Per-body CCD controls, virtual-only contact
+callbacks and populated-game/crowd scalability remain unfinished.

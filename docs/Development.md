@@ -5624,3 +5624,81 @@ reload/edge scheduling, native collision and animation use, portable SDL calls,
 module boundaries, durable test scope and asset/scene references/provenance. The
 source GLB and upstream cache hashes match their recorded values. The commit excludes
 user planning/design inputs, build/cache/helper files and any distribution package.
+
+
+## 2026-10-16 — Native character collider presence
+
+Characters now own real native kinematic inner capsules in the same Jolt broad
+phase as bodies. This fills the gap where ordinary rays, volume sweeps, sensor
+triggers and incoming-body solver contacts could not see a character. Native
+ColliderId is a BodyId/CharacterId variant, used by query hits, contact parties and
+ground support. Character proxies never masquerade as publicly mutable rigid bodies.
+Backend user data separates handle kinds; opaque caller tags remain separately
+owned metadata and survive lifecycle events. Scene bindings supply entity tags for
+both kinds and map query/support results back to current entity identities.
+
+The backend reserves an extra character set for batch preparation, retaining
+independent public body/character limits and full-capacity replacement. RAII destroys
+prepared proxies on rejected batches. Virtual movement excludes all proxy bodies
+and retains native character-to-character solving, avoiding self/duplicate collision.
+Body/active statistics count only public rigid bodies. Peer support resolves only
+while its owner is live and cannot enable a jump after removal.
+
+Character deletion, teleport and replacement preflight the owned contact queue.
+Mixed changes reserve the union of affected body/character pairs before either set
+publishes, retaining motion, contacts and IDs on rejected preparation. Teleport
+preparation failures do not fault a still-unchanged world; failures after publication
+remain explicit faults. Native worker callbacks retain the same capture/owner-side
+reconciliation and error boundaries. Native proxy geometry/events are real solver
+manifolds; virtual predictive-shell encounters that never touch the proxy are not
+claimed as complete character contact events. Arbitrary-speed CCD guarantees,
+per-body CCD authoring and virtual-only contact callbacks remain unfinished.
+
+Scene/SDK sphere filtering now uses ignoreEntity for either collider kind, with no
+old filter-name alias. Native filtering accepts the typed ignoreCollider. Prism
+Relay's shoulder camera excludes its own character while retaining all other
+colliders. Feature Lab's ordinary character audit demonstrates native ray/sphere
+identity and self-filtering. No new host invocation method, public header tree,
+special renderer, temporary source generator or visual test executable is added.
+
+The first focused Debug run passes 89/91. One old assertion still required rays to
+miss characters and is updated to the new identity contract. The incoming-body
+case initially used motion resolved by the virtual predictive shell before a native
+proxy manifold; a 20m/s incoming sphere now establishes the actual proxy contact.
+A follow-up fixed-location assertion was incorrect: physical bodies can push a
+virtual character. The durable regression instead checks real Begin contact,
+separation on every step, bounded physical push and no horizontal drift after the
+incoming body is removed. Corrected Debug selection passes 91/91 (13.61s); peer
+support/removal passes 1/1 (.24s). Expanded Release/NDEBUG selection including
+Feature Lab passes 99/99 (1.30s), all without desktop windows.
+
+An actual Release editor run opens the generated Prism Relay project, starts Play
+and enables Game input through the strict live mailbox. Computer use holds W for
+.6s; the native Player changes from [-3,0,2] to approximately [-3,0,.026693]. Its
+sphere-swept shoulder camera follows and subsequently orbits without colliding with
+the player, audio failure, script diagnostic, dropped fixed time or viewport error.
+Stop reports 3306 frames/3318 fixed steps. Its immediate response precedes the
+native capture-mode update; the following inspection confirms capture released and
+text input restored, authoring revision 1 clean with the saved Player [-3,0,2] pose.
+Normal close exits 0 and removes the owned mailbox. This workflow uses the actual
+editor and CUA supplement; no automated test opens a desktop window. Final full
+suite/review and cleanup results follow below. Only arm64 macOS is locally executed.
+
+
+Full serial arm64 macOS suites pass Debug 1022/1022 (147.56s), then Release/NDEBUG
+1022/1022 (20.59s), after both builds complete and the native editor has closed.
+Inventory is 258 unit and 764 integration cases, including 123 offscreen GPU,
+28 SDL-dummy platform and 27 native audio cases (labels overlap). Host-device access
+is used for offscreen GPU/audio integration. No automated test opens a desktop
+window. All 20 changed C++/TypeScript source files pass clang-format checks, and diff
+whitespace checks pass.
+
+Precommit review covers typed owner identity, callback thread safety, proxy shape/
+body lifetime, slot bounds and full-capacity batches, shared queue preflight and
+post-publication fault handling, stale/foreign owner checks, native-only collision,
+scene tags/support mapping, script filtering/host guards, module separation and
+platform-neutral Jolt/SDL usage. Temporary native app linkage, control scripts and
+observation files are removed; build caches and test logs remain ignored. User
+planning/design inputs stay untracked, and no distribution archive is produced.
+The broader mature-editor/large-game goal, finished realistic art, per-body CCD,
+virtual-only contacts and crowd/scalability evidence remain incomplete.

@@ -7,6 +7,7 @@
 #include <span>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 import Dot.Physics.World;
@@ -38,7 +39,7 @@ TEST_CASE("physics_batch.full_capacity_replacement_retains_handle") {
   auto hit = world->rayCast({2, 2, 0}, {0, -4, 0});
   REQUIRE(hit);
   REQUIRE(hit->has_value());
-  CHECK((*hit)->body == *body);
+  CHECK((*hit)->collider == ColliderId{*body});
 }
 
 TEST_CASE("physics_batch.create_destroy_replace_results_follow_input_order") {

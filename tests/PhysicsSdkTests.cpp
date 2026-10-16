@@ -216,7 +216,7 @@ export class Actor extends ScriptComponent {
     hit.center.z = 99;
 
     if (physics.sphereCast({x: 0, y: 0, z: 3}, 0.25, {x: 0, y: 0, z: -4},
-        {ignoreBody: this.self.id}) !== null) {
+        {ignoreEntity: this.self.id}) !== null) {
       throw Error('native body filter');
     }
   }
@@ -462,4 +462,53 @@ TEST_CASE("physics_sdk_typecheck_rejects_incomplete_vectors_states_and_unsupport
     REQUIRE_FALSE(result);
     CHECK(result.error().message.find("TS") != std::string::npos);
   }
+}
+
+TEST_CASE("character_sdk_native_proxy_queries_and_trigger_contacts_resolve_the_entity") {
+  Project project;
+  project.write(R"ts(
+import {physics, ScriptComponent} from 'dot:engine';
+export class Actor extends ScriptComponent {
+  onUpdate(): void {
+    const cast = physics.sphereCast({x: 0, y: 1, z: 3}, .2, {x: 0, y: 0, z: -6});
+
+    if (!cast || cast.entity.value !== this.self.id.value) {
+      throw Error('character collider identity');
+    }
+
+    if (physics.sphereCast({x: 0, y: 1, z: 3}, .2, {x: 0, y: 0, z: -6},
+        {ignoreEntity: this.self.id}) !== null) {
+      throw Error('character self filter');
+    }
+
+    const trigger = physics.contacts.events.find(event => event.sensor
+      && (event.first.value === this.self.id.value || event.second.value === this.self.id.value));
+
+    if (!trigger) {
+      throw Error('character sensor event');
+    }
+
+    this.self.name = 'observed character trigger';
+  }
+}
+)ts");
+  auto native = scene();
+  const auto actor = native->entities()->front().id;
+  REQUIRE(native->setRigidBody(actor, std::nullopt));
+  REQUIRE(native->setCharacterController(actor, Dot::World::CharacterController{}));
+  const auto trigger = native->createEntity("Trigger").value();
+  Dot::World::RigidBody volume;
+  volume.motion = Dot::Physics::Motion::Static;
+  volume.shape = Dot::Physics::Shape::Box;
+  volume.halfExtents = {1, 1, 1};
+  volume.sensor = true;
+  REQUIRE(native->setTransform(trigger, {{0, 1, 0}}));
+  REQUIRE(native->setRigidBody(trigger, volume));
+  auto physics = source(native);
+  auto scripts = service(native, project.compile(), physics);
+  good(scripts.start());
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(1.0 / 60));
+  CHECK(native->entity(actor)->name == "observed character trigger");
+  good(scripts.stop());
 }

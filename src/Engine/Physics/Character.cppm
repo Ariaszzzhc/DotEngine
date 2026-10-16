@@ -34,6 +34,9 @@ export namespace Dot::Physics {
   struct CharacterConfig : CharacterProperties {
     Math::Vec3 position{};
     float yawDegrees{};
+    /** Owned contact metadata, preserved in lifecycle events after removal.
+     * 拥有的接触元数据，删除后仍在生命周期事件中保留。 */
+    std::uint64_t userTag{};
   };
 
   /** World-space horizontal desired speed (Y must be zero), magnitude <=50 m/s.

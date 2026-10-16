@@ -12,6 +12,7 @@ module;
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module Dot.Physics.SceneSimulation;
@@ -214,6 +215,45 @@ namespace Dot::Physics {
       return found->second.body;
     }
 
+    auto resolveCollider(EntityId entity) const -> Core::Result<ColliderId> {
+      auto valid = ready();
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      if (entity.scene != m_scene || entity.value == 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid collider entity or foreign scene");
+      }
+
+      if (const auto found = m_entries.find(entity.value); found != m_entries.end()) {
+        return ColliderId{found->second.body};
+      }
+
+      if (const auto found = m_characters.find(entity.value); found != m_characters.end()) {
+        return ColliderId{found->second.character};
+      }
+
+      return Core::fail(Core::ErrorCode::NotFound, "Entity has no synchronized collider");
+    }
+
+    auto entity(const ColliderId& id) const -> std::optional<EntityId> {
+      for (const auto& [value, entry] : m_entries) {
+        if (id == ColliderId{entry.body}) {
+          return EntityId{m_scene, value};
+        }
+      }
+
+      for (const auto& [value, entry] : m_characters) {
+        if (id == ColliderId{entry.character}) {
+          return EntityId{m_scene, value};
+        }
+      }
+
+      return std::nullopt;
+    }
+
     auto resolveCharacter(EntityId entity, bool mutate = false) const -> Core::Result<CharacterId> {
       auto checked = ready(mutate);
 
@@ -392,6 +432,7 @@ namespace Dot::Physics {
           return context(entity.id, config.error());
         }
 
+        config->userTag = entity.id.value;
         const auto existing = m_impl->m_characters.find(entity.id.value);
 
         if (existing != m_impl->m_characters.end()
@@ -686,16 +727,8 @@ namespace Dot::Physics {
       return std::unexpected(state.error());
     }
 
-    std::optional<EntityId> support;
-
-    if (state->groundBody) {
-      for (const auto& [value, entry] : m_impl->m_entries) {
-        if (entry.body == *state->groundBody) {
-          support = EntityId{m_impl->m_scene, value};
-          break;
-        }
-      }
-    }
+    const auto support
+        = state->groundCollider ? m_impl->entity(*state->groundCollider) : std::nullopt;
 
     return SceneCharacterState{state->position, state->rotation,     state->velocity,
                                state->ground,   state->groundNormal, state->groundVelocity,
@@ -863,11 +896,8 @@ namespace Dot::Physics {
 
     const auto& hit = **result;
 
-    for (const auto& [value, entry] : m_impl->m_entries) {
-      if (entry.body == hit.body) {
-        return std::optional{
-            SceneRayHit{{m_impl->m_scene, value}, hit.fraction, hit.point, hit.normal}};
-      }
+    if (auto entity = m_impl->entity(hit.collider)) {
+      return std::optional{SceneRayHit{*entity, hit.fraction, hit.point, hit.normal}};
     }
 
     return Core::fail(Core::ErrorCode::External, "Scene ray hit has no entity binding");
@@ -888,14 +918,14 @@ namespace Dot::Physics {
 
     SphereCastFilter nativeFilter{filter.includeSensors, {}};
 
-    if (filter.ignoreBody) {
-      auto body = m_impl->resolve(*filter.ignoreBody);
+    if (filter.ignoreEntity) {
+      auto body = m_impl->resolveCollider(*filter.ignoreEntity);
 
       if (!body) {
         return std::unexpected(body.error());
       }
 
-      nativeFilter.ignoreBody = *body;
+      nativeFilter.ignoreCollider = *body;
     }
 
     auto result = m_impl->m_world.sphereCast(origin, radius, displacement, nativeFilter);
@@ -910,15 +940,9 @@ namespace Dot::Physics {
 
     const auto& hit = **result;
 
-    for (const auto& [value, entry] : m_impl->m_entries) {
-      if (entry.body == hit.body) {
-        return std::optional{SceneSphereHit{{m_impl->m_scene, value},
-                                            hit.fraction,
-                                            hit.center,
-                                            hit.point,
-                                            hit.normal,
-                                            hit.penetrationDepth}};
-      }
+    if (auto entity = m_impl->entity(hit.collider)) {
+      return std::optional{SceneSphereHit{*entity, hit.fraction, hit.center, hit.point, hit.normal,
+                                          hit.penetrationDepth}};
     }
 
     return Core::fail(Core::ErrorCode::External, "Scene sphere sweep hit has no entity binding");

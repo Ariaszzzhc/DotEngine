@@ -41,7 +41,7 @@ export namespace Dot::Physics {
 
   struct SceneSphereCastFilter {
     bool includeSensors{};
-    std::optional<Dot::World::EntityId> ignoreBody;
+    std::optional<Dot::World::EntityId> ignoreEntity;
   };
 
   struct SceneSphereHit {
@@ -90,9 +90,10 @@ export namespace Dot::Physics {
     /** Character dimensions follow positive uniform world scale; feet must remain
      * Y-up. Step/stick distances remain world metres. Inputs are world-space;
      * set yaw without clearing motion. Character poses write back with body poses
-     * in the same scene transaction. Support refers to synchronized rigid bodies.
+     * in the same scene transaction. Support refers to synchronized rigid bodies or characters.
      * 角色尺寸按正向等比世界缩放，脚底须保持 Y 向上，台阶/贴地距离仍为世界米。
-     * 输入使用世界坐标，转向保留运动；角色/刚体位姿在同一场景事务写回，支撑指向已同步刚体。 */
+     * 输入使用世界坐标，转向保留运动；角色/刚体位姿在同一场景事务写回，支撑指向已同步刚体或角色。
+     */
     [[nodiscard]] auto character(Dot::World::EntityId entity) const
         -> Core::Result<SceneCharacterState>;
     [[nodiscard]] auto setCharacterInput(Dot::World::EntityId entity, const CharacterInput& input)
@@ -117,9 +118,9 @@ export namespace Dot::Physics {
                                      Math::Quat rotation, double seconds) -> Core::Result<void>;
     [[nodiscard]] auto rayCast(Math::Vec3 origin, Math::Vec3 displacement) const
         -> Core::Result<std::optional<SceneRayHit>>;
-    /** Observational volume sweep against last synchronized rigid bodies; filter
-     * owners must be synchronized body entities. 原生体积扫掠只读最近同步刚体，
-     * 过滤所有者须为已同步的刚体实体。 */
+    /** Observational volume sweep against synchronized bodies and characters;
+     * ignored owners must have either collider kind. 原生体积扫掠只读已同步刚体及角色，
+     * 忽略所有者须具有其中一种碰撞体。 */
     [[nodiscard]] auto sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
                                   const SceneSphereCastFilter& filter = {}) const
         -> Core::Result<std::optional<SceneSphereHit>>;

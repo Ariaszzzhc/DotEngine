@@ -44,9 +44,11 @@ module;
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module Dot.Physics.World;
@@ -60,6 +62,16 @@ namespace Dot::Physics {
   namespace {
     constexpr JPH::ObjectLayer staticLayer = 0;
     constexpr JPH::ObjectLayer movingLayer = 1;
+    constexpr std::uint64_t characterBit = std::uint64_t{1} << 63;
+
+    auto collider(std::uint64_t world, std::uint64_t key) -> ColliderId {
+      if ((key & characterBit) != 0) {
+        return CharacterId{world, key & ~characterBit};
+      }
+
+      return BodyId{world, key};
+    }
+
     constexpr float maxSpeed = 500;
     constexpr float maxAngularSpeed = 0.25F * JPH::JPH_PI * 60;
     std::atomic<std::uint64_t> nextWorld{1};
@@ -467,8 +479,8 @@ namespace Dot::Physics {
           const auto firstValue = firstBody.GetUserData();
           const auto secondValue = secondBody.GetUserData();
           const bool swapped = firstValue > secondValue;
-          ContactParty first{{m_world, firstValue}, m_tags(firstValue)};
-          ContactParty second{{m_world, secondValue}, m_tags(secondValue)};
+          ContactParty first{collider(m_world, firstValue), m_tags(firstValue)};
+          ContactParty second{collider(m_world, secondValue), m_tags(secondValue)};
 
           if (swapped) {
             std::swap(first, second);
@@ -502,7 +514,7 @@ namespace Dot::Physics {
           }
 
           const std::scoped_lock lock(m_mutex);
-          const Key key{first.body.value, second.body.value};
+          const Key key{std::min(firstValue, secondValue), std::max(firstValue, secondValue)};
 
           if (!m_pending.contains(key) && m_pending.size() == m_maxPairs) {
             m_failure.store(Failure::Capacity);
@@ -543,7 +555,7 @@ namespace Dot::Physics {
     class SolidBodies final : public JPH::BodyFilter {
     public:
       auto ShouldCollideLocked(const JPH::Body& body) const -> bool override {
-        return !body.IsSensor();
+        return !body.IsSensor() && (body.GetUserData() & characterBit) == 0;
       }
     };
 
@@ -622,6 +634,7 @@ namespace Dot::Physics {
       std::unique_ptr<JPH::CharacterVirtual> capsule;
       CharacterProperties properties;
       CharacterInput input;
+      std::uint64_t userTag;
     };
 
     std::shared_ptr<Runtime> m_runtime;
@@ -647,9 +660,12 @@ namespace Dot::Physics {
         : m_runtime(std::move(owner)),
           m_identity(identity),
           m_config(config),
-          m_contacts(
-              identity, config.maxBodies * 16, config.maxContactEvents,
-              [this](std::uint64_t value) { return std::as_const(m_bodies).at(value).userTag; }) {
+          m_contacts(identity, (config.maxBodies + config.maxCharacters) * 16,
+                     config.maxContactEvents, [this](std::uint64_t value) {
+                       return (value & characterBit) == 0
+                                  ? std::as_const(m_bodies).at(value).userTag
+                                  : std::as_const(m_characters).at(value & ~characterBit).userTag;
+                     }) {
       if (config.workerThreads == 0) {
         m_jobs = std::make_unique<JPH::JobSystemSingleThreaded>(JPH::cMaxPhysicsJobs);
       } else {
@@ -657,8 +673,12 @@ namespace Dot::Physics {
             JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, static_cast<int>(config.workerThreads));
       }
 
-      m_system.Init(config.maxBodies, 0, config.maxBodies * 16, config.maxBodies * 16, m_layers,
-                    m_broadFilter, m_pairFilter);
+      /** Native inner proxies are prepared before publishing a batch. Reserve one
+       * additional character set so replacements work at full public capacity.
+       * 原生内部代理在批量发布前准备，多预留一组角色槽，使公开容量满时仍可替换。 */
+      const auto slots = config.maxBodies + 2 * config.maxCharacters;
+      const auto pairs = (config.maxBodies + config.maxCharacters) * 16;
+      m_system.Init(slots, 0, pairs, pairs, m_layers, m_broadFilter, m_pairFilter);
       m_system.SetGravity(native(config.gravity));
       m_bodies.reserve(config.maxBodies);
       m_characterCollisions.mCharacters.reserve(config.maxCharacters);
@@ -733,6 +753,30 @@ namespace Dot::Physics {
       return &found->second;
     }
 
+    auto nativeCollider(std::uint64_t key) const -> JPH::BodyID {
+      return (key & characterBit) == 0
+                 ? m_bodies.at(key).nativeId
+                 : m_characters.at(key & ~characterBit).capsule->GetInnerBodyID();
+    }
+
+    auto resolveCollider(const ColliderId& id) -> Core::Result<JPH::BodyID> {
+      return std::visit(
+          [this](auto value) -> Core::Result<JPH::BodyID> {
+            auto entry = resolve(value);
+
+            if (!entry) {
+              return std::unexpected(entry.error());
+            }
+
+            if constexpr (std::is_same_v<decltype(value), BodyId>) {
+              return entry->nativeId;
+            } else {
+              return (*entry)->capsule->GetInnerBodyID();
+            }
+          },
+          id);
+    }
+
     auto refreshCharacter(JPH::CharacterVirtual& character) -> Core::Result<void> {
       character.RefreshContacts(m_system.GetDefaultBroadPhaseLayerFilter(movingLayer),
                                 m_system.GetDefaultLayerFilter(movingLayer), SolidBodies{}, {},
@@ -763,16 +807,24 @@ namespace Dot::Physics {
       JPH::CharacterVirtualSettings settings;
       settings.mID = JPH::CharacterID{static_cast<JPH::uint32>(id)};
       settings.mShape = shape.Get();
+      settings.mInnerBodyShape = shape.Get();
+      settings.mInnerBodyLayer = movingLayer;
       settings.mShapeOffset = {0, config.radius + config.halfHeight, 0};
       settings.mSupportingVolume = JPH::Plane{JPH::Vec3::sAxisY(), -config.radius};
       settings.mMaxSlopeAngle = JPH::DegreesToRadians(config.maxSlopeDegrees);
       settings.mMass = config.mass;
       settings.mMaxStrength = config.maxStrength;
       settings.mMaxNumHits = config.maxContacts;
-      auto capsule = std::make_unique<JPH::CharacterVirtual>(&settings, native(config.position),
-                                                             native(*rotation), 0, &m_system);
+      auto capsule = std::make_unique<JPH::CharacterVirtual>(
+          &settings, native(config.position), native(*rotation), characterBit | id, &m_system);
+
+      if (capsule->GetInnerBodyID().IsInvalid()) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Cannot allocate character broad-phase proxy");
+      }
+
       capsule->SetCharacterVsCharacterCollision(&m_characterCollisions);
-      return CharacterEntry{std::move(capsule), config, {}};
+      return CharacterEntry{std::move(capsule), config, {}, config.userTag};
     }
 
     auto advanceCharacters(float seconds) -> Core::Result<void> {
@@ -951,7 +1003,7 @@ namespace Dot::Physics {
         if (change.body) {
           id = *change.body;
         } else {
-          if (nextValue == std::numeric_limits<std::uint64_t>::max()) {
+          if (nextValue == characterBit) {
             return Core::fail(Core::ErrorCode::Unavailable, "Physics body identity exhausted");
           }
 
@@ -1085,6 +1137,7 @@ namespace Dot::Physics {
       result.characters.reserve(characters.size());
       std::unordered_set<std::uint64_t> seen;
       std::map<std::uint64_t, Impl::CharacterEntry> prepared;
+      ContactCollector::RemovalSet removals;
       auto count = m_impl->m_characters.size();
       auto next = m_impl->m_nextCharacter;
 
@@ -1108,6 +1161,9 @@ namespace Dot::Physics {
           }
 
           previous = *entry;
+          removals.emplace(
+              characterBit | change.character->value,
+              change.config ? ContactEndReason::Reconfigured : ContactEndReason::Destroyed);
           --count;
         }
 
@@ -1159,6 +1215,19 @@ namespace Dot::Physics {
         return Core::fail(Core::ErrorCode::Unavailable, "Character batch exceeds capacity");
       }
 
+      for (const auto& change : bodies) {
+        if (change.body) {
+          removals.emplace(change.body->value, change.config ? ContactEndReason::Reconfigured
+                                                             : ContactEndReason::Destroyed);
+        }
+      }
+
+      auto eventsReady = m_impl->m_contacts.prepareRemoval(removals);
+
+      if (!eventsReady) {
+        return std::unexpected(eventsReady.error());
+      }
+
       auto applied = applyChanges(bodies);
 
       if (!applied) {
@@ -1167,6 +1236,7 @@ namespace Dot::Physics {
 
       result.bodies = std::move(*applied);
       committed = !bodies.empty() || !characters.empty();
+      m_impl->m_contacts.remove(removals, m_impl->m_step, true);
       m_impl->m_nextCharacter = next;
 
       for (const auto& change : characters) {
@@ -1335,9 +1405,26 @@ namespace Dot::Physics {
       return std::unexpected(entry.error());
     }
 
-    m_impl->m_characterCollisions.Remove((*entry)->capsule.get());
-    m_impl->m_characters.erase(id.value);
-    return {};
+    try {
+      const ContactCollector::RemovalSet removed{
+          {characterBit | id.value, ContactEndReason::Destroyed}};
+
+      if (!m_impl->m_faulted) {
+        auto eventsReady = m_impl->m_contacts.prepareRemoval(removed);
+
+        if (!eventsReady) {
+          return eventsReady;
+        }
+      }
+
+      m_impl->m_contacts.remove(removed, m_impl->m_step, !m_impl->m_faulted);
+      m_impl->m_characterCollisions.Remove((*entry)->capsule.get());
+      m_impl->m_characters.erase(id.value);
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        std::format("Prepare character contact cleanup: {}", error.what()));
+    }
   }
 
   auto World::character(CharacterId id) const -> Core::Result<CharacterState> {
@@ -1371,11 +1458,21 @@ namespace Dot::Physics {
         return Core::fail(Core::ErrorCode::External, "Unknown native character ground state");
     }
 
-    std::optional<BodyId> support;
-    const auto found = m_impl->m_bodies.find(capsule.GetGroundUserData());
+    std::optional<ColliderId> support;
+    const auto key = capsule.GetGroundUserData();
 
-    if (found != m_impl->m_bodies.end() && found->second.nativeId == capsule.GetGroundBodyID()) {
-      support = BodyId{m_impl->m_identity, found->first};
+    if ((key & characterBit) != 0) {
+      const auto found = m_impl->m_characters.find(key & ~characterBit);
+
+      if (found != m_impl->m_characters.end()) {
+        support = CharacterId{m_impl->m_identity, found->first};
+      }
+    } else {
+      const auto found = m_impl->m_bodies.find(key);
+
+      if (found != m_impl->m_bodies.end() && found->second.nativeId == capsule.GetGroundBodyID()) {
+        support = BodyId{m_impl->m_identity, found->first};
+      }
     }
 
     return CharacterState{vector(capsule.GetPosition()),
@@ -1465,7 +1562,19 @@ namespace Dot::Physics {
       return std::unexpected(rotation.error());
     }
 
+    bool mutating{};
+
     try {
+      const ContactCollector::RemovalSet removed{
+          {characterBit | id.value, ContactEndReason::PoseChanged}};
+      auto eventsReady = m_impl->m_contacts.prepareRemoval(removed);
+
+      if (!eventsReady) {
+        return eventsReady;
+      }
+
+      mutating = true;
+      m_impl->m_contacts.remove(removed, m_impl->m_step, true);
       auto& capsule = *(*entry)->capsule;
       capsule.SetPosition(native(feet));
       capsule.SetRotation(native(*rotation));
@@ -1481,9 +1590,11 @@ namespace Dot::Physics {
 
       return {};
     } catch (const std::exception& error) {
-      m_impl->m_faulted = true;
-      return Core::fail(Core::ErrorCode::External,
-                        std::format("Character teleport may have changed pose: {}", error.what()));
+      m_impl->m_faulted = m_impl->m_faulted || mutating;
+      return Core::fail(
+          Core::ErrorCode::External,
+          std::format("Character teleport failed {}: {}",
+                      mutating ? "after publication" : "during preparation", error.what()));
     }
   }
 
@@ -1556,8 +1667,8 @@ namespace Dot::Physics {
     try {
       auto collected = m_impl->m_contacts.finish(
           m_impl->m_step, [&](ContactCollector::Key key, bool wasSleeping) {
-            const auto first = m_impl->m_bodies.at(key.first).nativeId;
-            const auto second = m_impl->m_bodies.at(key.second).nativeId;
+            const auto first = m_impl->nativeCollider(key.first);
+            const auto second = m_impl->nativeCollider(key.second);
             const auto& bodies = m_impl->m_system.GetBodyInterface();
             bool touching = m_impl->m_system.WereBodiesInContact(first, second);
             bool sleeping = !bodies.IsActive(first) && !bodies.IsActive(second);
@@ -1620,9 +1731,16 @@ namespace Dot::Physics {
     }
 
     return WorldStats{
-        m_impl->m_bodies.size(),     m_impl->m_system.GetNumActiveBodies(JPH::EBodyType::RigidBody),
-        m_impl->m_faulted,           m_impl->m_contacts.pairs(),
-        m_impl->m_contacts.queued(), m_impl->m_characters.size()};
+        m_impl->m_bodies.size(),
+        static_cast<std::size_t>(std::ranges::count_if(
+            m_impl->m_bodies,
+            [&](const auto& item) {
+              return m_impl->m_system.GetBodyInterface().IsActive(item.second.nativeId);
+            })),
+        m_impl->m_faulted,
+        m_impl->m_contacts.pairs(),
+        m_impl->m_contacts.queued(),
+        m_impl->m_characters.size()};
   }
 
   auto World::drainContactEvents() -> Core::Result<std::vector<ContactEvent>> {
@@ -1860,10 +1978,8 @@ namespace Dot::Physics {
       normal = *unit;
     }
 
-    return std::optional{RayHit{{m_impl->m_identity, locked.GetBody().GetUserData()},
-                                hit.mFraction,
-                                vector(point),
-                                normal}};
+    return std::optional{RayHit{collider(m_impl->m_identity, locked.GetBody().GetUserData()),
+                                hit.mFraction, vector(point), normal}};
   }
 
   auto World::sphereCast(Math::Vec3 origin, float radius, Math::Vec3 displacement,
@@ -1888,14 +2004,14 @@ namespace Dot::Physics {
 
     JPH::BodyID ignored;
 
-    if (filter.ignoreBody) {
-      auto body = m_impl->resolve(*filter.ignoreBody);
+    if (filter.ignoreCollider) {
+      auto body = m_impl->resolveCollider(*filter.ignoreCollider);
 
       if (!body) {
         return std::unexpected(body.error());
       }
 
-      ignored = body->nativeId;
+      ignored = *body;
     }
 
     try {
@@ -1941,11 +2057,8 @@ namespace Dot::Physics {
       }
 
       return std::optional{
-          SphereHit{{m_impl->m_identity, locked.GetBody().GetUserData()},
-                    hit.mFraction,
-                    origin + displacement * hit.mFraction,
-                    point,
-                    normal,
+          SphereHit{collider(m_impl->m_identity, locked.GetBody().GetUserData()), hit.mFraction,
+                    origin + displacement * hit.mFraction, point, normal,
                     hit.mFraction == 0 ? std::max(0.F, hit.mPenetrationDepth) : 0.F}};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

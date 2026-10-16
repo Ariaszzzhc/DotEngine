@@ -201,3 +201,43 @@ TEST_CASE("scene_character_contact_failure_faults_and_reset_recovers_from_author
   CHECK_FALSE(simulation.stats()->faulted);
   fixture.step(simulation);
 }
+
+TEST_CASE("scene_character_query_filter_and_sensor_events_use_character_entity_identity") {
+  Fixture fixture;
+  REQUIRE(fixture.scene.setTransform(fixture.actor, {}));
+  const auto sensor = fixture.scene.createEntity("Trigger").value();
+  World::RigidBody volume;
+  volume.motion = Physics::Motion::Static;
+  volume.shape = Physics::Shape::Box;
+  volume.halfExtents = {1, 1, 1};
+  volume.sensor = true;
+  REQUIRE(fixture.scene.setTransform(sensor, {{0, 1, 0}}));
+  REQUIRE(fixture.scene.setRigidBody(sensor, volume));
+  auto simulation = fixture.simulation();
+  const auto ray = simulation.rayCast({0, 1, 3}, {0, 0, -6}).value();
+  REQUIRE(ray);
+  CHECK(ray->entity == sensor);
+  const auto swept = simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6}).value();
+  REQUIRE(swept);
+  CHECK(swept->entity == fixture.actor);
+  CHECK_FALSE(
+      simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6}, {false, fixture.actor})->has_value());
+  CHECK_FALSE(simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6}, {false, fixture.root}));
+  CHECK_FALSE(
+      simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6},
+                            {false, World::EntityId{fixture.scene.id() + 1, fixture.actor.value}}));
+  fixture.step(simulation);
+  auto events = simulation.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].first == sensor);
+  CHECK(events[0].second == fixture.actor);
+  CHECK(events[0].sensor);
+  REQUIRE(fixture.scene.destroyEntity(fixture.actor));
+  REQUIRE(simulation.synchronize(fixture.scene));
+  events = simulation.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == Physics::ContactPhase::End);
+  CHECK(events[0].endReason == Physics::ContactEndReason::Destroyed);
+  CHECK(events[0].second == fixture.actor);
+  CHECK_FALSE(simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6})->has_value());
+}

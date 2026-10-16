@@ -46,7 +46,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       throw Error('Prism Relay requires its authored character, camera, model and bounded speeds');
     }
 
-    this.#camera = new ShoulderCamera(camera);
+    this.#camera = new ShoulderCamera(camera, this.self.id);
     this.#model = model;
     this.#listener = listener;
   }

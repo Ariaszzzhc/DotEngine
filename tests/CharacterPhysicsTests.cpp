@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <span>
 #include <thread>
 #include <utility>
+#include <variant>
 
 import Dot.Physics.World;
 import Dot.Core.Result;
@@ -53,7 +55,7 @@ TEST_CASE("character.physics_falls_lands_walks_and_reports_actual_support") {
   const auto character = grounded(world);
   const auto landed = world.character(character).value();
   CHECK(landed.position.y == doctest::Approx(0).epsilon(.04));
-  CHECK(landed.groundBody == support);
+  CHECK(landed.groundCollider == std::optional<ColliderId>{support});
   CHECK(landed.groundNormal.y > .99F);
   CHECK(landed.velocity.y <= 0);
   CHECK(landed.velocity.y >= -9.81F * tick - .001F);
@@ -67,7 +69,7 @@ TEST_CASE("character.physics_falls_lands_walks_and_reports_actual_support") {
   CHECK(world.character(character)->position.x == doctest::Approx(3).epsilon(.02));
   CHECK(world.body(support)->position == Math::Vec3{0, -.5F, 0});
   CHECK(world.drainContactEvents()->empty());
-  CHECK_FALSE(world.rayCast({3, 1, 2}, {0, 0, -4})->has_value());
+  CHECK(world.rayCast({3, 1, 2}, {0, 0, -4})->value().collider == ColliderId{character});
 }
 
 TEST_CASE("character.physics_jump_is_single_use_and_air_requests_do_not_buffer") {
@@ -174,7 +176,7 @@ TEST_CASE("character.physics_sensors_do_not_support_and_removed_ground_does_not_
   step(world, 60);
   CHECK(world.character(character)->position.y < -4);
   CHECK(world.character(character)->ground == GroundState::Airborne);
-  CHECK_FALSE(world.character(character)->groundBody);
+  CHECK_FALSE(world.character(character)->groundCollider);
   REQUIRE(world.teleportCharacter(character, {0, 0, 0}));
   const auto support = floor(world);
   step(world, 30);
@@ -183,7 +185,7 @@ TEST_CASE("character.physics_sensors_do_not_support_and_removed_ground_does_not_
   REQUIRE(world.setCharacterInput(character, {{}, true}));
   step(world);
   CHECK(world.character(character)->velocity.y < 0);
-  CHECK_FALSE(world.character(character)->groundBody);
+  CHECK_FALSE(world.character(character)->groundCollider);
 }
 
 TEST_CASE("character.physics_moving_platform_velocity_is_actual_support_motion") {
@@ -195,7 +197,7 @@ TEST_CASE("character.physics_moving_platform_velocity_is_actual_support_motion")
   const auto state = world.character(character).value();
   CHECK(world.body(platform)->position.x == doctest::Approx(1).epsilon(.02));
   CHECK(state.position.x == doctest::Approx(1).epsilon(.03));
-  CHECK(state.groundBody == platform);
+  CHECK(state.groundCollider == std::optional<ColliderId>{platform});
   CHECK(state.groundVelocity.x == doctest::Approx(1));
 }
 
@@ -323,7 +325,7 @@ TEST_CASE("character.physics_walkable_slope_climbs_and_steep_slope_rejects_ascen
 
     if (angle == 30) {
       CHECK(final.ground == GroundState::Grounded);
-      CHECK(final.groundBody == support);
+      CHECK(final.groundCollider == std::optional<ColliderId>{support});
       CHECK(final.position.x > initial.position.x + 1);
       CHECK(final.position.y > initial.position.y + .5F);
       CHECK(final.groundNormal.y == doctest::Approx(std::cos(radians)).epsilon(.01));
@@ -407,7 +409,7 @@ TEST_CASE("character.physics_pushes_dynamic_body_and_rides_a_vertical_platform")
     step(world, 60);
     const auto state = world.character(character).value();
     CHECK(state.position.y == doctest::Approx(1).epsilon(.03));
-    CHECK(state.groundBody == platform);
+    CHECK(state.groundCollider == std::optional<ColliderId>{platform});
     CHECK(state.groundVelocity.y == doctest::Approx(1));
     REQUIRE(world.setCharacterInput(character, {{}, true}));
     step(world);
@@ -439,4 +441,149 @@ TEST_CASE("character.physics_substeps_advance_bodies_and_characters_together") {
         == doctest::Approx(fine.character(second)->position.y).epsilon(.0001));
   CHECK(coarse.body(firstBody)->position.y
         == doctest::Approx(fine.body(secondBody)->position.y).epsilon(.0001));
+}
+
+TEST_CASE("character.colliders_query_identity_filter_pose_and_lifetime_are_native") {
+  auto world = Physics::World::create({.maxBodies = 1, .gravity = {}, .maxCharacters = 1}).value();
+  const auto body = world.createBody(box({4, 1, 0}, {.5F, 1, .5F})).value();
+  const auto character = world.createCharacter().value();
+  CHECK(character.value == body.value);
+  auto ray = world.rayCast({0, 1, 3}, {0, 0, -6}).value();
+  REQUIRE(ray);
+  CHECK(ray->collider == ColliderId{character});
+  CHECK(ray->fraction == doctest::Approx((3 - .35) / 6).epsilon(.01));
+  REQUIRE(ray->normal);
+  CHECK(ray->normal->z > .99F);
+  auto swept = world.sphereCast({0, 1, 3}, .25F, {0, 0, -6}).value();
+  REQUIRE(swept);
+  CHECK(swept->collider == ColliderId{character});
+  CHECK(swept->center.z == doctest::Approx(.6).epsilon(.01));
+  CHECK_FALSE(world.sphereCast({0, 1, 3}, .25F, {0, 0, -6}, {false, character})->has_value());
+  CHECK(world.stats()->bodies == 1);
+  CHECK(world.stats()->active == 0);
+  CHECK(world.stats()->characters == 1);
+  REQUIRE(world.teleportCharacter(character, {2, 0, 0}, 90));
+  CHECK_FALSE(world.rayCast({0, 1, 3}, {0, 0, -6})->has_value());
+  CHECK(world.rayCast({2, 1, 3}, {0, 0, -6})->value().collider == ColliderId{character});
+  auto moved = std::move(world);
+  REQUIRE(moved.destroyCharacter(character));
+  CHECK_FALSE(moved.rayCast({2, 1, 3}, {0, 0, -6})->has_value());
+  CHECK_FALSE(moved.sphereCast({0, 1, 3}, .25F, {0, 0, -6}, {false, character}));
+  const auto replacement = moved.createCharacter().value();
+  CHECK(replacement.value > character.value);
+  auto foreign = Physics::World::create({.gravity = {}}).value();
+  const auto other = foreign.createCharacter().value();
+  CHECK_FALSE(moved.sphereCast({0, 1, 3}, .25F, {0, 0, -6}, {false, other}));
+}
+
+TEST_CASE("character.colliders_sensor_events_preserve_tags_and_lifecycle_reasons") {
+  auto world = Physics::World::create({.gravity = {}, .workerThreads = 2}).value();
+  auto volume = box({0, 1, 0}, {1, 1, 1});
+  volume.sensor = true;
+  volume.userTag = 41;
+  const auto sensor = world.createBody(volume).value();
+  CharacterConfig config;
+  config.userTag = 73;
+  const auto character = world.createCharacter(config).value();
+  step(world);
+  auto events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == ContactPhase::Begin);
+  CHECK(events[0].first.collider == ColliderId{sensor});
+  CHECK(events[0].second.collider == ColliderId{character});
+  CHECK(events[0].first.userTag == 41);
+  CHECK(events[0].second.userTag == 73);
+  CHECK(events[0].sensor);
+  REQUIRE(events[0].geometry);
+  CHECK_FALSE(events[0].geometry->points.empty());
+  step(world);
+  events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == ContactPhase::Stay);
+  REQUIRE(world.teleportCharacter(character, {4, 0, 0}));
+  events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == ContactPhase::End);
+  CHECK(events[0].endReason == ContactEndReason::PoseChanged);
+  CHECK_FALSE(events[0].geometry);
+  step(world);
+  CHECK(world.drainContactEvents()->empty());
+  REQUIRE(world.teleportCharacter(character, {}));
+  step(world);
+  REQUIRE(world.drainContactEvents()->size() == 1);
+  config.userTag = 99;
+  const CharacterChange change{character, config};
+  REQUIRE(world.applyChanges({}, std::span{&change, 1}));
+  events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == ContactPhase::End);
+  CHECK(events[0].endReason == ContactEndReason::Reconfigured);
+  CHECK(events[0].second.userTag == 73);
+  step(world);
+  events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].phase == ContactPhase::Begin);
+  CHECK(events[0].second.userTag == 99);
+  REQUIRE(world.destroyCharacter(character));
+  events = world.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events[0].endReason == ContactEndReason::Destroyed);
+  CHECK(events[0].second.collider == ColliderId{character});
+  CHECK(events[0].second.userTag == 99);
+  step(world);
+  CHECK(world.drainContactEvents()->empty());
+}
+
+TEST_CASE("character.colliders_incoming_body_contacts_and_pushes_without_passing_through") {
+  auto world = Physics::World::create({.gravity = {}}).value();
+  const auto character = world.createCharacter().value();
+  BodyConfig config;
+  config.position = {-2, 1, 0};
+  config.radius = .25F;
+  config.velocity = {20, 0, 0};
+  config.friction = 0;
+  const auto incoming = world.createBody(config).value();
+  bool touched{};
+
+  for (int frame = 0; frame < 60; ++frame) {
+    step(world);
+    CHECK(world.character(character)->position.x - world.body(incoming)->position.x > .55F);
+
+    for (const auto& event : world.drainContactEvents().value()) {
+      if (event.phase == ContactPhase::Begin && !event.sensor
+          && event.first.collider == ColliderId{incoming}
+          && event.second.collider == ColliderId{character}) {
+        touched = true;
+      }
+    }
+  }
+
+  CHECK(touched);
+  const auto feet = world.character(character)->position;
+  const auto center = world.body(incoming)->position;
+  INFO("character x ", feet.x, " incoming x ", center.x);
+  CHECK(feet.x - center.x > .55F);
+  CHECK(feet.x - center.x < .8F);
+  CHECK(feet.x > 0);
+  CHECK(feet.x < 2);
+  REQUIRE(world.destroyBody(incoming));
+  step(world, 30);
+  CHECK(world.character(character)->position.x == doctest::Approx(feet.x).epsilon(.01));
+  CHECK_FALSE(world.stats()->faulted);
+}
+
+TEST_CASE("character.colliders_peer_support_identity_cannot_survive_removed_owner") {
+  auto world = Physics::World::create().value();
+  floor(world);
+  const auto bottom = grounded(world, {});
+  const auto top = grounded(world, {0, 3, 0});
+  CHECK(world.character(top)->groundCollider == std::optional<ColliderId>{bottom});
+  CHECK(world.character(top)->position.y > 1.7F);
+  REQUIRE(world.destroyCharacter(bottom));
+  CHECK_FALSE(world.character(top)->groundCollider);
+  REQUIRE(world.setCharacterInput(top, {{}, true}));
+  step(world);
+  CHECK(world.character(top)->velocity.y < 0);
+  step(world, 120);
+  CHECK(world.character(top)->position.y == doctest::Approx(0).epsilon(.02));
 }

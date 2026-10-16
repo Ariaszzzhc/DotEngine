@@ -5,6 +5,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <variant>
 
 import Dot.Physics.World;
 import Dot.Physics.SceneSimulation;
@@ -32,7 +33,7 @@ TEST_CASE("sphere_cast.closest_surface_reports_center_and_outward_contact_normal
   REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
   REQUIRE(result->has_value());
   const auto hit = **result;
-  CHECK(hit.body == body);
+  CHECK(hit.collider == ColliderId{body});
   CHECK(hit.fraction == doctest::Approx(.5625).epsilon(.001));
   CHECK(hit.center.z == doctest::Approx(.75).epsilon(.001));
   CHECK(hit.point.z == doctest::Approx(.5).epsilon(.001));
@@ -48,7 +49,7 @@ TEST_CASE("sphere_cast.radius_catches_edges_that_a_center_ray_misses") {
   CHECK_FALSE(world.rayCast({.7F, 0, 3}, {0, 0, -6})->has_value());
   const auto result = world.sphereCast({.7F, 0, 3}, .25F, {0, 0, -6}).value();
   REQUIRE(result);
-  CHECK(result->body == body);
+  CHECK(result->collider == ColliderId{body});
   CHECK(result->center.z == doctest::Approx(.65).epsilon(.01));
   REQUIRE(result->normal);
   CHECK(result->normal->x > .7F);
@@ -82,15 +83,15 @@ TEST_CASE("sphere_cast_filters_sensors_and_explicit_body_without_truncating_hits
   const auto sensor = world.createBody(box({0, 0, 2}, true)).value();
   const auto ordinary = world.sphereCast({0, 0, 4}, .2F, {0, 0, -8}).value();
   REQUIRE(ordinary);
-  CHECK(ordinary->body == solid);
+  CHECK(ordinary->collider == ColliderId{solid});
   const auto sensed = world.sphereCast({0, 0, 4}, .2F, {0, 0, -8}, {true, {}}).value();
   REQUIRE(sensed);
-  CHECK(sensed->body == sensor);
+  CHECK(sensed->collider == ColliderId{sensor});
   CHECK(sensed->fraction < ordinary->fraction);
   CHECK_FALSE(world.sphereCast({0, 0, 4}, .2F, {0, 0, -8}, {false, solid})->has_value());
   const auto ignored = world.sphereCast({0, 0, 4}, .2F, {0, 0, -8}, {true, sensor}).value();
   REQUIRE(ignored);
-  CHECK(ignored->body == solid);
+  CHECK(ignored->collider == ColliderId{solid});
 }
 
 TEST_CASE("sphere_cast_handles_curved_colliders_and_translated_worlds") {
@@ -103,7 +104,7 @@ TEST_CASE("sphere_cast_handles_curved_colliders_and_translated_worlds") {
       const auto body = world.createBody(config).value();
       const auto hit = world.sphereCast({offset, 0, offset + 3}, .25F, {0, 0, -4}).value();
       REQUIRE(hit);
-      CHECK(hit->body == body);
+      CHECK(hit->collider == ColliderId{body});
       CHECK(std::abs(hit->point.z - (offset + .5F)) < .01F);
       CHECK(std::abs(hit->center.z - (offset + .75F)) < .01F);
     }

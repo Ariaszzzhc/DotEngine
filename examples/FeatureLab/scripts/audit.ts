@@ -223,6 +223,17 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('physics.setCharacterYaw', actor.characterState.rotation.y > 0.7);
     actor.setCharacterYaw(0);
     this.check('Entity.setCharacterYaw', actor.characterState.rotation.w === 1);
+    const feet = actor.characterState.position;
+    const origin = {x: feet.x, y: feet.y + 1, z: feet.z + 3};
+    const travel = {x: 0, y: 0, z: -6};
+    this.check(
+        'character.rayIdentity', physics.rayCast(origin, travel)?.entity.value === actor.id.value);
+    this.check(
+        'character.sphereIdentity',
+        physics.sphereCast(origin, .2, travel)?.entity.value === actor.id.value);
+    this.check(
+        'character.querySelfFilter',
+        physics.sphereCast(origin, .2, travel, {ignoreEntity: actor.id}) === null);
   }
 
   private physicsChecks(): void {

@@ -14,18 +14,83 @@ export interface Vec2 {
   y: number;
 }
 
-/** Physical native key names; unsupported names fail instead of reading false.
- * 原生物理按键名称，不支持的名称明确失败而非返回 false。 */
+/**
+ * Physical native key names; unsupported names fail instead of reading false.
+ * 原生物理按键名称，不支持的名称明确失败而非返回 false。
+ */
 export const keys = Object.freeze([
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-  'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-  'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-  'Y', 'Z', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
-  'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Enter', 'Escape', 'Backspace', 'Tab',
-  'Space', 'Left', 'Right', 'Up', 'Down', 'F1', 'F2', 'F3',
-  'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11',
-  'F12', 'LeftControl', 'RightControl', 'LeftShift', 'RightShift', 'LeftAlt', 'RightAlt', 'LeftSuper',
-  'RightSuper', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'KeypadEnter'
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'O',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
+  'Digit0',
+  'Enter',
+  'Escape',
+  'Backspace',
+  'Tab',
+  'Space',
+  'Left',
+  'Right',
+  'Up',
+  'Down',
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
+  'LeftControl',
+  'RightControl',
+  'LeftShift',
+  'RightShift',
+  'LeftAlt',
+  'RightAlt',
+  'LeftSuper',
+  'RightSuper',
+  'Delete',
+  'Insert',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+  'KeypadEnter'
 ] as const);
 
 export type Key = typeof keys[number];
@@ -296,10 +361,12 @@ export const components = Object.freeze({
   },
 });
 
-/** World-space runtime state, separate from the authored rigid-body description.
- * 世界坐标运行状态，与编辑刚体描述分离。 */
+/**
+ * World-space runtime state, separate from the authored rigid-body description.
+ * 世界坐标运行状态，与编辑刚体描述分离。
+ */
 export interface PhysicsBodyState {
-  motion: 'static' | 'kinematic' | 'dynamic';
+  motion: 'static'|'kinematic'|'dynamic';
   position: Vec3;
   rotation: Quat;
   velocity: Vec3;
@@ -345,16 +412,16 @@ export interface RayHit {
   entity: EntityId;
   fraction: number;
   point: Vec3;
-  normal: Vec3 | null;
+  normal: Vec3|null;
 }
 
 /**
- * Sensors are excluded by default; ignoreBody must name a synchronized rigid body.
- * 默认排除传感器，ignoreBody 须指向已同步刚体。
+ * Sensors are excluded by default; ignoreEntity must name a synchronized rigid body or character.
+ * 默认排除传感器，ignoreEntity 须指向已同步刚体或角色。
  */
 export interface SphereCastFilter {
   includeSensors?: boolean;
-  ignoreBody?: EntityId|null;
+  ignoreEntity?: EntityId|null;
 }
 
 /**
@@ -375,17 +442,19 @@ export interface ContactGeometry {
   points: {first: Vec3; second: Vec3}[];
 }
 
-/** Removed entity IDs remain meaningful historical data; check existence before
+/**
+ * Removed entity IDs remain meaningful historical data; check existence before
  * resolving them. Geometry may be absent on lifecycle-only events.
- * 已删除实体 ID 仍是有意义的历史数据，解析前须检查存活；生命周期事件可无几何数据。 */
+ * 已删除实体 ID 仍是有意义的历史数据，解析前须检查存活；生命周期事件可无几何数据。
+ */
 export interface ContactEvent {
-  phase: 'begin' | 'stay' | 'sleep' | 'end';
-  endReason: 'separated' | 'poseChanged' | 'destroyed' | 'reconfigured' | null;
+  phase: 'begin'|'stay'|'sleep'|'end';
+  endReason: 'separated'|'poseChanged'|'destroyed'|'reconfigured'|null;
   first: EntityId;
   second: EntityId;
   sensor: boolean;
   step: string;
-  geometry: ContactGeometry | null;
+  geometry: ContactGeometry|null;
 }
 
 export interface ContactBatch {
@@ -394,11 +463,13 @@ export interface ContactBatch {
   events: ContactEvent[];
 }
 
-/** Native scheduling publishes contacts without consuming them on script reads.
+/**
+ * Native scheduling publishes contacts without consuming them on script reads.
  * Queries show last synchronized state; controls act on that real simulation.
  * Native failures throw HostError, and scripts cannot advance/reset the world.
  * 原生调度发布接触数据，脚本读取不消费；查询展示最近同步状态，控制作用于真实仿真。
- * 原生失败抛出 HostError，脚本不能推进/重置世界。 */
+ * 原生失败抛出 HostError，脚本不能推进/重置世界。
+ */
 export const physics = Object.freeze({
   body(entity: EntityId): PhysicsBodyState {
     return invoke('physics.body', [entity]) as PhysicsBodyState;
@@ -427,7 +498,7 @@ export const physics = Object.freeze({
   sphereCast(origin: Vec3, radius: number, displacement: Vec3,
       filter: SphereCastFilter = {}): SphereHit|null {
     return invoke('physics.sphereCast', [origin, radius, displacement,
-      {includeSensors: false, ignoreBody: null, ...filter}]) as SphereHit|null;
+      {includeSensors: false, ignoreEntity: null, ...filter}]) as SphereHit|null;
   },
 
   get contacts(): ContactBatch {
@@ -466,9 +537,11 @@ export interface AudioListenerState {
 
 export interface AudioSpatialState extends SpatialProperties, AudioListenerState {}
 
-/** Source read cursor may include backend prefetch; device/queued presentation
+/**
+ * Source read cursor may include backend prefetch; device/queued presentation
  * time is independent. Decimal frame strings retain all uint64 bits.
- * 源读取游标可含后端预取，设备/队列播放时间独立；十进制帧字符串保留 uint64 全部位。 */
+ * 源读取游标可含后端预取，设备/队列播放时间独立；十进制帧字符串保留 uint64 全部位。
+ */
 export interface AudioVoiceState {
   clip: AudioClipInfo;
   settings: VoiceSettings;
@@ -480,7 +553,7 @@ export interface AudioVoiceState {
 
 export interface AudioOutputStats {
   running: boolean;
-  fault: 'none' | 'callback' | 'stopped' | 'rerouted' | 'interrupted' | 'start' | 'stop';
+  fault: 'none'|'callback'|'stopped'|'rerouted'|'interrupted'|'start'|'stop';
   queuedFrames: number;
   availableFrames: number;
   submittedFrames: string;
@@ -493,13 +566,13 @@ export interface AudioOutputStats {
 }
 
 export interface AudioPlaybackStats {
-  state: 'running' | 'closed' | 'faulted';
-  error: {code: HostErrorCode; message: string} | null;
+  state: 'running'|'closed'|'faulted';
+  error: {code: HostErrorCode; message: string}|null;
   output: AudioOutputStats;
 }
 
 export interface AudioStats {
-  mode: 'offline' | 'playback';
+  mode: 'offline'|'playback';
   generation: string;
   volume: number;
   assets: number;
@@ -508,14 +581,16 @@ export interface AudioStats {
   playing: number;
   renderedFrames: string;
   faulted: boolean;
-  playback: AudioPlaybackStats | null;
+  playback: AudioPlaybackStats|null;
 }
 
-/** Real synchronized audio voices; native scheduling loads assets/updates poses.
+/**
+ * Real synchronized audio voices; native scheduling loads assets/updates poses.
  * Pause retains cursor, stop pauses/rewinds, and play resumes or restarts an ended
  * voice. Controls affect future mixed blocks; queued PCM remains unchanged.
  * 真实同步声部，由原生调度加载资源/更新位姿；暂停保留游标，停止暂停并归零，播放恢复
- * 或重启已结束声部。控制影响后续混音块，已排队 PCM 不变。 */
+ * 或重启已结束声部。控制影响后续混音块，已排队 PCM 不变。
+ */
 export const audio = Object.freeze({
   voice(entity: EntityId): AudioVoiceState {
     return invoke('audio.voice', [entity]) as AudioVoiceState;

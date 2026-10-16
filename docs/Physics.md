@@ -149,8 +149,8 @@ reconciles contacts after the synchronous step, using current backend contact an
 activity state. Entering sleep also checks actual geometry within Jolt's
 speculative contact distance; inactive status alone does not establish overlap.
 
-Events describe one logical body pair. Multiple collision substeps coalesce to
-the last observed manifold for each pair. `Begin` starts a pair, `Stay` carries an
+Events describe one logical collider pair (rigid body or character proxy). Multiple
+collision substeps coalesce to the last observed manifold for each pair. `Begin` starts a pair, `Stay` carries an
 observation of an existing pair, `Sleep` marks a dormant pair, and `End` closes it.
 Dormant pairs remain tracked; waking observations produce `Stay`, with separation
 closing the pair. A transient observed contact may produce Begin/Stay followed by
@@ -159,22 +159,25 @@ pair values sorted within each step/lifetime operation. The step field denotes
 the most recent physics step; lifecycle edits retain that step number.
 
 Begin/observed Stay geometry owns its contact points and uses the pre-solver
-manifold. Normals point from the smaller public body value to the larger, and
-contact point sides follow that ordering. Negative depth is speculative contact;
+manifold. Normals follow collider order: rigid bodies before characters, then
+increasing public handle value within each kind. Contact point sides follow that
+ordering. Negative depth is speculative contact;
 these events do not claim a resolved impulse. Sleep, End, and an unobserved wake
 have no geometry. End reasons distinguish separation, pose change, destruction,
-and reconfiguration. Direct pose edits invalidate affected contacts; identical
-position/equivalent quaternion edits retain them.
+and reconfiguration. Body setPose retains contacts for identical poses/equivalent
+quaternions. Explicit character teleport resets motion and invalidates its contacts,
+including when targeting the same pose.
 
-Runtime `BodyConfig::userTag` is an opaque uint64 association copied into events.
-It is never dereferenced and survives body destruction in already captured data.
+Runtime `BodyConfig::userTag` and `CharacterConfig::userTag` are opaque uint64
+associations copied into events. They are never dereferenced and survive owner
+destruction in already captured data.
 Scene binding uses entity values for this association, so scene events remain
 identifiable after entity/component removal without retaining scene storage.
 Such removal IDs can be stale when queried against the scene. Reset discards the
 old world and its contact stream.
 
 World configuration permits 1..262144 queued events (default 65536), with tracked
-and per-step captured pairs limited to sixteen times body capacity. Drain events
+and per-step captured pairs limited to sixteen times combined body/character capacity. Drain events
 regularly, including after lifecycle edits. Queue-full lifecycle/pose operations
 fail before mutation and can be retried after draining. Capture, reconciliation,
 or queue failure after a step faults the world/service and rejects incomplete
@@ -184,11 +187,12 @@ recreate or reset to resume. There is no silent truncation of event streams.
 ## Sphere volume sweeps
 
 `World::sphereCast(origin, radius, displacement, filter)` sweeps a real Jolt sphere
-against current rigid bodies. `SceneSimulation::sphereCast` maps contacts and the
-optional ignored body to scene-scoped entities. Radius is [0.001,10000] metres,
+against current rigid bodies and character proxies. `SceneSimulation::sphereCast` maps contacts and the
+optional ignored collider to scene-scoped entities. Radius is [0.001,10000] metres,
 center endpoints are finite within +/-1e6, and displacement length is at least
 0.001. Sensors are excluded by default; includeSensors explicitly enables them.
-ignoreBody must resolve to a current synchronized rigid body, not a virtual capsule.
+`ignoreCollider` is an optional native BodyId/CharacterId variant; scene/SDK
+`ignoreEntity` must resolve to a synchronized rigid body or character.
 Invalid/stale/foreign filters fail instead of silently changing query meaning.
 
 The closest hit includes fraction, sphere center, obstacle surface point, outward
@@ -203,8 +207,8 @@ The backend uses an origin-relative contact offset to retain local precision whe
 translating returned surface points. This does not make the single-precision world
 a large-world streaming/origin-rebasing system. Headless regressions check corners,
 overlap, sensor/body filtering, owner/thread/lifetime contracts, curved colliders
-and translated scenes. Virtual capsules retain their documented lack of an inner
-rigid-body proxy and do not participate in these queries.
+and translated scenes. Character query hits retain CharacterId identity; proxies
+cannot be passed to rigid-body mutation methods.
 
 ## Native character controller foundation
 
@@ -235,14 +239,29 @@ live body handle are returned. Controller velocity includes the native downward
 support probe; it is not a difference of corrected feet positions. Native reported
 contact-budget failure is an error, rather than a successful truncated result.
 
-This foundation intentionally has no inner rigid-body proxy. Virtual capsules
-collide with solid bodies and one another, but ordinary ray casts, rigid-body
-sensor/contact events and fast incoming bodies do not see a capsule in the broad
-phase. Body statistics count rigid bodies; `characters` counts owned capsules.
-Scene persistence, Inspector/agent authoring and shared GameSession simulation now
-use the controller. TypeScript controls use the same service. Humanoid content and the requested
-over-the-shoulder camera remain unfinished. This does not establish a finished
-character template or large-crowd scalability.
+Each virtual controller owns a native kinematic capsule proxy in the broad phase.
+Ray/sphere queries and native rigid-body/sensor contacts see this proxy. Native
+`ColliderId` is a BodyId/CharacterId variant; hits, contact parties and ground support
+retain the real owner kind. Proxy slots do not consume public maxBodies capacity;
+one additional character set is reserved for full-capacity replacement preparation.
+Prepared proxies are owned by RAII and are removed on rejected batches. Public body
+and active-body statistics count only rigid bodies; `characters` counts capsules.
+
+Virtual motion excludes all proxy bodies from its body queries and uses the native
+character-to-character helper, preventing duplicate/self collision. Native proxy
+contacts share the owned event stream with rigid bodies, including sensor events.
+A controller's predictive shell can resolve an encounter before the inner proxy
+contacts the other body; those virtual-only encounters are not claimed as rigid
+manifolds/events. Incoming-body regression verifies real native proxy contact and
+physical pushing without passing through the capsule. It does not establish
+continuous collision detection for arbitrary velocities: public per-body CCD control
+and comprehensive virtual-character contact callbacks remain open work.
+
+Character removal, teleport and replacement use the same event-capacity preflight
+as body lifecycle operations. Mixed batches reserve space for the union of affected
+pairs before publishing either set. Lifecycle end events retain tags/identity after
+removal. Native support can identify a live peer character, and removed support
+cannot supply a queued jump. These contracts do not establish large-crowd scalability.
 
 ## Scene character controllers
 
@@ -264,8 +283,8 @@ The native scene service exposes `character`, `setCharacterInput` and
 `setCharacterYaw`. State includes world feet/rotation/velocity, ground state/normal/
 velocity and optional scene-scoped `groundEntity`. Queries describe the latest
 synchronization; removed/foreign/moved handles and wrong-thread calls fail explicitly.
-Support lookup currently scans synchronized bodies. It is not a crowd-performance
-claim. Capsule contacts still do not enter rigid-body events or ray queries.
+Support/query lookup currently scans synchronized collider bindings. It is not a
+crowd-performance claim. Scene queries/events map character proxies to their owners.
 
 The mixed `World::applyChanges(bodies, characters)` prepares both sets before
 mutation. Invalid descriptions, duplicate/stale/foreign handles and final-capacity

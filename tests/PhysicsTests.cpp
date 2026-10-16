@@ -5,6 +5,7 @@
 #include <limits>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 import Dot.Physics.World;
@@ -140,7 +141,7 @@ TEST_CASE("physics.ray_nearest_hit_normal_miss_and_inside") {
   auto ray = world->rayCast({0, 2, 0}, {0, -10, 0});
   REQUIRE(ray);
   REQUIRE(ray->has_value());
-  CHECK((*ray)->body == *sphere);
+  CHECK((*ray)->collider == ColliderId{*sphere});
   CHECK((*ray)->fraction == doctest::Approx(0.15));
   CHECK((*ray)->point.y == doctest::Approx(0.5));
   REQUIRE((*ray)->normal);
@@ -173,7 +174,7 @@ TEST_CASE("physics.pose_normalization_and_static_broadphase_update") {
   auto ray = world->rayCast({3, 2, 0}, {0, -4, 0});
   REQUIRE(ray);
   REQUIRE(ray->has_value());
-  CHECK((*ray)->body == *body);
+  CHECK((*ray)->collider == ColliderId{*body});
 }
 
 TEST_CASE("physics.kinematic_target_moves_on_step") {
