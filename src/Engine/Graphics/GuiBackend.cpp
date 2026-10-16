@@ -440,6 +440,17 @@ namespace Dot::Graphics::Detail {
         return false;
       }
 
+      if (buttonEvent->position) {
+        const auto& point = *buttonEvent->position;
+
+        if (!std::isfinite(point[0]) || !std::isfinite(point[1])) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "GUI button requires finite coordinates");
+        }
+
+        io.AddMousePosEvent(point[0], point[1]);
+      }
+
       constexpr std::array<Uint8, 5> buttons{SDL_BUTTON_LEFT, SDL_BUTTON_RIGHT, SDL_BUTTON_MIDDLE,
                                              SDL_BUTTON_X1, SDL_BUTTON_X2};
       native.button.type
@@ -447,6 +458,11 @@ namespace Dot::Graphics::Detail {
       native.button.windowID = event.windowId;
       native.button.button = buttons[static_cast<std::size_t>(index)];
       native.button.down = buttonEvent->down;
+
+      if (buttonEvent->position) {
+        native.button.x = (*buttonEvent->position)[0];
+        native.button.y = (*buttonEvent->position)[1];
+      }
 
       if (!m_impl->m_platform) {
         io.AddMouseButtonEvent(index, buttonEvent->down);

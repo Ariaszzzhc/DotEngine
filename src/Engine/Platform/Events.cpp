@@ -2,6 +2,7 @@ module;
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <format>
 #include <optional>
 #include <utility>
@@ -139,7 +140,8 @@ namespace Dot::Platform {
         case SDL_EVENT_MOUSE_BUTTON_UP:
           events.push_back(
               {native.button.windowID, timestamp,
-               ButtonChanged{buttonFromNative(native.button.button), native.button.down}});
+               ButtonChanged{buttonFromNative(native.button.button), native.button.down,
+                             std::array{native.button.x, native.button.y}}});
           break;
         case SDL_EVENT_MOUSE_MOTION:
           events.push_back({native.motion.windowID, timestamp,

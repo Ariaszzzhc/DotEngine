@@ -1,6 +1,8 @@
 module;
 
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -112,6 +114,10 @@ export namespace Dot::Platform {
   struct ButtonChanged {
     MouseButton button;
     bool down;
+    /** Native event-local client coordinates in logical window units. Semantic
+     * button-only input may omit position; consumers then retain their pointer.
+     * 原生事件自带的窗口客户区逻辑坐标；语义按键输入可省略位置，消费者保留原指针位置。 */
+    std::optional<std::array<float, 2>> position{};
   };
 
   struct PointerMoved {

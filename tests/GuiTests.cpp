@@ -443,6 +443,17 @@ TEST_CASE("graphics.gui_input_real_button_keyboard_text_modifiers_and_focus") {
   REQUIRE(gpu.guiEvent({0, 0, ButtonChanged{MouseButton::Left, false}}));
   REQUIRE(gpu.renderGui(draw, 160, 100));
   CHECK(clicked);
+  REQUIRE(gpu.guiEvent({0, 0, PointerMoved{140, 80, 0, 0}}));
+  REQUIRE(gpu.renderGui(draw, 160, 100));
+  REQUIRE(gpu.guiEvent({0, 0, ButtonChanged{MouseButton::Left, true, std::array{32.F, 24.F}}}));
+  REQUIRE(gpu.renderGui(draw, 160, 100));
+  REQUIRE(gpu.guiEvent({0, 0, ButtonChanged{MouseButton::Left, false, std::array{32.F, 24.F}}}));
+  REQUIRE(gpu.renderGui(draw, 160, 100));
+  CHECK(clicked);
+  CHECK_FALSE(
+      gpu.guiEvent({0, 0,
+                    ButtonChanged{MouseButton::Left, true,
+                                  std::array{std::numeric_limits<float>::infinity(), 0.F}}}));
   REQUIRE(gpu.guiEvent({0, 0, KeyChanged{Key::LeftControl, true, false}}));
   REQUIRE(gpu.renderGui(
       []() -> Dot::Core::Result<void> {

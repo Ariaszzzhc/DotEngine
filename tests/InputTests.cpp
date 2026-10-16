@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <limits>
 #include <string_view>
 
@@ -132,4 +133,31 @@ TEST_CASE("input.accumulation_overflow_is_transactional") {
   CHECK(input.consume({0, 0, Wheel{maximum, maximum}}));
   CHECK_FALSE(input.consume({0, 0, Wheel{maximum, maximum}}));
   CHECK(input.wheel().x == maximum);
+}
+
+TEST_CASE("input.button_local_positions_update_atomically_without_synthesizing_motion") {
+  InputState input(7);
+  REQUIRE(input.consume({7, 0, PointerMoved{12, 23, 4, 5}}));
+  REQUIRE(input.consume({7, 0, ButtonChanged{MouseButton::Left, true, std::array{85.F, 37.F}}}));
+  CHECK(input.pointer().x == 85);
+  CHECK(input.pointer().y == 37);
+  CHECK(input.pointerDelta().x == 4);
+  CHECK(input.pointerDelta().y == 5);
+  CHECK(input.button(MouseButton::Left).pressed);
+  input.beginFrame();
+  CHECK_FALSE(input.consume({8, 0, ButtonChanged{MouseButton::Left, false, std::array{1.F, 2.F}}}));
+  CHECK_FALSE(
+      input.consume({7, 0,
+                     ButtonChanged{MouseButton::Left, false,
+                                   std::array{std::numeric_limits<float>::quiet_NaN(), 2.F}}}));
+  CHECK(input.button(MouseButton::Left).down);
+  CHECK_FALSE(input.button(MouseButton::Left).released);
+  CHECK(input.pointer().x == 85);
+  REQUIRE(input.consume({7, 0, ButtonChanged{MouseButton::Left, false, std::array{-8.F, 300.F}}}));
+  CHECK(input.button(MouseButton::Left).released);
+  CHECK(input.pointer().x == -8);
+  CHECK(input.pointer().y == 300);
+  CHECK(input.pointerDelta().x == 0);
+  REQUIRE(input.consume({7, 0, ButtonChanged{MouseButton::Right, true}}));
+  CHECK(input.pointer().x == -8);
 }

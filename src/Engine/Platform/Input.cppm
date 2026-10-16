@@ -34,7 +34,10 @@ export namespace Dot::Platform {
   };
 
   /** Frame edges persist until beginFrame; focus loss releases held buttons.
-   * 帧内边沿保留到下一帧，失焦释放按键。 */
+   * Button-local coordinates update pointer position without inventing relative
+   * motion. Invalid coordinates reject the whole event before any state changes.
+   * 帧内边沿保留到下一帧，失焦释放按键。按钮事件坐标更新位置，但不产生相对位移；
+   * 无效坐标在任何状态变更前拒绝整个事件。 */
   class InputState {
   public:
     explicit InputState(std::uint32_t windowId = 0) noexcept;

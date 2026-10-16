@@ -6422,3 +6422,40 @@ package is generated. The local specification and reference output remain untrac
 Production animation/skeleton binding, curves, state/layers and scalability, finished
 realistic sci-fi art, streaming and populated-game performance remain open. Passing
 checks establish these contracts, not completion or production readiness of the engine.
+
+
+## 2026-10-16 — Preserve native button coordinates
+
+Native GUI investigation reveals that normalized button events discard SDL's event-local
+client coordinates. A click/release without an independent preceding motion event can
+therefore consume the previous pointer position. ButtonChanged now owns optional logical
+XY coordinates: actual SDL button events provide them, semantic button-only input may
+omit them. InputState updates absolute pointer position before the edge without inventing
+relative motion. Nonfinite coordinates reject the whole event before changing button or
+pointer state. Finite coordinates outside the window remain valid during capture.
+The GUI forwards the same validated position before its button edge in both native and
+offscreen contexts, retaining native SDL event coordinates for the vendor backend.
+
+The existing SDL-dummy event translation case now injects motion at (12,23) followed by
+a button event at (85,37), then consumes the normalized events through InputState. It
+reproduces the bug before the fix: both position assertions fail (1/1, .03s), while the
+button edge itself succeeds. The added pure CPU input case covers press/release position,
+no invented delta, foreign-window rejection, invalid-coordinate atomicity and omitted
+coordinates. The existing offscreen GUI input case moves outside a button, then clicks
+inside using only button-local coordinates and observes its actual callback; invalid
+coordinates remain rejected. These focused Debug checks pass 3/3 (.69s). No automated
+check creates a desktop window.
+
+Release/NDEBUG full arm64 macOS checks pass 1089/1089 (18.52s), including the concurrently
+prepared animation curve work. The suite has 288 unit and 801 integration cases; overlapping
+subsets include 125 offscreen GPU, 27 native audio and 28 SDL-dummy platform cases. Native
+computer-use click/drag behavior is still inconsistent in the actual editor; this change
+fixes the independently reproduced event conversion contract, not a claim that it is the
+sole cause or that native curve dragging has passed acceptance. Product animation work
+continues through strict real editor operations. Windows/Linux are not executed.
+
+Precommit review checks owned optional coordinates, unchanged semantic button-only input,
+window scoping, finite validation before mutation, native/offscreen forwarding order,
+pointer-versus-delta semantics and focused device-free/dummy/offscreen regression scopes.
+No dependency/compiler/linker setting or platform target changes. Formatting and whitespace
+checks pass; the unrelated local specification and visual-reference output stay untracked.

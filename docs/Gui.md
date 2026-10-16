@@ -81,6 +81,17 @@ clipboard and IME placement remain in the official platform backend. Core's key
 vocabulary includes Delete/Insert/Home/End/PageUp/PageDown/KeypadEnter, with exact
 SDL, GUI and script SDK mappings.
 
+Native SDL button events retain their event-local logical client coordinates through
+`ButtonChanged.position`. InputState and guiEvent consume that position before the
+button edge, even when no distinct motion event precedes a click/release. Semantic
+button-only events may omit it and retain the current pointer. Nonfinite positions
+reject the complete event; absolute updates never invent relative gameplay motion.
+Negative/outside-window finite coordinates remain valid during capture. The GUI uses
+the same normalized event position in both native and offscreen contexts.
+
+原生按钮事件保留自身的窗口逻辑坐标；没有独立移动事件时也先定位再处理按键边沿。
+省略位置的语义事件保留当前指针；无效坐标整项拒绝，绝对定位不伪造游戏相对位移。
+
 Local verification uses macOS/Metal. Windows/Linux implementations and dependency
 features are supported in code but remain uncompiled/unexecuted locally.
 

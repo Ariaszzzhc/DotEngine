@@ -198,6 +198,16 @@ namespace Dot::Platform {
               return false;
             }
 
+            if (data.position) {
+              const auto& point = *data.position;
+
+              if (!std::isfinite(point[0]) || !std::isfinite(point[1])) {
+                return false;
+              }
+
+              m_pointer = {point[0], point[1]};
+            }
+
             updateButton(m_buttons[index], data.down);
           } else if constexpr (std::is_same_v<Data, Focus>) {
             if (!data.focused) {

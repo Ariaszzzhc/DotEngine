@@ -11,6 +11,7 @@
 
 import Dot.Core.Result;
 import Dot.Platform.Events;
+import Dot.Platform.Input;
 import Dot.Platform.System;
 import Dot.Platform.Window;
 
@@ -235,14 +236,25 @@ TEST_CASE("platform.translate_native_events") {
   motion.motion.y = 23;
   motion.motion.xrel = 4;
   REQUIRE(SDL_PushEvent(&motion));
+  SDL_Event button{};
+  button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+  button.button.windowID = window->id();
+  button.button.button = SDL_BUTTON_LEFT;
+  button.button.down = true;
+  button.button.x = 85;
+  button.button.y = 37;
+  REQUIRE(SDL_PushEvent(&button));
   REQUIRE(requestQuit().has_value());
   const auto events = pollEvents();
   REQUIRE(events.has_value());
   bool gotKey = false;
   bool gotMotion = false;
   bool gotQuit = false;
+  InputState input(window->id());
 
   for (const auto& event : *events) {
+    static_cast<void>(input.consume(event));
+
     if (const auto* data = std::get_if<KeyChanged>(&event.data)) {
       gotKey = data->key == Key::A && data->down && event.windowId == window->id();
     }
@@ -257,4 +269,8 @@ TEST_CASE("platform.translate_native_events") {
   CHECK(gotKey);
   CHECK(gotMotion);
   CHECK(gotQuit);
+  CHECK(input.button(MouseButton::Left).down);
+  CHECK(input.pointer().x == 85);
+  CHECK(input.pointer().y == 37);
+  CHECK(input.pointerDelta().x == 4);
 }
