@@ -7056,3 +7056,97 @@ observations and logs remain. Build caches and existing archives are preserved; 
 distribution archive is generated. Cached/pooled shadow updates, populated-scene
 profiling/streaming, temporal quality, remaining authoring systems and finished
 realistic game art remain open. The broader engine goal remains unfinished.
+
+### Active scene files, shared file forms and Lighting Studio
+
+Document now owns an active scene path rather than binding every save to startup.
+Added strict open-scene/create-scene/save-scene-as operations to the shared typed/
+CLI/JSON service. Paths use existing portable scenes/assets parents (or the configured
+startup path when opening), exact spelling and no symlinks/engine staging components.
+New files never replace existing destinations under the caller's serialized filesystem
+contract. Open/Create prepare allocation/history before publication/replacement,
+clear selection/history and advance revision/scope while retaining the borrowed
+Scene object's address. Previously allocated entity values remain reserved. Save as
+retains scope/selection/history, changes destination/baseline and leaves the old file
+unchanged. Normal Save validates and replaces only the active file.
+
+Metadata validation compares the owned project descriptor directly, without requiring
+a still-readable startup scene. External edits still conflict on Save; a valid new
+Save as can rescue current content even when an external editor has damaged startup.
+Metadata conflicts remain failures. Invalid load/name/path, collision and history
+capacity failures preserve document state; failed creation leaves no destination.
+File APIs retain owner-thread/moved-state checks and strict canonical revisions.
+
+Resource authoring/catalog includes scenes alongside assets/scripts. File menu and
+asset-browser open operations use the same implementation. The viewport identifies
+the active file. Scene file forms expose mode/path/name/discard through inspection,
+with bounded owned staging, current-revision confirmation and shared cancellation.
+The GUI confirmation button invokes the exact machine operation; Cancel/Escape
+share scene-dialog close. Dirty document discard is explicit and independent of
+resource drafts. Competing forms/Play/gestures/animation audition reject navigation;
+project-close Save/Discard/Cancel and independent owned clipboard reads remain usable.
+
+A successful switch releases stopped Play state, closes clean resource buffers,
+resets skeleton/selection bindings and invalidates viewport/asset caches. Frozen
+owned captures remain independent. UI snapshots refresh immediately after document
+publication, before fallible catalog/reset follow-up; failures after publication
+explicitly report committed effects. Startup metadata is unchanged. Existing Play
+and export use the active scene. These are single-active-file authoring workflows;
+runtime/additive scene composition and multi-document sessions remain unfinished.
+
+Authored examples/FeatureLab/scenes/LightingStudio.dotscene and studio-floor.dotmaterial
+through the actual native editor operations: a camera, PBR floor, copper/normal-mapped/
+dielectric cubes, glass/cutout panels, HDRI IBL, SSAO and three shadowed light kinds.
+It is a persistent editable capability scene in the existing FeatureLab project,
+with no gameplay script/probe executable or retained content-generation script.
+Its material/resource paths load through the real engine. Main remains the startup
+SDK demonstration and its bytes are unchanged. Existing example documentation now
+explains opening/saving/exporting the studio and separates offscreen checks from
+actual native workflows.
+
+The first native session verifies creation/material authoring, actual saved-camera
+pixels, Save as with retained history/scope, undo/redo, repeated file switching,
+Inspector/material draft guards, Play/Stop and data export of the active Studio
+under the package's startup path. Exported scene data equals the current authoring
+scene; original project/source file hashes remain unchanged. No distribution archive
+or user delivery bundle is produced; the data package is temporary verification.
+
+A second native session exercises complete form staging/confirmation: empty names
+fail without creating files, wrong boolean types/stale revisions preserve state,
+Create/Open/Save as succeed, and switching releases stopped Play state. An owned
+invalid catalog filename on macOS deliberately causes post-publication catalog
+failure; inspection still reports the newly committed scene and matching UI snapshot.
+Removing the fixture permits catalog recovery. Close/Cancel while a file form is
+active retains the form; Save and close writes only an owned temporary active copy.
+All stable project/studio/material hashes remain unchanged. Both sessions exit 0,
+with empty stderr and retired control directories. Client assumptions about mutation
+responses containing workspace fields and close commands not needing revisions were
+corrected by inspecting/resuming the same live session, without restarting the app.
+Native pointer/keyboard interaction is not claimed.
+
+Build example/template copies and install preparation now exclude live .dot-stage-*
+mailboxes/import staging and Finder metadata. A shared CMake copy helper preserves
+normal authored files and source data; callers retain owned destination replacement.
+This prevents building an open authored project from carrying session data into
+example/template copies. Resource/scene creation rejects engine staging names.
+
+Added four document behavior cases, one real CLI session case, one scene-root resource
+case, one native Studio resource/document case and one filesystem-only CMake copy
+regression. Cases cover scope/revision/history/identity, ownership/thread/moves,
+failures/collisions/aliases, metadata/conflicts/rescue, active-file-only persistence,
+private staging exclusion and retained authored data. No unit test starts devices or
+windows, no automated integration opens a desktop window, and no new executable is
+introduced. macOS Release/NDEBUG full checks pass 1135/1135 (18.02s): 317 unit and
+818 integration, including overlapping 132 offscreen GPU, 27 native audio and 28
+SDL-dummy platform cases. Focused Debug checks pass 51/51 (5.51s), all file/process/
+project integration cases, with twelve carrying the existing compiler label. Both
+presets build using the caller's toolchain/environment. Windows/Linux are not run.
+
+Precommit review covers prepare/publication ordering, stable borrows and monotonic
+identity, active-file baselines, metadata recovery, strict forms, close-modal
+composition, cache/session release, postcommit observation and portable build copies.
+All nine changed C++ files pass clang-format; whitespace checks pass. Temporary app,
+source copies/failure fixture, request clients, editing helpers and exported test data
+are removed; ignored screenshots/state/log evidence, caches and prior archives remain.
+Runtime scene composition/streaming, broader authoring/performance systems and the
+finished realistic game remain open; the original engine goal remains unfinished.

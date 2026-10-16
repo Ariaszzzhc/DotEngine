@@ -10,7 +10,7 @@ if(WIN32)
     install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION . COMPONENT EditorDistribution)
 endif()
 install(DIRECTORY "$<TARGET_FILE_DIR:DotEditor>/resources/" DESTINATION resources
-    USE_SOURCE_PERMISSIONS COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
+    USE_SOURCE_PERMISSIONS COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE PATTERN ".dot-stage-*" EXCLUDE)
 foreach(dot_notice IN LISTS dot_package_notices)
     get_filename_component(dot_notice_directory "${dot_notice}" DIRECTORY)
     get_filename_component(dot_notice_name "${dot_notice_directory}" NAME)
@@ -19,9 +19,9 @@ foreach(dot_notice IN LISTS dot_package_notices)
 endforeach()
 install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/licenses/" DESTINATION licenses COMPONENT EditorDistribution)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/examples/PrismRelay" DESTINATION examples
-    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
+    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE PATTERN ".dot-stage-*" EXCLUDE)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/examples/FeatureLab" DESTINATION examples
-    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE)
+    COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE PATTERN ".dot-stage-*" EXCLUDE)
 install(FILES "${CMAKE_SOURCE_DIR}/docs/Distribution.md" DESTINATION . RENAME README.md COMPONENT EditorDistribution)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/EditorInfo.plist.in"
     "${CMAKE_CURRENT_BINARY_DIR}/EditorInfo.plist" @ONLY)

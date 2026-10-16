@@ -539,6 +539,13 @@ namespace Dot::Editor {
     bool m_propertiesInvalid{};
     std::string m_previewError;
     bool m_pendingClose{};
+    bool m_sceneDialog{};
+    bool m_sceneDialogRequested{};
+    bool m_sceneDialogClose{};
+    int m_sceneDialogMode{};
+    bool m_discardScene{};
+    std::string m_scenePath{"scenes/new.dotscene"};
+    std::string m_sceneName{"New Scene"};
     bool m_previewReady{};
     bool m_active{};
     bool m_applying{};
@@ -2318,6 +2325,106 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      const bool sceneOperation
+          = command == "open-scene" || command == "create-scene" || command == "save-scene-as";
+
+      if (command == "scene-dialog") {
+        Codec::requireFields(parsed, {"command", "mode"});
+        const auto mode = parsed["mode"].get<std::string>();
+
+        if (mode != "open" && mode != "create" && mode != "save-as" && mode != "close") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown scene dialog mode");
+        }
+
+        if (mode == "close") {
+          m_sceneDialog = false;
+          m_sceneDialogRequested = false;
+          m_sceneDialogClose = true;
+          return execute("{\"command\":\"inspect\"}");
+        }
+
+        if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
+            || pendingText() || m_animationPreview || m_transform || m_pendingClose
+            || m_captureDialog) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Finish active Play, drafts, gestures and dialogs before scene files");
+        }
+
+        m_sceneDialogMode = mode == "open" ? 0 : mode == "create" ? 1 : 2;
+        m_scenePath = mode == "open" ? (m_selectedResource.ends_with(".dotscene")
+                                            ? m_selectedResource
+                                            : m_document->stats()->scenePath)
+                                     : "scenes/new.dotscene";
+        m_discardScene = false;
+        m_sceneDialog = true;
+        m_sceneDialogRequested = true;
+        m_sceneDialogClose = false;
+        return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "stage-scene-dialog" || command == "confirm-scene-dialog") {
+        if (command == "stage-scene-dialog") {
+          Codec::requireFields(parsed, {"command", "revision", "path", "name", "discard"});
+        } else {
+          Codec::requireFields(parsed, {"command", "revision"});
+        }
+
+        if (!m_sceneDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Scene dialog requires an active form and current revision");
+        }
+
+        if (command == "stage-scene-dialog") {
+          auto path = parsed["path"].get<std::string>();
+          auto name = parsed["name"].get<std::string>();
+          const auto discard = parsed["discard"].get<bool>();
+          const auto validSceneFormText = [](const std::string& value) {
+            return value.size() <= 4096 && value.find('\0') == std::string::npos
+                   && Core::isValidUtf8(value);
+          };
+
+          if (!validSceneFormText(path) || !validSceneFormText(name)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Scene form text requires UTF-8 without NUL, at most 4096 bytes");
+          }
+
+          m_scenePath.swap(path);
+          m_sceneName.swap(name);
+          m_discardScene = discard;
+          return execute("{\"command\":\"inspect\"}");
+        }
+
+        Json operation{{"command", m_sceneDialogMode == 0   ? "open-scene"
+                                   : m_sceneDialogMode == 1 ? "create-scene"
+                                                            : "save-scene-as"},
+                       {"revision", parsed["revision"]},
+                       {"path", m_scenePath}};
+
+        if (m_sceneDialogMode != 2) {
+          operation["discard"] = m_discardScene;
+        }
+
+        if (m_sceneDialogMode == 1) {
+          operation["name"] = m_sceneName;
+        }
+
+        return execute(operation.dump());
+      }
+
+      if (m_sceneDialog && !sceneOperation && command != "inspect" && command != "save"
+          && command != "close" && command != "save-close" && command != "cancel-close"
+          && command != "request-focus" && command != "resources"
+          && command != "inspect-animation-clipboard" && command != "read-animation-clipboard") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Complete or close the scene file dialog first");
+      }
+
+      if (sceneOperation && (pendingText() || m_pendingClose || m_captureDialog)) {
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Save or close resource drafts and finish active dialogs before scene files");
+      }
 
       if (command == "inspect-animation-clipboard" || command == "read-animation-clipboard"
           || command == "clear-animation-clipboard") {
@@ -4536,7 +4643,60 @@ namespace Dot::Editor {
                               .dump();
       }
 
+      const auto previousRevision = m_document->stats()->revision;
       auto result = m_document->dispatch(documentRequest);
+
+      auto updated = refresh();
+
+      if (!updated) {
+        return Core::fail(updated.error().code,
+                          "Document response may have committed; " + updated.error().message);
+      }
+
+      if (sceneOperation && m_document->stats()->revision != previousRevision) {
+        if (command != "save-scene-as") {
+          m_play.reset();
+          m_playError.reset();
+          m_playDiagnostics.clear();
+          m_clipDocument.reset();
+          m_clipContext = {};
+          m_clipForm = m_clipOriginal = nullptr;
+          setClipSelection({});
+          cancelKeyMove();
+          m_material.reset();
+          m_materialForm = nullptr;
+          m_text.reset();
+          m_selectedResource.clear();
+          m_selectionAnchor.clear();
+          m_editRevision = 0;
+          m_editorView = true;
+          m_environmentRevision.clear();
+          m_occlusionRevision.clear();
+          m_previewReady = false;
+          m_previewError.clear();
+          m_renderedFrame.reset();
+          m_renderedView.reset();
+          m_assetRefresh = true;
+          auto cleared
+              = m_skeleton.set(*m_document->scene().value(), m_project->files().value(), {});
+
+          if (!cleared) {
+            return Core::fail(cleared.error().code,
+                              "Scene changed; skeleton reset failed: " + cleared.error().message);
+          }
+        }
+
+        m_sceneDialog = false;
+        m_sceneDialogRequested = false;
+        m_sceneDialogClose = true;
+        auto listed = catalog();
+
+        if (!listed) {
+          return Core::fail(
+              listed.error().code,
+              "Scene operation committed; catalog refresh failed: " + listed.error().message);
+        }
+      }
 
       if (result && command == "select-hierarchy") {
         const auto mode = parsed["mode"].get<std::string>();
@@ -4550,13 +4710,6 @@ namespace Dot::Editor {
           && (command == "select" || command == "select-many" || command == "select-hierarchy")
           && !m_material) {
         m_selectedResource.clear();
-      }
-
-      auto updated = refresh();
-
-      if (!updated) {
-        return Core::fail(updated.error().code,
-                          "Document response may have committed; " + updated.error().message);
       }
 
       if (result
@@ -4606,6 +4759,13 @@ namespace Dot::Editor {
               {"panels", m_panelGeometry}}},
             {"requestedPane", m_requestedPane},
             {"pendingClose", m_pendingClose},
+            {"sceneDialog", m_sceneDialog ? Json{{"mode", m_sceneDialogMode == 0   ? "open"
+                                                          : m_sceneDialogMode == 1 ? "create"
+                                                                                   : "save-as"},
+                                                 {"path", m_scenePath},
+                                                 {"name", m_sceneName},
+                                                 {"discard", m_discardScene}}
+                                          : Json(nullptr)},
             {"running", m_application->running()},
             {"inspector", m_edit},
             {"propertiesText", m_propertiesText},
@@ -5554,6 +5714,14 @@ namespace Dot::Editor {
       return applied ? Core::Result<void>{} : std::unexpected(*m_actionError);
     }
 
+    auto openSceneAsset(std::string_view path) -> bool {
+      if (m_document->stats()->dirty) {
+        return sessionAction({{"command", "scene-dialog"}, {"mode", "open"}});
+      }
+
+      return action({{"command", "open-scene"}, {"path", path}, {"discard", false}});
+    }
+
     auto fileAction(Json request) -> bool {
       const auto command = request["command"].get<std::string>();
 
@@ -6133,6 +6301,10 @@ namespace Dot::Editor {
           m_message = result ? "" : result.error().message;
         }
 
+        if (m_selectedResource.ends_with(".dotscene") && ImGui::Button("Open scene")) {
+          openSceneAsset(m_selectedResource);
+        }
+
         if (m_selectedResource.starts_with("assets/") && m_selectedResource.ends_with(".dotscene")
             && ImGui::Button("Add model to scene")) {
           edit({{{"op", "instantiate-model"}, {"path", m_selectedResource}}});
@@ -6242,7 +6414,11 @@ namespace Dot::Editor {
 
         if (fileAction({{"command", "select-asset"}, {"path", path}}) && doubleClick
             && entry["type"] == "text" && !path.ends_with(".dotmaterial")) {
-          fileAction({{"command", "open-external"}, {"path", path}});
+          if (path.ends_with(".dotscene")) {
+            openSceneAsset(path);
+          } else {
+            fileAction({{"command", "open-external"}, {"path", path}});
+          }
         }
       };
       const int columns
@@ -6897,6 +7073,9 @@ namespace Dot::Editor {
     }
 
     auto viewportControls() -> void {
+      ImGui::TextDisabled("%s%s", m_snapshot["scenePath"].get_ref<const std::string&>().c_str(),
+                          m_document->stats()->dirty ? " *" : "");
+
       if (m_animationPreview) {
         animationControls();
         return;
@@ -7298,6 +7477,16 @@ namespace Dot::Editor {
       ImGui::TextUnformatted("DotEngine");
 
       if (ImGui::BeginMenu("File")) {
+        for (const auto& item :
+             {std::pair{"New scene...", "create"}, std::pair{"Open scene...", "open"},
+              std::pair{"Save scene as...", "save-as"}}) {
+          if (ImGui::MenuItem(item.first, nullptr, false,
+                              !playing() && !m_animationPreview && !m_transform)) {
+            sessionAction({{"command", "scene-dialog"}, {"mode", item.second}});
+          }
+        }
+
+        ImGui::Separator();
         if (ImGui::MenuItem(m_clipDocument ? "Save animation"
                             : m_material   ? "Save material"
                                            : "Save scene",
@@ -8981,6 +9170,71 @@ namespace Dot::Editor {
 
         if (!m_message.empty()) {
           ImGui::TextWrapped("%s", m_message.c_str());
+        }
+
+        ImGui::EndPopup();
+      }
+
+      if (m_sceneDialogRequested) {
+        ImGui::OpenPopup("Scene files");
+        m_sceneDialogRequested = false;
+      }
+
+      if (m_sceneDialog || m_sceneDialogClose) {
+        const auto sceneDialogSpace = ImGui::GetMainViewport()->WorkSize;
+        ImGui::SetNextWindowSizeConstraints({520, 0}, {std::min(700.F, sceneDialogSpace.x - 40),
+                                                       std::min(600.F, sceneDialogSpace.y - 40)});
+      }
+
+      if (ImGui::BeginPopupModal("Scene files", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          sessionAction({{"command", "scene-dialog"}, {"mode", "close"}});
+        }
+
+        if (m_sceneDialogClose) {
+          ImGui::CloseCurrentPopup();
+          m_sceneDialogClose = false;
+        } else {
+          ImGui::TextWrapped("Current scene: %s",
+                             m_snapshot["scenePath"].get_ref<const std::string&>().c_str());
+          ImGui::TextWrapped("%s", m_sceneDialogMode == 0 ? "Open an existing project scene."
+                                   : m_sceneDialogMode == 1
+                                       ? "Create an empty scene in an existing folder."
+                                       : "Save a copy and continue editing the new file.");
+          ImGui::SetNextItemWidth(420);
+          ImGui::InputText("Scene path", &m_scenePath);
+
+          if (m_sceneDialogMode == 1) {
+            ImGui::InputText("Scene name", &m_sceneName);
+          }
+
+          if (m_sceneDialogMode != 2 && m_document->stats()->dirty) {
+            ImGui::TextWrapped("The current scene has unsaved changes.");
+            ImGui::Checkbox("Discard unsaved scene changes", &m_discardScene);
+          }
+
+          const auto label = m_sceneDialogMode == 0   ? "Open"
+                             : m_sceneDialogMode == 1 ? "Create"
+                                                      : "Save copy";
+
+          if (ImGui::Button(label)) {
+            if (action({{"command", "confirm-scene-dialog"}})) {
+              ImGui::CloseCurrentPopup();
+              m_sceneDialogClose = false;
+            }
+          }
+
+          ImGui::SameLine();
+
+          if (ImGui::Button("Cancel")) {
+            sessionAction({{"command", "scene-dialog"}, {"mode", "close"}});
+            ImGui::CloseCurrentPopup();
+            m_sceneDialogClose = false;
+          }
+
+          if (!m_message.empty()) {
+            ImGui::TextWrapped("%s", m_message.c_str());
+          }
         }
 
         ImGui::EndPopup();

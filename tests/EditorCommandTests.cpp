@@ -397,3 +397,52 @@ TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
     CHECK(error["error"]["message"].get<std::string>().find("frame budget") != std::string::npos);
   }
 }
+
+TEST_CASE("editor_document_scene_files_use_one_cli_session_and_keep_startup_bytes") {
+  Directory directory;
+  create(directory);
+  auto project = Dot::Project::Project::open(directory.root / "game folder").value();
+  auto files = project.files().value();
+  const auto startup = files.readText("scenes/main.dotscene").value();
+  const auto requests = Json::array(
+      {{{"command", "create-scene"},
+        {"revision", "1"},
+        {"path", "scenes/level.dotscene"},
+        {"name", "Level"},
+        {"discard", false}},
+       {{"command", "edit"},
+        {"revision", "2"},
+        {"operations", Json::array({{{"op", "create"}, {"name", "Persistent entity"}}})}},
+       {{"command", "save-scene-as"}, {"revision", "3"}, {"path", "scenes/copied.dotscene"}},
+       {{"command", "open-scene"},
+        {"revision", "4"},
+        {"path", "scenes/main.dotscene"},
+        {"discard", false}},
+       {{"command", "open-scene"},
+        {"revision", "5"},
+        {"path", "scenes/copied.dotscene"},
+        {"discard", false}}});
+  REQUIRE(directory.files().writeTextAtomic("scene-requests.json", requests.dump()));
+  auto result = Dot::Core::runProcess(
+      {DOT_EDITOR_EXECUTABLE,
+       {"document", utf(files.root()), utf(directory.root / "scene-requests.json")},
+       directory.root});
+  REQUIRE(result);
+  CHECK(result->exitCode == 0);
+  CHECK(result->standardError.empty());
+  std::istringstream lines(result->standardOutput);
+  std::vector<Json> responses;
+
+  for (std::string line; std::getline(lines, line);) {
+    responses.push_back(Json::parse(line));
+  }
+
+  REQUIRE(responses.size() == 5);
+  CHECK(responses.back()["scenePath"] == "scenes/copied.dotscene");
+  CHECK(responses.back()["scene"]["entities"][0]["name"] == "Persistent entity");
+  CHECK(responses.back()["dirty"] == false);
+  CHECK(files.readText("scenes/main.dotscene").value() == startup);
+  CHECK(Dot::World::loadScene(files, "scenes/level.dotscene")->entities()->empty());
+  CHECK(Dot::Core::processResources().handles == 0);
+  CHECK(Dot::Core::processResources().children == 0);
+}

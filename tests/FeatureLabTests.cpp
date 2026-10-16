@@ -13,6 +13,8 @@
 #include <vector>
 
 import Dot.Core.Files;
+import Dot.Editor.Document;
+import Dot.Assets.Material;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Project;
@@ -453,4 +455,38 @@ TEST_CASE("feature_lab.continuous_slider_reset_and_discrete_comparison_use_nativ
     CHECK(native->transform(slider->id)->position == resetContact);
     report(session.close());
   }
+}
+
+TEST_CASE("feature_lab.lighting_studio_is_a_separate_editable_scene_with_native_materials") {
+  Fixture fixture;
+  auto files = fixture.project.files().value();
+  const auto startup = files.readText("scenes/main.dotscene").value();
+  auto document = Editor::Document::open(fixture.project).value();
+  REQUIRE(document.openScene("scenes/LightingStudio.dotscene", document.stats()->revision));
+  CHECK(document.stats()->scenePath == "scenes/LightingStudio.dotscene");
+  auto scene = document.scene().value();
+  auto entities = scene->entities().value();
+  CHECK(entities.size() == 10);
+  CHECK(scene->environment()->has_value());
+  CHECK(scene->occlusion()->has_value());
+  std::size_t shadowSources{}, meshes{};
+
+  for (const auto& entity : entities) {
+    if (entity.light && entity.light->shadows) {
+      ++shadowSources;
+    }
+
+    if (entity.mesh) {
+      ++meshes;
+      REQUIRE(entity.material);
+      CHECK(Assets::loadMaterial(files, entity.material->asset));
+    }
+  }
+
+  CHECK(shadowSources == 3);
+  CHECK(meshes == 6);
+  REQUIRE(document.saveAs("scenes/studio-copy.dotscene", document.stats()->revision));
+  REQUIRE(document.openScene("scenes/main.dotscene", document.stats()->revision));
+  CHECK(files.readText("scenes/main.dotscene").value() == startup);
+  CHECK(document.stats()->scenePath == "scenes/main.dotscene");
 }

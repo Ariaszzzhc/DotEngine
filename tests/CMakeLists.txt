@@ -227,3 +227,10 @@ add_test(NAME distribution.archive_excludes_finder_metadata
         -P "${CMAKE_CURRENT_SOURCE_DIR}/EditorArchiveTests.cmake")
 set_tests_properties(distribution.archive_excludes_finder_metadata PROPERTIES
     LABELS "integration" TIMEOUT 15)
+
+add_test(NAME project_copy.excludes_live_sessions_and_partial_resources
+    COMMAND "${CMAKE_COMMAND}" "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/project_copy"
+        "-DCOPY_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/CopyProject.cmake"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/ProjectCopyTests.cmake")
+set_tests_properties(project_copy.excludes_live_sessions_and_partial_resources PROPERTIES
+    LABELS "integration" TIMEOUT 15)

@@ -155,9 +155,12 @@ namespace Dot::Editor {
       }
 
       if (!Core::isPortableRelativePath(value)
-          || (!inside(value, "assets") && !inside(value, m_description.scriptsDirectory))) {
+          || value.find("/.dot-stage-") != std::string_view::npos
+          || (!inside(value, "assets") && !inside(value, "scenes")
+              && !inside(value, m_description.scriptsDirectory))) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Resource path must be portable and inside assets or scripts");
+                          "Resource path must be portable, outside engine staging and inside "
+                          "assets, scenes or scripts");
       }
 
       if (write && readOnly(value)) {
@@ -298,9 +301,10 @@ namespace Dot::Editor {
         return std::unexpected(checked.error());
       }
 
-      std::vector<std::string> roots{"assets"};
+      std::vector<std::string> roots{"assets", "scenes"};
 
-      if (!inside(m_impl->m_description.scriptsDirectory, "assets")) {
+      if (!inside(m_impl->m_description.scriptsDirectory, "assets")
+          && !inside(m_impl->m_description.scriptsDirectory, "scenes")) {
         roots.push_back(m_impl->m_description.scriptsDirectory);
       }
 
@@ -333,13 +337,15 @@ namespace Dot::Editor {
       };
 
       for (const auto& root : roots) {
-        auto resolved = m_impl->resolve(root, false, root == "assets");
+        const bool optional = (root == "assets" || root == "scenes")
+                              && !inside(m_impl->m_description.scriptsDirectory, root);
+        auto resolved = m_impl->resolve(root, false, optional);
 
         if (!resolved) {
           return std::unexpected(resolved.error());
         }
 
-        if (!Fs::exists(*resolved) && root == "assets") {
+        if (!Fs::exists(*resolved) && optional) {
           continue;
         }
 

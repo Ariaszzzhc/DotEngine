@@ -1,0 +1,522 @@
+{
+  "entities": [
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": {
+        "farPlane": 100.0,
+        "nearPlane": 0.10000000149011612,
+        "orthographicHeight": 10.0,
+        "primary": true,
+        "projection": "perspective",
+        "verticalFovDegrees": 50.0
+      },
+      "character": null,
+      "id": "9007199254740998",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Studio camera",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          7.0,
+          5.0,
+          8.0
+        ],
+        "rotation": [
+          -0.20412477850914001,
+          0.3432624638080597,
+          0.07669679820537567,
+          0.9135762453079224
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740999",
+      "light": null,
+      "material": {
+        "asset": "assets/studio-floor.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "quad",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Floor",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          -0.5,
+          0.0
+        ],
+        "rotation": [
+          -0.7071067690849304,
+          0.0,
+          0.0,
+          0.7071067690849304
+        ],
+        "scale": [
+          14.0,
+          14.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741000",
+      "light": null,
+      "material": {
+        "asset": "assets/copper.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Copper",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741001",
+      "light": null,
+      "material": {
+        "asset": "assets/normal-surface.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Normal mapped surface",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741002",
+      "light": null,
+      "material": {
+        "asset": "assets/studio-floor.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Dielectric",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741003",
+      "light": null,
+      "material": {
+        "asset": "assets/glass.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "quad",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Glass",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          1.25,
+          -2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741004",
+      "light": null,
+      "material": {
+        "asset": "assets/cutout.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "quad",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Alpha cutout",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.0,
+          1.25,
+          -2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741005",
+      "light": {
+        "color": [
+          1.0,
+          0.9700000286102295,
+          0.8999999761581421
+        ],
+        "enabled": true,
+        "innerConeDegrees": 30.0,
+        "intensity": 2.5,
+        "kind": "directional",
+        "outerConeDegrees": 50.0,
+        "range": 10.0,
+        "shadows": {
+          "cascades": 2,
+          "depthBias": 0.00019999999494757503,
+          "distance": 30.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 1024,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
+      },
+      "material": null,
+      "mesh": null,
+      "name": "Sun",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          5.0,
+          0.0
+        ],
+        "rotation": [
+          -0.44037747383117676,
+          -0.26672929525375366,
+          -0.13885048031806946,
+          0.8459572792053223
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741006",
+      "light": {
+        "color": [
+          0.3499999940395355,
+          0.6499999761581421,
+          1.0
+        ],
+        "enabled": true,
+        "innerConeDegrees": 30.0,
+        "intensity": 100.0,
+        "kind": "point",
+        "outerConeDegrees": 50.0,
+        "range": 10.0,
+        "shadows": {
+          "cascades": 1,
+          "depthBias": 0.00019999999494757503,
+          "distance": 10.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
+      },
+      "material": null,
+      "mesh": null,
+      "name": "Cool point",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -3.0,
+          3.0,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254741007",
+      "light": {
+        "color": [
+          1.0,
+          0.699999988079071,
+          0.4000000059604645
+        ],
+        "enabled": true,
+        "innerConeDegrees": 30.0,
+        "intensity": 100.0,
+        "kind": "spot",
+        "outerConeDegrees": 50.0,
+        "range": 10.0,
+        "shadows": {
+          "cascades": 1,
+          "depthBias": 0.00019999999494757503,
+          "distance": 10.0,
+          "filterRadius": 2.0,
+          "normalBias": 0.009999999776482582,
+          "resolution": 512,
+          "slopeBias": 0.0010000000474974513,
+          "splitLambda": 0.6499999761581421
+        }
+      },
+      "material": null,
+      "mesh": null,
+      "name": "Warm spot",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.0,
+          3.0,
+          2.0
+        ],
+        "rotation": [
+          -0.3535533845424652,
+          0.3535533845424652,
+          0.1464466154575348,
+          0.8535534143447876
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "asset": "assets/studio_small_09_1k.hdr",
+    "background": true,
+    "brdfSize": 128,
+    "diffuseSize": 32,
+    "intensity": 0.3499999940395355,
+    "radianceSize": 128,
+    "rotationDegrees": 0.0,
+    "samples": 512,
+    "specularSize": 128
+  },
+  "name": "Lighting Studio",
+  "occlusion": {
+    "bias": 0.019999999552965164,
+    "directions": 8,
+    "filterRadius": 2,
+    "radius": 0.5,
+    "steps": 4,
+    "strength": 1.0
+  },
+  "version": 1
+}

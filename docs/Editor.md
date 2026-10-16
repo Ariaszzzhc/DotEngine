@@ -5,8 +5,8 @@ service, JSON commands and a native project editing window. Runtime play uses a
 separate GameSession scene; the Document service opens no audio, physics, compiler
 or window backend. Workspace adds window/GPU/GUI ownership around that document.
 
-`Dot.Editor.Document` opens the configured project startup scene with fresh scope,
-owns bounded history and exposes read-only scene access. Each changed edit,
+`Dot.Editor.Document` initially opens the configured startup scene with fresh scope,
+then owns one active scene file with bounded history and read-only scene access. Each changed edit,
 undo and redo prepares a validated scene before replacing the stable scene object.
 Borrowed scene addresses survive document moves; entity handles must be reacquired
 after scope replacement. All operations require the creating thread.
@@ -15,7 +15,7 @@ Document revisions are nonzero decimal strings in JSON, as are entity values and
 scene scopes. Every mutation requires the current revision; stale requests fail
 before effects. Inspect returns the revision, scope, selected value, next available
 entity value (null on exhaustion), dirty flag, undo/redo availability, history entry/
-byte totals and the complete version-1 native scene. Responses also include ok=true
+byte totals, `scenePath` and the complete version-1 native scene. Responses also include ok=true
 and an array of surviving newly created values. Owned snapshots may be freely edited
 without modifying the document.
 
@@ -101,11 +101,73 @@ The saved baseline may retain one extra snapshot up to the native 64 MiB limit.
 
 Dirty state compares the current canonical authoring scene with the saved baseline,
 so undo can return to a clean state and undo after saving can make it dirty again.
-Save checks on-disk metadata and the semantic startup-scene baseline before atomic
+Save checks on-disk metadata and the active scene file's semantic baseline before atomic
 replacement. External changes report a conflict and preserve unsaved edits. This
 check is not an OS compare-and-swap; clients must still serialize filesystem changes.
 If response allocation fails after a successful mutation, the error states that
 the document committed; retrying with an old revision will fail.
+
+## Scene files
+
+File → New scene / Open scene / Save scene as uses the same document operations as
+CLI/JSON. Assets → Project exposes the `scenes` folder; double-click a `.dotscene`
+file or choose Open scene. Dirty scene switches open the scene form so discard is
+explicit. The viewport header and inspection's `scenePath` identify the active file.
+
+```json
+{"command":"create-scene","revision":"1","path":"scenes/Level.dotscene","name":"Level","discard":false}
+{"command":"save-scene-as","revision":"2","path":"scenes/LevelCopy.dotscene"}
+{"command":"open-scene","revision":"3","path":"scenes/main.dotscene","discard":false}
+```
+
+Each object is a separate strict request with the current revision. New files require
+an existing `scenes`/`assets` parent and never overwrite an existing destination.
+Opening also accepts the configured startup path if it lives elsewhere in the project.
+Paths follow portable UTF-8/exact-case rules, reject symlinks and reserve `.dot-stage-*`
+components for engine ownership. A new scene starts empty; add a primary Camera for
+Game view/Play. A failed load, invalid path/name, collision or history-budget rejection
+preserves the current document; no failed creation leaves a new scene file.
+
+Open/Create prepare the new scene fully before replacement, clear selection/history
+and advance revision/scope. The Scene object's borrowed address stays stable; old
+handles and requests remain invalid. Newly allocated entity values stay monotonic
+across file switches. Save as changes the save destination/baseline while retaining
+scope, selection and history; undo may become dirty against the new baseline. It
+leaves the old file unchanged. Normal Save affects only the active file. External
+scene edits conflict on Save; Save as can rescue current content into a new file even
+when an external editor has corrupted/deleted the startup file. Metadata conflicts
+still reject writing. Caller filesystem serialization remains required.
+
+Apply/reset Inspector/environment/AO forms and save/close dirty resource editors
+before file operations; `discard` applies only to scene changes. Open/Create close
+clean resource buffers, reset skeleton/viewport bindings and invalidate old previews.
+Play/gestures/animation audition and active close/native-save dialogs block navigation.
+Frozen completed PNG captures retain their original context. Project startup metadata
+is unchanged: opening a project still chooses its configured startup scene, while
+workspace Play and export consume the active scene (including unsaved scene edits).
+This is single-document scene-file authoring; runtime/additive scene loading is not
+implemented by these commands.
+
+The actual file form is also completely observable/controllable by agents:
+
+```json
+{"command":"scene-dialog","mode":"open"}
+{"command":"stage-scene-dialog","revision":"4","path":"scenes/Level.dotscene","name":"Level","discard":false}
+{"command":"confirm-scene-dialog","revision":"4"}
+{"command":"scene-dialog","mode":"close"}
+```
+
+Modes are `open`, `create`, `save-as`, `close`. `workspace.sceneDialog` is null when
+closed, otherwise contains mode/path/name/discard. Stage replaces the entire owned
+form with bounded UTF-8/no-NUL text (4096 bytes per field), without changing document
+revision/history. Confirmation requires the current revision and uses the exact
+same operation as the GUI button. Invalid confirmation retains the form for repair.
+Cancel/Escape and the close command share cancellation. File forms block competing
+authoring; project-close Save/Discard/Cancel remains available.
+
+场景文件可通过菜单、资源浏览器及严格 JSON 共用操作创建、打开和另存。切换会清空当前
+历史/选择并推进版本与范围；另存保留历史并改变保存目标，不改旧文件或启动配置。未保存
+场景须明确丢弃，资源草稿须先完成。对话框字段可读取、暂存、确认或取消，不要求模拟鼠标。
 
 ## Command-line authoring
 
@@ -504,7 +566,7 @@ returns actual sourceFiles on success and contextual diagnostics on failure.
 Opening/editing/saving a file clears earlier check messages, avoiding a stale
 success label for changed source.
 
-Resource operations are restricted to assets and the configured scripts subtree.
+Resource operations are restricted to assets, scenes and the configured scripts subtree.
 The protected `scripts/dot` path also checks filesystem directory identity. Paths follow shared
 lexical [portable naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
 including Windows superscript device names, and reject symlinks/special files and

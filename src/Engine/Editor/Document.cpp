@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <exception>
 #include <expected>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -23,6 +24,7 @@ import Dot.Core.Result;
 import Dot.Core.Text;
 import Dot.Core.Paths;
 import Dot.Core.Files;
+import Dot.Editor.Resources;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -41,6 +43,16 @@ namespace Dot::Editor {
       }
 
       return {};
+    }
+
+    auto sceneFile(std::string_view value) -> std::filesystem::path {
+      return std::filesystem::path(std::u8string(value.begin(), value.end()));
+    }
+
+    auto sceneAssetPath(std::string_view value) -> bool {
+      return Core::isPortableRelativePath(value) && value.ends_with(".dotscene")
+             && value.find("/.dot-stage-") == std::string_view::npos
+             && (value.starts_with("scenes/") || value.starts_with("assets/"));
     }
 
     auto find(Json& entities, std::uint64_t id) -> Json* {
@@ -389,6 +401,7 @@ namespace Dot::Editor {
     };
 
     Project::Project m_project;
+    std::string m_path;
     World::Scene m_scene;
     DocumentConfig m_config;
     std::thread::id m_thread{std::this_thread::get_id()};
@@ -402,6 +415,7 @@ namespace Dot::Editor {
     Impl(Project::Project project, World::Scene scene, DocumentConfig config,
          std::shared_ptr<const std::string> text, std::uint64_t next)
         : m_project(std::move(project)),
+          m_path(m_project.description().value().startScene),
           m_scene(std::move(scene)),
           m_config(config),
           m_next(next),
@@ -434,6 +448,112 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::Unavailable, "Editor document revision exhausted");
       }
 
+      return {};
+    }
+
+    /** Validate metadata without reloading startup content, so Save as can rescue
+     * current authoring even when that external scene has become unreadable.
+     * 只校验项目描述、不重载启动内容，使外部启动场景已无法读取时仍可另存救回编辑内容。 */
+    auto projectFiles() const -> Core::Result<Core::FileSystem> {
+      auto files = m_project.files();
+
+      if (!files) {
+        return std::unexpected(files.error());
+      }
+
+      auto metadata = files->readText("project.dotproject", 64 * 1024);
+
+      if (!metadata) {
+        return std::unexpected(metadata.error());
+      }
+
+      auto actual = Project::decodeDescription(*metadata);
+
+      if (!actual) {
+        return std::unexpected(actual.error());
+      }
+
+      if (*actual != m_project.description().value()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Editor project metadata changed externally");
+      }
+
+      return files;
+    }
+
+    auto readableScene(std::string_view value) const -> Core::Result<void> {
+      if (!sceneAssetPath(value)) {
+        if (value == m_project.description().value().startScene) {
+          return {};
+        }
+
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Scene requires a portable .dotscene path under scenes or assets");
+      }
+
+      auto store = ResourceStore::open(m_project, {.textBytes = 64 * 1024 * 1024});
+
+      if (!store) {
+        return std::unexpected(store.error());
+      }
+
+      auto resolved = store->externalTextPath(value);
+      return resolved ? Core::Result<void>{} : std::unexpected(resolved.error());
+    }
+
+    auto publishScene(std::string_view value, std::string_view text) const -> Core::Result<void> {
+      if (!sceneAssetPath(value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "New scene requires a portable .dotscene path under scenes or assets");
+      }
+
+      auto store = ResourceStore::open(m_project, {.textBytes = 64 * 1024 * 1024});
+      return store ? store->createText(value, text) : std::unexpected(store.error());
+    }
+
+    /** All allocations and optional publication precede the nonthrowing scene swap.
+     * 全部内存准备及可选文件发布先于不抛异常的场景替换。 */
+    auto replaceScene(World::Scene prepared, std::string path, bool publish) -> Core::Result<void> {
+      auto text = World::encodeScene(prepared);
+
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+
+      if (text->size() > m_config.historyBytes) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene exceeds editor history budget");
+      }
+
+      auto next = m_next;
+      auto entities = prepared.entities();
+
+      if (!entities) {
+        return std::unexpected(entities.error());
+      }
+
+      for (const auto& entity : *entities) {
+        next = std::max(next, entity.id.value + 1);
+      }
+
+      auto saved = std::make_shared<const std::string>(std::move(*text));
+      std::vector<Entry> history{{saved, {}}};
+
+      if (publish) {
+        auto written = publishScene(path, *saved);
+
+        if (!written) {
+          return written;
+        }
+      }
+
+      m_scene = std::move(prepared);
+      m_path.swap(path);
+      m_history = std::move(history);
+      m_saved = std::move(saved);
+      m_bytes = m_saved->size();
+      m_cursor = 0;
+      m_next = next;
+      ++m_revision;
       return {};
     }
 
@@ -598,7 +718,8 @@ namespace Dot::Editor {
           m_impl->m_cursor > 0,
           m_impl->m_cursor + 1 < m_impl->m_history.size(),
           m_impl->m_history.size(),
-          m_impl->m_bytes};
+          m_impl->m_bytes,
+          m_impl->m_path};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Inspect document selection: " + std::string(error.what()));
@@ -619,7 +740,8 @@ namespace Dot::Editor {
         selection.push_back(std::to_string(entity.value));
       }
 
-      return Json{{"selection", std::move(selection)},
+      return Json{{"scenePath", stats->scenePath},
+                  {"selection", std::move(selection)},
                   {"revision", std::to_string(stats->revision)},
                   {"scope", std::to_string(stats->scene)},
                   {"selected",
@@ -976,6 +1098,108 @@ namespace Dot::Editor {
     }
   }
 
+  auto Document::openScene(std::string_view path, std::uint64_t revision, bool discard)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!discard && *m_impl->m_history[m_impl->m_cursor].text != *m_impl->m_saved) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Save the current scene or explicitly discard it first");
+    }
+
+    try {
+      auto files = m_impl->projectFiles();
+      auto readable = m_impl->readableScene(path);
+
+      if (!files || !readable) {
+        return std::unexpected(!files ? files.error() : readable.error());
+      }
+
+      auto loaded = World::loadScene(*files, sceneFile(path));
+      return loaded ? m_impl->replaceScene(std::move(*loaded), std::string(path), false)
+                    : std::unexpected(loaded.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Open scene document: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::createScene(std::string_view path, std::string_view name, std::uint64_t revision,
+                             bool discard) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!discard && *m_impl->m_history[m_impl->m_cursor].text != *m_impl->m_saved) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Save the current scene or explicitly discard it first");
+    }
+
+    try {
+      auto files = m_impl->projectFiles();
+
+      if (!files) {
+        return std::unexpected(files.error());
+      }
+
+      auto scene = World::Scene::create(name);
+      return scene ? m_impl->replaceScene(std::move(*scene), std::string(path), true)
+                   : std::unexpected(scene.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Create scene document: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::saveAs(std::string_view path, std::uint64_t revision) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return checked;
+    }
+
+    try {
+      auto files = m_impl->projectFiles();
+
+      if (!files) {
+        return std::unexpected(files.error());
+      }
+
+      auto candidate = std::string(path);
+      const auto& text = m_impl->m_history[m_impl->m_cursor].text;
+      auto written = m_impl->publishScene(candidate, *text);
+
+      if (!written) {
+        return written;
+      }
+
+      m_impl->m_path.swap(candidate);
+      m_impl->m_saved = text;
+      ++m_impl->m_revision;
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Save scene as: " + std::string(error.what()));
+    }
+  }
+
   auto Document::save(std::uint64_t revision) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
@@ -988,31 +1212,14 @@ namespace Dot::Editor {
     }
 
     try {
-      auto files = m_impl->m_project.files();
+      auto files = m_impl->projectFiles();
+      auto readable = m_impl->readableScene(m_impl->m_path);
 
-      if (!files) {
-        return std::unexpected(files.error());
+      if (!files || !readable) {
+        return std::unexpected(!files ? files.error() : readable.error());
       }
 
-      auto project = Project::Project::open(files->root());
-
-      if (!project) {
-        return std::unexpected(project.error());
-      }
-
-      auto expected = m_impl->m_project.description();
-      auto actual = project->description();
-
-      if (!expected || !actual) {
-        return std::unexpected(expected ? actual.error() : expected.error());
-      }
-
-      if (*expected != *actual) {
-        return Core::fail(Core::ErrorCode::InvalidState,
-                          "Editor project metadata changed externally");
-      }
-
-      auto disk = project->loadStartup();
+      auto disk = World::loadScene(*files, sceneFile(m_impl->m_path));
 
       if (!disk) {
         return std::unexpected(disk.error());
@@ -1025,10 +1232,11 @@ namespace Dot::Editor {
       }
 
       if (*baseline != *m_impl->m_saved) {
-        return Core::fail(Core::ErrorCode::InvalidState, "Editor startup scene changed externally");
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Editor scene changed externally: " + m_impl->m_path);
       }
 
-      auto saved = m_impl->m_project.saveStartup(m_impl->m_scene);
+      auto saved = World::saveScene(*files, sceneFile(m_impl->m_path), m_impl->m_scene);
 
       if (!saved) {
         return saved;
@@ -1075,6 +1283,12 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "entities"});
         } else if (command == "duplicate-selection" || command == "delete-selection") {
           Codec::requireFields(parsed, {"command", "revision"});
+        } else if (command == "open-scene") {
+          Codec::requireFields(parsed, {"command", "revision", "path", "discard"});
+        } else if (command == "create-scene") {
+          Codec::requireFields(parsed, {"command", "revision", "path", "name", "discard"});
+        } else if (command == "save-scene-as") {
+          Codec::requireFields(parsed, {"command", "revision", "path"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -1127,6 +1341,14 @@ namespace Dot::Editor {
                   ? std::nullopt
                   : std::optional{World::EntityId{(*current)->id(), Codec::id(parsed["entity"])}},
               revision);
+        } else if (command == "open-scene") {
+          result = openScene(parsed["path"].get<std::string>(), revision,
+                             parsed["discard"].get<bool>());
+        } else if (command == "create-scene") {
+          result = createScene(parsed["path"].get<std::string>(), parsed["name"].get<std::string>(),
+                               revision, parsed["discard"].get<bool>());
+        } else if (command == "save-scene-as") {
+          result = saveAs(parsed["path"].get<std::string>(), revision);
         } else if (command == "undo") {
           result = undo(revision);
         } else if (command == "redo") {

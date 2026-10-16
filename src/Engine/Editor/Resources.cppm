@@ -56,13 +56,13 @@ export namespace Dot::Editor {
 
   class TextDocument;
 
-  /** Project-root resource authoring for assets and the configured script tree.
+  /** Project-root resource authoring for assets, scenes and the configured script tree.
    * SDK files are read-only. Rejects symlinks/special files, non-portable paths
    * and ASCII case aliases. Calls require the creating thread; text documents
    * retain shared descriptors after store moves/destruction. Callers serialize
    * filesystem edits; checks/replacement are not an OS compare-and-swap and
    * do not isolate hostile races. No existing file is implicitly overwritten.
-   * 项目根内 assets 与配置脚本目录的资源编辑，SDK 只读；拒绝链接/特殊文件、不可移植
+   * 项目根内 assets、scenes 与配置脚本目录的资源编辑，SDK 只读；拒绝链接/特殊文件、不可移植
    * 路径及 ASCII 大小写别名。调用限创建线程，文本文档在服务移动/销毁后仍持有共享描述。
    * 调用者串行文件修改；检查/替换不是 OS 比较交换，不隔离恶意竞争，不隐式覆盖已有文件。 */
   class ResourceStore {

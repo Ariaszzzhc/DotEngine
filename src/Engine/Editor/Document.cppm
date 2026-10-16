@@ -32,6 +32,7 @@ export namespace Dot::Editor {
     bool canRedo;
     std::size_t historyEntries;
     std::uint64_t historyBytes;
+    std::string scenePath;
   };
 
   struct EditReport {
@@ -67,6 +68,28 @@ export namespace Dot::Editor {
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
     [[nodiscard]] auto stats() const -> Core::Result<DocumentStats>;
     [[nodiscard]] auto snapshot() const -> Core::Result<std::string>;
+    /** Replace the active authoring scene only after loading/preparing it fully.
+     * Paths are existing portable .dotscene files under scenes/assets, or the
+     * configured startup file. Dirty scenes require explicit discard. Success
+     * clears scene history/selection, preserves the Scene object's address and
+     * advances revision/scope; previously published entity values stay reserved.
+     * 完整加载准备后才替换当前编辑场景；路径为 scenes/assets 下已有的可移植 .dotscene
+     * 或配置启动文件。未保存场景须显式丢弃；成功清空历史/选择、保留 Scene 对象地址并
+     * 推进版本/范围，已发布实体值仍保留不复用。 */
+    [[nodiscard]] auto openScene(std::string_view path, std::uint64_t revision,
+                                 bool discard = false) -> Core::Result<void>;
+    /** Publish a new empty scene in an existing scenes/assets directory, then
+     * activate it as a clean document. Existing destinations are never replaced.
+     * 在已有 scenes/assets 目录发布空场景，再作为干净文档启用，不替换已有目标。 */
+    [[nodiscard]] auto createScene(std::string_view path, std::string_view name,
+                                   std::uint64_t revision, bool discard = false)
+        -> Core::Result<void>;
+    /** Save current content at a new scenes/assets path and retarget subsequent
+     * saves. Retains scope/selection/history; undo may become dirty against the new
+     * baseline. Does not modify the old file or project startup setting.
+     * 在 scenes/assets 新路径保存当前内容并切换后续保存目标；保留范围/选择/历史，撤销
+     * 可相对新基线变脏，不修改旧文件或项目启动配置。 */
+    [[nodiscard]] auto saveAs(std::string_view path, std::uint64_t revision) -> Core::Result<void>;
     /** Validate a complete existing-entity draft and return strict edit operations,
      * without changing scene, selection, revision or history. Primary camera/listener
      * transfers demote the previous owner in the same prepared transaction.

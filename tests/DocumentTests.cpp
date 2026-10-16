@@ -906,3 +906,176 @@ TEST_CASE("document_continuous_collision_edits_history_and_save_use_strict_body_
   auto reopened = fixture.document();
   CHECK(state(reopened)["scene"]["entities"][1]["rigidBody"]["collisionDetection"] == "continuous");
 }
+
+TEST_CASE("document.scene_files_switch_cleanly_keep_scope_guards_and_never_reuse_allocations") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto* stable = document.scene().value();
+  const auto original = document.snapshot().value();
+  const auto path = document.stats()->scenePath;
+  CHECK(path == "scenes/main.dotscene");
+  const auto oldScope = stable->id();
+  auto report = edit(document, Json::array({{{"op", "create"}, {"name", "Reserved"}}}));
+  REQUIRE(report.created.size() == 1);
+  const auto reserved = report.created[0];
+  const auto editedScope = stable->id();
+  const auto dirty = document.snapshot().value();
+  CHECK_FALSE(document.createScene("scenes/second.dotscene", "Second", revision(document)));
+  CHECK(document.snapshot().value() == dirty);
+  REQUIRE(document.saveAs("scenes/副本.dotscene", revision(document)));
+  CHECK(document.scene().value() == stable);
+  CHECK(stable->id() == editedScope);
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(document.stats()->canUndo);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(document.stats()->dirty);
+  REQUIRE(document.redo(revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(fixture.project().loadStartup()->entities()->size() + 1 == stable->entities()->size());
+  const auto beforeSwitch = revision(document);
+  REQUIRE(document.createScene("scenes/second.dotscene", "Second", beforeSwitch));
+  CHECK(document.scene().value() == stable);
+  CHECK(stable->id() != oldScope);
+  CHECK(document.stats()->scenePath == "scenes/second.dotscene");
+  CHECK_FALSE(document.stats()->canUndo);
+  CHECK_FALSE(document.stats()->canRedo);
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(document.stats()->selection.empty());
+  CHECK(stable->entities()->empty());
+  CHECK_FALSE(document.save(beforeSwitch));
+  auto created = edit(document, Json::array({{{"op", "create"}, {"name", "New entity"}}}));
+  CHECK(created.created.at(0) > reserved);
+  CHECK_FALSE(document.openScene(path, revision(document)));
+  REQUIRE(document.openScene(path, revision(document), true));
+  CHECK(document.stats()->scenePath == path);
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(stable->entities()->size() == fixture.project().loadStartup()->entities()->size());
+  REQUIRE(document.openScene("scenes/副本.dotscene", revision(document)));
+  CHECK(stable->entities()->size() == fixture.project().loadStartup()->entities()->size() + 1);
+  REQUIRE(document.openScene("scenes/second.dotscene", revision(document)));
+  CHECK(stable->entities()->empty());
+  CHECK(Json::parse(original)["scenePath"] == path);
+}
+
+TEST_CASE("document.scene_file_failures_preserve_document_and_never_overwrite_targets") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto files = fixture.project().files().value();
+  const auto initial = document.snapshot().value();
+  const auto startup = files.readText("scenes/main.dotscene").value();
+  REQUIRE(files.writeTextAtomic("scenes/broken.dotscene", "not json"));
+
+  for (const auto* path : {"../escape.dotscene", "other/scene.dotscene", "scenes/alias.DOTSCENE",
+                           "scenes/MAIN.dotscene", "scripts/dot/scene.dotscene",
+                           "scenes/missing.dotscene", "scenes/broken.dotscene"}) {
+    CHECK_FALSE(document.openScene(path, revision(document), true));
+    CHECK(document.snapshot().value() == initial);
+  }
+
+  for (const auto* path :
+       {"scenes/main.dotscene", "scenes/broken.dotscene", "scenes/sub/missing.dotscene",
+        "../escape.dotscene", "scripts/saved.dotscene", "scenes/.dot-stage-private.dotscene"}) {
+    CHECK_FALSE(document.saveAs(path, revision(document)));
+    CHECK_FALSE(document.createScene(path, "Second", revision(document), true));
+    CHECK(document.snapshot().value() == initial);
+  }
+
+  CHECK(files.readText("scenes/main.dotscene").value() == startup);
+  CHECK(files.readText("scenes/broken.dotscene").value() == "not json");
+  CHECK_FALSE(document.createScene("scenes/new.dotscene", "", revision(document)));
+  CHECK_FALSE(std::filesystem::exists(files.root() / "scenes/new.dotscene"));
+  REQUIRE(document.saveAs("scenes/copy.dotscene", revision(document)));
+  edit(document, Json::array({{{"op", "scene-name"}, {"name", "Changed"}}}));
+  const auto changed = document.snapshot().value();
+  REQUIRE(files.writeTextAtomic("scenes/copy.dotscene", startup));
+  auto external = Json::parse(startup);
+  external["name"] = "External";
+  REQUIRE(files.writeTextAtomic("scenes/copy.dotscene", external.dump()));
+  CHECK_FALSE(document.save(revision(document)));
+  CHECK(document.snapshot().value() == changed);
+  CHECK(Json::parse(files.readText("scenes/copy.dotscene").value())["name"] == "External");
+  CHECK(files.readText("scenes/main.dotscene").value() == startup);
+  REQUIRE(files.writeTextAtomic("scenes/main.dotscene", "broken startup"));
+  REQUIRE(document.saveAs("scenes/rescued.dotscene", revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(Json::parse(files.readText("scenes/rescued.dotscene").value())["name"] == "Changed");
+  CHECK(files.readText("scenes/main.dotscene").value() == "broken startup");
+}
+
+TEST_CASE("document.scene_file_commands_are_strict_and_save_the_active_file_only") {
+  Fixture fixture;
+  auto document = fixture.document();
+  auto request = [&](Json value) {
+    value["revision"] = std::to_string(revision(document));
+    return document.dispatch(value.dump());
+  };
+  REQUIRE(request({{"command", "create-scene"},
+                   {"path", "scenes/level.dotscene"},
+                   {"name", "Level"},
+                   {"discard", false}}));
+  CHECK(Json::parse(document.snapshot().value())["scenePath"] == "scenes/level.dotscene");
+  edit(document, Json::array({{{"op", "create"}, {"name", "Authored"}}}));
+  REQUIRE(request({{"command", "save"}}));
+  REQUIRE(
+      request({{"command", "open-scene"}, {"path", "scenes/main.dotscene"}, {"discard", false}}));
+  REQUIRE(
+      request({{"command", "open-scene"}, {"path", "scenes/level.dotscene"}, {"discard", false}}));
+  CHECK(state(document)["scene"]["entities"][0]["name"] == "Authored");
+  const auto before = document.snapshot().value();
+
+  for (auto value :
+       {Json{{"command", "open-scene"}, {"path", "scenes/main.dotscene"}},
+        Json{{"command", "open-scene"}, {"path", "scenes/main.dotscene"}, {"discard", 1}},
+        Json{{"command", "save-scene-as"}, {"path", "scenes/extra.dotscene"}, {"extra", true}},
+        Json{{"command", "create-scene"},
+             {"path", "scenes/extra.dotscene"},
+             {"name", 1},
+             {"discard", false}}}) {
+    CHECK_FALSE(request(value));
+    CHECK(document.snapshot().value() == before);
+  }
+}
+
+TEST_CASE("document.scene_load_budget_thread_and_metadata_failures_preserve_state") {
+  Fixture fixture;
+  auto files = fixture.project().files().value();
+  const auto baseline = Dot::World::encodeScene(fixture.project().loadStartup().value()).value();
+  auto document = fixture.document({128, baseline.size()});
+  auto large = Dot::World::Scene::create("Large").value();
+
+  for (int i = 0; i < 100; ++i) {
+    REQUIRE(large.createEntity("Entity " + std::to_string(i)));
+  }
+
+  REQUIRE(files.writeTextAtomic("scenes/large.dotscene", Dot::World::encodeScene(large).value()));
+  const auto before = document.snapshot().value();
+  CHECK_FALSE(document.openScene("scenes/large.dotscene", revision(document), true));
+  CHECK(document.snapshot().value() == before);
+  const auto version = revision(document);
+  bool opened{}, created{}, copied{};
+  std::thread other([&] {
+    opened = document.openScene("scenes/main.dotscene", version).has_value();
+    created = document.createScene("scenes/thread.dotscene", "Thread", version).has_value();
+    copied = document.saveAs("scenes/thread-copy.dotscene", version).has_value();
+  });
+  other.join();
+  CHECK_FALSE(opened);
+  CHECK_FALSE(created);
+  CHECK_FALSE(copied);
+  CHECK(document.snapshot().value() == before);
+  auto project = fixture.project();
+  auto description = project.description().value();
+  description.name = "Externally changed project";
+  REQUIRE(project.save(description));
+  CHECK_FALSE(document.openScene("scenes/main.dotscene", version));
+  CHECK_FALSE(document.createScene("scenes/blocked.dotscene", "Blocked", version));
+  CHECK_FALSE(document.saveAs("scenes/blocked-copy.dotscene", version));
+  CHECK(document.snapshot().value() == before);
+  CHECK_FALSE(std::filesystem::exists(files.root() / "scenes/blocked.dotscene"));
+  CHECK_FALSE(std::filesystem::exists(files.root() / "scenes/blocked-copy.dotscene"));
+  auto moved = std::move(document);
+  CHECK_FALSE(document.openScene("scenes/main.dotscene", version));
+  CHECK_FALSE(document.createScene("scenes/moved.dotscene", "Moved", version));
+  CHECK_FALSE(document.saveAs("scenes/moved-copy.dotscene", version));
+  CHECK(moved.snapshot().value() == before);
+}

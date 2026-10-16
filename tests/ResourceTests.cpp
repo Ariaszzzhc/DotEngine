@@ -108,7 +108,7 @@ TEST_CASE("resources.path_text_capacity_metadata_and_missing_parent_boundaries")
   limits.binaryBytes = 4;
   auto resources = ResourceStore::open(fixture.project, limits).value();
 
-  for (const auto* name : {"../escape.ts", "scripts/../escape.ts", "scenes/scene.ts",
+  for (const auto* name : {"../escape.ts", "scripts/../escape.ts", "outside/scene.ts",
                            "assets/CON.txt", "assets/COM².txt", "assets/missing/file.txt"}) {
     CHECK_FALSE(resources.createText(name, ""));
   }
@@ -215,4 +215,23 @@ TEST_CASE("resources.external_text_path_reuses_metadata_exact_paths_and_readonly
   description.name = "Changed";
   REQUIRE(fixture.project.save(description));
   CHECK_FALSE(moved.externalTextPath("scripts/mover.ts"));
+}
+
+TEST_CASE("resources.scene_tree_supports_native_files_without_exposing_project_metadata") {
+  Fixture fixture;
+  auto resources = ResourceStore::open(fixture.project).value();
+  auto entries = resources.list().value();
+  CHECK(std::ranges::find(entries, "scenes/main.dotscene", &ResourceEntry::path) != entries.end());
+  REQUIRE(resources.createDirectory("scenes/levels"));
+  REQUIRE(resources.createText("scenes/levels/empty.dotscene", "{}"));
+  auto text = resources.openText("scenes/levels/empty.dotscene");
+  REQUIRE(text);
+  CHECK_FALSE(text->snapshot()->readOnly);
+  CHECK(resources.externalTextPath("scenes/levels/empty.dotscene"));
+  CHECK_FALSE(resources.createText("scenes/LEVELS/alias.dotscene", "{}"));
+  CHECK_FALSE(resources.openText("project.dotproject"));
+  CHECK_FALSE(resources.createText("outside/scene.dotscene", "{}"));
+  CHECK_FALSE(resources.createDirectory(".dot-private"));
+  CHECK_FALSE(resources.createDirectory("assets/.dot-stage-user"));
+  CHECK_FALSE(resources.createText("scenes/.dot-stage-user.dotscene", "{}"));
 }

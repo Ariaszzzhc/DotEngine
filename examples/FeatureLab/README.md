@@ -24,9 +24,9 @@ report only after explicit stop. Additional checks exercise component removal,
 failed-write/control preservation, owned snapshots, collider queries and exact
 high-precision identity.
 
-Tests verify all lifecycle phases, real contacts and PCM, owned snapshots/native
-failures, reload without replaying start, actual GPU presentation/projections,
-native audio callbacks, editor Play isolation and relocated standalone startup.
+Focused regressions verify lifecycle phases, real contacts/PCM, owned snapshots,
+native failures, reload without replaying start and Play isolation. Graphics checks
+render offscreen; actual editor workflows use the product agent interface.
 The report includes the last input, physics/contact and audio snapshots plus hook
 counts. Opening the scene alone does not claim that runtime checks have executed.
 
@@ -35,6 +35,24 @@ regressions provide the broader limits, lifetime, thread, format, device and
 error-path coverage described in docs/Testing.md.
 Local validation is arm64 macOS; Windows/Linux implementations are not locally
 validated. No JavaScript scene/rendering/physics substitute is used.
+
+## Lighting Studio scene
+
+Use File → Open scene with `scenes/LightingStudio.dotscene`, or open it from the
+Assets browser's Project → scenes folder. It is an ordinary editable scene in this
+same project; `scenes/main.dotscene` remains the startup/API demonstration.
+
+Lighting Studio contains a primary camera, a neutral PBR floor, copper/dielectric/
+normal-mapped cubes, glass and alpha-cutout panels, HDRI IBL, SSAO, directional
+cascades, a cool point light and a warm spot light with shadows. Use Game view/Play
+for the saved camera, or Scene view to navigate and edit materials/lights. It has
+no attached gameplay scripts. Save writes the active file; Save scene as retains
+history while creating a new file. Workspace export publishes the currently open
+scene, independently of the configured startup file.
+
+The studio and its floor material were authored through the actual editor's shared
+agent operations. It is a persistent capability example, not a separate rendering
+probe executable. Open `scenes/main.dotscene` to return to the runtime SDK showcase.
 
 ## HDR environment
 
