@@ -20,19 +20,29 @@ export namespace Dot::Project {
     std::uint32_t height{720};
     std::uint32_t fixedHz{60};
     bool hotReload{true};
+    std::string applicationId{};
     auto operator==(const Description&) const -> bool = default;
   };
 
   /** Strict version-1 JSON within 64 KiB. Names are 1..128 UTF-8 bytes; window
    * dimensions 1..8192 and fixed rate 1..240 Hz. Paths are portable canonical
    * relative UTF-8 without dot/traversal/reserved components. Parsing/encoding
-   * validates metadata only and does not initialize subsystems.
+   * validates metadata only and does not initialize subsystems. applicationId is
+   * required and follows Core's stable portable identity contract; display-name
+   * edits do not change it. Only create accepts an empty ID and generates one.
    * 64 KiB 内严格版本 1 JSON；名称为 1..128 字节 UTF-8，窗口尺寸 1..8192，固定频率
    * 1..240 Hz。路径为可移植规范相对 UTF-8，不含点/回溯/保留段；解析/编码仅校验元数据，
-   * 不初始化子系统。 */
+   * 不初始化子系统。applicationId 必填，遵守 Core 的稳定可移植身份契约，修改显示名称
+   * 不改变身份；仅 create 接受空身份并自动生成。 */
   [[nodiscard]] auto validateDescription(const Description& description) -> Core::Result<void>;
   [[nodiscard]] auto encodeDescription(const Description& description) -> Core::Result<std::string>;
   [[nodiscard]] auto decodeDescription(std::string_view source) -> Core::Result<Description>;
+
+  /** Generate a new application identity for creation, not a security token.
+   * Once persisted, keep it when renaming/moving/exporting; template instances
+   * receive independent identities. 为新建生成应用身份，不用于安全认证；持久化后改名、
+   * 移动、导出须保留，从模板新建则生成独立身份。 */
+  [[nodiscard]] auto createApplicationId() -> Core::Result<std::string>;
 
   /** Rooted authoring descriptor. Open validates startup scene and required script
    * files/directories with no symlink components. Scene loads return independent

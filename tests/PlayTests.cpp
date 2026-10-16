@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <expected>
+#include <filesystem>
+#include <iterator>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -204,9 +206,11 @@ TEST_CASE("play.component_errors_are_visible_and_realm_fault_requires_stop") {
   config.session.scripts.runtime.milliseconds = 5;
   auto faulted
       = PlaySession::create(fixture.project, fixture.compiler(), authoring, config).value();
+  auto retainedData = faulted.gameData().value();
   CHECK_FALSE(faulted.advance(Dot::Platform::InputState{}, 0ns));
   CHECK(faulted.stats()->state == PlayState::Faulted);
   CHECK(faulted.lastFrame()->reports.back().frame.realmFaulted);
+  CHECK_FALSE(retainedData.perform(R"({"command":"set","key":"score","value":0})"));
   CHECK_FALSE(faulted.advance(Dot::Platform::InputState{}, 1ns));
   REQUIRE(faulted.stop());
   CHECK(faulted.stats()->state == PlayState::Stopped);
@@ -307,4 +311,66 @@ TEST_CASE("play.agent_input_drives_shared_scripts_physics_then_releases_without_
   CHECK_FALSE(input.next().value());
   CHECK(Dot::World::encodeScene(authoring).value() == before);
   REQUIRE(play.stop());
+}
+
+TEST_CASE("play.game_data_and_save_files_are_isolated_and_removed_after_stop") {
+  Fixture fixture;
+  auto files = fixture.directory.files();
+  REQUIRE(files.createDirectories("temporary-saves"));
+  auto root = Dot::Core::FileSystem::open(files.root() / "temporary-saves").value();
+  auto config = fixture.config();
+  config.temporarySavesParent = root;
+  auto authoring = fixture.project.loadStartup().value();
+  const auto manifest = fixture.project.files()->readText("project.dotproject").value();
+  auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, config).value();
+  auto data = play.gameData().value();
+  REQUIRE(data.perform(R"({"command":"set","key":"score","value":7})"));
+  REQUIRE(data.perform(R"({"command":"save","slot":"test","overwrite":false})"));
+  REQUIRE(std::distance(std::filesystem::directory_iterator(root.root()),
+                        std::filesystem::directory_iterator{})
+          == 1);
+  REQUIRE(play.stop());
+  CHECK(std::filesystem::directory_iterator(root.root()) == std::filesystem::directory_iterator{});
+  CHECK_FALSE(data.perform(R"({"command":"load","slot":"test","revision":"2"})"));
+  CHECK(nlohmann::json::parse(data.perform(R"({"command":"snapshot"})").value())["data"]["score"]
+        == 7);
+  auto restarted
+      = PlaySession::create(fixture.project, fixture.compiler(), authoring, config).value();
+  auto fresh = restarted.gameData().value();
+  CHECK(nlohmann::json::parse(fresh.perform(R"({"command":"snapshot"})").value())["data"].empty());
+  CHECK(nlohmann::json::parse(fresh.perform(R"({"command":"list-saves"})").value()).empty());
+#if !defined(_WIN32)
+  REQUIRE(fresh.perform(R"({"command":"save","slot":"blocked","overwrite":false})"));
+  const auto owned = std::filesystem::directory_iterator(root.root())->path();
+  const auto permissions = std::filesystem::status(owned).permissions();
+
+  struct Restore {
+    std::filesystem::path path;
+    std::filesystem::perms permissions;
+
+    ~Restore() {
+      std::error_code ignored;
+      std::filesystem::permissions(path, permissions, ignored);
+    }
+  } restore{owned, permissions};
+
+  std::filesystem::permissions(
+      owned, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec);
+  auto rejected = restarted.stop();
+
+  if (!rejected) {
+    CHECK(rejected.error().code == Dot::Core::ErrorCode::Io);
+    CHECK(restarted.stats()->state == PlayState::Stopped);
+    CHECK_FALSE(fresh.perform(R"({"command":"set","key":"score","value":0})"));
+    std::filesystem::permissions(owned, permissions);
+  } else {
+    WARN_MESSAGE(false,
+                 "Current credentials bypass directory permissions; failure fixture skipped");
+  }
+#endif
+  REQUIRE(restarted.stop());
+  CHECK(fixture.project.files()->readText("project.dotproject").value() == manifest);
+  config.session.progress.saves = files;
+  CHECK_FALSE(PlaySession::create(fixture.project, fixture.compiler(), authoring, config));
+  CHECK(std::filesystem::directory_iterator(root.root()) == std::filesystem::directory_iterator{});
 }

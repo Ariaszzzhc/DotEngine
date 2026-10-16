@@ -52,6 +52,8 @@ TEST_CASE("templates.copy_complete_game_with_engine_imports_without_source_chang
   auto created = fixture.create(source);
   REQUIRE_MESSAGE(created, (created ? "" : created.error().message));
   CHECK(created->description()->name == "游戏");
+  CHECK(created->description()->applicationId
+        != Project::Project::open(source.root())->description()->applicationId);
   CHECK(created->loadStartup()->entityCount().value()
         == Project::Project::open(source.root())->loadStartup()->entityCount().value());
   CHECK(created->files()->readBytes("assets/models/surveyor.glb").value()

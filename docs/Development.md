@@ -7358,3 +7358,94 @@ application identity and per-user directories, built-in realm-restricted script
 services, isolated Play state, matching editor/agent controls and actual example
 workflows remain next. Synchronous save I/O, background scheduling and crash
 recovery also remain open. The full engine/game objective is not complete.
+
+### Integrated game state, save slots and isolated Play
+
+Project metadata now requires a stable portable applicationId, independent of its
+display name/location. Blank creation generates a random identity when unspecified;
+strict encoding/opening requires one. Template instances receive independent IDs;
+rename, relocation and native/data export preserve the stored identity. Updated both
+editable example manifests and metadata contracts directly, without compatibility
+fallbacks or format-version increments. SDL user-data directory resolution lives in
+its own platform interface/implementation, validates IDs before filesystem effects
+and needs no video/audio initialization. The native player uses its per-app user
+directory's saves child and propagates failures without a project/install fallback.
+
+GameSession now owns one shared GameData service across scene/realm replacements.
+The native strict JSON protocol implements owned state observations, semantic edits,
+optimistic replace/load and explicit slot operations. Built-in dot:engine gameState
+and saves wrappers use that same service. Only in-memory observations are read-only
+preparation calls; constructors/migration cannot write state or perform any disk
+operation. Failed candidate preparation preserves the active store. Close lets Stop
+hooks persist before retirement; fault/destruction retire writes and disk access.
+Retained handles still allow owned in-memory observations. No implicit save/load,
+entity restoration or scene replacement is added by storage itself.
+
+Play creates fresh state and an owned private temporary directory, rejecting direct
+player-save roots. Stop explicitly discards it even when hooks fail. Added fallible
+StagedDirectory::discard: cleanup errors retain ownership/path for retry, while
+destruction stays best effort. A stopped Play can retry cleanup; restarting through
+the workspace cleans the previous store first. Realm faults retire retained data
+writers too. A configurable temporary parent still receives only owned children.
+
+Window -> Game state is a docked product panel with live JSON observation and
+explicit Save/Load/Delete/Refresh controls. GUI and the strict game-data workspace
+operation share GameData::perform, reject stale Play identities and permit only
+observations during pending close/non-running Play. show-pane/docking include the
+real panel. Slot listings are cached instead of scanned each frame. Revision/size
+tokens preserve uint64 bits as decimal strings. Document history and player progress
+are separate, and the GUI explains temporary Play storage.
+
+FeatureLab covers all ten new SDK methods using actual storage, restores its
+initial state and deletes its reserved demonstration slot. Work is spread over
+existing lifecycle phases to stay within the unchanged host-call/time budgets.
+F6 saves the game camera's scene/pose; F7 explicitly restores it, requesting the
+saved scene and applying its pose from the new camera's Start. Missing saves and
+scene failures publish a status without disabling camera input. The auditor now
+compares prepared audio with the pre-Start authored pose: Start callbacks may move
+the camera before the session's first audio synchronization.
+
+Ten enduring regressions reuse existing unit/filesystem/compiler targets: four pure
+CPU protocol/path cases and six integration cases for identity, cleanup retry,
+corrupt/stale loads, built-in SDK scene/restart/preparation and Play storage isolation.
+Existing cases additionally verify fault retirement, template identity separation
+and the actual compiled FeatureLab F6/L/F7 route restoring a displaced camera. Unit
+cases initialize no files/devices; automated cases open no desktop windows. Final
+focused Debug CTest passes 43/43 (8.32s).
+
+One actual native editor session completes 43 product requests with eight expected
+strict/stale rejections. It verifies save/overwrite/conflict/read/load behavior,
+F6 -> L -> F7 through both scenes, restoring a modified checkpoint pose, current
+panel visibility/geometry, retained observations after Stop, fresh Play isolation,
+missing-save recovery and source-free export preserving the application ID. The
+actual Report contains 129 live checks and eight deliberately caught errors, without
+unexpected Play diagnostics. Project metadata and both scene-file hashes remain
+unchanged. Native editor exits 0 with empty stderr and retires its control directory;
+terminal close is verified through the supervising process, since its mailbox
+response can disappear during retirement. Documented that terminal observation.
+
+The actual native player starts the exported data package for 180 frames, exits 0
+with empty stderr and creates the expected SDL user/app saves directory on macOS.
+Owned empty user directories created for this review are removed. CoreGraphics did
+not provide window titles, so no native screenshot/check-count or pixel-comparison
+claim is made. The editor's product/geometry observations and compiled behavior
+checks are separate evidence. Neither workflow is installed as a window-opening
+test or bespoke acceptance executable.
+
+macOS arm64 Debug/Release builds succeed. Full CTest passes Debug 1178/1178
+(179.16s) and Release/NDEBUG 1178/1178 (19.15s): 328 unit and 850 integration,
+with overlapping 191 compiler, 132 offscreen GPU, 32 native-audio and 28 SDL-dummy
+cases. Windows/Linux code is not executed locally. Release commands retain NDEBUG.
+
+Review covers explicit roots/IDs, shared state and retirement, candidate/Stop
+boundaries, owned cleanup and retry, UTF-8/portable names, strict schemas, error
+propagation, platform assumptions, cached listing and GUI/agent parity. Thirty-one
+changed/new C++/TypeScript files pass clang-format and whitespace checks pass.
+Dependencies and caller compiler/linker settings remain unchanged. Background I/O,
+directory crash recovery/cloud persistence and finished game-specific checkpoint
+workflows remain open alongside the wider engine/game requirements.
+
+Owned temporary client/request helpers and exported validation data are removed.
+Ignored actual-result JSON/log evidence and build caches remain, as do the untracked
+user references and existing archives. No distribution archive is generated. The
+complete engine/game goal remains active and unfinished.

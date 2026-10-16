@@ -111,3 +111,42 @@ TEST_CASE("staged_directory_invalid_names_and_concurrent_publish_preserve_the_wi
   CHECK(a != b);
   CHECK(parent.files().readText("race/value").value() == (a ? "first" : "second"));
 }
+
+TEST_CASE("staged_directory.explicit_discard_releases_ownership_and_failure_can_retry") {
+  Parent parent;
+  auto staging = Dot::Core::StagedDirectory::create(parent.files()).value();
+  const auto root = staging.files()->root();
+  REQUIRE(staging.files()->writeTextAtomic("owned.txt", "owned"));
+#if !defined(_WIN32)
+  const auto permissions = std::filesystem::status(root).permissions();
+
+  struct Restore {
+    std::filesystem::path path;
+    std::filesystem::perms permissions;
+
+    ~Restore() {
+      std::error_code ignored;
+      std::filesystem::permissions(path, permissions, ignored);
+    }
+  } restore{root, permissions};
+
+  std::filesystem::permissions(
+      root, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec);
+  auto rejected = staging.discard();
+
+  if (!rejected) {
+    CHECK(rejected.error().code == Dot::Core::ErrorCode::Io);
+    CHECK(rejected.error().message.find("temporary directory") != std::string::npos);
+    CHECK(staging.files());
+    std::filesystem::permissions(root, permissions);
+  } else {
+    WARN_MESSAGE(false,
+                 "Current credentials bypass directory permissions; failure fixture skipped");
+  }
+#endif
+  REQUIRE(staging.discard());
+  CHECK_FALSE(staging.files());
+  CHECK_FALSE(std::filesystem::exists(root));
+  REQUIRE(staging.discard());
+  CHECK(std::filesystem::is_empty(parent.root));
+}

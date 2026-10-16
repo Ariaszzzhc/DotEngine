@@ -48,3 +48,17 @@ TEST_CASE("paths.portable_names_cover_unicode_devices_and_boundaries") {
   CHECK(limit.size() == 4096);
   CHECK(Dot::Core::isPortableRelativePath(limit));
 }
+
+TEST_CASE("paths.application_identity_is_a_bounded_portable_literal") {
+  for (const auto* value : {"game-1234", "example_game", "42", "a"}) {
+    CHECK(Dot::Core::isApplicationId(value));
+  }
+
+  CHECK(Dot::Core::isApplicationId(std::string(64, 'a')));
+
+  for (const auto& value :
+       std::vector<std::string>{"", "../game", "has space", "game.id", "CON", "nul", "lpt1", "Game",
+                                "游戏", std::string(65, 'a'), std::string("a\0b", 3)}) {
+    CHECK_FALSE(Dot::Core::isApplicationId(value));
+  }
+}

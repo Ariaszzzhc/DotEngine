@@ -21,6 +21,7 @@ import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
+import Dot.Platform.UserData;
 import Dot.World.Scene;
 
 #include "Player.hpp"
@@ -52,6 +53,24 @@ namespace Dot::Runtime {
 
       if (!files) {
         return std::unexpected(files.error());
+      }
+
+      auto userData = Platform::userDataDirectory(description->applicationId);
+
+      if (!userData) {
+        return std::unexpected(userData.error());
+      }
+
+      auto directory = userData->createDirectories("saves");
+
+      if (!directory) {
+        return std::unexpected(directory.error());
+      }
+
+      auto saves = Core::FileSystem::open(userData->root() / "saves");
+
+      if (!saves) {
+        return std::unexpected(saves.error());
       }
 
       Core::ApplicationConfig applicationConfig;
@@ -88,6 +107,7 @@ namespace Dot::Runtime {
       }
 
       Project::GameSessionConfig sessionConfig;
+      sessionConfig.progress.saves = std::move(*saves);
       sessionConfig.audioMode = Project::SessionAudio::Playback;
       sessionConfig.audio.output.volume = options.volume;
       auto session

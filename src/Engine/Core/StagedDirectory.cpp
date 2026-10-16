@@ -90,6 +90,29 @@ namespace Dot::Core {
     }
   }
 
+  auto StagedDirectory::discard() -> Result<void> {
+    if (m_staging.empty()) {
+      return {};
+    }
+
+    try {
+      std::error_code error;
+      std::filesystem::remove_all(m_staging, error);
+
+      if (error) {
+        const auto bytes = m_staging.generic_u8string();
+        return fail(ErrorCode::Io, "Remove temporary directory '"
+                                       + std::string(bytes.begin(), bytes.end())
+                                       + "': " + error.message());
+      }
+
+      m_staging.clear();
+      return {};
+    } catch (const std::exception& error) {
+      return fail(ErrorCode::External, "Discard temporary directory: " + std::string(error.what()));
+    }
+  }
+
   auto StagedDirectory::create(const FileSystem& parent) -> Result<StagedDirectory> {
     if (parent.root().empty()) {
       return fail(ErrorCode::InvalidArgument, "Staging parent was moved");

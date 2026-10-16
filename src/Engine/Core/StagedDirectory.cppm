@@ -25,6 +25,11 @@ export namespace Dot::Core {
     /** Borrowing descriptor; staging owner must remain alive and unpublished.
      * 借用描述，暂存所有者须保持存活且未发布。 */
     [[nodiscard]] auto files() const -> Result<FileSystem>;
+    /** Explicit cleanup reports errors and retains ownership for retry; removal
+     * can be partial. Destruction remains best effort. Empty ownership is a no-op.
+     * 显式清理报告错误并保留所有权以便重试，删除可能部分完成；销毁仍尽力清理，
+     * 不再拥有目录时操作无变化。 */
+    [[nodiscard]] auto discard() -> Result<void>;
     /** Destination is one relative filename in the same parent. Publication
      * errors retain staging for retry; a post-rename open failure explicitly
      * reports that publication already occurred, without deleting the destination.

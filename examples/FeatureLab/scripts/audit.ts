@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, type HostError, input, type JsonValue, keys, mouseButtons, physics, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameState, type HostError, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -33,6 +33,11 @@ function equal(first: unknown, second: unknown): boolean {
 export class Audit extends ScriptComponent<{contract: string}> {
   #checked = new Set<string>();
   #authored = new Map<string, Entity>();
+  /**
+   * Audio's prepared pose precedes Start callbacks, which may move the camera.
+   * 音频准备位姿早于可移动相机的 Start 回调。
+   */
+  #preparedListenerPosition = this.entity('Camera').transform.position;
   #starts = 0;
   #fixed = 0;
   #updates = 0;
@@ -287,9 +292,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check(
         'audio.stats',
         audio.stats().assets === 1 && audio.stats().voices === 1 && !audio.stats().faulted);
-    this.check(
-        'audio.listener',
-        equal(audio.listener().position, this.entity('Camera').transform.position));
+    this.check('audio.listener', equal(audio.listener().position, this.#preparedListenerPosition));
     audio.play(voice.id);
     this.check('audio.play', voice.audioVoice.playing);
     audio.pause(voice.id);
@@ -409,6 +412,27 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('scenes.status', scenes.current().scope === this.self.id.scene);
   }
 
+  private gameDataChecks(): void {
+    const initial = gameState.snapshot();
+    this.check('gameState.snapshot', typeof initial.revision === 'string');
+    gameState.set('featureAudit', {visits: 1});
+    this.check('gameState.set', typeof gameState.snapshot().revision === 'string');
+    this.check('gameState.get', equal(gameState.get('featureAudit'), {visits: 1}));
+    const slot = saves.write('feature-lab-audit', true);
+    this.check('saves.write', slot.name === 'feature-lab-audit' && Number(slot.bytes) > 0);
+    this.check('saves.list', saves.list().some(s => s.name === slot.name));
+    gameState.set('featureAudit', {visits: 2});
+    this.check('saves.read', equal(saves.read(slot.name).data.featureAudit, {visits: 1}));
+    saves.load(slot.name, gameState.snapshot().revision);
+    this.check('saves.load', equal(gameState.get('featureAudit'), {visits: 1}));
+    gameState.remove('featureAudit');
+    this.check('gameState.remove', gameState.get('featureAudit') === undefined);
+    gameState.replace(initial.data, gameState.snapshot().revision);
+    this.check('gameState.replace', equal(gameState.snapshot().data, initial.data));
+    saves.remove(slot.name);
+    this.check('saves.remove', !saves.list().some(s => s.name === slot.name));
+  }
+
   onStart(): void {
     ++this.#starts;
     this.check('ScriptComponent.constructor', this.self.exists && Object.isFrozen(this.properties));
@@ -441,6 +465,10 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.animationChecks();
     } else if (!this.#checked.has('Entity.setCharacterYaw')) {
       this.characterChecks();
+    }
+
+    if (this.#checked.has('Entity.setCharacterYaw') && !this.#checked.has('gameState.snapshot')) {
+      this.gameDataChecks();
     }
 
     this.inputChecks();

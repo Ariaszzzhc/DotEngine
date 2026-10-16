@@ -51,6 +51,7 @@ add_executable(DotUnitTests
     HomeDialogTests.cpp
     SceneFlowTests.cpp
     GameStateTests.cpp
+    GameDataTests.cpp
     SceneAnimatorTests.cpp
     AnimationTransitionTests.cpp
     SkinTests.cpp

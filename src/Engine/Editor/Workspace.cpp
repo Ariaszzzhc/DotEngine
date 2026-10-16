@@ -520,6 +520,10 @@ namespace Dot::Editor {
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
     std::uint64_t m_playSession{};
+    std::string m_saveSlot{"checkpoint"};
+    bool m_saveOverwrite{};
+    bool m_saveSlotsKnown{};
+    Json m_saveSlots = Json::array();
     PlayInput m_agentInput;
     std::string m_inputSource{"none"};
     Platform::InputState m_gameInput;
@@ -1145,6 +1149,14 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::Unavailable, "Play session identities exhausted");
       }
 
+      if (m_play) {
+        auto cleaned = m_play->stop();
+
+        if (!cleaned) {
+          return std::unexpected(cleaned.error());
+        }
+      }
+
       auto tool = compiler();
 
       if (!tool) {
@@ -1160,6 +1172,8 @@ namespace Dot::Editor {
 
       m_play.emplace(std::move(*created));
       ++m_playSession;
+      m_saveSlotsKnown = false;
+      m_saveSlots = Json::array();
       m_agentInput.reset();
       m_inputSource = "none";
 
@@ -1179,7 +1193,7 @@ namespace Dot::Editor {
     }
 
     auto stopPlay() -> Core::Result<void> {
-      if (!playing()) {
+      if (!m_play) {
         return {};
       }
 
@@ -4166,6 +4180,41 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "game-data") {
+        Codec::requireFields(parsed, {"command", "session", "value"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Game data requires the current Play session");
+        }
+
+        const auto operation = parsed["value"].at("command").get<std::string>();
+
+        if ((m_pendingClose || m_play->stats()->state != PlayState::Running)
+            && operation != "snapshot" && operation != "get") {
+          return Core::fail(Core::ErrorCode::InvalidState, "Game data is closing");
+        }
+
+        auto service = m_play->gameData();
+        auto result = service ? service->perform(parsed["value"].dump())
+                              : Core::Result<std::string>{std::unexpected(service.error())};
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        auto value = Codec::parseJson(*result, 36);
+
+        if (operation == "list-saves") {
+          m_saveSlots = value;
+          m_saveSlotsKnown = true;
+        } else if (operation == "save" || operation == "delete-save") {
+          m_saveSlotsKnown = false;
+        }
+
+        return Json{{"ok", true}, {"result", std::move(value)}}.dump();
+      }
+
       if (command == "request-play-scene" || command == "play-scene-status") {
         if (command == "request-play-scene") {
           Codec::requireFields(parsed, {"command", "session", "revision", "path"});
@@ -4420,7 +4469,7 @@ namespace Dot::Editor {
 
         if (pane != "scene" && pane != "environment" && pane != "rendering" && pane != "resources"
             && pane != "inspector" && pane != "viewport" && pane != "console" && pane != "skeleton"
-            && pane != "animation") {
+            && pane != "animation" && pane != "game-data") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -7124,6 +7173,79 @@ namespace Dot::Editor {
       }
     }
 
+    auto gameDataPanel() -> void {
+      if (!m_play) {
+        ImGui::TextWrapped("Start Play to inspect game state and try isolated saves.");
+        return;
+      }
+
+      auto service = m_play->gameData();
+      auto snapshot = service ? service->perform(R"({"command":"snapshot"})")
+                              : Core::Result<std::string>{std::unexpected(service.error())};
+
+      if (!snapshot) {
+        ImGui::TextWrapped("%s", snapshot.error().message.c_str());
+        return;
+      }
+
+      auto state = Codec::parseJson(*snapshot, 36);
+      ImGui::Text("Revision %s", state["revision"].get_ref<const std::string&>().c_str());
+      ImGui::TextWrapped("Play saves are temporary and are removed when Play stops.");
+      const auto request = [&](Json value) {
+        return sessionAction({{"command", "game-data"},
+                              {"session", std::to_string(m_playSession)},
+                              {"value", std::move(value)}});
+      };
+      const bool running = m_play->stats()->state == PlayState::Running && !m_pendingClose;
+      ImGui::BeginDisabled(!running);
+
+      if (running && !m_saveSlotsKnown) {
+        m_saveSlotsKnown = true;
+        request({{"command", "list-saves"}});
+      }
+
+      ImGui::SetNextItemWidth(-1);
+      ImGui::InputText("##save-slot", &m_saveSlot);
+      ImGui::Checkbox("Replace an existing slot", &m_saveOverwrite);
+
+      if (ImGui::Button("Save state")) {
+        request({{"command", "save"}, {"slot", m_saveSlot}, {"overwrite", m_saveOverwrite}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Load state")) {
+        request({{"command", "load"}, {"slot", m_saveSlot}, {"revision", state["revision"]}});
+      }
+
+      if (ImGui::Button("Delete slot")) {
+        request({{"command", "delete-save"}, {"slot", m_saveSlot}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Refresh slots")) {
+        request({{"command", "list-saves"}});
+      }
+
+      for (const auto& slot : m_saveSlots) {
+        const auto& name = slot["name"].get_ref<const std::string&>();
+        const auto label = name + " (" + slot["bytes"].get<std::string>() + " bytes)";
+
+        if (ImGui::Selectable(label.c_str(), name == m_saveSlot)) {
+          m_saveSlot = name;
+        }
+      }
+
+      ImGui::EndDisabled();
+      ImGui::Separator();
+      ImGui::BeginChild("Game state values", {0, 0}, ImGuiChildFlags_Borders,
+                        ImGuiWindowFlags_HorizontalScrollbar);
+      const auto text = state["data"].dump(2);
+      ImGui::TextUnformatted(text.c_str());
+      ImGui::EndChild();
+    }
+
     auto viewportControls() -> void {
       ImGui::TextDisabled("%s%s", m_snapshot["scenePath"].get_ref<const std::string&>().c_str(),
                           m_document->stats()->dirty ? " *" : "");
@@ -7634,7 +7756,7 @@ namespace Dot::Editor {
               std::pair{"Inspector", "inspector"}, std::pair{"Environment", "environment"},
               std::pair{"Rendering", "rendering"}, std::pair{"Assets", "resources"},
               std::pair{"Skeleton", "skeleton"}, std::pair{"Animation", "animation"},
-              std::pair{"Console", "console"}}) {
+              std::pair{"Console", "console"}, std::pair{"Game state", "game-data"}}) {
           if (ImGui::MenuItem(label)) {
             sessionAction({{"command", "show-pane"}, {"pane", pane}});
           }
@@ -7697,6 +7819,10 @@ namespace Dot::Editor {
     static auto panelTitle(std::string_view panel) -> const char* {
       if (panel == "hierarchy") {
         return "Hierarchy";
+      }
+
+      if (panel == "game-data") {
+        return "Game state";
       }
 
       if (panel == "viewport") {
@@ -8974,6 +9100,7 @@ namespace Dot::Editor {
         ImGui::DockBuilderDockWindow("Environment", inspector);
         ImGui::DockBuilderDockWindow("Rendering", inspector);
         ImGui::DockBuilderDockWindow("Skeleton", inspector);
+        ImGui::DockBuilderDockWindow("Game state", inspector);
         ImGui::DockBuilderDockWindow("Assets", assets);
         ImGui::DockBuilderDockWindow("Console", assets);
         ImGui::DockBuilderDockWindow("Animation", assets);
@@ -9166,6 +9293,12 @@ namespace Dot::Editor {
             ImGui::EndDisabled();
           }
         }
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Game state", "game-data", "game-data")) {
+        gameDataPanel();
       }
 
       ImGui::End();

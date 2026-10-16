@@ -19,6 +19,12 @@ namespace Dot::Core {
     }
   }  // namespace
 
+  auto isApplicationId(std::string_view value) noexcept -> bool {
+    return !value.empty() && value.size() <= 64 && std::ranges::all_of(value, [](unsigned char c) {
+      return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    }) && isPortableRelativePath(value);
+  }
+
   auto isPortableRelativePath(std::string_view value) noexcept -> bool {
     if (value.empty() || value.size() > 4096 || value.front() == '/' || value.back() == '/'
         || value.find_first_of("\\:<>\"|?*") != std::string_view::npos || !isValidUtf8(value)

@@ -12,7 +12,8 @@ Version 1 uses these exact JSON fields:
   "scriptsDirectory": "scripts",
   "window": {"width": 1280, "height": 720},
   "fixedHz": 60,
-  "hotReload": true
+  "hotReload": true,
+  "applicationId": "my-game-stable-id"
 }
 ```
 
@@ -23,7 +24,9 @@ traversal/dot/empty components, trailing dots/spaces, reserved Windows names and
 platform-specific separators/characters. Startup paths end in lowercase .dotscene.
 Strict parsing rejects missing/unknown/duplicate fields, incorrect types,
 non-integer numbers, unsupported versions, nesting beyond 8, invalid bytes and
-manifests larger than 64 KiB. Metadata parsing starts no subsystems.
+manifests larger than 64 KiB. Metadata parsing starts no subsystems. applicationId is a required stable portable
+lowercase ID independent of the name/path; creation can generate it, template
+instances get new IDs, and rename/move/export preserve it. See [game storage](GameState.md).
 
 `Dot.Project` exposes Description codecs and Project::create/open/files/description/
 loadStartup/save/saveStartup. Open validates the startup scene and configured script

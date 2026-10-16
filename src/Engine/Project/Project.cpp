@@ -5,6 +5,8 @@ module;
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <format>
+#include <random>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -108,6 +110,18 @@ namespace Dot::Project {
     }
   }  // namespace
 
+  auto createApplicationId() -> Core::Result<std::string> {
+    try {
+      std::random_device random;
+      return std::format("game-{:08x}{:08x}{:08x}{:08x}", static_cast<std::uint32_t>(random()),
+                         static_cast<std::uint32_t>(random()), static_cast<std::uint32_t>(random()),
+                         static_cast<std::uint32_t>(random()));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Generate application identity: " + std::string(error.what()));
+    }
+  }
+
   auto validateDescription(const Description& description) -> Core::Result<void> {
     if (description.name.empty() || description.name.size() > 128
         || !Core::isValidUtf8(description.name)
@@ -116,9 +130,10 @@ namespace Dot::Project {
         || !description.startScene.ends_with(".dotscene")
         || !Core::isPortableRelativePath(description.scriptsDirectory) || description.width == 0
         || description.width > 8192 || description.height == 0 || description.height > 8192
-        || description.fixedHz == 0 || description.fixedHz > 240) {
+        || description.fixedHz == 0 || description.fixedHz > 240
+        || !Core::isApplicationId(description.applicationId)) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Invalid project name/paths/window/fixed rate");
+                        "Invalid project name/paths/window/fixed rate/application identity");
     }
 
     return {};
@@ -138,7 +153,8 @@ namespace Dot::Project {
                   {"scriptsDirectory", description.scriptsDirectory},
                   {"window", {{"width", description.width}, {"height", description.height}}},
                   {"fixedHz", description.fixedHz},
-                  {"hotReload", description.hotReload}}
+                  {"hotReload", description.hotReload},
+                  {"applicationId", description.applicationId}}
                  .dump(2)
              + "\n";
     } catch (const std::exception& error) {
@@ -155,7 +171,7 @@ namespace Dot::Project {
     try {
       auto value = Codec::parseJson(source, 8);
       Codec::requireFields(value, {"version", "name", "startScene", "scriptsDirectory", "window",
-                                   "fixedHz", "hotReload"});
+                                   "fixedHz", "hotReload", "applicationId"});
       Codec::requireFields(value["window"], {"width", "height"});
 
       if (integer(value["version"], 1) != 1) {
@@ -168,7 +184,8 @@ namespace Dot::Project {
                          integer(value["window"]["width"], 8192),
                          integer(value["window"]["height"], 8192),
                          integer(value["fixedHz"], 240),
-                         value["hotReload"].get<bool>()};
+                         value["hotReload"].get<bool>(),
+                         value["applicationId"].get<std::string>()};
       auto checked = validateDescription(result);
       return checked ? Core::Result<Description>{std::move(result)}
                      : Core::Result<Description>{std::unexpected(checked.error())};
@@ -224,19 +241,29 @@ namespace Dot::Project {
 
   auto Project::create(const Core::FileSystem& parent, const std::filesystem::path& folder,
                        const Description& description) -> Core::Result<Project> {
-    auto metadata = encodeDescription(description);
-    const auto utf = folder.generic_u8string();
-    const std::string name(utf.begin(), utf.end());
-
-    if (!metadata || folder.filename() != folder || !Core::isPortableRelativePath(name)) {
-      return metadata ? Core::Result<Project>{Core::fail(
-                            Core::ErrorCode::InvalidArgument,
-                            "Project folder must be one portable relative name")}
-                      : Core::Result<Project>{std::unexpected(metadata.error())};
-    }
-
     try {
       auto ownedDescription = description;
+
+      if (ownedDescription.applicationId.empty()) {
+        auto identity = createApplicationId();
+
+        if (!identity) {
+          return std::unexpected(identity.error());
+        }
+
+        ownedDescription.applicationId = std::move(*identity);
+      }
+
+      auto metadata = encodeDescription(ownedDescription);
+      const auto name = utf(folder);
+
+      if (!metadata || folder.filename() != folder || !Core::isPortableRelativePath(name)) {
+        return metadata ? Core::Result<Project>{Core::fail(
+                              Core::ErrorCode::InvalidArgument,
+                              "Project folder must be one portable relative name")}
+                        : Core::Result<Project>{std::unexpected(metadata.error())};
+      }
+
       auto staging = Core::StagedDirectory::create(parent);
 
       if (!staging) {
@@ -322,7 +349,7 @@ export class Mover extends ScriptComponent<{speed: number}> {
         }
       }
 
-      auto valid = resources(*files, description);
+      auto valid = resources(*files, ownedDescription);
 
       if (!valid) {
         return std::unexpected(valid.error());

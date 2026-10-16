@@ -942,3 +942,13 @@ bounds unique graphics inputs to 32768 and decoded mesh/image data to 512 MiB; n
 subsystems retain their own configured limits. The operation is synchronous; GPU
 allocation/render failures can still happen after commit. There is no additive scene
 composition, background streaming or persistent gameplay-state transfer in this API.
+
+## Game state and save slots
+
+The engine-owned module exports `gameState` and `saves`; see
+[game storage](GameState.md#script-api) for the strict JSON, revision and lifetime
+contracts. GameSession supplies the shared services across scene replacements.
+Constructors/migration only observe in-memory state; all disk access requires an
+active lifecycle phase. No implicit save, load, scene switch or entity restoration
+is performed. The native player uses stable application identity/user directories;
+editor Play uses isolated disposable storage.

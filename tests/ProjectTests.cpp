@@ -48,7 +48,8 @@ namespace {
 }  // namespace
 
 TEST_CASE("project_metadata_roundtrip_unicode_boundaries_and_portable_paths") {
-  Description description{"游戏🙂", "场景/主.dotscene", "源码", 8192, 1, 240, false};
+  Description description{"游戏🙂", "场景/主.dotscene", "源码", 8192, 1, 240,
+                          false,    "metadata-test"};
   auto encoded = encodeDescription(description);
   REQUIRE(encoded);
   CHECK(decodeDescription(*encoded).value() == description);
@@ -74,7 +75,9 @@ TEST_CASE("project_metadata_roundtrip_unicode_boundaries_and_portable_paths") {
 }
 
 TEST_CASE("project_metadata_rejects_unknown_missing_duplicate_versions_types_and_bytes") {
-  const auto original = Json::parse(encodeDescription(Description{}).value());
+  Description description;
+  description.applicationId = "metadata-test";
+  const auto original = Json::parse(encodeDescription(description).value());
 
   for (const auto& item : original.items()) {
     auto missing = original;
@@ -239,4 +242,26 @@ TEST_CASE("project_save_rejects_manifest_links_without_overwriting_another_proje
   CHECK(files.readText("scenes/main.dotscene").value() == before);
   CHECK(project.description()->name == "Project");
   CHECK_FALSE(Project::open(files.root()));
+}
+
+TEST_CASE("project.application_identity_survives_rename_and_new_projects_are_independent") {
+  Parent parent;
+  auto first = Project::create(parent.files(), "first").value();
+  auto second = Project::create(parent.files(), "second").value();
+  auto metadata = first.description().value();
+  const auto identity = metadata.applicationId;
+  REQUIRE_FALSE(identity.empty());
+  CHECK(identity != second.description()->applicationId);
+  metadata.name = "Renamed game";
+  REQUIRE(first.save(metadata));
+  auto reopened = Project::open(first.files()->root()).value();
+  CHECK(reopened.description()->applicationId == identity);
+  CHECK(reopened.description()->name == "Renamed game");
+
+  for (const auto* value : {"", "../escape", "CON", "nul", "com1", "UPPER", "has space", "a/b"}) {
+    auto invalid = metadata;
+    invalid.applicationId = value;
+    CHECK_FALSE(encodeDescription(invalid));
+    CHECK(first.description()->applicationId == identity);
+  }
 }

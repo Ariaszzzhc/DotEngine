@@ -100,6 +100,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Game/State.cpp
     src/Engine/Game/Saves.cpp
     src/Engine/Script/SceneFlow.cpp
+    src/Engine/Script/GameData.cpp
     src/Engine/Project/GamePackage.cpp
     src/Engine/Project/GameExport.cpp
     src/Engine/Project/Templates.cpp
@@ -125,6 +126,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Text.cpp
     src/Engine/Core/Application.cpp
     src/Engine/Platform/System.cpp
+    src/Engine/Platform/UserData.cpp
     src/Engine/Platform/Window.cpp
     src/Engine/Platform/Events.cpp
     src/Engine/Platform/Dialog.cpp
@@ -230,6 +232,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Game/State.cppm
         src/Engine/Game/Saves.cppm
         src/Engine/Script/SceneFlow.cppm
+        src/Engine/Script/GameData.cppm
         src/Engine/Project/GamePackage.cppm
         src/Engine/Project/GameExport.cppm
         src/Engine/Project/Templates.cppm
@@ -250,6 +253,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/Home.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
+        src/Engine/Platform/UserData.cppm
         src/Engine/Platform/Window.cppm
         src/Engine/Platform/Events.cppm
         src/Engine/Platform/Dialog.cppm

@@ -57,6 +57,7 @@ namespace {
       REQUIRE(project.save(description));
       auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
       Project::GameSessionConfig config;
+      config.progress.saves = storage.files().value();
       config.pollInterval = std::chrono::milliseconds{0};
       auto result = Project::GameSession::create(project, compiler, config);
       REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
@@ -126,7 +127,7 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   const std::regex member(R"(^  (?:(get|set) )?([A-Za-z][A-Za-z0-9_]*)\()", std::regex::multiline);
 
   for (const auto* name : {"input", "components", "physics", "audio", "animation", "scene",
-                           "scenes", "Entity", "ScriptComponent"}) {
+                           "scenes", "gameState", "saves", "Entity", "ScriptComponent"}) {
     const bool isClass
         = std::string_view(name) == "Entity" || std::string_view(name) == "ScriptComponent";
     const auto prefix = std::string(isClass ? "export class " : "export const ") + name;
@@ -162,8 +163,8 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   }
 
   const std::regex constant(R"(^export const ([A-Za-z][A-Za-z0-9_]*))", std::regex::multiline);
-  const std::set<std::string> namespaces{"input",     "components", "physics", "audio",
-                                         "animation", "scene",      "scenes"};
+  const std::set<std::string> namespaces{"input", "components", "physics",   "audio", "animation",
+                                         "scene", "scenes",     "gameState", "saves"};
 
   for (auto match = std::sregex_iterator(sdk.begin(), sdk.end(), constant);
        match != std::sregex_iterator{}; ++match) {
@@ -505,10 +506,12 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   REQUIRE_MESSAGE(output, (output ? "" : output.error().message));
   auto package = Project::GamePackage::open(*output).value();
   CHECK(package.description()->startScene == "scenes/LightingStudio.dotscene");
-  auto session
-      = Project::GameSession::createCompiled(package.files().value(), package.description().value(),
-                                             package.scene().value(), package.program().value())
-            .value();
+  Project::GameSessionConfig config;
+  config.progress.saves = fixture.storage.files().value();
+  auto session = Project::GameSession::createCompiled(
+                     package.files().value(), package.description().value(),
+                     package.scene().value(), package.program().value(), config)
+                     .value();
   report(session.start());
   Platform::InputState input;
   REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
@@ -526,6 +529,24 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
     input.beginFrame();
   }
 
+  const auto press = [&](Platform::Key key) {
+    Platform::InputState event;
+    REQUIRE(event.consume({0, 0, Platform::KeyChanged{key, true, false}}));
+    REQUIRE(session.publish(event));
+    report(session.update(0));
+    event.beginFrame();
+    REQUIRE(event.consume({0, 0, Platform::KeyChanged{key, false, false}}));
+    REQUIRE(session.publish(event));
+    report(session.update(0));
+  };
+  auto camera = main->primaryCamera().value();
+  auto checkpoint = main->transform(camera).value();
+  checkpoint.position.x += 3;
+  REQUIRE(main->setTransform(camera, checkpoint));
+  press(Platform::Key::F6);
+  auto state = session.gameData().value();
+  auto snapshot = Json::parse(state.perform(R"({"command":"snapshot"})").value());
+  CHECK(snapshot["data"]["cameraCheckpointStatus"] == "Camera checkpoint saved");
   REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
   REQUIRE(session.publish(input));
   report(session.update(0));
@@ -533,6 +554,15 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   CHECK(session.stats()->transition->committed);
   complete(fixture.project, *main);
   CHECK(data(*main)["stops"] == 1);
+  press(Platform::Key::F7);
+  CHECK(session.stats()->location.path == "scenes/main.dotscene");
+  auto restored = session.scene().value();
+  const auto pose = restored->transform(restored->primaryCamera().value()).value();
+  CHECK(pose.position == checkpoint.position);
+  CHECK(pose.rotation == checkpoint.rotation);
+  CHECK(pose.scale == checkpoint.scale);
+  snapshot = Json::parse(state.perform(R"({"command":"snapshot"})").value());
+  CHECK(snapshot["data"]["cameraCheckpointStatus"] == "Camera checkpoint restored");
   report(session.close());
   CHECK(files.readText("scenes/main.dotscene").value() == originalMain);
   CHECK(files.readText("scenes/LightingStudio.dotscene").value() == originalStudio);

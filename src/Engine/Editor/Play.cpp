@@ -4,6 +4,7 @@ module;
 #include <chrono>
 #include <exception>
 #include <expected>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <string>
@@ -14,6 +15,8 @@ module Dot.Editor.Play;
 
 import Dot.Core.Clock;
 import Dot.Core.Result;
+import Dot.Core.StagedDirectory;
+import Dot.Core.Files;
 import Dot.Project.GameSession;
 
 namespace Dot::Editor {
@@ -33,6 +36,7 @@ namespace Dot::Editor {
 
   struct PlaySession::Impl {
     std::thread::id m_thread{std::this_thread::get_id()};
+    std::optional<Core::StagedDirectory> m_saveStorage;
     Project::GameSession m_session;
     Core::FrameStepper m_stepper;
     std::size_t m_maxUpdates;
@@ -56,9 +60,18 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto fault() -> void {
+      m_stats.state = PlayState::Faulted;
+      auto data = m_session.gameData();
+
+      if (data) {
+        data->retire();
+      }
+    }
+
     auto record(Core::Result<Script::LiveScriptReport> result) -> Core::Result<void> {
       if (!result) {
-        m_stats.state = PlayState::Faulted;
+        fault();
         return std::unexpected(result.error());
       }
 
@@ -66,7 +79,7 @@ namespace Dot::Editor {
       m_frame.reports.push_back(std::move(*result));
 
       if (faulted) {
-        m_stats.state = PlayState::Faulted;
+        fault();
         return Core::fail(Core::ErrorCode::InvalidState, "Play script realm faulted");
       }
 
@@ -95,6 +108,11 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Play update budget must be 1..64");
     }
 
+    if (config.session.progress.saves) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Play owns an isolated temporary save directory");
+    }
+
     try {
       auto description = project.description();
 
@@ -102,8 +120,24 @@ namespace Dot::Editor {
         return std::unexpected(description.error());
       }
 
+      auto parent = config.temporarySavesParent
+                        ? Core::Result<Core::FileSystem>{*config.temporarySavesParent}
+                        : Core::FileSystem::open(std::filesystem::temp_directory_path());
+
+      if (!parent) {
+        return std::unexpected(parent.error());
+      }
+
+      auto storage = Core::StagedDirectory::create(*parent);
+
+      if (!storage) {
+        return std::unexpected(storage.error());
+      }
+
+      auto sessionConfig = config.session;
+      sessionConfig.progress.saves = storage->files().value();
       auto session = Project::GameSession::createFromScene(project, compiler, authoring,
-                                                           config.session, std::move(scenePath));
+                                                           sessionConfig, std::move(scenePath));
 
       if (!session) {
         return std::unexpected(session.error());
@@ -111,6 +145,7 @@ namespace Dot::Editor {
 
       auto impl
           = std::make_unique<Impl>(std::move(*session), description->fixedHz, config.maxUpdates);
+      impl->m_saveStorage.emplace(std::move(*storage));
       impl->m_frame.reports.reserve(config.maxUpdates + 1);
       auto started = impl->m_session.start();
 
@@ -191,7 +226,7 @@ namespace Dot::Editor {
       const auto seconds = std::min(1.0, std::chrono::duration<double>(elapsed).count());
       return m_impl->record(m_impl->m_session.update(seconds));
     } catch (const std::exception& error) {
-      m_impl->m_stats.state = PlayState::Faulted;
+      m_impl->fault();
       return Core::fail(Core::ErrorCode::External,
                         "Advance play session: " + std::string(error.what()));
     }
@@ -211,6 +246,22 @@ namespace Dot::Editor {
     ActiveScope active{m_impl->m_active};
     auto result = m_impl->m_session.close();
     m_impl->m_stats.state = PlayState::Stopped;
+
+    if (m_impl->m_saveStorage) {
+      auto cleaned = m_impl->m_saveStorage->discard();
+
+      if (!cleaned) {
+        if (!result) {
+          result.error().message += "; cleanup: " + cleaned.error().message;
+          return result;
+        }
+
+        return std::unexpected(cleaned.error());
+      }
+
+      m_impl->m_saveStorage.reset();
+    }
+
     return result;
   }
 
@@ -227,6 +278,16 @@ namespace Dot::Editor {
 
     return m_impl->m_session.scene().transform(
         [](const auto& scene) -> const World::Scene* { return scene.get(); });
+  }
+
+  auto PlaySession::gameData() const -> Core::Result<Script::GameData> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session.gameData()
+                   : Core::Result<Script::GameData>{std::unexpected(checked.error())};
   }
 
   auto PlaySession::requestScene(std::string_view path) -> Core::Result<std::uint64_t> {

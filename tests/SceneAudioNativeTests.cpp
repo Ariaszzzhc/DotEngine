@@ -53,6 +53,7 @@ TEST_CASE("audio.game_session_activates_native_audio_after_start_and_releases_pr
   REQUIRE(scene.setAudioSource(entity, source));
   REQUIRE(scene.setScript(entity, Dot::World::ScriptComponent{"player.ts", "Player"}));
   Dot::Project::Description description;
+  description.applicationId = "audio-test";
   description.hotReload = false;
   Dot::Project::GameSessionConfig config;
   config.audioMode = Dot::Project::SessionAudio::Playback;
@@ -279,6 +280,7 @@ TEST_CASE("audio.scene_transition_prepares_new_endpoint_silently_and_releases_re
          return std::nullopt;
        }});
   Dot::Project::Description description;
+  description.applicationId = "audio-test";
   description.hotReload = false;
   const auto mixerBefore = Dot::Audio::Mixer::backendMemory();
   const auto outputBefore = Dot::Audio::Output::backendMemory();

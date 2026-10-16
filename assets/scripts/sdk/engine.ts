@@ -991,8 +991,10 @@ export class ScriptComponent<Properties extends object = Record<string, unknown>
   }
 }
 
-/** Frame-boundary scene replacement; request acceptance is not completion.
- * 帧边界场景替换；请求被接受不代表加载完成。 */
+/**
+ * Frame-boundary scene replacement; request acceptance is not completion.
+ * 帧边界场景替换；请求被接受不代表加载完成。
+ */
 export interface SceneLocation {
   scope: string;
   path: string|null;
@@ -1017,5 +1019,80 @@ export const scenes = Object.freeze({
 
   status(id: string): SceneRequest {
     return invoke('scenes.status', [id]) as SceneRequest;
+  }
+});
+
+/**
+ * Owned finite JSON data, independent of scene/realm lifetime. Large IDs are strings.
+ * 独立于场景/realm 生命周期的有限 JSON 数据；大整数 ID 使用字符串。
+ */
+export type GameStateData = {
+  [key: string]: JsonValue
+};
+export interface GameStateSnapshot {
+  revision: string;
+  data: GameStateData;
+}
+
+export interface SaveSlot {
+  name: string;
+  bytes: string;
+}
+
+/**
+ * Session-wide state survives scene replacement; observations are owned copies.
+ * Key names are literal. Replace requires the current revision; no-op edits retain it.
+ * 游戏级状态跨场景替换保留，观察结果为独立副本；键为字面名称。替换须携带当前修订，
+ * 无变化的修改保留修订。
+ */
+export const gameState = Object.freeze({
+  snapshot(): GameStateSnapshot {
+    return invoke('gameState.snapshot', []) as GameStateSnapshot;
+  },
+
+  get(key: string): JsonValue|undefined {
+    const result = invoke('gameState.get', [key]) as {present: boolean; value: JsonValue};
+    return result.present ? result.value : undefined;
+  },
+
+  set(key: string, value: JsonValue): string {
+    return (invoke('gameState.set', [key, value]) as {revision: string}).revision;
+  },
+
+  remove(key: string): string {
+    return (invoke('gameState.remove', [key]) as {revision: string}).revision;
+  },
+
+  replace(data: GameStateData, revision: string): string {
+    return (invoke('gameState.replace', [data, revision]) as {revision: string}).revision;
+  }
+});
+
+/**
+ * Explicit save operations; construction/migration cannot access disk. No auto-load
+ * or auto-save. The player uses its stable application ID's user directory; editor
+ * Play uses disposable isolated storage. Loading replaces only game state, not a scene.
+ * 显式存档操作，构造/迁移期间不可访问磁盘；不自动读写。独立游戏使用稳定应用身份的用户
+ * 目录，编辑器 Play 使用独立临时存储。加载仅替换游戏状态，不切换场景。
+ */
+export const saves = Object.freeze({
+  list(): SaveSlot[] {
+    return invoke('saves.list', []) as SaveSlot[];
+  },
+
+  read(slot: string): GameStateSnapshot {
+    return invoke('saves.read', [slot]) as GameStateSnapshot;
+  },
+
+  write(slot: string, overwrite: boolean): SaveSlot {
+    return invoke('saves.write', [slot, overwrite]) as SaveSlot;
+  },
+
+  load(slot: string, revision: string): string {
+    return (invoke('saves.load', [slot, revision]) as {revision: string}).revision;
+  },
+
+  remove(slot: string): void {
+    invoke('saves.remove', [slot]);
   }
 });

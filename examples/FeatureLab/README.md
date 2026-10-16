@@ -152,3 +152,19 @@ input publication without replaying reset or recreating the native body. The
 existing Dynamic showcase body also uses continuous mode, and its SDK state
 reports the actual backend setting. Continuous mode is valid only for solid dynamic
 bodies; it does not sweep rotation or sensor crossings.
+
+## Camera checkpoints and game data
+
+F6 explicitly saves the current game camera pose and scene into `camera-checkpoint`.
+F7 reads/restores it, requesting the saved scene when necessary; a restored camera
+applies the saved pose. Window → Game state exposes owned state/operation status and
+slot controls through the same editor/agent implementation. Missing or invalid
+checkpoints report their error in `cameraCheckpointStatus` without disabling camera
+input. Enable Game input in editor Play before using these keys.
+
+Play saves are disposable and disappear on Stop. Standalone games retain them in
+SDL's per-user directory under the stable application ID, independently of project
+name/location. Loading is a deliberate game action; engine storage does not itself
+move cameras or switch scenes. The SDK auditor exercises state and filesystem APIs,
+restores its initial state and deletes its own `feature-lab-audit` demonstration slot.
+The demo's stored identity is `dotengine-feature-lab`; template instances receive new IDs.

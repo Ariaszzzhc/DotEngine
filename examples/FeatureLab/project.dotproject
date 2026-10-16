@@ -8,5 +8,6 @@
     "height": 720
   },
   "fixedHz": 60,
-  "hotReload": true
+  "hotReload": true,
+  "applicationId": "dotengine-feature-lab"
 }

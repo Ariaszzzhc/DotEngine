@@ -1686,3 +1686,17 @@ is reported and faults Play. Invalid target files, assets or script preparation 
 the old game and report the failed request. Scene rendering/GPU allocation can still
 fail after commit; GPU staging, background streaming, additive scenes and persistent
 cross-scene gameplay state are not implemented by this operation.
+
+## Play game state and saves
+
+Window → Game state provides owned state inspection and explicit save-slot controls.
+Play uses a fresh temporary store, deleted on Stop; it cannot access player saves.
+The live `game-data` operation and GUI share the strict product implementation.
+See [protocol, lifecycle and examples](GameState.md#product-protocol-and-editor).
+Opening/focusing this docked panel uses `{"command":"show-pane","pane":"game-data"}`.
+State survives in-game scene replacement while authoring data remains independent.
+
+Terminal close retires the private control directory, so a supervising agent must
+verify the owned editor process exits rather than waiting indefinitely for a response
+file that may already have been removed. Rejected/pending close remains observable
+through the live mailbox. This does not make `queued:true` an applied-success receipt.

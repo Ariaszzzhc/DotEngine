@@ -8,5 +8,6 @@
     "height": 800
   },
   "fixedHz": 60,
-  "hotReload": true
+  "hotReload": true,
+  "applicationId": "dotengine-prism-relay"
 }

@@ -83,6 +83,13 @@ namespace Dot::Project {
       }
 
       description->name = name;
+      auto identity = createApplicationId();
+
+      if (!identity) {
+        return std::unexpected(identity.error());
+      }
+
+      description->applicationId = std::move(*identity);
       auto metadata = encodeDescription(*description);
 
       if (!metadata) {

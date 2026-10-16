@@ -20,6 +20,7 @@ export import Dot.Script.LiveScripts;
 export import Dot.Script.SceneScripts;
 export import Dot.Script.InputSource;
 export import Dot.Script.SceneFlow;
+export import Dot.Script.GameData;
 export import Dot.Script.PhysicsSource;
 export import Dot.Audio.SceneAudio;
 
@@ -28,6 +29,9 @@ export namespace Dot::Project {
   enum class SessionState { Ready, Running, Faulted, Closed };
 
   struct GameSessionConfig {
+    /** Initial state/root for one game, shared by its scene replacements.
+     * 单次游戏的初始状态/存档目录，场景替换共享同一存储。 */
+    Script::GameDataConfig progress;
     Script::InputSourceConfig input;
     Script::PhysicsSourceConfig physics;
     Script::SceneScriptsConfig scripts;
@@ -97,6 +101,9 @@ export namespace Dot::Project {
      * update 后须重新获取；提交替换发布新范围，保留的共享旧场景仍存活但不再参与模拟。 */
     [[nodiscard]] auto scene() const -> Core::Result<std::shared_ptr<World::Scene>>;
     [[nodiscard]] auto stats() const -> Core::Result<GameSessionStats>;
+    /** Owned game-wide control handle; close/fault/destruction retires writes.
+     * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
+    [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
     /** Queue replacement at the end of the next variable update. Acceptance is
      * not completion; query the retained request result. Prepare failures keep the
      * old scene running. A committed stop/start failure faults the new session.
@@ -142,8 +149,8 @@ export namespace Dot::Project {
         const Core::FileSystem& assets, Description description, World::Scene scene,
         const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
         const Script::CompiledProgram* program, std::optional<std::string> scenePath,
-        const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {})
-        -> Core::Result<GameSession>;
+        const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {},
+        const Script::GameData* progress = nullptr) -> Core::Result<GameSession>;
     [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report) -> Core::Result<void>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;

@@ -12,6 +12,7 @@ module;
 export module Dot.Editor.Play;
 
 import Dot.Core.Result;
+import Dot.Core.Files;
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Platform.Input;
@@ -25,6 +26,10 @@ export namespace Dot::Editor {
   struct PlayConfig {
     PlayConfig() noexcept;
     Project::GameSessionConfig session;
+    /** Optional parent for owned disposable children; defaults to system temp.
+     * Never supplies player saves directly. 可指定临时子目录的父目录，默认系统临时目录；
+     * 不可直接使用玩家存档目录。 */
+    std::optional<Core::FileSystem> temporarySavesParent;
     std::size_t maxUpdates{8};
   };
 
@@ -76,6 +81,7 @@ export namespace Dot::Editor {
                                bool pointerCaptured = false) -> Core::Result<void>;
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
+    [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto stop() -> Core::Result<Script::ScriptReport>;
     /** Borrow expires when a later advance replaces the scene; reacquire each frame.

@@ -13,8 +13,8 @@
 
 import Dot.Core.Types;
 
-/** Launch native project/package playback; development acceptance has its own executable.
- * 启动原生项目或游戏包播放，开发验收使用独立可执行程序。 */
+/** Launch native project/package playback.
+ * 启动原生项目或游戏包播放。 */
 auto main(int argc, char** argv) -> int {
   try {
     if (argc == 2 && std::string_view(argv[1]) == "--version") {

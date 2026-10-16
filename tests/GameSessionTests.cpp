@@ -634,3 +634,92 @@ export class Mover extends ScriptComponent {
   CHECK(original.scene().value().get() == old.get());
   good(original.close());
 }
+
+TEST_CASE("game_data.builtin_sdk_persists_across_scene_changes_close_and_compiled_restart") {
+  Fixture fixture(false);
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {gameState, saves, ScriptComponent} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  prepared = gameState.snapshot();
+
+  onStart(): void {
+    if (gameState.get('visits') === undefined && saves.list().some(s => s.name === 'checkpoint')) {
+      saves.load('checkpoint', gameState.snapshot().revision);
+    }
+
+    const visits = gameState.get('visits') ?? 0;
+
+    if (typeof visits !== 'number') {
+      throw new Error('Invalid visits');
+    }
+
+    gameState.set('visits', visits + 1);
+    this.self.name = 'visit-' + (visits + 1);
+  }
+
+  onStop(): void {
+    saves.write('checkpoint', true);
+  }
+}
+)ts"));
+  auto target = fixture.project.loadStartup().value();
+  REQUIRE(target.rename("Destination"));
+  REQUIRE(Dot::World::saveScene(fixture.project.files().value(), "scenes/next.dotscene", target));
+  GameSessionConfig config;
+  config.progress.saves = fixture.directory.files();
+  auto session = fixture.session(config);
+  good(session.start());
+  auto handle = session.gameData().value();
+  CHECK(actor(session).name == "visit-1");
+  auto request = session.requestScene("scenes/next.dotscene").value();
+  good(session.update(0));
+  REQUIRE(session.sceneRequest(request)->committed);
+  CHECK(actor(session).name == "visit-2");
+  good(session.close());
+  CHECK_FALSE(handle.perform(R"({"command":"set","key":"visits","value":0})"));
+  CHECK_FALSE(handle.perform(R"({"command":"list-saves"})"));
+  CHECK(nlohmann::json::parse(handle.perform(R"({"command":"snapshot"})").value())["data"]["visits"]
+        == 2);
+  auto program
+      = fixture.compiler().compileProject(fixture.project.files().value(), "scripts").value();
+  auto description = fixture.project.description().value();
+  auto scene = fixture.project.loadStartup().value();
+  auto restarted = GameSession::createCompiled(fixture.project.files().value(), description, scene,
+                                               program, config)
+                       .value();
+  good(restarted.start());
+  CHECK(actor(restarted).name == "visit-3");
+  good(restarted.close());
+}
+
+TEST_CASE("game_data.builtin_sdk_rejects_preparation_io_and_writes_without_damaging_active_state") {
+  for (const auto* attempt : {"gameState.set('score',0)", "saves.list()"}) {
+    Fixture fixture(false);
+    REQUIRE(fixture.project.files()->writeTextAtomic(
+        "scripts/mover.ts",
+        std::string("import {gameState,saves,scenes,ScriptComponent} from 'dot:engine';")
+            + "export class Mover extends ScriptComponent { attempt="
+              "scenes.current().path==='scenes/rejected.dotscene'?"
+            + attempt + ":gameState.snapshot();}"));
+    auto target = fixture.project.loadStartup().value();
+    REQUIRE(
+        Dot::World::saveScene(fixture.project.files().value(), "scenes/rejected.dotscene", target));
+    GameSessionConfig config;
+    config.progress.initial = R"({"score":7})";
+    config.progress.saves = fixture.directory.files();
+    auto session = fixture.session(config);
+    good(session.start());
+    auto old = session.scene().value();
+    auto handle = session.gameData().value();
+    REQUIRE(handle.perform(R"({"command":"set","key":"score","value":8})"));
+    const auto before = handle.perform(R"({"command":"snapshot"})").value();
+    auto request = session.requestScene("scenes/rejected.dotscene").value();
+    good(session.update(0));
+    CHECK(session.sceneRequest(request)->state == Dot::Script::SceneRequestState::Failed);
+    CHECK_FALSE(session.sceneRequest(request)->committed);
+    CHECK(session.scene().value().get() == old.get());
+    CHECK(handle.perform(R"({"command":"snapshot"})").value() == before);
+    good(session.update(0));
+    good(session.close());
+  }
+}

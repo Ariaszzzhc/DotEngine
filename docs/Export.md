@@ -132,3 +132,10 @@ validation is arm64 macOS; Windows/Linux remain unvalidated.
 The [Prism Relay example](Examples.md) is a complete ordinary project that can be
 edited, played and exported through these operations. Runtime window titles follow
 native scene names, allowing script-authored progress/status through the scene API.
+
+## Stable player progress identity
+
+Native/data exports preserve the project's required `applicationId` independently
+of display name, startup scene or output directory. The native player uses that ID
+with SDL's user-data directory and a `saves` child, never the package directory.
+New projects instantiated from templates receive new IDs. See [save contracts](GameState.md).

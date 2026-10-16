@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <future>
+#include <iterator>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -12,6 +13,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Result;
 import Dot.Game.State;
 import Dot.Game.Saves;
+import Dot.Script.GameData;
 
 namespace {
   using namespace Dot;
@@ -286,3 +288,39 @@ TEST_CASE("saves.failed_atomic_replace_retains_previous_slot_and_cleans_pending_
   }
 }
 #endif
+
+TEST_CASE("game_data.disk_load_is_explicit_and_conflicts_or_corruption_never_publish") {
+  Fixture fixture;
+  auto files = fixture.files();
+  Script::GameDataConfig config;
+  config.saves = files;
+  auto data = Script::GameData::create(config).value();
+  const auto call = [&](const Json& request) {
+    auto result = data.perform(request.dump());
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    return Json::parse(*result);
+  };
+  call({{"command", "set"}, {"key", "score"}, {"value", 7}});
+  const auto saved = call({{"command", "save"}, {"slot", "checkpoint"}, {"overwrite", false}});
+  CHECK(saved["name"] == "checkpoint");
+  CHECK(saved["bytes"].is_string());
+  auto snapshot = call({{"command", "snapshot"}});
+  call({{"command", "set"}, {"key", "score"}, {"value", 99}});
+  CHECK(call({{"command", "read-save"}, {"slot", "checkpoint"}})["data"]["score"] == 7);
+  CHECK(call({{"command", "snapshot"}})["data"]["score"] == 99);
+  CHECK_FALSE(data.perform(
+      Json{{"command", "load"}, {"slot", "checkpoint"}, {"revision", snapshot["revision"]}}
+          .dump()));
+  snapshot = call({{"command", "snapshot"}});
+  call({{"command", "load"}, {"slot", "checkpoint"}, {"revision", snapshot["revision"]}});
+  snapshot = call({{"command", "snapshot"}});
+  CHECK(snapshot["data"]["score"] == 7);
+  REQUIRE(files.writeTextAtomic("checkpoint.dotsave", "damaged"));
+  CHECK_FALSE(data.perform(
+      Json{{"command", "load"}, {"slot", "checkpoint"}, {"revision", snapshot["revision"]}}
+          .dump()));
+  CHECK(call({{"command", "snapshot"}}) == snapshot);
+  CHECK(call({{"command", "list-saves"}}).size() == 1);
+  call({{"command", "delete-save"}, {"slot", "checkpoint"}});
+  CHECK(call({{"command", "list-saves"}}).empty());
+}

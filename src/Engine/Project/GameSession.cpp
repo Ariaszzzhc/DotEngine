@@ -36,6 +36,7 @@ import Dot.Graphics.Image;
 import Dot.Graphics.Environment;
 import Dot.Graphics.Renderer;
 import Dot.Script.SceneFlow;
+import Dot.Script.GameData;
 
 namespace Dot::Project {
   namespace {
@@ -355,6 +356,7 @@ namespace Dot::Project {
     std::optional<Script::TypeScriptCompiler> m_compiler;
     std::optional<Script::CompiledProgram> m_program;
     std::optional<Script::SceneFlow> m_flow;
+    std::optional<Script::GameData> m_progress;
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -364,6 +366,16 @@ namespace Dot::Project {
      * 脚本回调持有服务，先销毁 realm 再销毁依赖。 */
     std::optional<Script::SceneScripts> m_scripts;
     std::optional<Script::LiveScripts> m_live;
+
+    auto retireServices() noexcept -> void {
+      if (m_flow) {
+        m_flow->retire();
+      }
+
+      if (m_progress) {
+        m_progress->retire();
+      }
+    }
 
     auto check(bool allowTerminal = false) const -> Core::Result<void> {
       if (m_thread != std::this_thread::get_id() || m_active) {
@@ -424,7 +436,7 @@ namespace Dot::Project {
 
         if (!result || result->frame.realmFaulted) {
           m_state = SessionState::Faulted;
-          m_flow->retire();
+          retireServices();
           return result;
         }
 
@@ -433,7 +445,7 @@ namespace Dot::Project {
 
           if (!advanced) {
             m_state = SessionState::Faulted;
-            m_flow->retire();
+            retireServices();
             return std::unexpected(advanced.error());
           }
         }
@@ -443,7 +455,7 @@ namespace Dot::Project {
 
           if (!animated) {
             m_state = SessionState::Faulted;
-            m_flow->retire();
+            retireServices();
             return std::unexpected(animated.error());
           }
 
@@ -451,7 +463,7 @@ namespace Dot::Project {
 
           if (!synchronized) {
             m_state = SessionState::Faulted;
-            m_flow->retire();
+            retireServices();
             return std::unexpected(synchronized.error());
           }
         }
@@ -459,7 +471,7 @@ namespace Dot::Project {
         return result;
       } catch (const std::exception& error) {
         m_state = SessionState::Faulted;
-        m_flow->retire();
+        retireServices();
         return Core::fail(Core::ErrorCode::External,
                           "Dispatch game session: " + std::string(error.what()));
       }
@@ -474,7 +486,7 @@ namespace Dot::Project {
   auto GameSession::operator=(GameSession&& other) noexcept -> GameSession& {
     if (this != &other) {
       if (m_impl && m_impl->m_flow) {
-        m_impl->m_flow->retire();
+        m_impl->retireServices();
       }
 
       m_impl = std::move(other.m_impl);
@@ -485,7 +497,7 @@ namespace Dot::Project {
 
   GameSession::~GameSession() {
     if (m_impl && m_impl->m_flow) {
-      m_impl->m_flow->retire();
+      m_impl->retireServices();
     }
   }
 
@@ -592,14 +604,12 @@ namespace Dot::Project {
                   : std::unexpected(cloned.error());
   }
 
-  auto GameSession::prepareSession(const Core::FileSystem& assets, Description description,
-                                   World::Scene scene, const GameSessionConfig& config,
-                                   const Script::TypeScriptCompiler* compiler,
-                                   const Script::CompiledProgram* precompiled,
-                                   std::optional<std::string> scenePath,
-                                   const Script::SceneFlow* sharedFlow,
-                                   std::shared_ptr<const Origin> origin)
-      -> Core::Result<GameSession> {
+  auto GameSession::prepareSession(
+      const Core::FileSystem& assets, Description description, World::Scene scene,
+      const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
+      const Script::CompiledProgram* precompiled, std::optional<std::string> scenePath,
+      const Script::SceneFlow* sharedFlow, std::shared_ptr<const Origin> origin,
+      const Script::GameData* sharedProgress) -> Core::Result<GameSession> {
     try {
       if (sharedFlow) {
         auto graphics = sceneGraphics(assets, scene);
@@ -632,6 +642,14 @@ namespace Dot::Project {
         impl->m_program = *precompiled;
       }
 
+      auto progress = sharedProgress ? Core::Result<Script::GameData>{*sharedProgress}
+                                     : Script::GameData::create(config.progress);
+
+      if (!progress) {
+        return std::unexpected(progress.error());
+      }
+
+      impl->m_progress.emplace(std::move(*progress));
       auto flow = sharedFlow ? Core::Result<Script::SceneFlow>{*sharedFlow}
                              : Script::SceneFlow::create(impl->m_identity, scenePath);
 
@@ -684,7 +702,8 @@ namespace Dot::Project {
 
       for (auto bindings :
            {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_audio->bindings(),
-            impl->m_animations->bindings(), impl->m_flow->bindings(impl->m_identity, scenePath)}) {
+            impl->m_animations->bindings(), impl->m_progress->bindings(),
+            impl->m_flow->bindings(impl->m_identity, scenePath)}) {
         if (!bindings) {
           return std::unexpected(bindings.error());
         }
@@ -802,6 +821,16 @@ namespace Dot::Project {
     return result;
   }
 
+  auto GameSession::gameData() const -> Core::Result<Script::GameData> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check(true);
+    return checked ? Core::Result<Script::GameData>{*m_impl->m_progress}
+                   : Core::Result<Script::GameData>{std::unexpected(checked.error())};
+  }
+
   auto GameSession::requestScene(std::string_view path) -> Core::Result<std::uint64_t> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
@@ -869,12 +898,12 @@ namespace Dot::Project {
 
       if (!recorded) {
         m_impl->m_state = SessionState::Faulted;
-        m_impl->m_flow->retire();
+        m_impl->retireServices();
         return recorded;
       }
 
       if (committed) {
-        m_impl->m_flow->retire();
+        m_impl->retireServices();
         return std::unexpected(std::move(error));
       }
 
@@ -908,7 +937,7 @@ namespace Dot::Project {
             = prepareSession(*m_impl->m_files, m_impl->m_description, std::move(*loaded),
                              m_impl->m_config, m_impl->m_compiler ? &*m_impl->m_compiler : nullptr,
                              m_impl->m_program ? &*m_impl->m_program : nullptr, request.path,
-                             &*m_impl->m_flow, m_impl->m_origin);
+                             &*m_impl->m_flow, m_impl->m_origin, &*m_impl->m_progress);
 
         if (!prepared) {
           return failed(prepared.error());
@@ -1029,7 +1058,7 @@ namespace Dot::Project {
         = !result || result->realmFaulted ? SessionState::Faulted : SessionState::Running;
 
     if (m_impl->m_state == SessionState::Faulted) {
-      m_impl->m_flow->retire();
+      m_impl->retireServices();
     }
 
     if (m_impl->m_state == SessionState::Running) {
@@ -1037,7 +1066,7 @@ namespace Dot::Project {
 
       if (!animated) {
         m_impl->m_state = SessionState::Faulted;
-        m_impl->m_flow->retire();
+        m_impl->retireServices();
         return std::unexpected(animated.error());
       }
 
@@ -1048,7 +1077,7 @@ namespace Dot::Project {
 
         if (!synchronized) {
           m_impl->m_state = SessionState::Faulted;
-          m_impl->m_flow->retire();
+          m_impl->retireServices();
           return std::unexpected(synchronized.error());
         }
 
@@ -1056,7 +1085,7 @@ namespace Dot::Project {
 
         if (!activated) {
           m_impl->m_state = SessionState::Faulted;
-          m_impl->m_flow->retire();
+          m_impl->retireServices();
           return std::unexpected(activated.error());
         }
       }
@@ -1099,7 +1128,7 @@ namespace Dot::Project {
 
     if (!result || result->frame.realmFaulted) {
       if (m_impl->m_state == SessionState::Faulted) {
-        m_impl->m_flow->retire();
+        m_impl->retireServices();
       }
 
       return result;
@@ -1131,7 +1160,7 @@ namespace Dot::Project {
 
     if (!result && result.error().code != Core::ErrorCode::InvalidArgument) {
       m_impl->m_state = SessionState::Faulted;
-      m_impl->m_flow->retire();
+      m_impl->retireServices();
     }
 
     return result;
@@ -1154,6 +1183,8 @@ namespace Dot::Project {
 
     ActiveScope active{m_impl->m_active};
     m_impl->m_flow->retire();
-    return m_impl->shutdown();
+    auto stopped = m_impl->shutdown();
+    m_impl->m_progress->retire();
+    return stopped;
   }
 }  // namespace Dot::Project
