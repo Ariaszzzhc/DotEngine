@@ -16,6 +16,7 @@ import Dot.Math;
 import Dot.Platform.Window;
 import Dot.Platform.Events;
 export import Dot.Graphics.Geometry;
+export import Dot.Graphics.Overlay;
 export import Dot.Graphics.Image;
 export import Dot.Graphics.PostProcess;
 export import Dot.Graphics.Lighting;
@@ -168,13 +169,18 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  struct GuiViewportFrame {
+    RenderTarget target;
+    ViewportOverlay overlay;
+  };
+
   /** Runs synchronously after GUI layout, before its GPU submission. Dimensions
-   * are current physical pixels. Return a completed owned target, explicit absence,
-   * or an error; captures live only for this frame. Rendering is allowed here,
+   * are current physical pixels. Return a completed owned target with optional x-ray GUI geometry,
+   * explicit absence, or an error; captures live only for this frame. Rendering is allowed here,
    * GUI reentry, moving or destroying its renderer is not.
-   * 在 GUI 布局后、GPU 提交前同步执行，尺寸为本帧物理像素。返回已绘制的所属目标、
-   * 明确缺席或错误；捕获仅保留本帧。允许渲染，不允许 GUI 重入或移动/销毁渲染器。 */
-  using GuiViewportDraw = std::function<Core::Result<std::optional<RenderTarget>>(
+   * 在 GUI 布局后、GPU 提交前同步执行，尺寸为本帧物理像素。返回已绘制的所属目标及可选透视 GUI
+   * 几何、 明确缺席或错误；捕获仅保留本帧。允许渲染，不允许 GUI 重入或移动/销毁渲染器。 */
+  using GuiViewportDraw = std::function<Core::Result<std::optional<GuiViewportFrame>>(
       std::uint32_t width, std::uint32_t height)>;
 
   /** Shared GPU mesh. Static uploads are immutable; SkinnedMesh views observe

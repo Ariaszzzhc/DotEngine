@@ -187,6 +187,18 @@ namespace Dot::Graphics::Detail {
     /** Stable opaque layout tokens; never submitted as GPU texture views.
      * 所属帧解析为真实视图或移除绘制命令，稳定布局令牌不作为 GPU 视图提交。 */
     std::array<std::uint8_t, 16> m_imageTags{};
+
+    struct ImageRegion {
+      ImDrawList* source{};
+      ImVec2 origin{};
+      ImVec2 size{};
+      ImVec2 clipMin{};
+      ImVec2 clipMax{};
+      float alpha{1};
+    };
+
+    std::array<ImageRegion, 16> m_regions{};
+    std::vector<std::unique_ptr<ImDrawList>> m_overlays;
     std::size_t m_imageCount{};
     std::string m_error;
     bool m_validationError{};
@@ -198,6 +210,7 @@ namespace Dot::Graphics::Detail {
 
       auto* previous = ImGui::GetCurrentContext();
       ImGui::SetCurrentContext(m_context);
+      m_overlays.clear();
 
       if (m_renderer) {
         ImGui_ImplWGPU_Shutdown();
@@ -518,6 +531,11 @@ namespace Dot::Graphics::Detail {
     ImGuiErrorRecoveryState recovery;
 
     try {
+      if (auto* previous = ImGui::GetDrawData()) {
+        previous->Clear();
+      }
+
+      m_impl->m_overlays.clear();
       ImGui_ImplWGPU_NewFrame();
       m_impl->m_imageCount = 0;
 
@@ -632,6 +650,24 @@ namespace Dot::Graphics::Detail {
     const auto token
         = static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(&m_impl->m_imageTags[index]));
     ImGui::Image(token, {width, height});
+    auto* list = ImGui::GetWindowDrawList();
+    const auto border = ImGui::GetStyle().ImageBorderSize;
+    const auto item = ImGui::GetItemRectMin();
+    const ImVec2 origin{item.x + border, item.y + border};
+    const auto clipMin = list->GetClipRectMin();
+    const auto clipMax = list->GetClipRectMax();
+    auto& region = m_impl->m_regions[index];
+    region = {list,
+              origin,
+              {width, height},
+              {std::max(origin.x, clipMin.x), std::max(origin.y, clipMin.y)},
+              {std::min(origin.x + width, clipMax.x), std::min(origin.y + height, clipMax.y)},
+              ImGui::GetStyle().Alpha};
+
+    if (!ImGui::IsItemVisible()) {
+      region.clipMax = region.clipMin;
+    }
+
     ++m_impl->m_imageCount;
     return GuiImageSlot{index, static_cast<std::uint32_t>(pixelsX),
                         static_cast<std::uint32_t>(pixelsY)};
@@ -661,6 +697,77 @@ namespace Dot::Graphics::Detail {
       }
     }
 
+    return {};
+  }
+
+  auto GuiBackend::resolveOverlay(std::size_t index, const ViewportOverlay& overlay)
+      -> Core::Result<void> {
+    if (m_impl->m_building || index >= m_impl->m_imageCount) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Invalid viewport overlay resolution");
+    }
+
+    auto valid = validateOverlay(overlay);
+
+    if (!valid) {
+      return valid;
+    }
+
+    const auto& region = m_impl->m_regions[index];
+
+    if ((overlay.lines.empty() && overlay.points.empty()) || region.clipMax.x <= region.clipMin.x
+        || region.clipMax.y <= region.clipMin.y) {
+      return {};
+    }
+
+    ContextScope context{m_impl->m_context};
+    auto* data = ImGui::GetDrawData();
+    const auto source = std::find(data->CmdLists.begin(), data->CmdLists.end(), region.source);
+
+    if (source == data->CmdLists.end()) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Viewport overlay lost its source window");
+    }
+
+    const auto offset = source - data->CmdLists.begin() + 1;
+    auto list = std::make_unique<ImDrawList>(ImGui::GetDrawListSharedData());
+    list->_ResetForNewFrame();
+    list->PushTexture(ImGui::GetIO().Fonts->TexRef);
+    list->PushClipRect(region.clipMin, region.clipMax);
+    const auto position = [&](Math::Vec2 uv) -> ImVec2 {
+      return {region.origin.x + uv.x * region.size.x, region.origin.y + uv.y * region.size.y};
+    };
+    const auto color = [&](Math::Vec4 value) -> ImU32 {
+      return ImGui::ColorConvertFloat4ToU32({value.x, value.y, value.z, value.w * region.alpha});
+    };
+
+    for (const auto& line : overlay.lines) {
+      list->AddLine(position(line.segment.from), position(line.segment.to), color(line.color),
+                    line.thickness);
+    }
+
+    for (const auto& point : overlay.points) {
+      list->AddCircleFilled(position(point.position), point.radius, color(point.color), 12);
+    }
+
+    list->PopClipRect();
+    list->PopTexture();
+    const auto vertices = static_cast<std::uint64_t>(data->TotalVtxCount)
+                          + static_cast<std::uint64_t>(list->VtxBuffer.Size);
+    const auto indices = static_cast<std::uint64_t>(data->TotalIdxCount)
+                         + static_cast<std::uint64_t>(list->IdxBuffer.Size);
+
+    if (vertices > m_impl->m_config.maxVertices || indices > m_impl->m_config.maxIndices
+        || vertices > static_cast<std::uint64_t>(std::numeric_limits<int>::max())
+        || indices > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Viewport overlay exceeds GUI geometry budget");
+    }
+
+    auto* resolved = list.get();
+    m_impl->m_overlays.push_back(std::move(list));
+    data->AddDrawList(resolved);
+    std::rotate(data->CmdLists.begin() + offset, data->CmdLists.end() - 1, data->CmdLists.end());
+    m_impl->m_stats.vertices = static_cast<std::uint32_t>(vertices);
+    m_impl->m_stats.indices = static_cast<std::uint32_t>(indices);
     return {};
   }
 

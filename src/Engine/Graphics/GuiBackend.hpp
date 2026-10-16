@@ -23,6 +23,8 @@ namespace Dot::Graphics::Detail {
     [[nodiscard]] auto reserveImage(float width, float height, std::uint32_t maximum)
         -> Core::Result<GuiImageSlot>;
     [[nodiscard]] auto resolveImage(std::size_t index, WGPUTextureView view) -> Core::Result<void>;
+    [[nodiscard]] auto resolveOverlay(std::size_t index, const ViewportOverlay& overlay)
+        -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> GuiStats;
     [[nodiscard]] auto building() const -> bool;
     auto submitted() -> void;

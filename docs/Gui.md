@@ -121,3 +121,26 @@ image, with hit-testing from those same observed segments. Its draft scene is re
 through guiViewport after layout. Capture/readiness is invalidated when the gesture
 changes or ends; an old target never claims to be the current draft. Transform overlays
 are editor chrome and are not serialized or included in game render targets.
+
+## Deferred viewport overlays
+
+GuiViewportDraw returns an optional GuiViewportFrame: a completed target plus a
+bounded ViewportOverlay. Lines/points use top-left normalized UVs [0,1], display
+RGBA [0,1] and logical-pixel thickness/radius [.5,16]. Each vector has at most
+4096 elements. Empty overlays add no geometry. Invalid geometry and total GUI
+vertex/index budget failures are explicit errors, without replaying callbacks.
+
+Overlays are resolved after layout and viewport rendering. They use an owned
+Dear ImGui draw list clipped to the actual image rectangle (including image borders,
+window clipping and DPI), inserted after its source window at that window's stacking
+layer. Other foreground windows still cover the overlay. They are x-ray editor
+geometry, without scene depth testing. They never modify scene/HDR targets or their
+readbacks. Lists and font references remain owned through submission and are retired
+before their ImGui context. Large geometry uses the backend's vertex-offset path.
+
+Dot.Graphics.Overlay supplies device-free homogeneous projection/clipping, including
+near-plane and viewport-crossing segments. Dot.Animation.Skeleton samples actual
+skin joint names, world positions and nearest bound ancestors using native skin
+count/palette validation. Multiple roots and unbound intermediate hierarchy nodes
+are preserved explicitly; no connections are inferred from palette order.
+These are foundations for the editor's skeleton viewer, not an implemented bone editor.

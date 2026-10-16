@@ -80,6 +80,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/Skin.cpp
     src/Engine/Animation/SkinFiles.cpp
     src/Engine/Animation/SceneSkin.cpp
+    src/Engine/Animation/Skeleton.cpp
     src/Engine/Assets/SceneSkins.cpp
     src/Engine/Animation/SkinSource.cpp
     src/Engine/Graphics/Skinning.cpp
@@ -156,6 +157,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Shadows.cpp
     src/Engine/Graphics/Occlusion.cpp
     src/Engine/Graphics/View.cpp
+    src/Engine/Graphics/Overlay.cpp
     src/Engine/Graphics/Frustum.cpp
     src/Engine/Graphics/DrawBatches.cpp
     src/Engine/Graphics/RenderQueue.cpp
@@ -195,6 +197,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/Skin.cppm
         src/Engine/Animation/SkinFiles.cppm
         src/Engine/Animation/SceneSkin.cppm
+        src/Engine/Animation/Skeleton.cppm
         src/Engine/Assets/SceneSkins.cppm
         src/Engine/Animation/SkinSource.cppm
         src/Engine/Graphics/Skinning.cppm
@@ -276,6 +279,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Shadows.cppm
         src/Engine/Graphics/Occlusion.cppm
         src/Engine/Graphics/View.cppm
+        src/Engine/Graphics/Overlay.cppm
         src/Engine/Graphics/Frustum.cppm
         src/Engine/Graphics/DrawBatches.cppm
         src/Engine/Graphics/RenderQueue.cppm

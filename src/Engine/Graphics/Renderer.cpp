@@ -661,7 +661,7 @@ namespace Dot::Graphics {
         WGPUTextureView view{};
 
         if (*target) {
-          auto& resolved = **target;
+          auto& resolved = (**target).target;
 
           if (!resolved.m_impl || resolved.m_impl->owner != diagnostics) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -688,6 +688,14 @@ namespace Dot::Graphics {
 
         if (!resolved) {
           return resolved;
+        }
+
+        if (*target) {
+          auto overlay = gui->resolveOverlay(request.slot.index, (**target).overlay);
+
+          if (!overlay) {
+            return overlay;
+          }
         }
       }
 

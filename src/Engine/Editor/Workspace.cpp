@@ -6096,14 +6096,15 @@ namespace Dot::Editor {
          * GUI 布局后解析 GPU 工作，保留重入保护；本帧像素尺寸与保留图像一致。 */
         auto image = m_renderer->guiViewport(
             [&](std::uint32_t width,
-                std::uint32_t height) -> Core::Result<std::optional<Graphics::RenderTarget>> {
+                std::uint32_t height) -> Core::Result<std::optional<Graphics::GuiViewportFrame>> {
               auto ready = preview(width, height);
 
               if (!ready) {
                 return std::unexpected(ready.error());
               }
 
-              return m_previewReady ? m_target : std::nullopt;
+              return m_previewReady ? std::optional{Graphics::GuiViewportFrame{*m_target, {}}}
+                                    : std::nullopt;
             },
             m_viewWidth, m_viewHeight);
 

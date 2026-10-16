@@ -6128,3 +6128,52 @@ failed-operation preservation and native fault recovery, read-only authoring gua
 GUI/agent parity, subtree skin bounds and frame metadata, portable standard-library
 code, formatting and focused behavioral coverage. Windows/Linux remain supported in
 code without local execution claims. The complete engine goal remains open.
+
+## 2026-10-16 — Current-frame overlay and skeleton data
+
+The graphics module now provides bounded display-color viewport lines/points and a
+pure CPU homogeneous projector. Projection validates an invertible finite matrix,
+clips all six frustum planes plus positive W before division and retains visible
+segments with offscreen/near-plane-crossing endpoints. Invalid inputs return errors;
+valid outside geometry returns explicit absence. Overlay UVs, colors, logical sizes
+and per-vector 4096-element bounds are validated.
+
+GuiViewportDraw now returns GuiViewportFrame with its owned target and optional
+geometry. The clean current API replaces the old target-only result at all consumers.
+After actual viewport rendering, the GUI backend builds an owned clipped draw list
+at the source window's stacking layer. Borders, DPI and window clipping are respected;
+foreground windows still cover overlays. Total GUI budgets are checked before draw
+list publication. Failed callbacks/geometry/budgets do not replay side effects or
+publish a successful GUI frame. Lists are retired while their owning ImGui context
+still exists. Scene targets and PNG/HDR readbacks remain untouched.
+
+The new pure CPU skeleton sampler uses the actual enabled mesh skin, reuses native
+SceneSkin count/palette validation and owns joint names/world positions. Palette
+ordering is preserved while parents resolve to the nearest bound real ancestor;
+unbound helper distances and multiple roots remain explicit. It never invents edges
+from index order or mesh origin, initializes devices or writes scene state.
+
+Eight new unit cases cover clipping, perspective near-plane intersections, invalid
+geometry/bounds, owned snapshots, reordered joints, real hierarchy updates/helpers,
+multiple roots, source lifetime, disabled/missing/foreign/count-mismatched inputs and
+thread/move rules. Two enduring offscreen GUI cases cover borders/DPI, current-frame
+pixels, window order, clean scene readback, maximum overlay geometry above 65535
+vertices, budget/invalid-input recovery and lifetime. Existing viewport tests retain
+their owner/size/absence/failure coverage under the new result type.
+
+Initial builds identify signed geometry-count arithmetic, a missing aspect argument
+in a test and a partially designated GuiConfig fixture; these are corrected. A local
+text-edit search also misses a formatter-wrapped test name and is corrected before
+rebuilding. Full Debug and Release builds succeed. Focused Debug unit checks pass
+8/8 (.08s); final Debug GUI checks pass 14/14 (7.46s). Release results are recorded below.
+No automated case opens a desktop window. The actual skeleton panel/control workflow
+remains the next implementation, rather than being claimed from these foundations.
+
+Release/NDEBUG unit checks pass 8/8 (.05s) and all GUI offscreen checks pass 14/14
+(.65s). All twelve changed C++ source/interface/private-header/test files pass
+clang-format; whitespace checks pass. Review covers module direction, homogeneous
+clipping and UV bounds, skin/scoped-entity validation, owned snapshots, ImGui context/
+font/list lifetime, source-window stacking, geometry budgets and vertex-offset use,
+callback non-replay, retained targets and unchanged scene pixels. Compiler/linker
+settings and dependency pins are unchanged. Only arm64 macOS is executed. No new
+archive or desktop-window test is produced. Product bone inspection follows next.

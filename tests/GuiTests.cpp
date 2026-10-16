@@ -130,8 +130,8 @@ TEST_CASE("graphics.gui_viewport_resolves_current_dpi_pixels_after_layout_and_re
   std::optional<RenderTarget> retained;
   int calls{};
   float width = 40.25F;
-  const GuiViewportDraw viewport
-      = [&](std::uint32_t w, std::uint32_t h) -> Dot::Core::Result<std::optional<RenderTarget>> {
+  const GuiViewportDraw viewport =
+      [&](std::uint32_t w, std::uint32_t h) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
     ++calls;
     CHECK_FALSE(gpu.closeGui());
     CHECK_FALSE(gpu.renderGui(rect, 8, 8));
@@ -139,7 +139,7 @@ TEST_CASE("graphics.gui_viewport_resolves_current_dpi_pixels_after_layout_and_re
     REQUIRE(target);
     REQUIRE(gpu.renderMeshesInto(*target, {}, {}, {1, 0, 0, 1}));
     retained = *target;
-    return retained;
+    return std::optional{GuiViewportFrame{*retained, {}}};
   };
   REQUIRE(gpu.enableGui());
   const GuiDraw draw = [&]() -> Dot::Core::Result<void> {
@@ -192,14 +192,16 @@ TEST_CASE(
   };
   auto foreign = other.createTarget(24, 24).value();
   REQUIRE(other.renderMeshesInto(foreign, {}, {}));
-  CHECK_FALSE(
-      frame([&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return foreign; }));
+  CHECK_FALSE(frame([&](auto, auto) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    return std::optional{GuiViewportFrame{foreign, {}}};
+  }));
   auto empty = gpu.createTarget(24, 24).value();
-  CHECK_FALSE(
-      frame([&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return empty; }));
+  CHECK_FALSE(frame([&](auto, auto) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    return std::optional{GuiViewportFrame{empty, {}}};
+  }));
   empty = {};
   int calls{};
-  auto failed = frame([&](auto w, auto h) -> Dot::Core::Result<std::optional<RenderTarget>> {
+  auto failed = frame([&](auto w, auto h) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
     ++calls;
     auto target = gpu.createTarget(w, h).value();
     throw std::runtime_error("viewport draw fixture");
@@ -209,18 +211,21 @@ TEST_CASE(
   CHECK(calls == 1);
   CHECK(gpu.guiStats()->frames == 0);
   CHECK(gpu.resourceStats()->targets == 0);
-  auto absent = frame(
-      [](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return std::nullopt; });
+  auto absent = frame([](auto, auto) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    return std::nullopt;
+  });
   REQUIRE_MESSAGE(absent, (absent ? "" : absent.error().message));
   CHECK(pixel(*absent, 20, 20) == pixel(*absent, 0, 0));
   CHECK(gpu.guiStats()->frames == 1);
   auto wrongSize = gpu.createTarget(8, 8).value();
   REQUIRE(gpu.renderMeshesInto(wrongSize, {}, {}));
-  CHECK_FALSE(frame(
-      [&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> { return wrongSize; }));
+  CHECK_FALSE(frame([&](auto, auto) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    return std::optional{GuiViewportFrame{wrongSize, {}}};
+  }));
   wrongSize = {};
   int omitted{};
-  const GuiViewportDraw none = [&](auto, auto) -> Dot::Core::Result<std::optional<RenderTarget>> {
+  const GuiViewportDraw none
+      = [&](auto, auto) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
     ++omitted;
     return std::nullopt;
   };
@@ -562,4 +567,129 @@ TEST_CASE("graphics.gui_navigation_keys_reach_exact_widget_keys") {
         return {};
       },
       96, 96));
+}
+
+TEST_CASE(
+    "graphics.gui_deferred_overlay_matches_dpi_clip_window_layer_and_preserves_scene_pixels") {
+  auto gpu = renderer();
+  REQUIRE(gpu.enableGui());
+  std::optional<RenderTarget> retained;
+  bool foreground{};
+  bool large{};
+  const GuiViewportDraw viewport
+      = [&](auto w, auto h) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    auto target = gpu.createTarget(w, h).value();
+    REQUIRE(gpu.renderMeshesInto(target, {}, {}, {1, 0, 0, 1}));
+    retained = target;
+    ViewportOverlay overlay;
+    overlay.lines.push_back({{{0, .25F}, {1, .25F}}, {0, 1, 1, 1}, 2});
+    overlay.points.push_back({{.5F, .5F}, {0, 1, 0, 1}, 3});
+    overlay.points.push_back({{1, 1}, {0, 1, 0, 1}, 3});
+    if (large) {
+      overlay.points.assign(4096, {{.5F, .5F}, {0, 1, 0, 1}, 3});
+      overlay.lines.assign(4096, {{{0, .25F}, {1, .25F}}, {0, 1, 1, 1}, 2});
+    }
+
+    return std::optional{GuiViewportFrame{std::move(target), std::move(overlay)}};
+  };
+  const GuiDraw draw = [&]() -> Dot::Core::Result<void> {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+    ImGui::PushStyleVar(ImGuiStyleVar_ImageBorderSize, 2);
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({64, 64});
+    ImGui::Begin("Overlay canvas", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground
+                     | ImGuiWindowFlags_NoSavedSettings);
+    auto result = gpu.guiViewport(viewport, 32, 32);
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+
+    if (foreground) {
+      ImGui::SetNextWindowPos({10, 10});
+      ImGui::SetNextWindowSize({32, 32});
+      ImGui::SetNextWindowFocus();
+      ImGui::Begin("Overlay foreground", nullptr,
+                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground
+                       | ImGuiWindowFlags_NoSavedSettings);
+      ImGui::GetWindowDrawList()->AddRectFilled({10, 10}, {30, 30}, IM_COL32(0, 0, 255, 255));
+      ImGui::End();
+    }
+
+    return result;
+  };
+  auto image = gpu.renderGui(draw, 128, 128, 1.0 / 60, 2);
+  REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
+  CHECK(pixel(*image, 36, 36) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  CHECK(pixel(*image, 36, 20) == std::array<std::uint8_t, 4>{0, 255, 255, 255});
+  CHECK(pixel(*image, 60, 36) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  CHECK(pixel(*image, 72, 60)[1] != 255);
+  auto clean = gpu.readTarget(*retained).value();
+  CHECK(pixel(clean, 32, 32) == std::array<std::uint8_t, 4>{255, 0, 0, 255});
+  foreground = true;
+  image = gpu.renderGui(draw, 128, 128, 1.0 / 60, 2);
+  REQUIRE(image);
+  CHECK(pixel(*image, 36, 36) == std::array<std::uint8_t, 4>{0, 0, 255, 255});
+  CHECK(gpu.guiStats()->frames == 2);
+  foreground = false;
+  large = true;
+  image = gpu.renderGui(draw, 128, 128, 1.0 / 60, 2);
+  REQUIRE(image);
+  CHECK(pixel(*image, 36, 36) == std::array<std::uint8_t, 4>{0, 255, 0, 255});
+  CHECK(gpu.guiStats()->vertices > 65535);
+  CHECK(gpu.guiStats()->frames == 3);
+  retained.reset();
+  REQUIRE(gpu.closeGui());
+  CHECK(gpu.resourceStats()->targets == 0);
+}
+
+TEST_CASE("graphics.gui_overlay_invalid_geometry_and_budget_errors_recover_without_replay") {
+  auto gpu = renderer();
+  GuiConfig config;
+  config.maxVertices = 1000;
+  config.maxIndices = 3000;
+  REQUIRE(gpu.enableGui(config));
+  int mode{};
+  int calls{};
+  const GuiViewportDraw viewport
+      = [&](auto w, auto h) -> Dot::Core::Result<std::optional<GuiViewportFrame>> {
+    ++calls;
+    auto target = gpu.createTarget(w, h).value();
+    REQUIRE(gpu.renderMeshesInto(target, {}, {}, {1, 0, 0, 1}));
+    ViewportOverlay overlay;
+
+    if (mode == 0) {
+      overlay.points.push_back({{2, 0}});
+    } else if (mode == 1) {
+      overlay.points.assign(250, {{.5F, .5F}});
+    }
+
+    return std::optional{GuiViewportFrame{std::move(target), std::move(overlay)}};
+  };
+  const GuiDraw draw = [&]() -> Dot::Core::Result<void> {
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({64, 64});
+    ImGui::Begin("Overlay bounds", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+    auto result = gpu.guiViewport(viewport, 24, 24);
+    ImGui::End();
+    return result;
+  };
+  auto invalid = gpu.renderGui(draw, 64, 64);
+  REQUIRE_FALSE(invalid);
+  CHECK(invalid.error().code == Dot::Core::ErrorCode::InvalidArgument);
+  CHECK(calls == 1);
+  CHECK(gpu.guiStats()->frames == 0);
+  CHECK(gpu.resourceStats()->targets == 0);
+  mode = 1;
+  auto budget = gpu.renderGui(draw, 64, 64);
+  REQUIRE_FALSE(budget);
+  CHECK(budget.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(calls == 2);
+  CHECK(gpu.guiStats()->frames == 0);
+  mode = 2;
+  REQUIRE(gpu.renderGui(draw, 64, 64));
+  CHECK(calls == 3);
+  CHECK(gpu.guiStats()->frames == 1);
+  REQUIRE(gpu.closeGui());
+  CHECK(gpu.resourceStats()->targets == 0);
 }
