@@ -146,15 +146,21 @@ TEST_CASE("model.transactional_bundle_publication_and_single_history_instantiati
   const auto before = Json::parse(document.snapshot().value());
   const auto revision = document.stats()->revision;
   const auto operation
-      = "[{\"op\":\"instantiate-model\",\"path\":\"assets/model/model.dotscene\"}]";
+      = Json::array(
+            {{{"op", "instantiate-scene"},
+              {"path", "assets/model/model.dotscene"},
+              {"parent", nullptr},
+              {"transform",
+               {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}})
+            .dump();
   auto edited = document.apply(operation, revision);
   REQUIRE_MESSAGE(edited, (edited ? "" : edited.error().message));
-  CHECK(edited->created.size() == 3);
-  CHECK(document.scene().value()->entities()->size() == 5);
+  CHECK(edited->created.size() == 4);
+  CHECK(document.scene().value()->entities()->size() == 6);
   REQUIRE(document.undo(document.stats()->revision));
   CHECK(Json::parse(document.snapshot().value())["scene"] == before["scene"]);
   REQUIRE(document.redo(document.stats()->revision));
-  CHECK(document.scene().value()->entities()->size() == 5);
+  CHECK(document.scene().value()->entities()->size() == 6);
   CHECK_FALSE(document.apply(operation, revision));
   bool rejected{};
   std::thread worker([&] {
@@ -163,7 +169,7 @@ TEST_CASE("model.transactional_bundle_publication_and_single_history_instantiati
   worker.join();
   CHECK(rejected);
   REQUIRE(document.save(document.stats()->revision));
-  CHECK(project.loadStartup()->entities()->size() == 5);
+  CHECK(project.loadStartup()->entities()->size() == 6);
 }
 
 TEST_CASE("model.sparse_base64_and_missing_normals_generate_owned_flat_surface") {

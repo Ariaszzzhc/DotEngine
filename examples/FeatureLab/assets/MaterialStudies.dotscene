@@ -1,0 +1,316 @@
+{
+  "entities": [
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "1",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Surfaces",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "2",
+      "light": null,
+      "material": {
+        "asset": "assets/copper.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Copper",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "3",
+      "light": null,
+      "material": {
+        "asset": "assets/normal-surface.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Normal mapped surface",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "4",
+      "light": null,
+      "material": {
+        "asset": "assets/studio-floor.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "cube",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Dielectric",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "5",
+      "light": null,
+      "material": {
+        "asset": "assets/glass.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "quad",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Glass",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.0,
+          1.25,
+          -2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "6",
+      "light": null,
+      "material": {
+        "asset": "assets/cutout.dotmaterial"
+      },
+      "mesh": {
+        "asset": "",
+        "castsShadow": true,
+        "kind": "quad",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Alpha cutout",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.0,
+          1.25,
+          -2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "7",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Material studies",
+      "parent": "1",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "environment": null,
+  "name": "Material studies content",
+  "occlusion": null,
+  "version": 1
+}

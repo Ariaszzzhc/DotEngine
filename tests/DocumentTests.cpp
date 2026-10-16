@@ -860,11 +860,17 @@ TEST_CASE("skin.document_duplicate_instance_and_history_remap_joint_references_t
   CHECK(document.scene().value()->entityCount().value() == 6);
   REQUIRE(Dot::World::saveScene(fixture.project().files().value(), "assets/model.dotscene", scene));
   const auto instance = edit(
-      document, Json::array({{{"op", "instantiate-model"}, {"path", "assets/model.dotscene"}}}));
-  REQUIRE(instance.created.size() == 3);
+      document,
+      Json::array(
+          {{{"op", "instantiate-scene"},
+            {"path", "assets/model.dotscene"},
+            {"parent", nullptr},
+            {"transform",
+             {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}}));
+  REQUIRE(instance.created.size() == 4);
   copied = document.scene().value();
-  CHECK(copied->entity(copied->findEntity(instance.created[1]).value())->skin->joints
-        == std::vector<std::uint64_t>{instance.created[2]});
+  CHECK(copied->entity(copied->findEntity(instance.created[2]).value())->skin->joints
+        == std::vector<std::uint64_t>{instance.created[3]});
   auto invalid = Json::array(
       {{{"op", "component"},
         {"entity", "2"},
@@ -1176,4 +1182,119 @@ TEST_CASE("document.hierarchy_history_budget_failure_does_not_consume_identity_o
   CHECK_FALSE(rejected);
   CHECK(state(document) == before);
   CHECK(document.stats()->nextEntity == 3);
+}
+
+TEST_CASE("document.scene_content_save_and_instance_share_history_selection_and_high_water") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document,
+       Json::array(
+           {{{"op", "transform"},
+             {"entity", "2"},
+             {"value",
+              {{"position", {5, 1, 2}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}}));
+  request(document, {{"command", "select-many"}, {"entities", {"2"}}});
+  const auto original = state(document);
+  auto saved = request(document, {{"command", "save-selection-scene"},
+                                  {"path", "assets/cube-content.dotscene"},
+                                  {"name", "Cube content"}});
+  CHECK(saved["contentPath"] == "assets/cube-content.dotscene");
+  CHECK(state(document) == original);
+  auto content
+      = Dot::World::loadScene(fixture.project().files().value(), "assets/cube-content.dotscene")
+            .value();
+  CHECK(content.entityCount().value() == 2);
+  CHECK(content.worldTransform(content.findEntity(2).value())->data[12] == 0);
+  auto operation = Json::array(
+      {{{"op", "instantiate-scene"},
+        {"path", "assets/cube-content.dotscene"},
+        {"parent", "1"},
+        {"transform",
+         {{"position", {10, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
+  const auto inserted = edit(document, operation);
+  REQUIRE(inserted.created.size() == 3);
+  const auto root = inserted.created.front();
+  CHECK(state(document)["selection"] == Json::array({std::to_string(root)}));
+  auto scene = document.scene().value();
+  CHECK(scene->entity(scene->findEntity(root).value())->parent->value == 1);
+  const auto pose
+      = scene->worldTransform(scene->findEntity(inserted.created.back()).value()).value();
+  CHECK(pose.data[12] == 10);
+  CHECK(pose.data[14] == 4);
+  CHECK(scene->primaryCamera()->value == 1);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == original["scene"]);
+  CHECK(state(document)["selection"] == original["selection"]);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(document.scene().value()->entityCount().value() == 5);
+  REQUIRE(document.save(revision(document)));
+  CHECK(fixture.project().loadStartup()->entityCount().value() == 5);
+  REQUIRE(document.undo(revision(document)));
+  const auto branched = edit(document, operation);
+  CHECK(branched.created.front() > inserted.created.back());
+}
+
+TEST_CASE("document.scene_content_file_conflicts_paths_and_stale_requests_preserve_authoring") {
+  Fixture fixture;
+  auto document = fixture.document();
+  CHECK_FALSE(document.saveSelectionAs("assets/empty.dotscene", "Empty", revision(document)));
+  request(document, {{"command", "select-many"}, {"entities", {"2"}}});
+  const auto before = state(document);
+  CHECK_FALSE(
+      document.saveSelectionAs("scenes/content.dotscene", "Wrong tree", revision(document)));
+  CHECK_FALSE(document.saveSelectionAs("assets/missing/content.dotscene", "Missing parent",
+                                       revision(document)));
+  CHECK_FALSE(document.saveSelectionAs("assets/content.dotscene", "Stale", 0));
+  REQUIRE(document.saveSelectionAs("assets/Content.dotscene", "Content", revision(document)));
+  auto files = fixture.project().files().value();
+  const auto bytes = files.readText("assets/Content.dotscene").value();
+  CHECK_FALSE(document.saveSelectionAs("assets/Content.dotscene", "Replace", revision(document)));
+  CHECK_FALSE(document.saveSelectionAs("assets/content.dotscene", "Alias", revision(document)));
+  CHECK_FALSE(document.dispatch(Json{
+      {"command", "save-selection-scene"},
+      {"revision", std::to_string(revision(document))},
+      {"path", "assets/unknown.dotscene"},
+      {"name", "Unknown"},
+      {"extra", true}}.dump()));
+  const auto alias = Json::array(
+      {{{"op", "instantiate-scene"},
+        {"path", "assets/content.dotscene"},
+        {"parent", nullptr},
+        {"transform",
+         {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
+  CHECK_FALSE(document.apply(alias.dump(), revision(document)));
+  CHECK(files.readText("assets/Content.dotscene").value() == bytes);
+  CHECK(state(document) == before);
+  auto description = fixture.project().description().value();
+  description.name = "Externally edited";
+  REQUIRE(files.writeTextAtomic("project.dotproject",
+                                Dot::Project::encodeDescription(description).value()));
+  CHECK_FALSE(document.saveSelectionAs("assets/changed-project.dotscene", "Changed project",
+                                       revision(document)));
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.scene_content_history_rejection_and_invalid_batch_keep_allocations_private") {
+  Fixture fixture;
+  const auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  auto document = fixture.document({128, bytes + 128});
+  request(document, {{"command", "select-many"}, {"entities", {"2"}}});
+  REQUIRE(document.saveSelectionAs("assets/content.dotscene", "Content", revision(document)));
+  const auto before = state(document);
+  auto insertion = Json::array(
+      {{{"op", "instantiate-scene"},
+        {"path", "assets/content.dotscene"},
+        {"parent", nullptr},
+        {"transform",
+         {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
+  CHECK_FALSE(document.apply(insertion.dump(), revision(document)));
+  CHECK(state(document) == before);
+  CHECK(document.stats()->nextEntity == 3);
+  auto normal = fixture.document();
+  const auto initial = state(normal);
+  insertion[0]["parent"] = "999";
+  insertion.insert(insertion.begin(), {{"op", "create"}, {"name", "Unpublished"}});
+  CHECK_FALSE(normal.apply(insertion.dump(), revision(normal)));
+  CHECK(state(normal) == initial);
+  CHECK(normal.stats()->nextEntity == 3);
 }

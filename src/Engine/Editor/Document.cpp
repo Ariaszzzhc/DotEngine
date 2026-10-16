@@ -28,6 +28,7 @@ import Dot.Editor.Resources;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.World.SceneContent;
 
 namespace Dot::Editor {
   namespace {
@@ -204,7 +205,7 @@ namespace Dot::Editor {
 
     auto operation(Json& scene, const Json& command, std::uint64_t& next,
                    std::vector<std::uint64_t>& created, std::vector<std::uint64_t>& selection,
-                   const Core::FileSystem& files) -> Core::Result<void> {
+                   const Project::Project& project) -> Core::Result<void> {
       if (!command.is_object() || !command.contains("op") || !command["op"].is_string()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Edit operation requires an op string");
       }
@@ -328,66 +329,63 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (op == "instantiate-model") {
-        Codec::requireFields(command, {"op", "path"});
+      if (op == "instantiate-scene") {
+        Codec::requireFields(command, {"op", "path", "parent", "transform"});
         const auto path = command["path"].get<std::string>();
 
-        if (!Core::isPortableRelativePath(path) || !path.starts_with("assets/")
-            || !path.ends_with(".dotscene")) {
+        if (!sceneAssetPath(path)) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Model scene must be a portable assets path");
+                            "Scene content requires a portable scene/assets path");
         }
 
-        auto model = World::loadScene(
-            files, std::filesystem::path(std::u8string(path.begin(), path.end())));
+        auto store = ResourceStore::open(project, {.textBytes = 64 * 1024 * 1024});
+        auto readable = store ? store->externalTextPath(path)
+                              : Core::Result<std::filesystem::path>{std::unexpected(store.error())};
 
-        if (!model) {
-          return std::unexpected(model.error());
+        if (!readable) {
+          return std::unexpected(readable.error());
         }
 
-        auto encoded = World::encodeScene(*model);
+        auto content = World::loadScene(project.files().value(), sceneFile(path));
+        auto target = World::decodeScene(scene.dump());
+
+        if (!content || !target) {
+          return std::unexpected(!content ? content.error() : target.error());
+        }
+
+        const auto& pose = command["transform"];
+        Codec::requireFields(pose, {"position", "rotation", "scale"});
+        const auto position = Codec::numbers<3>(pose["position"]);
+        const auto rotation = Codec::numbers<4>(pose["rotation"]);
+        const auto scale = Codec::numbers<3>(pose["scale"]);
+        const World::Transform placement{{position[0], position[1], position[2]},
+                                         {rotation[0], rotation[1], rotation[2], rotation[3]},
+                                         {scale[0], scale[1], scale[2]}};
+        const auto parent
+            = command["parent"].is_null()
+                  ? std::optional<World::EntityId>{}
+                  : std::optional{World::EntityId{target->id(), Codec::id(command["parent"])}};
+        auto instance = World::prepareSceneInstance(*target, *content, next, placement, parent);
+
+        if (!instance) {
+          return std::unexpected(instance.error());
+        }
+
+        auto encoded = World::encodeScene(instance->scene);
 
         if (!encoded) {
           return std::unexpected(encoded.error());
         }
 
-        auto source = Codec::parseJson(*encoded);
-        const auto count = source["entities"].size();
+        created.push_back(instance->root.value);
 
-        if (count == 0 || count > 10000 - entities.size() || count > exhausted - next) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Model instance exceeds entity/identity capacity");
+        for (const auto& mapping : instance->entities) {
+          created.push_back(mapping.target.value);
         }
 
-        std::map<std::string, std::string> ids;
-
-        for (const auto& entity : source["entities"]) {
-          ids.emplace(entity["id"].get<std::string>(), std::to_string(next));
-          created.push_back(next++);
-        }
-
-        for (auto entity : source["entities"]) {
-          entity["id"] = ids.at(entity["id"].get<std::string>());
-
-          if (entity.contains("skin") && !entity["skin"].is_null()) {
-            for (auto& joint : entity["skin"]["joints"]) {
-              joint = ids.at(joint.get<std::string>());
-            }
-          }
-
-          if (entity.contains("animation") && !entity["animation"].is_null()) {
-            for (auto& target : entity["animation"]["targets"]) {
-              target["entity"] = ids.at(target["entity"].get<std::string>());
-            }
-          }
-
-          if (!entity["parent"].is_null()) {
-            entity["parent"] = ids.at(entity["parent"].get<std::string>());
-          }
-
-          entities.push_back(std::move(entity));
-        }
-
+        next += instance->entities.size() + 1;
+        selection = {instance->root.value};
+        scene = Codec::parseJson(*encoded);
         return {};
       }
 
@@ -952,8 +950,8 @@ namespace Dot::Editor {
       auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (const auto& operationValue : operations) {
-        auto applied = operation(candidate, operationValue, next, created, selection,
-                                 m_impl->m_project.files().value());
+        auto applied
+            = operation(candidate, operationValue, next, created, selection, m_impl->m_project);
 
         if (!applied) {
           return std::unexpected(applied.error());
@@ -1013,8 +1011,8 @@ namespace Dot::Editor {
       auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (std::size_t index = 0; index < commands.size(); ++index) {
-        auto result = operation(candidate, commands[index], next, created, selection,
-                                m_impl->m_project.files().value());
+        auto result
+            = operation(candidate, commands[index], next, created, selection, m_impl->m_project);
 
         if (!result) {
           return Core::fail(result.error().code, "Edit operation " + std::to_string(index) + ": "
@@ -1312,6 +1310,51 @@ namespace Dot::Editor {
     }
   }
 
+  auto Document::saveSelectionAs(std::string_view path, std::string_view name,
+                                 std::uint64_t revision) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!sceneAssetPath(path) || !path.starts_with("assets/")) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Saved scene content requires an assets .dotscene path");
+    }
+
+    auto files = m_impl->projectFiles();
+
+    if (!files) {
+      return std::unexpected(files.error());
+    }
+
+    try {
+      std::vector<World::EntityId> selected;
+
+      for (const auto id : m_impl->m_history[m_impl->m_cursor].selection) {
+        selected.push_back({m_impl->m_scene.id(), id});
+      }
+
+      auto content = World::extractSceneContent(m_impl->m_scene, selected, name);
+
+      if (!content) {
+        return std::unexpected(content.error());
+      }
+
+      auto encoded = World::encodeScene(content->scene);
+      return encoded ? m_impl->publishScene(path, *encoded)
+                     : Core::Result<void>{std::unexpected(encoded.error())};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Save scene content: " + std::string(error.what()));
+    }
+  }
+
   auto Document::save(std::uint64_t revision) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
@@ -1404,6 +1447,8 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "path", "name", "discard"});
         } else if (command == "save-scene-as") {
           Codec::requireFields(parsed, {"command", "revision", "path"});
+        } else if (command == "save-selection-scene") {
+          Codec::requireFields(parsed, {"command", "revision", "path", "name"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -1472,6 +1517,10 @@ namespace Dot::Editor {
                                revision, parsed["discard"].get<bool>());
         } else if (command == "save-scene-as") {
           result = saveAs(parsed["path"].get<std::string>(), revision);
+        } else if (command == "save-selection-scene") {
+          result = saveSelectionAs(parsed["path"].get<std::string>(),
+                                   parsed["name"].get<std::string>(), revision);
+          committed = result.has_value();
         } else if (command == "undo") {
           result = undo(revision);
         } else if (command == "redo") {
@@ -1498,6 +1547,10 @@ namespace Dot::Editor {
       auto response = Codec::parseJson(*snapshot);
       response["ok"] = true;
       response["created"] = Json::array();
+
+      if (command == "save-selection-scene") {
+        response["contentPath"] = parsed["path"];
+      }
 
       for (auto id : created) {
         response["created"].push_back(std::to_string(id));

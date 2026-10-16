@@ -137,16 +137,27 @@ export namespace Dot::Editor {
      * Failed saves retain dirty/revision/history. 原子替换前检查项目描述与已保存场景
      * 基线，外部修改作为冲突失败；检查及替换不是 OS 比较交换，仍须串行文件编辑。
      * 保存失败保留未保存状态、版本与历史。 */
+    /** Save selected subtree content to a new assets scene without changing the
+     * active document, allocator, selection, revision or undo history. Existing
+     * files/aliases are never replaced; native references must remain internal.
+     * 将所选子树保存为新的 assets 场景，不改变当前文档、分配器、选择、版本及历史。
+     * 不替换已有文件/别名，原生引用须留在内容内部。 */
+    [[nodiscard]] auto saveSelectionAs(std::string_view path, std::string_view name,
+                                       std::uint64_t revision) -> Core::Result<void>;
     [[nodiscard]] auto save(std::uint64_t revision) -> Core::Result<void>;
     /** Shared automation/UI protocol: inspect, edit, select/select-many,
      * duplicate-selection/delete-selection, group-selection/ungroup-selection,
-     * undo, redo, save. Hierarchy edits preserve world poses when requested;
+     * save-selection-scene, undo, redo, save. Scene-content save publishes a new
+     * assets file without changing document state. instantiate-scene edits select
+     * a new placement root and remap native references through a prepared candidate.
+     * Hierarchy edits preserve world poses when requested;
      * grouping uses minimal selected roots and ungrouping removes only
      * component-free containers. Selection/history/identity changes commit together.
      * Duplicate/delete operations expand descendant unions once. Copies retain external
      * parents/native components, remap internal parents, demote primary camera/
      * listener flags, and select mapped input IDs. Script properties stay opaque;
      * arbitrary numbers/strings are not interpreted as entity references.
+     * 内容保存仅发布新资产文件，不改变文档；场景插入选择新的放置根并在候选中重映射原生引用。
      * 层级编辑可显式保持世界姿态；成组处理最小选择根，拆组仅删除无功能组件容器。
      * 选择、历史及标识变更共同提交。复制/删除对子树并集只处理一次；副本保留外部父级/
      * 原生组件，重映射内部父级，取消

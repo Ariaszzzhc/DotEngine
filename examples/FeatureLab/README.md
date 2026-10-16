@@ -73,6 +73,15 @@ operations share the document transaction and strict agent interface described i
 The runtime auditor also exercises the native `Entity.reparent`, `scene.group`
 and `scene.ungroup` SDK operations without a scene/physics substitute.
 
+`assets/MaterialStudies.dotscene` is editable reusable content saved from the studio
+through Save selection as scene, then opened and edited as an ordinary scene. Its
+Surfaces root retains the five models and shared project material references. In
+Assets, select it and choose Add scene instance to place an independent copy;
+the new root supports normal movement, hierarchy, undo/redo and saving. The asset
+contains no camera/environment: use Scene view while editing it. This is scene
+content reuse; linked updates and overrides remain future work. See
+[scene-content operations](../../docs/SceneContent.md).
+
 ## HDR environment
 
 The saved scene uses Studio Small 09 HDRI for material illumination and the sky.

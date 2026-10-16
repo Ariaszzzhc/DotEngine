@@ -7621,3 +7621,81 @@ integration suite includes 194 compiler, 132 offscreen, 32 native-audio and 28
 platform cases. Neither automated suite opens desktop windows. Windows/Linux
 code remains supported but was not executed locally. The unchanged broad goal
 remains active and is not inferred complete from these counts.
+
+
+## Reusable authored scene content
+
+Added Dot.World.SceneContent with separate interface/implementation. CPU-only
+extraction prepares the descendant union of a unique ordered selection, rooted
+around the active entity's world origin with compact asset IDs. External parent
+bases are flattened only when representable as TRS; reflected bases remain valid,
+while shear fails. Native skin/animation references must remain inside the union;
+script JSON stays opaque and paths stay project-root relative. Environment/AO are
+excluded from content extraction. Sources and caller entity allocation remain intact.
+
+Scene insertion prepares an independent, validated target candidate with a placement
+container and owned scoped ID map. Placement is parent-local; original target
+entity values, globals and primary camera/listener remain, imported primary flags
+are demoted and native references remap. Final depth, entity, codec and history
+limits reject before publication. Candidate handles use a fresh scope: this is
+explicit authoring preparation, not in-place runtime instantiation or a linked asset.
+Linked updates/overrides and reusable prefab editing remain unfinished.
+
+Editor Save selection as scene publishes a new assets file without changing active
+scene, selection, scope, dirty state, revision, history or high-water mark. Paths,
+project metadata, missing parents, aliases and existing files are checked. Failures
+after an applied file operation carry committed-effect context. GUI and agents use
+save-selection-scene; Play, drafts, gestures and dialogs are guarded. General
+instantiate-scene replaces the previous model-specific insertion implementation,
+without an alias or compatibility parser. Imported models and authored scenes now
+share native preparation, selecting the placement root with one undo/redo entry.
+Resource catalog refresh failures report successful file publication explicitly.
+
+Added five existing-target pure CPU cases for overlap/layout/reflection, scoped
+ownership, native/opaque references, globals/primary flags, world placement,
+shear/depth/capacity/high IDs, foreign/moved/thread handles and source preservation.
+Three document regressions cover new-file publication, unsaved source preservation,
+normal insertion/history/save/reopen/branch high-water, metadata/stale/path/alias
+failures and history/batch rejection. Existing model and native-binding regressions
+now check the shared operation and placement container. No new acceptance executable
+or desktop-window test was added. Initial focused 32 cases pass (4.28s).
+
+Actual macOS release editor validation completed 53 product requests in one native
+workspace: open Lighting Studio, save the Material studies selection, verify all
+active document state unchanged, open/edit/save the content root as Surfaces, return
+to Studio, remove the original group and insert the new file at the original
+placement, compare every original world matrix, capture, Play, reject content saving
+during Play, Stop, undo both scene edits and close. It created the persistent
+examples/FeatureLab/assets/MaterialStudies.dotscene through the product rather than
+a committed generation script. This scene contains seven editable entities and
+shares its material resources with the studio.
+
+All original world matrices agree within 1e-5. Two actual 1480x574 viewport PNGs are
+byte-identical, from frame serials 131/213, revisions 7/11, and scopes 10/16 with
+Game view/document source and no material preview. The captured viewport image was
+inspected. Native Play runs without unexpected diagnostics; source project metadata,
+main scene and Lighting Studio hashes remain unchanged. Undo restores clean original
+scene data. Editor stderr is empty, the control directory retires and the owned
+process exits 0. GUI button bindings were reviewed; physical pointer clicks were
+not exercised by these agent requests. This is specific content-workflow evidence,
+not proof of completed prefab tooling or large-game production maturity.
+
+
+Final rebuilt configurations include the authored asset in generated example copies.
+Focused checks pass 41/41 in Debug (5.99s) and Release (0.83s). Full macOS arm64
+checks pass Debug 1205/1205 (181.32s), Release/NDEBUG 1205/1205 (19.69s). Each full
+suite has 339 unit and 866 integration cases, including 194 compiler, 132 durable
+offscreen, 32 native-audio and 28 platform cases. Automated suites open no desktop
+windows. Windows/Linux source targets were not executed locally.
+
+Final review covers module direction/interface separation, scoped/candidate ownership,
+reference closure/remapping, primary/global preservation, matrix representation,
+integer/depth/capacity boundaries, exclusive file publication, metadata and alias
+conflicts, error context after possible effects, GUI/agent guards, history/ID lifetime
+and appropriate test coverage. Eight changed/new C++ files pass clang-format and
+whitespace checks pass. Dependencies and caller compiler/linker settings are unchanged.
+Removed 54 owned helper/request files, keeping actual JSON/log/image evidence and
+build caches. The authored example asset remains; user references remain untracked
+and existing archives are preserved. No distribution archive was generated. The
+full engine/editor/game objective remains active, including linked content, mature
+animation workflows, streaming/performance and finished Prism Relay experience.

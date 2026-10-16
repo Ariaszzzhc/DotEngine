@@ -433,6 +433,7 @@ namespace Dot::Editor {
     std::string m_selectedResource;
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
+    std::string m_contentName{"Scene content"};
     std::string m_importSource;
     std::string m_environmentRevision;
     Json m_environmentDraft;
@@ -4733,6 +4734,13 @@ namespace Dot::Editor {
             "Apply or reset pending inspector/environment/AO changes before another operation");
       }
 
+      if (command == "save-selection-scene"
+          && (m_animationPreview || m_transform || m_pendingClose || pendingText()
+              || m_captureDialog)) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Finish drafts, gestures and dialogs before saving scene content");
+      }
+
       std::string documentRequest(request);
 
       if (command == "select-hierarchy") {
@@ -4842,6 +4850,16 @@ namespace Dot::Editor {
           return Core::fail(
               listed.error().code,
               "Scene operation committed; catalog refresh failed: " + listed.error().message);
+        }
+      }
+
+      if (result && command == "save-selection-scene") {
+        auto listed = catalog();
+        m_assetRefresh = true;
+
+        if (!listed) {
+          return Core::fail(listed.error().code, "Scene content saved; resource refresh failed: "
+                                                     + listed.error().message);
         }
       }
 
@@ -6538,10 +6556,23 @@ namespace Dot::Editor {
           openSceneAsset(m_selectedResource);
         }
 
-        if (m_selectedResource.starts_with("assets/") && m_selectedResource.ends_with(".dotscene")
-            && ImGui::Button("Add model to scene")) {
-          edit({{{"op", "instantiate-model"}, {"path", m_selectedResource}}});
+        if (m_selectedResource.ends_with(".dotscene") && ImGui::Button("Add scene instance")) {
+          edit({{{"op", "instantiate-scene"},
+                 {"path", m_selectedResource},
+                 {"parent", nullptr},
+                 {"transform",
+                  {{"position", {0, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}});
         }
+
+        ImGui::InputText("Content name", &m_contentName);
+        ImGui::BeginDisabled(!m_document->stats()->selected);
+
+        if (ImGui::Button("Save selection as scene")) {
+          action(
+              {{"command", "save-selection-scene"}, {"path", m_newPath}, {"name", m_contentName}});
+        }
+
+        ImGui::EndDisabled();
 
         if (ImGui::Button("Check scripts")) {
           fileAction({{"command", "check-scripts"}});

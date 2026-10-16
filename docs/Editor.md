@@ -874,19 +874,20 @@ linear input validation and bounds generation; they are not frame-time or FPS cl
 
 Assets Actions offers Import glTF / GLB model using the source file and a new
 project `assets/...` folder. After import, select its `model.dotscene` and use Add
-model to scene. Imported hierarchy, transforms, material references and editable
+scene instance. Imported hierarchy, transforms, material references and editable
 native files use the actual engine; insertion can be undone/redone once and saved.
 The current scene's camera/environment/lighting remain authoritative.
 
 ```json
 {"command":"import-model","source":"/absolute/model.glb","path":"assets/robot"}
-{"command":"edit","revision":"3","operations":[{"op":"instantiate-model","path":"assets/robot/model.dotscene"}]}
+{"command":"edit","revision":"3","operations":[{"op":"instantiate-scene","path":"assets/robot/model.dotscene","parent":null,"transform":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}}]}
 ```
 
 Import optionally accepts an unsigned `scene` index 0..1023. It reports source scene,
 mesh/material/image/node and animation counts, generated scene and native model
 descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
-Add model to scene retains the animation player and remaps its node targets.
+Add scene instance retains the animation player and remaps its node targets under
+one selected placement container. Imported primary cameras/listeners are demoted.
 Inspector supports clip/clock/loop/auto-play settings; Play uses the same native
 GameSession as exported games. TypeScript playback controls use the same players.
 Isolated editor audition is available below; keyframe authoring remains unfinished.
@@ -1749,3 +1750,19 @@ collapse requests. Inspect exposes requested `workspace.hierarchyExpansion` and
 actual rendered `workspace.hierarchyRows` states; wait for a later rendered frame
 to observe the view update. Opening another scene resets expansion; save-as of the
 same scene retains it. Deleted IDs are pruned. Group selection opens its new group.
+
+
+## Reusable scene content
+
+Assets → Save selection as scene publishes a new `.dotscene` under assets using the
+Path and Content name fields. It saves the descendant union around the active
+entity's world origin, preserving internal native references and authored data.
+Open that file with ordinary scene editing tools. Select any assets/scenes
+`.dotscene` and choose Add scene instance; the inserted placement root is selected
+for existing transform, hierarchy and undo/redo tools. Both actions share strict
+agent operations. See [content contracts and examples](SceneContent.md).
+
+Feature Lab includes `assets/MaterialStudies.dotscene`, saved and edited through
+these product operations. It shares the original materials/meshes and can be
+inserted into another scene in the same project. Scene instances are independent
+authored copies; linked updates and override editing remain unfinished.
