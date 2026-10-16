@@ -6709,3 +6709,99 @@ archive is generated; Windows/Linux are not executed. Specification/reference ou
 remain untracked. Multi-key/tangent-handle/binding/state/layer animation authoring,
 finished realistic game art, rendering scale/streaming/performance and the broader
 production engine goal remain unfinished.
+
+
+## 2026-10-16 — Cross-track animation group retiming
+
+Native RetimeKeys resolves 1..16384 unique exact node/path/time source keys together
+inside an ordinary ordered clip-edit batch. It preserves payloads, tangents, channel
+modes and key count, rebuilds/sorts affected tracks and checks final time uniqueness.
+Selected keys may occupy positions vacated by the group, including swaps. Duplicate/
+missing sources, invalid targets and collisions with unselected or other destination
+keys reject the complete candidate. Numeric no-op targets preserve source float bits.
+Ordinary UpdateKey remains the full value/time replacement operation; group retiming
+has one simultaneous implementation, without another format or compatibility layer.
+
+AnimationKeyMove now owns an ordered group, with the last key as absolute-time anchor.
+Each update adds the same double offset to original times before native float rounding;
+all translated keys must remain in 0..86400. Ghost snapshots retain per-key payload and
+occupancy, with aggregate changed/occupied flags. Float-collapsed destinations remain
+visible and reject commit; returning to origin restores exact source representations.
+The immutable source is shared, updates never copy/publish the clip, and prior owned
+snapshots remain unchanged. Moved handles retire correctly; self-move assignment is a
+no-op so clip/vector ownership cannot diverge. The unit interface remains separate
+from implementation and has no scene/file/device/history/hidden-clock dependency.
+
+The actual editor adds strict select-animation-keys and select-all-animation-keys
+operations. Selection validates every source before publishing ordered references and
+its active Inspector form; errors retain both. Empty selection clears the form, while
+pose preparation clears authored-key selection. Select-all builds a bounded group in
+the product rather than sending thousands of references through the 1 MiB request
+boundary; oversized clips fail without partial selection. Begin-animation-key-move
+consumes current selection, and subsequent scoped update/finish operations share the
+native group retime, pose/skin preflight and ordinary history publication boundary.
+Moved references are prepared before publication and selected through the same native
+selection implementation after commit. A post-commit selection failure explicitly
+reports publication and clears stale form/references, without claiming rollback.
+
+GUI Ctrl/Cmd toggle and Shift range selection, cross-track membership, Select all,
+Clear selection and Move selected keys route through these product operations. The
+curve highlights selected keys, renders matching ghost markers and moves an existing
+group when dragging one of its selected markers. Modifier-click selects without
+starting a move; failed source selection cannot start a different old group. Single-key
+value/tangent controls are disabled for multiple keys. Existing range/save/history/
+modal/focus safeguards remain active; one group creates one undo step regardless of
+key/update count. Changed ordinary edits/history clear stale selection; no-ops retain
+selection and redo. Dope-sheet, copy/value group editing, tangent handles, visual binding,
+state/layers and production animation performance remain unfinished.
+
+Durable checks extend the existing pure tool/edit cases and file-only document cases,
+without a new target or desktop-window test. They retain former single-key coverage
+and add simultaneous swaps/vacated-source movement, cross-channel payload/mode retention,
+absolute updates, duplicate/empty/oversized selection, every-key boundaries, denormal
+float collapse, exact return to origin, the full 16384-key bound and group history/
+exact-byte save/undo/redo. Final Release/NDEBUG full checks pass 1102/1102 (18.65s):
+299 unit and 803 integration, with overlapping 126 offscreen GPU, 27 native audio and
+28 SDL-dummy platform cases. Final focused Debug animation/edit/tool/document/preview
+checks pass 71/71 (2.25s): 42 unit and 29 integration, including one offscreen GPU case.
+Earlier foundation and complete runs also pass. No automatic case opens a desktop window.
+
+Real editor product operations on a PrismRelay copy verify a three-channel Head group:
+repeated ghosts leave the actual native pose, preview identity, history and disk intact;
+malformed/duplicate/missing selections preserve selection/form. Occupied time and an
+actual missing library asset reject commit while retaining the same recoverable move.
+Restoring the asset allows one commit; actual cloned pose changes at .02 and one undo
+restores it. Retired sessions fail and a return-to-origin no-op retains redo. Close
+confirmation preserves the group session, save/update/commit are guarded in the modal,
+and cancellation remains available without losing selection, pose or disk state.
+
+All 195 channels and 14820 keys then select through the actual product operation and
+move together by one second, including destinations originally held by selected keys.
+The clip remains 14820 keys, duration changes to 3.5, one undo restores the native pose,
+and save/close/reopen loads those exact saved times. Only the copied animation changes;
+the source authoring scene stays identical. Screenshots show the multi-selection
+Inspector guidance, locked single-key controls, ghost, and visible move/all/clear actions.
+Native window observation stalls in the computer-use interface; after it returns, the
+same launcher/control is confirmed live and normal product inspection/screenshot resume.
+That observation delay is not treated as application termination or engine failure.
+Physical mouse modifier/range/drag acceptance remains unproven at the previously
+observed SDL/macOS virtual-input boundary; no synthetic event hook is introduced.
+
+A final same-build product run adds 2048 keys through eight ordinary edit batches,
+checks that selecting all 16868 rejects atomically while retaining a selected key,
+and undoes those batches to a clean 14820-key resource. It again commits/undoes the
+full group with real native pose comparison, checks pose-form/selection separation,
+and closes normally. Both native sessions exit 0 with empty stderr and retired control
+directories. All nine original scene/animation files match their initial hashes.
+Temporary app/project copies, clients/requests and edit helpers are removed; ignored
+observations/build logs, caches and existing archives remain. No distribution archive
+is generated. Compiler/linker environment, dependencies and platform targets are
+unchanged; Windows/Linux are not executed.
+
+Precommit review covers simultaneous source resolution, immutable ownership and
+self-move invariants, float boundaries/collisions, selection validation before state
+changes, prepublication allocations, expected error context, shared product/GUI paths,
+source/resource/preview isolation and balanced GUI scopes. All eight changed C++ files
+pass clang-format and diff whitespace checks pass. Specification/reference output
+remain untracked. Broader animation authoring, finished realistic game content,
+rendering/streaming/performance and the full production engine goal remain open.

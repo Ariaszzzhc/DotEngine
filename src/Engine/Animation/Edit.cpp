@@ -4,6 +4,7 @@ module;
 #include <cmath>
 #include <exception>
 #include <expected>
+#include <map>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -38,7 +39,67 @@ namespace Dot::Animation {
             [&](const auto& edit) -> Core::Result<void> {
               using T = std::decay_t<decltype(edit)>;
 
-              if constexpr (std::is_same_v<T, RenameClip>) {
+              if constexpr (std::is_same_v<T, RetimeKeys>) {
+                if (edit.keys.empty() || edit.keys.size() > MaxRetimeKeys) {
+                  return Core::fail(Core::ErrorCode::InvalidArgument,
+                                    "Retime requires 1..16384 source keys");
+                }
+
+                std::map<std::pair<std::uint32_t, Path>, std::size_t> channels;
+
+                for (std::size_t i = 0; i < candidate.tracks.size(); ++i) {
+                  channels.emplace(std::pair{candidate.tracks[i].node, candidate.tracks[i].path},
+                                   i);
+                }
+
+                std::map<std::size_t, std::map<float, float>> changes;
+
+                for (const auto& item : edit.keys) {
+                  if (!std::isfinite(item.time) || item.time < 0 || item.time > 86400
+                      || !std::isfinite(item.target) || item.target < 0 || item.target > 86400) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid retime key time");
+                  }
+
+                  const auto channel = channels.find({item.node, item.path});
+
+                  if (channel == channels.end()) {
+                    return Core::fail(Core::ErrorCode::NotFound, "Retime track does not exist");
+                  }
+
+                  const auto& keys = candidate.tracks[channel->second].keys;
+                  const auto key = std::ranges::lower_bound(keys, item.time, {}, &Key::time);
+
+                  if (key == keys.end() || key->time != item.time) {
+                    return Core::fail(Core::ErrorCode::NotFound,
+                                      "Retime source key does not exist");
+                  }
+
+                  if (!changes[channel->second].emplace(item.time, item.target).second) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate retime source");
+                  }
+                }
+
+                for (const auto& [channel, times] : changes) {
+                  auto& keys = candidate.tracks[channel].keys;
+
+                  for (auto& key : keys) {
+                    const auto change = times.find(key.time);
+
+                    if (change != times.end() && change->second != key.time) {
+                      key.time = change->second;
+                    }
+                  }
+
+                  std::ranges::sort(keys, {}, &Key::time);
+
+                  if (std::ranges::adjacent_find(keys, {}, &Key::time) != keys.end()) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument,
+                                      "Retime destination key time is occupied");
+                  }
+                }
+
+                return {};
+              } else if constexpr (std::is_same_v<T, RenameClip>) {
                 candidate.name = edit.name;
                 return {};
               } else {

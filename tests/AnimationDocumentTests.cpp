@@ -222,3 +222,35 @@ TEST_CASE("animation_document.key_move_retains_count_history_and_failed_collisio
   CHECK(loadClip(f.files, f.path)->description().value()->tracks[0].keys[0].time == 1);
   CHECK(original.value.description().value()->tracks[0].keys[0].time == 0);
 }
+
+TEST_CASE("animation_document.group_retime_is_one_history_step_and_exact_undo_preserves_redo") {
+  Fixture f;
+  auto doc = f.open();
+  auto before = doc.snapshot().value();
+  const std::vector<ClipEdit> changes{
+      RetimeKeys{{{0, Path::Translation, 0, 2}, {0, Path::Translation, 2, 0}}}};
+  REQUIRE(doc.edit(changes, before.revision));
+  auto changed = doc.snapshot().value();
+  CHECK(changed.historyStates == 2);
+  CHECK(changed.value.description().value()->tracks[0].keys[0].value.x == 2);
+  CHECK(f.files.readText(f.path).value() == f.original);
+  REQUIRE(doc.undo(changed.revision));
+  CHECK_FALSE(doc.snapshot()->dirty);
+  CHECK(doc.snapshot()->canRedo);
+  const std::vector<ClipEdit> noop{
+      RetimeKeys{{{0, Path::Translation, 0, -0.F}, {0, Path::Translation, 2, 2}}}};
+  const auto revision = doc.snapshot()->revision;
+  REQUIRE(doc.edit(noop, revision));
+  CHECK(doc.snapshot()->revision == revision);
+  CHECK(doc.snapshot()->canRedo);
+  const std::vector<ClipEdit> collision{RetimeKeys{{{0, Path::Translation, 0, 2}}}};
+  CHECK_FALSE(doc.edit(collision, revision));
+  CHECK(doc.snapshot()->revision == revision);
+  CHECK(doc.snapshot()->historyBytes == changed.historyBytes);
+  REQUIRE(doc.redo(revision));
+  REQUIRE(doc.save(doc.snapshot()->revision));
+  CHECK(loadClip(f.files, f.path)->description().value()->tracks[0].keys[0].value.x == 2);
+  REQUIRE(doc.undo(doc.snapshot()->revision));
+  REQUIRE(doc.save(doc.snapshot()->revision));
+  CHECK(f.files.readText(f.path).value() == f.original);
+}

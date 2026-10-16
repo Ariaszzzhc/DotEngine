@@ -1314,8 +1314,9 @@ leave an already saved animation clean, with the preview/history retained for re
 Every operation uses the same strict product implementation. The ordinary inspect
 response reports `workspace.animationClip`: buffer/path/name/resource revision,
 duration, channel/key counts, dirty/undo/redo, history states/serialized bytes, key
-form, pendingForm and the optional move transaction. The ordinary authoring
-revision/scene/dirty state remains unchanged. `workspace.animationPreview.draft` identifies the decoded asset path.
+form, pendingForm, ordered selection and the optional move transaction. The ordinary
+authoring revision/scene/dirty state remains unchanged. `workspace.animationPreview.draft`
+identifies the decoded asset path.
 `animationClip.curve` reports the current time range; changing that view does not alter
 resource revision/history, preview identity/clock, or staged key values.
 Normal audition still supports library switching; close the editing document before
@@ -1362,13 +1363,16 @@ operation shapes are:
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"put-key","node":8,"path":"translation","interpolation":"linear","key":{"time":0.25,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-key","node":8,"path":"translation","time":0.25}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"update-key","node":8,"path":"translation","time":0.25,"key":{"time":0.5,"value":[0,0.16,0,0],"inTangent":[0,0,0,0],"outTangent":[0,0,0,0]}}]}
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"retime-keys","keys":[{"node":8,"path":"translation","time":0.25,"target":0.5},{"node":8,"path":"translation","time":0.5,"target":0.25}]}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-track","node":8,"path":"translation"}]}
 {"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"set-interpolation","node":8,"path":"translation","interpolation":"cubic"}]}
 ```
 
 Path is translation/rotation/scale; interpolation is step/linear/cubic. Non-cubic keys
-require zero tangents. Batches validate the final immutable native clip. The product
-preflights the candidate against the actual authoring scene/bindings and native writer/
+require zero tangents. Retime-keys resolves 1..16384 unique sources simultaneously,
+permitting selected-source swaps while rejecting occupied unselected or duplicate
+targets. It preserves all key payloads, count and channel modes. Batches validate the
+final immutable native clip. The product preflights the candidate against the actual authoring scene/bindings and native writer/
 physics authority before changing history. Enabled skins are CPU-validated both at the
 new preview's initial sample and the retained current sample, catching poses that are
 finite yet outside the supported skin matrix range. Failed binding/sample/skin checks
@@ -1410,27 +1414,56 @@ errors rather than hiding them. Tangent values remain editable through Inspector
 Key movement has a scoped product transaction shared by GUI dragging and agents:
 
 ```json
-{"command":"begin-animation-key-move","buffer":"1","revision":"1","node":8,"path":"translation","time":0}
+{"command":"select-animation-keys","buffer":"1","revision":"1","keys":[{"node":8,"path":"translation","time":0},{"node":8,"path":"rotation","time":0}]}
+{"command":"begin-animation-key-move","buffer":"1","revision":"1"}
 {"command":"update-animation-key-move","session":"1","time":0.0125}
 {"command":"finish-animation-key-move","session":"1","commit":true}
+```
+
+Selection alternatives and gesture cancellation have these request shapes:
+
+```json
+{"command":"select-all-animation-keys","buffer":"1","revision":"1"}
+{"command":"select-animation-keys","buffer":"1","revision":"1","keys":[]}
 {"command":"finish-animation-key-move","session":"1","commit":false}
 ```
 
-The begin request requires an existing exact-time source key, current resource IDs,
-a clean form and no other move/dialog. It selects that source key and returns an
-independent move session. Observe `workspace.animationClip.move` (null when absent):
-canonical session/buffer/revision strings, node/path, sourceTime, current time, changed
-and occupied. Sessions increase across resource reopen; retired IDs cannot affect a
-new gesture. Update takes an absolute finite native-float time in 0..86400 seconds.
-It moves only the curve ghost, without copying/publishing the clip, changing the
-preview pose/clock/session, changing history, or writing files. Occupied destinations
-remain inspectable; commit rejects them and retains the gesture for adjustment/cancel.
-Invalid requests retain the preceding target. Returning to the source time is a no-op.
+Selection references are exact node/path/native-float times, ordered without duplicates,
+with at most 16384 keys across tracks. Empty selection clears the form. Invalid or
+stale selection retains the previous selection/form; selecting requires a clean form
+and no active move. The last reference becomes the active Inspector key and move
+anchor. The existing select-animation-key operation replaces selection with one exact
+key; time:null prepares a pose form and clears authored-key selection. The strict
+select-all-animation-keys request builds the same bounded selection in the product,
+without requiring a large request body. An oversized clip is rejected without partial
+selection. Explicit arrays also remain subject to the ordinary 1 MiB request bound.
+Selection does not change resource history, preview or disk; ordinary changed edits/
+undo/redo clear it, while no-ops retain it. Multi-selection locks single-key value/
+tangent form edits; select one key to use those controls.
 
-Commit uses the ordinary native UpdateKey edit, initial/current pose and skin preflight,
+Begin consumes the current nonempty selection and requires current resource IDs,
+a clean form and no other move/dialog. It returns an independent move session.
+Observe workspace.animationClip.move (null when absent): canonical session/buffer/
+revision strings, ordered keys (node/path/sourceTime/time/occupied), absolute anchor
+time, changed and occupied. Sessions increase across resource reopen; retired IDs
+cannot affect a new gesture. Update takes the anchor's absolute finite native-float
+time in 0..86400 seconds. The tool adds the same double offset to each original
+source, then rounds each destination to native float. Relative timing is therefore
+preserved up to float rounding; any resulting duplicate destination rejects commit.
+Every translated key must remain in 0..86400, even if the anchor is valid. Invalid
+updates retain the preceding ghost. Returning to the anchor origin restores all
+original float representations exactly.
+
+Updates move only curve ghosts, without copying/publishing the clip, changing preview
+pose/clock/session or history, or writing files. Selected sources vacate together;
+the group may occupy their former positions. Unselected occupied destinations and
+float-collapsed selected destinations remain inspectable, and commit rejects them
+without losing the gesture. Ghosts retain values/tangents/interpolation.
+
+Commit uses one native RetimeKeys operation, initial/current pose and skin preflight,
 and document publication boundary. A changed successful commit creates one history
-step regardless of update count, retains key count/value/tangents/interpolation, selects
-the new time and retires the move. No-op commits retain revision, redo and preview
+step regardless of update/key count, retains key count/value/tangents/interpolation,
+selects all moved keys and retires the move. No-op commits retain revision, redo and preview
 identity. Preflight/history failures retain the move and previous resource/preview.
 Cancel simply discards the ghost. Preview playback/seek/configuration and read queries
 remain available; commit validates the current sample at that moment. Competing edits,
@@ -1439,22 +1472,30 @@ resource discard retires the transaction. An active move is pending work even wh
 unchanged: window close prompts, save-close is rejected, and cancel-close or move
 cancellation preserves recovery without an implicit save.
 
-The Animation panel shows the same ghost and exposes Move time, Apply move and Cancel
-move, including occupied-time feedback. A pointer drag includes the final release
-position, commits on release, and cancels on Escape, lost focus or a changed graph width.
+The Animation panel supports Ctrl/Cmd toggle across tracks and Shift inclusive ranges
+on the active track (Ctrl/Cmd+Shift adds a range); the clicked key becomes active.
+Select all keys and Clear selection use the same product operations. Move selected
+keys starts a group gesture. Dragging an already selected curve marker moves that
+group; dragging an unselected marker selects/moves that one key. Modifier-clicking
+markers only changes selection. The same ghosts and Move time / Apply move / Cancel
+move controls expose occupied-time feedback; Move time is the last selected key's
+absolute anchor time. A pointer drag includes the final release position, commits on
+release, and cancels on Escape, lost focus or a changed graph width.
 A failed commit keeps the ghost for correction. Agent-created gestures have no pointer
 binding and remain available without OS focus; native focus/Escape cancellation applies
 only to a pointer-bound drag. Computer-use virtual mouse acceptance remains limited by
 the observed SDL/macOS coordinate behavior, separately from product-operation checks.
 
-移键使用同源开始/绝对时间更新/提交/取消协议；更新只移动曲线标记，不修改片段、姿态、
-历史或磁盘。目标时间占用及预检失败保留操作，允许调整/取消；成功提交只产生一步撤销，
-原键数量、值、切线及插值不变。返回原时间不改变版本、重做或预览身份。活动操作参与关闭
-确认，旧会话不能影响重开后的资源；智能体操作无需系统焦点，鼠标拖动另有焦点丢失取消。
+移键使用同源选择/开始/锚点绝对时间更新/提交/取消协议；支持跨轨道 16384 键有序选择，
+末键为活动锚点。每个原键加同一 double 偏移后转 float，舍入重叠时拒绝提交；返回原位
+精确恢复原 float。组内键同时腾位，不覆盖未选键。更新只移动标记，不修改片段/姿态/
+历史/磁盘，失败可调整/取消；整组成功只产生一步撤销，数量/值/切线/插值不变。GUI
+支持 Ctrl/Cmd 增减、Shift 范围及全选/清空，智能体使用同源严格操作。活动操作参与关闭
+确认，旧会话不能影响重开的资源；智能体无需系统焦点，原生鼠标拖动另有焦点丢失取消。
 
-This workflow edits existing bound library clips. Multi-key/dope-sheet and graphical
-tangent-handle editing, visual binding/retargeting, state graphs/layers, root motion/events
-and production animation scalability remain unfinished.
+This workflow edits existing bound library clips. Dope-sheet, multi-key value/copy and
+graphical tangent-handle editing, visual binding/retargeting, state graphs/layers,
+root motion/events and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
 值和三次切线。键表单需显式应用/重置；插入与替换按原生 float 时间判断，不隐式移动旧键。
@@ -1465,4 +1506,4 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键操作、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
+多键复制/数值编辑、图形切线手柄、绑定和状态图等生产制作能力仍待完成。

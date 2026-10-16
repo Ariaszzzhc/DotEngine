@@ -345,19 +345,34 @@ agent operations; see [animation clip editing](Editor.md#animation-clip-editing)
 接入轨道/关键帧选择、值与切线草稿、候选姿态预检、保存/历史及同源智能体操作；图形切线/
 状态图、视觉绑定和生产规模验证仍待完成。
 
-`Dot.Editor.AnimationKeyMove` owns an immutable source clip and an absolute-time ghost
-for one exact existing node/path/key. It creates no scene/files/device/clock. Updates
-validate finite native float seconds in 0..86400 and preserve the preceding target on
-failure; snapshots own source/target/key payload and changed/occupied flags. Source
-values/tangents and channel interpolation are unchanged. Occupied destinations remain
-visible; edit rejects them without losing the ghost and otherwise returns one ordinary
-UpdateKey. Returning to the source restores its original float representation. Copies
-are disabled; moves retire the source handle, destruction discards the ghost, and
-independent instances may share source data. Synchronize access to a mutable instance.
-The editor scopes this tool to a document identity/revision, preflights a candidate with
-the current native preview, and publishes once through the ordinary resource history.
-The GUI and agent transaction protocol are described in [clip editing](Editor.md#animation-clip-editing).
+`Dot.Editor.AnimationKeyMove` owns an immutable clip and 1..16384 unique selected
+source keys across channels. The last key anchors an absolute target time; updates add
+the same double offset to every original source before native float rounding. Any
+translated key outside 0..86400 rejects the update and retains the preceding ghost.
+Selected sources vacate together. Unselected occupancy and duplicate destinations
+caused by float rounding are visible per key and reject edit without discarding the
+preview. Returning to origin restores exact source float representations. Values,
+tangents and modes remain unchanged. Snapshots own ordered key payloads and aggregate
+changed/occupied state, independent of later updates or tool lifetime. It creates no
+scene, file, device, clock or history; update does not copy the clip.
 
-移键工具持有不可变片段，纯时间草稿不涉及场景/文件/设备；占用目标可见且可恢复，返回
-原时间恢复原始 float 表示。提交仅返回普通 UpdateKey，资源身份/版本、姿态预检和单步历史
-由编辑器统一处理；销毁丢弃草稿，移动使源句柄失效，独立工具可共享片段。
+RetimeKeys is a simultaneous native edit within an ordinary ordered ClipEdit batch.
+It resolves up to 16384 unique exact source keys against the current candidate before
+retiming/sorting each affected track once. Selected sources may swap or vacate for one
+another; duplicate final times cannot overwrite any key. Input payloads, tangents,
+interpolation and key counts remain unchanged. Numeric no-op targets preserve original
+float bits. Invalid/missing/duplicate sources, nonfinite/out-of-range targets or final
+collisions fail the whole batch. The final native clip still validates normally.
+
+Copies of the tool are disabled; moves retire the source handle and destruction
+discards the ghost. Independent tools share clips; synchronize mutable access. The
+editor scopes the selection/gesture to current document identity/revision and native
+preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
+for shared GUI/agent selection and move operations. Complete dope-sheet, multi-key
+copy/value editing, tangent handles and state/layer authoring remain unfinished.
+
+多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
+同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。
+组内同时腾位，原位恢复精确保留 float 表示；值/切线/模式和数量不变。RetimeKeys 在
+普通有序批次中同时解析全部源键，统一重排受影响轨道，最终片段仍须完整校验；失败不改源。
+工具不涉及场景/文件/设备/历史，编辑器校验身份/版本及原生姿态后提交一步历史。

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <limits>
 #include <vector>
 
@@ -155,4 +156,36 @@ TEST_CASE("animation_edit.key_update_preserves_authored_cubic_tangents") {
   CHECK(actual.inTangent == key.inTangent);
   CHECK(actual.outTangent == key.outTangent);
   CHECK(changed.sample(1.25)->at(0).value.x == doctest::Approx(1.75));
+}
+
+TEST_CASE("animation_edit.group_retime_resolves_sources_simultaneously_and_retains_payload") {
+  auto original = source();
+  const std::array<ClipEdit, 1> edits{
+      RetimeKeys{{{0, Path::Translation, 0, 2}, {0, Path::Translation, 2, 0}}}};
+  auto changed = editClip(original, edits);
+  REQUIRE(changed);
+  const auto& before = original.description().value()->tracks[0];
+  const auto& after = changed->description().value()->tracks[0];
+  REQUIRE(after.keys.size() == before.keys.size());
+  CHECK(after.keys[0].value == before.keys[1].value);
+  CHECK(after.keys[1].value == before.keys[0].value);
+  CHECK(after.interpolation == before.interpolation);
+}
+
+TEST_CASE(
+    "animation_edit.group_retime_rejects_collision_duplicates_and_missing_sources_atomically") {
+  auto original = source();
+
+  for (auto changes :
+       {RetimeKeys{{}}, RetimeKeys{{{0, Path::Translation, 0, 2}}},
+        RetimeKeys{{{0, Path::Translation, 0, .5F}, {0, Path::Translation, 0, .75F}}},
+        RetimeKeys{{{0, Path::Translation, 0, .5F}, {0, Path::Translation, 2, .5F}}},
+        RetimeKeys{{{0, Path::Translation, 0, -.5F}}}, RetimeKeys{{{0, Path::Translation, .5F, 2}}},
+        RetimeKeys{{{9999, Path::Translation, 0, 2}}},
+        RetimeKeys{{{0, Path::Translation, 0, std::numeric_limits<float>::infinity()}}}}) {
+    const std::array<ClipEdit, 1> edits{changes};
+    CHECK_FALSE(editClip(original, edits));
+    CHECK(original.description().value()->tracks[0].keys[0].time == 0);
+    CHECK(original.description().value()->tracks[0].keys[1].time == 2);
+  }
 }

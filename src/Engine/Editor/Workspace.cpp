@@ -17,6 +17,8 @@ module;
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -469,6 +471,8 @@ namespace Dot::Editor {
     std::optional<AnimationDocument> m_clipDocument;
     Json m_clipForm = nullptr;
     Json m_clipOriginal = nullptr;
+    std::vector<Animation::KeyReference> m_clipSelection;
+    std::set<std::tuple<std::uint32_t, Animation::Path, float>> m_clipSelected;
     int m_clipNewNode{};
     int m_clipNewPath{};
     bool m_clipTrackScroll{};
@@ -1780,6 +1784,92 @@ namespace Dot::Editor {
           {"outTangent", {key.outTangent.x, key.outTangent.y, key.outTangent.z, key.outTangent.w}}};
     }
 
+    static auto clipReferences(const Json& values) -> std::vector<Animation::KeyReference> {
+      if (!values.is_array() || values.size() > Animation::MaxRetimeKeys) {
+        throw std::invalid_argument("Key selection requires at most 16384 references");
+      }
+
+      std::vector<Animation::KeyReference> result;
+      result.reserve(values.size());
+
+      for (const auto& item : values) {
+        Codec::requireFields(item, {"node", "path", "time"});
+        result.push_back(
+            {clipIndex(item["node"]), clipPath(item["path"]), Codec::number(item["time"])});
+      }
+
+      return result;
+    }
+
+    static auto referencesJson(std::span<const Animation::KeyReference> keys) -> Json {
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      auto result = Json::array();
+
+      for (const auto& key : keys) {
+        result.push_back({{"node", key.node},
+                          {"path", paths.at(static_cast<std::size_t>(key.path))},
+                          {"time", key.time}});
+      }
+
+      return result;
+    }
+
+    auto setClipSelection(std::vector<Animation::KeyReference> keys) -> void {
+      std::set<std::tuple<std::uint32_t, Animation::Path, float>> selected;
+
+      for (const auto& key : keys) {
+        selected.emplace(key.node, key.path, key.time);
+      }
+
+      m_clipSelection = std::move(keys);
+      m_clipSelected = std::move(selected);
+    }
+
+    /** Prepare all selection/form allocations before changing product state.
+     * Last reference is the active key and move anchor; input order is retained.
+     * 修改产品状态前完成选择/表单分配；末引用为活动键及移键锚点，保留输入顺序。 */
+    auto selectClipKeys(const AnimationSnapshot& state, std::vector<Animation::KeyReference> keys)
+        -> Core::Result<void> {
+      Json form = nullptr;
+      std::set<std::tuple<std::uint32_t, Animation::Path, float>> selected;
+
+      if (!keys.empty()) {
+        auto valid = AnimationKeyMove::begin(state.value, keys);
+        auto resolved = valid ? valid->snapshot()
+                              : Core::Result<KeyMoveSnapshot>{std::unexpected(valid.error())};
+
+        if (!resolved) {
+          return std::unexpected(resolved.error());
+        }
+
+        const auto& last = resolved->keys.back();
+        const auto& tracks = state.value.description().value()->tracks;
+        const auto track = std::ranges::find_if(tracks, [&](const auto& item) {
+          return item.node == last.node && item.path == last.path;
+        });
+        constexpr std::array paths{"translation", "rotation", "scale"};
+        constexpr std::array modes{"step", "linear", "cubic"};
+        form = {{"node", last.node},
+                {"path", paths.at(static_cast<std::size_t>(last.path))},
+                {"interpolation", modes.at(static_cast<std::size_t>(track->interpolation))},
+                {"key", keyJson(last.key)}};
+
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+          keys[i].time = resolved->keys[i].sourceTime;
+          selected.emplace(keys[i].node, keys[i].path, keys[i].time);
+        }
+      }
+
+      auto original = form;
+      m_clipSelection = std::move(keys);
+      m_clipSelected = std::move(selected);
+      m_clipForm = std::move(form);
+      m_clipOriginal = std::move(original);
+      m_requestedPane = "inspector";
+      m_clipTrackScroll = m_clipKeyScroll = true;
+      return {};
+    }
+
     static auto clipEdits(const Json& operations) -> std::vector<Animation::ClipEdit> {
       if (!operations.is_array() || operations.empty() || operations.size() > 256) {
         throw std::invalid_argument("Animation operations require 1..256 entries");
@@ -1811,6 +1901,24 @@ namespace Dot::Editor {
           result.push_back(
               Animation::UpdateKey{clipIndex(operation["node"]), clipPath(operation["path"]),
                                    Codec::number(operation["time"]), clipKey(operation["key"])});
+        } else if (op == "retime-keys") {
+          Codec::requireFields(operation, {"op", "keys"});
+          const auto& keys = operation["keys"];
+
+          if (!keys.is_array() || keys.empty() || keys.size() > Animation::MaxRetimeKeys) {
+            throw std::invalid_argument("Retime requires 1..16384 keys");
+          }
+
+          Animation::RetimeKeys edit;
+          edit.keys.reserve(keys.size());
+
+          for (const auto& key : keys) {
+            Codec::requireFields(key, {"node", "path", "time", "target"});
+            edit.keys.push_back({clipIndex(key["node"]), clipPath(key["path"]),
+                                 Codec::number(key["time"]), Codec::number(key["target"])});
+          }
+
+          result.push_back(std::move(edit));
         } else if (op == "remove-track") {
           Codec::requireFields(operation, {"op", "node", "path"});
           result.push_back(
@@ -1840,13 +1948,21 @@ namespace Dot::Editor {
       }
 
       constexpr std::array paths{"translation", "rotation", "scale"};
+      auto keys = Json::array();
+
+      for (const auto& item : value->keys) {
+        keys.push_back({{"node", item.node},
+                        {"path", paths.at(static_cast<std::size_t>(item.path))},
+                        {"sourceTime", item.sourceTime},
+                        {"time", item.key.time},
+                        {"occupied", item.occupied}});
+      }
+
       return {{"session", std::to_string(m_clipMove->session)},
               {"buffer", std::to_string(m_clipMove->buffer)},
               {"revision", std::to_string(m_clipMove->revision)},
-              {"node", value->node},
-              {"path", paths.at(static_cast<std::size_t>(value->path))},
-              {"sourceTime", value->sourceTime},
-              {"time", value->key.time},
+              {"keys", std::move(keys)},
+              {"time", value->time},
               {"changed", value->changed},
               {"occupied", value->occupied}};
     }
@@ -1883,6 +1999,7 @@ namespace Dot::Editor {
               {"historyBytes", state->historyBytes},
               {"curve", {{"from", m_curveFrom}, {"to", m_curveTo}}},
               {"move", keyMoveStatus()},
+              {"selection", referencesJson(m_clipSelection)},
               {"form", m_clipForm},
               {"pendingForm", m_clipForm != m_clipOriginal}};
     }
@@ -2235,6 +2352,7 @@ namespace Dot::Editor {
         m_animationPreview.emplace(std::move(*preview));
         m_clipBindings.swap(bindings);
         m_clipForm = m_clipOriginal = nullptr;
+        setClipSelection({});
         m_curveFrom = 0;
         m_curveTo = std::max(1., draft->value.duration().value());
         m_curveCacheKey.clear();
@@ -2255,7 +2373,7 @@ namespace Dot::Editor {
         const bool finish = command == "finish-animation-key-move";
 
         if (begin) {
-          Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
         } else {
           Codec::requireFields(parsed, {"command", "session", finish ? "commit" : "time"});
         }
@@ -2283,25 +2401,10 @@ namespace Dot::Editor {
                 "Key move requires current resource identity, a clean form and no active move");
           }
 
-          auto move
-              = AnimationKeyMove::begin(state->value, clipIndex(parsed["node"]),
-                                        clipPath(parsed["path"]), Codec::number(parsed["time"]));
+          auto move = AnimationKeyMove::begin(state->value, m_clipSelection);
 
           if (!move) {
             return std::unexpected(move.error());
-          }
-
-          auto selected = execute(Json{
-              {"command", "select-animation-key"},
-              {"buffer", parsed["buffer"]},
-              {"revision", parsed["revision"]},
-              {"node", parsed["node"]},
-              {"path", parsed["path"]},
-              {"time",
-               parsed["time"]}}.dump());
-
-          if (!selected) {
-            return std::unexpected(selected.error());
           }
 
           m_clipMove.emplace(std::move(*move), m_buffer, state->revision, ++m_keyMoveSession);
@@ -2333,25 +2436,25 @@ namespace Dot::Editor {
               return std::unexpected(candidate.error());
             }
 
+            std::vector<Animation::KeyReference> keys;
+            keys.reserve(edit->keys.size());
+
+            for (const auto& item : edit->keys) {
+              keys.push_back({item.node, item.path, item.target});
+            }
+
             auto published = publishClipValue(*state, *candidate);
 
             if (!published) {
               return std::unexpected(published.error());
             }
 
-            const auto value = m_clipMove->move.snapshot().value();
             cancelKeyMove();
-            constexpr std::array paths{"translation", "rotation", "scale"};
-            auto selected = execute(Json{
-                {"command", "select-animation-key"},
-                {"buffer", std::to_string(m_buffer)},
-                {"revision", std::to_string(m_clipDocument->snapshot()->revision)},
-                {"node", value.node},
-                {"path", paths.at(static_cast<std::size_t>(value.path))},
-                {"time",
-                 value.key.time}}.dump());
+            auto selected = selectClipKeys(m_clipDocument->snapshot().value(), std::move(keys));
 
             if (!selected) {
+              m_clipForm = m_clipOriginal = nullptr;
+              setClipSelection({});
               return Core::fail(selected.error().code, "Key move committed; selection failed: "
                                                            + selected.error().message);
             }
@@ -2364,6 +2467,7 @@ namespace Dot::Editor {
 
       if (command == "inspect-animation-clip" || command == "list-animation-tracks"
           || command == "read-animation-track" || command == "select-animation-key"
+          || command == "select-animation-keys" || command == "select-all-animation-keys"
           || command == "stage-animation-key" || command == "reset-animation-key"
           || command == "apply-animation-key" || command == "move-animation-key"
           || command == "read-animation-curve" || command == "set-animation-curve-view"
@@ -2377,6 +2481,8 @@ namespace Dot::Editor {
         } else if (command == "read-animation-track") {
           Codec::requireFields(
               parsed, {"command", "buffer", "revision", "node", "path", "offset", "count"});
+        } else if (command == "select-animation-keys") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "keys"});
         } else if (command == "select-animation-key") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
         } else if (command == "stage-animation-key") {
@@ -2424,6 +2530,45 @@ namespace Dot::Editor {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Finish or cancel the key move before changing resource, form or time range");
+        }
+
+        if (command == "select-animation-keys" || command == "select-all-animation-keys") {
+          if (m_clipForm != m_clipOriginal) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Apply or reset the key form before changing selection");
+          }
+
+          std::vector<Animation::KeyReference> keys;
+
+          if (command == "select-all-animation-keys") {
+            for (const auto& track : value->tracks) {
+              if (track.keys.size() > Animation::MaxRetimeKeys - keys.size()) {
+                return Core::fail(Core::ErrorCode::InvalidArgument,
+                                  "Selection exceeds 16384 keys; select a smaller group");
+              }
+
+              for (const auto& key : track.keys) {
+                keys.push_back({track.node, track.path, key.time});
+              }
+            }
+          } else {
+            keys = clipReferences(parsed["keys"]);
+          }
+
+          auto selected = selectClipKeys(*state, std::move(keys));
+
+          if (!selected) {
+            return std::unexpected(selected.error());
+          }
+
+          return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+        }
+
+        if (m_clipSelection.size() > 1
+            && (command == "stage-animation-key" || command == "apply-animation-key"
+                || command == "move-animation-key")) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Select one key before editing its values or tangents");
         }
 
         if (command == "read-animation-curve") {
@@ -2520,6 +2665,7 @@ namespace Dot::Editor {
           m_clipDocument.reset();
           m_animationPreview.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          setClipSelection({});
           cancelKeyMove();
           m_previewReady = false;
           return execute("{\"command\":\"inspect\"}");
@@ -2552,23 +2698,23 @@ namespace Dot::Editor {
 
           const auto node = clipIndex(parsed["node"]);
           const auto path = clipPath(parsed["path"]);
+
+          if (!parsed["time"].is_null()) {
+            auto selected = selectClipKeys(*state, {{node, path, Codec::number(parsed["time"])}});
+
+            if (!selected) {
+              return std::unexpected(selected.error());
+            }
+
+            return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+          }
+
           const auto track = std::ranges::find_if(value->tracks, [&](const auto& item) {
             return item.node == node && item.path == path;
           });
           Animation::Key key;
 
-          if (!parsed["time"].is_null()) {
-            const auto time = Codec::number(parsed["time"]);
-            const auto found = track == value->tracks.end()
-                                   ? std::vector<Animation::Key>::const_iterator{}
-                                   : std::ranges::find(track->keys, time, &Animation::Key::time);
-
-            if (track == value->tracks.end() || found == track->keys.end()) {
-              return Core::fail(Core::ErrorCode::NotFound, "Selected animation key does not exist");
-            }
-
-            key = *found;
-          } else {
+          {
             auto preview = m_animationPreview->scene();
             auto owner = preview ? (*preview)->findEntity(m_animationPreview->stats()->owner)
                                  : Core::Result<World::EntityId>{std::unexpected(preview.error())};
@@ -2613,6 +2759,7 @@ namespace Dot::Editor {
                                        : modes.at(static_cast<std::size_t>(track->interpolation))},
                  {"key", keyJson(key)}};
           m_clipOriginal = m_clipForm;
+          setClipSelection({});
           m_requestedPane = "inspector";
           m_clipTrackScroll = m_clipKeyScroll = true;
           return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
@@ -2689,8 +2836,12 @@ namespace Dot::Editor {
 
         if (command == "apply-animation-key" || command == "move-animation-key") {
           m_clipOriginal = m_clipForm;
+          const auto key = clipKey(m_clipForm["key"]);
+          setClipSelection(
+              {{clipIndex(m_clipForm["node"]), clipPath(m_clipForm["path"]), key.time}});
         } else if (*published) {
           m_clipForm = m_clipOriginal = nullptr;
+          setClipSelection({});
         }
 
         return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
@@ -2847,6 +2998,7 @@ namespace Dot::Editor {
 
           m_clipDocument.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          setClipSelection({});
           cancelKeyMove();
           m_animationPreview.reset();
         } else if (action == "play") {
@@ -4116,6 +4268,7 @@ namespace Dot::Editor {
           m_animationPreview.reset();
           m_clipDocument.reset();
           m_clipForm = m_clipOriginal = nullptr;
+          setClipSelection({});
           cancelKeyMove();
           m_transform.reset();
           m_axisDrag.reset();
@@ -7495,6 +7648,65 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
     }
 
+    auto chooseClipKey(std::uint32_t node, Animation::Path path, float time) -> void {
+      const auto& io = ImGui::GetIO();
+      const bool additive = io.KeyCtrl || io.KeySuper;
+      auto keys = additive ? m_clipSelection : std::vector<Animation::KeyReference>{};
+      auto selected = additive ? m_clipSelected : decltype(m_clipSelected){};
+      const auto same = [&](const auto& item) {
+        return item.node == node && item.path == path && item.time == time;
+      };
+
+      if (io.KeyShift && !m_clipSelection.empty() && m_clipSelection.back().node == node
+          && m_clipSelection.back().path == path) {
+        const auto anchor = m_clipSelection.back().time;
+        const auto state = m_clipDocument->snapshot().value();
+        const auto& tracks = state.value.description().value()->tracks;
+        const auto track = std::ranges::find_if(
+            tracks, [&](const auto& item) { return item.node == node && item.path == path; });
+
+        if (track != tracks.end()) {
+          const auto first = std::ranges::lower_bound(track->keys, std::min(anchor, time), {},
+                                                      &Animation::Key::time);
+          const auto last = std::ranges::upper_bound(track->keys, std::max(anchor, time), {},
+                                                     &Animation::Key::time);
+
+          if (static_cast<std::size_t>(last - first) > Animation::MaxRetimeKeys) {
+            m_message = "Selection exceeds 16384 keys; narrow the range";
+            return;
+          }
+
+          for (auto key = first; key != last; ++key) {
+            if (selected.emplace(node, path, key->time).second) {
+              keys.push_back({node, path, key->time});
+            }
+          }
+        }
+      } else if (additive) {
+        const auto found = std::ranges::find_if(keys, same);
+
+        if (found != keys.end()) {
+          keys.erase(found);
+        } else {
+          keys.push_back({node, path, time});
+        }
+      } else {
+        keys.push_back({node, path, time});
+      }
+
+      if (io.KeyShift) {
+        const auto at = std::ranges::find_if(keys, same);
+
+        if (at != keys.end()) {
+          const auto active = *at;
+          keys.erase(at);
+          keys.push_back(active);
+        }
+      }
+
+      clipAction({{"command", "select-animation-keys"}, {"keys", referencesJson(keys)}});
+    }
+
     auto animationCurve(const AnimationSnapshot& state, const Animation::Track& track) -> void {
       constexpr std::array paths{"translation", "rotation", "scale"};
       const auto* path = paths.at(static_cast<std::size_t>(track.path));
@@ -7633,9 +7845,7 @@ namespace Dot::Editor {
 
       for (auto key = first; key != last; ++key) {
         const auto values = std::array{key->value.x, key->value.y, key->value.z, key->value.w};
-        const bool selected = !m_clipOriginal.is_null() && m_clipOriginal["node"] == track.node
-                              && m_clipOriginal["path"] == path
-                              && m_clipOriginal["key"]["time"] == key->time;
+        const bool selected = m_clipSelected.contains({track.node, track.path, key->time});
 
         for (std::size_t component = 0; component < count; ++component) {
           const ImVec2 point{x(key->time), y(values[component])};
@@ -7678,12 +7888,26 @@ namespace Dot::Editor {
       }
 
       if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !m_clipMove) {
-        if (hit
-            && clipAction({{"command", "begin-animation-key-move"},
-                           {"node", track.node},
-                           {"path", path},
-                           {"time", hit->time}})) {
-          m_curveDrag.emplace(m_clipMove->session, hit->time, mouse.x, minimum.x, maximum.x);
+        if (hit) {
+          const auto& io = ImGui::GetIO();
+
+          if (io.KeyCtrl || io.KeySuper || io.KeyShift) {
+            chooseClipKey(track.node, track.path, hit->time);
+          } else {
+            bool selected = m_clipSelected.contains({track.node, track.path, hit->time});
+
+            if (!selected) {
+              selected = clipAction({{"command", "select-animation-key"},
+                                     {"node", track.node},
+                                     {"path", path},
+                                     {"time", hit->time}});
+            }
+
+            if (selected && clipAction({{"command", "begin-animation-key-move"}})) {
+              const auto sourceTime = m_clipSelection.back().time;
+              m_curveDrag.emplace(m_clipMove->session, sourceTime, mouse.x, minimum.x, maximum.x);
+            }
+          }
         } else if (!hit && preview) {
           const auto time = std::clamp(
               m_curveFrom
@@ -7724,7 +7948,7 @@ namespace Dot::Editor {
                                      * (m_curveTo - m_curveFrom),
                            0., 86400.));
 
-            if (target != value.key.time) {
+            if (target != value.time) {
               sessionAction({{"command", "update-animation-key-move"},
                              {"session", std::to_string(drag.session)},
                              {"time", target}});
@@ -7743,18 +7967,20 @@ namespace Dot::Editor {
       if (m_clipMove) {
         const auto value = m_clipMove->move.snapshot().value();
 
-        if (value.node == track.node && value.path == track.path) {
-          const auto at = x(value.key.time);
-          draw->AddLine({at, minimum.y}, {at, maximum.y},
-                        value.occupied ? IM_COL32(230, 75, 75, 255)
-                                       : ImGui::GetColorU32(ImGuiCol_ButtonActive),
-                        2);
-
-          if (m_curveDrag) {
-            ImGui::SetTooltip("Move %.9g -> %.9g s%s / release to commit, Escape to cancel",
-                              double(value.sourceTime), double(value.key.time),
-                              value.occupied ? " (occupied)" : "");
+        for (const auto& item : value.keys) {
+          if (item.node == track.node && item.path == track.path) {
+            const auto at = x(item.key.time);
+            draw->AddLine({at, minimum.y}, {at, maximum.y},
+                          item.occupied ? IM_COL32(230, 75, 75, 255)
+                                        : ImGui::GetColorU32(ImGuiCol_ButtonActive),
+                          2);
           }
+        }
+
+        if (m_curveDrag) {
+          ImGui::SetTooltip("Move %zu keys / anchor %.9g s%s / release to commit, Escape to cancel",
+                            value.keys.size(), double(value.time),
+                            value.occupied ? " (occupied)" : "");
         }
       }
 
@@ -7884,10 +8110,33 @@ namespace Dot::Editor {
 
       ImGui::EndDisabled();
 
+      if (!m_clipMove) {
+        ImGui::BeginDisabled(pending || m_clipSelection.empty());
+
+        if (ImGui::Button("Move selected keys")) {
+          clipAction({{"command", "begin-animation-key-move"}});
+        }
+
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(pending);
+
+        if (nextButton("Select all keys")) {
+          clipAction({{"command", "select-all-animation-keys"}});
+        }
+
+        if (nextButton("Clear selection")) {
+          clipAction({{"command", "select-animation-keys"}, {"keys", Json::array()}});
+        }
+
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::Text("%zu selected / Ctrl-Cmd toggle / Shift range", m_clipSelection.size());
+      }
+
       if (m_clipMove) {
         const auto move = m_clipMove->move.snapshot().value();
         const auto session = std::to_string(m_clipMove->session);
-        float moveTime = move.key.time;
+        float moveTime = move.time;
         ImGui::SetNextItemWidth(110);
 
         if (ImGui::InputFloat("Move time (s)", &moveTime, 0, 0, "%.9g",
@@ -7961,10 +8210,7 @@ namespace Dot::Editor {
           ImGui::BeginDisabled(m_clipMove.has_value());
 
           if (ImGui::Selectable(label.c_str(), selected)) {
-            clipAction({{"command", "select-animation-key"},
-                        {"node", track.node},
-                        {"path", path},
-                        {"time", track.keys.front().time}});
+            chooseClipKey(track.node, track.path, track.keys.front().time);
           }
 
           ImGui::EndDisabled();
@@ -8008,12 +8254,9 @@ namespace Dot::Editor {
 
             ImGui::BeginDisabled(m_clipMove.has_value());
 
-            if (ImGui::Selectable(label, !m_clipOriginal.is_null()
-                                             && m_clipOriginal["key"]["time"] == key.time)) {
-              clipAction({{"command", "select-animation-key"},
-                          {"node", selected->node},
-                          {"path", paths.at(static_cast<std::size_t>(selected->path))},
-                          {"time", key.time}});
+            if (ImGui::Selectable(
+                    label, m_clipSelected.contains({selected->node, selected->path, key.time}))) {
+              chooseClipKey(selected->node, selected->path, key.time);
             }
 
             ImGui::EndDisabled();
@@ -8360,7 +8603,13 @@ namespace Dot::Editor {
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
         if (m_clipDocument) {
-          ImGui::BeginDisabled(m_clipMove.has_value());
+          if (m_clipSelection.size() > 1) {
+            ImGui::TextWrapped(
+                "%zu keys selected. Move the group in Animation; select one key to edit values.",
+                m_clipSelection.size());
+          }
+
+          ImGui::BeginDisabled(m_clipMove.has_value() || m_clipSelection.size() > 1);
           animationKeyProperties();
           ImGui::EndDisabled();
         } else {
