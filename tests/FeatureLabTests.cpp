@@ -290,6 +290,12 @@ TEST_CASE("feature_lab.idle_character_stays_supported_beside_moving_body_showcas
   CHECK(after.position.x == doctest::Approx(before.position.x).epsilon(.01));
   CHECK(after.position.y == doctest::Approx(before.position.y).epsilon(.04));
   CHECK(after.position.z == doctest::Approx(before.position.z).epsilon(.01));
+  const auto observed = data(*native);
+  const auto checked = observed["checked"].get<std::vector<std::string>>();
+  CHECK(std::ranges::find(checked, "character.virtualContact") != checked.end());
+  CHECK(std::ranges::any_of(observed["contacts"]["events"], [](const auto& event) {
+    return event["geometry"].is_object() && event["geometry"]["kind"] == "character";
+  }));
   report(session.close());
 }
 

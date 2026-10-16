@@ -439,11 +439,27 @@ export interface SphereHit extends RayHit {
   penetrationDepth: number;
 }
 
-export interface ContactGeometry {
+export interface ContactManifold {
+  kind: 'manifold';
   normal: Vec3;
   penetrationDepth: number;
   points: {first: Vec3; second: Vec3}[];
 }
+
+/**
+ * Native controller observation: point is on the observer's counterpart; normal
+ * follows event pair ordering. Signed separation includes controller padding.
+ * 原生控制器观察：点位于观察者的对方表面，法线遵循事件碰撞对顺序；有符号间距包含外壳。
+ */
+export interface CharacterContactGeometry {
+  kind: 'character';
+  normal: Vec3;
+  point: Vec3;
+  separation: number;
+  characterIsFirst: boolean;
+}
+
+export type ContactGeometry = ContactManifold|CharacterContactGeometry;
 
 /**
  * Removed entity IDs remain meaningful historical data; check existence before

@@ -59,10 +59,11 @@ TEST_CASE("contacts.begin_stay_owned_geometry_and_runtime_tags") {
   CHECK(event.second.userTag == 222);
   CHECK_FALSE(event.sensor);
   REQUIRE(event.geometry);
-  CHECK(event.geometry->normal.y == doctest::Approx(1));
-  CHECK(event.geometry->penetrationDepth >= 0);
-  REQUIRE_FALSE(event.geometry->points.empty());
-  CHECK(Dot::Math::isFinite(event.geometry->points.front().first));
+  CHECK(std::get<Dot::Physics::ContactManifold>(*event.geometry).normal.y == doctest::Approx(1));
+  CHECK(std::get<Dot::Physics::ContactManifold>(*event.geometry).penetrationDepth >= 0);
+  REQUIRE_FALSE(std::get<Dot::Physics::ContactManifold>(*event.geometry).points.empty());
+  CHECK(Dot::Math::isFinite(
+      std::get<Dot::Physics::ContactManifold>(*event.geometry).points.front().first));
   CHECK(fixture.world.stats()->contactPairs == 1);
   CHECK(fixture.world.stats()->queuedContactEvents == 0);
   REQUIRE(fixture.world.step(1.0 / 60));
@@ -71,8 +72,8 @@ TEST_CASE("contacts.begin_stay_owned_geometry_and_runtime_tags") {
   REQUIRE(next->size() == 1);
   CHECK(next->front().phase == ContactPhase::Stay);
   CHECK(next->front().step == 2);
-  CHECK(event.geometry->normal.y == doctest::Approx(1));
-  CHECK(event.geometry->points.size() > 0);
+  CHECK(std::get<Dot::Physics::ContactManifold>(*event.geometry).normal.y == doctest::Approx(1));
+  CHECK(std::get<Dot::Physics::ContactManifold>(*event.geometry).points.size() > 0);
 }
 
 TEST_CASE("contacts.sleep_does_not_emit_false_separation_and_wake_keeps_pair") {
@@ -247,7 +248,7 @@ TEST_CASE("contacts.worker_capture_pair_order_and_owned_stream_across_move") {
         < std::get<BodyId>(events->front().second.collider).value);
   CHECK(events->front().first.userTag == 111);
   REQUIRE(moved.step(1.0 / 60));
-  CHECK(events->front().geometry->points.size() > 0);
+  CHECK(std::get<Dot::Physics::ContactManifold>(*events->front().geometry).points.size() > 0);
 }
 
 TEST_CASE("contacts.native_id_churn_cannot_alias_public_pair_identity") {
@@ -318,11 +319,13 @@ TEST_CASE("contacts.public_pair_order_controls_normal_and_point_orientation") {
   CHECK(events->front().first.collider == ColliderId{*ball});
   CHECK(events->front().second.collider == ColliderId{*floor});
   REQUIRE(events->front().geometry);
-  CHECK(events->front().geometry->normal.y == doctest::Approx(-1));
+  CHECK(std::get<Dot::Physics::ContactManifold>(*events->front().geometry).normal.y
+        == doctest::Approx(-1));
   CHECK(events->front().first.userTag == 22);
   CHECK(events->front().second.userTag == 33);
-  REQUIRE_FALSE(events->front().geometry->points.empty());
-  const auto point = events->front().geometry->points.front();
+  REQUIRE_FALSE(std::get<Dot::Physics::ContactManifold>(*events->front().geometry).points.empty());
+  const auto point
+      = std::get<Dot::Physics::ContactManifold>(*events->front().geometry).points.front();
   CHECK(point.first.y <= point.second.y);
 }
 

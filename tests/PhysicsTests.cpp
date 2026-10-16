@@ -589,7 +589,7 @@ TEST_CASE("physics.continuous_shapes_hit_thin_walls_where_discrete_motion_tunnel
         CHECK(events.front().first.collider == ColliderId{obstacle});
         CHECK(events.front().second.collider == ColliderId{moving});
         REQUIRE(events.front().geometry);
-        CHECK(events.front().geometry->normal.x < -.99F);
+        CHECK(std::get<Dot::Physics::ContactManifold>(*events.front().geometry).normal.x < -.99F);
       }
 
       CHECK_FALSE(world.stats()->faulted);
@@ -618,7 +618,7 @@ TEST_CASE("physics.continuous_incoming_body_hits_the_native_character_proxy") {
     CHECK(events.front().second.collider == ColliderId{character});
     CHECK_FALSE(events.front().sensor);
     REQUIRE(events.front().geometry);
-    CHECK(events.front().geometry->normal.x > .99F);
+    CHECK(std::get<Dot::Physics::ContactManifold>(*events.front().geometry).normal.x > .99F);
     CHECK_FALSE(world.stats()->faulted);
   }
 }

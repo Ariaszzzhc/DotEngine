@@ -28,7 +28,10 @@ Focused regressions verify lifecycle phases, real contacts/PCM, owned snapshots,
 native failures, reload without replaying start and Play isolation. Graphics checks
 render offscreen; actual editor workflows use the product agent interface.
 The report includes the last input, physics/contact and audio snapshots plus hook
-counts. Opening the scene alone does not claim that runtime checks have executed.
+counts. `character.virtualContact` records a real controller ground observation;
+contact geometry distinguishes `manifold` from `character`, including native surface
+point, normal, signed separation and observing participant. No proxy overlap is
+required to observe a controller constraint. Opening the scene alone does not claim that runtime checks have executed.
 
 This project does not enumerate every failure/input permutation. Focused subsystem
 regressions provide the broader limits, lifetime, thread, format, device and

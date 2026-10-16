@@ -675,7 +675,7 @@ PhysicsBodyState reports the applied backend mode using the same field. Changing
 only this authoring property preserves current native linear/angular motion on
 synchronization; malformed/unsupported combinations fail before replacement.
 
-Ray/sphere hits and sensor/native proxy contact events include character-controller
+Ray/sphere hits, native proxy manifolds and virtual contact events include character-controller
 entities. Sphere filters use `ignoreEntity` for either synchronized collider kind;
 Prism Relay excludes its own capsule while sweeping the shoulder camera. Native
 support identity maps both rigid bodies and live peer characters to groundEntity.
@@ -731,8 +731,13 @@ old state. Body/stats queries remain diagnostic after a contact-publication faul
 
 Each successful synchronize/step drains native events once into a batch for all
 script readers. Batch indices and native step/generation values are decimal strings.
-Begin/Stay events include last observed pre-solver geometry, including speculative
-negative depth; lifecycle events can omit it. End reason is null except on End
+Observed Begin/Stay events include discriminated geometry. `kind: 'manifold'`
+provides `normal`, `penetrationDepth` and paired `points` (negative depth denotes
+speculation). `kind: 'character'` provides `normal`, counterpart-surface `point`,
+`separation` and `characterIsFirst`. Signed separation includes controller padding;
+solved predictive character constraints can have positive separation. Both normals
+follow event pair order. Narrow `geometry.kind` before reading type-specific fields.
+Lifecycle events can omit geometry. End reason is null except on End
 (separated, poseChanged, destroyed, reconfigured). Removed entity IDs remain valid
 historical data and may be stale in the scene. Reads return independent JSON
 snapshots, so multiple components see the same events even if one edits its copy.

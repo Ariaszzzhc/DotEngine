@@ -7522,3 +7522,102 @@ untracked and existing archives remain intact. No distribution archive was made.
 The broader engine/game goal remains active, including reusable content authoring,
 streaming/performance, mature animation tools and finished Prism Relay art/game
 workflows. Test totals do not establish that these requirements are finished.
+
+
+## Unified native character contact events
+
+Virtual capsule constraints now join the existing owned contact stream. Previously
+an inner proxy had to touch before a contact event existed, so a controller could
+resolve a wall/support encounter without publishing that observation. Live Jolt
+character callbacks now copy actual solved contacts; final active-contact snapshots
+keep resting constraints alive. Nearby predictive candidates that were never solved
+remain excluded. Native body/character pairs have one identity and one observation
+per outer step, with native manifolds preferred when both providers observe them.
+Final virtual membership is replaced per substep, so a transient pair may begin and
+end within one subdivided step. Awake character constraints do not falsely sleep.
+
+ContactGeometry is a native variant of ContactManifold and CharacterContactGeometry.
+The script union uses kind=manifold/character. Virtual geometry owns the native
+counterpart surface point, pair-ordered normal, signed separation including shell
+padding and observer side; it does not manufacture paired manifold points or
+penetration depth. Observed virtual separation can be positive. No Jolt pointers
+or callback locks escape to game code. The pinned Jolt 5.6 headers/implementation
+were checked against these semantics.
+
+Listener attachment is scoped to live ExtendedUpdate and reset by RAII, including
+exceptions/failures. Preparation, teleports and rejected edits do not publish
+callbacks with unpublished/stale identities. Contact records share native pair and
+queue bounds, lifecycle preflight, historical tags and monotonic IDs. Capture or
+queue failure after advancement faults the world and rejects incomplete delivery.
+The native world, scene mapping and PhysicsSource JSON publication use the same
+stream; independent script reads preserve owned geometry.
+
+Added focused existing-target regressions for ground/wall/peer constraints,
+Begin/Stay/End, observer and pair-normal orientation, owned snapshots after removal,
+world moves, preparation isolation, queue preflight, overflow/faulted cleanup,
+unsolved predictive proximity and substep transients. Existing rigid manifold tests
+now narrow the geometry variant explicitly. Scene removal preserves historical
+entity identity; a real TypeScript component reads and narrows native geometry,
+mutates its copy and verifies the next read is independent. Feature Lab's persistent
+auditor records character.virtualContact and exposes actual geometry in Report.
+No temporary visual probe, acceptance executable or committed helper was introduced.
+
+Debug focused checks pass 63/63 (5.38s), with the added predictive/transient boundaries
+passing 5/5 character-contact cases (0.41s). Initial scene/SDK fixtures used the
+default spherical body with a nonuniform floor scale; explicit box floors fixed the
+invalid fixture without changing native validation. Automated tests remain headless.
+
+Actual release editor validation completed 34 product requests across two ordinary
+projects. Feature Lab reports 133 live completed checks and eight deliberately
+caught errors, with a real character/Static-floor Stay at step 9: world point
+(4,-1.5,2), upward normal, signed separation approximately -1.86e-8 and the expected
+entity values (including the high-precision character ID). Prism Relay's agent W
+input moved the native avatar 1.532 m; Space reached sampled Y=1.511 m and the avatar
+landed near Y=0. Both sessions have no unexpected diagnostics, stop without changing
+authoring data, retire control directories and exit 0 with empty stderr. Project
+metadata and startup scene hashes remain unchanged. These inputs use the normal
+agent channel; no claim is made about native keyboard/IME or physical GUI interaction.
+
+
+Review additionally separated native manifold provenance from virtual membership:
+sleep retention is queried only for a pair actually observed by the native body
+provider. A nearby inactive proxy cannot invent a dormant virtual-only contact.
+An incoming moving-body trace verifies character→manifold→character provider
+handoffs remain Stay events with one observation per step. The solver also leaves
+and re-enters its solved set during this slowing encounter, so the regression
+checks valid event alternation rather than assuming one unbroken contact. Temporary
+trace instrumentation was removed; only ignored diagnostic output remains.
+The first full Debug run passed 1196/1197 (180.17s); its sole failure was an older
+scene sensor test expecting one event. It now checks both the sensor manifold and
+new ground constraint, plus both removal events, preserving the prior sensor
+identity and filtering checks.
+
+
+After provenance refinement, both reviewed configurations build and all 70 focused
+cases pass: Debug 5.81s, Release/NDEBUG 0.71s. Repeated the two actual release editor
+workflows on the reviewed binary (another 34 requests): Feature Lab observes real
+character ground geometry at step 15 with 133 live checks; Prism Relay moves
+1.520 m, reaches sampled Y=1.471 m and lands near Y=0. Both have empty stderr,
+no unexpected diagnostics, unchanged authoring/metadata/startup files, retired
+control directories and process exit 0. Real product validation remains separate
+from automated headless tests. The native input-method path was not exercised.
+
+Final review covers provider coalescing/provenance, signed geometry and ordered
+identity, callback/worker lifetime, scoped listener cleanup, bounds and faulted
+stream rejection, native/scene/SDK publication, historical handles and example
+behavior. Twelve changed C++/TypeScript files pass clang-format and whitespace
+checks pass. No dependency, platform guard, compiler or linker environment changed.
+Removed 70 owned temporary helper/request files from both validation passes and
+removed the temporary trace instrumentation. Actual result/response JSON and logs,
+including the diagnostic trace, remain in ignored build storage. Build caches,
+existing archives and untracked user references remain intact. No release archive
+was generated. Character scalability/performance and the wider editor/content/game
+requirements remain unfinished; this contact stage does not complete the goal.
+
+
+Final macOS arm64 suites pass: Debug 1197/1197 (179.86s) and Release/NDEBUG
+1197/1197 (19.10s), each containing 334 unit and 863 integration cases. The
+integration suite includes 194 compiler, 132 offscreen, 32 native-audio and 28
+platform cases. Neither automated suite opens desktop windows. Windows/Linux
+code remains supported but was not executed locally. The unchanged broad goal
+remains active and is not inferred complete from these counts.

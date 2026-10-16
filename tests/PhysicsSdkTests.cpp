@@ -559,3 +559,60 @@ export class Actor extends ScriptComponent {
   good(scripts.update(1.0 / 60));
   good(scripts.stop());
 }
+
+TEST_CASE("character_sdk_virtual_contacts_have_discriminated_owned_geometry") {
+  Project project;
+  project.write(R"ts(
+import {physics, ScriptComponent} from 'dot:engine';
+
+export class Actor extends ScriptComponent {
+  onUpdate(): void {
+    const batch = physics.contacts;
+    const event = batch.events.find(event => event.second.value === this.self.id.value);
+
+    if (!event || event.sensor || event.geometry?.kind !== 'character') {
+      throw Error('Expected native character observation');
+    }
+
+    const geometry = event.geometry;
+
+    if (geometry.normal.y < .99 || geometry.characterIsFirst ||
+        !Number.isFinite(geometry.separation) || Math.abs(geometry.point.y) > .001) {
+      throw Error('Invalid native character geometry');
+    }
+
+    geometry.point.y = 999;
+    const retained = physics.contacts.events.find(event => event.second.value === this.self.id.value);
+
+    if (retained?.geometry?.kind !== 'character' || retained.geometry.point.y === 999) {
+      throw Error('Borrowed contact geometry');
+    }
+
+    this.self.name = event.phase + ':' + geometry.kind;
+  }
+}
+)ts");
+  const auto program = project.compile();
+  auto native = scene();
+  const auto actor = native->entities()->front().id;
+  REQUIRE(native->setRigidBody(actor, std::nullopt));
+  REQUIRE(native->setCharacterController(actor, Dot::World::CharacterController{}));
+  const auto floor = native->createEntity("Floor").value();
+  Dot::World::RigidBody ground;
+  ground.motion = Dot::Physics::Motion::Static;
+  ground.shape = Dot::Physics::Shape::Box;
+  REQUIRE(native->setRigidBody(floor, ground));
+  REQUIRE(native->setTransform(floor, {{0, -.5F, 0}, {}, {10, 1, 10}}));
+  auto result = PhysicsSource::create(native);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  auto physics = std::move(*result);
+  auto scripts = service(native, program, physics);
+  good(scripts.start());
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(0));
+  CHECK(native->entity(actor)->name == "begin:character");
+  REQUIRE(physics.step(1.0 / 60));
+  good(scripts.update(0));
+  CHECK(native->entity(actor)->name == "stay:character");
+  good(scripts.stop());
+}

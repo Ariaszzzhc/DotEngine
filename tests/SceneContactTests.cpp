@@ -3,6 +3,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <variant>
 
 import Dot.Physics.SceneSimulation;
 import Dot.Physics.World;
@@ -61,7 +62,7 @@ TEST_CASE("scene_contacts.entities_remain_identifiable_after_removal") {
   CHECK(ended->front().endReason == ContactEndReason::Destroyed);
   CHECK(ended->front().second == fixture.body);
   CHECK_FALSE(fixture.scene.entity(ended->front().second));
-  CHECK(began->front().geometry->points.size() > 0);
+  CHECK(std::get<Dot::Physics::ContactManifold>(*began->front().geometry).points.size() > 0);
   CHECK(fixture.simulation.stats()->contactPairs == 0);
 }
 
@@ -142,4 +143,39 @@ TEST_CASE("scene_contacts.worker_rejection_and_move_preserve_owned_queue") {
   REQUIRE(events);
   REQUIRE(events->size() == 1);
   CHECK(events->front().second == fixture.body);
+}
+
+TEST_CASE("scene_contacts.virtual_character_geometry_and_removed_entities_remain_owned") {
+  auto scene = Scene::create().value();
+  const auto floor = scene.createEntity("Floor").value();
+  const auto actor = scene.createEntity("Character").value();
+  RigidBody ground;
+  ground.motion = Dot::Physics::Motion::Static;
+  ground.shape = Dot::Physics::Shape::Box;
+  REQUIRE(scene.setRigidBody(floor, ground));
+  REQUIRE(scene.setTransform(floor, {{0, -.5F, 0}, {}, {10, 1, 10}}));
+  REQUIRE(scene.setCharacterController(actor, CharacterController{}));
+  auto prepared = SceneSimulation::create(scene);
+  REQUIRE_MESSAGE(prepared, (prepared ? "" : prepared.error().message));
+  auto simulation = std::move(*prepared);
+  REQUIRE(simulation.step(scene, 1.0 / 60));
+  const auto events = simulation.drainContactEvents().value();
+  REQUIRE(events.size() == 1);
+  CHECK(events.front().first == floor);
+  CHECK(events.front().second == actor);
+  REQUIRE(events.front().geometry);
+  const auto* geometry
+      = std::get_if<Dot::Physics::CharacterContactGeometry>(&*events.front().geometry);
+  REQUIRE(geometry);
+  CHECK(geometry->normal.y > .99F);
+  REQUIRE(scene.destroyEntity(actor));
+  REQUIRE(simulation.synchronize(scene));
+  const auto ended = simulation.drainContactEvents().value();
+  REQUIRE(ended.size() == 1);
+  CHECK(ended.front().phase == ContactPhase::End);
+  CHECK(ended.front().endReason == ContactEndReason::Destroyed);
+  CHECK(ended.front().first == floor);
+  CHECK(ended.front().second == actor);
+  CHECK(geometry->point.y == doctest::Approx(0).epsilon(.001));
+  CHECK_FALSE(scene.entity(actor));
 }

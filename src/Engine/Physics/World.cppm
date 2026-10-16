@@ -125,11 +125,28 @@ export namespace Dot::Physics {
    * contact.
    * 此步最近观测的求解前接触流形，法线从较小碰撞体键指向较大键（刚体在角色之前），负深度表示预测接触。
    */
-  struct ContactGeometry {
+  struct ContactManifold {
     Math::Vec3 normal;
     float penetrationDepth;
     std::vector<ContactPoint> points;
   };
+
+  /** Native controller observation, not a rigid-body manifold. Normal follows
+   * pair ordering; point lies on the counterpart of the observing character.
+   * Separation is the backend signed distance including controller padding,
+   * and can be positive for a predictive collision that was actually solved.
+   * characterIsFirst identifies the observer without borrowing a native pointer.
+   * 原生控制器观察，不是刚体流形；法线遵循碰撞对顺序，点位于观察角色的对方表面。
+   * separation 为包含控制器外壳的后端有符号距离，实际解算的预测碰撞可为正值。
+   * characterIsFirst 标识观察者，不借用原生指针。 */
+  struct CharacterContactGeometry {
+    Math::Vec3 normal;
+    Math::Vec3 point;
+    float separation;
+    bool characterIsFirst;
+  };
+
+  using ContactGeometry = std::variant<ContactManifold, CharacterContactGeometry>;
 
   struct ContactEvent {
     ContactPhase phase;

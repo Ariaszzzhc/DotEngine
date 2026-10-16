@@ -241,6 +241,27 @@ export class Audit extends ScriptComponent<{contract: string}> {
         physics.sphereCast(origin, .2, travel, {ignoreEntity: actor.id}) === null);
   }
 
+  private characterContactChecks(): void {
+    if (this.#checked.has('character.virtualContact')) {
+      return;
+    }
+
+    const actor = this.entity('Character controller');
+    const floor = this.entity('Static');
+    const event = physics.contacts.events.find(
+        event => event.first.value === floor.id.value && event.second.value === actor.id.value
+            && event.geometry?.kind === 'character');
+
+    if (event?.geometry?.kind === 'character') {
+      const geometry = event.geometry;
+      this.check(
+          'character.virtualContact',
+          !geometry.characterIsFirst && geometry.normal.y > .99
+              && Number.isFinite(geometry.separation) &&
+              [geometry.point.x, geometry.point.y, geometry.point.z].every(Number.isFinite));
+    }
+  }
+
   private physicsChecks(): void {
     const dynamic = this.entity('Dynamic');
     const kinematic = this.entity('Kinematic');
@@ -497,6 +518,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.gameDataChecks();
     }
 
+    this.characterContactChecks();
     this.inputChecks();
     const panel = this.entity('Animated panel');
 

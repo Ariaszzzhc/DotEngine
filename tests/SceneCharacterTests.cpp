@@ -1,9 +1,11 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <thread>
 #include <utility>
+#include <variant>
 
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -228,16 +230,28 @@ TEST_CASE("scene_character_query_filter_and_sensor_events_use_character_entity_i
                             {false, World::EntityId{fixture.scene.id() + 1, fixture.actor.value}}));
   fixture.step(simulation);
   auto events = simulation.drainContactEvents().value();
-  REQUIRE(events.size() == 1);
-  CHECK(events[0].first == sensor);
-  CHECK(events[0].second == fixture.actor);
-  CHECK(events[0].sensor);
+  REQUIRE(events.size() == 2);
+  const auto trigger = std::ranges::find(events, true, &Physics::SceneContactEvent::sensor);
+  REQUIRE(trigger != events.end());
+  CHECK(trigger->first == sensor);
+  CHECK(trigger->second == fixture.actor);
+  REQUIRE(trigger->geometry);
+  CHECK(std::holds_alternative<Physics::ContactManifold>(*trigger->geometry));
+  const auto ground = std::ranges::find(events, false, &Physics::SceneContactEvent::sensor);
+  REQUIRE(ground != events.end());
+  CHECK(ground->second == fixture.actor);
+  REQUIRE(ground->geometry);
+  CHECK(std::holds_alternative<Physics::CharacterContactGeometry>(*ground->geometry));
   REQUIRE(fixture.scene.destroyEntity(fixture.actor));
   REQUIRE(simulation.synchronize(fixture.scene));
   events = simulation.drainContactEvents().value();
-  REQUIRE(events.size() == 1);
-  CHECK(events[0].phase == Physics::ContactPhase::End);
-  CHECK(events[0].endReason == Physics::ContactEndReason::Destroyed);
-  CHECK(events[0].second == fixture.actor);
+  REQUIRE(events.size() == 2);
+
+  for (const auto& event : events) {
+    CHECK(event.phase == Physics::ContactPhase::End);
+    CHECK(event.endReason == Physics::ContactEndReason::Destroyed);
+    CHECK(event.second == fixture.actor);
+    CHECK_FALSE(event.geometry);
+  }
   CHECK_FALSE(simulation.sphereCast({0, 1, 3}, .2F, {0, 0, -6})->has_value());
 }

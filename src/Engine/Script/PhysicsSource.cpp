@@ -11,7 +11,9 @@ module;
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "ComponentJson.hpp"
 
@@ -82,16 +84,31 @@ namespace Dot::Script {
       Json geometry = nullptr;
 
       if (event.geometry) {
-        auto points = Json::array();
+        geometry = std::visit(
+            [](const auto& value) -> Json {
+              using Type = std::decay_t<decltype(value)>;
 
-        for (const auto& point : event.geometry->points) {
-          points.push_back(
-              {{"first", Detail::xyz(point.first)}, {"second", Detail::xyz(point.second)}});
-        }
+              if constexpr (std::is_same_v<Type, Physics::ContactManifold>) {
+                auto points = Json::array();
 
-        geometry = {{"normal", Detail::xyz(event.geometry->normal)},
-                    {"penetrationDepth", event.geometry->penetrationDepth},
-                    {"points", std::move(points)}};
+                for (const auto& point : value.points) {
+                  points.push_back(
+                      {{"first", Detail::xyz(point.first)}, {"second", Detail::xyz(point.second)}});
+                }
+
+                return {{"kind", "manifold"},
+                        {"normal", Detail::xyz(value.normal)},
+                        {"penetrationDepth", value.penetrationDepth},
+                        {"points", std::move(points)}};
+              } else {
+                return {{"kind", "character"},
+                        {"normal", Detail::xyz(value.normal)},
+                        {"point", Detail::xyz(value.point)},
+                        {"separation", value.separation},
+                        {"characterIsFirst", value.characterIsFirst}};
+              }
+            },
+            *event.geometry);
       }
 
       return {

@@ -182,8 +182,10 @@ reconciles contacts after the synchronous step, using current backend contact an
 activity state. Entering sleep also checks actual geometry within Jolt's
 speculative contact distance; inactive status alone does not establish overlap.
 
-Events describe one logical collider pair (rigid body or character proxy). Multiple
-collision substeps coalesce to the last observed manifold for each pair. `Begin` starts a pair, `Stay` carries an
+Events describe one logical collider pair (rigid body or character), combining
+rigid proxy manifolds and actual virtual-controller observations. Multiple collision
+substeps coalesce observations; if both providers report a pair, a native manifold
+is preferred, otherwise the last character observation is used. `Begin` starts a pair, `Stay` carries an
 observation of an existing pair, `Sleep` marks a dormant pair, and `End` closes it.
 Dormant pairs remain tracked; waking observations produce `Stay`, with separation
 closing the pair. A transient observed contact may produce Begin/Stay followed by
@@ -191,12 +193,15 @@ End within the same engine step. Delivery follows operation order, with public
 pair values sorted within each step/lifetime operation. The step field denotes
 the most recent physics step; lifecycle edits retain that step number.
 
-Begin/observed Stay geometry owns its contact points and uses the pre-solver
-manifold. Normals follow collider order: rigid bodies before characters, then
-increasing public handle value within each kind. Contact point sides follow that
-ordering. Negative depth is speculative contact;
-these events do not claim a resolved impulse. Sleep, End, and an unobserved wake
-have no geometry. End reasons distinguish separation, pose change, destruction,
+Begin/observed Stay owns `ContactGeometry`, a variant of `ContactManifold` and
+`CharacterContactGeometry`. Manifolds retain paired pre-solver points and signed
+penetration depth (negative is speculative). Character observations retain the
+native counterpart surface `point`, signed `separation` including controller padding,
+and `characterIsFirst` to identify the observing participant. No paired manifold
+points or solved impulses are invented for virtual constraints. Normals follow
+collider order: rigid bodies before characters, then increasing public handle value
+within each kind. Manifold point sides follow that order; character point belongs
+to the observer's counterpart. Sleep, End, and an unobserved wake have no geometry. End reasons distinguish separation, pose change, destruction,
 and reconfiguration. Body setPose retains contacts for identical poses/equivalent
 quaternions. Explicit character teleport resets motion and invalidates its contacts,
 including when targeting the same pose.
@@ -284,11 +289,32 @@ Virtual motion excludes all proxy bodies from its body queries and uses the nati
 character-to-character helper, preventing duplicate/self collision. Native proxy
 contacts share the owned event stream with rigid bodies, including sensor events.
 A controller's predictive shell can resolve an encounter before the inner proxy
-contacts the other body; those virtual-only encounters are not claimed as rigid
-manifolds/events. Incoming-body regression verifies real native proxy contact and
-physical pushing without passing through the capsule. It does not establish
-continuous collision detection for arbitrary velocities. Solid dynamic bodies can
-select Continuous mode; comprehensive virtual-character contact callbacks remain open.
+contacts the other body. Actual native character callbacks and final active-contact
+observations now join the same Begin/Stay/End stream, including ground/wall and
+character-to-character encounters. Merely nearby predictive hits that were never
+solved are excluded. A solved predictive constraint can still have positive signed
+separation; this is not a rigid-body penetration depth. Native sensors continue
+through proxy manifolds; controller queries still exclude sensors from movement
+response. Provider changes do not create a second logical pair or false End.
+
+Character contacts remain awake while observed. Each substep replaces the active
+virtual set; transient observations can Begin/Stay and End in the same outer step.
+Native dormant-pair retention requires prior manifold provenance, tracked
+independently of virtual membership. Nearby inactive proxies cannot turn a
+virtual-only observation into a sleeping manifold. A moving body can leave and
+re-enter the solved-contact set while still near the controller; proximity alone
+does not extend an event lifetime. Use sensor overlaps for persistent area triggers.
+Callbacks only copy data while live simulation is advancing. Preparation, refresh,
+teleport and rejected batches do not publish virtual observations or reference
+unpublished identities. Lifecycle removal/pose/replacement shares the existing queue
+preflight, tags and stable public IDs. Capacity/capture failure after advancement
+faults the world and rejects incomplete streams. Native pointers are never returned.
+The implementation follows the pinned [Jolt 5.6 character contact semantics](https://github.com/jrouwe/JoltPhysics/blob/v5.6.0/Jolt/Physics/Character/CharacterVirtual.h).
+
+Incoming-body regression verifies real native proxy contact and physical pushing
+without passing through the capsule. It does not establish continuous collision
+detection for arbitrary velocities. Solid dynamic bodies can select Continuous mode.
+Large populated-character scalability remains separate performance work.
 
 Character removal, teleport and replacement use the same event-capacity preflight
 as body lifecycle operations. Mixed batches reserve space for the union of affected

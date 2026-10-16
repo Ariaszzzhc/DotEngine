@@ -39,6 +39,7 @@ module;
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -277,10 +278,13 @@ namespace Dot::Physics {
       throw std::logic_error("Unvalidated motion type");
     }
 
-    /** Worker callbacks only copy body/manifold data. Owner-side reconciliation
-     * reads contact/activity state after Jolt releases all body locks.
-     * 工作线程回调仅复制刚体/流形数据，所有者在 Jolt 释放刚体锁后读取接触与活动状态。 */
-    class ContactCollector final : public JPH::ContactListener {
+    /** Worker body callbacks and owner-thread character observations only copy
+     * native data; no game code runs under native locks. Owner-side reconciliation
+     * combines both providers after the step and retains one logical pair.
+     * 工作线程刚体回调及所有者线程角色观察仅复制原生数据，不在原生锁内执行游戏代码。
+     * 步进后由所有者合并两类来源，每个逻辑碰撞对仅保留一份。 */
+    class ContactCollector final : public JPH::ContactListener,
+                                   public JPH::CharacterContactListener {
     public:
       using Key = std::pair<std::uint64_t, std::uint64_t>;
       using TagLookup = std::function<std::uint64_t(std::uint64_t)>;
@@ -303,9 +307,57 @@ namespace Dot::Physics {
         capture(first, second, manifold, settings);
       }
 
+      auto OnContactAdded(const JPH::CharacterVirtual* character,
+                          const JPH::CharacterContact& contact,
+                          JPH::CharacterContactSettings&) noexcept -> void override {
+        captureCharacter(*character, contact);
+      }
+
+      auto OnContactPersisted(const JPH::CharacterVirtual* character,
+                              const JPH::CharacterContact& contact,
+                              JPH::CharacterContactSettings&) noexcept -> void override {
+        captureCharacter(*character, contact);
+      }
+
+      auto OnCharacterContactAdded(const JPH::CharacterVirtual* character,
+                                   const JPH::CharacterContact& contact,
+                                   JPH::CharacterContactSettings&) noexcept -> void override {
+        captureCharacter(*character, contact);
+      }
+
+      auto OnCharacterContactPersisted(const JPH::CharacterVirtual* character,
+                                       const JPH::CharacterContact& contact,
+                                       JPH::CharacterContactSettings&) noexcept -> void override {
+        captureCharacter(*character, contact);
+      }
+
       auto begin() -> void {
         m_pending.clear();
+        m_virtual.clear();
         m_failure.store(Failure::None);
+      }
+
+      auto beginVirtual() -> void {
+        m_virtual.clear();
+      }
+
+      auto retainVirtual(const JPH::CharacterVirtual& character,
+                         const JPH::CharacterContact& contact) -> Core::Result<void> {
+        if (contact.mHadCollision && !contact.mWasDiscarded && !contact.mIsSensorB) {
+          const auto owner = character.GetUserData();
+          const auto other = contact.mUserData;
+          const Key key{std::min(owner, other), std::max(owner, other)};
+
+          if (!m_virtual.contains(key) && m_virtual.size() == m_maxPairs) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Active character contact pair capacity exceeded");
+          }
+
+          m_virtual.insert(key);
+          captureCharacter(character, contact);
+        }
+
+        return {};
       }
 
       template <typename Probe>
@@ -332,6 +384,7 @@ namespace Dot::Physics {
           auto observed = m_pending.find(iterator->first);
 
           if (observed != m_pending.end()) {
+            record.native |= std::holds_alternative<ContactManifold>(observed->second.geometry);
             auto emitted
                 = emit({record.announced ? ContactPhase::Stay : ContactPhase::Begin,
                         ContactEndReason::Separated, record.first, record.second,
@@ -345,7 +398,12 @@ namespace Dot::Physics {
             record.sensor = observed->second.sensor;
           }
 
-          const auto [touching, sleeping] = probe(iterator->first, record.sleeping);
+          const auto [nativeTouching, nativeSleeping]
+              = probe(iterator->first, record.sleeping, record.native);
+          record.native = nativeTouching || nativeSleeping;
+          const bool virtualTouching = m_virtual.contains(iterator->first);
+          const bool touching = nativeTouching || virtualTouching;
+          const bool sleeping = nativeSleeping && !virtualTouching;
 
           if (sleeping) {
             if (!record.sleeping) {
@@ -406,6 +464,10 @@ namespace Dot::Physics {
       }
 
       auto remove(const RemovalSet& bodies, std::uint64_t step, bool publish) -> void {
+        std::erase_if(m_virtual, [&](const auto& key) {
+          return bodies.contains(key.first) || bodies.contains(key.second);
+        });
+
         for (auto iterator = m_records.begin(); iterator != m_records.end();) {
           auto first = bodies.find(iterator->first.first);
           auto second = bodies.find(iterator->first.second);
@@ -460,6 +522,7 @@ namespace Dot::Physics {
         bool sensor;
         bool sleeping{};
         bool announced{};
+        bool native{};
       };
 
       auto emit(ContactEvent event) -> Core::Result<void> {
@@ -470,6 +533,51 @@ namespace Dot::Physics {
 
         m_events.push_back(std::move(event));
         return {};
+      }
+
+      auto captureCharacter(const JPH::CharacterVirtual& character,
+                            const JPH::CharacterContact& contact) noexcept -> void {
+        try {
+          const auto owner = character.GetUserData();
+          const auto other = contact.mUserData;
+          const bool ownerFirst = owner < other;
+          ContactParty first{collider(m_world, owner), m_tags(owner)};
+          ContactParty second{collider(m_world, other), m_tags(other)};
+
+          if (!ownerFirst) {
+            std::swap(first, second);
+          }
+
+          CharacterContactGeometry geometry{
+              vector(contact.mContactNormal) * (ownerFirst ? -1.0F : 1.0F),
+              vector(contact.mPosition), contact.mDistance, ownerFirst};
+
+          if (owner == other || contact.mIsSensorB || contact.mWasDiscarded
+              || !Math::isFinite(geometry.normal) || !Math::isFinite(geometry.point)
+              || std::abs(Math::length(geometry.normal) - 1) > 0.001
+              || !std::isfinite(geometry.separation)) {
+            m_failure.store(Failure::External);
+            return;
+          }
+
+          const std::scoped_lock lock(m_mutex);
+          const Key key{std::min(owner, other), std::max(owner, other)};
+          const auto existing = m_pending.find(key);
+
+          if (existing == m_pending.end() && m_pending.size() == m_maxPairs) {
+            m_failure.store(Failure::Capacity);
+            return;
+          }
+
+          /** Prefer real manifolds when both native providers observed the pair.
+           * 两种原生来源均观察到同一碰撞对时，优先保留真实刚体流形。 */
+          if (existing == m_pending.end()
+              || !std::holds_alternative<ContactManifold>(existing->second.geometry)) {
+            m_pending.insert_or_assign(key, Captured{first, second, false, geometry});
+          }
+        } catch (...) {
+          m_failure.store(Failure::External);
+        }
       }
 
       auto capture(const JPH::Body& firstBody, const JPH::Body& secondBody,
@@ -486,7 +594,7 @@ namespace Dot::Physics {
             std::swap(first, second);
           }
 
-          ContactGeometry geometry;
+          ContactManifold geometry;
           geometry.normal = vector(manifold.mWorldSpaceNormal) * (swapped ? -1.0F : 1.0F);
           geometry.penetrationDepth = manifold.mPenetrationDepth;
           if (!Math::isFinite(geometry.normal)
@@ -536,6 +644,7 @@ namespace Dot::Physics {
       std::atomic<Failure> m_failure{Failure::None};
       std::map<Key, Captured> m_pending;
       std::map<Key, Record> m_records;
+      std::set<Key> m_virtual;
       std::vector<ContactEvent> m_events;
     };
 
@@ -832,6 +941,7 @@ namespace Dot::Physics {
 
     auto advanceCharacters(float seconds) -> Core::Result<void> {
       const auto gravity = native(m_config.gravity);
+      m_contacts.beginVirtual();
 
       for (auto& [id, entry] : m_characters) {
         (void)id;
@@ -868,6 +978,19 @@ namespace Dot::Physics {
         JPH::CharacterVirtual::ExtendedUpdateSettings settings;
         settings.mWalkStairsStepUp = {0, entry.properties.stepHeight, 0};
         settings.mStickToFloorStepDown = {0, -entry.properties.stickDistance, 0};
+
+        /** Only live simulation observes callbacks; preparation/teleport queries
+         * must not publish contacts or borrow unpublished identities.
+         * 仅存活仿真观察回调，准备/传送查询不得发布接触或借用未发布身份。 */
+        struct ListenerScope {
+          JPH::CharacterVirtual& m_character;
+
+          ~ListenerScope() {
+            m_character.SetListener(nullptr);
+          }
+        } listener{character};
+
+        character.SetListener(&m_contacts);
         character.ExtendedUpdate(
             seconds, gravity, settings, m_system.GetDefaultBroadPhaseLayerFilter(movingLayer),
             m_system.GetDefaultLayerFilter(movingLayer), SolidBodies{}, {}, m_temporary);
@@ -877,6 +1000,18 @@ namespace Dot::Physics {
           return Core::fail(
               Core::ErrorCode::External,
               "Character update exceeded contact capacity or produced invalid motion");
+        }
+      }
+
+      for (const auto& [id, entry] : m_characters) {
+        (void)id;
+
+        for (const auto& contact : entry.capsule->GetActiveContacts()) {
+          auto retained = m_contacts.retainVirtual(*entry.capsule, contact);
+
+          if (!retained) {
+            return retained;
+          }
         }
       }
 
@@ -1677,7 +1812,16 @@ namespace Dot::Physics {
 
     try {
       auto collected = m_impl->m_contacts.finish(
-          m_impl->m_step, [&](ContactCollector::Key key, bool wasSleeping) {
+          m_impl->m_step, [&](ContactCollector::Key key, bool wasSleeping, bool hadNativeContact) {
+            /** An inactive nearby proxy does not prove a virtual-only pair is
+             * a sleeping native manifold. Probe native retention only after an
+             * actual native observation, independently of virtual membership.
+             * 不活动的邻近代理不能证明纯虚拟接触是休眠原生流形；仅实际观察过原生接触
+             * 后查询其保留状态，并与虚拟接触集合分别跟踪。 */
+            if (!hadNativeContact) {
+              return std::pair{false, false};
+            }
+
             const auto first = m_impl->nativeCollider(key.first);
             const auto second = m_impl->nativeCollider(key.second);
             const auto& bodies = m_impl->m_system.GetBodyInterface();

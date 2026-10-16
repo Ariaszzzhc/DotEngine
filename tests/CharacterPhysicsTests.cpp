@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <span>
 #include <thread>
 #include <utility>
@@ -68,7 +69,7 @@ TEST_CASE("character.physics_falls_lands_walks_and_reports_actual_support") {
   step(world, 30);
   CHECK(world.character(character)->position.x == doctest::Approx(3).epsilon(.02));
   CHECK(world.body(support)->position == Math::Vec3{0, -.5F, 0});
-  CHECK(world.drainContactEvents()->empty());
+  CHECK_FALSE(world.drainContactEvents()->empty());
   CHECK(world.rayCast({3, 1, 2}, {0, 0, -4})->value().collider == ColliderId{character});
 }
 
@@ -495,7 +496,7 @@ TEST_CASE("character.colliders_sensor_events_preserve_tags_and_lifecycle_reasons
   CHECK(events[0].second.userTag == 73);
   CHECK(events[0].sensor);
   REQUIRE(events[0].geometry);
-  CHECK_FALSE(events[0].geometry->points.empty());
+  CHECK_FALSE(std::get<Dot::Physics::ContactManifold>(*events[0].geometry).points.empty());
   step(world);
   events = world.drainContactEvents().value();
   REQUIRE(events.size() == 1);
@@ -544,21 +545,60 @@ TEST_CASE("character.colliders_incoming_body_contacts_and_pushes_without_passing
   config.friction = 0;
   const auto incoming = world.createBody(config).value();
   bool touched{};
+  unsigned providers{};
+  std::size_t begins{}, ends{}, handoffs{};
+  bool open{};
+  std::optional<std::size_t> previousProvider;
 
   for (int frame = 0; frame < 60; ++frame) {
     step(world);
     CHECK(world.character(character)->position.x - world.body(incoming)->position.x > .55F);
 
+    std::size_t observations{};
+
     for (const auto& event : world.drainContactEvents().value()) {
-      if (event.phase == ContactPhase::Begin && !event.sensor
-          && event.first.collider == ColliderId{incoming}
+      if (!event.sensor && event.first.collider == ColliderId{incoming}
           && event.second.collider == ColliderId{character}) {
-        touched = true;
+        begins += event.phase == ContactPhase::Begin;
+        ends += event.phase == ContactPhase::End;
+        touched |= event.phase == ContactPhase::Begin;
+
+        if (event.phase == ContactPhase::Begin) {
+          CHECK_FALSE(open);
+          open = true;
+          previousProvider.reset();
+        } else if (event.phase == ContactPhase::End) {
+          CHECK(open);
+          open = false;
+          previousProvider.reset();
+        } else {
+          CHECK(event.phase == ContactPhase::Stay);
+          CHECK(open);
+        }
+
+        if (event.geometry) {
+          ++observations;
+          const auto provider = event.geometry->index();
+
+          if (previousProvider && *previousProvider != provider) {
+            CHECK(event.phase == ContactPhase::Stay);
+            ++handoffs;
+          }
+
+          previousProvider = provider;
+          providers |= std::holds_alternative<ContactManifold>(*event.geometry) ? 1U : 2U;
+        }
       }
     }
+
+    CHECK(observations <= 1);
   }
 
   CHECK(touched);
+  CHECK(providers == 3);
+  CHECK(begins > 0);
+  CHECK(ends <= begins);
+  CHECK(handoffs >= 2);
   const auto feet = world.character(character)->position;
   const auto center = world.body(incoming)->position;
   INFO("character x ", feet.x, " incoming x ", center.x);
@@ -586,4 +626,217 @@ TEST_CASE("character.colliders_peer_support_identity_cannot_survive_removed_owne
   CHECK(world.character(top)->velocity.y < 0);
   step(world, 120);
   CHECK(world.character(top)->position.y == doctest::Approx(0).epsilon(.02));
+}
+
+TEST_CASE("character.contacts_ground_constraints_preserve_tags_geometry_and_lifetime") {
+  auto world = Physics::World::create({.workerThreads = 2}).value();
+  auto ground = box({0, -.5F, 0}, {20, .5F, 20});
+  ground.userTag = 11;
+  const auto support = world.createBody(ground).value();
+  CharacterConfig config;
+  config.userTag = 17;
+  const auto character = world.createCharacter(config).value();
+  std::size_t begins{}, stays{};
+  std::optional<ContactEvent> owned;
+
+  for (int frame = 0; frame < 60; ++frame) {
+    step(world);
+    const auto events = world.drainContactEvents().value();
+    REQUIRE(events.size() == 1);
+    const auto& event = events.front();
+    CHECK(event.first.collider == ColliderId{support});
+    CHECK(event.second.collider == ColliderId{character});
+    CHECK(event.first.userTag == 11);
+    CHECK(event.second.userTag == 17);
+    CHECK_FALSE(event.sensor);
+    begins += event.phase == ContactPhase::Begin;
+    stays += event.phase == ContactPhase::Stay;
+    REQUIRE(event.geometry);
+    const auto* geometry = std::get_if<CharacterContactGeometry>(&*event.geometry);
+    REQUIRE(geometry);
+    CHECK(geometry->normal.y > .99F);
+    CHECK(geometry->point.y == doctest::Approx(0).epsilon(.001));
+    CHECK(std::abs(geometry->separation) < .03F);
+    CHECK_FALSE(geometry->characterIsFirst);
+    owned = event;
+  }
+
+  CHECK(begins == 1);
+  CHECK(stays == 59);
+  CHECK(world.stats()->contactPairs == 1);
+  const auto queued = world.stats()->queuedContactEvents;
+  config.position = {100, 0, 0};
+  const auto unrelated = world.createCharacter(config).value();
+  CHECK(world.stats()->queuedContactEvents == queued);
+  REQUIRE(world.destroyCharacter(unrelated));
+  CHECK(world.stats()->queuedContactEvents == queued);
+  auto moved = std::move(world);
+  REQUIRE(moved.destroyBody(support));
+  const auto ended = moved.drainContactEvents().value();
+  REQUIRE(ended.size() == 1);
+  CHECK(ended.front().phase == ContactPhase::End);
+  CHECK(ended.front().endReason == ContactEndReason::Destroyed);
+  CHECK(ended.front().first.userTag == 11);
+  CHECK(ended.front().second.userTag == 17);
+  CHECK_FALSE(ended.front().geometry);
+  CHECK(std::get<CharacterContactGeometry>(*owned->geometry).normal.y > .99F);
+  step(moved);
+  CHECK(moved.drainContactEvents()->empty());
+}
+
+TEST_CASE("character.contacts_wall_constraints_begin_stay_and_end_without_duplicate_pairs") {
+  auto world = Physics::World::create().value();
+  floor(world);
+  const auto wall = world.createBody(box({2, 2, 0}, {.1F, 2, 10})).value();
+  const auto character = grounded(world);
+  REQUIRE(world.drainContactEvents());
+  REQUIRE(world.setCharacterInput(character, {{3, 0, 0}, false}));
+  std::size_t begins{}, stays{}, ends{}, virtualObservations{};
+
+  for (int frame = 0; frame < 180; ++frame) {
+    if (frame == 90) {
+      REQUIRE(world.setCharacterInput(character, {{-3, 0, 0}, false}));
+    }
+
+    step(world);
+    std::size_t observations{};
+
+    for (const auto& event : world.drainContactEvents().value()) {
+      if (event.first.collider != ColliderId{wall}
+          || event.second.collider != ColliderId{character}) {
+        continue;
+      }
+
+      begins += event.phase == ContactPhase::Begin;
+      stays += event.phase == ContactPhase::Stay;
+      ends += event.phase == ContactPhase::End;
+
+      if (event.geometry) {
+        ++observations;
+
+        if (const auto* geometry = std::get_if<CharacterContactGeometry>(&*event.geometry)) {
+          ++virtualObservations;
+          CHECK(geometry->normal.x < -.99F);
+          CHECK(geometry->point.x == doctest::Approx(1.9).epsilon(.001));
+        }
+      }
+    }
+
+    CHECK(observations <= 1);
+  }
+
+  CHECK(begins == 1);
+  CHECK(stays > 10);
+  CHECK(ends == 1);
+  CHECK(virtualObservations > 10);
+}
+
+TEST_CASE("character.contacts_peer_constraints_keep_owner_order_and_removal_identity") {
+  auto world = Physics::World::create({.gravity = {}, .workerThreads = 2}).value();
+  CharacterConfig config;
+  config.userTag = 21;
+  const auto first = world.createCharacter(config).value();
+  config.position = {.9F, 0, 0};
+  config.userTag = 34;
+  const auto second = world.createCharacter(config).value();
+  REQUIRE(world.setCharacterInput(first, {{2, 0, 0}, false}));
+  std::size_t begins{}, virtualObservations{};
+
+  for (int frame = 0; frame < 60; ++frame) {
+    step(world);
+    const auto events = world.drainContactEvents().value();
+    CHECK(events.size() <= 1);
+
+    for (const auto& event : events) {
+      begins += event.phase == ContactPhase::Begin;
+      CHECK(event.phase != ContactPhase::End);
+      CHECK(event.first.collider == ColliderId{first});
+      CHECK(event.second.collider == ColliderId{second});
+      CHECK(event.first.userTag == 21);
+      CHECK(event.second.userTag == 34);
+      REQUIRE(event.geometry);
+
+      if (const auto* geometry = std::get_if<CharacterContactGeometry>(&*event.geometry)) {
+        ++virtualObservations;
+        CHECK(geometry->normal.x > .99F);
+        CHECK(Math::isFinite(geometry->point));
+      }
+    }
+  }
+
+  CHECK(begins == 1);
+  CHECK(virtualObservations > 1);
+  REQUIRE(world.destroyCharacter(second));
+  const auto ended = world.drainContactEvents().value();
+  REQUIRE(ended.size() == 1);
+  CHECK(ended.front().phase == ContactPhase::End);
+  CHECK(ended.front().endReason == ContactEndReason::Destroyed);
+  CHECK(ended.front().second.collider == ColliderId{second});
+  CHECK(ended.front().second.userTag == 34);
+  step(world);
+  CHECK(world.drainContactEvents()->empty());
+}
+
+TEST_CASE("character.contacts_queue_preflight_preserves_pose_and_overflow_faults_delivery") {
+  auto world = Physics::World::create({.maxContactEvents = 1}).value();
+  const auto support = floor(world);
+  const auto character = world.createCharacter().value();
+  step(world);
+  REQUIRE(world.stats()->queuedContactEvents == 1);
+  const auto position = world.character(character)->position;
+  CHECK_FALSE(world.teleportCharacter(character, {4, 0, 0}));
+  CHECK_FALSE(world.destroyBody(support));
+  CHECK(world.character(character)->position == position);
+  CHECK_FALSE(world.stats()->faulted);
+  const auto begin = world.drainContactEvents().value();
+  REQUIRE(begin.size() == 1);
+  CHECK(begin.front().phase == ContactPhase::Begin);
+  REQUIRE(world.teleportCharacter(character, position));
+  const auto ended = world.drainContactEvents().value();
+  REQUIRE(ended.size() == 1);
+  CHECK(ended.front().endReason == ContactEndReason::PoseChanged);
+  step(world);
+  CHECK_FALSE(world.step(tick));
+  CHECK(world.stats()->faulted);
+  CHECK_FALSE(world.drainContactEvents());
+  CHECK(world.character(character));
+  CHECK_FALSE(world.setCharacterInput(character, {}));
+  REQUIRE(world.destroyCharacter(character));
+  REQUIRE(world.destroyBody(support));
+}
+
+TEST_CASE(
+    "character.contacts_predictive_proximity_is_not_collision_and_substeps_close_transients") {
+  SUBCASE("stationary predictive shell does not announce an unsolved encounter") {
+    auto world = Physics::World::create({.gravity = {}}).value();
+    REQUIRE(world.createBody(box({2, 2, 0}, {.1F, 2, 10})));
+    CharacterConfig config;
+    config.position = {1.5F, 0, 0};
+    const auto character = world.createCharacter(config).value();
+    step(world, 10);
+    CHECK(world.drainContactEvents()->empty());
+    REQUIRE(world.setCharacterInput(character, {{3, 0, 0}, false}));
+    step(world, 10);
+    CHECK_FALSE(world.drainContactEvents()->empty());
+  }
+
+  SUBCASE("a contact crossed during one subdivided step begins and ends once") {
+    auto world = Physics::World::create().value();
+    const auto support = world.createBody(box({0, -.5F, 0}, {.5F, .5F, 1})).value();
+    const auto character = world.createCharacter().value();
+    REQUIRE(world.setCharacterInput(character, {{20, 0, 0}, false}));
+    REQUIRE(world.step(.25));
+    const auto events = world.drainContactEvents().value();
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].phase == ContactPhase::Begin);
+    CHECK(events[1].phase == ContactPhase::End);
+    CHECK(events[0].step == 1);
+    CHECK(events[1].step == 1);
+    CHECK(events[0].first.collider == ColliderId{support});
+    CHECK(events[0].second.collider == ColliderId{character});
+    REQUIRE(events[0].geometry);
+    CHECK(std::holds_alternative<CharacterContactGeometry>(*events[0].geometry));
+    CHECK_FALSE(events[1].geometry);
+    CHECK(world.stats()->contactPairs == 0);
+  }
 }
