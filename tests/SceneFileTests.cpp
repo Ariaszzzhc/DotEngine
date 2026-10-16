@@ -475,3 +475,59 @@ TEST_CASE("scene_file.occlusion_roundtrip_strict_integer_ranges_and_absence") {
   absent.erase("occlusion");
   CHECK_FALSE(decodeScene(absent.dump())->occlusion().value());
 }
+
+TEST_CASE("scene_files.allocation_floor_is_required_canonical_and_above_every_live_value") {
+  const auto valid = source();
+  CHECK(valid["nextEntity"] == "41");
+  auto missing = valid;
+  missing.erase("nextEntity");
+  CHECK_FALSE(decodeScene(missing.dump()));
+
+  for (const auto& value :
+       std::vector<Json>{0, 42, true, false, "0", "00", "-1", " 41", "+41", "41x", "40", "1",
+                         "18446744073709551615", "18446744073709551616"}) {
+    auto invalid = valid;
+    invalid["nextEntity"] = value;
+    CHECK_FALSE(decodeScene(invalid.dump()));
+  }
+
+  auto sparse = valid;
+  sparse["nextEntity"] = "9007199254740993";
+  auto loaded = decodeScene(sparse.dump());
+  REQUIRE(loaded);
+  CHECK(loaded->nextEntityValue().value() == 9007199254740993ULL);
+  CHECK(loaded->createEntity()->value == 9007199254740993ULL);
+  auto exhausted = valid;
+  exhausted["nextEntity"] = nullptr;
+  auto closed = decodeScene(exhausted.dump());
+  REQUIRE(closed);
+  CHECK_FALSE(closed->nextEntityValue().value());
+  CHECK_FALSE(closed->createEntity());
+}
+
+TEST_CASE("scene_files.saved_sparse_and_empty_scenes_preserve_retirement_and_exhaustion") {
+  Directory directory;
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  auto scene = Scene::create().value();
+  const auto first = scene.createEntity().value();
+  const auto retired = scene.createEntityWithId("Retired", 1000).value();
+  REQUIRE(scene.destroyEntity(retired));
+  REQUIRE(saveScene(files, "source.dotscene", scene));
+  auto loaded = loadScene(files, "source.dotscene").value();
+  CHECK(loaded.nextEntityValue().value() == 1001);
+  CHECK(loaded.createEntity()->value == 1001);
+  CHECK(scene.nextEntityValue().value() == 1001);
+  const auto last
+      = scene.createEntityWithId("Last", std::numeric_limits<std::uint64_t>::max() - 1).value();
+  REQUIRE(scene.destroyEntity(last));
+  REQUIRE(saveScene(files, "source.dotscene", scene));
+  auto exhausted = loadScene(files, "source.dotscene").value();
+  CHECK_FALSE(exhausted.nextEntityValue().value());
+  CHECK_FALSE(exhausted.createEntity());
+  REQUIRE(scene.destroyEntity(first));
+  REQUIRE(saveScene(files, "source.dotscene", scene));
+  auto empty = loadScene(files, "source.dotscene").value();
+  CHECK(empty.entityCount().value() == 0);
+  CHECK_FALSE(empty.nextEntityValue().value());
+  CHECK_FALSE(empty.createEntity());
+}

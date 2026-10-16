@@ -56,6 +56,45 @@ namespace Dot::Editor {
              && (value.starts_with("scenes/") || value.starts_with("assets/"));
     }
 
+    auto counterState(std::uint64_t next) -> std::optional<std::uint64_t> {
+      return next == exhausted ? std::optional<std::uint64_t>{} : std::optional{next};
+    }
+
+    auto counterJson(std::uint64_t next) -> Json {
+      return next == exhausted ? Json(nullptr) : Json(std::to_string(next));
+    }
+
+    auto allocationFloor(const World::Scene& scene) -> Core::Result<std::uint64_t> {
+      auto next = scene.nextEntityValue();
+      return next ? Core::Result<std::uint64_t>{next->value_or(exhausted)}
+                  : Core::Result<std::uint64_t>{std::unexpected(next.error())};
+    }
+
+    /** Allocation is non-undoable metadata; mementos retain authored content only.
+     * Restore/publish injects the current floor through the strict scene codec.
+     * 分配是不可撤销的元数据，历史仅保留编辑内容；恢复/发布经严格场景编解码注入当前上界。 */
+    auto authoringText(const World::Scene& scene) -> Core::Result<std::string> {
+      auto encoded = World::encodeScene(scene);
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      auto content = Codec::parseJson(*encoded);
+      content.erase("nextEntity");
+      return content.dump(2) + '\n';
+    }
+
+    auto decodeCandidate(Json& content, std::uint64_t next) -> Core::Result<World::Scene> {
+      content["nextEntity"] = counterJson(next);
+      return World::decodeScene(content.dump());
+    }
+
+    auto decodeHistory(std::string_view text, std::uint64_t next) -> Core::Result<World::Scene> {
+      auto content = Codec::parseJson(text);
+      return decodeCandidate(content, next);
+    }
+
     auto find(Json& entities, std::uint64_t id) -> Json* {
       auto found = std::ranges::find_if(
           entities, [id](const auto& value) { return Codec::id(value["id"]) == id; });
@@ -232,7 +271,7 @@ namespace Dot::Editor {
                             "Hierarchy edit requires 1..10000 entities");
         }
 
-        auto prepared = World::decodeScene(scene.dump());
+        auto prepared = decodeCandidate(scene, next);
 
         if (!prepared) {
           return std::unexpected(prepared.error());
@@ -347,7 +386,7 @@ namespace Dot::Editor {
         }
 
         auto content = World::loadScene(project.files().value(), sceneFile(path));
-        auto target = World::decodeScene(scene.dump());
+        auto target = decodeCandidate(scene, next);
 
         if (!content || !target) {
           return std::unexpected(!content ? content.error() : target.error());
@@ -521,6 +560,7 @@ namespace Dot::Editor {
     std::size_t m_cursor{};
     std::uint64_t m_bytes{};
     std::shared_ptr<const std::string> m_saved;
+    std::uint64_t m_savedNext{1};
 
     Impl(Project::Project project, World::Scene scene, DocumentConfig config,
          std::shared_ptr<const std::string> text, std::uint64_t next)
@@ -531,7 +571,8 @@ namespace Dot::Editor {
           m_next(next),
           m_history{{text, {}}},
           m_bytes(text->size()),
-          m_saved(std::move(text)) {
+          m_saved(std::move(text)),
+          m_savedNext(next) {
     }
 
     auto check() const -> Core::Result<void> {
@@ -624,7 +665,20 @@ namespace Dot::Editor {
     /** All allocations and optional publication precede the nonthrowing scene swap.
      * 全部内存准备及可选文件发布先于不抛异常的场景替换。 */
     auto replaceScene(World::Scene prepared, std::string path, bool publish) -> Core::Result<void> {
-      auto text = World::encodeScene(prepared);
+      auto loadedNext = allocationFloor(prepared);
+
+      if (!loadedNext) {
+        return std::unexpected(loadedNext.error());
+      }
+
+      const auto next = std::max(m_next, *loadedNext);
+      auto reserved = prepared.reserveEntityValuesBefore(counterState(next));
+
+      if (!reserved) {
+        return reserved;
+      }
+
+      auto text = authoringText(prepared);
 
       if (!text) {
         return std::unexpected(text.error());
@@ -634,22 +688,13 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::Unavailable, "Scene exceeds editor history budget");
       }
 
-      auto next = m_next;
-      auto entities = prepared.entities();
-
-      if (!entities) {
-        return std::unexpected(entities.error());
-      }
-
-      for (const auto& entity : *entities) {
-        next = std::max(next, entity.id.value + 1);
-      }
-
       auto saved = std::make_shared<const std::string>(std::move(*text));
       std::vector<Entry> history{{saved, {}}};
 
       if (publish) {
-        auto written = publishScene(path, *saved);
+        auto encoded = World::encodeScene(prepared);
+        auto written = encoded ? publishScene(path, *encoded)
+                               : Core::Result<void>{std::unexpected(encoded.error())};
 
         if (!written) {
           return written;
@@ -660,6 +705,7 @@ namespace Dot::Editor {
       m_path.swap(path);
       m_history = std::move(history);
       m_saved = std::move(saved);
+      m_savedNext = publish ? next : *loadedNext;
       m_bytes = m_saved->size();
       m_cursor = 0;
       m_next = next;
@@ -671,7 +717,13 @@ namespace Dot::Editor {
      * 替换稳定场景前准备所有需要分配的历史变更。 */
     auto commit(World::Scene prepared, std::uint64_t next, std::vector<std::uint64_t> created,
                 std::vector<std::uint64_t> selection) -> Core::Result<EditReport> {
-      auto encoded = World::encodeScene(prepared);
+      auto reserved = prepared.reserveEntityValuesBefore(counterState(next));
+
+      if (!reserved) {
+        return std::unexpected(reserved.error());
+      }
+
+      auto encoded = authoringText(prepared);
 
       if (!encoded) {
         return std::unexpected(encoded.error());
@@ -720,7 +772,7 @@ namespace Dot::Editor {
     }
 
     auto restore(std::size_t cursor) -> Core::Result<void> {
-      auto scene = World::decodeScene(*m_history[cursor].text);
+      auto scene = decodeHistory(*m_history[cursor].text, m_next);
 
       if (!scene) {
         return std::unexpected(scene.error());
@@ -756,7 +808,7 @@ namespace Dot::Editor {
         return std::unexpected(scene.error());
       }
 
-      auto text = World::encodeScene(*scene);
+      auto text = authoringText(*scene);
 
       if (!text) {
         return std::unexpected(text.error());
@@ -767,20 +819,15 @@ namespace Dot::Editor {
                           "Startup scene exceeds editor history budget");
       }
 
-      std::uint64_t next = 1;
-      auto entities = scene->entities();
+      auto next = allocationFloor(*scene);
 
-      if (!entities) {
-        return std::unexpected(entities.error());
-      }
-
-      for (const auto& entity : *entities) {
-        next = std::max(next, entity.id.value + 1);
+      if (!next) {
+        return std::unexpected(next.error());
       }
 
       return Document(std::make_unique<Impl>(project, std::move(*scene), config,
                                              std::make_shared<const std::string>(std::move(*text)),
-                                             next));
+                                             *next));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Open editor document: " + std::string(error.what()));
@@ -850,6 +897,8 @@ namespace Dot::Editor {
         selection.push_back(std::to_string(entity.value));
       }
 
+      auto sceneData = Codec::parseJson(*m_impl->m_history[m_impl->m_cursor].text);
+      sceneData["nextEntity"] = counterJson(m_impl->m_next);
       return Json{{"scenePath", stats->scenePath},
                   {"selection", std::move(selection)},
                   {"revision", std::to_string(stats->revision)},
@@ -863,7 +912,7 @@ namespace Dot::Editor {
                   {"canRedo", stats->canRedo},
                   {"historyEntries", stats->historyEntries},
                   {"historyBytes", std::to_string(stats->historyBytes)},
-                  {"scene", Codec::parseJson(*m_impl->m_history[m_impl->m_cursor].text)}}
+                  {"scene", std::move(sceneData)}}
           .dump();
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -958,7 +1007,7 @@ namespace Dot::Editor {
         }
       }
 
-      auto prepared = World::decodeScene(candidate.dump());
+      auto prepared = decodeCandidate(candidate, next);
 
       if (!prepared) {
         return std::unexpected(prepared.error());
@@ -1020,7 +1069,7 @@ namespace Dot::Editor {
         }
       }
 
-      auto prepared = World::decodeScene(candidate.dump());
+      auto prepared = decodeCandidate(candidate, next);
 
       if (!prepared) {
         return std::unexpected(prepared.error());
@@ -1070,7 +1119,7 @@ namespace Dot::Editor {
         }
       }
 
-      auto prepared = World::decodeScene(*m_impl->m_history[m_impl->m_cursor].text);
+      auto prepared = decodeHistory(*m_impl->m_history[m_impl->m_cursor].text, m_impl->m_next);
 
       if (!prepared) {
         return std::unexpected(prepared.error());
@@ -1295,7 +1344,9 @@ namespace Dot::Editor {
 
       auto candidate = std::string(path);
       const auto& text = m_impl->m_history[m_impl->m_cursor].text;
-      auto written = m_impl->publishScene(candidate, *text);
+      auto encoded = World::encodeScene(m_impl->m_scene);
+      auto written = encoded ? m_impl->publishScene(candidate, *encoded)
+                             : Core::Result<void>{std::unexpected(encoded.error())};
 
       if (!written) {
         return written;
@@ -1303,6 +1354,7 @@ namespace Dot::Editor {
 
       m_impl->m_path.swap(candidate);
       m_impl->m_saved = text;
+      m_impl->m_savedNext = m_impl->m_next;
       ++m_impl->m_revision;
       return {};
     } catch (const std::exception& error) {
@@ -1380,13 +1432,18 @@ namespace Dot::Editor {
         return std::unexpected(disk.error());
       }
 
-      auto baseline = World::encodeScene(*disk);
+      auto baseline = authoringText(*disk);
+      auto savedNext = allocationFloor(*disk);
+
+      if (!savedNext) {
+        return std::unexpected(savedNext.error());
+      }
 
       if (!baseline) {
         return std::unexpected(baseline.error());
       }
 
-      if (*baseline != *m_impl->m_saved) {
+      if (*baseline != *m_impl->m_saved || *savedNext != m_impl->m_savedNext) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Editor scene changed externally: " + m_impl->m_path);
       }
@@ -1398,6 +1455,7 @@ namespace Dot::Editor {
       }
 
       m_impl->m_saved = m_impl->m_history[m_impl->m_cursor].text;
+      m_impl->m_savedNext = m_impl->m_next;
       ++m_impl->m_revision;
       return {};
     } catch (const std::exception& error) {

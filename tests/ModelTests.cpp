@@ -158,7 +158,13 @@ TEST_CASE("model.transactional_bundle_publication_and_single_history_instantiati
   CHECK(edited->created.size() == 4);
   CHECK(document.scene().value()->entities()->size() == 6);
   REQUIRE(document.undo(document.stats()->revision));
-  CHECK(Json::parse(document.snapshot().value())["scene"] == before["scene"]);
+  auto restored = Json::parse(document.snapshot().value());
+  CHECK(restored["scene"]["nextEntity"] == restored["nextEntity"]);
+  CHECK(document.scene().value()->nextEntityValue().value() == document.stats()->nextEntity);
+  restored["scene"].erase("nextEntity");
+  auto authored = before["scene"];
+  authored.erase("nextEntity");
+  CHECK(restored["scene"] == authored);
   REQUIRE(document.redo(document.stats()->revision));
   CHECK(document.scene().value()->entities()->size() == 6);
   CHECK_FALSE(document.apply(operation, revision));

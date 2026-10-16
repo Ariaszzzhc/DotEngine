@@ -218,3 +218,24 @@ TEST_CASE("scene_content.identity_capacity_and_world_owner_boundaries_are_explic
   CHECK(rejected.error().code == Core::ErrorCode::Unavailable);
   CHECK(full.entityCount().value() == 10000);
 }
+
+TEST_CASE("scene_content.instance_preparation_respects_reserved_and_exhausted_target_identity") {
+  auto target = Scene::create().value();
+  REQUIRE(target.createEntity());
+  REQUIRE(target.reserveEntityValuesBefore(20));
+  auto source = Scene::create().value();
+  const auto node = source.createEntity().value();
+  REQUIRE(source.reserveEntityValuesBefore(1000));
+  CHECK_FALSE(prepareSceneInstance(target, source, 2));
+  auto prepared = prepareSceneInstance(target, source, 20);
+  REQUIRE(prepared);
+  CHECK(prepared->root.value == 20);
+  CHECK(prepared->scene.nextEntityValue().value() == 22);
+  CHECK(target.nextEntityValue().value() == 20);
+  auto extracted = extractSceneContent(source, std::array{node}, "Independent content");
+  REQUIRE(extracted);
+  CHECK(extracted->scene.nextEntityValue().value() == 3);
+  REQUIRE(target.reserveEntityValuesBefore(std::nullopt));
+  CHECK_FALSE(prepareSceneInstance(target, source, 1001));
+  CHECK_FALSE(target.nextEntityValue().value());
+}

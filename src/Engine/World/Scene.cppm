@@ -200,6 +200,16 @@ export namespace Dot::World {
     [[nodiscard]] auto occlusion() const
         -> Core::Result<std::optional<Graphics::OcclusionSettings>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
+    /** Next unused value, or null when allocation is permanently exhausted.
+     * Values survive serialization independently of live entities; querying does
+     * not reserve one. 下一个未使用值，分配永久耗尽时为空；与存活实体分别持久化，查询不预留。 */
+    [[nodiscard]] auto nextEntityValue() const -> Core::Result<std::optional<std::uint64_t>>;
+    /** Reserve all lower values without creating entities. The floor can only
+     * advance; null seals allocation, and zero/uint64 max are not valid finite
+     * floors. Failure leaves the allocator intact. 预留所有更低值而不创建实体，上界只能
+     * 前进；空值封闭分配，零/uint64 最大值不是有效有限上界；失败不改变分配器。 */
+    [[nodiscard]] auto reserveEntityValuesBefore(std::optional<std::uint64_t> next)
+        -> Core::Result<void>;
     [[nodiscard]] auto createEntity(std::string_view name = "Entity") -> Core::Result<EntityId>;
     /** Import a monotonic ID: it must be >= the next available value and below
      * uint64 max. Skipped/consumed values cannot later be reused.

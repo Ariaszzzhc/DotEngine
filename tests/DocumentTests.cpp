@@ -63,6 +63,11 @@ namespace {
     return Json::parse(document.snapshot().value());
   }
 
+  auto authored(Json scene) -> Json {
+    scene.erase("nextEntity");
+    return scene;
+  }
+
   auto revision(const Document& document) -> std::uint64_t {
     return document.stats()->revision;
   }
@@ -380,7 +385,7 @@ TEST_CASE("document_history_count_bytes_eviction_and_invalid_capacities") {
   REQUIRE(document.undo(revision(document)));
   CHECK_FALSE(document.undo(revision(document)));
   CHECK(state(document)["scene"]["entities"][1]["name"] == "A");
-  auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  const auto bytes = fixture.document().stats()->historyBytes;
   CHECK_FALSE(Document::open(fixture.project(), {128, bytes - 1}));
   auto bounded = fixture.document({128, bytes});
   edit(bounded, rename("A"));
@@ -707,7 +712,7 @@ TEST_CASE("document.multiselection_is_ordered_scoped_atomic_and_budgeted") {
   REQUIRE(document.selectMany({}, revision(document)));
   CHECK(state(document)["selection"].empty());
   CHECK_FALSE(document.stats()->selected);
-  const auto bytes = Dot::World::encodeScene(fixture.project().loadStartup().value())->size();
+  const auto bytes = fixture.document().stats()->historyBytes;
   auto bounded = fixture.document({128, bytes});
   const auto limited = bounded.snapshot().value();
   CHECK_FALSE(bounded.select(bounded.scene().value()->findEntity(2).value(), 1));
@@ -731,7 +736,8 @@ TEST_CASE("document.group_duplicate_remaps_overlaps_selection_and_undo_once") {
   CHECK(scene->entity(scene->findEntity(4).value())->mesh.has_value());
   CHECK(scene->entity(scene->findEntity(4).value())->name == "Cube Copy");
   REQUIRE(document.undo(revision(document)));
-  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  CHECK(state(document)["scene"]["nextEntity"] == state(document)["nextEntity"]);
   CHECK(state(document)["selection"] == before["selection"]);
   REQUIRE(document.redo(revision(document)));
   CHECK(state(document)["selection"] == copies["selection"]);
@@ -1113,7 +1119,8 @@ TEST_CASE(
   CHECK(current->worldTransform(current->findEntity(1).value())->data[14] == 4);
   CHECK(current->entity(current->findEntity(1).value())->camera->primary);
   REQUIRE(document.undo(revision(document)));
-  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  CHECK(state(document)["scene"]["nextEntity"] == state(document)["nextEntity"]);
   CHECK(state(document)["selection"] == before["selection"]);
   REQUIRE(document.redo(revision(document)));
   CHECK(state(document)["selection"] == Json::array({group}));
@@ -1223,7 +1230,8 @@ TEST_CASE("document.scene_content_save_and_instance_share_history_selection_and_
   CHECK(pose.data[14] == 4);
   CHECK(scene->primaryCamera()->value == 1);
   REQUIRE(document.undo(revision(document)));
-  CHECK(state(document)["scene"] == original["scene"]);
+  CHECK(authored(state(document)["scene"]) == authored(original["scene"]));
+  CHECK(state(document)["scene"]["nextEntity"] == state(document)["nextEntity"]);
   CHECK(state(document)["selection"] == original["selection"]);
   REQUIRE(document.redo(revision(document)));
   CHECK(document.scene().value()->entityCount().value() == 5);
@@ -1297,4 +1305,65 @@ TEST_CASE("document.scene_content_history_rejection_and_invalid_batch_keep_alloc
   CHECK_FALSE(normal.apply(insertion.dump(), revision(normal)));
   CHECK(state(normal) == initial);
   CHECK(normal.stats()->nextEntity == 3);
+}
+
+TEST_CASE("document.saved_deleted_node_values_are_retired_across_independent_reopen") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto first = edit(document, Json::array({{{"op", "create"}, {"name", "Durable node"}}}));
+  REQUIRE(first.created.size() == 1);
+  REQUIRE(document.save(revision(document)));
+  edit(document, Json::array({{{"op", "remove"}, {"entity", std::to_string(first.created[0])}}}));
+  REQUIRE(document.save(revision(document)));
+  auto disk = fixture.project().loadStartup().value();
+  CHECK(disk.nextEntityValue().value() == first.created[0] + 1);
+  auto reopened = fixture.document();
+  CHECK(reopened.stats()->nextEntity == first.created[0] + 1);
+  const auto second = edit(reopened, Json::array({{{"op", "create"}, {"name", "Replacement"}}}));
+  CHECK(second.created[0] > first.created[0]);
+}
+
+TEST_CASE("document.undo_keeps_allocation_floor_and_save_as_publishes_live_metadata") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto original = state(document);
+  const auto created = edit(document, Json::array({{{"op", "create"}, {"name", "Undone node"}}}));
+  REQUIRE(document.undo(revision(document)));
+  CHECK_FALSE(document.stats()->dirty);
+  CHECK(state(document)["scene"]["entities"] == original["scene"]["entities"]);
+  CHECK(document.scene().value()->nextEntityValue().value() == created.created[0] + 1);
+  CHECK(state(document)["scene"]["nextEntity"] == state(document)["nextEntity"]);
+  REQUIRE(document.saveAs("scenes/other.dotscene", revision(document)));
+  auto files = fixture.project().files().value();
+  auto disk = Dot::World::loadScene(files, "scenes/other.dotscene").value();
+  CHECK(disk.nextEntityValue().value() == created.created[0] + 1);
+  auto reopened = fixture.document();
+  REQUIRE(reopened.openScene("scenes/other.dotscene", revision(reopened)));
+  const auto next = edit(reopened, Json::array({{{"op", "create"}, {"name", "New source node"}}}));
+  CHECK(next.created[0] > created.created[0]);
+  auto changed = Json::parse(files.readText("scenes/other.dotscene").value());
+  changed["nextEntity"] = "100";
+  REQUIRE(files.writeTextAtomic("scenes/other.dotscene", changed.dump()));
+  const auto before = state(document);
+  CHECK_FALSE(document.save(revision(document)));
+  CHECK(state(document) == before);
+  CHECK(Json::parse(files.readText("scenes/other.dotscene").value())["nextEntity"] == "100");
+}
+
+TEST_CASE("document.unpublished_noop_and_failed_batch_do_not_consume_persistent_values") {
+  Fixture fixture;
+  auto document = fixture.document();
+  const auto original = state(document);
+  const auto result = edit(document, Json::array({{{"op", "create"}, {"name", "Unpublished"}},
+                                                  {{"op", "remove"}, {"entity", "3"}}}));
+  CHECK_FALSE(result.changed);
+  CHECK(state(document) == original);
+  CHECK(document.scene().value()->nextEntityValue().value() == 3);
+  CHECK_FALSE(document.apply(Json::array({{{"op", "create"}, {"name", "Rejected"}},
+                                          {{"op", "parent"}, {"entity", "3"}, {"parent", "999"}}})
+                                 .dump(),
+                             revision(document)));
+  CHECK(state(document) == original);
+  REQUIRE(document.save(revision(document)));
+  CHECK(fixture.project().loadStartup()->nextEntityValue().value() == 3);
 }

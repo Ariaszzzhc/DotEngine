@@ -43,11 +43,11 @@ export namespace Dot::World {
   /** Prepare insertion under a new container with parent-local placement. Source
    * environment/AO are ignored; target globals and existing entity values remain.
    * Imported primary cameras/listeners are demoted and native references remap.
-   * firstValue must exceed every live target value; authoring callers supply their
+   * firstValue must respect the target's reserved allocation floor; authoring callers supply their
    * history high-water mark. Failure leaves both sources/allocator ownership intact.
    * This returns a fresh-scope candidate, not in-place runtime instantiation or a link.
    * 在新容器下准备插入，放置变换相对父级；忽略内容的环境/AO，保留目标全局数据及现有实体值。
-   * 导入的主相机/听者取消主标记，原生引用重映射；firstValue 必须超过全部存活目标值，
+   * 导入的主相机/听者取消主标记，原生引用重映射；firstValue 必须遵守目标的分配预留上界，
    * 编辑调用者须提供历史高水位。失败不修改任一源及调用者分配器；返回新范围候选，
    * 不是运行时原地实例化或链接。 */
   [[nodiscard]] auto prepareSceneInstance(const Scene& target, const Scene& content,

@@ -10535,6 +10535,7 @@
     "specularSize": 128
   },
   "name": "Prism Relay | WASD move | Space jump | Shift sprint | Mouse look",
+  "nextEntity": "355",
   "occlusion": {
     "bias": 0.02500000037252903,
     "directions": 8,

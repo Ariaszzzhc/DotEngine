@@ -494,3 +494,34 @@ TEST_CASE("scene.local_transform_read_is_owned_scoped_and_rejects_removed_or_mov
   REQUIRE(moved.destroyEntity(entity));
   CHECK_FALSE(moved.transform(entity));
 }
+
+TEST_CASE("scene.entity_allocator_reservations_are_monotonic_owned_and_can_be_sealed") {
+  auto scene = Scene::create().value();
+  CHECK(scene.nextEntityValue().value() == 1);
+  const auto first = scene.createEntity().value();
+  REQUIRE(scene.reserveEntityValuesBefore(50));
+  CHECK(scene.nextEntityValue().value() == 50);
+  CHECK_FALSE(scene.reserveEntityValuesBefore(49));
+  CHECK_FALSE(scene.reserveEntityValuesBefore(0));
+  CHECK_FALSE(scene.reserveEntityValuesBefore(std::numeric_limits<std::uint64_t>::max()));
+  REQUIRE(scene.reserveEntityValuesBefore(50));
+  REQUIRE(scene.destroyEntity(first));
+  CHECK(scene.nextEntityValue().value() == 50);
+  const auto reserved = scene.createEntity().value();
+  CHECK(reserved.value == 50);
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !scene.nextEntityValue() && !scene.reserveEntityValuesBefore(60); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.nextEntityValue());
+  CHECK_FALSE(scene.reserveEntityValuesBefore(60));
+  CHECK(moved.nextEntityValue().value() == 51);
+  REQUIRE(moved.reserveEntityValuesBefore(std::nullopt));
+  CHECK_FALSE(moved.nextEntityValue().value());
+  CHECK_FALSE(moved.createEntity());
+  CHECK_FALSE(moved.reserveEntityValuesBefore(51));
+  REQUIRE(moved.destroyEntity(reserved));
+  CHECK_FALSE(moved.nextEntityValue().value());
+}

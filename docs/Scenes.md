@@ -6,7 +6,7 @@ Saving atomically replaces the destination and requires an existing parent.
 Decoding builds an independent scene, preserving entity values while assigning a
 fresh scene identity. Existing live scenes and their handles remain independent.
 
-The root requires `version` (integer 1), `name`, and `entities`, and allows optional
+The root requires `version` (integer 1), `name`, `nextEntity`, and `entities`, and allows optional
 `environment` (null/absent means no environment). Unknown fields are rejected. Every
 entity requires `id`, `name`, `parent`, and `transform`; `camera`, `mesh`, and
 `rigidBody`, `character`, `audioSource`, `audioListener`, `script`, `material`, `light`,
@@ -20,10 +20,20 @@ below the uint64 maximum, preserving precision for JavaScript and automation.
 Records may arrive in any order; duplicate IDs and missing parent targets fail.
 The encoder emits records in creation-value order.
 
+`nextEntity` is the canonical positive decimal string for the next unreserved value,
+strictly greater than every live entity value and below uint64 maximum. Null means
+permanent allocation exhaustion, including after deleting every entity. Missing,
+noncanonical, numeric or regressing values fail; the decoder never reconstructs the
+floor from surviving entities. Save/load preserves retired and explicitly reserved
+values. Allocation metadata does not identify a scene scope or create an entity.
+Native `nextEntityValue` observes it; `reserveEntityValuesBefore` advances it or seals
+allocation with null, without changing live handles. It cannot rewind or unseal.
+
 ```json
 {
   "version": 1,
   "name": "Example",
+  "nextEntity": "2",
   "entities": [
     {
       "id": "1",

@@ -63,7 +63,7 @@ initialization. The caller explicitly publishes the independently validated scen
 | Operation | Result and boundary |
 | --- | --- |
 | `extractSceneContent(source, selected, name)` | Descendant union, compact IDs and an identity container. Root world poses are flattened relative to the last selected entity's world origin; internal local transforms remain. Environment/AO are excluded; primary flags and opaque script data remain. |
-| `prepareSceneInstance(target, content, firstValue, placement, parent)` | Fresh-scope candidate retaining target entity values, a placement root and owned source-to-target mapping. `firstValue` must exceed every live target value; authoring callers supply their history high-water mark. |
+| `prepareSceneInstance(target, content, firstValue, placement, parent)` | Fresh-scope candidate retaining target entity values, a placement root and owned source-to-target mapping. `firstValue` must respect the target's reserved allocation floor; authoring callers supply their history high-water mark. |
 
 Both sources remain unchanged on success or failure. Returned handles address the
 candidate's fresh scope; this is preparation, not in-place runtime instantiation.
@@ -86,3 +86,11 @@ Feature Lab's material content was validated by replacing the original studio gr
 with the saved asset at the original placement. Independent world-matrix comparison
 and two distinct native viewport captures agree; this is specific workflow evidence,
 not a claim of completed prefab or large-game authoring capability.
+
+
+Saved content also preserves the scene's required `nextEntity` allocation metadata.
+Deleting the highest source node, saving and reopening does not make that value
+available for a replacement node. Scene extraction creates a new compact identity
+namespace; insertion respects the target's existing reservations and writes the
+advanced floor into the prepared candidate. This is necessary identity groundwork
+for linked updates, not an implementation of links or overrides.

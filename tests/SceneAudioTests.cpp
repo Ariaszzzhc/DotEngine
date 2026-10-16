@@ -263,9 +263,11 @@ TEST_CASE("scene_audio_codec_rejects_multiple_primary_listeners_instead_of_selec
   auto second = value["entities"][0];
   second["id"] = "2";
   value["entities"].push_back(second);
+  value["nextEntity"] = "3";
   auto rejected = decodeScene(value.dump());
   REQUIRE_FALSE(rejected);
   CHECK(rejected.error().code == Dot::Core::ErrorCode::InvalidArgument);
+  CHECK(rejected.error().message.find("primary audio listener") != std::string::npos);
   value["entities"][1]["audioListener"]["primary"] = false;
   CHECK(decodeScene(value.dump()));
 }

@@ -300,7 +300,8 @@ namespace Dot::World {
     };
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
-      Codec::requireFields(root, {"version", "name", "entities"}, {"environment", "occlusion"});
+      Codec::requireFields(root, {"version", "name", "nextEntity", "entities"},
+                           {"environment", "occlusion"});
 
       if (!root["version"].is_number_integer() || root["version"] != 1
           || !root["entities"].is_array() || root["entities"].size() > 10000) {
@@ -465,6 +466,14 @@ namespace Dot::World {
 
         handles.emplace(record.id, *entity);
         transforms.push_back({*entity, record.transform});
+      }
+
+      auto reserved = scene->reserveEntityValuesBefore(
+          root["nextEntity"].is_null() ? std::optional<std::uint64_t>{}
+                                       : std::optional{Codec::id(root["nextEntity"])});
+
+      if (!reserved) {
+        return std::unexpected(reserved.error());
       }
 
       auto changed = scene->setTransforms(transforms);
@@ -669,6 +678,11 @@ namespace Dot::World {
   auto encodeScene(const Scene& scene) -> Core::Result<std::string> {
     auto name = scene.name();
     auto entities = scene.entities();
+    auto next = scene.nextEntityValue();
+
+    if (!next) {
+      return std::unexpected(next.error());
+    }
 
     if (!name) {
       return std::unexpected(name.error());
@@ -773,6 +787,7 @@ namespace Dot::World {
 
     auto encoded = Json{{"version", 1},
                         {"name", *name},
+                        {"nextEntity", *next ? Json(std::to_string(**next)) : Json(nullptr)},
                         {"entities", std::move(records)},
                         {"environment", std::move(environmentJson)},
                         {"occlusion", std::move(occlusionJson)}}

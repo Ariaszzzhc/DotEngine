@@ -45,11 +45,14 @@ export namespace Dot::Editor {
   /** Owns an authoring scene and bounded undo history, without runtime backends.
    * Operations require the creating thread. Moves preserve the stable scene
    * address; edits/undo/redo replace its scope and invalidate prior EntityIds.
-   * Published entity values are never reused, including after undo/branching.
+   * Published values are not reused after undo/branching; saves preserve the
+   * allocation floor across reopen. History/dirty state track authored data;
+   * snapshots and file saves include the current non-undoable floor.
    * Copies of the project describe the same files; callers serialize saves.
    * 拥有编辑场景及有界撤销历史，不初始化运行后端；操作限创建线程。移动保留稳定场景
    * 地址，编辑/撤销/重做替换范围并使旧 EntityId 失效；已发布实体值在撤销/分支后也不
-   * 复用。项目副本描述相同文件，调用者须串行保存。 */
+   * 复用，保存后重新打开仍保留分配上界。历史及未保存标记仅跟踪编辑内容，快照/文件
+   * 同时包含当前不可撤销的分配上界。项目副本描述相同文件，调用者须串行保存。 */
   class Document {
   public:
     [[nodiscard]] static auto open(const Project::Project& project,
@@ -103,7 +106,7 @@ export namespace Dot::Editor {
      * scene before committing all changes, history and selection together.
      * Component/transform values use the native scene format. No-op batches
      * preserve revision/scope/history. Created reports contain surviving values.
-     * History (scene text plus selection ID bytes) keeps 1..1024 entries under
+     * History (authored scene text plus selection ID bytes) keeps 1..1024 entries under
      * 1 byte..512 MiB; older entries are evicted
      * when needed. The saved baseline may retain one additional <=64 MiB snapshot.
      * 严格 JSON 数组，1..256 操作、至多 1 MiB/64 层；完整准备最终场景后，一起提交修改、

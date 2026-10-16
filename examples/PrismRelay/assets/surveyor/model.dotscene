@@ -2802,6 +2802,7 @@
   ],
   "environment": null,
   "name": "Imported model",
+  "nextEntity": "70",
   "occlusion": null,
   "version": 1
 }

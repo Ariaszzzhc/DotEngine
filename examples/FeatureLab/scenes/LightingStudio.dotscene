@@ -551,6 +551,7 @@
     "specularSize": 128
   },
   "name": "Lighting Studio",
+  "nextEntity": "9007199254741009",
   "occlusion": {
     "bias": 0.019999999552965164,
     "directions": 8,

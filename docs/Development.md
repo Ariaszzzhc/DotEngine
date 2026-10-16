@@ -7699,3 +7699,81 @@ build caches. The authored example asset remains; user references remain untrack
 and existing archives are preserved. No distribution archive was generated. The
 full engine/editor/game objective remains active, including linked content, mature
 animation workflows, streaming/performance and finished Prism Relay experience.
+
+
+## Persistent scene entity allocation
+
+Confirmed a prerequisite gap for linked content: SceneFiles reconstructed allocation
+from surviving entities. Deleting a highest-valued source node and reopening could
+reuse its value for another node, invalidating durable source-node associations.
+Scene now exposes an owned-thread next-value observation and monotonic reservation
+operation; null seals allocation permanently. Reservations/deletions survive native
+codec and file round trips, including sparse and empty exhausted scenes.
+
+Scene JSON requires nextEntity, a canonical positive decimal next-value string above
+all live values, or null when exhausted. Missing/noncanonical/numeric/regressing
+metadata is rejected. Repository scene assets were replaced together with this
+strict format change; no fallback or format-number increment was added. Existing
+unrecorded reservation history cannot be reconstructed retroactively; initial fields
+use current live maxima, before durable link associations exist. Subsequent saves
+retain the real allocation state rather than inferring it from entity count.
+Scene-content extraction creates a fresh compact identity namespace, while insertion
+respects target reservations and publishes the advanced candidate floor.
+
+Document allocation remains non-undoable. Private history stores authored content
+without allocator metadata; reconstruction injects the current floor through the
+strict codec. Public snapshots expose matching top-level and scene.nextEntity;
+undo restores content/selection without rolling allocation backward. Dirty state
+compares authored content, so a content-clean undo need not be marked dirty solely
+for reservations. Save/Save as still publish the live floor. The saved baseline
+tracks its allocation separately and rejects external metadata-only edits. This
+avoids duplicate full snapshot storage or brittle serialized-text/hash comparisons.
+History byte budgets measure owned authoring text plus selection storage.
+
+Added native ownership/reservation/sealing tests, content insertion/extraction floor
+checks, canonical/missing/high/exhausted codec cases, sparse/empty file round trips,
+and independent Document reopen after saved node deletion. Further regressions cover
+undo/Save as, external allocation conflicts, no-op unpublished creation/removal and
+failed batches. Existing content-only undo comparisons now retain all authored-field
+checks and separately verify allocation, while history boundaries use actual owned
+history bytes. Initial focused 98-case run exposed five older budget/full-snapshot
+assumptions; after those contract updates all 98 pass (6.18s). Coupled content/model/
+Feature Lab and document checks pass 92/92 (8.67s), including two offscreen cases.
+
+Actual release editor validation uses two independently started native processes.
+Across 29 product requests, the first opens the editable MaterialStudies asset,
+allocates value 9007199254740998, saves it, deletes it and saves again. After clean
+close/process exit, the second process reopens the asset and allocates
+9007199254740999. Undo returns to clean authored content while retaining the advanced
+floor; a clean Save persists 9007199254741000. A complete create/remove no-op batch
+preserves scope, revision, allocation and published content. The final asset retains
+its seven original entities and no validation nodes; only allocation metadata differs.
+Project metadata, main scene and Lighting Studio hashes are unchanged. Both native
+processes exit 0 with empty stderr and retire their control directories. This is
+product lifetime/persistence validation, not a claim of mouse/IME or visual acceptance.
+Linked updates and override authoring remain unfinished; stable persisted node values
+are the necessary groundwork rather than completion of that workflow.
+
+The first full Debug run passed 1211/1212 (182.76s). Its sole failure was an older
+audio-codec fixture that appended entity 2 without advancing nextEntity beyond 2;
+strict allocation validation correctly rejected it before listener validation. The
+fixture now supplies floor 3 and checks the specific duplicate-primary-listener
+diagnostic. Both focused audio-codec cases pass (0.20s), preserving the semantic
+coverage instead of relaxing production validation.
+
+Final macOS arm64 Debug/Release builds succeed. Full suites pass 1212/1212 in Debug
+(181.14s) and Release (19.70s, NDEBUG), each containing 341 unit and 871 integration
+cases. Integration includes 194 compiler, 132 durable offscreen, 32 native-audio,
+28 platform and 20 process cases. Automated suites open no desktop windows.
+Windows/Linux source targets were not executed. These results establish the
+specified identity contracts, not completion of the full engine/editor/game goal.
+
+Final review covers monotonic/exhausted allocation, thread/moved-owner boundaries,
+strict codec input, exception-safe candidate/history/file publication, undo/no-op
+semantics, external conflict baselines and module interface separation. All 14
+changed C++ interface/implementation/test files pass clang-format; whitespace checks
+pass. All five changed example scenes retain identical authored data with valid
+allocation metadata. Removed 30 owned temporary client/request files, preserving
+actual product response/log evidence, build caches and existing archives. No
+distribution archive was generated. EngineDoc.md and output/ remain untracked;
+dependencies and caller compiler/linker settings are unchanged.

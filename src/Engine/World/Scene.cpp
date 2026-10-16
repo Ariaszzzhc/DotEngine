@@ -532,6 +532,45 @@ namespace Dot::World {
     return m_impl->lookup.size();
   }
 
+  auto Scene::nextEntityValue() const -> Core::Result<std::optional<std::uint64_t>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->nextEntity == std::numeric_limits<std::uint64_t>::max()
+               ? std::optional<std::uint64_t>{}
+               : std::optional{m_impl->nextEntity};
+  }
+
+  auto Scene::reserveEntityValuesBefore(std::optional<std::uint64_t> next) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    const auto value = next.value_or(maximum);
+
+    if ((next && (*next == 0 || *next == maximum)) || value < m_impl->nextEntity) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Entity allocation floor must be monotonic, positive or exhausted");
+    }
+
+    m_impl->nextEntity = value;
+    return {};
+  }
+
   auto Scene::createEntity(std::string_view name) -> Core::Result<EntityId> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");

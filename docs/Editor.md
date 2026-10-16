@@ -1766,3 +1766,21 @@ Feature Lab includes `assets/MaterialStudies.dotscene`, saved and edited through
 these product operations. It shares the original materials/meshes and can be
 inserted into another scene in the same project. Scene instances are independent
 authored copies; linked updates and override editing remain unfinished.
+
+
+## Persistent entity allocation
+
+Document snapshots expose the same current allocation floor in top-level
+`nextEntity` and `scene.nextEntity`. It is a canonical decimal string or null when
+exhausted. Undo restores authored content/selection while keeping allocation
+monotonic. Returning to saved authored content can therefore be clean even when the
+current floor exceeds the file's last saved floor. Save and Save scene as publish
+that current floor; reopening a file restores its reservations. Metadata-only
+external file changes participate in save conflict checks.
+
+History stores authored scene data and selection bytes; the non-undoable floor is
+held separately, without duplicating full snapshots. Dirty flags compare authored
+content, not allocator metadata. Rejected edits and complete no-op batches publish
+neither new values nor floor changes. Root scene JSON includes the current metadata,
+so content-only undo comparisons should exclude `nextEntity` and check its
+monotonicity separately. This does not add a user command that can rewind IDs.

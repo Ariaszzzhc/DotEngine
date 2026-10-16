@@ -1125,6 +1125,7 @@
     "specularSize": 128
   },
   "name": "Feature Lab",
+  "nextEntity": "9007199254740998",
   "occlusion": {
     "bias": 0.019999999552965164,
     "directions": 8,

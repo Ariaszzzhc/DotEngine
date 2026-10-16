@@ -218,6 +218,7 @@ namespace Dot::World {
         (*output)["entities"].push_back(std::move(entity));
       }
 
+      (*output)["nextEntity"] = std::to_string(next);
       return finish(std::move(*output), values, source.id(), 1);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -258,11 +259,13 @@ namespace Dot::World {
                           "Scene instance exceeds entity/identity capacity");
       }
 
-      for (const auto& entity : (*output)["entities"]) {
-        if (Codec::id(entity["id"]) >= firstValue) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Scene instance requires a monotonic first entity value");
-        }
+      if ((*output)["nextEntity"].is_null()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Target entity allocation is exhausted");
+      }
+
+      if (firstValue < Codec::id((*output)["nextEntity"])) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Scene instance requires the target allocation high-water mark");
       }
 
       auto container = rootScene((*input)["name"].get<std::string>(), placement);
@@ -304,6 +307,7 @@ namespace Dot::World {
         (*output)["entities"].push_back(std::move(entity));
       }
 
+      (*output)["nextEntity"] = next == maximum ? Json(nullptr) : Json(std::to_string(next));
       return finish(std::move(*output), values, content.id(), firstValue);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
