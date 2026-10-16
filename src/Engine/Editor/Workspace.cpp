@@ -542,6 +542,12 @@ namespace Dot::Editor {
         requested = *capture && *focused;
       }
 
+      auto text = m_application->window().setTextInput(!requested);
+
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+
       auto changed = m_application->window().setRelativeMouse(requested);
 
       if (!changed) {
@@ -1017,6 +1023,12 @@ namespace Dot::Editor {
                   {"pointerCaptureRequested", nullptr},
                   {"diagnostics", m_playDiagnostics},
                   {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
+      auto text = m_application->window().textInputActive();
+      status["textInputActive"] = text ? Json(*text) : Json(nullptr);
+
+      if (!text) {
+        status["inputModeError"] = errorJson(text.error())["error"];
+      }
 
       if (m_play) {
         const auto stats = m_play->stats().value();

@@ -75,6 +75,7 @@ export namespace Dot::Core {
     [[nodiscard]] auto running() const noexcept -> bool;
     /** Borrowed resources; do not transfer window ownership. 借用资源，不得转移窗口所有权。 */
     [[nodiscard]] auto window() -> Platform::Window&;
+    [[nodiscard]] auto window() const -> const Platform::Window&;
     [[nodiscard]] auto input() const -> const Platform::InputState&;
     [[nodiscard]] auto events() -> Signal<Platform::Event>&;
 

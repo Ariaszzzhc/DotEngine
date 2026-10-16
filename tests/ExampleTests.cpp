@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -111,20 +112,16 @@ namespace {
     return *found;
   }
 
-  auto title(Project::GameSession& session) -> std::string {
-    return session.scene().value()->name().value();
-  }
-
   class Driver {
   public:
     explicit Driver(Project::GameSession& session) : m_session(session) {
     }
 
-    auto frame(std::initializer_list<Platform::Key> down = {}) -> void {
+    auto publish(std::initializer_list<Platform::Key> down = {}, float dx = 0, float dy = 0,
+                 bool captured = false) -> void {
       m_input.beginFrame();
       constexpr std::array keys{Platform::Key::A, Platform::Key::D,     Platform::Key::W,
-                                Platform::Key::S, Platform::Key::Enter, Platform::Key::P,
-                                Platform::Key::R, Platform::Key::Space};
+                                Platform::Key::S, Platform::Key::Space, Platform::Key::LeftShift};
 
       for (auto key : keys) {
         const bool desired = std::ranges::find(down, key) != down.end();
@@ -134,40 +131,15 @@ namespace {
         }
       }
 
-      good(m_session.publish(m_input));
+      REQUIRE(m_input.consume({0, 0, Platform::PointerMoved{0, 0, dx, dy}}));
+      good(m_session.publish(m_input, captured));
+    }
+
+    auto frame(std::initializer_list<Platform::Key> down = {}, float dx = 0, float dy = 0,
+               bool captured = false) -> void {
+      publish(down, dx, dy, captured);
       report(m_session.fixedUpdate());
       report(m_session.update(1.0 / 60));
-    }
-
-    auto tap(Platform::Key key) -> void {
-      frame({key});
-      frame();
-    }
-
-    auto drive(float x, float z) -> void {
-      for (int count = 0; count < 400; ++count) {
-        const auto position = entity(m_session, "Player").transform.position;
-
-        if (std::hypot(position.x - x, position.z - z) < 0.15F
-            || title(m_session).find("Complete!") != std::string::npos) {
-          frame();
-          return;
-        }
-
-        const auto horizontal = x - position.x;
-        const auto vertical = z - position.z;
-
-        if (std::abs(horizontal) > 0.08F && std::abs(vertical) > 0.08F) {
-          frame({horizontal > 0 ? Platform::Key::D : Platform::Key::A,
-                 vertical > 0 ? Platform::Key::S : Platform::Key::W});
-        } else if (std::abs(horizontal) > 0.08F) {
-          frame({horizontal > 0 ? Platform::Key::D : Platform::Key::A});
-        } else {
-          frame({vertical > 0 ? Platform::Key::S : Platform::Key::W});
-        }
-      }
-
-      FAIL("Native player did not reach the requested route point");
     }
 
   private:
@@ -175,222 +147,216 @@ namespace {
     Platform::InputState m_input;
   };
 
-  struct Model {
-    Fixture fixture;
-    Script::CompiledProgram program;
-    Script::Runtime runtime;
-    Script::ModuleId module;
-
-    Model()
-        : program([&]() {
-            REQUIRE(fixture.project.files()->writeTextAtomic("scripts/driver.ts", R"(
-import {RelayRules, type Settings, type Checkpoint} from './rules';
-export function run(request: {settings: Settings; targets: string[];
-  ops: {op: string; name?: string; seconds?: number; state?: Checkpoint}[]}) {
-  const rules = new RelayRules(request.settings, request.targets);
-  const errors: string[] = [];
-  for (const action of request.ops) {
-    try {
-      switch(action.op) {
-        case 'start': rules.start(); break;
-        case 'pause': rules.pause(); break;
-        case 'reset': rules.reset(); break;
-        case 'hit': rules.hit(); break;
-        case 'tick': rules.tick(action.seconds!); break;
-        case 'collect': rules.collect(action.name!); break;
-        case 'restore': rules.restore(action.state!); break;
-        case 'mutate-copy': {const copy=rules.state; copy.collected.push('foreign'); break;}
-        default: throw new Error('Unknown test action');
-      }
-    } catch(error) {errors.push(String(error));}
+  auto observation(Project::GameSession& session) -> Json {
+    const auto entities = session.scene().value()->entities().value();
+    const auto observer = std::ranges::find_if(entities, [](const auto& entity) {
+      return entity.script && entity.script->className == "Observer";
+    });
+    REQUIRE(observer != entities.end());
+    return Json::parse(observer->name);
   }
-  return {state:rules.state, errors};
-})"));
-            auto compiled = fixture.compiler().compileProject(fixture.project.files().value());
-            good(compiled);
-            return std::move(*compiled);
-          }()),
-          runtime(Script::Runtime::create(program.files().value()).value()),
-          module(runtime.loadModule("driver.js").value()) {
-    }
 
-    auto run(Json operations, Json settings = {{"speed", 5}, {"timeLimit", 2}, {"maxHealth", 3}})
-        -> Json {
-      auto args = Json::array(
-                      {{{"settings", settings}, {"targets", {"one", "two"}}, {"ops", operations}}})
-                      .dump();
-      auto result = runtime.call(module, "run", args);
-      good(result);
-      REQUIRE(result->has_value());
-      return Json::parse(**result);
-    }
-  };
+  auto observe(Fixture& fixture) -> void {
+    REQUIRE(fixture.project.files()->writeTextAtomic("scripts/observer.ts", R"ts(
+import {scene, ScriptComponent} from 'dot:engine';
+export class Observer extends ScriptComponent {
+  #model = scene.entities().find(entity => entity.name === 'Surveyor')!;
+  #player = scene.entities().find(entity => entity.name === 'Player')!;
+  onUpdate(): void {
+    const character = this.#player.characterState;
+    this.self.name = JSON.stringify({clip: this.#model.animationState.clip,
+      ground: character.ground, vy: character.velocity.y});
+  }
+}
+)ts"));
+    auto scene = fixture.project.loadStartup().value();
+    const auto id = scene.createEntity("Observer").value();
+    REQUIRE(scene.setScript(id, World::ScriptComponent{"observer.ts", "Observer"}));
+    REQUIRE(fixture.project.saveStartup(scene));
+  }
 }  // namespace
 
-TEST_CASE("prism.rules_round_pause_win_loss_reset_and_owned_checkpoints") {
-  Model model;
-  auto ready = model.run(Json::array({{{"op", "tick"}, {"seconds", 1}}, {{"op", "hit"}}}));
-  CHECK(ready["state"]["phase"] == "ready");
-  CHECK(ready["state"]["health"] == 3);
-  auto won = model.run(Json::array({{{"op", "start"}},
-                                    {{"op", "collect"}, {"name", "one"}},
-                                    {{"op", "collect"}, {"name", "one"}},
-                                    {{"op", "pause"}},
-                                    {{"op", "tick"}, {"seconds", 1}},
-                                    {{"op", "pause"}},
-                                    {{"op", "mutate-copy"}},
-                                    {{"op", "collect"}, {"name", "two"}},
-                                    {{"op", "hit"}}}));
-  CHECK(won["state"]["phase"] == "won");
-  CHECK(won["state"]["collected"] == Json::array({"one", "two"}));
-  CHECK(won["state"]["elapsed"] == 0);
-  CHECK(won["state"]["health"] == 3);
-  auto lost = model.run(Json::array({{{"op", "start"}},
-                                     {{"op", "hit"}},
-                                     {{"op", "hit"}},
-                                     {{"op", "tick"}, {"seconds", 1}},
-                                     {{"op", "hit"}},
-                                     {{"op", "tick"}, {"seconds", 1}}}));
-  CHECK(lost["state"]["phase"] == "lost");
-  CHECK(lost["state"]["health"] == 1);
-  auto reset = model.run(
-      Json::array({{{"op", "start"}}, {{"op", "collect"}, {"name", "one"}}, {{"op", "reset"}}}));
-  CHECK(reset["state"] == ready["state"]);
-}
-
-TEST_CASE("prism.rules_invalid_inputs_and_restore_preserve_previous_state") {
-  Model model;
-  auto checkpoint = Json{{"phase", "paused"},
-                         {"elapsed", 0.5},
-                         {"health", 2},
-                         {"immunity", 0.2},
-                         {"collected", {"one"}}};
-  auto restored = model.run(Json::array({{{"op", "restore"}, {"state", checkpoint}}}));
-  CHECK(restored["state"] == checkpoint);
-  auto invalid = checkpoint;
-  invalid["collected"] = {"foreign"};
-  auto failed = model.run(Json::array({{{"op", "restore"}, {"state", checkpoint}},
-                                       {{"op", "restore"}, {"state", invalid}},
-                                       {{"op", "tick"}, {"seconds", -1}},
-                                       {{"op", "collect"}, {"name", "foreign"}}}));
-  CHECK(failed["state"] == checkpoint);
-  CHECK(failed["errors"].size() == 3);
-  invalid = checkpoint;
-  invalid["phase"] = "won";
-  failed = model.run(Json::array({{{"op", "restore"}, {"state", invalid}}}));
-  CHECK(failed["state"]["phase"] == "ready");
-  CHECK(failed["errors"].size() == 1);
-
-  for (const auto& settings :
-       std::vector<Json>{{{"speed", 0}, {"timeLimit", 2}, {"maxHealth", 3}},
-                         {{"speed", 5}, {"timeLimit", 301}, {"maxHealth", 3}},
-                         {{"speed", 5}, {"timeLimit", 2}, {"maxHealth", 4}}}) {
-    const auto args
-        = Json::array(
-              {{{"settings", settings}, {"targets", {"one", "two"}}, {"ops", Json::array()}}})
-              .dump();
-    CHECK_FALSE(model.runtime.call(model.module, "run", args));
-  }
-
-  CHECK(model.run(Json::array())["state"]["phase"] == "ready");
-}
-
-TEST_CASE("prism.native_physics_route_collects_eight_and_restarts") {
+TEST_CASE("prism.character_moves_relative_to_acknowledged_camera_and_blocks_at_walls") {
   Fixture fixture;
   auto session = fixture.session();
-  const auto original = fixture.project.loadStartup()->name().value();
   report(session.start());
+  CHECK(session.pointerCaptureRequested().value());
   Driver driver(session);
-  driver.tap(Platform::Key::Enter);
-  driver.drive(5.5F, 5.5F);
-  driver.drive(5.5F, -5.5F);
-  driver.drive(-5.5F, -5.5F);
-  driver.drive(-5.5F, 5.5F);
-  CHECK(title(session).find("Complete!") != std::string::npos);
-  CHECK(title(session).find("8/8") != std::string::npos);
 
-  for (int index = 1; index <= 8; ++index) {
-    CHECK_FALSE(entity(session, "CrystalVisual" + std::to_string(index)).mesh->visible);
+  for (int frame = 0; frame < 30; ++frame) {
+    driver.frame({Platform::Key::W});
   }
 
-  driver.tap(Platform::Key::R);
-  CHECK(title(session).find("Enter to start") != std::string::npos);
-  CHECK(title(session).find("0/8") != std::string::npos);
-  CHECK(entity(session, "Player").transform.position.x == doctest::Approx(-5.5));
-  CHECK(entity(session, "Player").transform.position.z == doctest::Approx(5.5));
-  CHECK(fixture.project.loadStartup()->name().value() == original);
+  const auto forward = entity(session, "Player").transform.position;
+  CHECK(forward.x == doctest::Approx(-3));
+  CHECK(forward.z < 0.8F);
+  driver.frame({}, -523.5988F, 0, false);
+  const auto unchanged = entity(session, "Camera").transform.rotation;
+  CHECK(unchanged.y == doctest::Approx(0));
+  driver.frame({}, -523.5988F, 0, true);
+  CHECK(entity(session, "Camera").transform.rotation.y > 0.7F);
 
-  for (int index = 1; index <= 8; ++index) {
-    CHECK(entity(session, "CrystalVisual" + std::to_string(index)).mesh->visible);
+  for (int frame = 0; frame < 120; ++frame) {
+    driver.frame({Platform::Key::W});
   }
 
-  driver.tap(Platform::Key::Enter);
-
-  for (int frame = 0; frame < 180; ++frame) {
-    driver.frame({Platform::Key::D});
-  }
-
-  const auto position = entity(session, "Player").transform.position.x;
-  CHECK(position > 6.9F);
-  CHECK(position < 7.1F);
+  const auto stopped = entity(session, "Player").transform.position;
+  CHECK(stopped.x < -6.9F);
+  CHECK(stopped.x > -7.1F);
+  CHECK(stopped.y == doctest::Approx(0).epsilon(0.02));
+  CHECK(fixture.project.loadStartup()->entityCount().value()
+        == session.scene().value()->entityCount().value());
   report(session.close());
 }
 
-TEST_CASE("prism.native_hazard_damage_pause_and_defeat_use_contacts") {
+TEST_CASE("prism.diagonal_intent_has_the_same_speed_and_native_sprint_is_faster") {
+  auto displacement = [](bool diagonal, bool sprint) {
+    Fixture fixture;
+    auto session = fixture.session();
+    report(session.start());
+    Driver driver(session);
+    const auto origin = entity(session, "Player").transform.position;
+
+    for (int frame = 0; frame < 25; ++frame) {
+      if (sprint) {
+        driver.frame({Platform::Key::D, Platform::Key::LeftShift});
+      } else if (diagonal) {
+        driver.frame({Platform::Key::D, Platform::Key::W});
+      } else {
+        driver.frame({Platform::Key::D});
+      }
+    }
+
+    const auto final = entity(session, "Player").transform.position;
+    report(session.close());
+    return std::hypot(final.x - origin.x, final.z - origin.z);
+  };
+  const auto straight = displacement(false, false);
+  CHECK(displacement(true, false) == doctest::Approx(straight).epsilon(0.02));
+  CHECK(displacement(false, true) > straight * 1.7F);
+}
+
+TEST_CASE("prism.jump_edge_is_consumed_once_and_native_rig_plays_jump_air_land") {
   Fixture fixture;
+  observe(fixture);
   auto session = fixture.session();
   report(session.start());
   Driver driver(session);
-  driver.tap(Platform::Key::Enter);
-  driver.drive(-1.5F, 0);
-  CHECK(title(session).find("2 HP") != std::string::npos);
-  driver.tap(Platform::Key::P);
-  const auto paused = entity(session, "Player").transform.position;
 
-  for (int frame = 0; frame < 30; ++frame) {
-    driver.frame({Platform::Key::D});
-  }
-
-  CHECK(title(session).find("P to resume") != std::string::npos);
-  CHECK(title(session).find("2 HP") != std::string::npos);
-  CHECK(entity(session, "Player").transform.position.x == doctest::Approx(paused.x));
-  driver.tap(Platform::Key::P);
-
-  for (int frame = 0; frame < 150; ++frame) {
+  for (int frame = 0; frame < 10; ++frame) {
     driver.frame();
   }
 
-  CHECK(title(session).find("Game over!") != std::string::npos);
-  CHECK(title(session).find("0 HP") != std::string::npos);
-  std::vector<float> pcm(4096);
-  good(session.renderAudio(pcm));
-  CHECK(std::ranges::any_of(pcm, [](float value) { return std::abs(value) > 0.001F; }));
+  CHECK(observation(session)["ground"] == "grounded");
+  CHECK(observation(session)["clip"] == 0);
+  driver.publish({Platform::Key::Space});
+
+  for (int step = 0; step < 6; ++step) {
+    report(session.fixedUpdate());
+  }
+
+  report(session.update(0.1));
+  CHECK(entity(session, "Player").transform.position.y > 0.4F);
+  std::set<int> clips{observation(session)["clip"].get<int>()};
+  float peak{};
+
+  for (int frame = 0; frame < 150; ++frame) {
+    driver.frame({Platform::Key::Space});
+    peak = std::max(peak, entity(session, "Player").transform.position.y);
+    clips.insert(observation(session)["clip"].get<int>());
+  }
+
+  CHECK(peak > 1.5F);
+  CHECK(peak < 2.0F);
+  CHECK(clips.contains(4));
+  CHECK(clips.contains(5));
+  CHECK(clips.contains(6));
+  CHECK(observation(session)["ground"] == "grounded");
+  CHECK(entity(session, "Player").transform.position.y == doctest::Approx(0).epsilon(0.02));
   report(session.close());
 }
 
-TEST_CASE("prism.hot_reload_preserves_round_and_native_scene") {
+TEST_CASE("prism.jump_press_between_fixed_steps_is_buffered_without_repeating") {
+  Fixture fixture;
+  auto session = fixture.session();
+  report(session.start());
+  Driver driver(session);
+  driver.frame();
+  driver.publish({Platform::Key::Space});
+  report(session.update(1.0 / 120));
+  driver.publish();
+  report(session.fixedUpdate());
+  report(session.update(1.0 / 60));
+  CHECK(entity(session, "Player").transform.position.y > 0.05F);
+  report(session.close());
+}
+
+TEST_CASE("prism.hot_reload_keeps_native_rig_character_motion_and_orbit") {
   Fixture fixture;
   auto session = fixture.session(true);
   report(session.start());
   Driver driver(session);
-  driver.tap(Platform::Key::Enter);
-  driver.drive(-3, 5.5F);
-  const auto before = title(session);
-  const auto sceneId = session.scene().value()->id();
+  driver.frame({}, -100, 25, true);
+
+  for (int frame = 0; frame < 10; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  const auto before = entity(session, "Player").transform.position;
+  const auto rotation = entity(session, "Camera").transform.rotation;
+  const auto scope = session.scene().value()->id();
   auto files = fixture.project.files().value();
-  auto source = files.readText("scripts/spin.ts").value();
-  const auto position = source.find("seconds * 1.5");
-  REQUIRE(position != std::string::npos);
-  source.replace(position, std::string("seconds * 1.5").size(), "seconds * 2.0");
-  good(files.writeTextAtomic("scripts/spin.ts", source));
-  auto reloaded = session.update(0);
-  report(reloaded);
-  CHECK(reloaded->source.committed);
-  REQUIRE(reloaded->source.reload.has_value());
-  CHECK(reloaded->source.reload->migrated == 9);
-  CHECK(session.scene().value()->id() == sceneId);
-  CHECK(title(session) == before);
-  CHECK_FALSE(entity(session, "CrystalVisual1").mesh->visible);
+  auto source = files.readText("scripts/camera.ts").value();
+  REQUIRE(files.writeTextAtomic("scripts/camera.ts", source + "\n"));
+  auto reload = session.update(0);
+  report(reload);
+  REQUIRE(reload->source.committed);
+  REQUIRE(reload->source.reload);
+  CHECK(reload->source.reload->migrated == 1);
+  CHECK(session.scene().value()->id() == scope);
+  CHECK(entity(session, "Player").transform.position == before);
+  CHECK(entity(session, "Camera").transform.rotation == rotation);
+  CHECK(session.pointerCaptureRequested().value());
+  driver.frame({Platform::Key::W});
+  CHECK(entity(session, "Player").transform.position.z < before.z);
+  CHECK(entity(session, "Player").character.has_value());
+  report(session.close());
+}
+
+TEST_CASE("prism.authored_steps_climb_with_native_support_and_tall_rise_requires_jump") {
+  Fixture fixture;
+  auto authored = fixture.project.loadStartup().value();
+  const auto entities = authored.entities().value();
+  const auto actor = std::ranges::find(entities, "Player", &World::EntityInfo::name);
+  REQUIRE(actor != entities.end());
+  auto pose = actor->transform;
+  pose.position = {2, 0, -1.8F};
+  REQUIRE(authored.setTransform(actor->id, pose));
+  REQUIRE(fixture.project.saveStartup(authored));
+  auto session = fixture.session();
+  report(session.start());
+  Driver driver(session);
+
+  for (int frame = 0; frame < 90; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  const auto blocked = entity(session, "Player").transform.position;
+  CHECK(blocked.z < -4.9F);
+  CHECK(blocked.z > -5.5F);
+  CHECK(blocked.y == doctest::Approx(.54).epsilon(.08));
+  driver.frame({Platform::Key::W, Platform::Key::Space});
+
+  for (int frame = 0; frame < 8; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  for (int frame = 0; frame < 80; ++frame) {
+    driver.frame();
+  }
+
+  const auto landed = entity(session, "Player").transform.position;
+  CHECK(landed.y == doctest::Approx(1.2).epsilon(.05));
   report(session.close());
 }
 

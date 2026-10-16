@@ -44,7 +44,13 @@ TEST_CASE("window.create_resize_title_and_release") {
     CHECK(size->height == 480);
     CHECK(window->setTitle("测试 🌏").has_value());
     CHECK(window->show().has_value());
+    CHECK_FALSE(window->textInputActive().value());
     CHECK(window->setTextInput(true).has_value());
+    CHECK(window->textInputActive().value());
+    CHECK(window->setTextInput(true).has_value());
+    CHECK(window->textInputActive().value());
+    CHECK(window->setTextInput(false).has_value());
+    CHECK_FALSE(window->textInputActive().value());
     CHECK(window->setTextInput(false).has_value());
   }
 
@@ -105,6 +111,8 @@ TEST_CASE("window.move_releases_old_resources") {
     CHECK_FALSE(second.setRelativeMouse(true));
     CHECK_FALSE(second.relativeMouse());
     CHECK_FALSE(second.focused());
+    CHECK_FALSE(second.textInputActive());
+    CHECK_FALSE(second.setTextInput(true));
   }
 
   CHECK_FALSE(videoInitialized());
@@ -130,6 +138,7 @@ TEST_CASE("window.reject_worker_thread_operations") {
     const auto other = Window::create(hiddenWindow());
     rejected = !other && !window->resize(640, 480) && !pollEvents()
                && !window->setRelativeMouse(true) && !window->relativeMouse() && !window->focused();
+    rejected = rejected && !window->setTextInput(true) && !window->textInputActive();
   });
   worker.join();
   CHECK(rejected);

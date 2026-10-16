@@ -181,6 +181,40 @@ export class Mover extends ScriptComponent {
   CHECK_FALSE(moved.pointerCaptureRequested());
 }
 
+TEST_CASE("game_session_start_audio_pose_baseline_preserves_velocity_on_repeated_start") {
+  Fixture fixture(false);
+  auto scene = fixture.project.loadStartup().value();
+  const auto camera = scene.entities()->front().id;
+  REQUIRE(scene.setAudioListener(camera, Dot::World::AudioListener{true}));
+  REQUIRE(fixture.project.saveStartup(scene));
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
+import {audio, scene, ScriptComponent} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  onStart(): void {
+    const camera = scene.primaryCamera!;
+    const pose = camera.transform;
+    pose.position.x = 1000;
+    camera.transform = pose;
+  }
+  onUpdate(): void {
+    this.self.name = audio.listener().velocity.x > 0.5 ? 'moving' : 'stationary';
+    const camera = scene.primaryCamera!;
+    const pose = camera.transform;
+    pose.position.x += 1 / 60;
+    camera.transform = pose;
+  }
+}
+)ts"));
+  auto session = fixture.session();
+  good(session.start());
+  good(session.update(1.0 / 60));
+  CHECK(actor(session).name == "stationary");
+  good(session.start());
+  good(session.update(1.0 / 60));
+  CHECK(actor(session).name == "moving");
+  good(session.close());
+}
+
 TEST_CASE("game_session_hot_reload_migrates_scripts_and_retains_native_motion_audio") {
   Fixture fixture;
   fixture.controller();

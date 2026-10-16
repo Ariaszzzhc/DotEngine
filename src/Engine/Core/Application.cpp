@@ -242,6 +242,14 @@ namespace Dot::Core {
     return m_impl->window;
   }
 
+  auto Application::window() const -> const Platform::Window& {
+    if (!m_impl) {
+      throw std::logic_error("Application has been moved from");
+    }
+
+    return m_impl->window;
+  }
+
   auto Application::input() const -> const Platform::InputState& {
     if (!m_impl) {
       throw std::logic_error("Application has been moved from");

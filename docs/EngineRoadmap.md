@@ -21,10 +21,10 @@ requirements remain:
 | --- | --- | --- |
 | Rendering | PBR material/texture slots, HDRI IBL, directional cascaded soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, resource streaming and populated-scene performance |
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning and animation cross-fades | Production skeleton/animation authoring, layered/state-machine workflows and scalability |
-| Physics/gameplay | Rigid bodies, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms and script/Inspector/agent controls | Broad-phase presence, actual humanoid and shoulder camera |
+| Physics/gameplay | Rigid bodies, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms and script/Inspector/agent controls | Broad-phase presence and populated-game character scalability |
 | Editor | Docked views, scene/resource/material authoring, picking/multiselection/gizmos, undo/redo, isolated Play and export | Consistent production workflows, complex scene organization, background compilation and performance/debugging tools |
 | AI control | Product CLI, strict JSON operations and live mailbox; shared document/resource/Play operations | Audit complete human/agent operation parity as workflows evolve; no test-only substitutes |
-| Example experience | Feature Lab and the current Prism Relay industrial environment | Coherent usable demonstrations; replace Prism Relay's intermediate collection startup with the requested character template |
+| Example experience | Feature Lab and Prism Relay's rigged character, native traversal and sphere-swept shoulder camera | Finished realistic sci-fi character/environment art, broader workflow and performance evidence |
 | Production evidence | Focused headless behavior/GPU tests and past macOS product checks | Real project workflow, stress/performance and shipping evidence beyond test counts |
 
 Prioritize complete usable

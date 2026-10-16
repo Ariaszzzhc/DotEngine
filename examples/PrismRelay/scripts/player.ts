@@ -1,217 +1,196 @@
-import {Entity, input, physics, scene, ScriptComponent, type Transform} from "dot:engine";
-import {type Checkpoint, RelayRules, type Settings} from './rules';
+import {Entity, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+
+import {type CameraState, ShoulderCamera} from './camera';
+
+interface Settings {
+  walkSpeed: number;
+  runSpeed: number;
+}
+
+interface Checkpoint {
+  camera: CameraState;
+  velocity: Vec3;
+  edgeFrame: string;
+  lookFrame: string;
+  jumpBuffer: number;
+  grounded: boolean;
+  clip: number;
+}
 
 /**
- * Attached player behavior. Native Jolt contacts decide pickups/damage;
- * source hot reload preserves gameplay state and never recreates the scene.
- * 玩家附加行为；拾取与伤害由原生 Jolt 接触决定，源码热重载保留玩法状态，不重建场景。
+ * Camera-relative intent drives the native capsule; gravity, support and collision
+ * remain in Jolt. The native animation player owns sampled poses and cross-fades.
+ * 相机朝向的运动意图驱动原生胶囊；重力、支撑及碰撞仍由 Jolt 处理，原生动画播放器采样并混合姿态。
  */
 export class RelayPlayer extends ScriptComponent<Settings> {
-  #rules!: RelayRules;
-  #entities = new Map<string, Entity>();
-  #spawn!: Transform;
-  #contactBatch = '';
-  #inputFrame = '';
-  #touching = new Map<string, string>();
+  #camera!: ShoulderCamera;
+  #model!: Entity;
+  #listener!: Entity;
+  #velocity: Vec3 = {x: 0, y: 0, z: 0};
+  #edgeFrame = '';
+  #lookFrame = '';
+  #jumpBuffer = 0;
+  #grounded = true;
+  #clip = 0;
 
-  private entity(name: string): Entity {
-    const entity = this.#entities.get(name);
+  private bind(): void {
+    const camera = scene.primaryCamera;
+    const listener = scene.primaryListener;
+    const model = scene.entities().find(entity => entity.name === 'Surveyor');
 
-    if (!entity || !entity.exists) {
-      throw new Error('Missing authored relay entity: ' + name);
+    if (!camera || !model || !listener || listener.parent !== null || !listener.audioListener
+        || model.parent?.id.value !== this.self.id.value || !this.self.character
+        || !Number.isFinite(this.properties.walkSpeed) || this.properties.walkSpeed <= 0
+        || !Number.isFinite(this.properties.runSpeed) || this.properties.runSpeed > 12
+        || this.properties.runSpeed < this.properties.walkSpeed) {
+      throw Error('Prism Relay requires its authored character, camera, model and bounded speeds');
     }
 
-    return entity;
+    this.#camera = new ShoulderCamera(camera);
+    this.#model = model;
+    this.#listener = listener;
   }
 
   onStart(): void {
-    for (const entity of scene.entities()) {
-      const name = entity.name;
-
-      if (this.#entities.has(name)) {
-        throw new Error('Duplicate authored relay entity: ' + name);
-      }
-
-      this.#entities.set(name, entity);
-    }
-
-    this.#spawn = this.self.transform;
-    this.#rules = new RelayRules(
-        this.properties, Array.from({length: 8}, (_, index) => 'Crystal' + (index + 1)));
-    this.refresh();
+    this.bind();
+    input.capturePointer(true);
+    this.#model.configureAnimation(1, true);
+    this.#model.playAnimation(0, true);
+    this.#camera.update(this.self.characterState.position, 0);
+    this.listen();
   }
 
-  onFixedUpdate(): void {
-    const active = this.#rules.state.phase === 'playing';
-    let x = active ? Number(input.key('D').down || input.key('Right').down)
-            - Number(input.key('A').down || input.key('Left').down)
-                   : 0;
-    let z = active ? Number(input.key('S').down || input.key('Down').down)
-            - Number(input.key('W').down || input.key('Up').down)
-                   : 0;
-    const length = Math.hypot(x, z);
+  private edges(frame: InputFrame): void {
+    if (frame.index !== this.#edgeFrame) {
+      this.#edgeFrame = frame.index;
 
-    if (length > 0) {
-      x *= this.properties.speed / length;
-      z *= this.properties.speed / length;
+      if (frame.keys.Space.pressed) {
+        this.#jumpBuffer = 0.14;
+      }
+    }
+  }
+
+  onFixedUpdate(seconds: number): void {
+    const frame = input.snapshot();
+    this.edges(frame);
+    const x = Number(frame.keys.D.down || frame.keys.Right.down)
+        - Number(frame.keys.A.down || frame.keys.Left.down);
+    const z = Number(frame.keys.S.down || frame.keys.Down.down)
+        - Number(frame.keys.W.down || frame.keys.Up.down);
+    const magnitude = Math.hypot(x, z);
+    const speed = frame.keys.LeftShift.down || frame.keys.RightShift.down
+        ? this.properties.runSpeed
+        : this.properties.walkSpeed;
+    const scale = magnitude > 0 ? speed / magnitude : 0;
+    const yaw = this.#camera.yaw;
+    const wanted = {
+      x: (Math.cos(yaw) * x + Math.sin(yaw) * z) * scale,
+      z: (-Math.sin(yaw) * x + Math.cos(yaw) * z) * scale,
+    };
+    const grounded = this.self.characterState.ground === 'grounded';
+    const blend = 1 - Math.exp(-(grounded ? 16 : 4) * seconds);
+    this.#velocity.x += (wanted.x - this.#velocity.x) * blend;
+    this.#velocity.z += (wanted.z - this.#velocity.z) * blend;
+    const jump = this.#jumpBuffer > 0 && grounded;
+    this.#jumpBuffer = jump ? 0 : Math.max(0, this.#jumpBuffer - seconds);
+    this.self.moveCharacter(this.#velocity, jump);
+
+    if (Math.hypot(this.#velocity.x, this.#velocity.z) > 0.05) {
+      this.self.setCharacterYaw(Math.atan2(-this.#velocity.x, -this.#velocity.z) * 180 / Math.PI);
+    }
+  }
+
+  private animate(): void {
+    const state = this.self.characterState;
+    const grounded = state.ground === 'grounded';
+    const animation = this.#model.animationState;
+    const finished = animation.timeSeconds >= animation.durationSeconds - 0.02;
+    const speed = Math.hypot(state.velocity.x, state.velocity.z);
+    let clip: number;
+
+    if (!grounded) {
+      clip = this.#grounded && state.velocity.y > 0               ? 4
+          : this.#clip === 4 && !finished && state.velocity.y > 0 ? 4
+                                                                  : 5;
+    } else if (
+        !this.#grounded
+        || (this.#clip === 6 && !finished && (speed < 0.15 || animation.timeSeconds < 0.15))) {
+      clip = 6;
+    } else {
+      clip = speed < 0.15 ? 0 : speed < 2 ? 1 : speed < 4.5 ? 2 : 3;
     }
 
-    this.self.setVelocity({x, y: 0, z});
-    this.self.setAngularVelocity({x: 0, y: 0, z: 0});
+    if (clip !== this.#clip) {
+      this.#model.configureAnimation(1, clip < 4 || clip === 5);
+      this.#model.crossFadeAnimation(clip, clip === 4 ? 0.06 : 0.12);
+      this.#clip = clip;
+    }
+
+    this.#grounded = grounded;
   }
 
   onUpdate(seconds: number): void {
-    if (this.#inputFrame !== input.index) {
-      this.#inputFrame = input.index;
+    const frame = input.snapshot();
+    this.edges(frame);
 
-      if (input.key('R').pressed) {
-        this.#rules.reset();
-        this.#touching.clear();
-        this.self.transform = this.#spawn;
-      } else if (input.key('Enter').pressed || input.key('Space').pressed) {
-        this.#rules.start();
-      } else if (input.key('P').pressed) {
-        this.#rules.pause();
-      }
+    if (frame.index !== this.#lookFrame) {
+      this.#lookFrame = frame.index;
+      this.#camera.look(frame);
     }
 
-    this.#rules.tick(seconds);
-    const contacts = physics.contacts;
-    const batch = contacts.generation + ':' + contacts.index;
-
-    if (batch !== this.#contactBatch) {
-      this.#contactBatch = batch;
-
-      for (const contact of contacts.events) {
-        if (!contact.sensor) {
-          continue;
-        }
-
-        const other = contact.first.value === this.self.id.value ? contact.second
-            : contact.second.value === this.self.id.value        ? contact.first
-                                                                 : null;
-
-        if (!other) {
-          continue;
-        }
-
-        if (contact.phase === 'end') {
-          this.#touching.delete(other.value);
-          continue;
-        }
-
-        const entity = new Entity(other);
-
-        if (entity.exists) {
-          this.#touching.set(other.value, entity.name);
-        }
-      }
-    }
-
-    /**
-     * Sleeping bodies retain contact until an explicit native end event.
-     * 休眠刚体保持接触，直到原生明确发送结束事件。
-     */
-    for (const name of this.#touching.values()) {
-      if (name.startsWith('Crystal') && this.#rules.collect(name)) {
-        this.self.seekAudio('0');
-        this.self.playAudio();
-      } else if (name.startsWith('Hazard') && this.#rules.hit()) {
-        this.entity('DamageSound').seekAudio('0');
-        this.entity('DamageSound').playAudio();
-      }
-    }
-
-    this.refresh();
+    this.#camera.update(this.self.characterState.position, seconds);
+    this.listen();
+    this.animate();
   }
 
-  private refresh(): void {
-    const state = this.#rules.state;
-
-    for (let index = 1; index <= 8; ++index) {
-      const visual = this.entity('CrystalVisual' + index);
-      const mesh = visual.mesh;
-      const score = this.entity('Score' + index);
-      const indicator = score.mesh;
-
-      if (!mesh || !indicator) {
-        throw new Error('Relay crystal/score requires authored meshes');
-      }
-
-      const collected = state.collected.includes('Crystal' + index);
-      mesh.visible = !collected;
-      indicator.tint = collected ? {x: 0.2, y: 1, z: 0.55, w: 1} : {x: 0.1, y: 0.2, z: 0.25, w: 1};
-      visual.mesh = mesh;
-      score.mesh = indicator;
-    }
-
-    for (let index = 1; index <= 3; ++index) {
-      const heart = this.entity('Health' + index);
-      const mesh = heart.mesh;
-
-      if (!mesh) {
-        throw new Error('Relay health requires an authored mesh');
-      }
-
-      mesh.visible = index <= state.health;
-      heart.mesh = mesh;
-    }
-
-    const timer = this.entity('Timer');
-    const transform = timer.transform;
-    transform.scale.x = Math.max(0.01, 14 * (1 - state.elapsed / this.properties.timeLimit));
-    timer.transform = transform;
-    const player = this.self.mesh;
-
-    if (!player) {
-      throw new Error('Relay player requires an authored mesh');
-    }
-
-    player.tint = state.phase === 'won'                ? {x: 0.2, y: 1, z: 0.55, w: 1}
-        : state.phase === 'lost' || state.immunity > 0 ? {x: 1, y: 0.2, z: 0.2, w: 1}
-                                                       : {x: 0.3, y: 0.85, z: 1, w: 1};
-    this.self.mesh = player;
-    const hint = state.phase === 'ready' ? 'Enter to start'
-        : state.phase === 'paused'       ? 'P to resume'
-        : state.phase === 'won'          ? 'Complete! R to restart'
-        : state.phase === 'lost'         ? 'Game over! R to restart'
-                                         : 'WASD/arrows | P pause';
-    scene.rename(
-        'Prism Relay | ' + hint + ' | ' + state.collected.length + '/8 | ' + state.health + ' HP | '
-        + Math.ceil(this.properties.timeLimit - state.elapsed) + 's');
+  /**
+   * Hear from the avatar with camera orientation. Orbiting a boom must not create
+   * artificial listener velocity or Doppler spikes.
+   * 听者位于角色头部并采用镜头朝向，环绕镜头不产生虚假的听者速度或多普勒突变。
+   */
+  private listen(): void {
+    const feet = this.self.characterState.position;
+    const pose = this.#camera.camera.transform;
+    pose.position = {x: feet.x, y: feet.y + 1.5, z: feet.z};
+    this.#listener.transform = pose;
   }
 
-  onSaveState(): {
-    rules: Checkpoint; spawn: Transform; input: string; contacts: string;
-    touching: [string, string][]
-  } {
+  onSaveState(): Checkpoint {
     return {
-      rules: this.#rules.state,
-      spawn: this.#spawn,
-      input: this.#inputFrame,
-      contacts: this.#contactBatch,
-      touching: [...this.#touching]
+      camera: this.#camera.state,
+      velocity: {...this.#velocity},
+      edgeFrame: this.#edgeFrame,
+      lookFrame: this.#lookFrame,
+      jumpBuffer: this.#jumpBuffer,
+      grounded: this.#grounded,
+      clip: this.#clip,
     };
   }
 
-  onLoadState(state: {
-    rules: Checkpoint; spawn: Transform; input: string; contacts: string;
-    touching: [string, string][]
-  }): void {
-    // Hot-reload candidates read authored entities before state migration; start is not replayed.
-    // 热重载候选在迁移状态前读取编辑实体，不重放 start。
-    this.#entities = new Map(scene.entities().map(entity => [entity.name, entity]));
-    this.#rules = new RelayRules(
-        this.properties, Array.from({length: 8}, (_, index) => 'Crystal' + (index + 1)));
-    this.#rules.restore(state.rules);
-    this.#spawn = state.spawn;
-    this.#inputFrame = state.input;
-    this.#contactBatch = state.contacts;
-    this.#touching = new Map(state.touching);
+  onLoadState(state: Checkpoint): void {
+    if (!state || !state.velocity || ![state.velocity.x, state.velocity.z].every(Number.isFinite)
+        || state.velocity.y !== 0 || Math.hypot(state.velocity.x, state.velocity.z) > 12.01
+        || !Number.isFinite(state.jumpBuffer) || state.jumpBuffer < 0 || state.jumpBuffer > 0.14
+        || typeof state.grounded !== 'boolean' || !Number.isInteger(state.clip) || state.clip < 0
+        || state.clip > 6 || typeof state.edgeFrame !== 'string'
+        || !/^[0-9]*$/.test(state.edgeFrame) || typeof state.lookFrame !== 'string'
+        || !/^[0-9]*$/.test(state.lookFrame)) {
+      throw Error('Invalid Prism Relay character checkpoint');
+    }
+
+    this.bind();
+    this.#camera.restore(state.camera);
+    this.#velocity = {...state.velocity};
+    this.#edgeFrame = state.edgeFrame;
+    this.#lookFrame = state.lookFrame;
+    this.#jumpBuffer = state.jumpBuffer;
+    this.#grounded = state.grounded;
+    this.#clip = state.clip;
   }
 
   onStop(): void {
-    this.self.stopAudio();
-    this.entity('DamageSound').stopAudio();
+    input.capturePointer(false);
+    this.self.moveCharacter({x: 0, y: 0, z: 0});
+    this.#model.stopAnimation();
   }
 }

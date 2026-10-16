@@ -154,6 +154,11 @@ namespace Dot::Runtime {
         }
 
         const bool capture = *requested && *focused && !quitting;
+        auto text = application->window().setTextInput(!capture);
+
+        if (!text) {
+          return text;
+        }
 
         if (capture != *relative) {
           auto changed = application->window().setRelativeMouse(capture);

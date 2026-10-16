@@ -1,0 +1,2807 @@
+{
+  "entities": [
+    {
+      "animation": {
+        "clip": 0,
+        "clips": [
+          "assets/surveyor/animations/0.dotanimation",
+          "assets/surveyor/animations/1.dotanimation",
+          "assets/surveyor/animations/2.dotanimation",
+          "assets/surveyor/animations/3.dotanimation",
+          "assets/surveyor/animations/4.dotanimation",
+          "assets/surveyor/animations/5.dotanimation",
+          "assets/surveyor/animations/6.dotanimation"
+        ],
+        "enabled": true,
+        "looping": true,
+        "playOnStart": true,
+        "speed": 1.0,
+        "targets": [
+          {
+            "entity": "1",
+            "node": 0
+          },
+          {
+            "entity": "2",
+            "node": 1
+          },
+          {
+            "entity": "5",
+            "node": 2
+          },
+          {
+            "entity": "6",
+            "node": 3
+          },
+          {
+            "entity": "7",
+            "node": 4
+          },
+          {
+            "entity": "8",
+            "node": 5
+          },
+          {
+            "entity": "9",
+            "node": 6
+          },
+          {
+            "entity": "10",
+            "node": 7
+          },
+          {
+            "entity": "11",
+            "node": 8
+          },
+          {
+            "entity": "12",
+            "node": 9
+          },
+          {
+            "entity": "13",
+            "node": 10
+          },
+          {
+            "entity": "14",
+            "node": 11
+          },
+          {
+            "entity": "15",
+            "node": 12
+          },
+          {
+            "entity": "16",
+            "node": 13
+          },
+          {
+            "entity": "17",
+            "node": 14
+          },
+          {
+            "entity": "18",
+            "node": 15
+          },
+          {
+            "entity": "19",
+            "node": 16
+          },
+          {
+            "entity": "20",
+            "node": 17
+          },
+          {
+            "entity": "21",
+            "node": 18
+          },
+          {
+            "entity": "22",
+            "node": 19
+          },
+          {
+            "entity": "23",
+            "node": 20
+          },
+          {
+            "entity": "24",
+            "node": 21
+          },
+          {
+            "entity": "25",
+            "node": 22
+          },
+          {
+            "entity": "26",
+            "node": 23
+          },
+          {
+            "entity": "27",
+            "node": 24
+          },
+          {
+            "entity": "28",
+            "node": 25
+          },
+          {
+            "entity": "29",
+            "node": 26
+          },
+          {
+            "entity": "30",
+            "node": 27
+          },
+          {
+            "entity": "31",
+            "node": 28
+          },
+          {
+            "entity": "32",
+            "node": 29
+          },
+          {
+            "entity": "33",
+            "node": 30
+          },
+          {
+            "entity": "34",
+            "node": 31
+          },
+          {
+            "entity": "35",
+            "node": 32
+          },
+          {
+            "entity": "36",
+            "node": 33
+          },
+          {
+            "entity": "37",
+            "node": 34
+          },
+          {
+            "entity": "38",
+            "node": 35
+          },
+          {
+            "entity": "39",
+            "node": 36
+          },
+          {
+            "entity": "40",
+            "node": 37
+          },
+          {
+            "entity": "41",
+            "node": 38
+          },
+          {
+            "entity": "42",
+            "node": 39
+          },
+          {
+            "entity": "43",
+            "node": 40
+          },
+          {
+            "entity": "44",
+            "node": 41
+          },
+          {
+            "entity": "45",
+            "node": 42
+          },
+          {
+            "entity": "46",
+            "node": 43
+          },
+          {
+            "entity": "47",
+            "node": 44
+          },
+          {
+            "entity": "48",
+            "node": 45
+          },
+          {
+            "entity": "49",
+            "node": 46
+          },
+          {
+            "entity": "50",
+            "node": 47
+          },
+          {
+            "entity": "51",
+            "node": 48
+          },
+          {
+            "entity": "52",
+            "node": 49
+          },
+          {
+            "entity": "53",
+            "node": 50
+          },
+          {
+            "entity": "54",
+            "node": 51
+          },
+          {
+            "entity": "55",
+            "node": 52
+          },
+          {
+            "entity": "56",
+            "node": 53
+          },
+          {
+            "entity": "57",
+            "node": 54
+          },
+          {
+            "entity": "58",
+            "node": 55
+          },
+          {
+            "entity": "59",
+            "node": 56
+          },
+          {
+            "entity": "60",
+            "node": 57
+          },
+          {
+            "entity": "61",
+            "node": 58
+          },
+          {
+            "entity": "62",
+            "node": 59
+          },
+          {
+            "entity": "63",
+            "node": 60
+          },
+          {
+            "entity": "64",
+            "node": 61
+          },
+          {
+            "entity": "65",
+            "node": 62
+          },
+          {
+            "entity": "66",
+            "node": 63
+          },
+          {
+            "entity": "67",
+            "node": 64
+          },
+          {
+            "entity": "68",
+            "node": 65
+          },
+          {
+            "entity": "69",
+            "node": 66
+          }
+        ]
+      },
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "1",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Armature",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "2",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Mannequin",
+      "parent": "1",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "3",
+      "light": null,
+      "material": {
+        "asset": "assets/surveyor/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/surveyor/meshes/0.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 0",
+      "parent": "2",
+      "rigidBody": null,
+      "script": null,
+      "skin": {
+        "asset": "assets/surveyor/skins/0.dotskin",
+        "enabled": true,
+        "joints": [
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69"
+        ]
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "4",
+      "light": null,
+      "material": {
+        "asset": "assets/surveyor/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/surveyor/meshes/1.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 1",
+      "parent": "2",
+      "rigidBody": null,
+      "script": null,
+      "skin": {
+        "asset": "assets/surveyor/skins/1.dotskin",
+        "enabled": true,
+        "joints": [
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69"
+        ]
+      },
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "5",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "root",
+      "parent": "1",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          -0.7071067690849304,
+          0.0,
+          0.0,
+          0.7071067690849304
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "6",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pelvis",
+      "parent": "5",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0053169443272054195,
+          0.08649440854787827,
+          0.8771723508834839
+        ],
+        "rotation": [
+          0.7559312582015991,
+          -0.08829516172409058,
+          -0.07525502890348434,
+          0.6442891955375671
+        ],
+        "scale": [
+          1.0,
+          0.9999999403953552,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "7",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "spine_01",
+      "parent": "6",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.4842953532934189e-09,
+          0.13817636668682098,
+          -4.962061428415154e-09
+        ],
+        "rotation": [
+          -0.06470271199941635,
+          -3.635405088076027e-09,
+          1.4009153836980204e-09,
+          0.9979045987129211
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "8",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "spine_02",
+      "parent": "7",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.3563550282924552e-09,
+          0.12403494119644165,
+          -3.645940438445905e-09
+        ],
+        "rotation": [
+          0.015377742238342762,
+          0.0001240851852344349,
+          0.00024849394685588777,
+          0.9998817443847656
+        ],
+        "scale": [
+          1.0,
+          1.0000001192092896,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "spine_03",
+      "parent": "8",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.3969838619232178e-09,
+          0.14127175509929657,
+          -3.8905767496544286e-09
+        ],
+        "rotation": [
+          0.09233494848012924,
+          0.00031255220528692007,
+          0.00025737815303727984,
+          0.9957278966903687
+        ],
+        "scale": [
+          1.0,
+          0.9999998807907104,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "10",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "neck_01",
+      "parent": "9",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          7.101334631443024e-09,
+          0.17289063334465027,
+          2.933322917897385e-09
+        ],
+        "rotation": [
+          0.01847863756120205,
+          -0.00023679726291447878,
+          -0.0002423614787403494,
+          0.9998291730880737
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.0000001192092896,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "11",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Head",
+      "parent": "10",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.561137080192566e-09,
+          0.08258677273988724,
+          -3.2101645786042354e-09
+        ],
+        "rotation": [
+          -0.001059611327946186,
+          0.09601302444934845,
+          -0.0027143575716763735,
+          0.9953758120536804
+        ],
+        "scale": [
+          1.0000001192092896,
+          0.9999998807907104,
+          0.9999997615814209
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "12",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "clavicle_l",
+      "parent": "9",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.018799975514411926,
+          0.14055350422859192,
+          0.0808950662612915
+        ],
+        "rotation": [
+          -0.5995030403137207,
+          -0.3734595775604248,
+          -0.39420461654663086,
+          0.5879853367805481
+        ],
+        "scale": [
+          1.0,
+          0.9999999403953552,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "13",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "upperarm_l",
+      "parent": "12",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.03007236309349537,
+          0.21858170628547668,
+          -0.01696852035820484
+        ],
+        "rotation": [
+          -0.28649404644966125,
+          0.6735248565673828,
+          -0.49582529067993164,
+          0.46737852692604065
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.0,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "14",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "lowerarm_l",
+      "parent": "13",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.3624886814086494e-08,
+          0.2744401693344116,
+          -6.390478546336453e-08
+        ],
+        "rotation": [
+          0.28030431270599365,
+          0.04288339987397194,
+          -0.004890392534434795,
+          0.958940327167511
+        ],
+        "scale": [
+          0.9999998211860657,
+          0.9999999403953552,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "15",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "hand_l",
+      "parent": "14",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          9.165940895172753e-08,
+          0.27264049649238586,
+          3.6484208987275224e-09
+        ],
+        "rotation": [
+          0.10600873082876205,
+          0.006375760771334171,
+          -0.02567433938384056,
+          0.994013249874115
+        ],
+        "scale": [
+          1.0,
+          1.0000001192092896,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "16",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_01_l",
+      "parent": "15",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.001999947242438793,
+          0.11989989131689072,
+          0.0309000127017498
+        ],
+        "rotation": [
+          0.44519034028053284,
+          0.5493689775466919,
+          -0.4451941251754761,
+          0.5493646264076233
+        ],
+        "scale": [
+          1.0000001192092896,
+          0.9999997019767761,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "17",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_02_l",
+      "parent": "16",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -5.128191205017174e-10,
+          0.040700074285268784,
+          -2.589203162983722e-08
+        ],
+        "rotation": [
+          0.6233418583869934,
+          6.134859376061286e-08,
+          2.1543812067648105e-07,
+          0.7819494605064392
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999999403953552,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "18",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_03_l",
+      "parent": "17",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          4.697540134657174e-09,
+          0.0347999669611454,
+          2.2800804799771868e-08
+        ],
+        "rotation": [
+          0.62334144115448,
+          -2.0485644824930205e-07,
+          6.312424005727735e-08,
+          0.7819497585296631
+        ],
+        "scale": [
+          1.0,
+          0.9999999403953552,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "19",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_04_leaf_l",
+      "parent": "18",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          9.723314375875702e-10,
+          0.030099885538220406,
+          -4.822867660791985e-10
+        ],
+        "rotation": [
+          3.102064706993722e-14,
+          1.0,
+          -8.381903171539307e-09,
+          3.6629523947340203e-06
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "20",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_01_l",
+      "parent": "15",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.0004001030756626278,
+          0.12159997224807739,
+          0.005200012121349573
+        ],
+        "rotation": [
+          0.43208980560302734,
+          0.5386998057365417,
+          -0.4580463767051697,
+          0.559727132320404
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999998807907104,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "21",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_02_l",
+      "parent": "20",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.5443804335955065e-08,
+          0.04234735295176506,
+          2.018611944265558e-08
+        ],
+        "rotation": [
+          0.6233412623405457,
+          0.000943477381952107,
+          0.0011836427729576826,
+          0.781948447227478
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "22",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_03_l",
+      "parent": "21",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.695790707856304e-08,
+          0.033933185040950775,
+          -5.18277261107869e-08
+        ],
+        "rotation": [
+          0.6233410835266113,
+          -0.0007043208461254835,
+          -0.0008833514293655753,
+          0.7819492816925049
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "23",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_04_leaf_l",
+      "parent": "22",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -5.615752485255143e-08,
+          0.034437187016010284,
+          7.366099730177211e-09
+        ],
+        "rotation": [
+          1.862612508674033e-09,
+          1.0,
+          9.313193771731676e-09,
+          3.636874907897436e-06
+        ],
+        "scale": [
+          1.0,
+          0.9999997019767761,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "24",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_01_l",
+      "parent": "15",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0015998681774362922,
+          0.1076999083161354,
+          -0.040799979120492935
+        ],
+        "rotation": [
+          0.5040571689605713,
+          0.5115413665771484,
+          -0.435151606798172,
+          0.5430423021316528
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.0,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "25",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_02_l",
+      "parent": "24",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.2226452617578616e-08,
+          0.040290575474500656,
+          4.4613102545554284e-08
+        ],
+        "rotation": [
+          0.6231628656387329,
+          -0.020061472430825233,
+          0.014925484545528889,
+          0.7816922664642334
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "26",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_03_l",
+      "parent": "25",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.1065510285845903e-08,
+          0.02766532450914383,
+          3.406934467875544e-08
+        ],
+        "rotation": [
+          0.6233415007591248,
+          0.0003798254474531859,
+          0.00047661716234870255,
+          0.781949520111084
+        ],
+        "scale": [
+          1.0000001192092896,
+          1.0000001192092896,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "27",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_04_leaf_l",
+      "parent": "26",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.058535114064398e-08,
+          0.02816416323184967,
+          -4.408202691763563e-09
+        ],
+        "rotation": [
+          2.421439582178664e-08,
+          1.0,
+          -1.3969672085778484e-09,
+          3.6368755900184624e-06
+        ],
+        "scale": [
+          1.0,
+          0.9999999403953552,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "28",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_01_l",
+      "parent": "15",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.00010003101488109678,
+          0.1190999448299408,
+          -0.0171000175178051
+        ],
+        "rotation": [
+          0.43533965945243835,
+          0.5413560271263123,
+          -0.454903781414032,
+          0.5572033524513245
+        ],
+        "scale": [
+          1.0,
+          0.9999997615814209,
+          1.000000238418579
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "29",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_02_l",
+      "parent": "28",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.274447024637084e-08,
+          0.039324987679719925,
+          -8.570096099447255e-08
+        ],
+        "rotation": [
+          0.6233418583869934,
+          7.393929990939796e-06,
+          9.58044438448269e-06,
+          0.7819494605064392
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999998807907104,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "30",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_03_l",
+      "parent": "29",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -3.5994528246874324e-08,
+          0.030919546261429787,
+          1.6371984656871064e-08
+        ],
+        "rotation": [
+          0.6233411431312561,
+          -0.0006651449366472661,
+          -0.0008344996604137123,
+          0.7819492816925049
+        ],
+        "scale": [
+          1.0,
+          0.9999998807907104,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "31",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_04_leaf_l",
+      "parent": "30",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.6175462747014535e-08,
+          0.03182258829474449,
+          -5.4205080424196694e-09
+        ],
+        "rotation": [
+          9.313191329241022e-10,
+          1.0,
+          9.313693150048152e-10,
+          3.655502041510772e-06
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "32",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_01_l",
+      "parent": "15",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.022800004109740257,
+          0.02730000764131546,
+          0.03359996899962425
+        ],
+        "rotation": [
+          0.2908383011817932,
+          0.9496491551399231,
+          0.11458341777324677,
+          0.021216977387666702
+        ],
+        "scale": [
+          0.9999998211860657,
+          0.9999997615814209,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "33",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_02_l",
+      "parent": "32",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.524582936620391e-08,
+          0.04302983358502388,
+          -1.6771082300692797e-08
+        ],
+        "rotation": [
+          0.21938996016979218,
+          0.023802563548088074,
+          -0.005304720252752304,
+          0.9753324389457703
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "34",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_03_l",
+      "parent": "33",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.2439259339535056e-08,
+          0.04907793179154396,
+          4.6528754182872945e-09
+        ],
+        "rotation": [
+          0.6873881220817566,
+          -0.00030906754545867443,
+          -0.00044465751852840185,
+          0.7262901067733765
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "35",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_04_leaf_l",
+      "parent": "34",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.3900069479054764e-08,
+          0.04086235538125038,
+          -1.3900725015503212e-08
+        ],
+        "rotation": [
+          4.812421572353287e-09,
+          0.5061779022216797,
+          2.8240609140084416e-07,
+          0.8624290823936462
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "36",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "clavicle_r",
+      "parent": "9",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.018799979239702225,
+          0.1405535340309143,
+          0.08089505136013031
+        ],
+        "rotation": [
+          -0.635614812374115,
+          0.31049013137817383,
+          0.3295918107032776,
+          0.6252670884132385
+        ],
+        "scale": [
+          0.9999998807907104,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "37",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "upperarm_r",
+      "parent": "36",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.03007233515381813,
+          0.21858173608779907,
+          -0.016968442127108574
+        ],
+        "rotation": [
+          -0.2942100167274475,
+          -0.6806532144546509,
+          0.46932724118232727,
+          0.47946181893348694
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999999403953552,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "38",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "lowerarm_r",
+      "parent": "37",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -3.636270662354946e-08,
+          0.27444031834602356,
+          3.9418814878899866e-08
+        ],
+        "rotation": [
+          0.36726224422454834,
+          -0.1536893993616104,
+          0.06167043372988701,
+          0.915256679058075
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999999403953552,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "39",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "hand_r",
+      "parent": "38",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.204330940003274e-08,
+          0.27264055609703064,
+          2.978894286798095e-08
+        ],
+        "rotation": [
+          0.11670906096696854,
+          0.0029166911263018847,
+          0.04477861523628235,
+          0.9921518564224243
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "40",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_01_r",
+      "parent": "39",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.0020000324584543705,
+          0.11989998817443848,
+          0.03089999407529831
+        ],
+        "rotation": [
+          0.44519084692001343,
+          -0.5493687987327576,
+          0.4451940357685089,
+          0.5493645071983337
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999998807907104,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "41",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_02_r",
+      "parent": "40",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.260815700263265e-08,
+          0.040700070559978485,
+          8.214140478912668e-08
+        ],
+        "rotation": [
+          0.62334144115448,
+          2.1751783663148672e-07,
+          6.333713287176579e-08,
+          0.7819497585296631
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "42",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_03_r",
+      "parent": "41",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.3323082132264972e-08,
+          0.03479999676346779,
+          3.5839207157550845e-08
+        ],
+        "rotation": [
+          0.6233415603637695,
+          1.5245119300288934e-07,
+          -2.1200266075993568e-07,
+          0.7819496989250183
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "43",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "index_04_leaf_r",
+      "parent": "42",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -3.6362035160664163e-08,
+          0.030100015923380852,
+          -4.797956520974367e-08
+        ],
+        "rotation": [
+          7.4505734914964705e-09,
+          -1.0,
+          -1.8626740150295973e-09,
+          3.6499138786894036e-06
+        ],
+        "scale": [
+          1.0,
+          1.0000001192092896,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "44",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_01_r",
+      "parent": "39",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.00040005164919421077,
+          0.12159997969865799,
+          0.005200011655688286
+        ],
+        "rotation": [
+          0.43209007382392883,
+          -0.5386996269226074,
+          0.458046555519104,
+          0.559726893901825
+        ],
+        "scale": [
+          1.0000001192092896,
+          0.9999998211860657,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "45",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_02_r",
+      "parent": "44",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -6.7827161664979485e-09,
+          0.042347293347120285,
+          -2.6595444069243968e-08
+        ],
+        "rotation": [
+          0.6233407855033875,
+          -0.0009435098036192358,
+          -0.0011834028409793973,
+          0.7819488644599915
+        ],
+        "scale": [
+          0.9999998807907104,
+          1.0000001192092896,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "46",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_03_r",
+      "parent": "45",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -7.188179829142882e-09,
+          0.033933188766241074,
+          1.023087747853424e-08
+        ],
+        "rotation": [
+          0.62334144115448,
+          0.0007041737553663552,
+          0.0008831482264213264,
+          0.781948983669281
+        ],
+        "scale": [
+          1.0,
+          0.9999998211860657,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "47",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "middle_04_leaf_r",
+      "parent": "46",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.5799513636570737e-08,
+          0.03443710878491402,
+          -8.150600905310057e-08
+        ],
+        "rotation": [
+          1.8626447051417472e-09,
+          -1.0,
+          -1.627691715135396e-14,
+          3.6443257158680353e-06
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "48",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_01_r",
+      "parent": "39",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.0015998630551621318,
+          0.10770002007484436,
+          -0.04079996049404144
+        ],
+        "rotation": [
+          0.5040568709373474,
+          -0.5115414261817932,
+          0.4351516366004944,
+          0.5430424809455872
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999999403953552,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "49",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_02_r",
+      "parent": "48",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          8.937045947732258e-08,
+          0.04029051586985588,
+          -8.392004247070872e-08
+        ],
+        "rotation": [
+          0.623163104057312,
+          0.02006109617650509,
+          -0.014925334602594376,
+          0.7816920876502991
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999995827674866,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "50",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_03_r",
+      "parent": "49",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -2.450974356804636e-08,
+          0.027665236964821815,
+          -2.6617071213763666e-08
+        ],
+        "rotation": [
+          0.6233417987823486,
+          -0.00038015254540368915,
+          -0.00047653232468292117,
+          0.7819492816925049
+        ],
+        "scale": [
+          1.0000001192092896,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "51",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "pinky_04_leaf_r",
+      "parent": "50",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          2.4538669762819154e-08,
+          0.028164222836494446,
+          7.091588116736602e-08
+        ],
+        "rotation": [
+          1.769510049598466e-08,
+          -1.0,
+          -7.450582373280668e-09,
+          3.6452572658163263e-06
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "52",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_01_r",
+      "parent": "39",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0001000164047582075,
+          0.11909996718168259,
+          -0.017099987715482712
+        ],
+        "rotation": [
+          0.43533986806869507,
+          -0.5413559079170227,
+          0.4549039900302887,
+          0.5572031140327454
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999997615814209,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "53",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_02_r",
+      "parent": "52",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -3.048153374152207e-08,
+          0.03932502493262291,
+          4.9431875481786847e-08
+        ],
+        "rotation": [
+          0.6233411431312561,
+          -7.553016530437162e-06,
+          -9.276930541091133e-06,
+          0.7819499969482422
+        ],
+        "scale": [
+          0.9999998211860657,
+          0.9999998807907104,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "54",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_03_r",
+      "parent": "53",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.0555597285133445e-08,
+          0.030919570475816727,
+          -2.604335236355837e-08
+        ],
+        "rotation": [
+          0.6233416199684143,
+          0.0006649239221587777,
+          0.0008343264926224947,
+          0.7819489240646362
+        ],
+        "scale": [
+          1.0,
+          0.9999998211860657,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "55",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ring_04_leaf_r",
+      "parent": "54",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          8.036906251618348e-09,
+          0.03182251751422882,
+          -3.671406645366915e-08
+        ],
+        "rotation": [
+          4.656647512035761e-09,
+          -1.0,
+          9.313218640727428e-09,
+          3.6480510061664972e-06
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999995827674866,
+          0.9999998211860657
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "56",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_01_r",
+      "parent": "39",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.02279997430741787,
+          0.027300028130412102,
+          0.03360002487897873
+        ],
+        "rotation": [
+          0.29083842039108276,
+          -0.9496491551399231,
+          -0.11458352953195572,
+          0.02121703512966633
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999998807907104,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "57",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_02_r",
+      "parent": "56",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.0900290448034866e-08,
+          0.0430297777056694,
+          1.7834329568700014e-08
+        ],
+        "rotation": [
+          0.21939009428024292,
+          -0.02380259707570076,
+          0.005304847378283739,
+          0.9753323793411255
+        ],
+        "scale": [
+          1.0,
+          0.9999998211860657,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "58",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_03_r",
+      "parent": "57",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.861554999038617e-08,
+          0.049077946692705154,
+          -1.6745714148669322e-08
+        ],
+        "rotation": [
+          0.6873881220817566,
+          0.0003092344559263438,
+          0.00044453871669247746,
+          0.7262901067733765
+        ],
+        "scale": [
+          0.9999998211860657,
+          0.9999998211860657,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "59",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thumb_04_leaf_r",
+      "parent": "58",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.1911819974841364e-08,
+          0.040862347930669785,
+          5.213599152398274e-08
+        ],
+        "rotation": [
+          2.8246169847534475e-08,
+          -0.5061777830123901,
+          -2.9610913543365314e-07,
+          0.862429141998291
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.000000238418579
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "60",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thigh_l",
+      "parent": "6",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.08900001645088196,
+          0.02777084894478321,
+          0.04602381959557533
+        ],
+        "rotation": [
+          0.9639022946357727,
+          0.11038857698440552,
+          -0.013610584661364555,
+          0.24191215634346008
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "61",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "calf_l",
+      "parent": "60",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          3.7223566451416445e-09,
+          0.4003097414970398,
+          9.277722590184112e-09
+        ],
+        "rotation": [
+          0.18485379219055176,
+          -0.11210092902183533,
+          0.021219424903392792,
+          0.9761210083961487
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999998807907104
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "62",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "foot_l",
+      "parent": "61",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          1.3782044838706042e-08,
+          0.42947983741760254,
+          2.8039885968667022e-09
+        ],
+        "rotation": [
+          -0.4953369200229645,
+          0.022376539185643196,
+          0.09231860935688019,
+          0.8634917140007019
+        ],
+        "scale": [
+          0.9999999403953552,
+          1.000000238418579,
+          1.0000001192092896
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "63",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ball_l",
+      "parent": "62",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          8.525551820071087e-09,
+          0.1733010858297348,
+          1.2759254985894586e-08
+        ],
+        "rotation": [
+          0.0001371801772620529,
+          -0.9643067717552185,
+          0.26478707790374756,
+          0.000499419926200062
+        ],
+        "scale": [
+          0.9999999403953552,
+          0.9999998211860657,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "64",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ball_leaf_l",
+      "parent": "63",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          7.417355618599686e-09,
+          0.07890002429485321,
+          -1.322567166894828e-09
+        ],
+        "rotation": [
+          -1.4901161193847656e-08,
+          -2.04308907569839e-08,
+          -3.0444399650370925e-16,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "65",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "thigh_r",
+      "parent": "6",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -0.08900000154972076,
+          0.027770791202783585,
+          0.046023838222026825
+        ],
+        "rotation": [
+          0.9932610392570496,
+          -0.11445434391498566,
+          0.014111890457570553,
+          0.011556520126760006
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999998211860657
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "66",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "calf_r",
+      "parent": "65",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.862645593320167e-09,
+          0.4003097414970398,
+          -1.7295882503987059e-09
+        ],
+        "rotation": [
+          0.11464209109544754,
+          0.35841047763824463,
+          -0.044409967958927155,
+          0.925433337688446
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "67",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "foot_r",
+      "parent": "66",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          9.478091200776362e-09,
+          0.4294798970222473,
+          1.1704447411275964e-09
+        ],
+        "rotation": [
+          -0.5777093768119812,
+          -0.04966915771365166,
+          -0.16396313905715942,
+          0.7980607748031616
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.9999999403953552
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "68",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ball_r",
+      "parent": "67",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -4.078462723100529e-08,
+          0.1733010709285736,
+          6.750660919152551e-09
+        ],
+        "rotation": [
+          0.0001370638346998021,
+          -0.9643067717552185,
+          0.26478710770606995,
+          0.0004994145128875971
+        ],
+        "scale": [
+          0.9999998807907104,
+          0.9999998211860657,
+          0.9999998211860657
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "69",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "ball_leaf_r",
+      "parent": "68",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -1.491184598023665e-08,
+          0.0789000391960144,
+          -5.238143807595463e-10
+        ],
+        "rotation": [
+          -1.4901161193847656e-08,
+          -2.04308907569839e-08,
+          -3.0444402297348885e-16,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "environment": null,
+  "name": "Imported model",
+  "occlusion": null,
+  "version": 1
+}

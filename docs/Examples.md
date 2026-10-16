@@ -1,16 +1,13 @@
-# Example games
+# Example projects
 
 ## Prism Relay
 
-Prism Relay's target is a realistic science-fiction, non-shooting over-the-shoulder
-character template: movement, jumping, camera follow and physical collision.
-Character integration is still required. Its current intermediate startup retains
-the earlier playable 3D collection prototype while the physical environment is
-being established; the following controls describe that intermediate behavior.
-Collect eight violet crystals in 75 seconds, avoid red hazards and preserve three
-health points. Native walls and the central obelisk block the player. Eight score
-indicators, three health markers, a shrinking time bar and the runtime title show
-progress. Victory and defeat stop player motion; restart restores the arena.
+Prism Relay is a non-shooting over-the-shoulder movement/jump template. Its former
+collection/timer rules and drone are removed. A native Jolt character carries an
+actual 65-joint skinned mannequin; authored idle, walk, jog, sprint, jump, airborne
+and landing clips use native playback/cross-fades. Movement is camera-relative,
+accelerated and normalized; buffered jump presses are consumed once rather than
+repeating across fixed steps.
 
 ```text
 cmake --preset debug
@@ -18,68 +15,39 @@ cmake --build --preset debug
 build/debug/bin/DotEditor open build/debug/examples/PrismRelay
 ```
 
-Enter/Space starts, WASD/arrows move, P pauses/resumes and R resets to the ready
-screen. Diagonal speed is normalized. Player color changes on damage and victory;
-crystals disappear after collection and their score indicators turn green.
+Enable Game input in Play. WASD/arrows move, Shift sprints, Space jumps, mouse
+motion orbits and the wheel changes distance. Escape releases editor input;
+focus loss requires re-enabling it. Native standalone Escape exits. A native sphere
+sweep keeps the shoulder camera clear of volume/corner obstacles, tightens without
+lag and damps outward recovery. The industrial bay includes physical walls, power
+cells, a central relay and four traversal steps.
 
-The build copies `examples/PrismRelay` to
-`build/<preset>/examples/PrismRelay`. That output is generated and refreshed by
-builds. Copy the project to a separate directory before persistent authoring
-changes; editing the source template updates subsequent builds. Open the copied
-project with DotEditor, use Play, open scripts externally through Resources,
-and use [native export](Export.md) to deliver a standalone game.
+The scripts own game intent and camera policy. Jolt owns motion/support/collision;
+native scene transforms, GPU skinning, animation players and rendering remain
+engine systems. Source hot reload retains intent, jump buffering and camera state
+without recreating the scene or replaying Start. Invalid checkpoints fail migration.
 
-The repository source projects open directly and import `dot:engine`. Tests compile
-their actual game scripts using the engine's embedded modules/declarations; SDK
-sources are absent from both project trees. The portable
-editor includes complete projects under its top-level `examples` directory.
+Generated copies under `build/<preset>/examples/` are replaced on builds. Use the
+project home to create a writable template copy, or copy the generated folder before
+persistent editing. Source projects open directly and resolve the engine-owned
+`dot:engine` module without copied SDK sources. The portable editor includes the
+same projects; the normal export workflow publishes a standalone native game.
 
-The saved scene owns 173 native entities and their camera/listener, transforms,
-hierarchy, meshes, rigid bodies, sensor pickups/hazards, audio and script
-attachments. The OBJ crystal and synthesized mono PCM sounds are original sample
-assets. Scripts attach to the player and visual crystal children; they do not
-construct an alternative JavaScript scene/rendering/physics engine.
+The scene consumes local PBR assets, Poly Haven textures/HDRI, directional soft
+shadows, SSAO and HDR tone mapping. The Quaternius CC0 source mannequin/locomotion
+subset, native skin/mesh/animation files and license remain in the project; source
+links and hashes are recorded in its asset provenance. No runtime downloads or
+special game renderer are used. The mannequin establishes actual rigged movement,
+not finished realistic character art or populated-scene performance.
 
-- `rules.ts` owns bounded round state, start/pause/reset, timed immunity, collection,
-  deadline/health defeat and checkpoint validation. Its snapshots are independent.
-- `player.ts` controls the real native body through input and physics bindings,
-  tracks active sensor contacts until explicit end events, plays native feedback
-  audio and updates authored meshes/time bar/scene status. Sleep does not silently
-  remove a touching hazard or crystal.
-- `spin.ts` animates visual children while native parent sensor poses remain stable.
+Headless regressions exercise the real project scripts, native physics, camera
+volume collisions/recovery/failure, jump scheduling, animation transitions, reload
+and template ownership. Integrated visuals use the actual editor's AI operations
+and computer use where useful. Local evidence covers arm64 macOS only.
 
-Hot reload preserves all nine running component states: round, spawn, last input/
-contact batches, active contacts and crystal rotation. It retains native scene and
-body ownership rather than replaying start hooks. Failed checkpoint/configuration
-validation prevents migration; it does not silently reset the round. Speed must be
-finite (0,12], time limit (0,300] seconds and maximum health an integer 1..3.
+## Feature Lab
 
-Runtime windows follow the current native scene name, so attached scripts can
-publish status through the existing scene API without application-specific game
-bindings. Title updates are skipped when unchanged and native errors propagate.
-
-Headless regressions cover checkpoints, configuration bounds, round state, real
-Jolt sensors/collisions, offline PCM and hot reload. Validate integrated visuals
-through the actual editor and exported player, using agent operations and computer
-use where appropriate. Local verification covers arm64 macOS; Windows/Linux remain
-unvalidated.
-
-This sample exercises the listed systems. The [Feature Lab example project](Acceptance.md)
-separately inventories and executes the complete current runtime SDK against native
-components and services; the sample alone is not evidence of full API coverage.
-
-The [project home](ProjectHome.md) can create a writable Prism Relay copy with the
-engine module imports directly from its packaged template; manual copying is optional.
-
-### Physical industrial environment
-
-Prism Relay now consumes actual PBR materials, local Poly Haven photo-derived
-color/normal/ARM maps and the Studio Small 09 HDRI. Original hard-surface assets
-with explicit normals form the deck, drone, cell docks, relay and service equipment.
-Perspective
-framing, authored directional soft shadows, local lights, geometric SSAO and the
-HDR/ACES-fitted display path run through ordinary scene components. Source and
-license records live with the project; no runtime downloads or special game renderer
-are introduced. Existing route, damage, restart and hot-reload checks remain.
-This environment pass does not establish finished realistic game art, polished
-camera/HUD/levels or populated-game performance.
+[Feature Lab](Acceptance.md) is an ordinary editable project under
+`examples/FeatureLab`. It inventories the current native component/runtime SDK and
+provides interactive demonstrations, including native character motion and M-toggle
+relative mouse look. It is separate from Prism Relay's character-template experience.

@@ -54,8 +54,8 @@ TEST_CASE("templates.copy_complete_game_with_engine_imports_without_source_chang
   CHECK(created->description()->name == "游戏");
   CHECK(created->loadStartup()->entityCount().value()
         == Project::Project::open(source.root())->loadStartup()->entityCount().value());
-  CHECK(created->files()->readBytes("assets/pickup.wav").value()
-        == source.readBytes("assets/pickup.wav").value());
+  CHECK(created->files()->readBytes("assets/models/surveyor.glb").value()
+        == source.readBytes("assets/models/surveyor.glb").value());
   CHECK_FALSE(std::filesystem::exists(created->files()->root() / "scripts/dot"));
   CHECK(created->files()->readText("assets/authored.txt").value() == "owned resource");
   CHECK(source.readText("assets/authored.txt").value() == "owned resource");

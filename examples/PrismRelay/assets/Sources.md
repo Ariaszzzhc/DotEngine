@@ -2,7 +2,8 @@
 
 Original geometry in meshes/ is authored for DotEngine.
 It is stored as ordinary native mesh resources; Python is not needed to open or run the game.
-The original crystal OBJ and feedback PCM remain repository-authored assets.
+The original crystal OBJ remains a repository-authored environment asset.
+The former drone and round-feedback PCM are removed.
 
 Downloaded texture files are unmodified 1K JPEGs from Poly Haven (CC0):
 
@@ -26,3 +27,23 @@ All inputs remain local and exports run offline.
 - `metal_plate_diff_1k.jpg`: `c6b6739eac2c75ccc898e753d7833df24eafbdb9aa92fb6eabfb92abd1a680a5`
 - `metal_plate_nor_gl_1k.jpg`: `994f851a84d52b51e97906021a1b7070ee6eac9a789fef041132268de47d8e6b`
 - `studio_small_09_1k.hdr`: `e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45`
+
+## Surveyor mannequin and locomotion
+
+- Quaternius, Universal Animation Library Standard:
+  https://quaternius.com/packs/universalanimationlibrary.html
+- Author's download page: https://quaternius.itch.io/universal-animation-library
+- Pack license: CC0 1.0 Universal, retained at models/LICENSE.txt.
+- Source file: Unreal-Godot/UAL1_Standard.glb, without root motion.
+- Original archive SHA-256:
+  cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724
+- Adapted models/surveyor.glb SHA-256:
+  b0adf827bb729b2774ed1104f407720eeff9ba1aa684cdad081e8258f9a72915
+
+The adaptation retains the real 65-joint mannequin, vertex weights and authored
+idle/walk/jog/sprint/jump-start/airborne/landing tracks. Unrelated animation data is
+removed, the editing pose uses the idle start, and the two materials use steel and
+dark joint PBR factors. Native resources in surveyor/ are imported through the
+editor's normal model operation. The scene parents the entire model/joint hierarchy
+to the character; physics owns root motion. No procedural skeleton/animation stand-in
+or runtime asset-generation script is required.

@@ -46,6 +46,10 @@ export namespace Dot::Platform {
     [[nodiscard]] auto resize(int width, int height) -> Core::Result<void>;
     [[nodiscard]] auto show() -> Core::Result<void>;
     [[nodiscard]] auto setTextInput(bool enabled) -> Core::Result<void>;
+    /** Actual native text/IME mode; disabling it leaves physical key events
+     * available for gameplay. Query requires the main thread and a live owner.
+     * 原生文本/输入法模式；关闭后仍保留游戏物理按键，查询限主线程及有效窗口。 */
+    [[nodiscard]] auto textInputActive() const -> Core::Result<bool>;
     /** Relative mode hides/confines the cursor while focused and permits motion
      * beyond window edges. SDL flushes pending motion when the mode changes.
      * 相对模式在聚焦时隐藏/限制光标，支持越过窗口边界的连续运动；切换时 SDL 清除待处理移动。 */

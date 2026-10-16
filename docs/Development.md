@@ -5530,3 +5530,97 @@ requested versus actual state, input edge preservation, realm lifetime/guards,
 editor GUI isolation, error propagation, platform-neutral SDL use, module boundaries
 and permanent behavioral test scope. No temporary helper/app or user planning/design
 input is included in the commit.
+
+
+## 2026-10-16 — Rigged shoulder character template
+
+Replaced Prism Relay's drone/collection/health/timer prototype with an ordinary
+editable third-person movement/jump project. A CC0 Quaternius 65-joint mannequin
+and seven authored, in-place locomotion/jump clips are retained as source GLB and
+native imported mesh/skin/material/animation resources. The author license and
+upstream/adapted SHA-256 provenance accompany the assets. The real editor's normal
+model import, instantiate, strict scene edit and save operations produced the
+224-entity scene; no runtime asset generator or game-specific renderer is added.
+Obsolete drone geometry/materials, pickup/damage audio and round/spin scripts are
+removed. Disposable build example copies are replaced so deleted files cannot
+linger; persistent projects must be copied outside those generated directories.
+
+Player intent drives the native saved character capsule: normalized camera-relative
+WASD/arrows, acceleration, sprint, buffered one-shot jumping, yaw and native
+animation cross-fades. Jump input publication is deduplicated across fixed/variable
+hooks. Native sphere sweeps handle shoulder-camera corners, immediate inward
+collision, damped outward recovery and initial-overlap separation; impossible
+geometry reports a failure without publishing an intersecting pose. Reload retains
+intent, pending jump and orbit without restarting native bodies or animation.
+
+Focused regression work initially exposed two genuine integration issues: orbiting
+the camera-attached listener exceeded bounded audio velocity, and the long authored
+jump-start clip outlasted the physical ascent. A separate listener now follows the
+avatar head with camera orientation, and ascent/descent controls the airborne
+transition. The step regression then exposed Start listener placement being treated
+as instantaneous motion: GameSession establishes its initial audio pose baseline
+with a zero-time synchronization after the first Start, without resetting velocity
+on repeated Start. The final traversal rise is 1.2m; the earlier .9m geometry could
+still be walked onto by native capsule support. Actual native checks now distinguish
+walkable steps from the rise requiring a jump.
+
+The first Debug selection was 10/12; the next was 12/13, then 29/30 before the final
+step geometry correction. The corrected step/audio pair passes 2/2 (5.85s), and the
+pre-input-fix Release focused selection passes 30/30 (1.34s). Durable headless
+regressions use the actual game scripts, Jolt, animation, audio/session and template
+ownership. Camera tests join the existing example target. No desktop-window test
+or bespoke visual acceptance executable is introduced.
+
+Actual Debug editor validation imports/authors/saves the model, runs Play and stops
+without authoring mutation. Actual Release Play renders the rigged mannequin and
+industrial PBR scene. Computer-use arrow input moves the real native character;
+the initial W/Space attempt under the user's Chinese IME was intercepted and did
+not establish movement/jumping. SDL text input was active during relative gameplay.
+The editor and runtime now suspend native text/IME input during relative capture
+and restore it on release, without switching the selected OS input method.
+Window text-mode mutation is idempotent, native query is main-thread/live-owner
+guarded, and strict Play inspection exposes actual text mode and query errors.
+
+The corrected actual Release editor run confirms pointerCaptured true and
+textInputActive false. Computer use holds W for .7s: position changes from
+[-3,0,2] to approximately [-3,0,-.239974], a 2.24m displacement. A Space press is
+observed through 100 bounded live AI inspections over 12.93s, with height reaching
+1.7745m and returning to the ground. Mouse orbit changes camera orientation without
+an audio error. Escape releases capture and restores text input; AI recapture
+restores relative mode, and Stop then releases it and restores text input again.
+Final Stop reports 5403 frames/5414 fixed steps, zero dropped nanoseconds and no
+script diagnostics/error. The authoring scene stays clean at revision 1 with its
+original Player pose [-3,0,2]; normal close exits 0 and removes its owned mailbox.
+The input/window/project/audio focused selections pass Debug 19/19 (10.09s) and
+Release/NDEBUG 19/19 (.86s), using SDL dummy video for platform cases.
+
+The mannequin is functional template content. Finished realistic character/suit art,
+cohesive environment polish, populated-game performance, mature editing workflows
+and the broader engine goal remain unfinished. Windows/Linux code is retained;
+execution evidence is arm64 macOS only. Temporary asset preparation/download/control
+scripts, native app linkage and investigation output are removed after verification;
+only the used upstream archive remains as ignored build cache. No distribution
+archive is produced. Final full-suite results and review follow below.
+
+
+The first full Debug run inside the restricted execution sandbox passes 870/1015
+(81.23s); all 123 offscreen GPU and 22 native audio failures are device-access
+failures, including `Request GPU adapter (3): No supported adapters` and
+`Initialize native audio context: No backend`. The unchanged suites are rerun
+with host-device access rather than weakening or skipping those checks.
+
+
+With host-device access, the full serial arm64 macOS suites pass Debug 1015/1015
+(145.98s), then Release/NDEBUG 1015/1015 (20.17s). Inventory is 258 unit and 757
+integration tests, including 123 offscreen GPU, 28 SDL-dummy platform and 27 native
+audio cases (labels overlap). Both builds complete before the full suites. Changed
+C++ module/test files and both character/camera scripts pass clang-format checks;
+staged diff whitespace checks pass after normalizing only license line endings and
+trailing whitespace, preserving its authorization and attribution text.
+
+Precommit review covers native ownership and first-Start audio error/state handling,
+main-thread/moved-window input guards, actual versus requested capture/text state,
+reload/edge scheduling, native collision and animation use, portable SDL calls,
+module boundaries, durable test scope and asset/scene references/provenance. The
+source GLB and upstream cache hashes match their recorded values. The commit excludes
+user planning/design inputs, build/cache/helper files and any distribution package.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "Prism Relay | Enter start | WASD/arrows | P pause | R restart",
+  "name": "Prism Relay | WASD move | Space jump | Shift sprint | Mouse look",
   "startScene": "scenes/main.dotscene",
   "scriptsDirectory": "scripts",
   "window": {

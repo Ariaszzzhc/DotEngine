@@ -9,11 +9,11 @@ readiness or editor maturity comparable to the requested target.
 | Static C++26 library, separate module interfaces/implementations, pinned native dependencies | Preserve caller compiler/linker environment; no installed public header tree |
 | PBR texture/material slots, HDRI IBL, directional soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, streaming and populated-scene performance remain incomplete |
 | OBJ/glTF/GLB import, native resources, GPU skinning and animation cross-fades | Full production animation/asset tools remain incomplete |
-| Rigid-body physics, contacts/queries, audio, saved character controllers and shared scene simulation/Inspector | Humanoid content and shoulder-camera integration remain incomplete |
+| Rigid-body physics, contacts/queries, audio, saved character controllers and shared scene simulation/Inspector | Rigged mannequin/shoulder template is implemented; final realistic character art and scalability remain incomplete |
 | TypeScript/QuickJS-NG, hot reload, dot:engine/dot:host and extensionless project imports | Existing script contracts are implemented; new native capabilities still need explicit SDK exposure |
 | Docked editor, scene/resources/materials, picking/gizmos/multiselection/history, isolated Play and native export | Mature content-production workflows and scalability remain incomplete |
 | CLI/strict JSON/live mailbox agent control and external source editing | Full AI control remains a product requirement for every current/future operation |
-| Editable Feature Lab and Prism Relay under examples/ | Prism Relay still retains an intermediate collection startup; the non-shooting shoulder-view template is unfinished |
+| Editable Feature Lab and Prism Relay under examples/ | Prism Relay now uses a native rigged character and shoulder camera; final realistic art and performance remain unfinished |
 
 ## Cleanup and verification scope
 
@@ -29,8 +29,8 @@ sessions. Real editor/standalone visual workflows use product agent operations,
 with computer use for human-style interaction and unexpected UI failures.
 See [testing](Testing.md) and [example workflow validation](Acceptance.md).
 
-The current macOS arm64 suite passes Debug 1010/1010 (141.64s) and Release/NDEBUG
-1010/1010 (17.91s), including 258 unit tests and 123 offscreen GPU regressions. These
+The current macOS arm64 suite passes Debug 1015/1015 (145.98s) and Release/NDEBUG
+1015/1015 (20.17s), including 258 unit tests and 123 offscreen GPU regressions. These
 counts describe verification scope, not overall production readiness. A separate
 product check uses actual editor agent operations to save/reload character
 scripts during Play, observe native movement/jumping, restore source, retain motion,
@@ -53,4 +53,9 @@ script requests and frontend acknowledgements. Feature Lab includes M-toggle mou
 look. A separate actual editor session verifies native capture, pointer-driven
 rotation, Escape and minimized-window release, unchanged authoring after Stop and
 clean process exit. Headless tests cover VM guards, reload and input publication.
-The requested Prism Relay shoulder camera and realistic humanoid remain open.
+Prism Relay now integrates a real rigged mannequin and native sphere-swept shoulder camera.
+The actual editor verifies W movement and Space jumping under the user's Chinese
+input method: relative gameplay suspends SDL text input, and Escape/Stop restore it.
+Native Play inspection exposes actual text mode. The stopped authoring scene stays
+clean; normal close exits successfully. Finished realistic humanoid/suit art and
+populated-game performance remain open.

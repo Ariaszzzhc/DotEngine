@@ -442,6 +442,7 @@ namespace Dot::Project {
     }
 
     ActiveScope active{m_impl->m_active};
+    const bool starting = m_impl->m_state == SessionState::Ready;
     auto result = m_impl->m_live ? m_impl->m_live->start() : m_impl->m_scripts->start();
     m_impl->m_state
         = !result || result->realmFaulted ? SessionState::Faulted : SessionState::Running;
@@ -452,6 +453,17 @@ namespace Dot::Project {
       if (!animated) {
         m_impl->m_state = SessionState::Faulted;
         return std::unexpected(animated.error());
+      }
+
+      if (starting) {
+        /** Start can place listeners/sources; establish their first motion sample.
+         * Start 可定位听者/声源；零时长同步建立首次运动采样，不将初始化当作瞬间移动。 */
+        auto synchronized = m_impl->m_audio->synchronize(0);
+
+        if (!synchronized) {
+          m_impl->m_state = SessionState::Faulted;
+          return std::unexpected(synchronized.error());
+        }
       }
     }
 

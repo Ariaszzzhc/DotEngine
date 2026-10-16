@@ -211,10 +211,23 @@ namespace Dot::Platform {
                         "Text input requires a live window on the main thread");
     }
 
+    if (SDL_TextInputActive(m_impl->window) == enabled) {
+      return {};
+    }
+
     if (!(enabled ? SDL_StartTextInput(m_impl->window) : SDL_StopTextInput(m_impl->window))) {
       return windowFailure("Cannot change text input mode");
     }
 
     return {};
+  }
+
+  auto Window::textInputActive() const -> Core::Result<bool> {
+    if (!m_impl || !isMainThread()) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Text input query requires a live window on the main thread");
+    }
+
+    return SDL_TextInputActive(m_impl->window);
   }
 }  // namespace Dot::Platform

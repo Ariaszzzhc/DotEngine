@@ -591,6 +591,10 @@ preparation and state export/import. A failed publication preserves the old fram
 and acknowledgement. Native mode transitions clear only accumulated pointer delta,
 preserving other current-frame input. Consume mouse motion once per variable frame,
 because multiple fixed steps can share the same publication.
+The native editor/runtime suspend SDL text/IME input while relative pointer mode
+is active and restore it when released. This preserves gameplay keys under input
+methods such as Chinese composition without changing the system input method.
+No Unicode text events are produced while native text input is suspended.
 
 The SDK exports frozen `keys` and `mouseButtons` name arrays, matching every
 supported native enum except Unknown/Count. Key names include A..Z, Digit0..9,
@@ -864,3 +868,8 @@ may read `animation.state` but cannot issue controls. Foreign/stale/disabled/mis
 players and invalid values produce catchable DotHostError values; scripts cannot
 advance the native clock or create a second backend. See [Animation](Animation.md)
 for exact transaction, timing, stop/restoration and clip-selection semantics.
+
+GameSession establishes a zero-duration audio pose baseline after the first Start
+callbacks and animation sampling. Initial spawn/listener placement is not inferred
+as high-speed motion. Repeating Start does not reset an established audio velocity
+sample. Subsequent variable updates use their actual elapsed duration.

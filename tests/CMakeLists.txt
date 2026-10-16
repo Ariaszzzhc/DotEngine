@@ -173,7 +173,7 @@ target_compile_definitions(DotExportTests PRIVATE
 add_dependencies(DotExportTests DotRuntimeKit)
 dotDiscoverTests(DotExportTests LABELS "integration;process;compiler" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
-add_executable(DotExampleTests main.cpp ExampleTests.cpp)
+add_executable(DotExampleTests main.cpp ExampleTests.cpp ShoulderCameraTests.cpp)
 target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotExampleTests PRIVATE
     DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"

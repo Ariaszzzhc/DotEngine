@@ -69,7 +69,7 @@ namespace Dot::Editor {
 
     auto catalog() -> Json {
       return Json::array({{{"id", "blank"}, {"name", "Camera and cube"}},
-                          {{"id", "prism"}, {"name", "Prism Relay game"}},
+                          {{"id", "prism"}, {"name", "Prism Relay character"}},
                           {{"id", "lab"}, {"name", "Component and SDK lab"}}});
     }
 
