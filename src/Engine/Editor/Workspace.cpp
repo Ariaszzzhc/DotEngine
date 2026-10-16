@@ -36,6 +36,7 @@ import Dot.Editor.Play;
 import Dot.Editor.PlayInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
+import Dot.Editor.SkeletonView;
 import Dot.Assets.ImageExport;
 import Dot.Platform.Dialog;
 import Dot.Graphics.View;
@@ -444,6 +445,8 @@ namespace Dot::Editor {
     std::string m_layoutError;
     std::string m_hierarchyFilter;
     std::string m_assetFilter;
+    std::string m_skeletonFilter;
+    SkeletonView m_skeleton;
     bool m_viewVisible{true};
     Json m_visibleHierarchy = Json::array();
     Json m_hierarchyRows = Json::object();
@@ -1324,6 +1327,114 @@ namespace Dot::Editor {
               {"error", state->error ? errorJson(*state->error)["error"] : Json(nullptr)}};
     }
 
+    /** Report geometry only when it belongs to the currently completed viewport.
+     * 仅报告属于当前已完成视口的几何，跨场景或未完成帧不冒充当前骨架。 */
+    auto skeletonStatus() const -> Json {
+      auto state = m_skeleton.stats();
+
+      if (!state) {
+        return errorJson(state.error());
+      }
+
+      const bool ready = state->frame && viewportCurrent() && m_renderedFrame
+                         && state->frame->serial == m_renderedFrame->serial
+                         && state->frame->pose.owner.scene == m_renderedFrame->context.scene;
+      Json frame = nullptr;
+
+      if (ready) {
+        const auto& pose = state->frame->pose;
+        Json joints = Json::array();
+        std::size_t roots{};
+
+        for (std::size_t i = 0; i < pose.joints.size(); ++i) {
+          const auto& joint = pose.joints[i];
+          const auto point = state->frame->projected[i];
+          roots += !joint.parent;
+          joints.push_back({{"index", i},
+                            {"entity", std::to_string(joint.entity.value)},
+                            {"name", joint.name},
+                            {"parent", joint.parent ? Json(std::to_string(
+                                                          pose.joints[*joint.parent].entity.value))
+                                                    : Json(nullptr)},
+                            {"parentLinks", joint.parentLinks},
+                            {"world", {joint.position.x, joint.position.y, joint.position.z}},
+                            {"uv", point ? Json{point->x, point->y} : Json(nullptr)}});
+        }
+
+        frame = {{"serial", std::to_string(state->frame->serial)},
+                 {"scene", std::to_string(pose.owner.scene)},
+                 {"asset", pose.asset},
+                 {"roots", roots},
+                 {"joints", std::move(joints)},
+                 {"projectedJoints", state->frame->overlay.points.size()},
+                 {"projectedBones", state->frame->overlay.lines.size()},
+                 {"playFrame", std::to_string(m_renderedFrame->playFrame)}};
+      }
+
+      return {
+          {"enabled", state->entity.has_value()},
+          {"entity", state->entity ? Json(std::to_string(*state->entity)) : Json(nullptr)},
+          {"selected", state->selected ? Json(std::to_string(*state->selected)) : Json(nullptr)},
+          {"ready", ready},
+          {"frame", std::move(frame)},
+          {"filter", m_skeletonFilter},
+          {"error", state->error ? errorJson(*state->error)["error"] : Json(nullptr)}};
+    }
+
+    /** Hit testing references the last displayed frame, not a newly advanced pose.
+     * Native selection is revalidated against the live binding before committing.
+     * 拾取引用上次显示的帧而非刚推进的姿态，提交前按实时绑定重新验证关节。 */
+    auto pickSkeleton(Math::Vec2 uv, std::uint64_t serial)
+        -> Core::Result<std::optional<std::uint64_t>> {
+      auto state = m_skeleton.stats();
+      auto scene = displayedScene();
+      auto view = currentView();
+      auto context = captureContext();
+
+      if (!state || !scene) {
+        return std::unexpected(!state ? state.error() : scene.error());
+      }
+
+      if (!std::isfinite(uv.x) || !std::isfinite(uv.y) || uv.x < 0 || uv.x > 1 || uv.y < 0
+          || uv.y > 1) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Skeleton pick UV must be in [0,1]");
+      }
+
+      if (!view || !context || !m_renderedView || *view != *m_renderedView || m_assetRefresh
+          || !m_viewVisible || !m_previewReady || !state->frame || !m_renderedFrame
+          || *context != m_renderedFrame->context || state->frame->serial != serial
+          || m_renderedFrame->serial != serial
+          || state->frame->pose.owner.scene != (*scene)->id()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Skeleton pick frame is stale");
+      }
+
+      float best = 36;
+      std::optional<std::uint64_t> hit;
+
+      for (std::size_t i = 0; i < state->frame->projected.size(); ++i) {
+        if (const auto point = state->frame->projected[i]) {
+          const auto x = (point->x - uv.x) * m_viewWidth;
+          const auto y = (point->y - uv.y) * m_viewHeight;
+          const auto distance = x * x + y * y;
+
+          if (distance < best) {
+            best = distance;
+            hit = state->frame->pose.joints[i].entity.value;
+          }
+        }
+      }
+
+      if (hit) {
+        auto selected = m_skeleton.select(**scene, m_project->files().value(), hit);
+
+        if (!selected) {
+          return std::unexpected(selected.error());
+        }
+      }
+
+      return hit;
+    }
+
     auto captureContext() const -> Core::Result<CaptureContext> {
       auto scene = displayedScene();
 
@@ -1376,7 +1487,7 @@ namespace Dot::Editor {
                                  : Json(nullptr)}}}};
     }
 
-    auto readViewport() -> Core::Result<Graphics::Image> {
+    auto viewportCurrent() const -> bool {
       auto context = captureContext();
       auto view = currentView();
       const auto previewKey = m_material && !playing()
@@ -1387,9 +1498,7 @@ namespace Dot::Editor {
           || !m_renderedView || *view != *m_renderedView || *context != m_renderedFrame->context
           || m_assetRefresh || previewKey != m_materialPreviewKey
           || (playing() && m_play->stats()->frames != m_renderedFrame->playFrame)) {
-        return Core::fail(Core::ErrorCode::InvalidState,
-                          m_previewError.empty() ? "Viewport has no current completed frame"
-                                                 : "Viewport preview: " + m_previewError);
+        return false;
       }
 
       if (m_animationPreview) {
@@ -1397,11 +1506,19 @@ namespace Dot::Editor {
 
         if (!animation || !m_renderedFrame->animation
             || animation->generation != m_renderedFrame->animation->generation) {
-          return Core::fail(Core::ErrorCode::InvalidState, "Animation preview frame is stale");
+          return false;
         }
       }
 
-      return m_renderer->readTarget(*m_target);
+      return true;
+    }
+
+    auto readViewport() -> Core::Result<Graphics::Image> {
+      return viewportCurrent()
+                 ? m_renderer->readTarget(*m_target)
+                 : Core::fail(Core::ErrorCode::InvalidState,
+                              m_previewError.empty() ? "Viewport has no current completed frame"
+                                                     : "Viewport preview: " + m_previewError);
     }
 
     auto browseCapture(std::uint64_t id) -> Core::Result<void> {
@@ -1554,6 +1671,85 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "set-skeleton" || command == "select-skeleton-joint"
+          || command == "focus-skeleton" || command == "inspect-skeleton"
+          || command == "pick-skeleton") {
+        if (command == "inspect-skeleton") {
+          Codec::requireFields(parsed, {"command", "scene"});
+        } else if (command == "pick-skeleton") {
+          Codec::requireFields(parsed, {"command", "scene", "uv"});
+        } else if (command == "set-skeleton") {
+          Codec::requireFields(parsed, {"command", "scene", "entity"});
+        } else {
+          Codec::requireFields(parsed, {"command", "scene", "entity", "joint"});
+        }
+
+        auto scene = displayedScene();
+
+        if (!scene || Codec::id(parsed["scene"]) != (*scene)->id()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Skeleton operation requires current scene");
+        }
+
+        if (command == "inspect-skeleton") {
+          return Json{{"ok", true}, {"skeleton", skeletonStatus()}}.dump();
+        }
+
+        if (command == "pick-skeleton") {
+          const auto uv = Codec::numbers<2>(parsed["uv"]);
+          const auto serial = m_renderedFrame ? m_renderedFrame->serial : 0;
+          auto hit = pickSkeleton({uv[0], uv[1]}, serial);
+          return hit ? Core::Result<std::string>{Json{
+                           {"ok", true},
+                           {"frame", std::to_string(serial)},
+                           {"hit", *hit ? Json(std::to_string(**hit)) : Json(nullptr)},
+                           {"skeleton",
+                            skeletonStatus()}}.dump()}
+                     : std::unexpected(hit.error());
+        }
+
+        const auto entity = parsed["entity"].is_null() ? std::optional<std::uint64_t>{}
+                                                       : std::optional{Codec::id(parsed["entity"])};
+        Core::Result<void> applied;
+
+        if (command == "set-skeleton") {
+          applied = m_skeleton.set(**scene, m_project->files().value(), entity);
+        } else {
+          auto state = m_skeleton.stats();
+
+          if (!state || !entity || state->entity != entity) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Skeleton target changed");
+          }
+
+          const auto joint = parsed["joint"].is_null() ? std::optional<std::uint64_t>{}
+                                                       : std::optional{Codec::id(parsed["joint"])};
+
+          if (command == "select-skeleton-joint") {
+            applied = m_skeleton.select(**scene, m_project->files().value(), joint);
+          } else {
+            if (playing() || m_transform) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Skeleton focus requires editor navigation");
+            }
+
+            auto bounds = m_skeleton.bounds(**scene, m_project->files().value(), joint);
+            applied = bounds ? m_editorCamera.focus(*bounds, m_viewWidth / m_viewHeight)
+                             : std::unexpected(bounds.error());
+
+            if (applied) {
+              m_editorView = true;
+            }
+          }
+        }
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
+        m_requestedPane = "skeleton";
+        return Json{{"ok", true}, {"skeleton", skeletonStatus()}}.dump();
+      }
 
       if (command == "preview-animation") {
         Codec::requireFields(parsed, {"command", "revision", "entity"});
@@ -2513,12 +2709,15 @@ namespace Dot::Editor {
         const auto panel = parsed["panel"].get<std::string>();
         const auto query = parsed["query"].get<std::string>();
 
-        if ((panel != "hierarchy" && panel != "resources") || query.size() > 128
-            || query.find('\0') != std::string::npos || !Core::isValidUtf8(query)) {
+        if ((panel != "hierarchy" && panel != "resources" && panel != "skeleton")
+            || query.size() > 128 || query.find('\0') != std::string::npos
+            || !Core::isValidUtf8(query)) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid panel search");
         }
 
-        (panel == "hierarchy" ? m_hierarchyFilter : m_assetFilter) = query;
+        (panel == "hierarchy"  ? m_hierarchyFilter
+         : panel == "skeleton" ? m_skeletonFilter
+                               : m_assetFilter) = query;
         return execute("{\"command\":\"inspect\"}");
       }
 
@@ -2666,7 +2865,8 @@ namespace Dot::Editor {
         const auto pane = parsed["pane"].get<std::string>();
 
         if (pane != "scene" && pane != "environment" && pane != "rendering" && pane != "resources"
-            && pane != "inspector" && pane != "viewport" && pane != "console") {
+            && pane != "inspector" && pane != "viewport" && pane != "console"
+            && pane != "skeleton") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -2982,7 +3182,10 @@ namespace Dot::Editor {
             {"pane", m_pane},
             {"theme", m_lightTheme ? "light" : "dark"},
             {"tool", toolStatus()},
-            {"filters", {{"hierarchy", m_hierarchyFilter}, {"resources", m_assetFilter}}},
+            {"filters",
+             {{"hierarchy", m_hierarchyFilter},
+              {"resources", m_assetFilter},
+              {"skeleton", m_skeletonFilter}}},
             {"displayed", {{"hierarchy", m_visibleHierarchy}, {"resources", m_visibleResources}}},
             {"hierarchyRows", m_hierarchyRows},
             {"layout",
@@ -2998,6 +3201,7 @@ namespace Dot::Editor {
             {"propertiesInvalid", m_propertiesInvalid},
             {"play", playStatus()},
             {"animationPreview", animationStatus()},
+            {"skeleton", skeletonStatus()},
             {"view", viewStatus()},
             {"capture", captureStatus()},
             {"message", m_message},
@@ -3124,11 +3328,8 @@ namespace Dot::Editor {
 
     auto viewStatus() const -> Json {
       const auto state = m_editorCamera.state();
-      auto current = currentView();
-      const bool ready = current && m_viewVisible && m_previewReady && m_renderedView
-                         && *current == *m_renderedView
-                         && m_renderedRevision == std::to_string(m_document->stats()->revision)
-                         && !m_assetRefresh;
+      const bool ready = viewportCurrent();
+      auto scene = displayedScene();
       auto stats = m_renderer->visibilityStats();
       Json draws = nullptr;
 
@@ -3162,6 +3363,7 @@ namespace Dot::Editor {
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
+          {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
           {"textInput", m_renderer->guiStats().value().text},
@@ -5434,6 +5636,23 @@ namespace Dot::Editor {
       const bool alt
           = input.key(Platform::Key::LeftAlt).down || input.key(Platform::Key::RightAlt).down;
 
+      if (hovered && left.pressed && !alt && !right.down && !middle.down) {
+        auto state = m_skeleton.stats();
+
+        if (state && state->frame) {
+          auto hit = pickSkeleton({(pointer.x - m_viewOrigin.x) / m_viewWidth,
+                                   (pointer.y - m_viewOrigin.y) / m_viewHeight},
+                                  state->frame->serial);
+
+          if (!hit) {
+            m_message = hit.error().message;
+          } else if (*hit) {
+            m_requestedPane = "skeleton";
+            return;
+          }
+        }
+      }
+
       if (hovered && left.pressed && !alt && m_tool != Tool::Select && m_editorView
           && !m_animationPreview) {
         auto hit = hitTransformTool(pointer);
@@ -5707,7 +5926,7 @@ namespace Dot::Editor {
              {std::pair{"Hierarchy", "scene"}, std::pair{"Scene", "viewport"},
               std::pair{"Inspector", "inspector"}, std::pair{"Environment", "environment"},
               std::pair{"Rendering", "rendering"}, std::pair{"Assets", "resources"},
-              std::pair{"Console", "console"}}) {
+              std::pair{"Skeleton", "skeleton"}, std::pair{"Console", "console"}}) {
           if (ImGui::MenuItem(label)) {
             sessionAction({{"command", "show-pane"}, {"pane", pane}});
           }
@@ -5792,6 +6011,10 @@ namespace Dot::Editor {
         return "Console";
       }
 
+      if (panel == "skeleton") {
+        return "Skeleton";
+      }
+
       return "Assets";
     }
 
@@ -5826,6 +6049,155 @@ namespace Dot::Editor {
       ImGui::DockBuilderDockWindow(panelTitle(panel), node);
       ImGui::DockBuilderFinish(root);
       ++m_layoutGeneration;
+    }
+
+    auto skeletonPanel() -> void {
+      auto scene = displayedScene();
+      auto state = m_skeleton.stats();
+
+      if (!scene || !state) {
+        ImGui::TextWrapped("%s", (!scene ? scene.error() : state.error()).message.c_str());
+        return;
+      }
+
+      auto entities = (*scene)->entities();
+
+      if (!entities) {
+        ImGui::TextWrapped("%s", entities.error().message.c_str());
+        return;
+      }
+
+      const auto scope = std::to_string((*scene)->id());
+      std::string label = "Off";
+
+      if (state->entity) {
+        const auto found = std::ranges::find_if(
+            *entities, [&](const auto& entity) { return entity.id.value == *state->entity; });
+        label = found == entities->end() ? "Missing target" : found->name;
+        label += " (" + std::to_string(*state->entity) + ")";
+      }
+
+      bool changed{};
+      ImGui::TextUnformatted("Mesh skin");
+      ImGui::SetNextItemWidth(-1);
+
+      if (ImGui::BeginCombo("##skeleton-target", label.c_str())) {
+        if (ImGui::Selectable("Off", !state->entity)) {
+          changed
+              = sessionAction({{"command", "set-skeleton"}, {"scene", scope}, {"entity", nullptr}});
+        }
+
+        for (const auto& entity : *entities) {
+          if (!entity.mesh || !entity.skin || !entity.skin->enabled) {
+            continue;
+          }
+
+          ImGui::PushID(static_cast<int>(entity.id.value));
+          const auto name = entity.name + " (" + std::to_string(entity.id.value) + ")";
+
+          if (ImGui::Selectable(name.c_str(), state->entity == entity.id.value)) {
+            changed = sessionAction({{"command", "set-skeleton"},
+                                     {"scene", scope},
+                                     {"entity", std::to_string(entity.id.value)}});
+          }
+
+          ImGui::PopID();
+        }
+
+        ImGui::EndCombo();
+      }
+
+      if (changed || !state->entity) {
+        ImGui::TextWrapped("Choose a skinned mesh to inspect its live skeleton.");
+        return;
+      }
+
+      ImGui::TextWrapped(
+          "X-ray overlay shows joints through surfaces. Click a joint in Scene or select it "
+          "below.");
+      const auto target = std::to_string(*state->entity);
+      ImGui::BeginDisabled(playing() || m_transform.has_value());
+
+      if (ImGui::Button("Frame skeleton")) {
+        sessionAction({{"command", "focus-skeleton"},
+                       {"scene", scope},
+                       {"entity", target},
+                       {"joint", nullptr}});
+      }
+
+      ImGui::BeginDisabled(!state->selected);
+
+      if (ImGui::Button("Frame joint")) {
+        sessionAction({{"command", "focus-skeleton"},
+                       {"scene", scope},
+                       {"entity", target},
+                       {"joint", std::to_string(*state->selected)}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(!state->selected || playing() || m_animationPreview || m_transform);
+
+      if (ImGui::Button("Edit selected joint")) {
+        if (action({{"command", "select"}, {"entity", std::to_string(*state->selected)}})) {
+          sessionAction({{"command", "show-pane"}, {"pane", "inspector"}});
+        }
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SetNextItemWidth(-1);
+      searchField("##skeleton-search", "Search joints", "skeleton", m_skeletonFilter);
+
+      if (state->error) {
+        ImGui::TextWrapped("%s", state->error->message.c_str());
+      }
+
+      if (!state->frame || state->frame->pose.owner.scene != (*scene)->id()) {
+        ImGui::TextWrapped("Waiting for a completed Scene viewport frame.");
+        return;
+      }
+
+      const auto& pose = state->frame->pose;
+      ImGui::TextWrapped("Last completed frame %s / %zu joints",
+                         std::to_string(state->frame->serial).c_str(), pose.joints.size());
+      ImGui::BeginChild("Joint list", {0, 0});
+
+      for (std::size_t index = 0; index < pose.joints.size(); ++index) {
+        const auto& joint = pose.joints[index];
+
+        if (!matchesFilter(joint.name, m_skeletonFilter)) {
+          continue;
+        }
+
+        ImGui::PushID(static_cast<int>(index));
+
+        if (ImGui::Selectable(joint.name.c_str(), state->selected == joint.entity.value)) {
+          sessionAction({{"command", "select-skeleton-joint"},
+                         {"scene", scope},
+                         {"entity", target},
+                         {"joint", std::to_string(joint.entity.value)}});
+        }
+
+        if (ImGui::IsItemHovered()) {
+          ImGui::BeginTooltip();
+          ImGui::Text("Joint %s / palette %zu", std::to_string(joint.entity.value).c_str(), index);
+          ImGui::Text("World: %.4f, %.4f, %.4f", joint.position.x, joint.position.y,
+                      joint.position.z);
+
+          if (joint.parent) {
+            ImGui::Text("Parent: %s (%u hierarchy links)", pose.joints[*joint.parent].name.c_str(),
+                        joint.parentLinks);
+          } else {
+            ImGui::TextUnformatted("Skeleton root");
+          }
+
+          ImGui::EndTooltip();
+        }
+
+        ImGui::PopID();
+      }
+
+      ImGui::EndChild();
     }
 
     auto draw() -> Core::Result<void> {
@@ -5983,6 +6355,7 @@ namespace Dot::Editor {
         ImGui::DockBuilderDockWindow("Inspector", inspector);
         ImGui::DockBuilderDockWindow("Environment", inspector);
         ImGui::DockBuilderDockWindow("Rendering", inspector);
+        ImGui::DockBuilderDockWindow("Skeleton", inspector);
         ImGui::DockBuilderDockWindow("Assets", assets);
         ImGui::DockBuilderDockWindow("Console", assets);
         ImGui::DockBuilderFinish(dock);
@@ -6103,8 +6476,21 @@ namespace Dot::Editor {
                 return std::unexpected(ready.error());
               }
 
-              return m_previewReady ? std::optional{Graphics::GuiViewportFrame{*m_target, {}}}
-                                    : std::nullopt;
+              if (!m_previewReady) {
+                return std::optional<Graphics::GuiViewportFrame>{};
+              }
+
+              auto scene = displayedScene();
+
+              if (!scene) {
+                return std::unexpected(scene.error());
+              }
+
+              auto overlay
+                  = m_skeleton.render(**scene, m_project->files().value(),
+                                      m_renderedFrame->viewProjection, m_renderedFrame->serial);
+              return std::optional{Graphics::GuiViewportFrame{
+                  *m_target, overlay ? std::move(*overlay) : Graphics::ViewportOverlay{}}};
             },
             m_viewWidth, m_viewHeight);
 
@@ -6155,6 +6541,12 @@ namespace Dot::Editor {
 
       if (beginPanel("Rendering", "rendering", "rendering")) {
         renderingPanel();
+      }
+
+      ImGui::End();
+
+      if (beginPanel("Skeleton", "skeleton", "skeleton")) {
+        skeletonPanel();
       }
 
       ImGui::End();
@@ -6394,9 +6786,10 @@ namespace Dot::Editor {
 
         if (m_assetRefresh) {
           auto cleared = m_drawing->clearCache();
+          auto invalidated = m_skeleton.invalidateAssets();
 
-          if (!cleared) {
-            return cleared;
+          if (!cleared || !invalidated) {
+            return !cleared ? cleared : invalidated;
           }
 
           m_assetRefresh = false;

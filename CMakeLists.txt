@@ -107,6 +107,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/PlayInput.cpp
     src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/AnimationPreview.cpp
+    src/Engine/Editor/SkeletonView.cpp
     src/Engine/Editor/Workspace.cpp
     src/Engine/Editor/Home.cpp
     src/Engine/Core/Logging.cpp
@@ -227,6 +228,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/PlayInput.cppm
         src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/AnimationPreview.cppm
+        src/Engine/Editor/SkeletonView.cppm
         src/Engine/Editor/Workspace.cppm
         src/Engine/Editor/Home.cppm
         src/Engine/Core/Core.cppm

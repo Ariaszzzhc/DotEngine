@@ -1147,3 +1147,66 @@ Stale generations cannot be read as a current viewport frame.
 恢复完整编辑场景，选择/历史/修订/保存状态不变。所有操作共用严格 JSON 实现；检查可读取
 实际预览场景、片段、时间及绑定姿态标记，过期会话无法影响新预览。PNG 同时记录该来源，
 结束预览后仍可保存已固定的画面。本功能用于动作检查，关键帧制作、骨架与状态图工具仍待完成。
+
+## Live skeleton inspection
+
+Window → Skeleton opens a dockable read-only viewer. Choose an enabled mesh skin;
+Off releases its cached asset/frame. The cyan x-ray joints/bones use actual world
+positions and nearest bound ancestors, including unbound helper nodes and multiple
+roots. The selected joint and its incoming bone are yellow. Overlay geometry is
+projected after the same scene frame renders, clipped to its viewport, respects GUI
+window order and stays out of scene PNG/HDR pixels. It does not depth-test surfaces.
+
+Select a joint in the filtered list or click within six logical pixels of its
+projected point in Scene. Hover the list for palette index, world coordinates and
+parent/link distance. Frame skeleton and Frame joint use actual padded world bounds;
+Play retains its game camera. Edit selected joint selects the real authoring entity
+through ordinary revision-checked document selection, then opens Inspector. Existing
+transform/undo tools edit that node; this does not create animation keyframes. Editing
+is disabled during animation audition, transforms and Play. Bone inspection/selection
+and filtering remain available, without changing authoring history or saved state.
+
+All controls use strict shared product operations. Read `workspace.view.scene` to
+obtain the current canonical scene scope, which changes for clones/document updates.
+Every request below requires that current scope. Replace sample IDs with observed IDs:
+
+```json
+{"command":"set-skeleton","scene":"12","entity":"283"}
+{"command":"inspect-skeleton","scene":"12"}
+{"command":"select-skeleton-joint","scene":"12","entity":"283","joint":"282"}
+{"command":"select-skeleton-joint","scene":"12","entity":"283","joint":null}
+{"command":"focus-skeleton","scene":"12","entity":"283","joint":null}
+{"command":"focus-skeleton","scene":"12","entity":"283","joint":"282"}
+{"command":"pick-skeleton","scene":"12","uv":[0.5,0.5]}
+{"command":"filter-panel","panel":"skeleton","query":"Hand"}
+{"command":"show-pane","pane":"skeleton"}
+{"command":"set-skeleton","scene":"12","entity":null}
+```
+
+Unknown fields fail; IDs are canonical decimal strings. UV uses the latest completed
+viewport with top-left origin and finite [0,1] coordinates, exactly like a native
+click at processing time. The pick result includes the actual frame serial and hit
+entity or null; a miss preserves selection. A hidden/unready viewport or changed
+scene/view rejects picking. It does not promise that an independently moving pose
+remains at a previously inspected UV. Inspector editing uses ordinary `select` and
+`edit` requests with current authoring revision, as elsewhere in this document.
+
+`workspace.skeleton` and `inspect-skeleton.skeleton` report enabled/target/selected,
+filter, readiness and observable native errors. Only a current completed viewport
+publishes `frame`: serial, actual scene scope, asset, root count, palette-ordered joints
+with entity/name/nearest parent/parentLinks/world/optional projected UV, projected point/
+bone counts and Play frame. Offscreen joints retain world data with null UV. Projected
+counts describe x-ray projection, not occlusion visibility. The GUI list explicitly
+labels its last completed frame while live animation advances.
+
+The viewer follows the target entity value into the active audition/Play/transform
+scene and revalidates bindings each render. Old scoped requests fail; removed joints
+clear selection on successful rebinding. Missing/invalid resources clear old geometry
+and expose retryable errors; invalid controls preserve prior settings. Immutable skin
+assets are cached by project root/path; the normal resource refresh invalidates this
+cache. No scene data, scripts, physics or audio are started by skeleton inspection.
+
+骨架面板查看真实蒙皮节点，透视线与同一已完成场景帧对齐，不写入场景导出像素。
+关节列表/视口拾取、搜索、全骨架/单骨段取景均有同源严格 JSON 操作；场景范围避免旧请求
+影响新克隆。编辑关节复用普通文档选择和 Inspector/撤销，不代表关键帧或重定向制作工具。
+预览/Play 中保持编辑场景不变，资源失败清除旧几何并报告错误。

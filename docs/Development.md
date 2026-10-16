@@ -6177,3 +6177,82 @@ font/list lifetime, source-window stacking, geometry budgets and vertex-offset u
 callback non-replay, retained targets and unchanged scene pixels. Compiler/linker
 settings and dependency pins are unchanged. Only arm64 macOS is executed. No new
 archive or desktop-window test is produced. Product bone inspection follows next.
+
+## 2026-10-16 — Live skeleton inspection in the editor
+
+The product now includes a dockable Skeleton panel, enabled mesh-skin choice/Off,
+filtered palette-ordered joint list, world/parent/link information, x-ray viewport
+points/bones, selected point/incoming-bone highlighting and whole/joint focus. Edit
+selected joint reuses real document selection and existing Inspector/undo tools;
+it does not create animation keyframes or alter inverse binds/weights. Animation
+preview and Play remain isolated from authoring. The viewer follows the requested
+entity value into the currently displayed scope, validates native bindings and
+samples only after that exact scene frame renders. PNG/HDR remain clean scene data.
+
+GUI and strict product requests share implementation: set/inspect skeleton, select
+joint, focus and normalized viewport picking, plus existing filter/layout operations.
+Scene-scoped requests reject stale source/preview/Play controls. A pick means clicking
+the latest displayed position now; its response identifies the actual processed frame,
+rather than requiring a serial that ordinary repainting would immediately expire.
+Current scene/view/revision readiness protects stale geometry; no hit preserves the
+selection. Snapshot inspection publishes geometry only for the current completed
+frame. The GUI explicitly labels its last completed pose while animation advances.
+
+The CPU/file-only SkeletonView owns loaded immutable skin data and frame snapshots;
+root/path-keyed caches invalidate on normal resource refresh. Invalid controls preserve
+settings; render failure retires stale geometry with observable retryable errors.
+Disabled inspection has no per-frame asset loading/sampling. Five focused filesystem
+integration cases cover live pose/projection/highlighting/focus, no source writes,
+invalid controls, native failure/recovery, cache/root/invalidation, source/clone binding,
+obsolete selection, owned snapshots and thread restrictions. They open no devices or
+windows. Existing pure projection/skeleton and durable offscreen GUI cases remain.
+
+Initial implementation builds identify missing standard filesystem/thread includes;
+these are added to the implementation global fragment. Initial fixtures use a skin
+path outside the required assets prefix and fail before assertions; corrected fixtures
+create/use assets/skeleton.dotskin. Final Debug focused service checks pass 5/5 (.41s),
+Release/NDEBUG 5/5 (.05s). Full arm64 macOS Debug passes 1068/1068 (154.23s), followed
+by a final full rebuild and 14/14 affected checks (1.80s) after pick protocol review.
+Final full Release/NDEBUG passes 1068/1068 (18.13s). The suite contains 278 unit and
+790 integration cases; overlapping subsets include 125 offscreen GPU, 27 native audio
+and 28 SDL-dummy platform cases. Automatic tests open no desktop windows.
+
+Actual product validation opens Prism Relay through its native editor app and uses
+its normal mailbox. The real Surveyor mesh 283 exposes 65 joints, 64 projected bones
+and one actual root. Head selection/highlighting, normalized position picking, search,
+whole/joint camera focus, bad/missing target, foreign joint, invalid UV, unknown fields
+and stale-scene rejection are observed. Switching overlay on/off produces byte-identical
+1480x704 scene PNGs without authoring revision/dirty/scene changes. Editing the real
+head transform changes live world coordinates; ordinary Undo restores exact prior
+coordinates and clean scene data. Native screenshot observation confirms actual model/
+bone alignment, yellow selected bone, normal and 151-logical-pixel narrow docked panel,
+wrapped controls/labels, scrollable joint list and dark/light themes. No unconfirmed
+simulated mouse click is counted as product acceptance.
+
+The first native run uses a generated build example while an independent full build
+regenerates that directory, removing its live mailbox. The product reports the real
+missing-root I/O error and exits; this validation-process interference is not hidden
+or described as a clean close. After confirming termination, a separate ignored example
+copy removes the shared-directory conflict. In that run source scope 2, animation scope
+4 and Play scope 5 remain distinct. Idle versus Walk at .4s changes real joint positions;
+old scoped controls fail. Twenty agent W frames move the skeleton root from [-3,0,2]
+to approximately [-3,0,.99208], consistent with actual character movement. Stop restores
+the unchanged source scene/revision/clean state. The earlier human W observation was
+Chinese IME interception and is not evidence of a movement defect.
+
+Precommit review covers module separation/direction, ownership and thread lifetime,
+strict fields/scoped identities, cache invalidation and failure recovery, current-frame
+projection and GUI-only geometry, native binding/nearest parent topology, read-only
+source/clone authority, edit/undo reuse, camera guards, logical DPI hit radius, portable
+code and focused coverage. No dependencies/compiler/linker environment/target platforms
+change; Windows/Linux are not executed. Production animation/skeleton authoring, state
+and layering tools, finished realistic sci-fi art, streaming and populated-game performance
+remain open. This is one integrated capability, not completion of the engine goal.
+
+The independent native run closes normally with launcher exit 0, no final-run error,
+empty stderr and retired control directory. Temporary application shell, example copy,
+requests and investigation clients are removed. Observations and PNGs remain only in
+ignored build storage; build caches and existing archives are preserved. All four
+changed C++ interface/implementation/test files pass clang-format; diff whitespace
+checks pass. No distribution package is generated. The unrelated local specification
+and visual-reference output remain untracked and are not included in commits.
