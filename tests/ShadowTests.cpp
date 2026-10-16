@@ -127,3 +127,79 @@ TEST_CASE("shadows.cpu_texel_stability_orthographic_camera_and_offscreen_casters
       = fitDirectionalShadows(view, {0, 0, 5}, {0, 0, -1}, settings, outside).value();
   CHECK(excluded.matrices[0] == original.matrices[0]);
 }
+
+TEST_CASE("shadows.cpu_local_projections_cover_faces_cones_and_depth_bounds") {
+  using namespace Dot::Math;
+  ShadowSettings settings;
+  settings.distance = 12;
+  const Vec3 position{2, 3, -4};
+  const auto point = fitPointShadows(position, 20, settings);
+  REQUIRE(point);
+  CHECK(point->kind == ShadowProjectionKind::Point);
+  CHECK(point->count == 6);
+  CHECK(point->origin == position);
+  CHECK(point->splits[0] == 12);
+  const std::array<Vec3, 6> axes{
+      {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}};
+
+  for (std::size_t face = 0; face < axes.size(); ++face) {
+    const auto near
+        = transformPoint(point->matrices[face], position + axes[face] * point->nearDepth);
+    const auto center = transformPoint(point->matrices[face], position + axes[face] * 2);
+    const auto far = transformPoint(point->matrices[face], position + axes[face] * 12);
+    REQUIRE(near);
+    REQUIRE(center);
+    REQUIRE(far);
+    CHECK(std::abs(near->z) < .00002F);
+    CHECK(center->x == doctest::Approx(0).epsilon(.00001));
+    CHECK(center->y == doctest::Approx(0).epsilon(.00001));
+    CHECK(center->z > 0);
+    CHECK(center->z < 1);
+    CHECK(far->z == doctest::Approx(1));
+    CHECK(transformPoint(point->matrices[face], position + axes[face] * 24)->z > 1);
+    CHECK(Dot::Math::isFinite(point->matrices[face]));
+  }
+
+  // A ray on a face seam belongs to both independent projections.
+  // 面接缝上的射线同时落在两个独立投影边界。
+  const Vec3 seam = position + Vec3{2, 2, 0};
+  CHECK(std::abs(transformPoint(point->matrices[0], seam)->y) == doctest::Approx(1));
+  CHECK(std::abs(transformPoint(point->matrices[2], seam)->x) == doctest::Approx(1));
+  const auto spot = fitSpotShadow(position, {0, -4, 0}, 30, 5, settings);
+  REQUIRE(spot);
+  CHECK(spot->kind == ShadowProjectionKind::Spot);
+  CHECK(spot->count == 1);
+  CHECK(spot->forward == Vec3{0, -1, 0});
+  CHECK(spot->splits[0] == 5);
+  CHECK(transformPoint(spot->matrices[0], position + Vec3{0, -2, 0})->x == doctest::Approx(0));
+  const auto edge = transformPoint(spot->matrices[0], position + Vec3{1.15470054F, -2, 0}).value();
+  CHECK(std::abs(edge.x) == doctest::Approx(1));
+  CHECK(std::abs(transformPoint(spot->matrices[0], position + Vec3{2, -2, 0})->x) > 1);
+  CHECK(fitPointShadows({}, .01F, settings)->nearDepth == doctest::Approx(.0001F));
+  CHECK(fitSpotShadow({}, {1, .001F, 0}, .1F, .01F, settings));
+}
+
+TEST_CASE("shadows.cpu_local_invalid_inputs_fail_without_camera_dependencies") {
+  const auto nan = std::numeric_limits<float>::quiet_NaN();
+  ShadowSettings settings;
+
+  for (const auto range : {nan, 0.F, -.01F, .009F, 1'000'001.F}) {
+    CHECK_FALSE(fitPointShadows({}, range, settings));
+    CHECK_FALSE(fitSpotShadow({}, {0, -1, 0}, 30, range, settings));
+  }
+
+  for (const auto position : {Dot::Math::Vec3{nan, 0, 0}, Dot::Math::Vec3{0, 1'000'001, 0}}) {
+    CHECK_FALSE(fitPointShadows(position, 10, settings));
+    CHECK_FALSE(fitSpotShadow(position, {0, -1, 0}, 30, 10, settings));
+  }
+
+  for (const auto cone : {nan, -1.F, 0.F, 90.F, 91.F}) {
+    CHECK_FALSE(fitSpotShadow({}, {0, -1, 0}, cone, 10, settings));
+  }
+
+  CHECK_FALSE(fitSpotShadow({}, {}, 30, 10, settings));
+  CHECK_FALSE(fitSpotShadow({}, {nan, 0, 0}, 30, 10, settings));
+  settings.resolution = 129;
+  CHECK_FALSE(fitPointShadows({}, 10, settings));
+  CHECK_FALSE(fitSpotShadow({}, {0, -1, 0}, 30, 10, settings));
+}

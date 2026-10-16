@@ -19,7 +19,7 @@ requirements remain:
 
 | Area | Current implementation | Evidence still needed or unfinished work |
 | --- | --- | --- |
-| Rendering | PBR material/texture slots, HDRI IBL, directional cascaded soft shadows, SSAO and HDR/tone mapping | Point/spot shadows, temporal quality, resource streaming and populated-scene performance |
+| Rendering | PBR material/texture slots, HDRI IBL, directional cascades and point/spot soft shadows (one source), SSAO and HDR/tone mapping | Multiple shadow sources, temporal quality, resource streaming and populated-scene performance |
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning, animation cross-fades, isolated audition, live skeleton inspection, existing-clip key editing/save/undo, sampled curves and cross-track group key selection/retiming and owned copy/paste across a player's clips shared with agents | Native curve-drag acceptance, dope-sheet/multi-key value/tangent-handle and skeleton/binding authoring, layered/state-machine workflows and scalability |
 | Physics/gameplay | Rigid bodies with linear CCD, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies and script/Inspector/agent controls | Virtual-only character contact events and populated-game character scalability |
 | Editor | Docked views, scene/resource/material authoring, picking/multiselection/gizmos, undo/redo, isolated Play and export | Consistent production workflows, complex scene organization, background compilation and performance/debugging tools |

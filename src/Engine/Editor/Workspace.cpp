@@ -5306,9 +5306,8 @@ namespace Dot::Editor {
             m_edit[component] = std::move(description);
             auto& light = m_edit[component];
             bool shadows = light.contains("shadows") && !light["shadows"].is_null();
-            ImGui::BeginDisabled(light["kind"] != "directional" && !shadows);
 
-            if (PropertyRow row{"Cast directional shadows"};
+            if (PropertyRow row{"Cast shadows"};
                 row.visible() && ImGui::Checkbox("##value", &shadows)) {
               light["shadows"] = shadows ? Json{{"resolution", 1024},   {"cascades", 4},
                                                 {"distance", 100.0F},   {"splitLambda", 0.65F},
@@ -5316,8 +5315,6 @@ namespace Dot::Editor {
                                                 {"normalBias", 0.01F},  {"filterRadius", 2.0F}}
                                          : Json(nullptr);
             }
-
-            ImGui::EndDisabled();
 
             if (shadows) {
               fields(light["shadows"]);

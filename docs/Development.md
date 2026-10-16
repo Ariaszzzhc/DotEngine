@@ -6909,3 +6909,71 @@ are removed; ignored observations/build logs, caches and existing archives remai
 No distribution archive is generated. Specification/reference output remain untracked.
 Dope-sheet, bulk value/tangent-handle/binding/state/layer authoring, finished realistic
 game art, rendering/streaming/performance and the overall production engine remain open.
+
+### Local light shadow projections and shared authoring
+
+Extended the existing single shadow source to directional, point or spot lights.
+Point lights render six independent 90-degree perspective depth layers; spots use
+one projection with twice their outer half-cone. A shadowed spot requires an outer
+half-cone strictly below 90 degrees. Local radial coverage is min(light range,
+shadow distance), with a bounded positive near plane. Directional cascade count
+and split blending remain directional controls. The CPU result is now one owned
+ShadowProjection type with six matrix slots, without aliases or compatibility code.
+
+Perspective spot receiver-plane derivatives use the quotient rule. Point PCF
+remaps every bilinear neighbor across cube faces, intersects its actual texel ray
+with the receiving geometric plane and compares that face's projected depth. The
+soft path performs sixteen bilinear taps/64 depth loads, while radius zero uses
+four loads. Normal offsets reaching the light and nonpositive homogeneous weights
+return lit before division. This is a fixed-radius filtering foundation, not
+contact-hardening or a claim of populated-scene performance. One source per frame
+remains explicit; multiple requested sources fail instead of silently dropping one.
+
+Depth storage follows actual projection layer count (six for point, one for spot,
+one through four for directional), reuses matching allocations and releases them
+when disabled. Maximum logical current depth storage is 96 MiB at 2048²/six faces;
+driver replacement/in-flight overlap is separate. Existing opaque/masked coverage,
+skinning and independent cast/receive behavior share the same rendering path.
+Inspector Cast shadows is available for all light kinds through existing strict
+scene/agent validation, history, persistence, preview and Play implementations.
+
+Added two pure CPU cases for local projection/coverage/cone/range boundaries and
+three enduring offscreen GPU cases for local occlusion, cast/receive flags, moving
+casters, masked holes, filtering, cutoff, resource transitions, all six faces,
+two-/three-face seams and the normal-bias/source numerical boundary. Expanded saved
+scene and document regressions to all three kinds, preserving invalid-input atomicity,
+undo/redo/save/reopen and directional pixel thresholds. No test window or new test
+executable is introduced. Latest Release/NDEBUG full checks pass 1122/1122 (18.63s):
+315 unit and 807 integration, including overlapping 129 offscreen GPU, 27 native
+audio and 28 SDL-dummy platform cases. Focused Debug checks pass 18/18 (12.91s):
+eight unit and ten integration, including eight offscreen GPU cases.
+
+An early full run overlapped an incremental link and reported an absent DotEditor
+executable, a script time-budget interruption under concurrent compilation, and
+one obsolete scene-file assertion rejecting point shadows. The stale assertion now
+checks roundtrips and the actual invalid spot boundary. Builds and tests were then
+ordered per configuration; subsequent full Release runs passed without changing
+script deadlines or removing coverage. Both presets configure/build successfully
+with the caller's toolchain/environment. Windows/Linux are not executed.
+
+Two actual native editor sessions on a FeatureLab copy verify buffered Inspector
+point-light application, six-face statistics, spotlight component/transform editing,
+one-face statistics, invalid 90-degree spot rejection without document mutation,
+undo/redo, save, exact saved-scene reopen and real Play/Stop. Initial captures used
+mostly unlit demonstration geometry, so these were not treated as visual shadow
+acceptance. PBR bindings and the actual material editor then produce visible frozen
+point/spot shadow-versus-disabled comparisons, including a plain receiving surface
+without the demonstration normal texture. Both sessions exit 0 with empty stderr
+and retired control directories. Original tracked examples remain unchanged; only
+the QA scene and material were edited. The final homogeneous-division guards are
+also verified by the focused offscreen boundary regression. Computer use is not
+used or claimed for this stage.
+
+Precommit review covers projection/bias conventions, CPU/WGSL layout, cross-face
+filtering, caster/receiver coverage, resource replacement/release, strict shared
+validation and authoring history. All thirteen changed C++ files pass clang-format;
+whitespace checks pass. Temporary app/project, request files and Python clients are
+removed; ignored capture/state observations and build logs remain. Caches and prior
+archives are preserved, and no distribution archive is generated. Multiple shadow
+sources, scalable local-face culling, temporal quality, complete animation authoring
+and a finished realistic game remain open. The broader engine goal is unfinished.

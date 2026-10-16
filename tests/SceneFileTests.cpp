@@ -413,8 +413,17 @@ TEST_CASE("scene_file.shadow_quality_and_mesh_cast_receive_flags_roundtrip_stric
     CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
   }
 
+  for (const auto kind : {"point", "spot"}) {
+    auto local = canonical;
+    local["entities"].back()["light"]["kind"] = kind;
+    auto loaded = Dot::World::decodeScene(local.dump());
+    REQUIRE(loaded);
+    CHECK(Json::parse(Dot::World::encodeScene(*loaded).value()) == local);
+  }
+
   auto bad = canonical;
-  bad["entities"].back()["light"]["kind"] = "point";
+  bad["entities"].back()["light"]["kind"] = "spot";
+  bad["entities"].back()["light"]["outerConeDegrees"] = 90;
   CHECK_FALSE(Dot::World::decodeScene(bad.dump()));
   bad = canonical;
   bad["entities"].back()["light"]["shadows"]["unknown"] = 1;

@@ -31,8 +31,9 @@ export namespace Dot::Graphics {
     float range{10};
     float innerConeDegrees{20};
     float outerConeDegrees{30};
-    /** Optional single directional shadow source per frame; point/spot requests fail.
-     * 每帧可选一盏方向光投影；点光/聚光请求明确失败。 */
+    /** Optional single shadow source per frame, of any kind. A shadowed spot's
+     * outer half-cone must be strictly less than 90 degrees.
+     * 每帧可选一盏任意种类的光源投影，投影聚光的外半角须严格小于 90 度。 */
     std::optional<ShadowSettings> shadows{};
   };
 

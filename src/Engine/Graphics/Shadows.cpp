@@ -23,6 +23,66 @@ namespace Dot::Graphics {
               index & 2 ? bounds.maximum.y : bounds.minimum.y,
               index & 4 ? bounds.maximum.z : bounds.minimum.z};
     }
+
+    auto localProjection(Math::Vec3 position, std::span<const Math::Vec3> directions, float fov,
+                         float range, const ShadowSettings& settings)
+        -> Core::Result<ShadowProjection> {
+      auto checked = validateShadowSettings(settings);
+
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+
+      if (!bounded(position) || !std::isfinite(range) || range < .01F || range > 1e6) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid local shadow position/range");
+      }
+
+      const auto far = std::min(range, settings.distance);
+      const auto near = std::min(.05F, far * .01F);
+      auto projection = Math::perspective(fov, 1, near, far);
+
+      if (!projection) {
+        return std::unexpected(projection.error());
+      }
+
+      ShadowProjection result{};
+      result.origin = position;
+      result.nearDepth = near;
+      result.splits[0] = far;
+      result.count = static_cast<std::uint32_t>(directions.size());
+      result.forward = directions[0];
+
+      for (std::size_t index = 0; index < directions.size(); ++index) {
+        const auto direction = directions[index];
+        auto rotation = Math::lookAt(
+            {}, direction,
+            std::abs(direction.y) > .99F ? Math::Vec3{0, 0, 1} : Math::Vec3{0, 1, 0});
+
+        if (!rotation) {
+          return std::unexpected(rotation.error());
+        }
+
+        Math::Mat4 translation;
+        translation.data[12] = -position.x;
+        translation.data[13] = -position.y;
+        translation.data[14] = -position.z;
+        auto view = Math::multiply(*rotation, translation);
+
+        if (!view) {
+          return std::unexpected(view.error());
+        }
+
+        auto matrix = Math::multiply(*projection, *view);
+
+        if (!matrix) {
+          return std::unexpected(matrix.error());
+        }
+
+        result.matrices[index] = *matrix;
+      }
+
+      return result;
+    }
   }  // namespace
 
   auto validateShadowSettings(const ShadowSettings& s) -> Core::Result<void> {
@@ -35,15 +95,47 @@ namespace Dot::Graphics {
         || !range(s.splitLambda, 0, 1) || !range(s.depthBias, 0, 0.02F)
         || !range(s.slopeBias, 0, 0.02F) || !range(s.normalBias, 0, 0.2F)
         || !range(s.filterRadius, 0, 8)) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid directional shadow settings");
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid shadow settings");
     }
 
     return {};
   }
 
+  auto fitPointShadows(Math::Vec3 position, float range, const ShadowSettings& settings)
+      -> Core::Result<ShadowProjection> {
+    const std::array<Math::Vec3, 6> directions{
+        {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}};
+    auto result = localProjection(position, directions, 90, range, settings);
+
+    if (result) {
+      result->kind = ShadowProjectionKind::Point;
+    }
+
+    return result;
+  }
+
+  auto fitSpotShadow(Math::Vec3 position, Math::Vec3 direction, float outerConeDegrees, float range,
+                     const ShadowSettings& settings) -> Core::Result<ShadowProjection> {
+    auto ray = Math::normalized(direction);
+
+    if (!ray || !std::isfinite(outerConeDegrees) || outerConeDegrees <= 0
+        || outerConeDegrees >= 90) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid shadow spot direction/cone");
+    }
+
+    const std::array directions{*ray};
+    auto result = localProjection(position, directions, outerConeDegrees * 2, range, settings);
+
+    if (result) {
+      result->kind = ShadowProjectionKind::Spot;
+    }
+
+    return result;
+  }
+
   auto fitDirectionalShadows(const Math::Mat4& viewProjection, Math::Vec3 camera,
                              Math::Vec3 lightDirection, const ShadowSettings& settings,
-                             std::span<const Bounds> casters) -> Core::Result<ShadowCascades> {
+                             std::span<const Bounds> casters) -> Core::Result<ShadowProjection> {
     auto checked = validateShadowSettings(settings);
 
     if (!checked) {
@@ -119,7 +211,7 @@ namespace Dot::Graphics {
 
     const auto up = std::abs(direction->y) > 0.99F ? Math::Vec3{1, 0, 0} : Math::Vec3{0, 1, 0};
     const auto rotation = Math::lookAt({}, *direction, up).value();
-    ShadowCascades result{{}, {}, {}, camera, *forward, settings.cascades, near};
+    ShadowProjection result{{}, {}, {}, camera, *forward, settings.cascades, near};
 
     for (std::uint32_t cascade = 0; cascade < settings.cascades; ++cascade) {
       const auto fraction = static_cast<float>(cascade + 1) / static_cast<float>(settings.cascades);

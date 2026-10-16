@@ -384,48 +384,58 @@ TEST_CASE("scene_material.environment_failures_preserve_frame_binding_and_cache_
   CHECK(device.resourceStats()->environments == 0);
 }
 
-TEST_CASE("scene_material.saved_directional_shadows_and_caster_flags_change_real_pixels") {
-  Fixture fixture;
-  REQUIRE(fixture.scene.setTransform(
-      fixture.camera, {{0, 6, 0}, Dot::Math::rotationEulerDegrees({-90, 0, 0}).value()}));
-  REQUIRE(fixture.scene.setCamera(
-      fixture.camera, Dot::World::Camera{.projection = Dot::World::Projection::Orthographic,
-                                         .orthographicHeight = 8,
-                                         .nearPlane = 0.1F,
-                                         .farPlane = 12,
-                                         .primary = true}));
-  REQUIRE(fixture.scene.setTransform(
-      fixture.mesh, {{}, Dot::Math::rotationEulerDegrees({-90, 0, 0}).value(), {8, 8, 1}}));
-  Dot::World::Light source;
-  source.intensity = 4;
-  source.shadows = Dot::Graphics::ShadowSettings{};
-  source.shadows->resolution = 128;
-  source.shadows->cascades = 1;
-  source.shadows->distance = 12;
-  source.shadows->filterRadius = 0;
-  source.shadows->normalBias = 0;
-  source.shadows->slopeBias = 0;
-  REQUIRE(fixture.scene.setLight(fixture.light, source));
-  REQUIRE(fixture.scene.setTransform(fixture.light,
-                                     {{}, Dot::Math::rotationEulerDegrees({-45, -90, 0}).value()}));
-  const auto cube = fixture.scene.createEntity("Caster").value();
-  REQUIRE(fixture.scene.setTransform(cube, {{0, 1, 0}, {}, {0.5F, 0.5F, 0.5F}}));
-  REQUIRE(fixture.scene.setMeshRenderer(cube, Dot::World::MeshRenderer{}));
-  auto scene = Dot::World::decodeScene(Dot::World::encodeScene(fixture.scene).value()).value();
-  auto device = renderer();
-  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
-  auto target = device.createTarget(129, 129).value();
-  auto rendered = drawing.renderInto(scene, target);
-  REQUIRE_MESSAGE(rendered, (rendered ? "" : rendered.error().message));
-  auto pixels = device.readHdrTarget(target).value();
-  CHECK(red(pixels, 80, 64) < 0.01F);
-  CHECK(red(pixels, 48, 64) > 0.4F);
-  auto nativeCube = scene.findEntity(cube.value).value();
-  auto description = scene.entity(nativeCube)->mesh.value();
-  description.castsShadow = false;
-  REQUIRE(scene.setMeshRenderer(nativeCube, description));
-  REQUIRE(drawing.renderInto(scene, target));
-  CHECK(red(device.readHdrTarget(target).value(), 80, 64) > 0.4F);
+TEST_CASE("scene_material.saved_shadow_kinds_and_caster_flags_change_real_pixels") {
+  for (const auto kind : {Dot::World::LightKind::Directional, Dot::World::LightKind::Point,
+                          Dot::World::LightKind::Spot}) {
+    Fixture fixture;
+    REQUIRE(fixture.scene.setTransform(
+        fixture.camera, {{0, 6, 0}, Dot::Math::rotationEulerDegrees({-90, 0, 0}).value()}));
+    REQUIRE(fixture.scene.setCamera(
+        fixture.camera, Dot::World::Camera{.projection = Dot::World::Projection::Orthographic,
+                                           .orthographicHeight = 8,
+                                           .nearPlane = 0.1F,
+                                           .farPlane = 12,
+                                           .primary = true}));
+    REQUIRE(fixture.scene.setTransform(
+        fixture.mesh, {{}, Dot::Math::rotationEulerDegrees({-90, 0, 0}).value(), {8, 8, 1}}));
+    Dot::World::Light source;
+    source.kind = kind;
+    source.intensity = kind == Dot::World::LightKind::Directional ? 4 : 80;
+    source.range = 12;
+    source.innerConeDegrees = 35;
+    source.outerConeDegrees = 55;
+    source.shadows = Dot::Graphics::ShadowSettings{};
+    source.shadows->resolution = 128;
+    source.shadows->cascades = 1;
+    source.shadows->distance = 12;
+    source.shadows->filterRadius = 0;
+    source.shadows->normalBias = 0;
+    source.shadows->slopeBias = 0;
+    REQUIRE(fixture.scene.setLight(fixture.light, source));
+    const bool local = kind != Dot::World::LightKind::Directional;
+    REQUIRE(fixture.scene.setTransform(
+        fixture.light,
+        {local ? Dot::Math::Vec3{-2, 3, 0} : Dot::Math::Vec3{},
+         Dot::Math::rotationEulerDegrees({local ? -56.30993F : -45.F, -90, 0}).value()}));
+    const auto cube = fixture.scene.createEntity("Caster").value();
+    REQUIRE(fixture.scene.setTransform(cube, {{0, 1, 0}, {}, {0.5F, 0.5F, 0.5F}}));
+    REQUIRE(fixture.scene.setMeshRenderer(cube, Dot::World::MeshRenderer{}));
+    auto scene = Dot::World::decodeScene(Dot::World::encodeScene(fixture.scene).value()).value();
+    auto device = renderer();
+    auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+    auto target = device.createTarget(129, 129).value();
+    auto rendered = drawing.renderInto(scene, target);
+    REQUIRE_MESSAGE(rendered, (rendered ? "" : rendered.error().message));
+    auto pixels = device.readHdrTarget(target).value();
+    CHECK(red(pixels, 80, 64) < 0.01F);
+    CHECK(red(pixels, 48, 64) > (local ? .3F : .4F));
+    auto nativeCube = scene.findEntity(cube.value).value();
+    auto description = scene.entity(nativeCube)->mesh.value();
+    description.castsShadow = false;
+    REQUIRE(scene.setMeshRenderer(nativeCube, description));
+    REQUIRE(drawing.renderInto(scene, target));
+    CHECK(red(device.readHdrTarget(target).value(), 80, 64) > (local ? .3F : .4F));
+  }
 }
 
 TEST_CASE("scene_material.saved_occlusion_changes_real_hdr_and_clears_only_owned_bindings") {

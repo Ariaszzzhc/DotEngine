@@ -576,13 +576,17 @@ TEST_CASE("document_material_and_light_components_share_history_save_and_agent_v
       = {{"resolution", 256},    {"cascades", 2},       {"distance", 30},      {"splitLambda", 0.5},
          {"depthBias", 0.0002F}, {"slopeBias", 0.001F}, {"normalBias", 0.01F}, {"filterRadius", 3}};
   const auto current = document.snapshot().value();
-  CHECK_FALSE(document.apply(
-      Json::array(
-          {{{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", shadowed}}})
-          .dump(),
-      revision(document)));
+  auto invalidShadow = shadowed;
+  invalidShadow["kind"] = "spot";
+  invalidShadow["outerConeDegrees"] = 90;
+  CHECK_FALSE(document.apply(Json::array({{{"op", "component"},
+                                           {"entity", "2"},
+                                           {"component", "light"},
+                                           {"value", invalidShadow}}})
+                                 .dump(),
+                             revision(document)));
   CHECK(document.snapshot().value() == current);
-  shadowed["kind"] = "directional";
+  shadowed["kind"] = "point";
   edit(document,
        Json::array(
            {{{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", shadowed}}}));
@@ -593,6 +597,21 @@ TEST_CASE("document_material_and_light_components_share_history_save_and_agent_v
   REQUIRE(document.save(revision(document)));
   auto reopened = fixture.document();
   CHECK(state(reopened)["scene"]["entities"][1]["light"] == shadowed);
+
+  for (const auto kind : {"spot", "directional"}) {
+    const auto previous = shadowed;
+    shadowed["kind"] = kind;
+    edit(
+        reopened,
+        Json::array(
+            {{{"op", "component"}, {"entity", "2"}, {"component", "light"}, {"value", shadowed}}}));
+    REQUIRE(reopened.undo(revision(reopened)));
+    CHECK(state(reopened)["scene"]["entities"][1]["light"] == previous);
+    REQUIRE(reopened.redo(revision(reopened)));
+    REQUIRE(reopened.save(revision(reopened)));
+    auto savedKind = fixture.document();
+    CHECK(state(savedKind)["scene"]["entities"][1]["light"] == shadowed);
+  }
 }
 
 TEST_CASE("document.environment_edits_undo_redo_atomic_failure_save_and_reopen") {

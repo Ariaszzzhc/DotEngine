@@ -36,7 +36,7 @@ an explicitly invalid texture is an error. SurfaceModel selects unlit or
 metallic/roughness shading through the same current HDR pipeline.
 The material also has finite nonnegative linear emissive radiance in [0,65503]
 per RGB channel, added before exposure; alpha is unaffected. Transparency blending remains planned; direct physical materials, HDRI lighting
-and explicit directional shadows are described below.
+and explicit shadow maps are described below.
 
 GPU regressions load actual PNG/HDR files, sample retained textures through materials
 into persistent GPU targets, check RGBA pixels and verify mesh/texture/target release.
@@ -134,7 +134,7 @@ retention. The sphere primitive supplies radial normals and explicit UV seams/po
 
 Material assets, persisted scene lights and basic shared inspector/agent authoring
 now use this renderer in preview, Play and exported games. Dedicated material tooling,
-the requested project/game visual upgrades, point/spot shadows, temporal AO, full animated glTF import,
+the requested project/game visual upgrades, multiple shadow sources, temporal AO, full animated glTF import,
 large-scene performance remains incomplete; the gallery does
 not establish those capabilities.
 
@@ -373,17 +373,17 @@ Feature Lab now includes its local CC0 Studio Small 09 panorama in the authored
 scene/project/template so editor, Play and native exports show the same environment.
 This provides authored IBL; directional shadows and the renderer SSAO foundation are
 described below, while temporal AO,
-point/spot shadows, async baking/streaming and advanced
+multiple shadow sources, async baking/streaming and advanced
 lighting/editor tools remain part of the active capability roadmap.
 
-## Cascaded directional soft shadows
+## Directional and local soft shadows
 
-`Light::shadows` explicitly requests one directional shadow source per frame. Null
-means no shadow map; point/spot requests or multiple requested directional sources
-fail validation. Shadow coverage supports opaque and masked static mesh geometry;
-point/spot projections, contact-hardening PCSS, temporal filtering and GPU-driven
-culling remain planned. CPU batching/instancing is implemented. Immediate unlit vertex rendering
-is independent of mesh shadow rendering.
+`Light::shadows` explicitly requests at most one shadow source per frame, of any
+light kind. Null means no shadow map; multiple requests fail without selecting or
+dropping a light silently. Shadow coverage shares opaque/masked and skinned geometry
+with the surface pass. Multiple shadow sources, contact-hardening PCSS, temporal
+filtering and GPU-driven culling remain planned. CPU batching/instancing is implemented.
+Immediate unlit vertex rendering is independent of mesh shadow rendering.
 
 `Dot.Graphics.Shadows` validates work on CPU and fits a finite camera frustum with
 at most 10000 world caster AABBs. Practical logarithmic/uniform splits cover the
@@ -396,10 +396,11 @@ matrices fail before submission, preserving the previous target frame.
 
 Defaults: resolution 1024, four cascades, distance 100 m, splitLambda .65, normalized
 depthBias .0002/slopeBias .001, normalBias .01 m and filterRadius 2 texels. Resolution
-is power-of-two 128..2048, cascades 1..4, distance .1..10000 (must exceed camera near),
+is power-of-two 128..2048, cascades 1..4, distance .1..10000 (directional coverage must
+exceed camera near),
 splitLambda [0,1], depth/slope biases [0,.02], normalBias [0,.2] and radius [0,8].
 A fixed-radius sixteen-tap PCF kernel plus bilinear depth comparisons produces soft
-edges; radius zero uses one hardware comparison sample. World-space softness grows
+edges; directional/spot radius zero uses one hardware comparison sample. World-space softness grows
 with cascade texel size; this is not a physical contact-hardening area-light model.
 
 Receiver-plane gradients come from world-position derivatives computed before
@@ -414,14 +415,15 @@ The renderer caches validated shader variants and Depth32Float array storage;
 independent caster uniforms prevent queue-write aliasing. Caster passes precede the
 HDR scene in one command buffer. Map dimensions are reused, reallocated on change
 and released when no source requests shadows. resourceStats.shadowBytes records
-working texels at four bytes each, at most 64 MiB of logical current map storage;
-replacement/in-flight driver allocations can overlap. These are working buffers,
-separate from asset texture/cache budgets. Per-draw/cascade uniforms and current
-CPU submission need pooling/culling/instancing for populated-scene scalability.
+working texels at four bytes each, at most 96 MiB of logical current map storage
+(2048² × six point faces); replacement/in-flight driver allocations can overlap. These are working buffers,
+separate from asset texture/cache budgets. Current CPU submission needs further
+pooling/culling and per-face local-light visibility for populated-scene scalability.
 
 Saved scene lights retain the strict shadows object with all eight settings; mesh
-components retain castsShadow/receivesShadow. The inspector can enable directional
-shadows and edit the nested settings; integral work controls retain integer JSON.
+components retain castsShadow/receivesShadow. The inspector can enable shadows on
+all three light kinds and edit the nested settings; integral work controls retain
+integer JSON.
 Document transactions/undo/saving, preview, Play and export use the same scene path.
 Feature Lab's saved directional headlight now requests cascades.
 
@@ -429,6 +431,30 @@ CPU tests cover fits/splits/texel stability/occluders;
 GPU tests check moving shadows, casting/receiving, measured penumbrae, all four
 cascades including off-camera casters, resource resize/release, other lights, IBL/
 emission and input failure retention. Saved-scene and document tests verify authoring.
+
+Point lights render six 90-degree perspective faces (+X,-X,+Y,-Y,+Z,-Z), independent
+of the camera. Spot lights render one perspective map with field of view twice the
+outer half-cone, which must be strictly less than 90 degrees when shadows are enabled.
+Both use radial coverage `min(light.range, shadows.distance)`; the perspective near
+plane is `min(.05, coverage*.01)` meters. `cascades` and `splitLambda` apply only to
+directional projection. Resolutions, PCF radius and bias controls retain their common
+bounds; changing kind also resizes the layer count (6/1/1..4), while disabling the
+source releases the depth texture.
+
+Spot receiver-plane derivatives use the perspective quotient rule. Point filtering
+remaps every bilinear neighbor across cube faces, intersects its actual texel ray
+with the geometric receiver plane, and compares in that face's projected depth.
+This avoids clamping the filter footprint at cube seams and avoids treating
+perspective depth as affine. Point hard filtering uses four depth loads; soft
+filtering uses sixteen bilinear taps (64 depth loads). This is explicit bounded
+work, with optimization/multiple-source budgeting still outstanding. Radial coverage
+limits affect shadowing only; the light's existing smooth range/cone attenuation
+continues independently. IBL, emission and other lights are not shadowed by this map.
+
+点光使用独立于相机的六面透视阴影，聚光使用外半角两倍的透视视角（投影时半角须小于
+90 度）。局部阴影径向覆盖不超过光源 range 与 shadows.distance 的较小值；级数及
+分段混合仅用于方向光。点光过滤逐纹素跨面重映射，并与接收平面求交后比较真实投影
+深度，避免立方体面接缝漏光。当前每帧仍最多一盏光源投影，多光源预算与性能优化待完成。
 
 ## Geometric ambient occlusion foundation
 

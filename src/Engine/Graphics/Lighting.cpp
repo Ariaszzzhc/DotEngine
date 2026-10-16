@@ -39,9 +39,9 @@ namespace Dot::Graphics {
 
       for (auto& light : result.lights) {
         if (light.shadows) {
-          if (light.kind != LightKind::Directional || ++shadowSources > 1) {
+          if (++shadowSources > 1) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Shadows require one directional source per frame");
+                              "Shadows require at most one source per frame");
           }
 
           auto checked = validateShadowSettings(*light.shadows);
@@ -49,7 +49,13 @@ namespace Dot::Graphics {
           if (!checked) {
             return std::unexpected(checked.error());
           }
+
+          if (light.kind == LightKind::Spot && light.outerConeDegrees >= 90) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Shadow spot outer cone must be less than 90 degrees");
+          }
         }
+
         if ((light.kind != LightKind::Directional && light.kind != LightKind::Point
              && light.kind != LightKind::Spot)
             || !positionValid(light.position) || !Math::isFinite(light.direction)

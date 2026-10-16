@@ -985,8 +985,9 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto ensureShadowMaps(const ShadowSettings& settings) -> Core::Result<void> {
-      if (shadowResolution == settings.resolution && shadowLayers == settings.cascades) {
+    auto ensureShadowMaps(const ShadowSettings& settings, std::uint32_t layers)
+        -> Core::Result<void> {
+      if (shadowResolution == settings.resolution && shadowLayers == layers) {
         return {};
       }
 
@@ -996,7 +997,7 @@ namespace Dot::Graphics {
 
       ErrorScope scope(instance, device);
       wgpu::TextureDescriptor descriptor;
-      descriptor.size = {settings.resolution, settings.resolution, settings.cascades};
+      descriptor.size = {settings.resolution, settings.resolution, layers};
       descriptor.format = wgpu::TextureFormat::Depth32Float;
       descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
       auto texture = device.CreateTexture(&descriptor);
@@ -1012,7 +1013,7 @@ namespace Dot::Graphics {
 
       shadowTexture = std::move(texture);
       shadowResolution = settings.resolution;
-      shadowLayers = settings.cascades;
+      shadowLayers = layers;
       shadowBytes
           = static_cast<std::uint64_t>(shadowResolution) * shadowResolution * shadowLayers * 4;
       return {};
@@ -2017,7 +2018,7 @@ namespace Dot::Graphics {
     }
 
     struct ShadowData {
-      std::array<Math::Mat4, 4> matrices;
+      std::array<Math::Mat4, 6> matrices;
       std::array<float, 4> splits;
       Math::Vec4 origin;
       Math::Vec4 forward;
@@ -2025,10 +2026,10 @@ namespace Dot::Graphics {
       Math::Vec4 meta;
     };
 
-    static_assert(sizeof(ShadowData) == 336);
+    static_assert(sizeof(ShadowData) == 464);
 
     auto fitShadows(std::span<const PreparedDraw> draws, const Math::Mat4& camera,
-                    std::size_t source) -> Core::Result<ShadowCascades> {
+                    std::size_t source) -> Core::Result<ShadowProjection> {
       std::vector<Bounds> casters;
       casters.reserve(draws.size());
 
@@ -2073,12 +2074,22 @@ namespace Dot::Graphics {
       }
 
       const auto& light = config.lighting.lights[source];
+
+      if (light.kind == LightKind::Point) {
+        return fitPointShadows(light.position, light.range, *light.shadows);
+      }
+
+      if (light.kind == LightKind::Spot) {
+        return fitSpotShadow(light.position, light.direction, light.outerConeDegrees, light.range,
+                             *light.shadows);
+      }
+
       return fitDirectionalShadows(camera, config.lighting.viewPosition, light.direction,
                                    *light.shadows, casters);
     }
 
     auto encodeShadows(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
-                       const ShadowCascades& fit) -> Core::Result<void> {
+                       const ShadowProjection& fit) -> Core::Result<void> {
       auto plan = batches(draws, BatchPass::Shadow);
 
       if (!plan) {
@@ -2148,7 +2159,7 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto bindShadows(const wgpu::RenderPipeline& pipeline, const ShadowCascades& fit,
+    auto bindShadows(const wgpu::RenderPipeline& pipeline, const ShadowProjection& fit,
                      std::size_t source) -> wgpu::BindGroup {
       const auto& settings = *config.lighting.lights[source].shadows;
       const ShadowData data{
@@ -2158,7 +2169,7 @@ namespace Dot::Graphics {
           {fit.forward.x, fit.forward.y, fit.forward.z, 0},
           {settings.depthBias, settings.slopeBias, settings.filterRadius, settings.normalBias},
           {static_cast<float>(source), static_cast<float>(settings.resolution),
-           static_cast<float>(fit.count), 0}};
+           static_cast<float>(fit.count), static_cast<float>(fit.kind)}};
       wgpu::BufferDescriptor descriptor;
       descriptor.size = sizeof(data);
       descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
@@ -2404,7 +2415,7 @@ namespace Dot::Graphics {
       }
 
       const auto source = shadowSource();
-      std::optional<ShadowCascades> fit;
+      std::optional<ShadowProjection> fit;
       wgpu::CommandEncoder shadowEncoder;
 
       if (source) {
@@ -2420,7 +2431,7 @@ namespace Dot::Graphics {
           return std::unexpected(checked.error());
         }
 
-        checked = ensureShadowMaps(*config.lighting.lights[*source].shadows);
+        checked = ensureShadowMaps(*config.lighting.lights[*source].shadows, matrices->count);
 
         if (!checked) {
           return std::unexpected(checked.error());

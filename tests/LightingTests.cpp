@@ -63,9 +63,12 @@ TEST_CASE("lighting.shadow_source_type_count_and_settings_validate_transactional
   lighting.lights = {light};
   REQUIRE(validatedLighting(lighting));
   lighting.lights[0].kind = LightKind::Spot;
+  CHECK(validatedLighting(lighting));
+  lighting.lights[0].outerConeDegrees = 90;
   CHECK_FALSE(validatedLighting(lighting));
+  lighting.lights[0].outerConeDegrees = 30;
   lighting.lights[0].kind = LightKind::Point;
-  CHECK_FALSE(validatedLighting(lighting));
+  CHECK(validatedLighting(lighting));
   lighting.lights[0] = light;
   lighting.lights.push_back(light);
   CHECK_FALSE(validatedLighting(lighting));

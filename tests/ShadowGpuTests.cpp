@@ -1,9 +1,11 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 import Dot.Graphics.Renderer;
@@ -147,6 +149,7 @@ TEST_CASE("shadows.gpu_only_requested_direct_light_is_attenuated_ibl_and_emissio
   CHECK_FALSE(fixture.renderer.setLighting(invalid));
   invalid = fixture.lights;
   invalid.lights[1].kind = LightKind::Spot;
+  invalid.lights[1].outerConeDegrees = 90;
   CHECK_FALSE(fixture.renderer.setLighting(invalid));
   invalid = fixture.lights;
   invalid.lights[1].shadows->resolution = 129;
@@ -216,4 +219,132 @@ TEST_CASE("shadows.gpu_mask_texture_holes_and_blend_do_not_cast_opaque_shadows")
   fixture.draws[1].material.baseColor.w = .5F;
   CHECK(fixture.red(fixture.render(), {1, 0, 0}) > .4F);
   CHECK(fixture.renderer.visibilityStats()->mesh->shadowInstances == 1);
+}
+
+TEST_CASE("shadows.gpu_local_occlusion_flags_masks_motion_and_resource_transitions") {
+  Fixture fixture;
+
+  for (const auto kind : {LightKind::Point, LightKind::Spot}) {
+    auto& light = fixture.lights.lights[0];
+    light.kind = kind;
+    light.position = {-2, 3, 0};
+    light.direction = {2, -3, 0};
+    light.intensity = 80;
+    light.range = 12;
+    light.innerConeDegrees = 35;
+    light.outerConeDegrees = 55;
+    fixture.draws[1].transform = Dot::Math::compose({0, 1, 0}).value();
+    REQUIRE(fixture.renderer.setLighting(fixture.lights));
+    const auto shadowed = fixture.render();
+    CHECK(fixture.red(shadowed, {1, 0, 0}) < .01F);
+    CHECK(fixture.red(shadowed, {-1, 0, 0}) > .3F);
+    const auto bytes = 128 * 128 * 4 * (kind == LightKind::Point ? 6 : 1);
+    CHECK(fixture.renderer.resourceStats()->shadowBytes == bytes);
+    fixture.draws[1].castsShadow = false;
+    const auto unshadowed = fixture.render();
+    const auto reference = fixture.red(unshadowed, {1, 0, 0});
+    CHECK(reference > .3F);
+    fixture.draws[1].castsShadow = true;
+    fixture.draws[0].receivesShadow = false;
+    CHECK(fixture.red(fixture.render(), {1, 0, 0}) == doctest::Approx(reference));
+    fixture.draws[0].receivesShadow = true;
+    fixture.draws[1].transform = Dot::Math::compose({-2, 1, 0}).value();
+    CHECK(fixture.red(fixture.render(), {1, 0, 0}) == doctest::Approx(reference));
+    fixture.draws[1].transform = Dot::Math::compose({0, 1, 0}).value();
+    auto transparent = fixture.renderer.uploadTexture(Image{1, 1, {255, 255, 255, 0}}).value();
+    fixture.draws[1].material.alphaMode = AlphaMode::Mask;
+    fixture.draws[1].material.baseColorTexture = transparent;
+    CHECK(fixture.red(fixture.render(), {1, 0, 0}) == doctest::Approx(reference));
+    fixture.draws[1].material.alphaMode = AlphaMode::Opaque;
+    fixture.draws[1].material.baseColorTexture.reset();
+    light.shadows->filterRadius = 6;
+    REQUIRE(fixture.renderer.setLighting(fixture.lights));
+    const auto soft = fixture.render();
+    std::size_t partial{};
+
+    for (std::size_t i = 0; i < soft.pixels.size(); i += 4) {
+      partial += unshadowed.pixels[i] > .1F && soft.pixels[i] > unshadowed.pixels[i] * .05F
+                 && soft.pixels[i] < unshadowed.pixels[i] * .95F;
+    }
+
+    CHECK(partial > 10);
+    light.shadows->filterRadius = 0;
+    light.shadows->distance = 1;
+    REQUIRE(fixture.renderer.setLighting(fixture.lights));
+    CHECK(fixture.red(fixture.render(), {1, 0, 0}) == doctest::Approx(reference));
+    light.shadows->distance = 12;
+  }
+
+  fixture.lights.lights[0].shadows.reset();
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  CHECK(fixture.renderer.resourceStats()->shadowBytes == 0);
+}
+
+TEST_CASE("shadows.gpu_point_all_faces_and_soft_cube_seams_remain_occluded") {
+  Fixture fixture;
+  auto& light = fixture.lights.lights[0];
+  light.kind = LightKind::Point;
+  light.position = {};
+  light.intensity = 80;
+  light.range = 12;
+  light.shadows->normalBias = .01F;
+  fixture.draws[1].material.doubleSided = true;
+  const std::array<Dot::Math::Vec3, 8> rays{{{1, 0, 0},
+                                             {-1, 0, 0},
+                                             {0, 1, 0},
+                                             {0, -1, 0},
+                                             {0, 0, 1},
+                                             {0, 0, -1},
+                                             {1, -1, 0},
+                                             {1, -1, 1}}};
+  auto wall = fixture.renderer.upload(cube({8, 8, .1F}).value()).value();
+  fixture.draws[0].mesh = &wall;
+
+  for (const auto ray : rays) {
+    const auto direction = Dot::Math::normalized(ray).value();
+    const auto up
+        = std::abs(direction.y) > .99F ? Dot::Math::Vec3{0, 0, 1} : Dot::Math::Vec3{0, 1, 0};
+    const auto receiver = direction * 4;
+    auto wallView = Dot::Math::lookAt(receiver, {}, up).value();
+    fixture.draws[0].transform = Dot::Math::inverse(wallView).value();
+    fixture.draws[1].transform = Dot::Math::compose(direction * 2).value();
+    fixture.lights.viewPosition = direction * .5F;
+    fixture.lights.viewDirection = direction;
+    // Clip the occluder before the near plane; it still participates in shadows.
+    // 用近平面裁掉投射物；它仍参与阴影投射。
+    fixture.camera = Dot::Math::multiply(Dot::Math::orthographic(-1, 1, -1, 1, 2.5F, 12).value(),
+                                         Dot::Math::lookAt(direction * .5F, receiver, up).value())
+                         .value();
+
+    for (const auto radius : {0.F, 6.F}) {
+      light.shadows->filterRadius = radius;
+      REQUIRE(fixture.renderer.setLighting(fixture.lights));
+      CHECK(fixture.red(fixture.render(), receiver) < .01F);
+      fixture.draws[1].castsShadow = false;
+      CHECK(fixture.red(fixture.render(), receiver) > .3F);
+      fixture.draws[1].castsShadow = true;
+    }
+  }
+}
+
+TEST_CASE("shadows.gpu_local_normal_bias_at_source_keeps_finite_lit_receiver") {
+  Fixture fixture;
+  auto& light = fixture.lights.lights[0];
+  light.position = {0, .2F, 0};
+  light.direction = {0, -1, 0};
+  light.intensity = .5F;
+  light.range = 1;
+  light.shadows->normalBias = .2F;
+
+  for (const auto kind : {LightKind::Point, LightKind::Spot}) {
+    light.kind = kind;
+    REQUIRE(fixture.renderer.setLighting(fixture.lights));
+    REQUIRE(fixture.renderer.renderMeshesInto(
+        fixture.target, std::span<const MeshDraw>(fixture.draws).first(1), fixture.camera));
+    const auto image = fixture.renderer.readHdrTarget(fixture.target).value();
+    CHECK(fixture.red(image, {}) > .3F);
+
+    CHECK(std::all_of(image.pixels.begin(), image.pixels.end(),
+                      [](float value) { return std::isfinite(value); }));
+  }
 }

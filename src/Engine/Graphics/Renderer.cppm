@@ -522,10 +522,10 @@ export namespace Dot::Graphics {
 
     /** Replace owned camera/direct-light data for future frames transactionally.
      * Lit draws require complete unit normals and finite affine world transforms;
-     * no-direct-light frames retain emission and explicitly bound IBL. Directional
-     * shadows are explicit; point/spot shadows remain planned.
+     * no-direct-light frames retain emission and explicitly bound IBL. Explicit
+     * shadows support directional, point and spot lights (one source per frame).
      * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
-     * 无直接光帧保留自发光及显式绑定的 IBL；方向光阴影须显式请求，点光/聚光阴影待实现。 */
+     * 无直接光帧保留自发光及显式绑定的 IBL；每帧最多一盏方向光、点光或聚光显式投影。 */
     [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
     [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 

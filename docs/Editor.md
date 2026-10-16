@@ -605,16 +605,17 @@ scene edit/revision. Resource failures appear with their paths; no substitute HD
 is supplied. Higher quality increases first-bake work; background import/bake jobs
 and advanced environment controls are still planned.
 
-## Directional shadows
+## Directional and local shadows
 
-The Light inspector's Cast directional shadows control enables saved cascade
+The Light inspector's Cast shadows control enables saved shadow
 settings. Expand shadows to choose resolution/count/coverage/splitting/bias and
-filter radius; the integer controls preserve the strict work types. Point/spot
-shadow requests are rejected. Mesh inspectors expose independent casting and
-receiving flags. Apply/undo/save, agent component edits, Play and exported players
-share the scene configuration. One enabled directional shadow source is supported
-per frame; additional sources report a contextual error rather than losing shadows.
-Advanced light gizmos, projection previews and point/spot shadows remain planned.
+filter radius; the integer controls preserve the strict work types. Directional
+lights use cascades/count/splitting. Point lights use six faces; spots use one map
+and require outerConeDegrees <90. Local distance is radial coverage capped by range.
+Mesh inspectors expose independent casting and receiving flags. Apply/undo/save, agent component edits, Play and exported players
+share the scene configuration. One enabled shadow source of any light kind is
+supported per frame; additional sources report a contextual error rather than losing shadows.
+Advanced light gizmos, projection previews and multiple shadow sources remain planned.
 
 ## Saved ambient occlusion
 
