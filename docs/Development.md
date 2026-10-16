@@ -5945,3 +5945,92 @@ scripts and observation/request files are removed. Ignored caches, verification 
 and the existing distribution remain; user design/planning inputs stay untracked.
 No release archive is produced. Complete editor operation parity, finished realistic
 sci-fi art, complex game authoring and populated-scene performance remain open.
+
+## 2026-10-16 — Actual viewport PNG export
+
+The editor now exposes Save viewport PNG and Save captured PNG through the File
+menu and strict capture-viewport/save-capture/browse-capture/discard-capture product
+operations. Capture is queued for a new native viewport frame; inspection separates
+queued, ready, saved, cancelled and failed states. The actual completed render
+target is read after GUI presentation, without rerendering a different scene/view.
+Retained pixels exclude editor panels and transform handles. Provenance includes
+frame serial, scene scope/revision, editor/game/Play mode, Play identity/frame,
+actual pixel dimensions/view-projection matrix and material-preview state.
+
+A bounded CPU capture service owns at most one queued/ready image. Newer matching
+frames are required; stale IDs, revisions/scopes/modes/sessions and inconsistent
+metadata fail. Frozen pixels survive later rendering and Stop. Successful save,
+cancellation and discard release them; failed saves retain them for retry. The
+existing direct viewport readback also rejects hidden/failed/stale previews.
+
+PNG export prepares an explicit existing parent and portable UTF-8 filename,
+requires deliberate overwrite, rejects links/special/read-only files and ASCII
+case aliases, bounds existing files to 64 MiB and scans to 65536 directory entries.
+It checks exact byte baselines before encoding and atomic replacement. This is
+serialized local editing, without hostile filesystem race isolation or promised
+crash durability. File commit precedes capture acknowledgement; a later catalog
+refresh failure explicitly reports the committed PNG instead of claiming no write.
+
+The shared SDL dialog module replaces the Home-specific callback header. Callback
+results own copied paths/errors, are consumed once and can outlive their initiating
+owner without a GUI borrow. Invalid/empty/oversized/non-UTF-8/multiple paths fail.
+Save dialogs open after pixels are frozen and pointer capture is released. Conflicting
+operations/window close are rejected until native completion; cancellation discards
+the capture and native errors retain it for retry. Existing Home folder selection
+uses the same callback ownership and preserves its close/release guards.
+
+Eight new lasting regressions add three pure CPU capture cases, one pure CPU dialog
+validation case, three filesystem PNG cases and one filesystem capture/save retry
+case. The two existing callback lifetime/result tests remain. No new executable,
+window/device initialization in unit tests, desktop-window integration test or
+visual probe is added. Initial builds found a missing default aggregate member,
+a missing standard vector include for the test comparator and an unparenthesized
+doctest diagnostic expression; these source/test errors were corrected. Focused
+Debug passes 10/10 (.26s); focused Release/NDEBUG passes 10/10 (.06s). Precommit
+platform review also makes Unicode test paths explicitly UTF-8 for Windows.
+
+Actual Release Prism Relay product operations save an editor view at 1480x704 and
+an over-shoulder Play view. A capture at Play frame 15 remains byte/provenance-stable
+while 30 real W input frames move the character from [-3,0,2] to approximately
+[-3,0,1.27846]. A later capture at frame 84 has different pixels and camera matrix.
+Saving a frozen Play capture after Stop also succeeds with the original provenance.
+Existing-file overwrite refusal preserves both file and ready image; explicit retry
+succeeds. Unknown fields, stale revisions and saved/stale capture IDs are rejected.
+Native SDL Save is observed and operated through the system accessibility controls:
+cancel returns cancelled state, a subsequent save creates native-save.png with the
+reported dimensions and bytes. Native-selected and direct editor-view PNGs are
+byte-identical. Close/save/discard conflicts are rejected while the dialog is open.
+
+A deliberate unsaved missing-mesh edit makes the viewport unavailable; capture then
+reports failed and creates no PNG. Undo restores rendering and a clean authoring
+state. Docking resizes the target to 872x704; PNG headers and reported dimensions
+match. Layout reset and clean close succeed, followed by a separate actual Home
+folder-dialog open/cancel and clean close. Both native runs exit 0, stderr is empty,
+and their control directories are removed. Temporary native app shells, clients and
+request files are removed; observations remain only in ignored build storage.
+
+The user identified Chinese IME interception as the reason a prior single native W
+keypress did not produce confirmable movement. That observation is not evidence of
+an engine movement defect; the actual agent-input checks above bypass OS text entry.
+This correction does not establish a successful human-style text-field edit or resolve
+the independently observed virtual-pointer coordinate issue.
+
+本轮交付实际视口 PNG 保存、固定画面与来源信息、系统对话框及同源智能体操作。
+这些工作改善真实项目的视觉检查流程；观察画面仍是原型场景，不代表写实科幻美术已达标。
+完整编辑器操作覆盖、成熟内容制作流程、完成度更高的示例和复杂场景性能仍需继续推进。
+
+Full arm64 macOS Debug passes 1047/1047 (144.37s). After the Unicode-path review and
+interface contract clarification, both configurations rebuild successfully and the
+focused final Debug checks pass 10/10 (.28s). Final Release/NDEBUG passes the full
+1047/1047 (16.96s). There are 269 unit and 778 integration cases; hardware-labelled
+subsets include 123 offscreen GPU and 27 native audio cases, with 28 SDL-dummy platform
+cases (labels overlap). Automated checks open no desktop windows. All 12 changed C++
+source/interface/test files pass clang-format and diff whitespace checks pass.
+
+Precommit review checks module direction and interface/body separation, borrowed
+readback lifetime versus owned snapshots, monotonic IDs/context freshness, bounded
+paths/files/images and strict command schemas, atomic-save failure/retry behavior,
+callback ownership/main-thread submission and close guards, exact PNG row/alpha
+preservation and UTF-8 Windows path construction. Compiler/linker settings, dependency
+pins and platform targets remain unchanged. Windows/Linux have not been executed.
+No distribution archive is generated. The broader engine goal remains incomplete.

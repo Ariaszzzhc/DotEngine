@@ -104,6 +104,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/PreviewWorker.cpp
     src/Engine/Editor/Play.cpp
     src/Engine/Editor/PlayInput.cpp
+    src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/Workspace.cpp
     src/Engine/Editor/Home.cpp
     src/Engine/Core/Logging.cpp
@@ -115,6 +116,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/System.cpp
     src/Engine/Platform/Window.cpp
     src/Engine/Platform/Events.cpp
+    src/Engine/Platform/Dialog.cpp
     src/Engine/Platform/Input.cpp
     src/Engine/Math/Math.cpp
     src/Engine/Graphics/Renderer.cpp
@@ -125,6 +127,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Image.cpp
     src/Engine/Graphics/Geometry.cpp
     src/Engine/Assets/Image.cpp
+    src/Engine/Assets/ImageExport.cpp
     src/Engine/Assets/Material.cpp
     src/Engine/Assets/Mesh.cpp
     src/Engine/Assets/Model.cpp
@@ -218,12 +221,14 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/PreviewWorker.cppm
         src/Engine/Editor/Play.cppm
         src/Engine/Editor/PlayInput.cppm
+        src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/Workspace.cppm
         src/Engine/Editor/Home.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/Window.cppm
         src/Engine/Platform/Events.cppm
+        src/Engine/Platform/Dialog.cppm
         src/Engine/Platform/Input.cppm
         src/Engine/Core/Application.cppm
         src/Engine/Math/Math.cppm
@@ -234,6 +239,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Image.cppm
         src/Engine/Graphics/Geometry.cppm
         src/Engine/Assets/Image.cppm
+        src/Engine/Assets/ImageExport.cppm
         src/Engine/Assets/Material.cppm
         src/Engine/Assets/Mesh.cppm
         src/Engine/Assets/Model.cppm

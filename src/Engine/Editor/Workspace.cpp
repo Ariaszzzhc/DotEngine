@@ -34,6 +34,10 @@ import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
 import Dot.Editor.PlayInput;
+import Dot.Editor.ViewportCapture;
+import Dot.Assets.ImageExport;
+import Dot.Platform.Dialog;
+import Dot.Graphics.View;
 import Dot.Editor.Resources;
 import Dot.Editor.MaterialDocument;
 import Dot.Editor.AssetPreview;
@@ -492,6 +496,13 @@ namespace Dot::Editor {
     bool m_viewBlocked{};
     std::optional<Graphics::SceneView> m_renderedView;
     std::string m_renderedRevision;
+    std::uint64_t m_viewFrame{};
+    std::optional<CaptureFrame> m_renderedFrame;
+    ViewportCapture m_capture;
+    bool m_captureBrowse{};
+    std::shared_ptr<Platform::DialogRequest> m_captureDialog;
+    Json m_captureOutput = nullptr;
+    std::string m_captureMessage;
     float m_viewWidth{640};
     float m_viewHeight{480};
     std::optional<Core::Error> m_inputError;
@@ -1269,6 +1280,208 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto captureContext() const -> Core::Result<CaptureContext> {
+      auto scene = playing()     ? m_play->scene()
+                   : m_transform ? m_transform->scene()
+                                 : m_document->scene();
+
+      if (!scene) {
+        return std::unexpected(scene.error());
+      }
+
+      return CaptureContext{m_document->stats()->revision, (*scene)->id(),
+                            playing() ? m_playSession : 0,
+                            playing()      ? ViewportMode::Play
+                            : m_editorView ? ViewportMode::Editor
+                                           : ViewportMode::Game,
+                            m_transform.has_value()};
+    }
+
+    auto captureStatus() const -> Json {
+      constexpr std::array states{"empty", "queued", "ready", "saved", "cancelled", "failed"};
+      constexpr std::array modes{"editor", "game", "play"};
+      const auto state = m_capture.stats();
+      const auto& frame = state.frame;
+      return {{"id", std::to_string(state.id)},
+              {"state", states.at(static_cast<std::size_t>(state.state))},
+              {"dialog", bool(m_captureDialog) || m_captureBrowse},
+              {"message", m_captureMessage},
+              {"output", m_captureOutput},
+              {"error", state.error ? errorJson(*state.error)["error"] : Json(nullptr)},
+              {"frame",
+               {{"serial", std::to_string(frame.serial)},
+                {"revision", std::to_string(frame.context.revision)},
+                {"scene", std::to_string(frame.context.scene)},
+                {"session", std::to_string(frame.context.session)},
+                {"playFrame", std::to_string(frame.playFrame)},
+                {"mode", modes.at(static_cast<std::size_t>(frame.context.mode))},
+                {"source", frame.context.transform                    ? "transform"
+                           : frame.context.mode == ViewportMode::Play ? "play"
+                                                                      : "document"},
+                {"size", {frame.width, frame.height}},
+                {"viewProjection", frame.viewProjection.data},
+                {"materialPreview", frame.materialPreview}}}};
+    }
+
+    auto readViewport() -> Core::Result<Graphics::Image> {
+      auto context = captureContext();
+      auto view = currentView();
+      const auto previewKey = m_material && !playing()
+                                  ? std::to_string(m_buffer) + m_materialForm.dump()
+                                  : std::string{};
+
+      if (!context || !view || !m_viewVisible || !m_previewReady || !m_target || !m_renderedFrame
+          || !m_renderedView || *view != *m_renderedView || *context != m_renderedFrame->context
+          || m_assetRefresh || previewKey != m_materialPreviewKey
+          || (playing() && m_play->stats()->frames != m_renderedFrame->playFrame)) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          m_previewError.empty() ? "Viewport has no current completed frame"
+                                                 : "Viewport preview: " + m_previewError);
+      }
+
+      return m_renderer->readTarget(*m_target);
+    }
+
+    auto browseCapture(std::uint64_t id) -> Core::Result<void> {
+      auto image = m_capture.image(id);
+
+      if (!image) {
+        return std::unexpected(image.error());
+      }
+
+      captureInput(false);
+      auto released = synchronizePointerCapture();
+
+      if (!released) {
+        return std::unexpected(released.error());
+      }
+
+      const auto initial = (m_project->files()->root() / "viewport.png").generic_u8string();
+      auto dialog
+          = Platform::DialogRequest::open(m_application->window(), Platform::DialogKind::PngSave,
+                                          std::string(initial.begin(), initial.end()));
+
+      if (!dialog) {
+        return std::unexpected(dialog.error());
+      }
+
+      m_captureDialog = std::move(*dialog);
+      return {};
+    }
+
+    auto saveCapture(std::uint64_t id, const std::string& parentText, const std::string& filename,
+                     bool overwrite) -> Core::Result<void> {
+      auto image = m_capture.image(id);
+
+      if (!image) {
+        return std::unexpected(image.error());
+      }
+
+      if (parentText.empty() || parentText.size() > 16384 || !Core::isValidUtf8(parentText)
+          || parentText.find('\0') != std::string::npos) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "PNG parent requires bounded UTF-8");
+      }
+
+      const auto path = std::filesystem::path(std::u8string(parentText.begin(), parentText.end()));
+
+      if (!path.is_absolute()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "PNG parent must be absolute");
+      }
+
+      auto parent = Core::FileSystem::open(path);
+
+      if (!parent) {
+        return std::unexpected(parent.error());
+      }
+
+      auto plan = Assets::ImageExport::prepare(*parent, filename, overwrite);
+
+      if (!plan) {
+        return std::unexpected(plan.error());
+      }
+
+      auto report = plan->write(**image);
+
+      if (!report) {
+        return std::unexpected(report.error());
+      }
+
+      auto acknowledged = m_capture.saved(id);
+
+      if (!acknowledged) {
+        return std::unexpected(acknowledged.error());
+      }
+
+      m_captureOutput = {{"path", report->path}, {"bytes", std::to_string(report->bytes)}};
+      auto refreshed = catalog();
+
+      if (!refreshed) {
+        return Core::fail(
+            Core::ErrorCode::Io,
+            "PNG saved at " + report->path + "; catalog refresh: " + refreshed.error().message);
+      }
+
+      return {};
+    }
+
+    auto resolveCapture() -> void {
+      auto state = m_capture.stats();
+
+      if (state.state == CaptureState::Queued) {
+        auto completed = [&]() -> Core::Result<void> {
+          auto image = readViewport();
+
+          if (!image) {
+            return std::unexpected(image.error());
+          }
+
+          return m_capture.complete(state.id, *m_renderedFrame, std::move(*image));
+        }();
+
+        if (!completed) {
+          static_cast<void>(m_capture.fail(state.id, completed.error()));
+          m_captureBrowse = false;
+          m_message = completed.error().message;
+        } else if (m_captureBrowse) {
+          m_captureBrowse = false;
+          auto opened = browseCapture(state.id);
+
+          if (!opened) {
+            m_message = m_captureMessage = opened.error().message;
+          }
+        }
+      }
+
+      if (!m_captureDialog) {
+        return;
+      }
+
+      auto reply = m_captureDialog->take();
+
+      if (!reply) {
+        return;
+      }
+
+      m_captureDialog.reset();
+      state = m_capture.stats();
+
+      if (reply->status == Platform::DialogStatus::Cancelled) {
+        sessionAction({{"command", "discard-capture"}, {"capture", std::to_string(state.id)}});
+      } else if (reply->status == Platform::DialogStatus::Failed) {
+        m_message = m_captureMessage = reply->error;
+      } else {
+        const auto path
+            = std::filesystem::path(std::u8string(reply->path.begin(), reply->path.end()));
+        const auto parent = path.parent_path().generic_u8string();
+        const auto filename = path.filename().generic_u8string();
+        sessionAction({{"command", "save-capture"},
+                       {"capture", std::to_string(state.id)},
+                       {"parent", std::string(parent.begin(), parent.end())},
+                       {"file", std::string(filename.begin(), filename.end())},
+                       {"overwrite", true}});
+      }
+    }
+
     auto execute(std::string_view request) -> Core::Result<std::string> {
       auto valid = validRequest(request);
 
@@ -1279,6 +1492,68 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "capture-viewport" || command == "save-capture" || command == "browse-capture"
+          || command == "discard-capture") {
+        if (command == "capture-viewport") {
+          Codec::requireFields(parsed, {"command", "revision", "dialog"});
+        } else if (command == "save-capture") {
+          Codec::requireFields(parsed, {"command", "capture", "parent", "file", "overwrite"});
+        } else {
+          Codec::requireFields(parsed, {"command", "capture"});
+        }
+
+        if (m_captureDialog || m_pendingClose) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Complete the native dialog or close confirmation first");
+        }
+
+        Core::Result<void> applied;
+
+        if (command == "capture-viewport") {
+          const auto dialog = parsed["dialog"].get<bool>();
+
+          if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Capture has a stale revision");
+          }
+
+          auto context = captureContext();
+
+          if (!context) {
+            return std::unexpected(context.error());
+          }
+
+          auto queued = m_capture.request(*context, m_viewFrame);
+
+          if (!queued) {
+            return std::unexpected(queued.error());
+          }
+
+          m_captureBrowse = dialog;
+          m_captureOutput = nullptr;
+          m_captureMessage.clear();
+        } else {
+          const auto id = Codec::id(parsed["capture"]);
+
+          if (command == "save-capture") {
+            applied
+                = saveCapture(id, parsed["parent"].get<std::string>(),
+                              parsed["file"].get<std::string>(), parsed["overwrite"].get<bool>());
+          } else if (command == "browse-capture") {
+            applied = browseCapture(id);
+          } else {
+            applied = m_capture.discard(id);
+
+            if (applied) {
+              m_captureBrowse = false;
+            }
+          }
+
+          m_captureMessage = applied ? "" : applied.error().message;
+        }
+
+        return applied ? execute("{\"command\":\"inspect\"}") : std::unexpected(applied.error());
+      }
 
       if (command == "focus-window") {
         Codec::requireFields(parsed, {"command"});
@@ -2388,6 +2663,11 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "discard"});
         const bool discard = parsed["discard"].get<bool>();
 
+        if (m_captureDialog) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Complete or cancel the native save dialog before closing");
+        }
+
         if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
              || pendingOcclusion() || pendingText() || m_transform)
             && !discard) {
@@ -2547,6 +2827,7 @@ namespace Dot::Editor {
             {"propertiesInvalid", m_propertiesInvalid},
             {"play", playStatus()},
             {"view", viewStatus()},
+            {"capture", captureStatus()},
             {"message", m_message},
             {"material", materialStatus()},
             {"previews", previewStatus()},
@@ -2928,11 +3209,39 @@ namespace Dot::Editor {
         m_materialPreviewKey = previewKey;
       }
 
+      if (m_viewFrame == std::numeric_limits<std::uint64_t>::max()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Viewport frame identity exhausted");
+      }
+
+      const auto aspect = static_cast<float>(width) / static_cast<float>(height);
+      auto projection = [&]() -> Core::Result<Math::Mat4> {
+        if (const auto* custom = std::get_if<Graphics::View>(&*view)) {
+          return Graphics::viewProjection(*custom, aspect);
+        }
+
+        const auto* entity = std::get_if<World::EntityId>(&*view);
+        auto camera = entity ? Core::Result<World::EntityId>(*entity) : (*scene)->primaryCamera();
+        return camera ? (*scene)->viewProjection(*camera, aspect) : std::unexpected(camera.error());
+      }();
+
+      if (!projection) {
+        m_previewReady = false;
+        m_previewError = projection.error().message;
+        return {};
+      }
+
       auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view);
 
       if (drawn) {
         m_renderedView = *view;
         m_renderedRevision = std::to_string(m_document->stats()->revision);
+        m_renderedFrame = CaptureFrame{captureContext().value(),
+                                       ++m_viewFrame,
+                                       playing() ? m_play->stats()->frames : 0,
+                                       width,
+                                       height,
+                                       *projection,
+                                       !previewKey.empty()};
       }
 
       m_previewReady = drawn.has_value();
@@ -5014,6 +5323,23 @@ namespace Dot::Editor {
           focusedSave();
         }
 
+        const auto capture = m_capture.stats();
+        const bool retained = capture.state == CaptureState::Ready;
+        const bool busy = m_captureDialog || capture.state == CaptureState::Queued;
+
+        if (ImGui::MenuItem(retained ? "Save captured PNG..." : "Save viewport PNG...", nullptr,
+                            false, !busy)) {
+          if (retained) {
+            sessionAction({{"command", "browse-capture"}, {"capture", std::to_string(capture.id)}});
+          } else {
+            action({{"command", "capture-viewport"}, {"dialog", true}});
+          }
+        }
+
+        if (ImGui::MenuItem("Discard viewport capture", nullptr, false, retained && !busy)) {
+          sessionAction({{"command", "discard-capture"}, {"capture", std::to_string(capture.id)}});
+        }
+
         if (ImGui::MenuItem("Export game")) {
           m_exportDialog = true;
         }
@@ -5579,6 +5905,11 @@ namespace Dot::Editor {
     auto callbacks() -> Core::LoopCallbacks {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
+        if (m_captureDialog) {
+          m_message = "Complete or cancel the native save dialog before closing";
+          return false;
+        }
+
         m_pendingClose = m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
                          || pendingOcclusion() || pendingText() || m_transform.has_value();
 
@@ -5700,7 +6031,13 @@ namespace Dot::Editor {
         auto shown = m_renderer->presentGui(
             [&] { return draw(); },
             std::min(std::chrono::duration<double>(frame.elapsed).count(), 1.0));
-        return shown.transform([](auto) {});
+
+        if (!shown) {
+          return std::unexpected(shown.error());
+        }
+
+        resolveCapture();
+        return {};
       };
       return callbacks;
     }
@@ -6000,14 +6337,7 @@ namespace Dot::Editor {
       return std::unexpected(checked.error());
     }
 
-    if (!m_impl->m_previewReady || !m_impl->m_target) {
-      return Core::fail(Core::ErrorCode::InvalidState,
-                        m_impl->m_previewError.empty()
-                            ? "Workspace has no rendered preview"
-                            : "Workspace preview: " + m_impl->m_previewError);
-    }
-
-    return m_impl->m_renderer->readTarget(*m_impl->m_target);
+    return m_impl->readViewport();
   }
 
   auto Workspace::captureAssetPreview(std::string_view path) -> Core::Result<Graphics::Image> {

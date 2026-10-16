@@ -15,7 +15,6 @@ module;
 #include <vector>
 
 #include "../Serialization/Json.hpp"
-#include "HomeDialog.hpp"
 
 module Dot.Editor.Home;
 
@@ -28,6 +27,8 @@ import Dot.Platform.System;
 import Dot.Platform.Events;
 import Dot.Project.Templates;
 import Dot.Script.Compiler;
+
+import Dot.Platform.Dialog;
 
 namespace Dot::Editor {
   namespace {
@@ -93,12 +94,6 @@ namespace Dot::Editor {
         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
                || c == '_' || c == '-';
       });
-    }
-
-    auto SDLCALL folderCallback(void* data, const char* const* files, int) -> void {
-      std::unique_ptr<std::shared_ptr<Detail::FolderRequest>> request(
-          static_cast<std::shared_ptr<Detail::FolderRequest>*>(data));
-      (*request)->complete(files, files ? nullptr : SDL_GetError());
     }
   }  // namespace
 
@@ -187,7 +182,7 @@ namespace Dot::Editor {
     int m_template{};
     bool m_active{};
     bool m_createPage{};
-    std::shared_ptr<Detail::FolderRequest> m_dialog;
+    std::shared_ptr<Platform::DialogRequest> m_dialog;
     bool m_dialogProject{};
     Json m_controls = Json::object();
 
@@ -209,14 +204,17 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::InvalidState, "A folder dialog is already open");
       }
 
-      m_dialog = std::make_shared<Detail::FolderRequest>();
+      const auto& initial = project ? m_root : m_parent;
+      auto request = Platform::DialogRequest::open(m_application->window(),
+                                                   Platform::DialogKind::Folder, initial);
+
+      if (!request) {
+        return std::unexpected(request.error());
+      }
+
+      m_dialog = std::move(*request);
       m_dialogProject = project;
       m_message.clear();
-      auto ticket = std::make_unique<std::shared_ptr<Detail::FolderRequest>>(m_dialog);
-      const auto& initial = project ? m_root : m_parent;
-      SDL_ShowOpenFolderDialog(folderCallback, ticket.release(),
-                               static_cast<SDL_Window*>(m_application->window().nativeHandle()),
-                               initial.empty() ? nullptr : initial.c_str(), false);
       return {};
     }
 
@@ -233,9 +231,9 @@ namespace Dot::Editor {
 
       m_dialog.reset();
 
-      if (reply->status == Detail::FolderStatus::Failed) {
+      if (reply->status == Platform::DialogStatus::Failed) {
         m_message = reply->error;
-      } else if (reply->status == Detail::FolderStatus::Selected) {
+      } else if (reply->status == Platform::DialogStatus::Selected) {
         if (reply->path.empty() || reply->path.size() > 16384 || !Core::isValidUtf8(reply->path)) {
           m_message = "The selected folder path is invalid";
           return;

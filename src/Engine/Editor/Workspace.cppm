@@ -60,8 +60,9 @@ export namespace Dot::Editor {
     [[nodiscard]] auto dispatch(std::string_view request) -> Core::Result<std::string>;
     [[nodiscard]] auto snapshot() const -> Core::Result<std::string>;
     [[nodiscard]] auto controlDirectory() const -> Core::Result<std::filesystem::path>;
-    /** Read actual viewport pixels for diagnostics; requires a rendered preview.
-     * 诊断时读取真实视口像素，要求已绘制预览。 */
+    /** Read actual completed viewport pixels; reject hidden, failed or stale scene,
+     * camera, Play frame and material previews. Does not render another view.
+     * 读取实际完成视口像素；拒绝隐藏、失败或场景/相机/Play 帧/材质过期的预览，不另行渲染。 */
     [[nodiscard]] auto captureViewport() -> Core::Result<Graphics::Image>;
     /** Owned CPU copy of a completed cached asset/material preview. No rendering
      * or file reads; pending, failed or stale material forms return errors.

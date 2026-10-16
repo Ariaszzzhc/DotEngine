@@ -26,6 +26,7 @@ add_executable(DotUnitTests
     EventTests.cpp
     InputTests.cpp
     PlayInputTests.cpp
+    ViewportCaptureTests.cpp
     MathTests.cpp
     GeometryTests.cpp
     PostProcessTests.cpp
@@ -83,6 +84,7 @@ add_executable(DotTests
     AudioHostTests.cpp
     AssetTests.cpp
     ImageTests.cpp
+    ImageExportTests.cpp
     MaterialTests.cpp
     AnimationFileTests.cpp
     SkinFileTests.cpp

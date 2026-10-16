@@ -1006,3 +1006,67 @@ actual preview failure. `captureViewport` includes that context when no preview 
 be captured; it does not report a successful frame for a failed asset load. A later
 successful draw clears the error. A native missing-mesh/undo case checks diagnostic
 visibility and recovery of the original pixels after the Docking layout settles.
+
+## Viewport PNG capture / 视口 PNG 捕获
+
+File → Save viewport PNG captures the actual completed scene render target, including
+its current game/editor camera and material preview, without rerendering another view.
+The PNG contains scene pixels only, excluding editor panels and transform handles.
+Pixels are frozen before SDL opens the native save dialog, so Play may continue while
+choosing a destination. Save captured PNG retries a retained image; Discard viewport
+capture releases it. Native cancellation also releases the image.
+
+File → Save viewport PNG 捕获实际完成的场景渲染目标，保留当前游戏/编辑相机与材质预览，
+不另行渲染其他视角。PNG 仅含场景像素，不含编辑器面板和变换手柄。打开 SDL 系统保存
+对话框前固定像素，因此选择目标期间 Play 可以继续。Save captured PNG 可重试保留的图像；
+Discard viewport capture 和系统取消均释放图像。
+
+The same operations are available through the live workspace mailbox:
+
+```json
+{"command":"capture-viewport","revision":"1","dialog":false}
+{"command":"save-capture","capture":"1","parent":"/absolute/existing/folder","file":"viewport.png","overwrite":false}
+{"command":"browse-capture","capture":"1"}
+{"command":"discard-capture","capture":"1"}
+```
+
+Each object is a separate strict request. All listed fields are required; unknown
+fields fail. Capture requires the current authoring revision and queues a new frame.
+`dialog:true` requests the same native dialog as the menu. Inspect
+`workspace.capture.state` before saving: `queued` acknowledges the request only;
+`ready` means owned pixels exist. The next native render iteration resolves the request;
+a hidden/deferred/failed viewport or changed scene/revision/view mode/Play session
+fails rather than exporting an older frame. At most one queued/ready image is retained.
+Finish or discard it before requesting another. IDs are canonical decimal strings,
+monotonically increasing for this workspace; stale IDs cannot save/discard newer images.
+
+`workspace.capture.frame` records the actual frame serial, authoring revision, scene
+scope, Play session/frame (zero outside Play), mode/source, pixel dimensions, column-major
+view-projection matrix and material-preview flag. These describe a completed capture
+only in `ready`/`saved`; queued metadata describes the requested context and prior serial.
+Later rendering, camera movement, Stop and document edits do not change retained pixels
+or provenance. Save does not change document history/revision/dirty state. On success,
+state becomes `saved`, pixels are released and `output` contains an owned absolute path
+and decimal byte count. Errors/cancellation are observable through inspection.
+
+The parent must be an existing absolute UTF-8 directory. The filename must be one
+portable component ending in `.png` (case-insensitive). Existing files require explicit
+`overwrite:true`; symlinks, special/read-only files and ASCII case aliases are rejected.
+A prepared export checks an unchanged byte baseline before atomic replacement. Existing
+content and encoded PNGs are bounded to 64 MiB; parent scans to 65536 entries. This is
+serialized local editing, not hostile concurrent filesystem isolation or crash durability.
+Save failures retain the image for retry/discard. A catalog refresh failure after file
+commit explicitly reports that the PNG was saved; the capture remains `saved`.
+
+Native save confirmation supplies explicit overwrite consent. While its dialog is open,
+conflicting capture/save/discard commands and window close are rejected to retain the
+parent window. Native dialog errors retain the frozen image and expose a message for
+retry. Agent clients normally use `dialog:false` and direct `save-capture`, without OS UI.
+
+每条 JSON 是独立的严格请求，字段必须完整且不能多余。先轮询 `workspace.capture.state`，
+`queued` 仅表示受理，`ready` 才表示像素已固定。隐藏、延后、失败或上下文变化的视口明确
+失败，不保存旧画面。一次至多保留一张图；过期编号不能作用于新图。检查结果包含实际帧号、
+修订、场景范围、Play 会话/帧、相机矩阵、像素尺寸及材质预览状态。后续运行、Stop 或编辑
+不改变已捕获图像，也不影响场景历史或保存状态。失败可重试，成功后释放像素并报告绝对路径
+与字节数。已有目标须明确允许覆盖，拒绝链接、特殊/只读文件及大小写别名；原子替换前校验
+字节基线。系统对话框打开时保留父窗口并拒绝冲突操作；智能体通常直接指定路径保存。
