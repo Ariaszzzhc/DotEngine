@@ -503,6 +503,9 @@ namespace Dot::Editor {
     std::optional<Core::Error> m_playError;
     std::optional<Core::Error> m_closeError;
     std::optional<Core::Application> m_application;
+    std::optional<Platform::Event> m_lastPointerPress;
+    std::optional<Platform::Event> m_lastPointerRelease;
+    std::optional<Platform::Event> m_lastPointerMotion;
     std::optional<Graphics::Renderer> m_renderer;
     std::optional<Graphics::SceneRenderer> m_drawing;
     std::optional<Graphics::RenderTarget> m_target;
@@ -1990,6 +1993,82 @@ namespace Dot::Editor {
                  ? Core::Result<void>{}
                  : Core::fail(refreshed.error().code, "Animation saved; resource refresh failed: "
                                                           + refreshed.error().message);
+    }
+
+    /** Read last consumed native state and latest GUI NewFrame in their logical
+     * coordinate spaces. Event snapshots are bounded to one press/release/motion,
+     * with no keyboard/text recording or input injection. Samples may differ in age.
+     * 读取最后消费的原生状态及最近 GUI NewFrame 的逻辑坐标；事件仅各保留一次按下/释放/
+     * 移动，不记录键盘文本、不注入输入。各采样更新时间可能不同。 */
+    auto inputStatus() const -> Core::Result<Json> {
+      auto logical = m_application->window().size();
+      auto pixels = m_application->window().pixelSize();
+      auto gui = m_renderer->guiStats();
+
+      if (!logical || !pixels || !gui) {
+        return std::unexpected(!logical ? logical.error() : !pixels ? pixels.error() : gui.error());
+      }
+
+      const auto& input = m_application->input();
+      const auto pointer = input.pointer();
+      const auto delta = input.pointerDelta();
+      Json buttons = Json::array();
+
+      for (const auto& [name, button] : Platform::buttonNames()) {
+        const auto state = input.button(button);
+        buttons.push_back({{"name", name},
+                           {"down", state.down},
+                           {"pressed", state.pressed},
+                           {"released", state.released}});
+      }
+
+      const auto eventJson = [](const std::optional<Platform::Event>& event) -> Json {
+        if (!event) {
+          return nullptr;
+        }
+
+        Json result{{"window", event->windowId}, {"timestamp", std::to_string(event->timestamp)}};
+
+        if (const auto* button = std::get_if<Platform::ButtonChanged>(&event->data)) {
+          const bool valid = button->position && std::isfinite((*button->position)[0])
+                             && std::isfinite((*button->position)[1]);
+          result["button"] = static_cast<unsigned>(button->button);
+          result["down"] = button->down;
+          result["hasPosition"] = button->position.has_value();
+          result["positionValid"] = valid;
+          result["position"] = valid ? Json::array({(*button->position)[0], (*button->position)[1]})
+                                     : Json(nullptr);
+        } else if (const auto* motion = std::get_if<Platform::PointerMoved>(&event->data)) {
+          const bool positionValid = std::isfinite(motion->x) && std::isfinite(motion->y);
+          const bool deltaValid = std::isfinite(motion->deltaX) && std::isfinite(motion->deltaY);
+          result["positionValid"] = positionValid;
+          result["deltaValid"] = deltaValid;
+          result["position"] = positionValid ? Json::array({motion->x, motion->y}) : Json(nullptr);
+          result["delta"]
+              = deltaValid ? Json::array({motion->deltaX, motion->deltaY}) : Json(nullptr);
+        }
+
+        return result;
+      };
+      const auto& consumed = gui->input;
+      return Json{
+          {"window",
+           {{"logical", {logical->width, logical->height}},
+            {"pixels", {pixels->width, pixels->height}}}},
+          {"native",
+           {{"pointer", {pointer.x, pointer.y}},
+            {"delta", {delta.x, delta.y}},
+            {"buttons", std::move(buttons)},
+            {"lastPress", eventJson(m_lastPointerPress)},
+            {"lastRelease", eventJson(m_lastPointerRelease)},
+            {"lastMotion", eventJson(m_lastPointerMotion)}}},
+          {"gui",
+           {{"frame", std::to_string(consumed.frame)},
+            {"logicalSize", {consumed.logicalSize.x, consumed.logicalSize.y}},
+            {"framebufferScale", {consumed.framebufferScale.x, consumed.framebufferScale.y}},
+            {"pointer", consumed.pointer ? Json::array({consumed.pointer->x, consumed.pointer->y})
+                                         : Json(nullptr)},
+            {"buttons", consumed.buttons}}}};
     }
 
     auto execute(std::string_view request) -> Core::Result<std::string> {
@@ -3984,8 +4063,15 @@ namespace Dot::Editor {
           return std::unexpected(focused.error());
         }
 
+        auto input = inputStatus();
+
+        if (!input) {
+          return std::unexpected(input.error());
+        }
+
         response["workspace"] = {
             {"focused", *focused},
+            {"input", std::move(*input)},
             {"pendingInspector", pendingInspector()},
             {"pendingEnvironment", pendingEnvironment()},
             {"environmentDraft", m_environmentDraft},
@@ -8535,6 +8621,14 @@ namespace Dot::Editor {
 
       impl->m_events
           = impl->m_application->events().subscribe([state = impl.get()](const auto& event) {
+              if (event.windowId == state->m_application->window().id()) {
+                if (const auto* button = std::get_if<Platform::ButtonChanged>(&event.data)) {
+                  (button->down ? state->m_lastPointerPress : state->m_lastPointerRelease) = event;
+                } else if (std::holds_alternative<Platform::PointerMoved>(event.data)) {
+                  state->m_lastPointerMotion = event;
+                }
+              }
+
               if (std::holds_alternative<Platform::Focus>(event.data)
                   && !std::get<Platform::Focus>(event.data).focused) {
                 state->captureInput(false);

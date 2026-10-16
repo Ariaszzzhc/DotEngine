@@ -347,6 +347,45 @@ existing `capture-input` operation when native relative capture is needed; focus
 still releases that native mode. Agent deltas can be inspected without capture, but
 scripts requiring acknowledged capture (such as the shoulder camera) obey that flag.
 
+## Pointer input diagnostics
+
+The ordinary strict `inspect` request includes `workspace.input`, a read-only snapshot
+for investigating hit-testing, focus and DPI. It neither injects GUI input nor changes
+the scene, resource history, camera or playback clock:
+
+- `window.logical` and `window.pixels` are current SDL client extents, excluding native
+  title-bar chrome.
+- `native.pointer`/`delta` and named button `down`/`pressed`/`released` values are the
+  application's last consumed InputState. Position starts at zero before any event;
+  edges/deltas reset each application frame.
+- `native.lastPress`, `lastRelease` and `lastMotion` retain only the last event of each
+  kind for this window, or null before one arrives. They own window ID, SDL nanosecond
+  timestamp as a decimal string and event coordinates. Button numeric codes are
+  Unknown=0, Left=1, Middle=2, Right=3, Back=4, Forward=5. `hasPosition`/`positionValid`
+  distinguish omitted and invalid coordinates; invalid values display null. Motion
+  also reports `positionValid`/`deltaValid`. No keyboard/text event log is retained.
+- `gui` reports the latest GUI NewFrame's context-local `frame` counter, logicalSize,
+  framebufferScale, optional pointer and held-button mask. Mask bits 0..4 mean
+  left/right/middle/back/forward. An unknown GUI position is null; finite coordinates
+  outside the window remain observable. ImGui may floor coordinates to logical pixels.
+
+GUI input is copied before drawing callbacks, so it remains inspectable after a callback
+fails. The counter starts at zero and resets with the GUI context; it differs from the
+renderer count of successful submissions. Native and GUI snapshots may have different
+ages, especially when inspect runs before the next GUI NewFrame. Last button events do
+not imply current held state; use the current named buttons or GUI mask for that.
+
+When computer use appears to miss a target, compare requested location, native button/
+motion coordinates and GUI coordinates before treating it as an editor defect. Window
+activation is asynchronous; observe focused after focus-window. Current macOS evidence
+shows virtual pointer requests can arrive in SDL without the requested motion; actual
+product agent operations remain the primary verification/control interface.
+
+inspect 现包含只读输入诊断：窗口逻辑/物理大小、原生输入状态、各一次按下/释放/移动事件，
+以及 GUI 最近 NewFrame 的输入。坐标空间、采样时间和成功提交帧计数明确区分，不注入 GUI
+输入、不修改场景或播放，不记录键盘文本。虚拟指针未产生 SDL 位移时不能当作编辑器命中
+失败；通过同源产品智能体操作继续验证功能。
+
 ## Resources and external source editing
 
 The Resources tab lists assets and the configured script directory in sorted
@@ -656,7 +695,7 @@ Real ImGui docked windows replace fixed child regions: Hierarchy at left, indepe
 Scene/Game viewport in the center, Inspector/Environment/Rendering tabs at right and
 Assets/Console below left/center. Tabs and splitters can move, resize and float inside the
 application window. Window focuses each pane and resets the initial 18/60/22 and
-25-percent bottom proportions. No additional native windows or terminal are created
+34-percent bottom proportions. No additional native windows or terminal are created
 by docking. File/Edit/Build menus invoke the same existing scene/export operations.
 Assets Actions contains actual resource/import/script-check and agent-buffer actions.
 Hierarchy and asset filters search names/paths, retaining matching hierarchy ancestors;
@@ -670,7 +709,7 @@ session state; saving the scene never writes them into game data.
 - `reset-layout`: no additional fields. Applied in the next GUI frame; a pending
   docking command must finish first.
 - `dock-panel`: `panel`/`target` are `hierarchy`, `viewport`, `inspector`, `environment`,
-  `rendering`, `resources` or `console`; target must currently be docked. `placement` is `tab`,
+  `rendering`, `skeleton`, `animation`, `resources` or `console`; target must currently be docked. `placement` is `tab`,
   `left`, `right`, `up` or `down`, with `ratio` in [0.1,0.9] (unused for tabbing).
   Returns `queued:true`. `inspect.workspace.layout` reports pending, command generation,
   error and actual per-panel logical geometry/visibility/focus/docking after the owning frame.
@@ -680,7 +719,8 @@ These commands require no scene revision and remain available with authoring dra
 or during Play; they do not mutate the scene. `inspect.workspace.theme` and `filters`
 report session state. Sarasa UI SC Regular supplies Inter Western/CJK mixed text from
 one pinned packaged font, rendered at a compact logical size with native DPI handling.
-Gizmos, thumbnails, cross-session profiles and detached native panels remain planned.
+Cross-session layout profiles and detached native panels remain planned; current
+manipulator and resource-preview workflows are described below.
 
 Console presents actual workspace/viewport errors, Play failure context and compiler
 locations that open externally. Runtime diagnostics remain available after Stop and
@@ -1252,6 +1292,8 @@ Native curve-drag acceptance remains outstanding: computer-use drag attempts hav
 produced a confirmed movement, including a comparison with the ordinary time slider.
 The strict update/move resource operations are verified through actual product workflows;
 this observation does not establish that native pointer behavior is fully validated.
+The current macOS virtual-input mismatch is documented under pointer input diagnostics;
+it is not evidence of a failed physical-mouse gesture.
 
 Save clip, Undo clip and Redo clip affect the resource document, independently of
 scene authoring history. File/Edit menus and existing save/history shortcuts route

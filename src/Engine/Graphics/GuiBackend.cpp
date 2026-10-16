@@ -535,7 +535,8 @@ namespace Dot::Graphics::Detail {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid GUI draw/delta/scale");
     }
 
-    if (m_impl->m_stats.frames == std::numeric_limits<std::uint64_t>::max() - 1) {
+    if (m_impl->m_stats.frames == std::numeric_limits<std::uint64_t>::max() - 1
+        || m_impl->m_stats.input.frame == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::Unavailable, "GUI frame index exhausted");
     }
 
@@ -565,6 +566,19 @@ namespace Dot::Graphics::Detail {
       io.DeltaTime = static_cast<float>(std::max(seconds, 0.000001));
       ImGui::NewFrame();
       started = true;
+      auto& input = m_impl->m_stats.input;
+      ++input.frame;
+      input.logicalSize = {io.DisplaySize.x, io.DisplaySize.y};
+      input.framebufferScale = {io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y};
+      input.pointer = ImGui::IsMousePosValid(&io.MousePos)
+                          ? std::optional{Math::Vec2{io.MousePos.x, io.MousePos.y}}
+                          : std::nullopt;
+      input.buttons = 0;
+
+      for (std::uint32_t button = 0; button < 5; ++button) {
+        input.buttons |= io.MouseDown[button] ? (1U << button) : 0;
+      }
+
       ImGui::ErrorRecoveryStoreState(&recovery);
       auto result = draw();
 

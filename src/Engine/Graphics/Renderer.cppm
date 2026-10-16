@@ -130,6 +130,21 @@ export namespace Dot::Graphics {
     std::uint32_t maxIndices{3'000'000};
   };
 
+  /** Input consumed by the latest GUI NewFrame, including a callback that later
+   * fails. Logical client coordinates and physical/logical framebuffer scale are
+   * explicit; absent pointer means ImGui has no valid position. Buttons use bits
+   * 0..4 for left/right/middle/back/forward. Owned values, no GUI pointers.
+   * 最近 GUI NewFrame 已消费的输入，包含后续回调失败的帧。明确逻辑客户区坐标及物理/
+   * 逻辑缩放；无有效位置时 pointer 为空。按钮位 0..4 为左/右/中/后退/前进。值独立拥有，
+   * 不暴露 GUI 指针。 */
+  struct GuiInputStats {
+    std::uint64_t frame{};
+    Math::Vec2 logicalSize{};
+    Math::Vec2 framebufferScale{};
+    std::optional<Math::Vec2> pointer;
+    std::uint32_t buttons{};
+  };
+
   struct GuiStats {
     bool enabled{};
     std::uint64_t frames{};
@@ -138,6 +153,7 @@ export namespace Dot::Graphics {
     bool mouse{};
     bool keyboard{};
     bool text{};
+    GuiInputStats input;
   };
 
   using GuiDraw = std::function<Core::Result<void>()>;
@@ -563,10 +579,12 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto enableGui(const GuiConfig& config = {}) -> Core::Result<void>;
     [[nodiscard]] auto closeGui() -> Core::Result<void>;
     [[nodiscard]] auto guiEvent(const Platform::Event& event) -> Core::Result<bool>;
-    /** Owner-thread read, including inside GUI callbacks. Geometry/input describe
-     * the latest assembled GUI data; frames counts successful submissions. Reading
+    /** Owner-thread read, including inside GUI callbacks. Geometry/capture flags
+     * describe assembled data; input captures the latest NewFrame before invoking
+     * user drawing, even if it fails. frames counts successful submissions. Reading
      * does not complete or replay a frame. Device faults remain expected errors.
-     * 限所有者线程，GUI 回调内也可读取。几何/输入为最近组装的数据，frames 为成功提交数；
+     * 限所有者线程，GUI 回调内也可读取。几何/捕获标记为组装数据；input 在用户绘制回调前
+     * 记录最近 NewFrame，含失败帧。frames 为成功提交数；
      * 查询不完成或重放帧，设备故障仍以 expected 错误报告。 */
     [[nodiscard]] auto guiStats() const -> Core::Result<GuiStats>;
     /** UI image retains the target through submission; size uses logical pixels.

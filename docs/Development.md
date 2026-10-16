@@ -6555,3 +6555,77 @@ directory; native app inventory confirms it is stopped. Temporary app shell, pro
 copy, requests, clients and insertion snippet are removed. Ignored observations and build
 caches remain; no distribution archive is generated. Local specification/reference output
 remain untracked and outside commits. The full engine goal remains open.
+
+
+## 2026-10-16 — Product pointer input diagnostics
+
+GuiStats now owns a processed-input snapshot: a per-context NewFrame counter, logical
+size, framebuffer scale, optional logical pointer and five held-button bits. It is
+copied before invoking drawing callbacks, including those that subsequently fail.
+Successful submission count and assembled geometry/capture flags retain their separate
+meanings. Snapshots have no GUI pointers, survive context retirement and reset in a
+new/disabled context. Counter exhaustion rejects a new frame instead of wrapping.
+
+The real editor's ordinary inspect exposes workspace.input alongside existing focus,
+view and layout state. It reads current SDL client sizes, last consumed application
+pointer/delta/named button state and the latest GUI input snapshot. Exactly one owned
+native press, release and motion event is retained for the application's own window,
+with timestamp/window/position metadata; no keyboard/text log or unbounded event trace
+is added. Absent events/unknown GUI positions are null, and invalid event coordinates
+are explicitly marked rather than serialized as plausible positions. Native and GUI
+samples may differ in age; reading does not poll/inject pointer input, advance a GUI
+frame or mutate authored resources. Existing frame edges/deltas still reset normally.
+
+A durable offscreen GUI case reads the snapshot inside a callback that deliberately
+fails: native button-local position (32,24), scale 2, logical size 80x60 and held left
+button are visible before drawing, while submission count remains zero. A release at
+(40,30) and a succeeding frame advance the processed/submitted counters independently.
+The old snapshot remains unchanged after new input and closeGui, which resets current
+stats. An initial test call incorrectly assumes an anisotropic public renderGui scale;
+it is corrected to the existing uniform-scale API, without expanding that API.
+
+Actual native diagnosis runs the real editor on macOS 27.0.1 with the pinned SDL 3.4.18.
+The window reports 1280x800 logical / 2560x1600 physical client pixels and GUI scale 2.
+With actual window focus confirmed, a computer-use drag requesting screenshot positions
+(1040,282)->(1140,282) delivers press and release at the same SDL position
+(435.58984375,577.01171875); the last motion timestamp predates the press. GUI position
+is (435,577), consistent with ImGui flooring, so the requested displacement is already
+absent before editor hit-testing. Per-gesture timestamps establish this; positions can
+change between separate observations when the physical system pointer moves.
+
+The pinned dependency's compiled Cocoa source explains the observed virtual-input
+limitation: on macOS 26 and later, mouseMoved substitutes SDL_GetGlobalMouseState for
+the event-local location as an operating-system workaround. Foreground button delivery
+uses that tracked mouse state. Virtual pointer events can therefore disagree with the
+physical global position even when focus is correct. This is evidence for the current
+computer-use/SDL boundary, not acceptance of a physical mouse drag or proof that every
+native interaction works. No vendor patch, global-poll bypass, fake success or alternate
+test-only GUI injection is introduced. Product agent operations remain the primary
+control/verification path; physical pointer acceptance stays explicitly outstanding.
+
+The final same-build editor run verifies input snapshots during actual PrismRelay
+animation editing: open the native library, move Head's first key to .0125 and change
+its value through the shared product operation, observe the actual isolated native pose,
+then undo and close the resource. Input counters progress while source scene, authoring
+revision/dirty state and all nine on-disk scene/animation files remain unchanged. Null
+GUI pointer and absent last events are observable without fabricated values. The
+application exits with launcher status 0, empty stderr and a retired control directory.
+Temporary app shell, copied project and investigation clients are removed; observations
+remain only in ignored build storage, with build caches/existing archives preserved.
+
+Release/NDEBUG full checks pass 1090/1090 (17.74s). Focused Debug input/platform/GUI checks
+pass 33/33 (9.40s): 17 unit cases, one SDL-dummy platform case and all 15 offscreen GUI
+cases. The complete suite has 288 unit and 802 integration cases, with overlapping
+126 offscreen GPU, 27 native audio and 28 SDL-dummy platform subsets. After strengthening
+the snapshot guard, its final Release case passes 1/1 (.12s) and Debug passes 1/1 (.68s).
+No added automatic check opens a desktop window. Windows/Linux are not executed; compiler/linker environment,
+dependency pins and supported platform targets are unchanged. No archive is generated.
+
+Precommit review covers copied-value lifetime, bounded event retention and window scope,
+invalid/unknown positions, context/frame counter semantics, read-only callback access,
+expected query errors, logical/physical coordinate contracts, documentation and useful
+failure/recovery coverage. All four changed C++ interface/implementation/test files pass
+clang-format and diff whitespace checks pass. Workspace documentation also corrects stale
+bottom-dock proportions and obsolete planned-gizmo/preview wording to match current
+behavior. The specification/reference output remain untracked. Native physical-pointer
+acceptance and the wider production engine/game requirements remain open.

@@ -708,3 +708,50 @@ TEST_CASE("graphics.gui_overlay_invalid_geometry_and_budget_errors_recover_witho
   REQUIRE(gpu.closeGui());
   CHECK(gpu.resourceStats()->targets == 0);
 }
+
+TEST_CASE("graphics.gui_input_snapshots_preserve_processed_dpi_and_failed_frame_state") {
+  using namespace Dot::Platform;
+  auto gpu = renderer();
+  REQUIRE(gpu.enableGui());
+  auto initial = gpu.guiStats().value();
+  CHECK(initial.input.frame == 0);
+  CHECK_FALSE(initial.input.pointer);
+  REQUIRE(gpu.guiEvent({0, 0, ButtonChanged{MouseButton::Left, true, std::array{32.F, 24.F}}}));
+  Dot::Graphics::GuiInputStats retained;
+  REQUIRE_FALSE(gpu.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        const auto stats = gpu.guiStats().value();
+        retained = stats.input;
+        CHECK(stats.frames == 0);
+        CHECK(retained.frame == 1);
+        CHECK(retained.logicalSize.x == 80);
+        CHECK(retained.logicalSize.y == 60);
+        CHECK(retained.framebufferScale.x == 2);
+        CHECK(retained.framebufferScale.y == 2);
+        REQUIRE(retained.pointer);
+        CHECK(retained.pointer->x == 32);
+        CHECK(retained.pointer->y == 24);
+        CHECK(retained.buttons == 1);
+        return Dot::Core::fail(Dot::Core::ErrorCode::InvalidState, "Rejected GUI callback");
+      },
+      160, 120, .01, 2));
+  REQUIRE(retained.pointer);
+  const auto failed = gpu.guiStats().value();
+  CHECK(failed.frames == 0);
+  CHECK(failed.input.frame == 1);
+  REQUIRE(gpu.guiEvent({0, 0, ButtonChanged{MouseButton::Left, false, std::array{40.F, 30.F}}}));
+  REQUIRE(gpu.renderGui(rect, 160, 120, .01, 2));
+  const auto next = gpu.guiStats().value();
+  CHECK(next.frames == 1);
+  CHECK(next.input.frame == 2);
+  REQUIRE(next.input.pointer);
+  CHECK(next.input.pointer->x == 40);
+  CHECK(next.input.pointer->y == 30);
+  CHECK(next.input.buttons == 0);
+  CHECK(retained.pointer->x == 32);
+  CHECK(retained.buttons == 1);
+  REQUIRE(gpu.closeGui());
+  CHECK_FALSE(gpu.guiStats()->input.pointer);
+  CHECK(gpu.guiStats()->input.frame == 0);
+  CHECK(retained.pointer->x == 32);
+}

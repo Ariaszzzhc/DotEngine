@@ -67,6 +67,26 @@ when operations are quiescent. `closeGui` is terminal/idempotent for that contex
 works after device diagnostics fail and allows explicit reinitialization. Renderer
 destruction releases GUI/font/backend resources before destroying its device.
 
+GuiStats.input is an owned snapshot of the latest GUI NewFrame, copied before the user
+draw callback. It reports a context-local processed-frame counter, logical display size,
+physical/logical framebuffer scale, optional logical pointer and five held-button bits
+(left/right/middle/back/forward). The pointer is null when ImGui has no valid position;
+outside-window finite coordinates are retained. This snapshot remains available after
+a failed callback, without claiming a submitted frame. Successful submission count and
+assembled geometry/capture flags retain their separate meanings. Reading inside the
+callback sees that frame's processed input, never advances or replays it. Snapshots
+retain owned values after later input, closeGui or context destruction; newly enabled
+or disabled contexts start with a zero input counter and no pointer.
+
+The actual editor includes this snapshot alongside last consumed application input,
+bounded last pointer events and native window extents in inspect.workspace.input.
+These are separate observation times; use them to locate coordinate/focus problems
+rather than assuming virtual input and physical system pointer state are identical.
+
+GuiStats.input 在绘制回调前复制最近 NewFrame 的输入，拥有逻辑位置、DPI、按钮及独立帧
+计数；失败帧也可检查，不冒充成功提交。快照不借用 GUI 内存，后续输入或关闭不影响旧值。
+编辑器 inspect 将其与原生状态及有界最近指针事件并列，明确不同采样时刻。
+
 Forward each normalized window event with `guiEvent` before drawing. Foreign
 window IDs are ignored; keyboard, pointer, buttons, wheel, committed UTF-8 text
 and focus are supported. Nonfinite coordinates/wheel and malformed/NUL/oversize
