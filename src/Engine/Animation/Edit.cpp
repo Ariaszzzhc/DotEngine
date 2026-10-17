@@ -1,10 +1,13 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
 #include <expected>
+#include <limits>
 #include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -17,6 +20,93 @@ module Dot.Animation.Edit;
 import Dot.Core.Result;
 
 namespace Dot::Animation {
+  namespace {
+    auto component(double value) -> Core::Result<float> {
+      if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Key adjustment overflows float");
+      }
+
+      return static_cast<float>(value);
+    }
+
+    /** Quaternion right multiplication is linear even for non-unit derivatives.
+     * 四元数右乘对非单位导数同样线性，禁止按旋转值归一化切线。 */
+    auto postRotate(Math::Vec4 value, Math::Quat rotation) -> Core::Result<Math::Vec4> {
+      const std::array<double, 4> a{value.x, value.y, value.z, value.w};
+      const std::array<double, 4> b{rotation.x, rotation.y, rotation.z, rotation.w};
+      const std::array products{a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+                                a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                                a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+                                a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]};
+      std::array<float, 4> result;
+
+      for (std::size_t i = 0; i < result.size(); ++i) {
+        auto checked = component(products[i]);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        result[i] = *checked;
+      }
+
+      return Math::Vec4{result[0], result[1], result[2], result[3]};
+    }
+
+    auto transform(Key& key, const Track& track, const TransformKeys& edit) -> Core::Result<void> {
+      if (track.path == Path::Rotation) {
+        if (edit.rotation == Math::Quat{}) {
+          return {};
+        }
+
+        for (auto* value : {&key.value, &key.inTangent, &key.outTangent}) {
+          if (value != &key.value && track.interpolation != Interpolation::CubicSpline) {
+            continue;
+          }
+
+          auto rotated = postRotate(*value, edit.rotation);
+
+          if (!rotated) {
+            return std::unexpected(rotated.error());
+          }
+
+          *value = *rotated;
+        }
+
+        return {};
+      }
+
+      const bool scale = track.path == Path::Scale;
+      const std::array factors{edit.scale.x, edit.scale.y, edit.scale.z};
+      const std::array offsets{edit.translation.x, edit.translation.y, edit.translation.z};
+
+      for (auto* value : {&key.value, &key.inTangent, &key.outTangent}) {
+        if (value != &key.value && (!scale || track.interpolation != Interpolation::CubicSpline)) {
+          continue;
+        }
+
+        const std::array axes{&value->x, &value->y, &value->z};
+
+        for (std::size_t i = 0; i < axes.size(); ++i) {
+          if ((scale && factors[i] == 1) || (!scale && offsets[i] == 0)) {
+            continue;
+          }
+
+          auto checked = component(scale ? static_cast<double>(*axes[i]) * factors[i]
+                                         : static_cast<double>(*axes[i]) + offsets[i]);
+
+          if (!checked) {
+            return std::unexpected(checked.error());
+          }
+
+          *axes[i] = *checked;
+        }
+      }
+
+      return {};
+    }
+  }  // namespace
+
   auto editClip(const Clip& clip, std::span<const ClipEdit> edits) -> Core::Result<Clip> {
     auto source = clip.description();
 
@@ -40,7 +130,61 @@ namespace Dot::Animation {
             [&](const auto& edit) -> Core::Result<void> {
               using T = std::decay_t<decltype(edit)>;
 
-              if constexpr (std::is_same_v<T, PasteKeys>) {
+              if constexpr (std::is_same_v<T, TransformKeys>) {
+                const std::array<double, 4> q{edit.rotation.x, edit.rotation.y, edit.rotation.z,
+                                              edit.rotation.w};
+                const auto length
+                    = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+
+                if (edit.keys.empty() || edit.keys.size() > MaxSelectedKeys
+                    || !Math::isFinite(edit.translation) || !Math::isFinite(edit.scale)
+                    || !Math::isFinite(edit.rotation) || std::abs(length - 1) > 1e-4
+                    || edit.scale.x == 0 || edit.scale.y == 0 || edit.scale.z == 0) {
+                  return Core::fail(Core::ErrorCode::InvalidArgument,
+                                    "Invalid key adjustment count/offset/unit rotation/scale");
+                }
+
+                std::map<std::pair<std::uint32_t, Path>, std::size_t> channels;
+
+                for (std::size_t i = 0; i < candidate.tracks.size(); ++i) {
+                  channels.emplace(std::pair{candidate.tracks[i].node, candidate.tracks[i].path},
+                                   i);
+                }
+
+                std::set<std::pair<std::size_t, float>> selected;
+
+                for (const auto& item : edit.keys) {
+                  if (!std::isfinite(item.time) || item.time < 0 || item.time > 86400) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument,
+                                      "Invalid adjustment key time");
+                  }
+
+                  const auto channel = channels.find({item.node, item.path});
+
+                  if (channel == channels.end()) {
+                    return Core::fail(Core::ErrorCode::NotFound, "Adjustment track does not exist");
+                  }
+
+                  auto& track = candidate.tracks[channel->second];
+                  auto key = std::ranges::lower_bound(track.keys, item.time, {}, &Key::time);
+
+                  if (key == track.keys.end() || key->time != item.time) {
+                    return Core::fail(Core::ErrorCode::NotFound, "Adjustment key does not exist");
+                  }
+
+                  if (!selected.emplace(channel->second, item.time).second) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate adjustment key");
+                  }
+
+                  auto changed = transform(*key, track, edit);
+
+                  if (!changed) {
+                    return changed;
+                  }
+                }
+
+                return {};
+              } else if constexpr (std::is_same_v<T, PasteKeys>) {
                 if (edit.collision != KeyCollision::Reject
                     && edit.collision != KeyCollision::Replace) {
                   return Core::fail(Core::ErrorCode::InvalidArgument,

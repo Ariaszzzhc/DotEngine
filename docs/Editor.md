@@ -1575,7 +1575,8 @@ selection. Explicit arrays also remain subject to the ordinary 1 MiB request bou
 Selection does not change resource history, preview or disk; ordinary changed edit
 batches/undo/redo clear it, while no-op batches retain it. Paste explicitly selects its
 destination keys even if replacing identical content. Multi-selection locks single-key
-value/tangent form edits; select one key to use those controls.
+value/tangent form edits; select one key to use those controls. The group adjustment
+controls below remain available for selected keys across tracks.
 
 Begin consumes the current nonempty selection and requires current resource IDs,
 a clean form and no other move/dialog. It returns an independent move session.
@@ -1701,9 +1702,56 @@ SDL/macOS input boundary; visible controls do not by themselves prove pointer de
 改变目标通道插值。三次部分键可复制，粘贴结果仍须合法。整次通过原生姿态/蒙皮预检后提交
 一步历史，成功选择目标，失败不改草稿/预览/文件；系统剪贴板不受影响。
 
-This workflow edits existing bound library clips. Dope-sheet, multi-key value and
-graphical tangent-handle editing, visual binding/retargeting, state graphs/layers,
-root motion/events and production animation scalability remain unfinished.
+### Selected key value adjustment
+
+With several keys selected, Inspector offers translation offset, local rotation in
+XYZ Euler degrees and componentwise scale factors. Apply adjustment changes only
+selected existing keys, preserving their times/count, channels, interpolation and
+selection order. Translation adds an offset in the channel's parent coordinates;
+rotation appends a local rotation (unit XYZW right multiplication); scale multiplies
+XYZ. Cubic scale and rotation derivatives receive the same linear transform;
+translation derivatives remain unchanged. Derivatives are never normalized as
+rotations. Unselected keys remain unchanged, so adjusting part of a curve can also
+change its interpolation near those keys. This is not a world-space pose gizmo.
+
+These controls share the strict operations below. Each request requires the current
+buffer/revision and a clean single-key form, without an active move/close/dialog.
+The parameter form is reported by animationClip.adjustment. Setting/resetting it
+changes no resource, history, preview or disk. Parameters remain after Apply so
+another Apply repeats the relative adjustment; opening a clip resets them to the
+identity. Unapplied parameters are not an unsaved resource or pending key form.
+Empty selection, singular scale, overflow or invalid native clip/pose/skin fails
+without changing the document/history/preview/selection or parameter form.
+
+```json
+{"command":"set-animation-key-adjustment","buffer":"1","revision":"1","value":{"translation":[0,0.02,0],"rotationDegrees":[0,0,5],"scale":[1,1,1]}}
+{"command":"apply-animation-key-adjustment","buffer":"1","revision":"1"}
+```
+
+A changed Apply prepares the new selection/form and native candidate preview before
+publishing one resource history state. Times and ordered references remain selected;
+the active key's form shows its new payload. Identity/no-change Apply retains
+revision, redo, preview session/clock and selection. Save, Undo/Redo and close use
+the ordinary resource workflow. Generic edit batches also accept this operation
+with explicit 1..16384 unique node/path/time references and a unit XYZW rotation:
+
+```json
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"transform-keys","keys":[{"node":8,"path":"rotation","time":0},{"node":8,"path":"rotation","time":0.5}],"translation":[0,0,0],"rotation":[0,0,0.043619387,0.999048222],"scale":[1,1,1]}]}
+```
+
+Generic batches retain their ordinary selection-clearing behavior on a changed
+commit. Identity components preserve native float bits. No retiming, mode conversion,
+binding remap, quaternion sign correction or tangent rescaling is implicit.
+
+多选 Inspector 支持局部通道平移偏移、追加局部旋转和缩放系数，复用同源严格操作。
+三次缩放/旋转切线按同一线性变换处理，平移切线不变，不把导数归一化为旋转。仅改选中键，
+时间、数量、模式和选择顺序不变；部分键调整可能影响邻近插值。参数不是未保存草稿，重复
+Apply 会再次调整；打开片段重置参数。候选选择、原生姿态和蒙皮预检后提交一步历史，失败
+保留文档、历史、预览、选择和参数。恒等操作保留修订、重做与预览时钟。
+
+This workflow edits existing bound library clips. Dope-sheet and graphical tangent-
+handle editing, visual binding/retargeting, state graphs/layers, root motion/events
+and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
 值和三次切线。键表单需显式应用/重置；插入与替换按原生 float 时间判断，不隐式移动旧键。
@@ -1714,7 +1762,7 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键数值编辑、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
+多键相对 TRS 调整已实现，完整 dope sheet、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
 
 
 ## Runtime scene changes

@@ -294,6 +294,21 @@ all old tracks or create a two-key cubic track without exposing an invalid inter
 state. Missing tracks/keys, invalid times, modes, values or final empty channels fail
 without changing the input. It creates no files, scenes or devices.
 
+TransformKeys adjusts 1..16384 unique existing exact-time references in one immutable
+candidate. Local translation adds XYZ, scale multiplies XYZ, and rotation right-
+multiplies XYZW by a finite unit quaternion. Cubic scale/rotation derivatives receive
+the same linear transform; translation derivatives stay unchanged. Non-cubic zero
+tangents and vector W remain unchanged. Identity components skip arithmetic to keep
+native float bits, including signed zero. Times/counts, interpolation and bindings
+never change. Invalid parameters, references, arithmetic overflow or final native
+validation rejects the entire batch. Selected-key group adjustment shares this
+kernel with the editor's preview/history preflight; it does not author world-space
+poses or normalize derivatives as quaternions.
+
+TransformKeys 原子调整已有多键局部 TRS，平移加偏移、缩放逐轴乘系数、旋转右乘单位四元数。
+三次缩放/旋转导数做同一线性变换，平移导数不变；恒等分量保留 float 位。时间、数量、
+插值和绑定不变，错误拒绝整批；编辑器复用原生姿态/蒙皮预检和历史，不隐式编辑世界姿态。
+
 `Clip::sampleTrack` evaluates one track index from this immutable clip description
 with the exact ordinary native evaluator. It avoids evaluating/allocating samples for
 unrelated channels, and therefore does not certify their current samples. Endpoint
@@ -368,8 +383,8 @@ Copies of the tool are disabled; moves retire the source handle and destruction
 discards the ghost. Independent tools share clips; synchronize mutable access. The
 editor scopes the selection/gesture to current document identity/revision and native
 preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
-for shared GUI/agent selection and move operations. Complete dope-sheet, multi-key
-value editing, tangent handles and state/layer authoring remain unfinished.
+for shared GUI/agent selection, move and relative TRS value adjustment operations.
+Complete dope-sheet, tangent handles and state/layer authoring remain unfinished.
 
 多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
 同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。

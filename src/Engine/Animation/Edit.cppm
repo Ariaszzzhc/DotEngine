@@ -11,6 +11,7 @@ export module Dot.Animation.Edit;
 
 export import Dot.Animation.KeyGroup;
 import Dot.Core.Result;
+import Dot.Math;
 
 export namespace Dot::Animation {
   struct PutKey {
@@ -44,6 +45,22 @@ export namespace Dot::Animation {
     std::vector<KeyTimeChange> keys;
   };
 
+  /** Adjust 1..16384 unique existing keys without retiming. Translation adds a
+   * local channel offset; scale multiplies componentwise; rotation postmultiplies
+   * XYZW by a finite unit quaternion. Cubic scale/rotation derivatives receive
+   * the same linear transform; translation derivatives stay unchanged. No tangent
+   * normalization/sign correction or implicit interpolation change. Identity
+   * components preserve source float bits; final native clip validation is atomic.
+   * 不移时地调整 1..16384 个唯一现有键；平移加局部通道偏移，缩放逐分量相乘，旋转
+   * XYZW 右乘有限单位四元数。三次缩放/旋转导数使用同一线性变换，平移导数不变；
+   * 不归一化切线、不更改符号或隐式改插值。恒等分量保留原 float 位，最终原生校验原子生效。 */
+  struct TransformKeys {
+    std::vector<KeyReference> keys;
+    Math::Vec3 translation{};
+    Math::Quat rotation{};
+    Math::Vec3 scale{1, 1, 1};
+  };
+
   enum class KeyCollision { Reject, Replace };
 
   struct PasteKeys {
@@ -67,8 +84,8 @@ export namespace Dot::Animation {
     std::string name;
   };
 
-  using ClipEdit = std::variant<PutKey, UpdateKey, RetimeKeys, PasteKeys, RemoveKey, RemoveTrack,
-                                SetInterpolation, RenameClip>;
+  using ClipEdit = std::variant<PutKey, UpdateKey, RetimeKeys, TransformKeys, PasteKeys, RemoveKey,
+                                RemoveTrack, SetInterpolation, RenameClip>;
 
   /** Atomic ordered batch, <=256 edits, keyed by logical node/path and exact float
    * seconds. Put replaces an equal-time key or inserts in order; new tracks use

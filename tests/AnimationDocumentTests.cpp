@@ -49,6 +49,39 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("animation_document.group_value_adjustment_is_one_revision_and_persists_with_history") {
+  Fixture f;
+  auto doc = f.open();
+  auto before = doc.snapshot().value();
+  TransformKeys adjustment{{{0, Path::Translation, 0}, {0, Path::Translation, 2}}, {0, 3, 0}};
+  std::vector<ClipEdit> operations{adjustment};
+  REQUIRE(doc.edit(operations, before.revision));
+  auto state = doc.snapshot().value();
+  CHECK(state.revision == before.revision + 1);
+  CHECK(state.historyStates == before.historyStates + 1);
+  CHECK(state.dirty);
+  CHECK(state.value.sample(1)->at(0).value.y == 3);
+  const auto revision = state.revision;
+  operations = {TransformKeys{adjustment.keys}};
+  REQUIRE(doc.edit(operations, revision));
+  CHECK(doc.snapshot()->revision == revision);
+  REQUIRE(doc.save(revision));
+  auto reopened = f.open();
+  CHECK(reopened.snapshot()->value.sample(1)->at(0).value.y == 3);
+  REQUIRE(doc.undo(doc.snapshot()->revision));
+  CHECK(doc.snapshot()->value.sample(1)->at(0).value.y == 0);
+  REQUIRE(doc.redo(doc.snapshot()->revision));
+  CHECK(doc.snapshot()->value.sample(1)->at(0).value.y == 3);
+  auto invalid = adjustment;
+  invalid.scale.x = 0;
+  operations = {RenameClip{"No partial write"}, invalid};
+  state = doc.snapshot().value();
+  CHECK_FALSE(doc.edit(operations, state.revision));
+  CHECK(doc.snapshot()->revision == state.revision);
+  CHECK(doc.snapshot()->value.description().value()->name
+        == state.value.description().value()->name);
+}
+
 TEST_CASE("animation_document.owned_draft_history_save_and_exact_source_undo") {
   Fixture f;
   auto doc = f.open();

@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <bit>
+#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -25,6 +28,146 @@ namespace {
     return editClip(clip, {edits.begin(), edits.size()});
   }
 }  // namespace
+
+TEST_CASE("animation_edit.group_local_adjustment_preserves_cubic_curve_transform_and_derivatives") {
+  const auto q = Math::rotationEulerDegrees({0, 45, 0}).value();
+  const auto clip
+      = Clip::create({"Cubic adjustment",
+                      {{0,
+                        Path::Translation,
+                        Interpolation::CubicSpline,
+                        {{0, {1, 2, 3, 0}, {}, {1, 2, 3, 0}}, {2, {4, 5, 6, 0}, {2, 1, 0, 0}, {}}}},
+                       {1,
+                        Path::Scale,
+                        Interpolation::CubicSpline,
+                        {{0, {1, 2, 3, 0}, {}, {.1F, .2F, .3F, 0}},
+                         {2, {2, 3, 4, 0}, {.2F, .1F, .3F, 0}, {}}}},
+                       {2,
+                        Path::Rotation,
+                        Interpolation::CubicSpline,
+                        {{0, {0, 0, 0, 1}, {}, {.1F, .2F, .3F, .4F}},
+                         {2, {q.x, q.y, q.z, q.w}, {.2F, .1F, .3F, .4F}, {}}}}}})
+            .value();
+  TransformKeys adjustment;
+  adjustment.translation = {2, -1, .5F};
+  adjustment.scale = {2, .5F, -1};
+  adjustment.rotation = Math::rotationEulerDegrees({0, 0, 90}).value();
+
+  for (const auto& track : clip.description().value()->tracks) {
+    for (const auto& key : track.keys) {
+      adjustment.keys.push_back({track.node, track.path, key.time});
+    }
+  }
+
+  auto adjusted = edit(clip, {adjustment}).value();
+  const auto& tracks = adjusted.description().value()->tracks;
+  CHECK(tracks.size() == 3);
+  CHECK(tracks[0].keys[0].outTangent == Math::Vec4{1, 2, 3, 0});
+  CHECK(tracks[1].keys[0].outTangent == Math::Vec4{.2F, .1F, -.3F, 0});
+  const auto tangent = tracks[2].keys[0].outTangent;
+  const auto half = std::sqrt(.5);
+  CHECK(tangent.x == doctest::Approx(.3 * half));
+  CHECK(tangent.y == doctest::Approx(.1 * half));
+  CHECK(tangent.z == doctest::Approx(.7 * half));
+  CHECK(tangent.w == doctest::Approx(.1 * half));
+  const auto delta = Math::compose({}, adjustment.rotation).value();
+
+  for (const double time : {0., .25, 1., 1.75, 2.}) {
+    const auto before = clip.sample(time).value();
+    const auto after = adjusted.sample(time).value();
+    CHECK(after[0].value.x == doctest::Approx(before[0].value.x + 2));
+    CHECK(after[0].value.y == doctest::Approx(before[0].value.y - 1));
+    CHECK(after[0].value.z == doctest::Approx(before[0].value.z + .5));
+    CHECK(after[1].value.x == doctest::Approx(before[1].value.x * 2));
+    CHECK(after[1].value.y == doctest::Approx(before[1].value.y * .5));
+    CHECK(after[1].value.z == doctest::Approx(-before[1].value.z));
+    const auto a = before[2].value;
+    const auto b = after[2].value;
+    const auto expected
+        = Math::multiply(Math::compose({}, {a.x, a.y, a.z, a.w}).value(), delta).value();
+    const auto actual = Math::compose({}, {b.x, b.y, b.z, b.w}).value();
+
+    for (std::size_t i = 0; i < expected.data.size(); ++i) {
+      CHECK(actual.data[i] == doctest::Approx(expected.data[i]).epsilon(.00001).scale(1));
+    }
+  }
+
+  CHECK(clip.description().value()->tracks[0].keys[0].value.x == 1);
+  CHECK(adjusted.duration().value() == clip.duration().value());
+}
+
+TEST_CASE(
+    "animation_edit.group_adjustment_changes_only_selected_payloads_and_identity_keeps_bits") {
+  auto clip = source();
+  TransformKeys offset{{{0, Path::Translation, 2}}, {0, 3, 0}};
+  const auto adjusted = edit(clip, {offset}).value();
+  CHECK(adjusted.description().value()->tracks[0].keys[0].value == Math::Vec4{});
+  CHECK(adjusted.description().value()->tracks[0].keys[1].value == Math::Vec4{2, 3, 0, 0});
+  auto data = *clip.description().value();
+  data.tracks[0].keys[0].value = {-0.F, -0.F, 0, -0.F};
+  data.tracks[0].keys[0].time = -0.F;
+  data.tracks[0].keys[0].inTangent.x = -0.F;
+  clip = Clip::create(std::move(data)).value();
+  TransformKeys identity{{{0, Path::Translation, 0}}};
+  const auto unchanged = edit(clip, {identity}).value();
+  const auto& old = clip.description().value()->tracks[0].keys[0];
+  const auto& now = unchanged.description().value()->tracks[0].keys[0];
+  CHECK(std::bit_cast<std::uint32_t>(now.time) == std::bit_cast<std::uint32_t>(old.time));
+  CHECK(std::bit_cast<std::uint32_t>(now.value.x) == std::bit_cast<std::uint32_t>(old.value.x));
+  CHECK(std::bit_cast<std::uint32_t>(now.value.y) == std::bit_cast<std::uint32_t>(old.value.y));
+  CHECK(std::bit_cast<std::uint32_t>(now.inTangent.x)
+        == std::bit_cast<std::uint32_t>(old.inTangent.x));
+}
+
+TEST_CASE(
+    "animation_edit.group_adjustment_rejects_invalid_refs_parameters_and_overflow_atomically") {
+  const auto clip = source();
+  TransformKeys adjustment{{{0, Path::Translation, 0}}};
+  CHECK_FALSE(edit(clip, {TransformKeys{}}));
+  adjustment.keys.push_back(adjustment.keys[0]);
+  CHECK_FALSE(edit(clip, {RenameClip{"Not published"}, adjustment}));
+  adjustment.keys = {{0, Path::Translation, 1}};
+  CHECK_FALSE(edit(clip, {adjustment}));
+  adjustment.keys = {{0, Path::Rotation, 0}};
+  CHECK_FALSE(edit(clip, {adjustment}));
+  adjustment.keys = {{0, Path::Translation, 0}};
+  adjustment.rotation = {0, 0, 0, 2};
+  CHECK_FALSE(edit(clip, {adjustment}));
+  adjustment.rotation = {};
+  adjustment.scale.x = 0;
+  CHECK_FALSE(edit(clip, {adjustment}));
+  adjustment.scale.x = 1;
+  adjustment.translation.x = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(edit(clip, {adjustment}));
+  auto data = *clip.description().value();
+  data.tracks[0].keys[0].value.x = std::numeric_limits<float>::max();
+  auto large = Clip::create(std::move(data)).value();
+  adjustment.translation.x = std::numeric_limits<float>::max();
+  CHECK_FALSE(edit(large, {adjustment}));
+  CHECK(clip.description().value()->name == "Move");
+  auto scale
+      = Clip::create({"Scale", {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}}}}})
+            .value();
+  adjustment = {{{0, Path::Scale, 0}}, {}, {}, {1e-9F, 1, 1}};
+  CHECK_FALSE(edit(scale, {adjustment}));
+}
+
+TEST_CASE("animation_edit.group_adjustment_accepts_full_selection_capacity") {
+  Track track{0, Path::Translation, Interpolation::Linear, {}};
+  TransformKeys adjustment;
+  adjustment.translation.y = 1;
+
+  for (std::size_t i = 0; i < MaxSelectedKeys; ++i) {
+    track.keys.push_back({static_cast<float>(i), {1, 2, 3, 0}});
+    adjustment.keys.push_back({0, Path::Translation, static_cast<float>(i)});
+  }
+
+  const auto clip = Clip::create({"Full selection", {std::move(track)}}).value();
+  const auto adjusted = edit(clip, {adjustment}).value();
+  CHECK(adjusted.description().value()->tracks[0].keys.back().value.y == 3);
+  adjustment.keys.push_back(adjustment.keys.back());
+  CHECK_FALSE(edit(clip, {adjustment}));
+}
 
 TEST_CASE("animation_edit.inserts_sorted_replaces_exact_times_and_creates_channels") {
   const auto clip = source();

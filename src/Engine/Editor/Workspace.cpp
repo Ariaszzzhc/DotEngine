@@ -587,6 +587,8 @@ namespace Dot::Editor {
     bool m_clipPasteOverwrite{};
     Json m_clipForm = nullptr;
     Json m_clipOriginal = nullptr;
+    Json m_clipAdjustment
+        = {{"translation", {0, 0, 0}}, {"rotationDegrees", {0, 0, 0}}, {"scale", {1, 1, 1}}};
     std::vector<Animation::KeyReference> m_clipSelection;
     std::set<std::tuple<std::uint32_t, Animation::Path, float>> m_clipSelected;
     int m_clipNewNode{};
@@ -2132,13 +2134,21 @@ namespace Dot::Editor {
     /** Prepare all selection/form allocations before changing product state.
      * Last reference is the active key and move anchor; input order is retained.
      * 修改产品状态前完成选择/表单分配；末引用为活动键及移键锚点，保留输入顺序。 */
-    auto selectClipKeys(const AnimationSnapshot& state, std::vector<Animation::KeyReference> keys)
-        -> Core::Result<void> {
+    struct ClipSelection {
+      std::vector<Animation::KeyReference> keys;
+      std::set<std::tuple<std::uint32_t, Animation::Path, float>> selected;
+      Json form;
+      Json original;
+    };
+
+    static auto prepareClipSelection(const Animation::Clip& clip,
+                                     std::vector<Animation::KeyReference> keys)
+        -> Core::Result<ClipSelection> {
       Json form = nullptr;
       std::set<std::tuple<std::uint32_t, Animation::Path, float>> selected;
 
       if (!keys.empty()) {
-        auto valid = AnimationKeyMove::begin(state.value, keys);
+        auto valid = AnimationKeyMove::begin(clip, keys);
         auto resolved = valid ? valid->snapshot()
                               : Core::Result<KeyMoveSnapshot>{std::unexpected(valid.error())};
 
@@ -2147,7 +2157,7 @@ namespace Dot::Editor {
         }
 
         const auto& last = resolved->keys.back();
-        const auto& tracks = state.value.description().value()->tracks;
+        const auto& tracks = clip.description().value()->tracks;
         const auto track = std::ranges::find_if(tracks, [&](const auto& item) {
           return item.node == last.node && item.path == last.path;
         });
@@ -2165,13 +2175,41 @@ namespace Dot::Editor {
       }
 
       auto original = form;
-      m_clipSelection = std::move(keys);
-      m_clipSelected = std::move(selected);
-      m_clipForm = std::move(form);
-      m_clipOriginal = std::move(original);
+      return ClipSelection{std::move(keys), std::move(selected), std::move(form),
+                           std::move(original)};
+    }
+
+    auto publishClipSelection(ClipSelection prepared) -> void {
+      m_clipSelection = std::move(prepared.keys);
+      m_clipSelected = std::move(prepared.selected);
+      m_clipForm = std::move(prepared.form);
+      m_clipOriginal = std::move(prepared.original);
       m_requestedPane = "inspector";
       m_clipTrackScroll = m_clipKeyScroll = true;
+    }
+
+    auto selectClipKeys(const AnimationSnapshot& state, std::vector<Animation::KeyReference> keys)
+        -> Core::Result<void> {
+      auto prepared = prepareClipSelection(state.value, std::move(keys));
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      publishClipSelection(std::move(*prepared));
       return {};
+    }
+
+    static auto clipAdjustment(const Json& value) -> Json {
+      Codec::requireFields(value, {"translation", "rotationDegrees", "scale"});
+      Json result = Json::object();
+
+      for (const auto* field : {"translation", "rotationDegrees", "scale"}) {
+        const auto v = Codec::numbers<3>(value[field]);
+        result[field] = {v[0], v[1], v[2]};
+      }
+
+      return result;
     }
 
     static auto clipEdits(const Json& operations) -> std::vector<Animation::ClipEdit> {
@@ -2205,6 +2243,15 @@ namespace Dot::Editor {
           result.push_back(
               Animation::UpdateKey{clipIndex(operation["node"]), clipPath(operation["path"]),
                                    Codec::number(operation["time"]), clipKey(operation["key"])});
+        } else if (op == "transform-keys") {
+          Codec::requireFields(operation, {"op", "keys", "translation", "rotation", "scale"});
+          const auto t = Codec::numbers<3>(operation["translation"]);
+          const auto r = Codec::numbers<4>(operation["rotation"]);
+          const auto s = Codec::numbers<3>(operation["scale"]);
+          result.push_back(Animation::TransformKeys{clipReferences(operation["keys"]),
+                                                    {t[0], t[1], t[2]},
+                                                    {r[0], r[1], r[2], r[3]},
+                                                    {s[0], s[1], s[2]}});
         } else if (op == "retime-keys") {
           Codec::requireFields(operation, {"op", "keys"});
           const auto& keys = operation["keys"];
@@ -2334,6 +2381,7 @@ namespace Dot::Editor {
               {"curve", {{"from", m_curveFrom}, {"to", m_curveTo}}},
               {"move", keyMoveStatus()},
               {"selection", referencesJson(m_clipSelection)},
+              {"adjustment", m_clipAdjustment},
               {"form", m_clipForm},
               {"pendingForm", m_clipForm != m_clipOriginal}};
     }
@@ -2879,6 +2927,8 @@ namespace Dot::Editor {
         m_clipBindings.swap(bindings);
         m_clipContext = std::move(context);
         m_clipForm = m_clipOriginal = nullptr;
+        m_clipAdjustment
+            = {{"translation", {0, 0, 0}}, {"rotationDegrees", {0, 0, 0}}, {"scale", {1, 1, 1}}};
         setClipSelection({});
         m_curveFrom = 0;
         m_curveTo = std::max(1., draft->value.duration().value());
@@ -2996,12 +3046,13 @@ namespace Dot::Editor {
           || command == "read-animation-track" || command == "select-animation-key"
           || command == "select-animation-keys" || command == "select-all-animation-keys"
           || command == "copy-animation-keys" || command == "paste-animation-keys"
-          || command == "stage-animation-key" || command == "reset-animation-key"
-          || command == "apply-animation-key" || command == "move-animation-key"
-          || command == "read-animation-curve" || command == "set-animation-curve-view"
-          || command == "edit-animation-clip" || command == "undo-animation-clip"
-          || command == "redo-animation-clip" || command == "save-animation-clip"
-          || command == "close-animation") {
+          || command == "set-animation-key-adjustment"
+          || command == "apply-animation-key-adjustment" || command == "stage-animation-key"
+          || command == "reset-animation-key" || command == "apply-animation-key"
+          || command == "move-animation-key" || command == "read-animation-curve"
+          || command == "set-animation-curve-view" || command == "edit-animation-clip"
+          || command == "undo-animation-clip" || command == "redo-animation-clip"
+          || command == "save-animation-clip" || command == "close-animation") {
         if (command == "inspect-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer"});
         } else if (command == "list-animation-tracks") {
@@ -3017,6 +3068,8 @@ namespace Dot::Editor {
         } else if (command == "select-animation-key") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "node", "path", "time"});
         } else if (command == "stage-animation-key") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
+        } else if (command == "set-animation-key-adjustment") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
         } else if (command == "read-animation-curve") {
           Codec::requireFields(
@@ -3061,6 +3114,54 @@ namespace Dot::Editor {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Finish or cancel the key move before changing resource, form or time range");
+        }
+
+        if (command == "set-animation-key-adjustment"
+            || command == "apply-animation-key-adjustment") {
+          if (m_clipForm != m_clipOriginal || m_captureDialog) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Key adjustment requires a clean key form without a dialog");
+          }
+
+          if (command == "set-animation-key-adjustment") {
+            m_clipAdjustment = clipAdjustment(parsed["value"]);
+          } else {
+            const auto t = Codec::numbers<3>(m_clipAdjustment["translation"]);
+            const auto r = Codec::numbers<3>(m_clipAdjustment["rotationDegrees"]);
+            const auto s = Codec::numbers<3>(m_clipAdjustment["scale"]);
+            auto rotation = Math::rotationEulerDegrees({r[0], r[1], r[2]});
+
+            if (!rotation) {
+              return std::unexpected(rotation.error());
+            }
+
+            const std::array<Animation::ClipEdit, 1> edits{Animation::TransformKeys{
+                m_clipSelection, {t[0], t[1], t[2]}, *rotation, {s[0], s[1], s[2]}}};
+            auto candidate = Animation::editClip(state->value, edits);
+
+            if (!candidate) {
+              return std::unexpected(candidate.error());
+            }
+
+            auto selection = prepareClipSelection(*candidate, m_clipSelection);
+
+            if (!selection) {
+              return std::unexpected(selection.error());
+            }
+
+            auto published = publishClipValue(*state, *candidate);
+
+            if (!published) {
+              return std::unexpected(published.error());
+            }
+
+            if (*published) {
+              publishClipSelection(std::move(*selection));
+            }
+          }
+
+          return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+              .dump();
         }
 
         if (command == "copy-animation-keys" || command == "paste-animation-keys") {
@@ -8986,6 +9087,56 @@ namespace Dot::Editor {
       ImGui::EndChild();
     }
 
+    auto animationKeyAdjustment() -> void {
+      ImGui::TextWrapped("%zu selected keys / local adjustment", m_clipSelection.size());
+      ImGui::TextWrapped(
+          "Offset translation, append local rotation and multiply scale. Cubic "
+          "derivatives follow the same transform.");
+      ImGui::BeginDisabled(m_clipMove.has_value() || m_pendingClose || m_captureDialog
+                           || m_clipForm != m_clipOriginal);
+      auto form = m_clipAdjustment;
+      bool changed{};
+
+      for (const auto& [field, label] : {std::pair{"translation", "Translation offset"},
+                                         std::pair{"rotationDegrees", "Local rotation (degrees)"},
+                                         std::pair{"scale", "Scale factors"}}) {
+        auto values = Codec::numbers<3>(form[field]);
+        ImGui::TextUnformatted(label);
+        ImGui::PushID(field);
+        constexpr std::array axes{"X", "Y", "Z"};
+
+        for (std::size_t i = 0; i < values.size(); ++i) {
+          ImGui::PushID(static_cast<int>(i));
+          ImGui::TextUnformatted(axes[i]);
+          ImGui::SameLine();
+          ImGui::SetNextItemWidth(-1);
+          changed |= ImGui::InputFloat("##adjustment", &values[i], 0, 0, "%.9g");
+          ImGui::PopID();
+        }
+
+        form[field] = {values[0], values[1], values[2]};
+        ImGui::PopID();
+      }
+
+      if (changed) {
+        clipAction({{"command", "set-animation-key-adjustment"}, {"value", std::move(form)}});
+      }
+
+      if (ImGui::Button("Apply adjustment to selected keys")) {
+        clipAction({{"command", "apply-animation-key-adjustment"}});
+      }
+
+      if (ImGui::Button("Reset adjustment")) {
+        clipAction(
+            {{"command", "set-animation-key-adjustment"},
+             {"value",
+              {{"translation", {0, 0, 0}}, {"rotationDegrees", {0, 0, 0}}, {"scale", {1, 1, 1}}}}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::Separator();
+    }
+
     auto animationKeyProperties() -> void {
       auto state = m_clipDocument->snapshot();
 
@@ -10232,9 +10383,7 @@ namespace Dot::Editor {
       if (beginPanel("Inspector", "inspector", "inspector")) {
         if (m_clipDocument) {
           if (m_clipSelection.size() > 1) {
-            ImGui::TextWrapped(
-                "%zu keys selected. Move the group in Animation; select one key to edit values.",
-                m_clipSelection.size());
+            animationKeyAdjustment();
           }
 
           ImGui::BeginDisabled(m_clipMove.has_value() || m_clipSelection.size() > 1);

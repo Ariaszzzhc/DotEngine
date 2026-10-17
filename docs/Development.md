@@ -9714,3 +9714,125 @@ editors exit zero with empty stderr and retired controls, including the rejected
 initial large-batch attempt. Source restoration and native history are verified
 before owned app/native copies are removed. The editable temporary project remains
 in ignored build storage. No distribution archive or formal example change is made.
+
+## 2026-10-17 — selected animation key value adjustment
+
+Continue the content-production workflow after the hierarchy stage. Existing clips
+already support multi-key selection, retiming and copy/paste, but Inspector restricts
+value edits to one key. Add relative local TRS adjustment to a bounded selected group,
+shared by native clip editing, Inspector and strict product operations. This edits
+existing bound clips; it does not complete the dope sheet or animation production goal.
+
+Native TransformKeys resolves 1..16384 unique exact-time references without changing
+key times/counts, channel interpolation or bindings. Translation adds a parent-space
+channel offset, scale multiplies XYZ componentwise, and rotation postmultiplies XYZW
+by a finite unit quaternion. Cubic scale/rotation derivatives receive the same linear
+transform; translation derivatives remain unchanged. Quaternion derivatives are not
+normalized, sign-corrected or treated as unit rotations. Non-cubic zero tangents and
+vector W stay intact. Double intermediate arithmetic is checked before float conversion;
+identity components skip arithmetic to retain native float bits. Missing/duplicate
+keys, invalid parameters, overflow and final invalid clips reject the whole ordered
+batch without changing its immutable source.
+
+Inspector exposes translation offset, local Euler rotation degrees and scale factors
+for several selected keys. set-animation-key-adjustment stages finite native-float
+parameters; apply-animation-key-adjustment uses the same native TransformKeys kernel
+as the strict generic transform-keys edit. Both use current resource identity/revision
+and the existing form/move/dialog/close guards. Parameters remain after application,
+so repeated Apply repeats the relative adjustment; opening a clip resets them. They
+are not an unsaved resource or pending key form. Invalid application retains them
+for correction. Group Apply preallocates the candidate selection/form before ordinary
+native initial/current pose, authority and CPU skin preflight and document publication.
+One changed Apply is one history state and preserves ordered selection/times while
+updating the active payload. No-change Apply retains revision, redo and preview clock/
+identity. Generic batches retain ordinary changed-edit selection clearing. The GUI
+and agent operations share these implementations; no separate authoring scene or
+preview-only success path is introduced.
+
+Four pure unit cases verify analytical cubic translation/scale curves and quaternion
+matrix composition at endpoints and intermediate times, derivative transformation,
+unselected payloads, signed-zero identity, invalid/duplicate/missing references,
+nonunit/nonfinite/singular parameters, overflow, atomic batches and the full 16384-key
+boundary. One resource integration case verifies one history step, no-op revision,
+save/reopen, Undo/Redo and invalid-batch retention. The first focused run catches a
+new test using the pre-save revision for Undo; Save intentionally advances a dirty
+resource revision. Correct the test to use its current snapshot, retaining that
+product contract. Final focused Debug passes 48/48 (8.83s).
+
+Debug build and full CTest pass 1338/1338 (212.12s). Release configures/builds with the
+existing caller environment and full NDEBUG CTest passes 1338/1338 (29.73s), sequentially
+with other builds/tests. Counts: 419 unit / 919 integration; overlapping 162 offscreen,
+198 compiler, 33 platform, 32 audio-native and 20 process labels. Unit tests initialize
+no windows/devices/filesystems/compilers; automatic integration opens no desktop
+windows. Five changed C++ files pass clang-format and whitespace checks pass. Review
+covers immutable ownership, checked conversion, quaternion multiplication conventions,
+cubic derivative semantics, selected-key bounds/identity, allocation before resource
+publication, authority/preview error propagation and UI/strict-operation parity.
+Dependencies, compiler/linker settings, timing guards and platform/sanitizer scope
+are unchanged. Only macOS arm64 is executed.
+
+The real Release product project-action creates the ordinary editable PrismAnimation
+project from Prism Relay. In the native editor, open Surveyor's actual Idle_Loop asset
+(189 tracks / 1636 keys), pause/seek to 0.5s and frame the model. Product track/key
+queries identify node 34, forearm.R: two step translation keys, 76 linear rotation
+keys and two step scale keys. Select all 80 across those channels. Stage a 0.002m Y
+offset, 15-degree local Z rotation and [1,1.01,1] scale factors. Staging alone retains
+revision/history/preview; changed Apply changes exactly these 80 payloads in one
+history step, preserving times/modes/selection and leaving authoring scene/disk clean.
+Native viewport pixels change. Unknown fields, empty selection, an active move,
+singular scale, a duplicate-reference batch after Rename and a stale revision all
+reject without partial publication. Cancel the move and correct parameters normally.
+
+Undo reproduces the original viewport PNG byte for byte; identity Apply after Undo
+retains redo, revision and preview. Redo reproduces the adjusted PNG. Save, close and
+reopen the actual animation asset at the same paused time reproduces adjusted pixels
+exactly and resets parameters to identity. Inspect every serialized track/key against
+the original: all unselected tracks stay equal; changed values match independent
+TRS arithmetic and times/tangents/modes remain equal. The temporary observer initially
+assumes non-cubic serialized keys include zero tangent fields; fix it to honor the
+native format's omitted-zero contract and resume after Save without repeating the
+relative adjustment. Original/saved clip SHA-256:
+
+- bd61bf18dfc9e626ea4a06e141281ac2e3e8bd23672f634c4f6d89c0f90337da
+- adc5ac2db019b93e4cbedb979add791fdbf3d85fa89997c7f60c7bc696e21cf3
+
+Original/Undo preview PNG SHA-256 is db27fb651474d7d3751a8520f8a7e7fe534967878b8a7d6d8d7184b964d45d45;
+adjusted/Redo/saved-reopened is e9e98cb112bbe3544d7901d26793d904a27df77491e76e948eea6b5755890727.
+These are the same 1480x734 paused native model view, not fake pose data or UI mockups.
+The current Prism animation uses step/linear channels; cubic correctness is established
+by native behavioral tests, not claimed as cubic Prism authoring evidence. Native
+app discovery confirms the Mac remains locked and automatic unlock is unavailable;
+fresh pointer/keyboard acceptance is not claimed. Product CLI operations and actual
+rendered frames remain usable; no lock/input-system settings are changed.
+
+Actual Play reads the saved right-forearm Y scale 1.01, then real W/Space input moves
+Player to [-3,1.2830756,1.5228012], without Play errors/diagnostics. Stop restores the
+exact clean authoring scene. Game captures before/after Play retain baseline SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695. Normal save/export
+succeeds. Every exported content file equals the author's actual file, including the
+saved animation hash. The physically relocated native export runs with authoring
+hidden, exits zero after 360 game steps and verifies 115 files / 66,210,340 bytes.
+Final profile has 476 application steps (116 preparation + 360 game), with 120 retained
+unpaused/error-free steps and zero dropped fixed time. Native stderr contains normal
+preparation progress and no warning. Retained global slowest is first game step 116:
+41.485583ms total / 29.383708ms prepare / 9.561250ms render; retained median is
+11.789542ms. These are this run's application envelopes, not an animation performance
+comparison or game FPS. Initial/current native skin validation and synchronous skin
+status readback remain intact; resource streaming and populated-game costs stay open.
+
+Two earlier native observer runs also reach checked zero product exit and restore
+authoring, then reject their own verification: one expects a nonexistent profiling
+field, another incorrectly expects empty stderr rather than normal startup progress.
+Correct the observer to the actual droppedNanoseconds field and explicit progress
+output, then rerun the complete owned export validation successfully. Keep these
+attempts separate from final evidence; no product timing/error guards are weakened.
+
+Requests/applied responses, creation/track/key queries, original/saved clip, eight
+PNGs, Play snapshots, export content hashes, final native profile/process sample and
+binary metadata remain under build/key-adjustment-review. The owned editor exits
+zero with empty stderr and retired control directory. Authoring restoration is
+verified before owned app/native copies are removed; the writable example remains
+in ignored build storage. No formal example asset is changed and no distribution
+archive is produced. Full dope-sheet/tangent/binding/state-machine tools, broader
+native gesture acceptance, final realistic art/game experience and overall production
+readiness remain unfinished.
