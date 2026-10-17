@@ -9967,3 +9967,122 @@ experience and overall production maturity remain unfinished.
 Final helper-format rebuilds pass the same 41 focused cases: Debug 13.87s,
 Release/NDEBUG 3.58s. Final clang-format dry-run and staged whitespace checks pass.
 All product code and runtime evidence above retain the reviewed final behavior.
+
+## 2026-10-17 — responsive Play audio preparation
+
+Continue from 972ed52 on main with origin/main identical and no pending product
+changes. Follow the actual PrismRelay startup path rather than treating earlier
+hot-reload work as complete engine/game readiness. Formal example art/scripts and
+the static C++26 module/dependency layout remain unchanged.
+
+The real editor exposes a larger startup wait: one captured Play response takes
+583.877ms wall time, including mailbox/client polling; its slowest application step
+is 542.769125ms, with 536.741166ms in prepare. The following supplied interval is
+545.024167ms and drops 416.666675ms of fixed time. The main-thread process sample
+contains 48 samples waiting in Playback creation and 24 waiting in native activation.
+These are sampled stack counts, not exact elapsed-time attribution. Other startup
+work includes initial TypeScript compilation and animation resource decoding.
+
+Playback now supports owned asynchronous begin/pollReady, beginStart/pollStarted
+and requestClose/pollClosed operations. Initialization and activation use the
+existing real-device worker; no null-device fallback, early silent callbacks,
+detached worker or alternate mixer is introduced. Deferred endpoints still render
+and submit zero frames before explicit activation. Readiness futures publish device
+information before owner access. Controls reject during pending preparation or
+activation; client-thread checks, joined synchronous convenience APIs and terminal
+resource accounting remain. Cancellation retains ownership through native teardown;
+OS calls already in progress have no hard real-time cancellation guarantee.
+
+SceneAudio/AudioSession accept an explicitly supplied ready, unstarted deferred
+endpoint after exact configuration and client-thread validation. GameSession uses
+that same service path and can dispatch Start once, synchronize initial poses and
+queue native activation. Starting rejects gameplay until pollStart confirms actual
+completion. Cancelling rejects another Start/input/update; explicit close after
+cancellation also skips hooks. Normal synchronous game creation/start and runtime
+scene replacement retain their existing calling convention.
+
+PlaySession begin freezes authoring and owns isolated temporary saves plus pending
+audio. Polling performs scene/script setup on the owner, then waits by zero-duration
+future checks for activation. The editor reports preparing/cancelling, started and
+an audio/scene/activation/teardown preparation phase. It keeps the authoring scene
+and editor camera visible until publication, locks authoring edits and rejects
+unpublished game input/scene queries with contextual errors. UI/F5 and strict Play/
+Stop JSON operations share this implementation. Stop can cancel unpublished work
+without hooks; preparation failure preserves its original cause and retires owned
+storage. Closing during preparation keeps processing frames until teardown, then
+retires the control directory; terminal errors during deferred close propagate to
+the run result. Asset-preview unpause avoids already stopped workers.
+
+This moves real endpoint open/start waits off editor frames. Initial compilation,
+scene cloning, asset/animation service setup and some failure cleanup still have
+synchronous costs. Ordinary acknowledged voice controls remain synchronous. No
+application clock reset, skipped elapsed interval, raised catch-up budget or
+suppressed drop warning is used to hide those costs.
+
+Seven enduring additions in existing targets cover async endpoint readiness/start/
+close, cancellation and failed initialization with backend allocation recovery;
+thread/move boundaries; exact deferred endpoint adoption and rejection; Starting/
+Cancelling gameplay rejection and hook-free explicit close; frozen authoring and
+publication; disposable save removal; failed preparation and fresh retry. Device
+cases remain audio-native integration cases, with silent output volume, never unit
+or desktop-window tests. Debug full run passes 1,354 tests in 212.62s (419 unit,
+935 integration; 162 offscreen, 209 compiler, 36 audio-native, 33 platform and 21
+process). Final state/cancellation/close-result review rebuilds pass 63 focused Debug cases
+in 10.90s. Final Release/NDEBUG full run passes the same 1,354 in 30.76s. Only arm64 macOS
+is executed; there is no Windows/Linux validation claim.
+
+Repeat the actual Release editor on the same PrismMaintenance scene and viewport.
+Both cold-editor runs use 6-second external sampling with a requested 1ms period;
+OS/resource cache effects are not controlled. After the change, acknowledgement is
+79.264ms wall time and the greatest application step is 82.997917ms, including
+81.568792ms prepare. Greatest supplied interval is 84.336875ms, with no fixed time
+dropped in this observation. Inspect observes both audio and activation preparation
+while the editor processes requests/frames. Native initialization/activation appear
+on the audio worker (33 preparation and 21 start samples), while initial compiler
+process waiting remains on the main thread. These observations support removing
+those specific owner waits, not a universal latency/FPS claim or fully asynchronous
+loading. All four before/after ready/stopped viewport PNGs are byte-identical:
+SHA-256 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Create PrismStartup through the product's PrismRelay template operation, add and
+save an empty workflow marker through scene editing (343 entities, revision 3),
+and retain clean authoring. Queued Play/Stop observes unpublished cancellation and
+returns to stopped without a published game. An external TS2322 edit faults startup
+with the exact compiler cause, leaves authoring intact and rejects inspect-play;
+Stop, source correction and fresh Play recover. A later activation-phase observation
+is real, but its Stop reaches an already published game; do not count that attempt
+as unpublished activation-cancel acceptance. The native behavioral regression covers
+cancellation during Starting. Product input drives W+Space for 30 frames: player Z
+moves 2.0 to 1.3894497156 and observed jump Y reaches 1.4705257416 from zero. Runtime
+PNG shows the airborne animated character. No final Play diagnostics/errors remain.
+Save/Stop/cancel editor viewport PNGs match exactly. A separate actual editor reopens
+the saved marker and closes during unpublished preparation: acknowledgement reports
+running while teardown is pending, followed by exit zero and retired control.
+
+Native export through the workspace has 115 content files / 66,211,355 bytes,
+matching saved authoring. The restored player source hash is
+f1f0f955f646df287b6a9facdbd711a96810ade2b8b388aad6509037f70d2488. No .ts/.mts/.map
+is published. Physically relocate the native folder and hide authoring: DotGame
+exits zero after 360 game frames (466 application steps, including 106 preparation).
+The 120 retained samples are unpaused/error-free with zero dropped fixed time;
+stderr contains only normal preparation progress. Global slowest is step 106,
+42.871083ms; retained median is 11.605938ms. This checks source-free relocated
+execution through the synchronous player path, not a standalone-game speedup.
+Authoring is restored. Native mouse/keyboard CUA acceptance remains unavailable:
+the current inventory reports the Mac locked, so do not infer human interaction
+from product-agent input or viewport pixels.
+
+Requests/receipts/responses, profiles/process samples, PNGs, restored source and
+content hashes remain in ignored build/play-start-review. Five owned editor runs
+exit zero with empty stderr and retired controls; the native player exits zero.
+Owned app/native copies and obsolete implementation-edit helpers are removed after
+verification; replay helpers and editable project evidence remain ignored. No
+distribution archive is produced. Remaining synchronous startup work, broader asset
+I/O, animation tooling, game-specific progression, final art/game experience and
+overall production readiness are still unfinished.
+
+Final close review preserves error propagation if deferred teardown fails while
+window closure is pending. The repeated final Release editor close-during-prepare
+check exits zero with empty stderr and retired control on its healthy path; native
+teardown failure was not injected in this product run. Current format dry-run,
+whitespace checks and ownership/error/platform/test review pass before commit.

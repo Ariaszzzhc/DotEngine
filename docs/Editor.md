@@ -294,7 +294,17 @@ Document's revision, dirty state, selection or undo history.
 
 These requests require the current authoring revision and return updated inspect
 responses. Repeated play while active fails; stopping is idempotent. F5 toggles the
-same operation. Inspect's `workspace.play` contains idle/running/faulted/stopped
+same operation. A successful Play request acknowledges `preparing`; poll inspect
+until `running` before sending game input. The editor keeps displaying authoring
+while the real audio worker opens and activates the endpoint. Initial scene/script
+preparation still runs on the owner thread, so this is not fully asynchronous scene
+loading. `preparation` reports audio/scene/activation/teardown while pending.
+`started` becomes true only after actual activation. Preparing locks
+editing and unpublished game controls/inspection reject. Stop requests `cancelling`,
+retains ownership until native teardown completes, then reports `stopped` (or
+`faulted` with its error). Canceling unpublished startup invokes no Stop hooks.
+Window/agent close waits through this cancellation while frames continue.
+Inspect's `workspace.play` contains idle/preparing/running/cancelling/faulted/stopped
 state, frame/fixed-step counters, latest dropped time, input capture, errors and
 at most 64 historical diagnostics. `workspace.message` exposes current GUI action
 errors. `inspect-play` (only a command field) returns the actual game scene and
@@ -356,8 +366,9 @@ stop/apply effects are not rolled back. Cancel clears the close confirmation.
 Discard uses the existing close request with discard=true. Close cleanup errors
 are returned by frame/run operations rather than substituted with successful exit.
 
-A failed Play start preserves the first script failure's entity and diagnostic in
-the returned error before cleaning up the rejected session. Realm faults during
+A failed Play preparation preserves the first script failure's entity and diagnostic
+in `workspace.play.error` before cleaning up the rejected session; the original
+Play acknowledgement does not claim startup completion. Realm faults during
 play retain the same cause alongside the structured frame reports. Failed startup
 releases its temporary save storage and leaves the authoring scene available for
 correction and retry.

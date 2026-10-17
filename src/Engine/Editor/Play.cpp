@@ -20,6 +20,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Files;
 import Dot.Project.GameSession;
 import Dot.Script.SceneScripts;
+import Dot.World.SceneFiles;
 
 namespace Dot::Editor {
   namespace {
@@ -51,7 +52,18 @@ namespace Dot::Editor {
   struct PlaySession::Impl {
     std::thread::id m_thread{std::this_thread::get_id()};
     std::optional<Core::StagedDirectory> m_saveStorage;
-    Project::GameSession m_session;
+    std::optional<Project::GameSession> m_session;
+
+    struct Preparation {
+      Project::Project project;
+      Script::TypeScriptCompiler compiler;
+      World::Scene scene;
+      PlayConfig config;
+      std::optional<std::string> scenePath;
+      std::optional<Audio::Playback> playback;
+    };
+
+    std::unique_ptr<Preparation> m_preparation;
     Core::FrameStepper m_stepper;
     std::size_t m_maxUpdates;
     PlayStats m_stats;
@@ -65,6 +77,14 @@ namespace Dot::Editor {
           m_stats{PlayState::Running, hz, 0, 0, {}, {}, {}} {
     }
 
+    Impl(std::uint32_t hz, std::size_t maxUpdates)
+        : m_stepper(std::chrono::nanoseconds{1'000'000'000 / hz}, maxUpdates),
+          m_maxUpdates(maxUpdates),
+          m_stats{PlayState::Preparing, hz, 0, 0, {}, {}, {}} {
+      m_stats.started = false;
+      m_stats.preparation = PlayPreparation::Scene;
+    }
+
     auto check() const -> Core::Result<void> {
       if (m_thread != std::this_thread::get_id() || m_active) {
         return Core::fail(Core::ErrorCode::InvalidState,
@@ -76,7 +96,7 @@ namespace Dot::Editor {
 
     auto fault() -> void {
       m_stats.state = PlayState::Faulted;
-      auto data = m_session.gameData();
+      auto data = m_session->gameData();
 
       if (data) {
         data->retire();
@@ -162,12 +182,12 @@ namespace Dot::Editor {
           = std::make_unique<Impl>(std::move(*session), description->fixedHz, config.maxUpdates);
       impl->m_saveStorage.emplace(std::move(*storage));
       impl->m_frame.reports.reserve(config.maxUpdates + 1);
-      auto started = impl->m_session.start();
+      auto started = impl->m_session->start();
 
       if (!started || started->realmFaulted) {
         auto error = started ? realmFaultError("Start play script realm faulted", *started)
                              : started.error();
-        auto closed = impl->m_session.close();
+        auto closed = impl->m_session->close();
 
         if (!closed) {
           error.message += "; cleanup: " + closed.error().message;
@@ -181,6 +201,209 @@ namespace Dot::Editor {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Create play session: " + std::string(error.what()));
+    }
+  }
+
+  auto PlaySession::begin(const Project::Project& project,
+                          const Script::TypeScriptCompiler& compiler, const World::Scene& authoring,
+                          const PlayConfig& config, std::optional<std::string> scenePath)
+      -> Core::Result<PlaySession> {
+    if (config.maxUpdates == 0 || config.maxUpdates > 64 || config.session.progress.saves) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Play requires 1..64 updates and isolated temporary saves");
+    }
+
+    try {
+      auto description = project.description();
+      auto encoded = World::encodeScene(authoring);
+
+      if (!description || !encoded) {
+        return std::unexpected(!description ? description.error() : encoded.error());
+      }
+
+      auto cloned = World::decodeScene(*encoded);
+      auto parent = config.temporarySavesParent
+                        ? Core::Result<Core::FileSystem>{*config.temporarySavesParent}
+                        : Core::FileSystem::open(std::filesystem::temp_directory_path());
+
+      if (!cloned || !parent) {
+        return std::unexpected(!cloned ? cloned.error() : parent.error());
+      }
+
+      auto storage = Core::StagedDirectory::create(*parent);
+
+      if (!storage) {
+        return std::unexpected(storage.error());
+      }
+
+      auto impl = std::make_unique<Impl>(description->fixedHz, config.maxUpdates);
+      impl->m_saveStorage.emplace(std::move(*storage));
+      auto ownedConfig = config;
+      ownedConfig.session.progress.saves = impl->m_saveStorage->files().value();
+      impl->m_preparation = std::make_unique<Impl::Preparation>(
+          project, compiler, std::move(*cloned), std::move(ownedConfig), std::move(scenePath),
+          std::nullopt);
+      impl->m_frame.reports.reserve(config.maxUpdates + 1);
+
+      if (config.session.audioMode == Project::SessionAudio::Playback) {
+        impl->m_stats.preparation = PlayPreparation::Audio;
+        auto properties = config.session.audio;
+        properties.deferredStart = true;
+        auto playback = Audio::Playback::begin(properties);
+
+        if (!playback) {
+          return std::unexpected(playback.error());
+        }
+
+        impl->m_preparation->playback.emplace(std::move(*playback));
+      }
+
+      return PlaySession{std::move(impl)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin play preparation: " + std::string(error.what()));
+    }
+  }
+
+  auto PlaySession::pollPreparation() -> Core::Result<PlayState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    ActiveScope active{m_impl->m_active};
+    auto& state = m_impl->m_stats.state;
+
+    if (state != PlayState::Preparing && state != PlayState::Cancelling) {
+      return state;
+    }
+
+    auto& pending = *m_impl->m_preparation;
+    const auto fail = [&](Core::Error error) -> Core::Result<PlayState> {
+      if (!m_impl->m_stats.preparationError) {
+        m_impl->m_stats.preparationError = error;
+      } else if (m_impl->m_stats.preparationError->message.find(error.message)
+                 == std::string::npos) {
+        m_impl->m_stats.preparationError->message += "; teardown: " + error.message;
+      }
+
+      state = PlayState::Cancelling;
+      m_impl->m_stats.preparation = PlayPreparation::Teardown;
+      auto closing = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
+                     : pending.playback ? pending.playback->requestClose()
+                                        : Core::Result<void>{};
+
+      if (!closing) {
+        m_impl->m_stats.preparationError->message += "; teardown: " + closing.error().message;
+      }
+
+      return std::unexpected(*m_impl->m_stats.preparationError);
+    };
+
+    try {
+      if (state == PlayState::Cancelling) {
+        auto closed = m_impl->m_session  ? m_impl->m_session->pollPreparationClosed()
+                      : pending.playback ? pending.playback->pollClosed()
+                                         : Core::Result<bool>{true};
+
+        if (closed && !*closed) {
+          return state;
+        }
+
+        if (closed && pending.playback && !m_impl->m_session) {
+          auto result = pending.playback->close();
+
+          if (!result) {
+            closed = std::unexpected(result.error());
+          }
+        }
+
+        if (!closed) {
+          if (!m_impl->m_stats.preparationError) {
+            m_impl->m_stats.preparationError = closed.error();
+          } else if (m_impl->m_stats.preparationError->message.find(closed.error().message)
+                     == std::string::npos) {
+            m_impl->m_stats.preparationError->message += "; teardown: " + closed.error().message;
+          }
+        }
+
+        m_impl->m_session.reset();
+        pending.playback.reset();
+
+        if (m_impl->m_saveStorage) {
+          auto cleaned = m_impl->m_saveStorage->discard();
+
+          if (!cleaned) {
+            return fail(cleaned.error());
+          }
+
+          m_impl->m_saveStorage.reset();
+        }
+
+        m_impl->m_stats.preparation.reset();
+        state = m_impl->m_stats.preparationError ? PlayState::Faulted : PlayState::Stopped;
+        return state;
+      }
+
+      if (!m_impl->m_session) {
+        if (pending.playback) {
+          auto ready = pending.playback->pollReady();
+
+          if (!ready) {
+            return fail(ready.error());
+          }
+
+          if (!*ready) {
+            return state;
+          }
+        }
+
+        m_impl->m_stats.preparation = PlayPreparation::Scene;
+        auto session = Project::GameSession::createFromScene(
+            pending.project, pending.compiler, pending.scene, pending.config.session,
+            pending.scenePath, pending.playback ? &*pending.playback : nullptr);
+        pending.playback.reset();
+
+        if (!session) {
+          return fail(session.error());
+        }
+
+        m_impl->m_session.emplace(std::move(*session));
+        auto started = m_impl->m_session->beginStart();
+
+        if (!started || started->realmFaulted) {
+          return fail(started ? realmFaultError("Start play script realm faulted", *started)
+                              : started.error());
+        }
+
+        m_impl->m_frame.reports.push_back({{}, std::move(*started)});
+        m_impl->m_stats.preparation = PlayPreparation::Activation;
+        return state;
+      }
+
+      auto ready = m_impl->m_session->pollStart();
+
+      if (!ready) {
+        return fail(ready.error());
+      }
+
+      if (*ready) {
+        m_impl->m_stats.started = true;
+        m_impl->m_stats.preparation.reset();
+        state = PlayState::Running;
+        m_impl->m_preparation.reset();
+      }
+
+      return state;
+    } catch (const std::exception& error) {
+      return fail(Core::Error{Core::ErrorCode::External,
+                              "Poll play preparation: " + std::string(error.what()),
+                              std::source_location::current()});
     }
   }
 
@@ -213,7 +436,7 @@ namespace Dot::Editor {
     ActiveScope active{m_impl->m_active};
 
     try {
-      auto published = m_impl->m_session.publish(input, pointerCaptured);
+      auto published = m_impl->m_session->publish(input, pointerCaptured);
 
       if (!published) {
         return std::unexpected(published.error());
@@ -227,7 +450,7 @@ namespace Dot::Editor {
       ++m_impl->m_stats.frames;
 
       for (std::size_t step = 0; step < timing.updates; ++step) {
-        auto dispatched = m_impl->record(m_impl->m_session.fixedUpdate());
+        auto dispatched = m_impl->record(m_impl->m_session->fixedUpdate());
 
         if (!dispatched) {
           return dispatched;
@@ -237,7 +460,7 @@ namespace Dot::Editor {
       }
 
       const auto seconds = std::min(1.0, std::chrono::duration<double>(elapsed).count());
-      return m_impl->record(m_impl->m_session.update(seconds));
+      return m_impl->record(m_impl->m_session->update(seconds));
     } catch (const std::exception& error) {
       m_impl->fault();
       return Core::fail(Core::ErrorCode::External,
@@ -257,7 +480,29 @@ namespace Dot::Editor {
     }
 
     ActiveScope active{m_impl->m_active};
-    auto result = m_impl->m_session.close();
+
+    if (!m_impl->m_stats.started) {
+      if (m_impl->m_stats.state == PlayState::Stopped
+          || m_impl->m_stats.state == PlayState::Faulted) {
+        m_impl->m_stats.state = PlayState::Stopped;
+        return Script::ScriptReport{};
+      }
+
+      auto& pending = *m_impl->m_preparation;
+      auto requested = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
+                       : pending.playback ? pending.playback->requestClose()
+                                          : Core::Result<void>{};
+
+      if (!requested) {
+        return std::unexpected(requested.error());
+      }
+
+      m_impl->m_stats.state = PlayState::Cancelling;
+      m_impl->m_stats.preparation = PlayPreparation::Teardown;
+      return Script::ScriptReport{};
+    }
+
+    auto result = m_impl->m_session->close();
     m_impl->m_stats.state = PlayState::Stopped;
 
     if (m_impl->m_saveStorage) {
@@ -289,7 +534,11 @@ namespace Dot::Editor {
       return std::unexpected(checked.error());
     }
 
-    return m_impl->m_session.scene().transform(
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play scene has not been published");
+    }
+
+    return m_impl->m_session->scene().transform(
         [](const auto& scene) -> const World::Scene* { return scene.get(); });
   }
 
@@ -298,8 +547,12 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
 
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
     auto checked = m_impl->check();
-    return checked ? m_impl->m_session.gameData()
+    return checked ? m_impl->m_session->gameData()
                    : Core::Result<Script::GameData>{std::unexpected(checked.error())};
   }
 
@@ -308,8 +561,12 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
 
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
     auto checked = m_impl->check();
-    return checked ? m_impl->m_session.requestScene(path)
+    return checked ? m_impl->m_session->requestScene(path)
                    : Core::Result<std::uint64_t>{std::unexpected(checked.error())};
   }
 
@@ -318,8 +575,12 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
 
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
     auto checked = m_impl->check();
-    return checked ? m_impl->m_session.sceneRequest(id)
+    return checked ? m_impl->m_session->sceneRequest(id)
                    : Core::Result<Script::SceneRequest>{std::unexpected(checked.error())};
   }
 
@@ -328,8 +589,12 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
 
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
     auto checked = m_impl->check();
-    return checked ? m_impl->m_session.pointerCaptureRequested()
+    return checked ? m_impl->m_session->pointerCaptureRequested()
                    : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
@@ -343,7 +608,11 @@ namespace Dot::Editor {
       return std::unexpected(checked.error());
     }
 
-    auto game = m_impl->m_session.stats();
+    if (!m_impl->m_stats.started) {
+      return m_impl->m_stats;
+    }
+
+    auto game = m_impl->m_session->stats();
 
     if (!game) {
       return std::unexpected(game.error());
@@ -361,14 +630,18 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
     }
 
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
     auto checked = m_impl->check();
 
     if (!checked) {
       return std::unexpected(checked.error());
     }
 
-    auto result = m_impl->m_session.pollScripts(force);
-    auto state = m_impl->m_session.stats();
+    auto result = m_impl->m_session->pollScripts(force);
+    auto state = m_impl->m_session->stats();
 
     if (!state) {
       return std::unexpected(state.error());

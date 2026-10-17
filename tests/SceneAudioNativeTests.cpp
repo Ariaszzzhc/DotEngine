@@ -1,5 +1,6 @@
 #include <array>
 #include <chrono>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
@@ -12,6 +13,7 @@ import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Project;
+import Dot.Platform.Input;
 import Dot.Project.GameSession;
 import Dot.Script.Compiler;
 import Dot.Script.Host;
@@ -321,4 +323,125 @@ TEST_CASE("audio.scene_transition_prepares_new_endpoint_silently_and_releases_re
   CHECK(Dot::Audio::Mixer::backendMemory().allocations == mixerBefore.allocations);
   CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
   CHECK(Dot::Audio::Output::backendMemory().allocations == outputBefore.allocations);
+}
+
+TEST_CASE("audio.scene_adopts_only_matching_unstarted_deferred_playback") {
+  DotTest::Audio::Directory directory;
+  auto scene = Dot::World::Scene::create().value();
+  Dot::Audio::PlaybackConfig config;
+  config.deferredStart = true;
+  config.output.volume = 0;
+  auto playback = Dot::Audio::Playback::create(config).value();
+  auto mismatch = config;
+  ++mismatch.mixer.maxVoices;
+  CHECK_FALSE(
+      Dot::Audio::SceneAudio::createPlayback(scene, directory.files(), mismatch, {}, &playback));
+  CHECK(playback.pollReady().value());
+  CHECK_FALSE(playback.pollStarted().value());
+  auto audio
+      = Dot::Audio::SceneAudio::createPlayback(scene, directory.files(), config, {}, &playback);
+  REQUIRE(audio);
+  CHECK_FALSE(playback.pollReady());
+  CHECK(audio->stats()->playback->state == Dot::Audio::PlaybackState::Prepared);
+  CHECK(audio->stats()->playback->output.callbacks == 0);
+  REQUIRE(audio->beginPlayback());
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+  while (true) {
+    auto ready = audio->pollPlayback();
+    REQUIRE(ready);
+
+    if (*ready) {
+      break;
+    }
+
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  CHECK(audio->stats()->playback->state == Dot::Audio::PlaybackState::Running);
+  REQUIRE(audio->requestPlaybackClose());
+
+  while (!audio->pollPlaybackClosed().value()) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  CHECK(audio->stats()->playback->state == Dot::Audio::PlaybackState::Closed);
+  auto active = Dot::Audio::Playback::create(config).value();
+  REQUIRE(active.start());
+  CHECK_FALSE(
+      Dot::Audio::SceneAudio::createPlayback(scene, directory.files(), config, {}, &active));
+}
+
+TEST_CASE("audio.game_async_activation_requires_completion_before_gameplay") {
+  DotTest::Audio::Directory directory;
+  auto scene = Dot::World::Scene::create().value();
+  const auto entity = scene.createEntity("Player").value();
+  REQUIRE(scene.setScript(entity, Dot::World::ScriptComponent{"player.ts", "Player"}));
+  auto program = compiled(directory.files(), "onStart(){this.self.name='started';}");
+  Dot::Project::Description description;
+  description.applicationId = "audio-async-test";
+  description.hotReload = false;
+  Dot::Project::GameSessionConfig config;
+  config.audioMode = Dot::Project::SessionAudio::Playback;
+  config.audio.output.volume = 0;
+  auto session = Dot::Project::GameSession::createCompiled(directory.files(), description, scene,
+                                                           program, config)
+                     .value();
+  REQUIRE(session.beginStart());
+  CHECK(session.stats()->state == Dot::Project::SessionState::Starting);
+  REQUIRE(session.beginStart());
+  CHECK_FALSE(session.update(0));
+  CHECK_FALSE(session.fixedUpdate());
+  CHECK_FALSE(session.publish(Dot::Platform::InputState{}));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+  while (true) {
+    auto ready = session.pollStart();
+    REQUIRE(ready);
+
+    if (*ready) {
+      break;
+    }
+
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  CHECK(session.stats()->state == Dot::Project::SessionState::Running);
+  REQUIRE(session.update(0));
+  REQUIRE(session.close());
+  CHECK_FALSE(session.pollPreparationClosed());
+  CHECK_FALSE(session.requestPreparationClose());
+  const auto mixerBefore = Dot::Audio::Mixer::backendMemory();
+  const auto outputBefore = Dot::Audio::Output::backendMemory();
+  std::shared_ptr<Dot::World::Scene> cancelledScene;
+  program = compiled(directory.files(),
+                     "onStart(){this.self.name='started';}onStop(){this.self.name='stopped';}");
+
+  {
+    auto cancelled = Dot::Project::GameSession::createCompiled(directory.files(), description,
+                                                               scene, program, config)
+                         .value();
+    REQUIRE(cancelled.beginStart());
+    cancelledScene = cancelled.scene().value();
+    REQUIRE(cancelled.requestPreparationClose());
+    CHECK(cancelled.stats()->state == Dot::Project::SessionState::Cancelling);
+    CHECK_FALSE(cancelled.beginStart());
+    CHECK_FALSE(cancelled.update(0));
+    CHECK_FALSE(cancelled.publish(Dot::Platform::InputState{}));
+    const auto closeDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+    while (!cancelled.pollPreparationClosed().value()) {
+      REQUIRE(std::chrono::steady_clock::now() < closeDeadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+
+    REQUIRE(cancelled.close());
+  }
+
+  CHECK(cancelledScene->entities()->front().name == "started");
+  CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
 }

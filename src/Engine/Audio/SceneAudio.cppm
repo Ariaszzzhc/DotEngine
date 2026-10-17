@@ -43,11 +43,15 @@ export namespace Dot::Audio {
         -> Core::Result<SceneAudio>;
     /** Continuous real-device factory; files/poses are prepared on the client
      * thread, and a single batch commits on the playback worker.
-     * 连续原生播放工厂；文件/位姿在客户端线程准备，单批次在播放工作线程提交。 */
+     * 连续原生播放工厂；文件/位姿在客户端线程准备，单批次在播放工作线程提交。
+     * An optional ready, unstarted deferred endpoint is consumed only after
+     * exact configuration validation; it must belong to this client thread.
+     * 可传入同客户端线程的已就绪、未启动延后端点；精确核对配置后转移所有权。 */
     [[nodiscard]] static auto createPlayback(const Dot::World::Scene& scene,
                                              const Core::FileSystem& files,
                                              const PlaybackConfig& config = {},
-                                             const SceneAudioLimits& limits = {})
+                                             const SceneAudioLimits& limits = {},
+                                             Playback* preparedPlayback = nullptr)
         -> Core::Result<SceneAudio>;
     SceneAudio(const SceneAudio&) = delete;
     auto operator=(const SceneAudio&) -> SceneAudio& = delete;
@@ -58,6 +62,14 @@ export namespace Dot::Audio {
     /** Activate deferred native playback; offline mode is already ready.
      * 激活延后启动的原生播放；离线模式已就绪。 */
     [[nodiscard]] auto startPlayback() -> Core::Result<void>;
+    /** Nonblocking activation/teardown polling; offline audio is already ready.
+     * 非阻塞激活/清理轮询，离线音频已就绪。 */
+    [[nodiscard]] auto beginPlayback() -> Core::Result<void>;
+    [[nodiscard]] auto pollPlayback() -> Core::Result<bool>;
+    [[nodiscard]] auto requestPlaybackClose() -> Core::Result<void>;
+    /** Terminal backend errors are reported only after native teardown completes.
+     * 仅在原生清理完成后报告终止后端错误。 */
+    [[nodiscard]] auto pollPlaybackClosed() const -> Core::Result<bool>;
 
     /** Prepare a complete candidate before one backend batch. Recoverable file,
      * pose, capacity, and allocation failures retain the last successful binding.

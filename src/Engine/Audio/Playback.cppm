@@ -20,6 +20,7 @@ export namespace Dot::Audio {
     /** Prepare the endpoint and voices without mixing or starting callbacks.
      * 准备端点及声部但不混音，也不启动设备回调。 */
     bool deferredStart{};
+    auto operator==(const PlaybackConfig&) const -> bool;
   };
 
   enum class PlaybackState { Prepared, Running, Closed, Faulted };
@@ -44,6 +45,12 @@ export namespace Dot::Audio {
   class Playback {
   public:
     [[nodiscard]] static auto create(const PlaybackConfig& config = {}) -> Core::Result<Playback>;
+    /** Begin real endpoint initialization without waiting on the client. No null
+     * fallback; ready/start polling reports actual worker/device completion.
+     * 异步开始真实端点初始化，客户端不等待；不回退空设备，轮询反映真实线程/设备完成。 */
+    [[nodiscard]] static auto begin(const PlaybackConfig& config = {}) -> Core::Result<Playback>;
+    [[nodiscard]] auto pollReady() const -> Core::Result<bool>;
+    [[nodiscard]] auto configuration() const -> Core::Result<PlaybackConfig>;
     Playback(const Playback&) = delete;
     auto operator=(const Playback&) -> Playback& = delete;
     Playback(Playback&&) noexcept;
@@ -54,6 +61,11 @@ export namespace Dot::Audio {
      * after closure/fault. This is not a pause/resume operation.
      * 一次性激活已准备的播放，运行时幂等；关闭或故障后不可用，并非暂停/恢复。 */
     [[nodiscard]] auto start() -> Core::Result<void>;
+    /** Schedule activation after preparation; repeated requests share one
+     * completion. Polls never wait for native start or advance a mixer.
+     * 准备后排队激活，重复请求共享一次完成；轮询不等待设备启动，也不推进混音器。 */
+    [[nodiscard]] auto beginStart() -> Core::Result<void>;
+    [[nodiscard]] auto pollStarted() const -> Core::Result<bool>;
 
     [[nodiscard]] auto createVoice(const Clip& clip, const VoiceSettings& settings = {})
         -> Core::Result<VoiceId>;
@@ -87,6 +99,11 @@ export namespace Dot::Audio {
      * on healthy closure; faults remain errors and require a new service to recover.
      * 等待混音/设备工作结束并释放声部/后端资源；正常关闭幂等，故障仍返回错误，需新建服务恢复。 */
     [[nodiscard]] auto close() -> Core::Result<void>;
+    /** Request teardown without joining a native call in progress. Keep owning
+     * this object until pollClosed succeeds; destruction/close still join.
+     * 请求清理但不等待进行中的原生调用；pollClosed 成功前保留对象，销毁/close 仍等待回收。 */
+    [[nodiscard]] auto requestClose() -> Core::Result<void>;
+    [[nodiscard]] auto pollClosed() const -> Core::Result<bool>;
 
   private:
     struct Impl;

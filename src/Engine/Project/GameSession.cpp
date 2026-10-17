@@ -374,8 +374,11 @@ namespace Dot::Project {
                           "Game session requires owner thread without reentry");
       }
 
-      if (!allowTerminal && (m_state == SessionState::Closed || m_state == SessionState::Faulted)) {
-        return Core::fail(Core::ErrorCode::InvalidState, "Game session is closed or faulted");
+      if (!allowTerminal
+          && (m_state == SessionState::Closed || m_state == SessionState::Faulted
+              || m_state == SessionState::Cancelling)) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Game session is closed, faulted or cancelling");
       }
 
       if (!allowTerminal && m_scene->id() != m_identity) {
@@ -394,7 +397,10 @@ namespace Dot::Project {
     }
 
     auto shutdown() -> Core::Result<Script::ScriptReport> {
-      auto result = m_live ? m_live->stop() : m_scripts->stop();
+      auto result = m_state == SessionState::Cancelling
+                        ? Core::Result<Script::ScriptReport>{Script::ScriptReport{}}
+                    : m_live ? m_live->stop()
+                             : m_scripts->stop();
       m_live.reset();
       m_scripts.reset();
       m_animations.reset();
@@ -514,12 +520,18 @@ namespace Dot::Project {
   auto GameSession::createFromScene(const Project& project,
                                     const Script::TypeScriptCompiler& compiler,
                                     const World::Scene& scene, const GameSessionConfig& config,
-                                    std::optional<std::string> scenePath)
+                                    std::optional<std::string> scenePath,
+                                    Audio::Playback* preparedPlayback)
       -> Core::Result<GameSession> {
     auto valid = validate(config);
 
     if (!valid) {
       return std::unexpected(valid.error());
+    }
+
+    if (preparedPlayback && config.audioMode != SessionAudio::Playback) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Prepared playback requires native audio mode");
     }
 
     auto encoded = World::encodeScene(scene);
@@ -530,14 +542,15 @@ namespace Dot::Project {
 
     auto cloned = World::decodeScene(*encoded);
     return cloned ? prepare(project, compiler, std::move(*cloned), config, std::move(scenePath),
-                            std::move(*encoded))
+                            std::move(*encoded), preparedPlayback)
                   : std::unexpected(cloned.error());
   }
 
   auto GameSession::prepare(const Project& project, const Script::TypeScriptCompiler& compiler,
                             World::Scene scene, const GameSessionConfig& config,
                             std::optional<std::string> scenePath,
-                            std::optional<std::string> originBytes) -> Core::Result<GameSession> {
+                            std::optional<std::string> originBytes,
+                            Audio::Playback* preparedPlayback) -> Core::Result<GameSession> {
     try {
       auto description = project.description();
       auto files = project.files();
@@ -557,7 +570,8 @@ namespace Dot::Project {
       }
 
       return prepareSession(*files, std::move(*description), std::move(scene), config, &compiler,
-                            nullptr, std::move(scenePath), nullptr, std::move(origin));
+                            nullptr, std::move(scenePath), nullptr, std::move(origin), nullptr,
+                            preparedPlayback);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare project session: " + std::string(error.what()));
@@ -595,12 +609,15 @@ namespace Dot::Project {
                   : std::unexpected(cloned.error());
   }
 
-  auto GameSession::prepareSession(
-      const Core::FileSystem& assets, Description description, World::Scene scene,
-      const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
-      const Script::CompiledProgram* precompiled, std::optional<std::string> scenePath,
-      const Script::SceneFlow* sharedFlow, std::shared_ptr<const Origin> origin,
-      const Script::GameData* sharedProgress) -> Core::Result<GameSession> {
+  auto GameSession::prepareSession(const Core::FileSystem& assets, Description description,
+                                   World::Scene scene, const GameSessionConfig& config,
+                                   const Script::TypeScriptCompiler* compiler,
+                                   const Script::CompiledProgram* precompiled,
+                                   std::optional<std::string> scenePath,
+                                   const Script::SceneFlow* sharedFlow,
+                                   std::shared_ptr<const Origin> origin,
+                                   const Script::GameData* sharedProgress,
+                                   Audio::Playback* preparedPlayback) -> Core::Result<GameSession> {
     try {
       if (sharedFlow) {
         auto graphics = sceneGraphics(assets, scene);
@@ -673,7 +690,7 @@ namespace Dot::Project {
       playbackConfig.deferredStart = true;
       auto audio = config.audioMode == SessionAudio::Playback
                        ? Script::AudioSession::createPlayback(impl->m_scene, assets, playbackConfig,
-                                                              config.audioLimits)
+                                                              config.audioLimits, preparedPlayback)
                        : Script::AudioSession::create(impl->m_scene, assets, config.audio.mixer,
                                                       config.audioLimits);
 
@@ -1061,6 +1078,10 @@ namespace Dot::Project {
       return std::unexpected(checked.error());
     }
 
+    if (m_impl->m_state == SessionState::Starting) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game audio activation is pending");
+    }
+
     return m_impl->m_input->publish(input, pointerCaptured);
   }
 
@@ -1075,6 +1096,26 @@ namespace Dot::Project {
   }
 
   auto GameSession::start() -> Core::Result<Script::ScriptReport> {
+    auto begun = beginStart();
+
+    if (!begun || begun->realmFaulted) {
+      return begun;
+    }
+
+    auto activated = m_impl->m_audio->startPlayback();
+
+    if (!activated) {
+      m_impl->m_state = SessionState::Faulted;
+      m_impl->retireServices();
+      return std::unexpected(activated.error());
+    }
+
+    auto ready = pollStart();
+    return ready ? std::move(begun)
+                 : Core::Result<Script::ScriptReport>{std::unexpected(ready.error())};
+  }
+
+  auto GameSession::beginStart() -> Core::Result<Script::ScriptReport> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
     }
@@ -1083,6 +1124,10 @@ namespace Dot::Project {
 
     if (!checked) {
       return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state == SessionState::Starting) {
+      return Script::ScriptReport{};
     }
 
     ActiveScope active{m_impl->m_active};
@@ -1115,17 +1160,88 @@ namespace Dot::Project {
           return std::unexpected(synchronized.error());
         }
 
-        auto activated = m_impl->m_audio->startPlayback();
+        auto activated = m_impl->m_audio->beginPlayback();
 
         if (!activated) {
           m_impl->m_state = SessionState::Faulted;
           m_impl->retireServices();
           return std::unexpected(activated.error());
         }
+
+        m_impl->m_state = SessionState::Starting;
       }
     }
 
     return result;
+  }
+
+  auto GameSession::pollStart() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state == SessionState::Running) {
+      return true;
+    }
+
+    if (m_impl->m_state != SessionState::Starting) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session is not starting");
+    }
+
+    auto ready = m_impl->m_audio->pollPlayback();
+
+    if (!ready) {
+      m_impl->m_state = SessionState::Faulted;
+      m_impl->retireServices();
+    } else if (*ready) {
+      m_impl->m_state = SessionState::Running;
+    }
+
+    return ready;
+  }
+
+  auto GameSession::requestPreparationClose() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    if (!m_impl->m_audio) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game audio is closed");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (m_impl->m_state == SessionState::Running) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Cannot cancel a running game preparation");
+    }
+
+    m_impl->m_state = SessionState::Cancelling;
+    m_impl->retireServices();
+    return m_impl->m_audio->requestPlaybackClose();
+  }
+
+  auto GameSession::pollPreparationClosed() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    if (!m_impl->m_audio) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game audio is closed");
+    }
+
+    auto checked = m_impl->check(true);
+    return checked ? m_impl->m_audio->pollPlaybackClosed()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto GameSession::fixedUpdate() -> Core::Result<Script::LiveScriptReport> {

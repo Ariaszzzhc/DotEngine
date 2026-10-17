@@ -132,6 +132,15 @@ playback, then becomes idempotent. It does not pause/resume or reopen a closed/f
 service. Closing or destroying a prepared service releases all resources without
 playing it. A prepared worker waits at the configured poll interval.
 
+`begin()` starts owned endpoint initialization and returns without waiting for it;
+`pollReady()` checks actual completion. `beginStart()` queues activation once and
+`pollStarted()` checks its result without advancing the mixer. Controls reject while
+initialization/activation is pending. No null-device fallback is used. `requestClose()`
+requests teardown without joining an OS call in progress; keep ownership until
+`pollClosed()` succeeds, then `close()` reports any terminal error. Destruction and
+synchronous close still join. Polls and controls require the original client thread.
+The synchronous create/start convenience APIs wait for these same operations.
+
 `SceneAudio::startPlayback` and the native `AudioSession::startPlayback` scheduler
 operation forward activation (offline mode needs no activation). Reset retains
 whether the service has been activated. Scripts can observe `prepared` through
@@ -142,8 +151,12 @@ therefore cannot play its authored autoplay voices. Recoverable component callba
 failures retain their existing isolation/reporting behavior; realm or native startup
 failures before activation fault the session and leave the endpoint prepared;
 activation failures also propagate to the session. This defines
-the audio preparation boundary needed for forthcoming runtime scene changes; scene
-switching itself is not yet implemented.
+the audio preparation boundary used by scene startup and replacement. An explicitly
+supplied ready deferred endpoint must match the full configuration and creating
+thread before ownership can transfer into SceneAudio/GameSession. Async
+GameSession beginStart keeps state Starting until pollStart confirms native
+activation; gameplay/input advancement rejects during Starting. Editor Play uses
+this boundary to keep native opening/activation waits off its owner thread.
 
 Creating client-thread calls synchronously dispatch validated voice operations
 and return the worker's actual results. There is at most one pending command;

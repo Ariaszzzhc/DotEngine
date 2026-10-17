@@ -26,6 +26,7 @@ export namespace Dot::Audio {
     std::uint32_t sampleRate{48000};
     std::uint32_t maxVoices{64};
     std::uint64_t backendBytes{16 * 1024 * 1024};
+    auto operator==(const MixerConfig&) const -> bool;
   };
 
   struct VoiceState {

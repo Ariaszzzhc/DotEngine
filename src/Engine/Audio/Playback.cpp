@@ -24,6 +24,8 @@ import Dot.Audio.Mixer;
 import Dot.Core.Result;
 
 namespace Dot::Audio {
+  auto PlaybackConfig::operator==(const PlaybackConfig&) const -> bool = default;
+
   struct Playback::Impl {
     struct Command {
       virtual ~Command() = default;
@@ -53,6 +55,8 @@ namespace Dot::Audio {
     bool m_closed{};
     std::optional<Core::Error> m_error;
     std::promise<Core::Result<void>> m_started;
+    std::shared_future<Core::Result<void>> m_ready{m_started.get_future().share()};
+    std::shared_future<Core::Result<void>> m_activation;
     OutputInfo m_info{};
     PlaybackStats m_last{PlaybackState::Closed, {}, {}, std::nullopt};
 
@@ -72,13 +76,17 @@ namespace Dot::Audio {
       return {};
     }
 
-    auto shutdown() -> void {
+    auto requestClose() -> void {
       {
         std::lock_guard lock(m_mutex);
         m_closing = true;
       }
 
       m_wake.notify_one();
+    }
+
+    auto shutdown() -> void {
+      requestClose();
 
       if (m_worker.joinable()) {
         m_worker.join();
@@ -86,11 +94,21 @@ namespace Dot::Audio {
     }
 
     template <typename T, typename Function>
-    auto request(Function function) -> Core::Result<T> {
+    auto enqueue(Function function) -> Core::Result<std::future<Core::Result<T>>> {
       auto checked = checkClient();
 
       if (!checked) {
         return std::unexpected(checked.error());
+      }
+
+      if (m_ready.wait_for(std::chrono::seconds{0}) != std::future_status::ready
+          || (m_activation.valid()
+              && m_activation.wait_for(std::chrono::seconds{0}) != std::future_status::ready)) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Playback preparation/activation pending");
+      }
+
+      if (!m_ready.get()) {
+        return std::unexpected(m_ready.get().error());
       }
 
       try {
@@ -125,10 +143,26 @@ namespace Dot::Audio {
         }
 
         m_wake.notify_one();
-        return result.get();
+        return result;
       } catch (const std::exception& error) {
         return Core::fail(Core::ErrorCode::External,
                           std::format("Playback control: {}", error.what()));
+      }
+    }
+
+    template <typename T, typename Function>
+    auto request(Function function) -> Core::Result<T> {
+      auto queued = enqueue<T>(std::move(function));
+
+      if (!queued) {
+        return std::unexpected(queued.error());
+      }
+
+      try {
+        return queued->get();
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          std::format("Playback control completion: {}", error.what()));
       }
     }
 
@@ -372,6 +406,17 @@ namespace Dot::Audio {
   Playback::~Playback() = default;
 
   auto Playback::create(const PlaybackConfig& config) -> Core::Result<Playback> {
+    auto playback = begin(config);
+
+    if (!playback) {
+      return std::unexpected(playback.error());
+    }
+
+    const auto& ready = playback->m_impl->m_ready.get();
+    return ready ? std::move(playback) : Core::Result<Playback>{std::unexpected(ready.error())};
+  }
+
+  auto Playback::begin(const PlaybackConfig& config) -> Core::Result<Playback> {
     if (config.mixer.channels != config.output.channels
         || config.mixer.sampleRate != config.output.sampleRate || config.blockFrames == 0
         || config.blockFrames > 65536 || config.blockFrames > config.targetFrames
@@ -385,19 +430,41 @@ namespace Dot::Audio {
 
     try {
       auto impl = std::make_unique<Impl>(config);
-      auto started = impl->m_started.get_future();
       impl->m_worker = std::thread{&Impl::run, impl.get()};
-      auto ready = started.get();
-
-      if (!ready) {
-        return std::unexpected(ready.error());
-      }
-
       return Playback{std::move(impl)};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         std::format("Create playback worker: {}", error.what()));
     }
+  }
+
+  auto Playback::pollReady() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    auto checked = m_impl->checkClient();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_ready.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
+      return false;
+    }
+
+    const auto& result = m_impl->m_ready.get();
+    return result ? Core::Result<bool>{true} : std::unexpected(result.error());
+  }
+
+  auto Playback::configuration() const -> Core::Result<PlaybackConfig> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    auto checked = m_impl->checkClient();
+    return checked ? Core::Result<PlaybackConfig>{m_impl->m_config}
+                   : std::unexpected(checked.error());
   }
 
   auto Playback::createVoice(const Clip& clip, const VoiceSettings& settings)
@@ -538,15 +605,55 @@ namespace Dot::Audio {
       return std::unexpected(checked.error());
     }
 
+    auto ready = pollReady();
+
+    if (!ready || !*ready) {
+      return ready ? Core::fail(Core::ErrorCode::Unavailable, "Playback initialization pending")
+                   : std::unexpected(ready.error());
+    }
+
     return m_impl->m_info;
   }
 
   auto Playback::start() -> Core::Result<void> {
-    if (!m_impl) {
-      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    auto begun = beginStart();
+
+    if (!begun) {
+      return begun;
     }
 
-    return m_impl->request<void>(
+    if (m_impl->m_activation.valid()) {
+      return m_impl->m_activation.get();
+    }
+
+    return {};
+  }
+
+  auto Playback::beginStart() -> Core::Result<void> {
+    auto ready = pollReady();
+
+    if (!ready || !*ready) {
+      return ready ? Core::fail(Core::ErrorCode::Unavailable, "Playback initialization pending")
+                   : std::unexpected(ready.error());
+    }
+
+    {
+      std::lock_guard lock(m_impl->m_mutex);
+
+      if (m_impl->m_error) {
+        return std::unexpected(*m_impl->m_error);
+      }
+
+      if (m_impl->m_closing || m_impl->m_closed) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Playback is closed");
+      }
+    }
+
+    if (m_impl->m_activation.valid() || !m_impl->m_config.deferredStart) {
+      return {};
+    }
+
+    auto queued = m_impl->enqueue<void>(
         [impl = m_impl.get()](Mixer& mixer, Output& output) -> Core::Result<void> {
           if (impl->m_enabled) {
             return output.start();
@@ -566,6 +673,43 @@ namespace Dot::Audio {
 
           return started;
         });
+
+    if (!queued) {
+      return std::unexpected(queued.error());
+    }
+
+    m_impl->m_activation = queued->share();
+    return {};
+  }
+
+  auto Playback::pollStarted() const -> Core::Result<bool> {
+    auto ready = pollReady();
+
+    if (!ready || !*ready) {
+      return ready;
+    }
+
+    std::lock_guard lock(m_impl->m_mutex);
+
+    if (m_impl->m_error) {
+      return std::unexpected(*m_impl->m_error);
+    }
+
+    if (m_impl->m_closing || m_impl->m_closed) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback is closed");
+    }
+
+    if (!m_impl->m_config.deferredStart) {
+      return true;
+    }
+
+    if (!m_impl->m_activation.valid()
+        || m_impl->m_activation.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
+      return false;
+    }
+
+    const auto& result = m_impl->m_activation.get();
+    return result ? Core::Result<bool>{true} : std::unexpected(result.error());
   }
 
   auto Playback::stats() -> Core::Result<PlaybackStats> {
@@ -601,6 +745,36 @@ namespace Dot::Audio {
     }
 
     return result;
+  }
+
+  auto Playback::requestClose() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    auto checked = m_impl->checkClient();
+
+    if (!checked) {
+      return checked;
+    }
+
+    m_impl->requestClose();
+    return {};
+  }
+
+  auto Playback::pollClosed() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Playback has been moved");
+    }
+
+    auto checked = m_impl->checkClient();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    std::lock_guard lock(m_impl->m_mutex);
+    return m_impl->m_closed;
   }
 
   auto Playback::close() -> Core::Result<void> {

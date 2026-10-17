@@ -28,11 +28,15 @@ export namespace Dot::Script {
         -> Core::Result<AudioSession>;
     /** Open a real endpoint with no silent-device fallback. Controls affect
      * future mixed blocks; already queued PCM retains its existing content.
-     * 打开真实端点，不回退为空设备；控制影响后续混音块，已排队 PCM 保留原内容。 */
+     * 打开真实端点，不回退为空设备；控制影响后续混音块，已排队 PCM 保留原内容。
+     * An optional ready, unstarted deferred endpoint is consumed only after
+     * exact configuration validation; it must belong to this client thread.
+     * 可传入同客户端线程的已就绪、未启动延后端点；精确核对配置后转移所有权。 */
     [[nodiscard]] static auto createPlayback(std::shared_ptr<World::Scene> scene,
                                              const Core::FileSystem& files,
                                              const Audio::PlaybackConfig& config = {},
-                                             const Audio::SceneAudioLimits& limits = {})
+                                             const Audio::SceneAudioLimits& limits = {},
+                                             Audio::Playback* preparedPlayback = nullptr)
         -> Core::Result<AudioSession>;
     AudioSession(const AudioSession&) = delete;
     auto operator=(const AudioSession&) -> AudioSession& = delete;
@@ -43,6 +47,14 @@ export namespace Dot::Script {
     /** Native scheduler activation after scene startup; not exposed to scripts.
      * 场景启动后由原生调度器激活，不向脚本开放。 */
     [[nodiscard]] auto startPlayback() -> Core::Result<void>;
+    /** Nonblocking activation/teardown polling; offline audio is already ready.
+     * 非阻塞激活/清理轮询，离线音频已就绪。 */
+    [[nodiscard]] auto beginPlayback() -> Core::Result<void>;
+    [[nodiscard]] auto pollPlayback() -> Core::Result<bool>;
+    [[nodiscard]] auto requestPlaybackClose() -> Core::Result<void>;
+    /** Terminal backend errors are reported only after native teardown completes.
+     * 仅在原生清理完成后报告终止后端错误。 */
+    [[nodiscard]] auto pollPlaybackClosed() const -> Core::Result<bool>;
 
     /** Native scheduling: prepare authoring/poses before backend updates. Retain
      * manual playback/cursor when descriptions are unchanged. Reset reloads assets

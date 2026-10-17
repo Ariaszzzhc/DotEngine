@@ -387,8 +387,8 @@ namespace Dot::Audio {
   }
 
   auto SceneAudio::createPlayback(const Scene& scene, const Core::FileSystem& files,
-                                  const PlaybackConfig& config, const SceneAudioLimits& limits)
-      -> Core::Result<SceneAudio> {
+                                  const PlaybackConfig& config, const SceneAudioLimits& limits,
+                                  Playback* preparedPlayback) -> Core::Result<SceneAudio> {
     auto checked = validateLimits(limits);
 
     if (!checked) {
@@ -396,7 +396,25 @@ namespace Dot::Audio {
     }
 
     try {
-      auto backend = Playback::create(config);
+      if (preparedPlayback) {
+        auto actual = preparedPlayback->configuration();
+        auto ready = preparedPlayback->pollReady();
+        auto started = preparedPlayback->pollStarted();
+
+        if (!actual || !ready || !started) {
+          return std::unexpected(!actual  ? actual.error()
+                                 : !ready ? ready.error()
+                                          : started.error());
+        }
+
+        if (*actual != config || !config.deferredStart || !*ready || *started) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Scene playback requires a ready matching deferred endpoint");
+        }
+      }
+
+      auto backend = preparedPlayback ? Core::Result<Playback>{std::move(*preparedPlayback)}
+                                      : Playback::create(config);
 
       if (!backend) {
         return std::unexpected(backend.error());
@@ -416,6 +434,94 @@ namespace Dot::Audio {
       return Core::fail(Core::ErrorCode::External,
                         std::format("Create scene playback: {}", error.what()));
     }
+  }
+
+  auto SceneAudio::beginPlayback() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (auto* playback = std::get_if<Playback>(&m_impl->m_backend)) {
+      return playback->beginStart();
+    }
+
+    return {};
+  }
+
+  auto SceneAudio::pollPlayback() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (auto* playback = std::get_if<Playback>(&m_impl->m_backend)) {
+      auto ready = playback->pollStarted();
+
+      if (ready && *ready) {
+        m_impl->m_playbackConfig->deferredStart = false;
+      }
+
+      return ready;
+    }
+
+    return true;
+  }
+
+  auto SceneAudio::requestPlaybackClose() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (auto* playback = std::get_if<Playback>(&m_impl->m_backend)) {
+      return playback->requestClose();
+    }
+
+    return {};
+  }
+
+  auto SceneAudio::pollPlaybackClosed() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (auto* playback = std::get_if<Playback>(&m_impl->m_backend)) {
+      auto closed = playback->pollClosed();
+
+      if (closed && *closed) {
+        auto result = playback->close();
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+      }
+
+      return closed;
+    }
+
+    return true;
   }
 
   auto SceneAudio::synchronize(const Scene& scene, double seconds) -> Core::Result<void> {

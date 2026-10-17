@@ -21,7 +21,8 @@ import Dot.Script.Compiler;
 import Dot.Script.LiveScripts;
 
 export namespace Dot::Editor {
-  enum class PlayState { Running, Faulted, Stopped };
+  enum class PlayState { Running, Faulted, Stopped, Preparing, Cancelling };
+  enum class PlayPreparation { Audio, Scene, Activation, Teardown };
 
   struct PlayConfig {
     PlayConfig() noexcept;
@@ -42,6 +43,9 @@ export namespace Dot::Editor {
     Script::SceneLocation location{};
     std::optional<Script::SceneRequest> transition;
     std::optional<Script::LiveScriptsStats> source{};
+    bool started{true};
+    std::optional<Core::Error> preparationError{};
+    std::optional<PlayPreparation> preparation{};
   };
 
   struct PlayFrame {
@@ -50,13 +54,13 @@ export namespace Dot::Editor {
     std::vector<Script::LiveScriptReport> reports;
   };
 
-  /** Owns a freshly cloned, started game session and independent fixed timing.
+  /** Owns cloned play preparation or a started game session and independent fixed timing.
    * Never saves or borrows the authoring scene. Ordinary component/reload errors
    * are retained in lastFrame; realm/native faults require stop and recreation.
    * Calls require the creating thread without reentry; moves preserve ownership.
    * Stop runs hooks and releases backends even on failure, retaining the final
    * read-only scene. Destruction releases resources without invoking hooks.
-   * 拥有新克隆并启动的游戏会话及独立固定步计时，不保存或借用编辑场景。普通组件/
+   * 拥有新克隆的准备状态或已启动游戏会话及独立固定步计时，不保存或借用编辑场景。普通组件/
    * 重载错误保留在 lastFrame，realm/原生故障须停止并重建。调用限创建线程且不可重入，
    * 移动保持所有权。停止即使失败也释放后端并保留最终只读场景；销毁不执行钩子。 */
   class PlaySession {
@@ -66,6 +70,20 @@ export namespace Dot::Editor {
                                      const World::Scene& authoring, const PlayConfig& config = {},
                                      std::optional<std::string> scenePath = std::nullopt)
         -> Core::Result<PlaySession>;
+    /** Freeze authoring and begin real endpoint preparation. pollPreparation
+     * performs owner-thread scene/script setup and polls native activation;
+     * only completed activation publishes Running. Stop cancels unpublished work
+     * without hooks; keep polling until teardown finishes. Initial compilation
+     * and scene service setup still execute on the owner.
+     * 冻结编辑内容并开始真实端点准备；轮询在所有者线程建立场景/脚本并检查原生激活，
+     * 实际完成后才发布 Running。Stop 无钩子取消未发布工作，须持续轮询至清理结束。
+     * 初次编译及场景服务建立仍在所有者线程执行。 */
+    [[nodiscard]] static auto begin(const Project::Project& project,
+                                    const Script::TypeScriptCompiler& compiler,
+                                    const World::Scene& authoring, const PlayConfig& config = {},
+                                    std::optional<std::string> scenePath = std::nullopt)
+        -> Core::Result<PlaySession>;
+    [[nodiscard]] auto pollPreparation() -> Core::Result<PlayState>;
     PlaySession(const PlaySession&) = delete;
     auto operator=(const PlaySession&) -> PlaySession& = delete;
     PlaySession(PlaySession&&) noexcept;

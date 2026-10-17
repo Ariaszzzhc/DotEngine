@@ -419,3 +419,78 @@ TEST_CASE("play.game_data_and_save_files_are_isolated_and_removed_after_stop") {
   CHECK_FALSE(PlaySession::create(fixture.project, fixture.compiler(), authoring, config));
   CHECK(std::filesystem::directory_iterator(root.root()) == std::filesystem::directory_iterator{});
 }
+
+TEST_CASE("play.preparation_freezes_authoring_and_publishes_only_after_activation") {
+  Fixture fixture;
+  fixture.controller();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto actor = authoring.entities()->at(1).id;
+  REQUIRE(authoring.renameEntity(actor, "frozen"));
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  CHECK(play.stats()->state == PlayState::Preparing);
+  CHECK_FALSE(play.stats()->started);
+  CHECK(play.stats()->preparation == PlayPreparation::Scene);
+  CHECK_FALSE(play.scene());
+  CHECK_FALSE(play.gameData());
+  CHECK_FALSE(play.advance(held(), 1ms));
+  REQUIRE(authoring.renameEntity(actor, "later authoring"));
+  CHECK(play.pollPreparation().value() == PlayState::Preparing);
+  CHECK_FALSE(play.scene());
+  CHECK(play.stats()->preparation == PlayPreparation::Activation);
+  CHECK(play.stats()->frames == 0);
+  CHECK(play.pollPreparation().value() == PlayState::Running);
+  CHECK(play.stats()->started);
+  CHECK_FALSE(play.stats()->preparation);
+  CHECK(play.scene().value()->entities()->at(1).name == "frozen");
+  REQUIRE(play.advance(held(), 17ms));
+  CHECK(play.stats()->fixedSteps == 1);
+  REQUIRE(play.stop());
+  CHECK(authoring.entity(actor)->name == "later authoring");
+}
+
+TEST_CASE("play.cancel_preparation_never_dispatches_hooks_and_releases_temporary_saves") {
+  Fixture fixture;
+  auto authoring = fixture.project.loadStartup().value();
+  auto config = fixture.config();
+  config.temporarySavesParent = fixture.directory.files();
+  const auto countDirectories = [&] {
+    return std::distance(std::filesystem::directory_iterator{fixture.directory.files().root()},
+                         std::filesystem::directory_iterator{});
+  };
+  const auto before = countDirectories();
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, config).value();
+  REQUIRE(play.stop());
+  CHECK(play.stats()->state == PlayState::Cancelling);
+  CHECK(play.stats()->preparation == PlayPreparation::Teardown);
+  CHECK(play.pollPreparation().value() == PlayState::Stopped);
+  CHECK_FALSE(play.stats()->started);
+  CHECK_FALSE(play.stats()->preparation);
+  CHECK(play.lastFrame()->reports.empty());
+  REQUIRE(play.stop());
+  CHECK(play.pollPreparation().value() == PlayState::Stopped);
+  CHECK_FALSE(play.scene());
+  CHECK(countDirectories() == before);
+}
+
+TEST_CASE("play.preparation_failure_is_retained_until_stop_and_allows_fresh_retry") {
+  Fixture fixture;
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts",
+                                                   "export const broken: number = 'bad';"));
+  auto authoring = fixture.project.loadStartup().value();
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  CHECK_FALSE(play.pollPreparation());
+  CHECK(play.stats()->preparationError.has_value());
+  CHECK(play.stats()->state == PlayState::Cancelling);
+  CHECK(play.pollPreparation().value() == PlayState::Faulted);
+  CHECK_FALSE(play.stats()->started);
+  REQUIRE(play.stop());
+  CHECK(play.stats()->state == PlayState::Stopped);
+  fixture.controller();
+  auto retry = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                   .value();
+  REQUIRE(retry.pollPreparation());
+  CHECK(retry.pollPreparation().value() == PlayState::Running);
+  REQUIRE(retry.stop());
+}

@@ -28,6 +28,8 @@ import Dot.Core.Result;
 import Dot.Core.Text;
 
 namespace Dot::Audio {
+  auto OutputConfig::operator==(const OutputConfig&) const -> bool = default;
+
   namespace {
     auto nativeBackend(AudioBackend value) -> ma_backend {
       switch (value) {

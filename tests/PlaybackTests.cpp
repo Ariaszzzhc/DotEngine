@@ -586,3 +586,87 @@ TEST_CASE("audio_playback_stop_is_one_worker_command_and_rewinds_the_paused_sour
   CHECK(playback->voice(*voice)->sourceFrame == 0);
   REQUIRE(playback->close());
 }
+
+TEST_CASE("audio.playback_async_preparation_activation_and_close_preserve_real_completion") {
+  const auto mixerBefore = Mixer::backendMemory();
+  const auto outputBefore = Output::backendMemory();
+  auto properties = config();
+  properties.deferredStart = true;
+  auto playback = Playback::begin(properties);
+  REQUIRE(playback);
+  CHECK(playback->configuration().value() == properties);
+  REQUIRE(waitFor([&] {
+    const auto ready = playback->pollReady();
+    return !ready || *ready;
+  }));
+  REQUIRE(playback->pollReady().value());
+  CHECK_FALSE(playback->pollStarted().value());
+  auto prepared = playback->stats();
+  REQUIRE(prepared);
+  CHECK(prepared->output.callbacks == 0);
+  CHECK(prepared->output.submittedFrames == 0);
+  CHECK(prepared->mixer.renderedFrames == 0);
+  auto foreign = std::async(std::launch::async, [&] {
+    return !playback->pollReady() && !playback->configuration() && !playback->beginStart()
+           && !playback->pollStarted() && !playback->requestClose() && !playback->pollClosed();
+  });
+  CHECK(foreign.get());
+  REQUIRE(playback->beginStart());
+  REQUIRE(playback->beginStart());
+  REQUIRE(waitFor([&] {
+    auto started = playback->pollStarted();
+    return !started || *started;
+  }));
+  REQUIRE(playback->pollStarted().value());
+  CHECK(playback->stats()->state == PlaybackState::Running);
+  REQUIRE(playback->requestClose());
+  REQUIRE(playback->requestClose());
+  CHECK_FALSE(playback->beginStart());
+  REQUIRE(waitFor([&] { return playback->pollClosed().value(); }));
+  REQUIRE(playback->close());
+  CHECK(playback->stats()->state == PlaybackState::Closed);
+  CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Mixer::backendMemory().allocations == mixerBefore.allocations);
+  CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+  CHECK(Output::backendMemory().allocations == outputBefore.allocations);
+}
+
+TEST_CASE("audio.playback_async_cancel_and_failed_prepare_release_all_owned_resources") {
+  const auto mixerBefore = Mixer::backendMemory();
+  const auto outputBefore = Output::backendMemory();
+  auto properties = config();
+  properties.deferredStart = true;
+
+  for (int iteration = 0; iteration < 3; ++iteration) {
+    auto playback = Playback::begin(properties);
+    REQUIRE(playback);
+    REQUIRE(playback->requestClose());
+    REQUIRE(waitFor([&] { return playback->pollClosed().value(); }));
+    REQUIRE(playback->close());
+    CHECK(playback->stats()->output.callbacks == 0);
+    CHECK(playback->stats()->mixer.renderedFrames == 0);
+    CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+    CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+  }
+
+  properties.output.backendBytes = 1;
+  auto failed = Playback::begin(properties);
+  REQUIRE(failed);
+  REQUIRE(waitFor([&] { return !failed->pollReady(); }));
+  CHECK_FALSE(failed->info());
+  CHECK_FALSE(failed->beginStart());
+  REQUIRE(waitFor([&] { return failed->pollClosed().value(); }));
+  CHECK_FALSE(failed->close());
+  CHECK(failed->stats()->state == PlaybackState::Faulted);
+  auto moved = std::move(*failed);
+  CHECK_FALSE(failed->pollReady());
+  CHECK_FALSE(failed->configuration());
+  CHECK_FALSE(failed->beginStart());
+  CHECK_FALSE(failed->pollStarted());
+  CHECK_FALSE(failed->requestClose());
+  CHECK_FALSE(failed->pollClosed());
+  CHECK(Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Mixer::backendMemory().allocations == mixerBefore.allocations);
+  CHECK(Output::backendMemory().bytes == outputBefore.bytes);
+  CHECK(Output::backendMemory().allocations == outputBefore.allocations);
+}

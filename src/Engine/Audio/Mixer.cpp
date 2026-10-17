@@ -33,6 +33,8 @@ import Dot.Math;
 import Dot.Core.Result;
 
 namespace Dot::Audio {
+  auto MixerConfig::operator==(const MixerConfig&) const -> bool = default;
+
   namespace {
     std::atomic<std::uint64_t> nextMixer{1};
 

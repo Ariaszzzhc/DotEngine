@@ -621,6 +621,7 @@ namespace Dot::Editor {
     std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
+    bool m_closeAfterPlay{};
     std::uint64_t m_playSession{};
     std::string m_saveSlot{"checkpoint"};
     bool m_saveOverwrite{};
@@ -739,6 +740,59 @@ namespace Dot::Editor {
 
     auto playing() const -> bool {
       return m_play && m_play->stats()->state != PlayState::Stopped;
+    }
+
+    auto publishedPlay() const -> bool {
+      return playing() && m_play->stats()->started;
+    }
+
+    auto preparingPlay() const -> bool {
+      return m_play
+             && (m_play->stats()->state == PlayState::Preparing
+                 || m_play->stats()->state == PlayState::Cancelling);
+    }
+
+    auto pollPlayPreparation() -> void {
+      if (!preparingPlay()) {
+        return;
+      }
+
+      auto state = m_play->pollPreparation();
+
+      if (!state) {
+        m_playError = state.error();
+        diagnostic(errorJson(state.error()));
+        return;
+      }
+
+      if (*state == PlayState::Running) {
+        m_previewReady = false;
+        auto remembered = rememberPlayFrame();
+
+        if (!remembered) {
+          m_playError = remembered.error();
+          diagnostic(errorJson(remembered.error()));
+        }
+      } else if (*state == PlayState::Stopped || *state == PlayState::Faulted) {
+        auto error = m_play->stats()->preparationError;
+
+        if (error && (!m_playError || m_playError->message != error->message)) {
+          m_playError = *error;
+          diagnostic(errorJson(*error));
+        }
+
+        if (m_previewWorker && !m_previewsStopped) {
+          m_previewWorker->setPaused(false).value();
+        }
+      }
+
+      if (m_closeAfterPlay && !preparingPlay()) {
+        if (auto error = m_play->stats()->preparationError) {
+          m_closeError = *error;
+        }
+
+        m_application->stop();
+      }
     }
 
     auto resource(std::string_view name) const -> Core::Result<std::filesystem::path> {
@@ -1300,8 +1354,8 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::Unavailable, "Scene resources are still preparing");
       }
 
-      if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
-          || pendingText() || !m_application->running()) {
+      if (playing() || m_closeAfterPlay || pendingInspector() || pendingEnvironment()
+          || pendingOcclusion() || pendingText() || !m_application->running()) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Play requires no pending scene/file edits or active game");
       }
@@ -1324,8 +1378,8 @@ namespace Dot::Editor {
         return std::unexpected(tool.error());
       }
 
-      auto created = PlaySession::create(*m_project, *tool, *m_document->scene().value(),
-                                         m_config.play, m_document->stats()->scenePath);
+      auto created = PlaySession::begin(*m_project, *tool, *m_document->scene().value(),
+                                        m_config.play, m_document->stats()->scenePath);
 
       if (!created) {
         return std::unexpected(created.error());
@@ -1370,7 +1424,7 @@ namespace Dot::Editor {
         return std::unexpected(stopped.error());
       }
 
-      if (m_previewWorker) {
+      if (m_previewWorker && !m_previewsStopped && !preparingPlay()) {
         m_previewWorker->setPaused(false).value();
       }
 
@@ -1382,6 +1436,8 @@ namespace Dot::Editor {
       const auto agent = m_agentInput.stats();
       Json status{
           {"state", "idle"},
+          {"started", false},
+          {"preparation", nullptr},
           {"session", m_playSession == 0 ? Json(nullptr) : Json(std::to_string(m_playSession))},
           {"inputSource", m_inputSource},
           {"agentInput",
@@ -1403,8 +1459,15 @@ namespace Dot::Editor {
 
       if (m_play) {
         const auto stats = m_play->stats().value();
-        constexpr std::array states{"running", "faulted", "stopped"};
+        constexpr std::array states{"running", "faulted", "stopped", "preparing", "cancelling"};
         status["state"] = states.at(static_cast<std::size_t>(stats.state));
+        status["started"] = stats.started;
+
+        if (stats.preparation) {
+          constexpr std::array stages{"audio", "scene", "activation", "teardown"};
+          status["preparation"] = stages.at(static_cast<std::size_t>(*stats.preparation));
+        }
+
         status["fixedHz"] = stats.fixedHz;
         status["frames"] = std::to_string(stats.frames);
         status["fixedSteps"] = std::to_string(stats.fixedSteps);
@@ -1592,7 +1655,7 @@ namespace Dot::Editor {
     }
 
     auto displayedScene() const -> Core::Result<const World::Scene*> {
-      if (playing()) {
+      if (publishedPlay()) {
         return m_play->scene();
       }
 
@@ -1751,10 +1814,10 @@ namespace Dot::Editor {
       return CaptureContext{
           m_document->stats()->revision,
           (*scene)->id(),
-          playing() ? m_playSession : (m_animationPreview ? m_animationSession : 0),
-          playing()      ? ViewportMode::Play
-          : m_editorView ? ViewportMode::Editor
-                         : ViewportMode::Game,
+          publishedPlay() ? m_playSession : (m_animationPreview ? m_animationSession : 0),
+          publishedPlay() ? ViewportMode::Play
+          : m_editorView  ? ViewportMode::Editor
+                          : ViewportMode::Game,
           m_transform.has_value(),
           m_animationPreview.has_value()};
     }
@@ -4783,7 +4846,13 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::InvalidState, "No game preview session");
         }
 
-        auto encoded = World::encodeScene(*m_play->scene().value());
+        auto scene = m_play->scene();
+
+        if (!scene) {
+          return std::unexpected(scene.error());
+        }
+
+        auto encoded = World::encodeScene(**scene);
         return encoded ? Core::Result<std::string>{Json{{"ok", true},
                                                         {"play", playStatus()},
                                                         {"view", viewStatus()},
@@ -5187,7 +5256,12 @@ namespace Dot::Editor {
           m_rotationDrag.reset();
           auto stopped = stopPlay();
           auto previewsStopped = stopPreviews();
-          m_application->stop();
+
+          if (preparingPlay()) {
+            m_closeAfterPlay = true;
+          } else {
+            m_application->stop();
+          }
 
           if (!previewsStopped) {
             m_closeError = previewsStopped.error();
@@ -5823,7 +5897,7 @@ namespace Dot::Editor {
     }
 
     auto currentView() const -> Core::Result<Graphics::SceneView> {
-      if (playing() || !m_editorView) {
+      if (publishedPlay() || !m_editorView) {
         return Graphics::SceneView{};
       }
 
@@ -5863,7 +5937,7 @@ namespace Dot::Editor {
       }
 
       return {
-          {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
+          {"mode", publishedPlay() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
           {"loading", m_preparationStage == Graphics::ScenePreparationStage::Environment
                           ? Json("environment-pipeline")
@@ -5884,7 +5958,7 @@ namespace Dot::Editor {
           {"profiling", profileStatus()},
           {"textInput", m_renderer->guiStats().value().text},
           {"source", m_animationPreview ? "animation"
-                     : playing()        ? "play"
+                     : publishedPlay()  ? "play"
                      : m_transform      ? "transform"
                                         : "document"},
           {"flying", m_flying},
@@ -8337,6 +8411,12 @@ namespace Dot::Editor {
       if (playing()) {
         const auto stats = m_play->stats().value();
 
+        if (stats.state == PlayState::Preparing || stats.state == PlayState::Cancelling) {
+          ImGui::TextWrapped(stats.state == PlayState::Preparing
+                                 ? "Preparing Play; Stop cancels preparation."
+                                 : "Cancelling Play; waiting for native services to close.");
+        }
+
         if (stats.source && stats.source->compiling) {
           ImGui::TextWrapped("Compiling scripts; Play continues with the current code.");
         }
@@ -10741,9 +10821,15 @@ namespace Dot::Editor {
           }
         }
 
+        if (!m_pendingClose && preparingPlay()) {
+          m_closeAfterPlay = true;
+          return false;
+        }
+
         return !m_pendingClose;
       };
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
+        pollPlayPreparation();
         auto processed = processRequests();
 
         if (!processed) {

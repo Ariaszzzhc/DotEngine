@@ -24,6 +24,7 @@ export namespace Dot::Audio {
     std::uint64_t backendBytes{16 * 1024 * 1024};
     AudioBackend backend{AudioBackend::Default};
     float volume{1};
+    auto operator==(const OutputConfig&) const -> bool;
   };
 
   struct OutputInfo {

@@ -26,7 +26,7 @@ export import Dot.Audio.SceneAudio;
 
 export namespace Dot::Project {
   enum class SessionAudio { Offline, Playback };
-  enum class SessionState { Ready, Running, Faulted, Closed };
+  enum class SessionState { Ready, Running, Faulted, Closed, Starting, Cancelling };
 
   struct GameSessionConfig {
     /** Initial state/root for one game, shared by its scene replacements.
@@ -71,14 +71,18 @@ export namespace Dot::Project {
     /** Clone a validated authoring scene into a fresh scope without saving or
      * borrowing it. Project resources/scripts remain rooted at the project.
      * A supplied origin keeps an owned initial snapshot for returns during this
-     * session, matching export of unsaved authoring content.
+     * session, matching export of unsaved authoring content. An optional ready,
+     * unstarted deferred playback endpoint is consumed after exact configuration
+     * validation and must belong to this thread.
      * 克隆已校验的编辑场景到新范围，不保存也不借用源场景；资源/脚本仍以项目为根。
-     * 提供来源路径时保留初始快照，返回该路径重建初始内容，与未保存内容的导出一致。 */
+     * 提供来源路径时保留初始快照，返回该路径重建初始内容，与未保存内容的导出一致；
+     * 可选端点须为本线程已就绪且未启动的延后播放，精确核对配置后转移所有权。 */
     [[nodiscard]] static auto createFromScene(const Project& project,
                                               const Script::TypeScriptCompiler& compiler,
                                               const World::Scene& scene,
                                               const GameSessionConfig& config = {},
-                                              std::optional<std::string> scenePath = std::nullopt)
+                                              std::optional<std::string> scenePath = std::nullopt,
+                                              Audio::Playback* preparedPlayback = nullptr)
         -> Core::Result<GameSession>;
     /** Start-ready session from an owned compiled generation, without reading
      * TypeScript or invoking a compiler. Description must disable hot reload;
@@ -125,6 +129,18 @@ export namespace Dot::Project {
      * 仅为脚本请求，原生前端拥有聚焦/捕获策略，并随输入帧发布实际确认。 */
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto start() -> Core::Result<Script::ScriptReport>;
+    /** Dispatch Start once and queue native activation without waiting; pollStart
+     * publishes Running only on actual completion. No gameplay while Starting.
+     * 分发一次 Start 后非阻塞排队原生激活，pollStart 仅在真实完成后发布 Running；
+     * Starting 期间不可推进游戏。 */
+    [[nodiscard]] auto beginStart() -> Core::Result<Script::ScriptReport>;
+    [[nodiscard]] auto pollStart() -> Core::Result<bool>;
+    /** Cancel unpublished preparation without hooks; retain until teardown completes.
+     * Cancelling rejects startup/gameplay; close also skips hooks after cancellation.
+     * 无钩子地取消未发布的准备，清理完成前须保留所有权；取消中拒绝启动/游戏操作，
+     * 后续 close 也跳过钩子。 */
+    [[nodiscard]] auto requestPreparationClose() -> Core::Result<void>;
+    [[nodiscard]] auto pollPreparationClosed() const -> Core::Result<bool>;
     /** Requires start. Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then
      * advances animation then synchronizes audio once after all fixed steps, then
@@ -150,14 +166,16 @@ export namespace Dot::Project {
                                       const Script::TypeScriptCompiler& compiler,
                                       World::Scene scene, const GameSessionConfig& config,
                                       std::optional<std::string> scenePath,
-                                      std::optional<std::string> originBytes = std::nullopt)
+                                      std::optional<std::string> originBytes = std::nullopt,
+                                      Audio::Playback* preparedPlayback = nullptr)
         -> Core::Result<GameSession>;
     [[nodiscard]] static auto prepareSession(
         const Core::FileSystem& assets, Description description, World::Scene scene,
         const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
         const Script::CompiledProgram* program, std::optional<std::string> scenePath,
         const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {},
-        const Script::GameData* progress = nullptr) -> Core::Result<GameSession>;
+        const Script::GameData* progress = nullptr, Audio::Playback* preparedPlayback = nullptr)
+        -> Core::Result<GameSession>;
     [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report) -> Core::Result<void>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;

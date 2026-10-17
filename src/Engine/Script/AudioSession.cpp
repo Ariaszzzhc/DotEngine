@@ -314,13 +314,15 @@ namespace Dot::Script {
   auto AudioSession::createPlayback(std::shared_ptr<World::Scene> scene,
                                     const Core::FileSystem& files,
                                     const Audio::PlaybackConfig& config,
-                                    const Audio::SceneAudioLimits& limits)
+                                    const Audio::SceneAudioLimits& limits,
+                                    Audio::Playback* preparedPlayback)
       -> Core::Result<AudioSession> {
     if (!scene || scene->id() == 0) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Audio session requires a live scene");
     }
 
-    auto backend = Audio::SceneAudio::createPlayback(*scene, files, config, limits);
+    auto backend
+        = Audio::SceneAudio::createPlayback(*scene, files, config, limits, preparedPlayback);
 
     if (!backend) {
       return std::unexpected(backend.error());
@@ -366,6 +368,46 @@ namespace Dot::Script {
     }
 
     return reset;
+  }
+
+  auto AudioSession::beginPlayback() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_audio.beginPlayback()
+                   : Core::Result<void>{std::unexpected(checked.error())};
+  }
+
+  auto AudioSession::pollPlayback() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_audio.pollPlayback()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
+  }
+
+  auto AudioSession::requestPlaybackClose() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_audio.requestPlaybackClose()
+                   : Core::Result<void>{std::unexpected(checked.error())};
+  }
+
+  auto AudioSession::pollPlaybackClosed() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_audio.pollPlaybackClosed()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto AudioSession::startPlayback() -> Core::Result<void> {
