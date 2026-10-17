@@ -59,6 +59,31 @@ namespace Dot::World {
       return {};
     }
 
+    /** Retain float-unit components: repeated normalization can move a small component
+     * by one ULP on every load while the large components remain unchanged.
+     * Two float epsilons bound squared-length roundoff; matrices still normalize.
+     * 保留浮点单位旋转，避免每次载入时小分量漂移一 ULP、其他分量不变。
+     * 两倍 float epsilon 覆盖长度平方的舍入误差；矩阵计算仍执行归一化。 */
+    auto storedRotation(Math::Quat value) -> Core::Result<Math::Quat> {
+      auto normalized = Math::normalized(value);
+
+      if (!normalized) {
+        return std::unexpected(normalized.error());
+      }
+
+      const double x = value.x;
+      const double y = value.y;
+      const double z = value.z;
+      const double w = value.w;
+      const double squaredLength = x * x + y * y + z * z + w * w;
+
+      if (std::abs(squaredLength - 1) <= 2 * std::numeric_limits<float>::epsilon()) {
+        return value;
+      }
+
+      return *normalized;
+    }
+
     struct Identity {
       std::uint64_t value;
       std::string name;
@@ -1040,7 +1065,7 @@ namespace Dot::World {
                           "Transform batch contains a duplicate entity");
       }
 
-      auto rotation = Math::normalized(update.transform.rotation);
+      auto rotation = storedRotation(update.transform.rotation);
       auto local = Math::compose(update.transform.position, update.transform.rotation,
                                  update.transform.scale);
 

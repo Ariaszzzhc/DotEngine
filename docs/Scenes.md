@@ -76,8 +76,12 @@ and runtime behavior.
 }
 ```
 
-Rotations use XYZW quaternions and are normalized on import. Transforms must be
-finite, have nonzero scale, and produce supported world matrices. Cameras require
+Rotations use XYZW quaternions. Already unit-length float components are retained
+exactly (squared length within two float epsilons of one); other nonzero finite
+rotations are normalized on import/edit. Matrix evaluation still normalizes.
+This prevents rotation drift across scene loads, saves and undo/redo without
+rounding away genuine external edits. Transforms must be finite, have nonzero scale,
+and produce supported world matrices. Cameras require
 `projection` (`perspective`/`orthographic`), `verticalFovDegrees`,
 `orthographicHeight`, `nearPlane`, `farPlane`, and boolean `primary`. At most one
 camera may be primary, and camera world matrices must support float inversion.

@@ -9050,3 +9050,62 @@ concrete investigation. The owned temporary startup scene currently lacks its ca
 from the deliberate recovery probe; repair it through product operations after that
 fix. The formal source example is unchanged. Do not treat this recovery loop or the
 overall engine/editor/game objective as complete.
+
+## Stable float-unit scene rotations
+
+The missing-camera recovery failure is reproducible without a window: after writing
+one actual rounded joint quaternion, even an unchanged second Document save reports
+an external change. Repeated scene codec round trips move its small component by one
+ULP each time and change the world matrix. Both new regressions fail before the fix;
+raw logs remain under build/rotation-persistence-repro*. This is repeated float
+normalization, not a real filesystem conflict or metadata/allocation mismatch.
+
+Scene's shared transactional transform boundary now preserves finite float-unit
+quaternion components exactly when their double-evaluated squared length is within
+two float epsilons of one. Other finite nonzero inputs still normalize; matrix math
+continues to normalize. Math::normalized and the file format are unchanged. No
+external-conflict comparison tolerance is widened and no post-write reload/allocation
+is introduced. The scene contract and format documentation state the storage rule.
+
+Three durable cases cover exact positive/negative rotations through sixteen codec
+round trips and identical matrices/bytes; unchanged saves plus eight edit/save/undo/
+save/reopen rounds; genuine external scene-name and one-ULP rotation edits preserving
+both sides on rejection; extreme/denormal nonunit inputs; and zero/nonfinite rejection
+without mutation. Units initialize no windows/devices. Focused Debug passes 7/7
+(0.42s). Full builds succeed; complete Debug passes 1310/1310 (197.90s), then complete
+Release/NDEBUG passes 1310/1310 (26.50s), without overlapping builds and tests.
+Counts: 410 unit, 900 integration; overlapping 198 compiler, 148 offscreen,
+33 platform, 32 audio-native and 20 process cases. Only macOS arm64 is executed.
+Five changed C++ files pass clang-format; whitespace checks pass. Reviewed the
+roundoff bound, finite/zero/extreme validation, normalized matrix/physics inputs,
+transactional scene/history/save behavior, unchanged conflict detection and test
+ownership. No dependency/toolchain/linkage/sanitizer changes are made.
+
+Actual Release editor operations restore the owned PrismMaintenance startup camera
+from the protected recovery scene, then perform eight name/edit/save/undo/save rounds
+and unchanged saves with identical disk bytes. A second missing-camera probe returns
+an explicit unready Game view; queued capture ends failed, saving it rejects and
+creates no file. Saving the missing camera, Undo and saving again now all succeed.
+The restored full scene equals the protected authoring scene. Closing/reopening
+preserves it exactly. Restored/recovered/reopened/stopped PNGs are byte-identical to
+the previous character baseline, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Real W/Space Play observes Player [-3,1.4705257,1.3606409], no Play error/diagnostics,
+and clean exact authoring restoration on Stop. Both editors exit zero, empty stderr,
+with retired control directories. The owned startup scene is repaired; formal
+examples/PrismRelay files are unchanged. Native mouse/keyboard acceptance remains
+blocked by the previously reported locked Mac, with no fresh claim of that coverage.
+
+Export now contains 116 files / 66,649,969 bytes, including the protected recovery
+scene. Every content file, including the startup scene, matches authoring bytes
+exactly. The relocated native product runs 180 game steps with the owned authoring
+directory hidden, exits zero and records 307 application samples (127 preparation
+plus 180 game steps); the 120 retained frames are unpaused/error-free. Its first game
+step still takes 3575.157167ms, with 3540.134417ms in render; the following interval
+reports 3433.333196ms of dropped fixed time and the explicit one-second variable cap.
+The retained median step is 11.557021ms. This is an observed cold stall, not a matched
+performance comparison or proof that general loading is asynchronous. Other pipeline
+families/resource work remain the next measured investigation; timing guards and
+warnings are unchanged. Raw requests/responses, four PNGs, manifests and profiles
+remain under build/rotation-persistence-review. Verified temporary native output is
+removed after retaining evidence. Overall engine/editor/game goals remain unfinished.

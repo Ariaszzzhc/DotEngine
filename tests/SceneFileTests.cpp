@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -82,6 +83,33 @@ namespace {
     }
   };
 }  // namespace
+
+TEST_CASE("scene_files.float_unit_rotations_remain_exact_through_repeated_round_trips") {
+  const std::array rotations{Dot::Math::Quat{0.0942542776465416F, 0.7153381705284119F,
+                                             0.054892364889383316F, 0.690213143825531F},
+                             Dot::Math::Quat{-0.0942542776465416F, -0.7153381705284119F,
+                                             -0.054892364889383316F, -0.690213143825531F},
+                             Dot::Math::Quat{0, 0, 0, 2}};
+
+  for (const auto rotation : rotations) {
+    auto scene = Scene::create().value();
+    const auto entity = scene.createEntity("Rotated entity").value();
+    REQUIRE(scene.setTransform(entity, {{1, 2, 3}, rotation}));
+    const auto stored = scene.transform(entity)->rotation;
+    const auto matrix = scene.worldTransform(entity).value();
+    auto encoded = encodeScene(scene).value();
+
+    for (int round = 0; round < 16; ++round) {
+      auto loaded = decodeScene(encoded).value();
+      const auto restored = loaded.findEntity(entity.value).value();
+      CHECK(loaded.transform(restored)->rotation == stored);
+      CHECK(loaded.worldTransform(restored).value() == matrix);
+      const auto next = encodeScene(loaded).value();
+      CHECK(next == encoded);
+      encoded = next;
+    }
+  }
+}
 
 TEST_CASE("scene_files.round_trip_preserves_values_components_and_hierarchy") {
   auto scene = makeScene();

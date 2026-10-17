@@ -286,9 +286,12 @@ export namespace Dot::World {
      * Same owner/scope/liveness checks as entity().
      * 仅复制局部姿态，不复制名称/脚本等组件；与 entity() 共用所有者/范围/有效性校验。 */
     [[nodiscard]] auto transform(EntityId entity) const -> Core::Result<Transform>;
-    /** Normalize rotation; reject singular/non-finite transforms or any resulting
+    /** Preserve float-unit rotation components exactly; normalize other rotations.
+     * This keeps scene round trips/history stable despite float rounding.
+     * Reject singular/non-finite transforms or any resulting
      * world-matrix overflow. Failures leave the previous scene state intact.
-     * 归一化旋转，拒绝奇异/非有限变换及世界矩阵溢出；失败保留此前状态。
+     * 精确保留浮点单位旋转分量，其余旋转归一化，避免场景往返及历史状态漂移。
+     * 拒绝奇异/非有限变换及世界矩阵溢出；失败保留此前状态。
      */
     [[nodiscard]] auto setTransform(EntityId entity, const Transform& transform)
         -> Core::Result<void>;

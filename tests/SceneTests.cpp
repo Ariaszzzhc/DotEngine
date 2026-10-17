@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <limits>
 #include <optional>
@@ -83,6 +84,44 @@ TEST_CASE("scene.default_transform_and_normalized_rotation") {
   CHECK(matrix->data[0] == 2);
   CHECK(matrix->data[5] == 3);
   CHECK(matrix->data[10] == 4);
+}
+
+TEST_CASE("scene.rotation_storage_preserves_float_units_and_validates_other_inputs") {
+  auto scene = Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  const Dot::Math::Quat unit{0.0942542776465416F, 0.7153381705284119F, 0.054892364889383316F,
+                             0.690213143825531F};
+  REQUIRE(scene.setTransform(entity, {{}, unit}));
+  CHECK(scene.transform(entity)->rotation == unit);
+  const auto matrix = scene.worldTransform(entity).value();
+  REQUIRE(scene.setTransform(entity, {{}, unit}));
+  CHECK(scene.transform(entity)->rotation == unit);
+  CHECK(scene.worldTransform(entity).value() == matrix);
+
+  const auto maximum = std::numeric_limits<float>::max();
+  const auto minimum = std::numeric_limits<float>::denorm_min();
+
+  for (const auto rotation :
+       std::array{Dot::Math::Quat{0, 0, 0, 1.001F}, Dot::Math::Quat{0, 0, 0, maximum},
+                  Dot::Math::Quat{0, 0, 0, minimum}}) {
+    REQUIRE(scene.setTransform(entity, {{}, rotation}));
+    CHECK(scene.transform(entity)->rotation == Dot::Math::Quat{});
+  }
+
+  const auto before = scene.transform(entity).value();
+
+  for (const auto rotation :
+       std::array{Dot::Math::Quat{0, 0, 0, 0},
+                  Dot::Math::Quat{0, std::numeric_limits<float>::infinity(), 0, 1},
+                  Dot::Math::Quat{0, 0, std::numeric_limits<float>::quiet_NaN(), 1}}) {
+    auto rejected = scene.setTransform(entity, {{}, rotation});
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().code == Dot::Core::ErrorCode::InvalidArgument);
+    const auto after = scene.transform(entity).value();
+    CHECK(after.position == before.position);
+    CHECK(after.rotation == before.rotation);
+    CHECK(after.scale == before.scale);
+  }
 }
 
 TEST_CASE("scene.hierarchy_composition_cache_invalidation_and_detach") {

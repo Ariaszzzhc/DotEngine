@@ -399,6 +399,67 @@ TEST_CASE("document_history_count_bytes_eviction_and_invalid_capacities") {
   CHECK(bounded.snapshot().value() == before);
 }
 
+TEST_CASE("document_float_unit_rotation_saves_and_undo_do_not_invent_external_conflicts") {
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(document,
+       Json::array(
+           {{{"op", "transform"},
+             {"entity", "2"},
+             {"value",
+              {{"position", {0, 0, 0}},
+               {"rotation",
+                {0.0942542776465416, 0.7153381705284119, 0.054892364889383316, 0.690213143825531}},
+               {"scale", {1, 1, 1}}}}}}));
+  const auto original = state(document)["scene"];
+  auto files = fixture.project().files().value();
+  const auto path = fixture.project().description()->startScene;
+  REQUIRE(document.save(revision(document)));
+  const auto first = files.readText(path).value();
+  auto unchanged = document.save(revision(document));
+  REQUIRE_MESSAGE(unchanged, (unchanged ? "" : unchanged.error().message));
+  CHECK(files.readText(path).value() == first);
+
+  for (int round = 0; round < 8; ++round) {
+    edit(document, rename("Edited " + std::to_string(round)));
+    REQUIRE(document.save(revision(document)));
+    REQUIRE(document.undo(revision(document)));
+    CHECK(document.stats()->dirty);
+    REQUIRE(document.save(revision(document)));
+    CHECK_FALSE(document.stats()->dirty);
+    CHECK(state(document)["scene"] == original);
+    CHECK(state(fixture.document())["scene"] == original);
+    CHECK(files.readText(path).value() == first);
+  }
+
+  auto external = Json::parse(first);
+  external["name"] = "External change";
+  const auto written = external.dump(2);
+  REQUIRE(files.writeTextAtomic(path, written));
+  const auto before = state(document);
+  auto rejected = document.save(revision(document));
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Dot::Core::ErrorCode::InvalidState);
+  CHECK(state(document) == before);
+  CHECK(files.readText(path).value() == written);
+
+  external = Json::parse(first);
+
+  for (auto& entity : external["entities"]) {
+    if (entity["id"] == "2") {
+      entity["transform"]["rotation"][2] = 0.054892368614673615;
+    }
+  }
+
+  const auto rotated = external.dump(2);
+  REQUIRE(files.writeTextAtomic(path, rotated));
+  auto changedRotation = document.save(revision(document));
+  REQUIRE_FALSE(changedRotation);
+  CHECK(changedRotation.error().code == Dot::Core::ErrorCode::InvalidState);
+  CHECK(state(document) == before);
+  CHECK(files.readText(path).value() == rotated);
+}
+
 TEST_CASE("document_saved_baseline_dirty_state_and_failed_external_scene_save") {
   Fixture fixture;
   auto document = fixture.document();
