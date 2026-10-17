@@ -52,15 +52,21 @@ namespace {
 TEST_CASE("input_host_queries_are_readonly_and_capture_is_a_write_request") {
   auto input = source();
   auto services = bindings(input);
-  REQUIRE(services.size() == 10);
+  REQUIRE(services.size() == 13);
 
   for (const auto& service : services) {
-    if (service.name == "input.capturePointer") {
+    if (service.name == "input.capturePointer" || service.name == "input.requestTextInput") {
       CHECK(service.access == HostAccess::ReadWrite);
       continue;
     }
 
     CHECK(service.access == HostAccess::ReadOnly);
+
+    if (service.name == "input.textInputRequested") {
+      CHECK_FALSE(read(services, service.name).get<bool>());
+      continue;
+    }
+
     auto args = service.name == "input.key"      ? Json::array({"A"})
                 : service.name == "input.button" ? Json::array({"Left"})
                                                  : Json::array();
@@ -303,4 +309,32 @@ TEST_CASE("input_host_moves_thread_checks_and_publisher_release_preserve_binding
   REQUIRE(invoke(services, "input.capturePointer", Json::array({true})));
   std::thread release([values = std::move(services)]() mutable { values.clear(); });
   release.join();
+}
+
+TEST_CASE("input_host_text_request_is_independent_of_pointer_and_actual_native_mode") {
+  auto input = source({1});
+  auto services = bindings(input);
+  CHECK_FALSE(input.textInputRequested().value());
+  REQUIRE(invoke(services, "input.requestTextInput", Json::array({true})));
+  CHECK(input.textInputRequested().value());
+  CHECK_FALSE(input.pointerCaptureRequested().value());
+  CHECK_FALSE(invoke(services, "input.textInputActive"));
+  InputState native;
+  REQUIRE(input.publish(native, false, false));
+  CHECK_FALSE(read(services, "input.textInputActive").get<bool>());
+  CHECK(read(services, "input.textInputRequested").get<bool>());
+  REQUIRE(input.publish(native, false, true));
+  CHECK(read(services, "input.snapshot")["textInputActive"] == true);
+  REQUIRE(invoke(services, "input.requestTextInput", Json::array({false})));
+  CHECK_FALSE(input.textInputRequested().value());
+  CHECK(read(services, "input.textInputActive").get<bool>());
+  const auto before = read(services, "input.snapshot");
+  REQUIRE(native.consume({0, 0, Text{"xx"}}));
+  CHECK_FALSE(input.publish(native, true, false));
+  CHECK(read(services, "input.snapshot") == before);
+
+  for (const auto& args : {Json::array(), Json::array({1}), Json::array({true, false})}) {
+    CHECK_FALSE(invoke(services, "input.requestTextInput", args));
+    CHECK_FALSE(input.textInputRequested().value());
+  }
 }

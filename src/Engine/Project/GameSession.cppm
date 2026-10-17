@@ -16,6 +16,7 @@ import Dot.Project;
 import Dot.Project.ScenePreparation;
 import Dot.World.Scene;
 import Dot.Platform.Input;
+import Dot.Math;
 import Dot.Script.Compiler;
 export import Dot.Script.LiveScripts;
 export import Dot.Script.SceneScripts;
@@ -30,6 +31,16 @@ export import Dot.Audio.SceneAudio;
 export namespace Dot::Project {
   enum class SessionAudio { Offline, Playback };
   enum class SessionState { Ready, Running, Faulted, Closed, Starting, Cancelling };
+
+  /** Logical input-area size, matching InputState pointer units. Disabled areas
+   * cancel UI gestures on focus/viewport loss; zero sizes are legal only when disabled.
+   * No pointer is inferred without an area.
+   * 与 InputState 指针单位相同的逻辑输入区域；失焦/视口不可用时禁用并取消 UI 手势，
+   * 零尺寸仅在禁用时合法；没有区域时不推断指针位置。 */
+  struct GameInputArea {
+    Math::Vec2 size;
+    bool enabled{true};
+  };
 
   struct GameSessionConfig {
     /** Initial state/root for one game, shared by its scene replacements.
@@ -150,11 +161,13 @@ export namespace Dot::Project {
      * 不推进 Update/固定时间或开始待处理切换地轮询预检/退役音频；完成后可执行 Stop/Start
      * 并重建主线程服务，退役清理故障仍报告错误。 */
     [[nodiscard]] auto pollScene() -> Core::Result<Script::ScriptReport>;
-    [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false)
-        -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false,
+                               std::optional<GameInputArea> area = std::nullopt,
+                               bool textInputActive = false) -> Core::Result<std::uint64_t>;
     /** Script request only; the native frontend owns focus/capture policy and
      * publishes its actual acknowledgement with the input frame.
      * 仅为脚本请求，原生前端拥有聚焦/捕获策略，并随输入帧发布实际确认。 */
+    [[nodiscard]] auto textInputRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto start() -> Core::Result<Script::ScriptReport>;
     /** Dispatch Start once and queue native activation without waiting; pollStart

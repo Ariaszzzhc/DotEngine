@@ -40,6 +40,7 @@ export namespace Dot::Project {
     [[nodiscard]] auto next(const Platform::InputState& native)
         -> Core::Result<Platform::InputState>;
     [[nodiscard]] auto record(const Script::ScriptReport& report) -> Core::Result<void>;
+    [[nodiscard]] auto usingAgentInput() const -> Core::Result<bool>;
     [[nodiscard]] auto closing() const -> Core::Result<bool>;
 
   private:

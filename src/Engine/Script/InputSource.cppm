@@ -38,24 +38,26 @@ export namespace Dot::Script {
      * 原生事件处理后、脚本分发前复制；成功发布递增非零 uint64 序号，错误保留旧帧。
      * 坐标须有限，文本为有效 UTF-8 且不超过配置的 1 字节..1 MiB 限制，调用者不得并发
      * 修改借用的原生 InputState。 */
-    [[nodiscard]] auto publish(const Platform::InputState& state, bool pointerCaptured = false)
-        -> Core::Result<std::uint64_t>;
-    /** Read the script's request; only native publication acknowledges actual
-     * capture. Headless callers leave capture false. Requests survive realm reload
-     * and never operate an OS window from the script callback.
-     * 读取脚本请求，实际捕获仅由原生发布确认；无窗口调用者保持 false。
-     * 请求跨 realm 重载保留，脚本回调不直接操作系统窗口。 */
+    [[nodiscard]] auto publish(const Platform::InputState& state, bool pointerCaptured = false,
+                               bool textInputActive = false) -> Core::Result<std::uint64_t>;
+    /** Read independent script requests, initially false. Native publication alone
+     * acknowledges actual modes; relative capture takes precedence over text/IME.
+     * Requests survive realm reload and never operate windows from script callbacks.
+     * 读取独立的脚本请求，初值 false；实际模式仅由原生发布确认，相对捕获优先于文字输入。
+     * 请求跨 realm 重载保留，脚本回调不直接操作窗口。 */
+    [[nodiscard]] auto textInputRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     /** Observational methods return owned snapshots without consuming edges;
-     * valid reads before publication fail Unavailable. JSON indices are decimal
-     * strings, key/button names are exact native enum names (excluding sentinels).
+     * frame reads before publication fail Unavailable; textInputRequested can be
+     * read before publication. JSON indices are decimal strings, key/button names
+     * are exact native enum names (excluding sentinels).
      * Fixed steps sharing an input frame see the same edges; the application owns
-     * beginFrame/event/publish timing. capturePointer is a ReadWrite request,
-     * allowed before publication; pointerCaptured reports only the last native ack.
-     * 只读方法返回拥有快照且不消费边沿；发布前合法
-     * 读取返回 Unavailable。序号为十进制字符串，按键/鼠标名称精确匹配原生枚举（除哨兵）。
+     * beginFrame/event/publish timing. capturePointer/requestTextInput are ReadWrite
+     * requests allowed before publication; actual mode getters report native acks.
+     * 只读方法返回拥有快照且不消费边沿；发布前帧读取返回 Unavailable，
+     * textInputRequested 可提前读取。序号为十进制字符串，按键/鼠标名称精确匹配原生枚举。
      * 共用输入帧的固定步看到相同边沿，应用负责 beginFrame/事件/发布时间。
-     * capturePointer 为可在发布前调用的写请求，pointerCaptured 只报告最近原生确认。 */
+     * capturePointer/requestTextInput 为可提前调用的写请求，实际模式 getter 仅报告原生确认。 */
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
 
   private:

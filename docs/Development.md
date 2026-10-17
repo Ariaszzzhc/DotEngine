@@ -11133,3 +11133,117 @@ target PNG inspection and native presentation evidence do not establish physical
 keyboard/IME, pointer or wrapped-panel human acceptance. Clickable UI/layout tooling,
 finished game art, remaining startup/service work, resource streaming, broader game
 scale and the overall production engine/editor goal remain unfinished.
+
+## 2026-10-18 — Native buttons and explicit text input
+
+Continue Prism Relay's actual pause/checkpoint workflow with native buttons. Keep
+one bounded scene-local HUD model for labels/buttons, one ordered key space and the
+existing native text renderer. Render focus/hover/pressed/disabled state from owned
+base descriptions; scripts describe UI and apply gameplay intent, without handling
+hit tests, reimplementing rendering or accessing OS windows.
+
+Pointer press arms/focuses, holding does not repeat, and release activates only the
+same eligible control. Outside release/press, focus or viewport loss, relative
+capture, changed descriptions and hidden/disabled/removed controls cancel stale
+gestures. Disabled top buttons block lower buttons; labels remain passive. Tab and
+ShiftTab cycle eligible keys; Enter/KeypadEnter/Space confirm. Native mouse, keyboard
+and strict activate share validation and the bounded sequenced intent queue. A
+combined release/confirmation publishes at most one action. Game code owns its
+watermark and explicit loss policy; history is observational, retained for 64 actions
+and readable after retirement. New scene scopes reset it. Mutations stage data and
+reply allocation before committing; no-op descriptions preserve revisions.
+
+Input publication supplies logical viewport/window dimensions independently of
+physical target pixels. Unavailable disabled areas accept zero sizes and cancel UI;
+enabled areas require positive finite dimensions. The native player exposes actual
+logical inputArea/textInputActive, and agent source state never forges OS focus.
+HUD input is published once per frame, independently of fixed ticks. The last input
+consumption mask survives same-frame model removal so Return activated by Space
+cannot leak a jump into Prism gameplay. If HUD dispatch fails after input commits,
+the session explicitly faults and retires services instead of claiming rollback.
+
+Add independent requestTextInput/textInputRequested/textInputActive contracts.
+Requests default false and survive reload; native frontend policy and actual window
+queries own acknowledgement. Relative capture takes precedence. Editor fields keep
+their text mode outside Game input, while captured game menus follow the explicit
+game request. HUD keyboard arbitration follows that game request, independently of
+an editor field's native mode. No system input method is changed and no native text
+field/layout designer is claimed.
+
+Prism's ordinary editable script supplies Return/Save/Restore buttons. It processes
+at most eight actions per frame, applies the existing grounded checkpoint helpers,
+skips actions after return resumes gameplay and explicitly reports expired history.
+F6/F7/M remain usable. Feature Lab covers the added SDK and displays a native demo
+button; its real actions increment hudButtonCount, excluding its audit activation.
+Both examples migrate their action watermark with normal realm state.
+
+Five new cases in existing targets cover owned button snapshots/style/order,
+combined capacity/key space, malformed requests, cancellation/holding/disabled hits,
+keyboard traversal/deduplication, bounded history/loss/retirement, independent input
+request/actual acknowledgement, and Prism native pointer/keyboard/product intent,
+paused checkpointing, text-mode arbitration, unavailable dimensions and Space
+resume without jumping. Extend preparation guards, owner-thread and existing
+pause regression contracts. No unit initializes windows/devices, no automated
+integration opens a desktop window, and no acceptance executable is added.
+
+Initial compilation identifies missing specific Platform.Events and GameSession
+imports; add them explicitly. Initial focused tests pass 35/38: three Feature Lab
+inventory failures use names without the required getter .get suffix; correct the
+audit names, preserving SDK inventory checks. Final focused Debug passes 39/39 in
+16.43s, including the added integrated Prism button case. Retain first failures in
+ignored build/widgets-review; remaining validation is recorded below when completed.
+
+Full Debug passes 1417/1417 in 228.29s; Release/NDEBUG passes 1417/1417 in 32.95s.
+Final comment/contract synchronization rebuilds Debug successfully before the
+Release build/full suite. Counts are 435 unit and 982 integration; overlapping
+labels include 232 compiler, 164 offscreen, 37 audio-native, 34 platform and 21
+process. Build, CTest and actual product runs remain sequential. Only arm64 macOS
+is executed; no Windows/Linux validation, environment override or sanitizer is added.
+
+The actual Release editor creates PrismWidgets from the current template. Inspector
+uiFontSize changes 20 to 22 with apply/undo/redo, then save/close/reopen. Play renders
+three real buttons: Tab focuses Save; 30 held Enter frames save once. ShiftTab/Space
+returns without jumping. After movement, 180 held pointer frames show the native
+pressed Restore style without adding an action; automatic release adds exactly one,
+restoring the checkpoint while paused and without advancing fixed simulation.
+Disabled activation rejects explicitly and dims the actual target pixels. Inspect
+and saved PNG provenance agree on current HUD revision, with no text overflow.
+Stop preserves the exact clean authoring scene and makes retained HUD reads available
+while writes reject. A fresh Play resets UI history and isolated saves; Restore
+reports no checkpoint. Export uses that saved workspace. The two editor processes
+exit zero, retire controls and have empty stderr. Saved/stopped authoring PNG hash
+remains 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Relocate the unpacked native export and physically hide its owned authoring source.
+All 115 content files / 66,213,359 bytes match the edited saved project. No TypeScript
+or source maps ship. The font/notice remain present, with font SHA-256
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Two actual native processes verify Tab/ShiftTab/Enter/Space and pointer press/hold/
+release, single activation, native text mode false in the key-driven menu, paused
+save/restore, fresh unpaused startup after paused exit, damaged owned checkpoint
+refusal preserving pose/file bytes, restored-file retry, mailbox replay adding one
+intent, resumed movement and fresh scope/history on scene replacement. Old scoped
+HUD mutations reject. Recorded states reach actual presented HUD scope/revision,
+without overflow or script failures. Both processes exit zero and retire controls.
+Native stderr includes ordinary resource-preparation status and scheduler dropped
+fixed-time notices; it is not empty. Profiles preserve real stalls: first Render
+peak 256,687,334 ns, second 178,851,500 ns, and dropped intervals are retained. This
+functional workflow does not establish smooth interaction or identify a single
+cause. Font/raster/upload and checkpoint I/O remain synchronous; application
+startup/service and rendering work still need performance investigation.
+
+Restore the hidden source and verify all four earlier persistent checkpoint hashes.
+Record binary SHA-256, Mach-O arm64 architecture and dependency/load-command data
+before deleting only owned validation App/native copies and helper scripts/cache.
+The native export uses executable-relative LLVM runtime libraries; the development
+editor retains the caller's normal LLVM linkage. Keep editable projects, saves,
+request/result/presentation evidence, profiles, PNGs and build caches under ignored
+build/widgets-review. No distribution archive is produced. Review the staged diff
+for correctness, ownership, error handling, platform assumptions, formatting and
+behavioral coverage before commit; whitespace/clang-format checks pass.
+
+Computer use again reports the Mac locked. Product agent input and target pixels
+support the results above, without claiming physical keyboard/IME/pointer or wrapped
+panel human acceptance. Native text fields, visual layout authoring, full text
+shaping/bidi, finished Prism art, resource streaming, larger game scale and overall
+production engine/editor maturity remain unfinished.

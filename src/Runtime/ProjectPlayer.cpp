@@ -303,7 +303,17 @@ namespace Dot::Runtime {
                               + error.message);
                     }
 
-                    response["native"] = {{"focused", *focused}, {"pointerCaptured", *captured}};
+                    auto textActive = application->window().textInputActive();
+                    auto logical = application->window().size();
+
+                    if (!textActive || !logical) {
+                      return std::unexpected(!textActive ? textActive.error() : logical.error());
+                    }
+
+                    response["native"] = {{"focused", *focused},
+                                          {"pointerCaptured", *captured},
+                                          {"textInputActive", *textActive},
+                                          {"inputArea", {logical->width, logical->height}}};
                     auto text = textRenderer->stats();
 
                     if (!text) {
@@ -405,7 +415,13 @@ namespace Dot::Runtime {
         }
 
         const bool capture = *requested && *focused && !quitting;
-        auto text = application->window().setTextInput(!capture);
+        auto textRequest = session->textInputRequested();
+
+        if (!textRequest) {
+          return std::unexpected(textRequest.error());
+        }
+
+        auto text = application->window().setTextInput(*textRequest && !capture);
 
         if (!text) {
           return text;
@@ -425,8 +441,24 @@ namespace Dot::Runtime {
 
         auto controlled = agent ? agent->next(published)
                                 : Core::Result<Platform::InputState>{std::move(published)};
-        return controlled ? session->publish(*controlled, capture).transform([](auto) {})
-                          : std::unexpected(controlled.error());
+        if (!controlled) {
+          return std::unexpected(controlled.error());
+        }
+
+        auto logical = application->window().size();
+        auto textActive = application->window().textInputActive();
+        auto scripted = agent ? agent->usingAgentInput() : Core::Result<bool>{false};
+
+        if (!logical || !textActive || !scripted) {
+          return std::unexpected(!logical      ? logical.error()
+                                 : !textActive ? textActive.error()
+                                               : scripted.error());
+        }
+
+        const Project::GameInputArea area{
+            {static_cast<float>(logical->width), static_cast<float>(logical->height)},
+            (*focused || *scripted) && !quitting && logical->width > 0 && logical->height > 0};
+        return session->publish(*controlled, capture, area, *textActive).transform([](auto) {});
       };
 
       callbacks.fixedUpdate = [&](double) {
@@ -519,7 +551,13 @@ namespace Dot::Runtime {
           return {};
         }
 
-        auto screen = textRenderer->prepare(state->labels, static_cast<std::uint32_t>(size->width),
+        auto layers = hud->draws();
+
+        if (!layers) {
+          return std::unexpected(layers.error());
+        }
+
+        auto screen = textRenderer->prepare(*layers, static_cast<std::uint32_t>(size->width),
                                             static_cast<std::uint32_t>(size->height));
 
         if (!screen) {

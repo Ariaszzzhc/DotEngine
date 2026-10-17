@@ -631,7 +631,8 @@ must be finite; text must be scalar UTF-8 within a configured byte limit (defaul
 64 KiB, range 1 byte..1 MiB). Failed publication retains the previous frame/index.
 Native host transport budgets still apply: large custom text limits may require a
 larger Runtime JSON budget, especially when control characters need escaping.
-Valid reads before publication fail Unavailable. A missing input service fails
+Frame reads before publication fail Unavailable; textInputRequested can be read
+before the first publication. A missing input service fails
 NotFound through invoke, including with an entirely empty callback registry.
 
 | Native method | Arguments | Owned result |
@@ -646,6 +647,9 @@ NotFound through invoke, including with an entirely empty callback registry.
 | `input.index` | `[]` | publication index string |
 | `input.pointerCaptured` | `[]` | last native capture acknowledgement |
 | `input.capturePointer` | `[boolean]` | request relative pointer capture; no return data |
+| `input.requestTextInput` | `[boolean]` | independent text/IME request; no return data |
+| `input.textInputRequested` | `[]` | current script request, initially false |
+| `input.textInputActive` | `[]` | last actual native text/IME acknowledgement |
 
 The capture request does not operate a window or forge acknowledgement. The native
 frontend reads `pointerCaptureRequested()`, applies its focus/input policy through
@@ -656,10 +660,16 @@ preparation and state export/import. A failed publication preserves the old fram
 and acknowledgement. Native mode transitions clear only accumulated pointer delta,
 preserving other current-frame input. Consume mouse motion once per variable frame,
 because multiple fixed steps can share the same publication.
-The native editor/runtime suspend SDL text/IME input while relative pointer mode
-is active and restore it when released. This preserves gameplay keys under input
-methods such as Chinese composition without changing the system input method.
-No Unicode text events are produced while native text input is suspended.
+Text input is explicit: scripts call `input.requestTextInput(true)` for text entry
+and false when returning to key-driven UI/gameplay. Requests default false, survive
+realm reload and are ReadWrite operations denied during preparation. The native
+player enables SDL text mode only when requested and relative capture is inactive.
+The editor uses the game request during Game input capture and restores its own
+text mode for editor fields outside capture. Neither frontend changes the system
+input method. Native publication includes the actual `textInputActive` flag;
+headless callers default it false. HUD navigation/confirmation respects the game
+request independently of an editor field's actual text mode. No Unicode text events
+are produced while native text input is suspended.
 
 The SDK exports frozen `keys` and `mouseButtons` name arrays, matching every
 supported native enum except Unknown/Count. Key names include A..Z, Digit0..9,

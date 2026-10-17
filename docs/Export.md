@@ -245,7 +245,7 @@ frames, strict canonical key/button names, finite bounded coordinates/wheel/text
 once-only press/text edges and a final release frame. Escape/F5 are reserved
 frontend controls. An active request must finish or release after cancellation
 before replacement. `player.input.active/remaining/published` distinguish acceptance
-from consumption. `native.focused/pointerCaptured` report actual OS observations
+from consumption. `native.focused/pointerCaptured/textInputActive` report actual OS observations
 separately; agent key input does not invent pointer acknowledgement.
 
 `Dot.Project.PlayerControl` provides these CPU-only operations over a borrowed
@@ -281,3 +281,10 @@ simulatedUpdates for the current scene; scene replacement resets those counters
 and starts an unpaused clock. Native application profile step counts still measure
 scheduled callbacks. Input/rendering/frame UI and independent audio playback remain
 active while game simulation is paused. See [game clock contracts](GameClock.md).
+
+Native game UI buttons share the script/product [HUD contract](GameUi.md).
+`native.inputArea` supplies the current logical window size for structured pointer
+input; it is distinct from physical rendering resolution. Text/IME mode defaults
+off and follows the explicit script request unless relative capture is active.
+Activation acknowledgements queue intent; inspect gameplay/checkpoint results and
+presented HUD scope/revision after actual frames.

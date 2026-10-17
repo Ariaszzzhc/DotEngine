@@ -73,6 +73,7 @@ import Dot.Editor.Camera;
 import Dot.Editor.TransformTool;
 import Dot.Project;
 import Dot.Project.GamePackage;
+import Dot.Project.GameSession;
 import Dot.Project.GameExport;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
@@ -884,7 +885,19 @@ namespace Dot::Editor {
         requested = *capture && *focused;
       }
 
-      auto text = m_application->window().setTextInput(!requested);
+      bool wantsText = !m_captureInput;
+
+      if (m_captureInput && publishedPlay()) {
+        auto request = m_play->textInputRequested();
+
+        if (!request) {
+          return std::unexpected(request.error());
+        }
+
+        wantsText = *request;
+      }
+
+      auto text = m_application->window().setTextInput(wantsText && !requested);
 
       if (!text) {
         return std::unexpected(text.error());
@@ -4757,7 +4770,8 @@ namespace Dot::Editor {
 
         if (Codec::id(parsed["scope"]) != state->scope
             || ((m_pendingClose || m_play->stats()->state != PlayState::Running)
-                && operation != "snapshot")) {
+                && operation != "snapshot" && operation != "events"
+                && operation != "input-state")) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "HUD requires its current running scope");
         }
@@ -6309,7 +6323,13 @@ namespace Dot::Editor {
           return std::unexpected(state.error());
         }
 
-        labels = std::move(state->labels);
+        auto draws = hud->draws();
+
+        if (!draws) {
+          return std::unexpected(draws.error());
+        }
+
+        labels = std::move(*draws);
       }
 
       auto screen = m_textDrawing->prepare(labels, width, height);
@@ -11060,7 +11080,17 @@ namespace Dot::Editor {
       };
       callbacks.updateFrame = [&](const auto& frame) -> Core::Result<void> {
         if (playing() && m_play->stats()->state == PlayState::Running) {
-          auto advanced = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured);
+          auto text = m_application->window().textInputActive();
+
+          if (!text) {
+            return std::unexpected(text.error());
+          }
+
+          const Project::GameInputArea area{
+              {m_viewWidth, m_viewHeight},
+              m_viewVisible && (m_captureInput || m_inputSource == "agent") && !m_pendingClose};
+          auto advanced
+              = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured, area, *text);
           auto remembered = rememberPlayFrame();
 
           if (!remembered) {

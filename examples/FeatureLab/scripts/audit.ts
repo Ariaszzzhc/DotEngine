@@ -513,8 +513,35 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.entity('Dynamic').setVelocity({x: input.key('D').down ? 1 : 0, y: 0, z: 0});
   }
 
+  #uiSequence = '0';
+  #buttonActions = 0;
+
   onFrame(seconds: number): void {
     this.check('ScriptComponent.onFrame', super.onFrame(seconds) === undefined);
+
+    if (!this.#checked.has('input.requestTextInput')) {
+      const before = input.textInputRequested;
+      input.requestTextInput(!before);
+      this.check('input.textInputRequested.get', input.textInputRequested === !before);
+      input.requestTextInput(before);
+      this.check('input.requestTextInput', input.textInputRequested === before);
+      this.check('input.textInputActive.get', input.textInputActive === input.snapshot().textInputActive);
+    }
+
+    const actions = hud.events(this.#uiSequence);
+
+    if (actions.lost) {
+      throw Error('Feature Lab button history expired');
+    }
+
+    for (const action of actions.events) {
+      this.#uiSequence = action.sequence;
+
+      if (action.key === 'feature-button') {
+        ++this.#buttonActions;
+        gameState.set('hudButtonCount', this.#buttonActions);
+      }
+    }
 
     if (!this.#checked.has('gameClock.setPaused')) {
       const before = gameClock.snapshot();
@@ -538,6 +565,19 @@ export class Audit extends ScriptComponent<{contract: string}> {
       hud.clear();
       this.check('hud.clear', hud.snapshot().labels.length === 0);
       hud.set('controls', label);
+      const button = hud.button({text: 'Click / 点击', position: {x: .72, y: .02}, size: {x: .26, y: .1}});
+      this.check('hud.button', button.enabled && button.visible);
+      const sequence = hud.setButton('feature-button', button);
+      this.check('hud.setButton', sequence === hud.snapshot().revision);
+      hud.focus('feature-button');
+      this.check('hud.focus', hud.snapshot().focused === 'feature-button');
+      const activated = hud.activate('feature-button');
+      this.check('hud.activate', activated === hud.snapshot().sequence);
+      const events = hud.events('0');
+      this.check('hud.events', !events.lost && events.events.at(-1)?.key === 'feature-button');
+      this.#uiSequence = events.sequence;
+      this.check('hud.inputState', typeof hud.inputState().pointer === 'boolean');
+      hud.focus(null);
     }
     this.check('ScriptComponent.onUpdate', super.onUpdate(seconds) === undefined);
 
@@ -580,26 +620,32 @@ export class Audit extends ScriptComponent<{contract: string}> {
   }
 
   onSaveState():
-      {checked: string[]; starts: number; fixed: number; updates: number; errors: number} {
+      {checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number} {
     return {
       checked: [...this.#checked],
       starts: this.#starts,
       fixed: this.#fixed,
       updates: this.#updates,
-      errors: this.#errors
+      errors: this.#errors,
+      uiSequence: this.#uiSequence,
+      buttonActions: this.#buttonActions
     };
   }
 
   onLoadState(state: {
-    checked: string[]; starts: number; fixed: number; updates: number; errors: number
+    checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number
   }): void {
     if (!state || !Array.isArray(state.checked)
         || state.checked.some(key => typeof key !== 'string') ||
-        [state.starts, state.fixed, state.updates, state.errors].some(
-            value => !Number.isInteger(value) || value < 0)) {
+        [state.starts, state.fixed, state.updates, state.errors, state.buttonActions].some(
+            value => !Number.isInteger(value) || value < 0) || typeof state.uiSequence !== 'string'
+        || !/^(0|[1-9][0-9]*)$/.test(state.uiSequence)) {
       throw new Error('Invalid feature lab checkpoint');
     }
 
+    hud.events(state.uiSequence);
+    this.#uiSequence = state.uiSequence;
+    this.#buttonActions = state.buttonActions;
     this.#checked = new Set(state.checked);
     this.#starts = state.starts;
     this.#fixed = state.fixed;

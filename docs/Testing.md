@@ -55,3 +55,10 @@ Native exported executables still require manual product validation. The automat
 suite checks package ownership, relocation, compiled script/animation execution,
 errors and cleanup through headless GameSession; this does not claim OS-window or
 end-user visual verification.
+
+HUD button cases exercise native hit/focus/action contracts without windows. The
+Prism integration case drives ordinary InputState publication and editable game
+scripts through paused save/restore, queued product intent, text-mode arbitration
+and resume input ownership. Real editor/exported-player pointer and keyboard
+workflows remain separate product validation; synthetic input success does not
+establish physical keyboard, IME or pointer acceptance.

@@ -30,8 +30,19 @@ namespace Dot::Script {
     using Json = Serialization::Detail::Json;
     using Reply = Core::Result<std::optional<std::string>>;
 
-    constexpr std::array fields{"snapshot", "key",  "button", "pointer",         "pointerDelta",
-                                "wheel",    "text", "index",  "pointerCaptured", "capturePointer"};
+    constexpr std::array fields{"snapshot",
+                                "key",
+                                "button",
+                                "pointer",
+                                "pointerDelta",
+                                "wheel",
+                                "text",
+                                "index",
+                                "pointerCaptured",
+                                "capturePointer",
+                                "requestTextInput",
+                                "textInputRequested",
+                                "textInputActive"};
 
     auto point(Platform::Point value) -> Json {
       return {{"x", value.x}, {"y", value.y}};
@@ -52,6 +63,7 @@ namespace Dot::Script {
     std::uint64_t m_index{};
     std::optional<Json> m_frame;
     bool m_captureRequested{};
+    bool m_textRequested{};
 
     explicit Impl(InputSourceConfig value) : m_config(value) {
     }
@@ -79,7 +91,7 @@ namespace Dot::Script {
       try {
         auto args = Serialization::Detail::parseJson(arguments, 8);
         const bool named = field == "key" || field == "button";
-        const bool capture = field == "capturePointer";
+        const bool capture = field == "capturePointer" || field == "requestTextInput";
 
         if (!args.is_array() || args.size() != (named || capture ? 1U : 0U)
             || (named && !args[0].is_string()) || (capture && !args[0].is_boolean())) {
@@ -87,7 +99,7 @@ namespace Dot::Script {
         }
 
         if (capture) {
-          m_captureRequested = args[0].get<bool>();
+          (field == "capturePointer" ? m_captureRequested : m_textRequested) = args[0].get<bool>();
           return std::optional<std::string>{};
         }
 
@@ -103,6 +115,10 @@ namespace Dot::Script {
             return Core::fail(Core::ErrorCode::InvalidArgument,
                               "Unknown input " + std::string(field) + " name: " + name);
           }
+        }
+
+        if (field == "textInputRequested") {
+          return std::optional{Json(m_textRequested).dump()};
         }
 
         if (!m_frame) {
@@ -147,8 +163,8 @@ namespace Dot::Script {
     }
   }
 
-  auto InputSource::publish(const Platform::InputState& state, bool pointerCaptured)
-      -> Core::Result<std::uint64_t> {
+  auto InputSource::publish(const Platform::InputState& state, bool pointerCaptured,
+                            bool textInputActive) -> Core::Result<std::uint64_t> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Input source was moved");
     }
@@ -177,6 +193,7 @@ namespace Dot::Script {
                  {"pointerDelta", point(state.pointerDelta())},
                  {"wheel", point(state.wheel())},
                  {"pointerCaptured", pointerCaptured},
+                 {"textInputActive", textInputActive},
                  {"text", std::string(state.text())}};
 
       for (const auto& [name, key] : Platform::keyNames()) {
@@ -196,6 +213,16 @@ namespace Dot::Script {
       return Core::fail(Core::ErrorCode::External,
                         "Publish input frame: " + std::string(error.what()));
     }
+  }
+
+  auto InputSource::textInputRequested() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Input source was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<bool>{m_impl->m_textRequested}
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto InputSource::pointerCaptureRequested() const -> Core::Result<bool> {
@@ -228,8 +255,10 @@ namespace Dot::Script {
                           [impl = m_impl, field](std::string_view args) -> Reply {
                             return impl->invoke(field, args);
                           },
-                          std::string_view(field) == "capturePointer" ? HostAccess::ReadWrite
-                                                                      : HostAccess::ReadOnly});
+                          (std::string_view(field) == "capturePointer"
+                           || std::string_view(field) == "requestTextInput")
+                              ? HostAccess::ReadWrite
+                              : HostAccess::ReadOnly});
       }
 
       return result;

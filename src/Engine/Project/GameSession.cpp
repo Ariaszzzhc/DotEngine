@@ -24,6 +24,7 @@ import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Platform.Input;
+import Dot.Platform.Events;
 import Dot.Script.AudioSession;
 import Dot.Script.AnimationSession;
 import Dot.Assets.SceneSkins;
@@ -1047,7 +1048,8 @@ namespace Dot::Project {
     }
   }
 
-  auto GameSession::publish(const Platform::InputState& input, bool pointerCaptured)
+  auto GameSession::publish(const Platform::InputState& input, bool pointerCaptured,
+                            std::optional<GameInputArea> area, bool textInputActive)
       -> Core::Result<std::uint64_t> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
@@ -1063,7 +1065,69 @@ namespace Dot::Project {
       return Core::fail(Core::ErrorCode::InvalidState, "Game audio activation is pending");
     }
 
-    return m_impl->m_input->publish(input, pointerCaptured);
+    if (area
+        && (!std::isfinite(area->size.x) || !std::isfinite(area->size.y) || area->size.x < 0
+            || area->size.y < 0 || area->size.x > 1000000 || area->size.y > 1000000
+            || (area->enabled && (area->size.x == 0 || area->size.y == 0)))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid logical game input area");
+    }
+
+    auto textRequested = m_impl->m_input->textInputRequested();
+
+    if (!textRequested) {
+      return std::unexpected(textRequested.error());
+    }
+
+    auto published = m_impl->m_input->publish(input, pointerCaptured, textInputActive);
+
+    if (!published) {
+      return std::unexpected(published.error());
+    }
+
+    Script::HudInput ui;
+    ui.enabled = !pointerCaptured && (!area || area->enabled);
+
+    if (area && ui.enabled) {
+      const auto point = input.pointer();
+      const Math::Vec2 normalized{point.x / area->size.x, point.y / area->size.y};
+
+      if (normalized.x >= 0 && normalized.x < 1 && normalized.y >= 0 && normalized.y < 1) {
+        ui.pointer = normalized;
+      }
+    }
+
+    const auto button = input.button(Platform::MouseButton::Left);
+    ui.down = button.down;
+    ui.pressed = button.pressed;
+    ui.released = button.released;
+    const auto reverse
+        = input.key(Platform::Key::LeftShift).down || input.key(Platform::Key::RightShift).down;
+    ui.next = !*textRequested && input.key(Platform::Key::Tab).pressed && !reverse;
+    ui.previous = !*textRequested && input.key(Platform::Key::Tab).pressed && reverse;
+    ui.confirm = !*textRequested
+                 && (input.key(Platform::Key::Enter).pressed
+                     || input.key(Platform::Key::KeypadEnter).pressed
+                     || input.key(Platform::Key::Space).pressed);
+    auto handled = m_impl->m_hud->publish(ui);
+
+    if (!handled) {
+      m_impl->m_state = SessionState::Faulted;
+      m_impl->retireServices();
+      return Core::fail(handled.error().code,
+                        "Input frame committed; HUD dispatch failed: " + handled.error().message);
+    }
+
+    return published;
+  }
+
+  auto GameSession::textInputRequested() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_input->textInputRequested()
+                   : Core::Result<bool>{std::unexpected(checked.error())};
   }
 
   auto GameSession::pointerCaptureRequested() const -> Core::Result<bool> {

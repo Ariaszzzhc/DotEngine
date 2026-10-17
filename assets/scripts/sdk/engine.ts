@@ -112,6 +112,7 @@ export interface InputFrame {
   wheel: Vec2;
   text: string;
   pointerCaptured: boolean;
+  textInputActive: boolean;
 }
 
 /**
@@ -160,6 +161,21 @@ export const input = Object.freeze({
     invoke('input.capturePointer', [enabled]);
   },
 
+  /** Request native text/IME delivery independently of pointer capture. Relative
+   * capture suppresses text; only textInputActive is native acknowledgement.
+   * 独立于指针捕获地请求原生文字/输入法事件；相对捕获时禁用文字，只有 textInputActive 表示原生确认。 */
+  requestTextInput(enabled: boolean): void {
+    invoke('input.requestTextInput', [enabled]);
+  },
+
+  get textInputRequested(): boolean {
+    return invoke('input.textInputRequested', []) as boolean;
+  },
+
+  get textInputActive(): boolean {
+    return invoke('input.textInputActive', []) as boolean;
+  },
+
   get pointerCaptured(): boolean {
     return invoke('input.pointerCaptured', []) as boolean;
   },
@@ -203,16 +219,33 @@ export interface HudLabel {
   visible: boolean;
 }
 
+export interface HudButton extends HudLabel {
+  enabled: boolean;
+}
+
+export interface HudEvents {
+  sequence: string;
+  lost: boolean;
+  events: {sequence: string; key: string}[];
+}
+
 export interface HudSnapshot {
   scope: string;
   revision: string;
   labels: {key: string; value: HudLabel}[];
+  buttons: {key: string; value: HudButton}[];
+  focused: string|null;
+  hovered: string|null;
+  pressed: string|null;
+  sequence: string;
 }
 
 /**
- * Native, scene-local display text. Rectangles are normalized top-left UVs;
- * font/padding scale from reference height 720. UI does not intercept input.
- * 原生场景文字层，矩形采用视口左上归一化 UV，字体/留白按 720 参考高度缩放；不截获输入。
+ * Native scene-local labels/buttons. Rectangles use normalized top-left UVs;
+ * font/padding scale from height 720. Actions queue intent; inputState reports
+ * last-publication consumption without removing raw input edges.
+ * 原生场景文字/按钮，矩形采用左上归一化 UV，字体/留白按 720 高度缩放；动作仅入队意图，
+ * inputState 报告最近发布的消费状态，不移除原始输入边沿。
  */
 export const hud = Object.freeze({
   label(overrides: Partial<HudLabel> = {}): HudLabel {
@@ -234,6 +267,33 @@ export const hud = Object.freeze({
       color: {...value.color},
       background: {...value.background}
     };
+  },
+
+  button(overrides: Partial<HudButton> = {}): HudButton {
+    return {
+      ...hud.label({background: {x: .08, y: .13, z: .18, w: .98}, ...overrides}),
+      enabled: overrides.enabled === undefined ? true : overrides.enabled,
+    };
+  },
+
+  setButton(key: string, button: HudButton): string {
+    return (invoke('hud.setButton', [key, button]) as {revision: string}).revision;
+  },
+
+  focus(key: string|null): string {
+    return (invoke('hud.focus', [key]) as {revision: string}).revision;
+  },
+
+  activate(key: string): string {
+    return (invoke('hud.activate', [key]) as {sequence: string}).sequence;
+  },
+
+  events(after: string): HudEvents {
+    return invoke('hud.events', [after]) as HudEvents;
+  },
+
+  inputState(): {pointer: boolean; keyboard: boolean} {
+    return invoke('hud.inputState', []) as {pointer: boolean; keyboard: boolean};
   },
 
   snapshot(): HudSnapshot {

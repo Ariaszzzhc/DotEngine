@@ -212,14 +212,14 @@ namespace Dot::Project {
         const auto inner = value["value"].at("command").get<std::string>();
 
         if (Codec::id(value["scope"]) != m_impl->m_scope
-            || ((m_impl->m_closing || stats->state != SessionState::Running)
-                && inner != "snapshot")) {
+            || ((m_impl->m_closing || stats->state != SessionState::Running) && inner != "snapshot"
+                && inner != "events" && inner != "input-state")) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "HUD requires its current running scope");
         }
 
         auto hud = m_impl->m_session->hud();
-        effects = inner != "snapshot";
+        effects = inner != "snapshot" && inner != "events" && inner != "input-state";
         auto result = hud ? hud->perform(value["value"].dump())
                           : Core::Result<std::string>{std::unexpected(hud.error())};
         return result ? Core::Result<std::string>{Json{{"ok", true},
@@ -382,6 +382,15 @@ namespace Dot::Project {
       return Core::fail(Core::ErrorCode::External,
                         "Record player diagnostics: " + std::string(error.what()));
     }
+  }
+
+  auto PlayerControl::usingAgentInput() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Player control was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<bool>{m_impl->m_agent} : std::unexpected(checked.error());
   }
 
   auto PlayerControl::closing() const -> Core::Result<bool> {

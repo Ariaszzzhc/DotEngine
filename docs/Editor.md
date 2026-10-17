@@ -341,11 +341,16 @@ pointer buttons/motion/wheel are isolated from editor widgets. Escape, focus los
 Stop or closing releases capture. Focus loss disables Game input until explicitly
 enabled again. Outside-viewport clicks release ordinary absolute input capture.
 While relative mode is active, SDL text/IME input is suspended so the current
-input method cannot consume gameplay keys. Releasing relative mode restores text
-input for editor fields; the operating system's selected input method is unchanged.
+input method cannot consume gameplay keys. While Game input remains enabled, text
+mode follows the script's explicit
+`input.requestTextInput` request (initially false), including absolute-pointer
+menus. Releasing Game input restores text mode for editor fields; the operating
+system's selected input method is unchanged.
 Released capture publishes released edges from the last game input, then
-empty frames. Capture does not pause simulation/audio. No pause or single-step
-control is provided by this stage. F5 and Escape are reserved editor controls.
+empty frames. Capture does not pause simulation/audio. Native simulation pause
+uses the separate
+[game clock](GameClock.md); single-step is unfinished. F5 and Escape are reserved
+editor controls.
 
 `workspace.play.pointerCaptureRequested` reports the running script request;
 `pointerCaptured` reports the last successfully applied native mode. A command

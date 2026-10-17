@@ -107,12 +107,15 @@ export namespace Dot::Editor {
      * 至多一秒。额外固定时长报告为 dropped；负时长在输入/计时副作用前失败，不回滚
      * 已完成的回调。 */
     [[nodiscard]] auto advance(const Platform::InputState& input, std::chrono::nanoseconds elapsed,
-                               bool pointerCaptured = false) -> Core::Result<void>;
+                               bool pointerCaptured = false,
+                               std::optional<Project::GameInputArea> area = std::nullopt,
+                               bool textInputActive = false) -> Core::Result<void>;
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
     [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
+    [[nodiscard]] auto textInputRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto stop() -> Core::Result<Script::ScriptReport>;
     /** Borrow expires when a later advance replaces the scene; reacquire each frame.

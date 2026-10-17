@@ -196,7 +196,10 @@ The demo's stored identity is `dotengine-feature-lab`; template instances receiv
 ## Native text
 
 The ordinary SDK audit exercises `hud.label/snapshot/set/remove/clear` and leaves a
-bilingual native label in Play and exported games. It shares the game text path
+bilingual native label and clickable button in Play and exported games. The audit
+also covers setButton/focus/activate/events/inputState and explicit text-input
+request/acknowledgement. Actual demo button actions increment hudButtonCount;
+the audit's own synthetic activation is excluded from that count. It shares the game text path
 with Prism Relay; this is not an editor-only overlay or a visual layout designer.
 
 The audit also exercises the native game clock and unscaled onFrame hook, preserving

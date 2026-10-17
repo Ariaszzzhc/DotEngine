@@ -15,6 +15,7 @@ interface RuntimeState {
   edgeFrame: string;
   lookFrame: string;
   progressFrame: string;
+  uiSequence: string;
   jumpBuffer: number;
   grounded: boolean;
   clip: number;
@@ -33,6 +34,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #edgeFrame = '';
   #lookFrame = '';
   #progressFrame = '';
+  #uiSequence = '0';
   #jumpBuffer = 0;
   #grounded = true;
   #clip = 0;
@@ -80,7 +82,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     if (frame.index !== this.#edgeFrame) {
       this.#edgeFrame = frame.index;
 
-      if (frame.keys.Space.pressed) {
+      if (frame.keys.Space.pressed && !hud.inputState().keyboard) {
         this.#jumpBuffer = 0.14;
       }
     }
@@ -145,9 +147,54 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#grounded = grounded;
   }
 
+  private checkpoint(load: boolean): void {
+    let progressMessage: string|null = null;
+
+    try {
+      if (load) {
+        const saved = readCheckpoint();
+        this.self.teleportCharacter(saved.feet, saved.yawDegrees);
+        audio.resetMotion();
+        this.#camera.restore(saved.camera);
+        this.#velocity = {x: 0, y: 0, z: 0};
+        this.#jumpBuffer = 0;
+        this.#grounded = this.self.characterState.ground === 'grounded';
+        this.#clip = 0;
+        this.#model.configureAnimation(1, true);
+        this.#model.playAnimation(0, true);
+        this.#camera.update(this.self.characterState.position, 0);
+        this.listen();
+        progressMessage = 'Checkpoint restored';
+      } else {
+        const state = this.self.characterState;
+
+        if (state.ground !== 'grounded') {
+          throw Error('Land before saving a checkpoint');
+        }
+
+        saveCheckpoint({
+          format: 'prism-relay-checkpoint',
+          path: 'scenes/main.dotscene',
+          feet: {...state.position},
+          yawDegrees: Math.atan2(
+                          2 * state.rotation.w * state.rotation.y,
+                          1 - 2 * state.rotation.y * state.rotation.y)
+              * 180 / Math.PI,
+          camera: this.#camera.state,
+        });
+        progressMessage = 'Checkpoint saved';
+      }
+    } catch (error) {
+      progressFailure(error, this.properties.uiFontSize);
+    }
+
+    if (progressMessage !== null) {
+      progressStatus(progressMessage, this.properties.uiFontSize);
+    }
+  }
+
   onFrame(_seconds: number): void {
     const frame = input.snapshot();
-    let progressMessage: string|null = null;
 
     if (frame.index !== this.#progressFrame) {
       this.#progressFrame = frame.index;
@@ -156,66 +203,72 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         gameClock.setPaused(!gameClock.snapshot().paused);
       }
 
-      try {
-        if (frame.keys.F7.pressed) {
-          const saved = readCheckpoint();
-          this.self.teleportCharacter(saved.feet, saved.yawDegrees);
-          audio.resetMotion();
-          this.#camera.restore(saved.camera);
-          this.#velocity = {x: 0, y: 0, z: 0};
-          this.#jumpBuffer = 0;
-          this.#grounded = this.self.characterState.ground === 'grounded';
-          this.#clip = 0;
-          this.#model.configureAnimation(1, true);
-          this.#model.playAnimation(0, true);
-          this.#camera.update(this.self.characterState.position, 0);
-          this.listen();
-          progressMessage = 'Checkpoint restored';
-        } else if (frame.keys.F6.pressed) {
-          const state = this.self.characterState;
-
-          if (state.ground !== 'grounded') {
-            throw Error('Land before saving a checkpoint');
-          }
-
-          saveCheckpoint({
-            format: 'prism-relay-checkpoint',
-            path: 'scenes/main.dotscene',
-            feet: {...state.position},
-            yawDegrees: Math.atan2(
-                            2 * state.rotation.w * state.rotation.y,
-                            1 - 2 * state.rotation.y * state.rotation.y)
-                * 180 / Math.PI,
-            camera: this.#camera.state,
-          });
-          progressMessage = 'Checkpoint saved';
-        }
-      } catch (error) {
-        progressFailure(error, this.properties.uiFontSize);
+      if (frame.keys.F7.pressed) {
+        this.checkpoint(true);
+      } else if (frame.keys.F6.pressed) {
+        this.checkpoint(false);
       }
     }
 
-    if (progressMessage !== null) {
-      progressStatus(progressMessage, this.properties.uiFontSize);
+    const actions = hud.events(this.#uiSequence);
+
+    if (actions.lost) {
+      this.#uiSequence = actions.sequence;
+      progressFailure(Error('Menu action history expired'), this.properties.uiFontSize);
+    } else {
+      /** Bound synchronous checkpoint work per frame; acknowledgements queue intent.
+       * 每帧限制同步检查点工作量；确认仅表示意图入队。 */
+      for (const action of actions.events.slice(0, 8)) {
+        this.#uiSequence = action.sequence;
+
+        if (!gameClock.snapshot().paused) {
+          continue;
+        }
+
+        if (action.key === 'menu-0-return') {
+          gameClock.setPaused(false);
+        } else if (action.key === 'menu-1-save') {
+          this.checkpoint(false);
+        } else if (action.key === 'menu-2-restore') {
+          this.checkpoint(true);
+        }
+      }
     }
 
     const paused = gameClock.snapshot().paused;
 
     if (paused !== this.#menuVisible) {
-      this.#menuVisible = paused;
       input.capturePointer(!paused);
+      input.requestTextInput(false);
 
       if (paused) {
         hud.set('menu', hud.label({
-          text: 'GAME PAUSED\nF6 Save checkpoint\nF7 Restore checkpoint\nM Return to game',
-          position: {x: .26, y: .32},
-          size: {x: .48, y: .36},
+          text: 'PAUSED / 检查点\nTab selects; Enter/Space activates',
+          position: {x: .28, y: .25},
+          size: {x: .44, y: .5},
           fontSize: this.properties.uiFontSize,
           background: {x: .02, y: .03, z: .05, w: .96}
         }));
+        const buttons = ['Return to game', 'Save checkpoint', 'Restore checkpoint'];
+        const keys = ['menu-0-return', 'menu-1-save', 'menu-2-restore'];
+
+        for (let i = 0; i < keys.length; ++i) {
+          hud.setButton(keys[i]!, hud.button({
+            text: buttons[i]!,
+            position: {x: .33, y: .38 + i * .1},
+            size: {x: .34, y: .075},
+            fontSize: this.properties.uiFontSize,
+          }));
+        }
+
+        hud.focus('menu-0-return');
       } else {
-        hud.remove('menu');
+        for (const key of ['menu', 'menu-0-return', 'menu-1-save', 'menu-2-restore']) {
+          hud.remove(key);
+        }
       }
+
+      this.#menuVisible = paused;
     }
   }
 
@@ -252,6 +305,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       edgeFrame: this.#edgeFrame,
       lookFrame: this.#lookFrame,
       progressFrame: this.#progressFrame,
+      uiSequence: this.#uiSequence,
       jumpBuffer: this.#jumpBuffer,
       grounded: this.#grounded,
       clip: this.#clip,
@@ -266,17 +320,20 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         || state.clip > 6 || typeof state.edgeFrame !== 'string'
         || !/^[0-9]*$/.test(state.edgeFrame) || typeof state.lookFrame !== 'string'
         || !/^[0-9]*$/.test(state.lookFrame) || typeof state.progressFrame !== 'string'
-        || !/^[0-9]*$/.test(state.progressFrame)) {
+        || !/^[0-9]*$/.test(state.progressFrame) || typeof state.uiSequence !== 'string'
+        || !/^(0|[1-9][0-9]*)$/.test(state.uiSequence)) {
       throw Error('Invalid Prism Relay character checkpoint');
     }
 
     this.bind();
+    hud.events(state.uiSequence);
     this.#menuVisible = gameClock.snapshot().paused;
     this.#camera.restore(state.camera);
     this.#velocity = {...state.velocity};
     this.#edgeFrame = state.edgeFrame;
     this.#lookFrame = state.lookFrame;
     this.#progressFrame = state.progressFrame;
+    this.#uiSequence = state.uiSequence;
     this.#jumpBuffer = state.jumpBuffer;
     this.#grounded = state.grounded;
     this.#clip = state.clip;

@@ -131,11 +131,7 @@ namespace {
     auto publish(std::initializer_list<Platform::Key> down = {}, float dx = 0, float dy = 0,
                  bool captured = false) -> void {
       m_input.beginFrame();
-      constexpr std::array keys{Platform::Key::A,  Platform::Key::D,     Platform::Key::W,
-                                Platform::Key::S,  Platform::Key::Space, Platform::Key::LeftShift,
-                                Platform::Key::F6, Platform::Key::F7,    Platform::Key::M};
-
-      for (auto key : keys) {
+      for (const auto& [name, key] : Platform::keyNames()) {
         const bool desired = std::ranges::find(down, key) != down.end();
 
         if (m_input.key(key).down != desired) {
@@ -191,11 +187,13 @@ export class Observer extends ScriptComponent {
 TEST_CASE("prism.hud_feedback_is_native_scoped_and_preparation_cannot_publish_labels") {
   Fixture f;
   REQUIRE(f.project.files()->writeTextAtomic("scripts/ui-guard.ts", R"ts(
-import {gameClock, hud, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
+import {gameClock, hud, input, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
 function preparing(): void {
   hud.snapshot();
   gameClock.snapshot();
-  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true)]) {
+  hud.events('0');
+  hud.inputState();
+  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true), () => hud.setButton('x', hud.button()), () => hud.focus(null), () => hud.activate('x'), () => input.requestTextInput(true)]) {
     let denied = false;
     try { attempt(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
     if (!denied) { throw Error('HUD write escaped preparation guard'); }
@@ -322,7 +320,7 @@ export class PauseObserver extends ScriptComponent {
   const auto measured = probe();
 
   for (int i = 0; i < 60; ++i) {
-    driver.frame({Platform::Key::D, Platform::Key::Space});
+    driver.frame({Platform::Key::D});
   }
 
   CHECK(entity(session, "Player").transform.position == before.position);
@@ -1086,4 +1084,130 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
   CHECK(loaded["result"]["data"] == saved["result"]["data"]);
   CHECK(loaded["result"]["revision"] != saved["result"]["revision"]);
   report(restarted.close());
+}
+
+TEST_CASE(
+    "prism.native_buttons_route_mouse_keyboard_and_queued_product_actions_without_game_input_"
+    "leaks") {
+  Fixture f;
+  REQUIRE(f.project.files()->writeTextAtomic("scripts/text-request.ts", R"ts(
+import {gameState, input, ScriptComponent} from 'dot:engine';
+export class TextRequest extends ScriptComponent {
+  onFrame(): void { input.requestTextInput(gameState.get('textMode') === true); }
+}
+)ts"));
+  auto authoring = f.project.loadStartup().value();
+  const auto requester = authoring.createEntity("Text requester").value();
+  REQUIRE(authoring.setScript(requester, World::ScriptComponent{"text-request.ts", "TextRequest"}));
+  REQUIRE(f.project.saveStartup(authoring));
+  auto session = f.session(false, f.storage.files().value());
+  report(session.start());
+  auto ui = session.hud().value();
+  Platform::InputState native;
+  const auto step = [&](std::initializer_list<Platform::Key> keys = {}, bool down = false,
+                        Platform::Point pointer = {}, bool enabled = true) {
+    native.beginFrame();
+
+    for (const auto& [name, key] : Platform::keyNames()) {
+      const bool desired = std::ranges::find(keys, key) != keys.end();
+
+      if (native.key(key).down != desired) {
+        REQUIRE(native.consume({0, 0, Platform::KeyChanged{key, desired, false}}));
+      }
+    }
+
+    if (native.button(Platform::MouseButton::Left).down != down) {
+      REQUIRE(native.consume({0, 0,
+                              Platform::ButtonChanged{Platform::MouseButton::Left, down,
+                                                      std::array{pointer.x, pointer.y}}}));
+    }
+
+    REQUIRE(native.consume({0, 0, Platform::PointerMoved{pointer.x, pointer.y, 0, 0}}));
+    REQUIRE(session.publish(native, false, Project::GameInputArea{{1000, 500}, enabled}));
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  };
+  const auto point = [&](std::string_view key) -> Platform::Point {
+    const auto state = ui.snapshot().value();
+    const auto found = std::ranges::find(state.buttons, key, &Script::HudButtonLayer::key);
+    REQUIRE(found != state.buttons.end());
+    return {(found->value.position.x + found->value.size.x / 2) * 1000,
+            (found->value.position.y + found->value.size.y / 2) * 500};
+  };
+
+  for (int i = 0; i < 30; ++i) {
+    step();
+  }
+
+  step({Platform::Key::M});
+  CHECK(session.gameClock()->snapshot()->paused);
+  REQUIRE(ui.snapshot()->buttons.size() == 3);
+  CHECK(ui.snapshot()->focused == "menu-0-return");
+  CHECK_FALSE(session.textInputRequested().value());
+  const auto frozen = session.stats().value();
+  step({Platform::Key::Tab});
+  CHECK(ui.snapshot()->focused == "menu-1-save");
+  step({Platform::Key::Enter});
+  CHECK(ui.snapshot()->sequence == 1);
+  CHECK(Json::parse(session.gameData()
+                        ->perform(R"({"command":"snapshot"})")
+                        .value())["data"]["relayProgressStatus"]
+        == "Checkpoint saved");
+
+  for (int i = 0; i < 10; ++i) {
+    step({Platform::Key::Enter});
+  }
+
+  CHECK(ui.snapshot()->sequence == 1);
+  CHECK(session.stats()->simulatedFixedSteps == frozen.simulatedFixedSteps);
+  CHECK(session.stats()->simulatedUpdates == frozen.simulatedUpdates);
+  const auto restore = point("menu-2-restore");
+  step({}, true, restore);
+  CHECK(ui.snapshot()->pressed == "menu-2-restore");
+  step({}, false, restore, false);
+  CHECK(ui.snapshot()->sequence == 1);
+  step({}, true, restore);
+  step({}, true, restore);
+  step({}, false, restore);
+  CHECK(ui.snapshot()->sequence == 2);
+  CHECK(Json::parse(session.gameData()
+                        ->perform(R"({"command":"snapshot"})")
+                        .value())["data"]["relayProgressStatus"]
+        == "Checkpoint restored");
+  REQUIRE(session.gameData()->perform(R"({"command":"set","key":"textMode","value":true})"));
+  step();
+  CHECK(session.textInputRequested().value());
+  const auto focused = ui.snapshot()->focused;
+  step({Platform::Key::Tab, Platform::Key::Space});
+  CHECK(ui.snapshot()->focused == focused);
+  CHECK(ui.snapshot()->sequence == 2);
+  REQUIRE(session.gameData()->perform(R"({"command":"set","key":"textMode","value":false})"));
+  step();
+  auto control = Project::PlayerControl::create(session).value();
+  auto queued = control.perform(Json{{"command", "hud"},
+                                     {"scope", std::to_string(session.stats()->location.scope)},
+                                     {"value", {{"command", "activate"}, {"key", "menu-0-return"}}}}
+                                    .dump());
+  REQUIRE(queued);
+  CHECK(session.gameClock()->snapshot()->paused);
+  CHECK(Json::parse(*queued)["result"]["sequence"] == "3");
+  step();
+  CHECK_FALSE(session.gameClock()->snapshot()->paused);
+  CHECK(ui.snapshot()->buttons.empty());
+  step({Platform::Key::M});
+  step({Platform::Key::Space});
+  CHECK_FALSE(session.gameClock()->snapshot()->paused);
+
+  for (int i = 0; i < 10; ++i) {
+    step();
+  }
+
+  CHECK(std::abs(entity(session, "Player").transform.position.y) < .01F);
+  const auto revision = ui.snapshot()->revision;
+  CHECK_FALSE(session.publish(native, false, Project::GameInputArea{{0, 500}, true}));
+  CHECK(ui.snapshot()->revision == revision);
+  REQUIRE(session.publish(native, false, Project::GameInputArea{{0, 0}, false}));
+  report(session.close());
+  REQUIRE(ui.perform(R"({"command":"events","after":"0"})"));
+  CHECK_FALSE(ui.perform(R"({"command":"activate","key":"menu-0-return"})"));
 }
