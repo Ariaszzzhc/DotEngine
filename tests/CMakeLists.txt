@@ -19,6 +19,7 @@ endfunction()
 add_executable(DotUnitTests
     main.cpp
     CoreTests.cpp
+    ImageMipTests.cpp
     TextTests.cpp
     PathTests.cpp
     ExternalFileTests.cpp

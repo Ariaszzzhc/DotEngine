@@ -8670,3 +8670,62 @@ changed C++ files pass clang-format; whitespace checks pass. Useful logs, profil
 raw responses and PNGs remain in build/startup-investigation. Full engine/editor/
 game goals remain open; the next measured work is texture preparation, followed by
 remaining loading/compilation, production tools and finished Prism content.
+
+## Exact CPU texture mip preparation
+
+The first-render sample above identified repeated RGBA8 sRGB decode pow calls during
+texture preparation. Extracted the existing integer-bin mip algorithm into the
+validated CPU-only downsampleImage operation and replaced input transfer calls with
+an immutable 256-double table, initialized once safely across threads. Summation
+order, linear alpha, inverse transfer, rounding, odd-edge coverage and floor-half
+sizes are unchanged. A 1x1 input returns an independent copy; malformed images and
+unknown color spaces fail before allocation. Exceptions retain expected error context.
+Renderer upload borrows level zero for the queue copy and owns subsequent levels,
+eliminating its initial full source-pixel copy without retaining caller storage.
+GPU residency budgets, samplers, formats, shaders and resource accounting are unchanged.
+
+Four durable CPU cases in the existing unit executable compare all 65,536 byte pairs
+against direct transfer-function arithmetic, exercise linear/sRGB complete chains,
+odd and single-axis sizes, maximum width, 1x1 ownership, invalid dimensions/storage/
+color spaces, recovery and concurrent independent results. Existing offscreen texture
+sampling/ownership/lifetime cases continue to pass. Debug and Release configure/builds
+succeed with the existing toolchain environment. Full Debug passes 1295/1295 (197.55s);
+Release/NDEBUG passes 1295/1295 (21.11s). Counts are 407 unit and 888 integration,
+including 195 compiler, 142 offscreen, 33 platform, 32 audio-native and 20 process
+cases (overlapping labels). Only macOS arm64 is executed.
+
+Three serial 180-frame Release project runs use the same project, compiler, command
+and profiling mode as the preceding baseline, with no competing owned builds/tests
+or editors. First-render costs are 343.369125/324.242625/326.233916ms; median falls
+from 493.216083 to 326.233916ms (33.8558%). Whole-step costs are 381.063125/
+346.044708/348.723125ms; median falls from 519.313250 to 348.723125ms (32.8492%).
+Following dropped fixed time is 233.333324/199.999992/199.999992ms. These successive
+local runs retain warmed filesystem/driver context; they are not cold-cache guarantees,
+steady FPS, or proof that startup stalls are solved. No clock cap or warning changes.
+
+Actual Release editor runs W/Space for 30 fixed steps: Player moves from [-3,0,2]
+to [-3,1.4705257,1.3672982], with no Play diagnostics/error/dropped time. Independent
+application/renderer toggles and strict malformed requests still behave correctly.
+Stop retains revision one and the clean authoring scene. Before/profiled/stopped
+1480x574 PNGs are byte-identical to the established reference, SHA-256
+c345f04406d3defdfa323c9e357adfcbc7ef85a74b2c81879f4a458f6ae23fbe. Computer use
+inspects the actual native scene and diagnostic pane; the owned editor exits zero
+with empty stderr and retires its control directory.
+
+Native export and relocated 180-frame DotGame playback succeed. All 108 exported
+content files (39,020,486 bytes) match the current source bytes. The first relocated
+player still records 4908.594458ms rendering, 4927.414958ms whole-step time and
+4783.333142ms dropped fixed time, with the explicit one-second/drop warnings.
+This distinct startup problem remains open; the project improvement cannot be
+substituted for a native-export improvement. The temporary unpacked export is kept
+in ignored build storage for immediate diagnosis, not distributed as an editor release.
+Profiles, logs, content hashes, raw editor responses and PNGs remain under
+build/startup-investigation. Source-character/DCC research is also ignored; no candidate
+art replaces the functional animated character in this stage.
+
+Reviewed allocation/error paths, immutable table initialization, integer/index bounds,
+source/generated-level lifetimes and exact color arithmetic. Four changed C++ files
+pass clang-format and whitespace checks pass. No dependencies, compiler/linker settings,
+serialized formats, example content, compatibility paths or new executables are added.
+Production-scale loading/compilation, editor tools, finished Prism art and the overall
+engine/editor/game goal remain unfinished.

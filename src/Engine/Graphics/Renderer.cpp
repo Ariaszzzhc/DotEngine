@@ -3895,67 +3895,32 @@ namespace Dot::Graphics {
                                  : wgpu::MipmapFilterMode::Nearest;
       sampler.maxAnisotropy = options.maxAnisotropy;
       texture->sampler = m_impl->device.CreateSampler(&sampler);
-      Image mip = image;
+      const Image* mip = &image;
+      std::optional<Image> ownedMip;
 
       for (std::uint32_t level = 0; level < levels; ++level) {
         wgpu::TexelCopyTextureInfo destination;
         destination.texture = texture->texture;
         destination.mipLevel = level;
         wgpu::TexelCopyBufferLayout layout;
-        layout.bytesPerRow = mip.width * 4;
-        layout.rowsPerImage = mip.height;
-        const wgpu::Extent3D extent{mip.width, mip.height, 1};
-        m_impl->queue.WriteTexture(&destination, mip.pixels.data(), mip.pixels.size(), &layout,
+        layout.bytesPerRow = mip->width * 4;
+        layout.rowsPerImage = mip->height;
+        const wgpu::Extent3D extent{mip->width, mip->height, 1};
+        m_impl->queue.WriteTexture(&destination, mip->pixels.data(), mip->pixels.size(), &layout,
                                    &extent);
 
         if (level + 1 == levels) {
           break;
         }
 
-        Image next{std::max(1U, mip.width / 2), std::max(1U, mip.height / 2), {}};
-        next.pixels.resize(static_cast<std::size_t>(next.width) * next.height * 4);
+        auto next = downsampleImage(*mip, options.colorSpace);
 
-        for (std::uint32_t y = 0; y < next.height; ++y) {
-          for (std::uint32_t x = 0; x < next.width; ++x) {
-            const auto beginX = x * mip.width / next.width;
-            const auto endX = (x + 1) * mip.width / next.width;
-            const auto beginY = y * mip.height / next.height;
-            const auto endY = (y + 1) * mip.height / next.height;
-            const auto count = static_cast<double>((endX - beginX) * (endY - beginY));
-
-            for (std::size_t channel = 0; channel < 4; ++channel) {
-              double sum{};
-              const auto srgb = channel != 3 && options.colorSpace == ColorSpace::Srgb;
-
-              for (auto sy = beginY; sy < endY; ++sy) {
-                for (auto sx = beginX; sx < endX; ++sx) {
-                  auto value
-                      = mip.pixels[(static_cast<std::size_t>(sy) * mip.width + sx) * 4 + channel]
-                        / 255.0;
-
-                  if (srgb) {
-                    value
-                        = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
-                  }
-
-                  sum += value;
-                }
-              }
-
-              auto value = sum / count;
-
-              if (srgb) {
-                value = value <= 0.0031308 ? value * 12.92
-                                           : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
-              }
-
-              next.pixels[(static_cast<std::size_t>(y) * next.width + x) * 4 + channel]
-                  = static_cast<std::uint8_t>(std::clamp(std::round(value * 255), 0.0, 255.0));
-            }
-          }
+        if (!next) {
+          return std::unexpected(next.error());
         }
 
-        mip = std::move(next);
+        ownedMip = std::move(*next);
+        mip = &*ownedMip;
       }
 
       checked = scope.finish();

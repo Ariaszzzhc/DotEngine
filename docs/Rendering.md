@@ -20,6 +20,14 @@ linear. Mips average linear light and retain odd-size edges; each level has dime
 addressing and anisotropy 1..16 (nearest requires one). UV (0,0) addresses the source's
 top-left texel. No image-flip or decoder gamma setting is changed process-wide.
 
+`downsampleImage` exposes the same validated, device-independent CPU mip operation.
+It returns owned pixels, copies a 1x1 source, keeps alpha linear and rejects unknown
+color spaces. A shared immutable 256-value sRGB decode table uses the original
+transfer function; averaging order, output transfer and rounding are unchanged.
+Texture upload borrows level zero for its queue copy and owns only generated levels,
+without first duplicating the complete source image. No persistent source/mip cache
+or image-format change is introduced.
+
 `RendererConfig` limits asset texture residency before upload/mip allocation,
 by resource count and logical bytes including every mip level. Defaults are
 4096 textures and 512 MiB; these are configurable up to those bounds. Pipeline
