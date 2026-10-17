@@ -98,6 +98,10 @@ namespace Dot::Project {
     std::optional<Script::LiveScripts> m_live;
     std::optional<ScenePreparation> m_preparation;
     std::optional<Script::SceneRequest> m_preparingRequest;
+    /** Only the retired audio keeps its old scene; no old realm/physics/animation.
+     * Gate the next preparation until reaped, bounding native endpoints to two.
+     * 仅退役音频保留旧场景，不保留旧 realm/物理/动画；回收前不开始下次准备，端点至多两个。 */
+    std::optional<Script::AudioSession> m_retiredAudio;
 
     auto retireServices() noexcept -> void {
       if (m_preparation) {
@@ -145,7 +149,22 @@ namespace Dot::Project {
       return m_scripts->stats();
     }
 
-    auto shutdown() -> Core::Result<Script::ScriptReport> {
+    auto pollRetiredAudio() -> Core::Result<bool> {
+      if (!m_retiredAudio) {
+        return true;
+      }
+
+      auto closed = m_retiredAudio->pollPlaybackClosed();
+
+      if (!closed || *closed) {
+        m_retiredAudio.reset();
+      }
+
+      return closed;
+    }
+
+    auto shutdown(std::optional<Script::AudioSession>* retirement = nullptr)
+        -> Core::Result<Script::ScriptReport> {
       auto result = m_state == SessionState::Cancelling
                         ? Core::Result<Script::ScriptReport>{Script::ScriptReport{}}
                     : m_live ? m_live->stop()
@@ -155,7 +174,31 @@ namespace Dot::Project {
       m_live.reset();
       m_scripts.reset();
       m_animations.reset();
+
+      if (m_audio) {
+        auto closed = retirement && m_audioMode == SessionAudio::Playback
+                          ? m_audio->requestPlaybackClose()
+                          : m_audio->closePlayback();
+
+        if (closed && retirement && m_audioMode == SessionAudio::Playback) {
+          retirement->emplace(std::move(*m_audio));
+        } else if (!closed && result) {
+          result = std::unexpected(closed.error());
+        }
+      }
+
       m_audio.reset();
+
+      if (m_retiredAudio) {
+        auto closed = m_retiredAudio->closePlayback();
+
+        if (!closed && result) {
+          result = std::unexpected(closed.error());
+        }
+
+        m_retiredAudio.reset();
+      }
+
       m_physics.reset();
       m_input.reset();
       m_program.reset();
@@ -594,6 +637,7 @@ namespace Dot::Project {
 
     result.location = std::move(*location);
     result.transition = std::move(*latest);
+    result.retiringAudio = m_impl->m_retiredAudio.has_value();
 
     if (m_impl->m_state != SessionState::Closed) {
       if (m_impl->m_live) {
@@ -689,7 +733,22 @@ namespace Dot::Project {
                    : Core::Result<Script::SceneRequest>{std::unexpected(checked.error())};
   }
 
-  auto GameSession::processSceneRequest(Script::ScriptReport& report) -> Core::Result<void> {
+  auto GameSession::processSceneRequest(Script::ScriptReport& report, bool beginPending)
+      -> Core::Result<void> {
+    auto retired = m_impl->pollRetiredAudio();
+
+    if (!retired) {
+      auto error = retired.error();
+      error.message = "Retired scene audio teardown: " + error.message;
+      m_impl->m_state = SessionState::Faulted;
+      m_impl->retireServices();
+      return std::unexpected(std::move(error));
+    }
+
+    if (!*retired || (!beginPending && !m_impl->m_preparation)) {
+      return {};
+    }
+
     if (!m_impl->m_preparation) {
       auto pending = m_impl->m_flow->pending();
 
@@ -817,7 +876,7 @@ namespace Dot::Project {
 
       {
         ActiveScope active{m_impl->m_active};
-        stopped = m_impl->shutdown();
+        stopped = m_impl->shutdown(&replacement->m_retiredAudio);
       }
 
       m_impl.swap(replacement);
@@ -1089,7 +1148,7 @@ namespace Dot::Project {
     }
 
     Script::ScriptReport transition;
-    auto transitioned = processSceneRequest(transition);
+    auto transitioned = processSceneRequest(transition, true);
 
     if (!transitioned) {
       return std::unexpected(transitioned.error());
@@ -1116,11 +1175,7 @@ namespace Dot::Project {
 
     Script::ScriptReport report;
 
-    if (!m_impl->m_preparation) {
-      return report;
-    }
-
-    auto processed = processSceneRequest(report);
+    auto processed = processSceneRequest(report, false);
     return processed ? Core::Result<Script::ScriptReport>{std::move(report)}
                      : std::unexpected(processed.error());
   }

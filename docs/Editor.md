@@ -1863,8 +1863,20 @@ uncommitted work and retires its flow record; destruction joins without detachin
 Cancellation is cooperative: a decoder or bounded skin-validation pass can finish
 before the join completes.
 
-Scene rehydration, script compilation/VM/service setup, native audio activation and
-old-service retirement still run on the owner and can stall. Target audio remains
+After old Stop, the retired native audio requests real worker teardown and stays
+in one owned retirement slot. Old realm/physics/animation are released on the
+owner. Update or `pollScene` reaps the slot only after actual native teardown;
+`retiringAudio` reports unreaped ownership in Play status (and standalone player
+inspection), rather than claiming the old endpoint is already released or audible.
+The next cut stays Pending until that slot clears, bounding this game to two
+endpoints including a prepared replacement. A teardown fault is contextual and
+faults the current game. Close/destruction still join all owned endpoints. Already
+queued/driver PCM can retain its tail while native stop completes; this is not a
+sample-accurate crossfade or a guaranteed zero-overlap cut.
+
+Scene rehydration, script compilation/VM/service setup, native audio opening and
+activation, and non-audio retirement still run on the owner and can stall. Failure
+cleanup and final close can also wait for native teardown. Target audio remains
 silent until startup. Stop/Start callbacks are irreversible; a committed realm/native
 fault is reported and faults Play. Invalid target files/assets or script preparation
 keep the old game and report the failed request. GPU allocation can still fail after

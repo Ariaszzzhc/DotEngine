@@ -67,6 +67,9 @@ export namespace Dot::Audio {
     [[nodiscard]] auto beginPlayback() -> Core::Result<void>;
     [[nodiscard]] auto pollPlayback() -> Core::Result<bool>;
     [[nodiscard]] auto requestPlaybackClose() -> Core::Result<void>;
+    /** Join native teardown and report its terminal error; offline is a no-op.
+     * 等待原生清理并报告终止错误；离线模式无操作。 */
+    [[nodiscard]] auto closePlayback() -> Core::Result<void>;
     /** Terminal backend errors are reported only after native teardown completes.
      * 仅在原生清理完成后报告终止后端错误。 */
     [[nodiscard]] auto pollPlaybackClosed() const -> Core::Result<bool>;

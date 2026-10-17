@@ -723,6 +723,7 @@ namespace Dot::Editor {
     result.location = std::move(game->location);
     result.transition = std::move(game->transition);
     result.source = std::move(game->source);
+    result.retiringAudio = game->retiringAudio;
     return result;
   }
 

@@ -185,6 +185,7 @@ TEST_CASE("scene_transition.prepares_before_stop_rebuilds_services_and_preserves
   CHECK(session.stats()->location.path == "scenes/next.dotscene");
   CHECK(session.sceneRequest(id)->state == Script::SceneRequestState::Succeeded);
   CHECK(session.sceneRequest(id)->committed);
+  CHECK_FALSE(session.stats()->retiringAudio);
   REQUIRE(fixture.observations.size() == 3);
   CHECK(fixture.observations[0]["phase"] == "start");
   CHECK(fixture.observations[1]["phase"] == "stop");

@@ -16,6 +16,7 @@ import Dot.World.SceneFiles;
 import Dot.Project;
 import Dot.Platform.Input;
 import Dot.Project.GameSession;
+import Dot.Project.PlayerControl;
 import Dot.Script.Compiler;
 import Dot.Script.Host;
 
@@ -300,6 +301,7 @@ TEST_CASE("audio.scene_transition_prepares_new_endpoint_silently_and_releases_re
   REQUIRE(completed);
   REQUIRE(completed->failures.empty());
   CHECK(session.sceneRequest(id)->committed);
+  CHECK(session.stats()->retiringAudio);
   CHECK(session.scene().value()->id() != old->id());
   REQUIRE(observations.size() == 3);
   const auto& started = observations.back();
@@ -372,10 +374,116 @@ TEST_CASE("audio.scene_adopts_only_matching_unstarted_deferred_playback") {
   }
 
   CHECK(audio->stats()->playback->state == Dot::Audio::PlaybackState::Closed);
+  REQUIRE(audio->closePlayback());
+  REQUIRE(audio->closePlayback());
   auto active = Dot::Audio::Playback::create(config).value();
   REQUIRE(active.start());
   CHECK_FALSE(
       Dot::Audio::SceneAudio::createPlayback(scene, directory.files(), config, {}, &active));
+}
+
+TEST_CASE("audio.scene_retirement_is_bounded_observable_and_owned_through_moves_and_close") {
+  using namespace Dot;
+  DotTest::Audio::Directory directory;
+  const auto files = directory.files();
+  REQUIRE(files.createDirectories("scenes"));
+  auto initial = World::Scene::create("Retirement").value();
+  const auto actor = initial.createEntity("Player").value();
+  REQUIRE(initial.setScript(actor, World::ScriptComponent{"player.ts", "Player"}));
+  REQUIRE(World::saveScene(files, "scenes/next.dotscene", initial));
+  const auto program = compiled(files,
+                                "onStart(){this.self.name='started';}"
+                                "onStop(){this.self.name='stopped';}");
+  Project::Description description;
+  description.applicationId = "audio-retirement-test";
+  description.hotReload = false;
+  Project::GameSessionConfig config;
+  config.audioMode = Project::SessionAudio::Playback;
+  config.audio.output.volume = 0;
+  const auto mixerBefore = Audio::Mixer::backendMemory();
+  const auto outputBefore = Audio::Output::backendMemory();
+  auto session
+      = Project::GameSession::createCompiled(files, description, initial, program, config).value();
+  REQUIRE(session.start());
+  const auto mixerOne = Audio::Mixer::backendMemory().bytes - mixerBefore.bytes;
+  const auto outputOne = Audio::Output::backendMemory().bytes - outputBefore.bytes;
+  CHECK_FALSE(session.stats()->retiringAudio);
+  auto request = session.requestScene("scenes/next.dotscene").value();
+  std::weak_ptr<World::Scene> retired;
+
+  for (int iteration = 0; iteration < 3; ++iteration) {
+    retired = session.scene().value();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+
+    while (session.sceneRequest(request)->state != Script::SceneRequestState::Succeeded) {
+      auto frame = session.update(0);
+      REQUIRE_MESSAGE(frame, (frame ? "" : frame.error().message));
+      CHECK(frame->frame.failures.empty());
+      CHECK(Audio::Mixer::backendMemory().bytes <= mixerBefore.bytes + 2 * mixerOne);
+      CHECK(Audio::Output::backendMemory().bytes <= outputBefore.bytes + 2 * outputOne);
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    CHECK(session.stats()->retiringAudio);
+    CHECK_FALSE(retired.expired());
+    auto player = Project::PlayerControl::create(session).value();
+    auto snapshot = player.perform(R"({"command":"inspect"})");
+    REQUIRE(snapshot);
+    CHECK(Json::parse(*snapshot)["player"]["retiringAudio"] == true);
+    request = session.requestScene("scenes/next.dotscene").value();
+
+    if (iteration != 2) {
+      while (session.stats()->retiringAudio) {
+        REQUIRE(session.pollScene());
+        CHECK(session.sceneRequest(request)->state == Script::SceneRequestState::Pending);
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      }
+
+      CHECK(retired.expired());
+      CHECK(
+          Json::parse(player.perform(R"({"command":"inspect"})").value())["player"]["retiringAudio"]
+          == false);
+    }
+  }
+
+  auto moved = std::move(session);
+  CHECK_FALSE(session.stats());
+  CHECK(moved.stats()->retiringAudio);
+
+  SUBCASE("explicit_close_joins_both_endpoints_and_cancels_the_queued_cut") {
+    REQUIRE(moved.close());
+    CHECK(moved.sceneRequest(request)->state == Script::SceneRequestState::Cancelled);
+    CHECK_FALSE(moved.stats()->retiringAudio);
+    CHECK(moved.scene().value()->entities()->front().name == "stopped");
+  }
+
+  SUBCASE("quiescent_foreign_destruction_joins_without_running_stop_hooks") {
+    auto active = moved.scene().value();
+    std::thread release([owned = std::move(moved)] {});
+    release.join();
+    CHECK(active->entities()->front().name == "started");
+  }
+
+  SUBCASE("failed_current_audio_sync_still_releases_both_endpoints") {
+    auto active = moved.scene().value();
+    World::AudioSource missing;
+    missing.asset = "missing.wav";
+    REQUIRE(active->setAudioSource(active->entities()->front().id, missing));
+    CHECK_FALSE(moved.update(0));
+    CHECK(moved.stats()->state == Project::SessionState::Faulted);
+    CHECK(moved.stats()->retiringAudio);
+    REQUIRE(moved.close());
+    CHECK(moved.sceneRequest(request)->state == Script::SceneRequestState::Cancelled);
+    CHECK_FALSE(moved.stats()->retiringAudio);
+  }
+
+  CHECK(retired.expired());
+  CHECK(Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
+  CHECK(Audio::Mixer::backendMemory().allocations == mixerBefore.allocations);
+  CHECK(Audio::Output::backendMemory().bytes == outputBefore.bytes);
+  CHECK(Audio::Output::backendMemory().allocations == outputBefore.allocations);
 }
 
 TEST_CASE("audio.game_async_activation_requires_completion_before_gameplay") {

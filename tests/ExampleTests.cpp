@@ -595,6 +595,7 @@ TEST_CASE(
   const auto after = control(player, {{"command", "inspect"}});
   CHECK(after["player"]["scope"] != scope);
   CHECK(after["player"]["input"]["active"] == false);
+  CHECK(after["player"]["retiringAudio"] == false);
   CHECK(control(player, {{"command", "scene-status"},
                          {"request", requested["request"]}})["transition"]["state"]
         == "succeeded");

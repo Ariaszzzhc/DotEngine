@@ -10547,3 +10547,93 @@ No distribution archive is created. Final formatting, whitespace and ownership/
 error/platform/test reviews pass before commit. Remaining owner service/retirement work,
 Prism checkpoint restoration/feedback, larger production workflows, final art and
 the overall engine goal remain unfinished.
+
+## 2026-10-17 — Bounded scene audio retirement
+
+Follow the real standalone replacement sample: 26 samples on the main thread were
+inside old AudioSession/SceneAudio/Playback destruction waiting for native teardown.
+After irreversible old Stop and realm release, request the existing playback
+worker's real close and retain only the AudioSession in one owned retirement slot.
+Its old scene/clips stay owned until native completion; old realm, physics and
+animation do not. Update and explicit pollScene reap only completed teardown, and
+contextual late backend errors fault the current session rather than vanish.
+
+A following scene request can queue but stays Pending until retirement clears.
+This bounds each game to two native endpoints including a prepared candidate;
+there is no detached reaper, task queue or growing collection of old sessions.
+Pure polling still never begins a Pending cut, including a target Start request.
+GameSession/Play/native player inspection expose retiringAudio as unreaped ownership,
+not a claim that an endpoint is audible or already released. The editor shows the
+same status. Stop/destruction synchronously join both active and retired native
+work; explicit SceneAudio/AudioSession closePlayback returns the real terminal
+error. Scheduler teardown remains valid after scene invalidation on the owner;
+ordinary reads/writes still reject invalid scenes and every foreign caller rejects.
+
+The endpoint may finish an already buffered PCM tail while stop completes. This is
+not a sample-accurate crossfade or a guaranteed zero-overlap cut. New endpoint
+opening/activation, failed-candidate cleanup, non-audio retirement and final close
+remain owner waits. No timing reset, warning suppression, widened catch-up budget
+or paused simulation is used to hide resource work.
+
+One enduring native-backend regression in the existing target performs repeated
+cuts and observes the real player JSON, one owned retirement slot, queued-cut poll
+semantics, released old-scene weak references and a two-endpoint memory bound.
+Moves preserve retirement. Explicit close cancels queued cuts and releases both
+endpoints; quiescent foreign destruction releases without Stop. A final subcase
+makes the current audio asset genuinely missing while retirement is owned, verifies
+a real synchronization fault, then checks complete close and baseline allocation/
+byte counts. Existing native preparation, silent target startup, offline transition
+and host tests cover idempotent close, moved handles, foreign threads and scene
+invalidation recovery. No fake backend, windowed automated test or new executable.
+
+Focused Debug passes 174/174 in 21.83s; full Debug passes 1,388/1,388 in 218.48s.
+After adding the final native fault/close subcase (product implementation unchanged),
+that Debug case passes in 0.56s; final full Release/NDEBUG passes 1,388/1,388 in
+31.62s. Counts: 426 unit, 962 integration, with overlapping labels including 224
+compiler, 162 offscreen, 37 audio-native, 33 platform and 21 process. Builds/checks
+run sequentially before separate native product runs. Only arm64 macOS is executed.
+CUA reports the Mac still locked; no human pointer/keyboard acceptance is claimed.
+
+The real Release editor opens the saved PrismControl project, performs three
+same-scene Play cuts (7/6/6 observed Loading snapshots), rejects a missing scene
+without commit, and then moves/jumps through actual product input (Z 1.3756583929,
+peak Y 1.3822506666). The subsequent explicit editor status reads have already
+reaped retirement and report false; do not claim those reads observed a true slot.
+Stop restores a clean authoring scene with byte-identical saved/stopped PNG,
+SHA-256 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Export through the workspace, compare every 115 content files / 66,211,235 bytes
+with saved authoring and the prior export, and verify no TypeScript/source maps.
+Relocate native output and physically hide the authoring project during both runs.
+
+A same-scene native run under a six-second sample at requested 1ms observes one
+true retirement snapshot and later false. Its greatest application step is
+46.363958ms versus the preceding 87.923417ms sampled run; longest supplied interval
+is 48.888916ms and retained median is 11.5959585ms. The greatest step is now a
+render/prepare-heavy frame, not the replacement Update. Its 0.581500ms Update is
+NOT the maximum replacement Update; that frame has left the 120-entry history.
+Do not manufacture a per-phase peak from the global greatest-step record. Caches,
+OS/driver state and sampling overhead are not controlled, so this is local evidence
+rather than a universal timing guarantee.
+
+The new main-thread sample has no thread-join/image-decode branch. Scene preparation
+still decodes images on its worker (275 loadImage samples). Main still spends 10
+samples preparing animation clips and three waiting for a new playback endpoint.
+A second native process performs six consecutive cuts while moving through every
+Loading interval: old player Z progresses from 1.928114 to at most 0.875776/0.815906
+before each new scope. Each cut observes a true retirement slot and the last is
+polled false; the following missing-scene request fails without commit. Its greatest
+step is 87.892375ms, with 70.478625ms Update and 89.153417ms longest interval. This
+remaining spike is real; retirement alone does not complete asynchronous loading.
+Retained samples and global extrema show zero fixed-time drops and no paused/error
+frames; stderr has normal preparation and the intentional missing-file diagnostic.
+Both players and the editor exit zero and retire their control directories.
+
+Authoring is restored, the preceding persistent slot retains its exact hash, and
+binary arm64/linkage/hash metadata is recorded. The owned editor/native copies
+and compiled helper cache are removed after inspection; authoring, data, caches,
+raw requests/responses, progress histories, profiles, stack sample, replay scripts
+and PNGs remain under ignored build/audio-retirement-review. No distribution archive is made.
+Formatting/whitespace and ownership/error/platform/test review pass before commit.
+Per-phase peak retention, remaining animation/service preparation, Prism checkpoint
+restoration/feedback, larger production workflows, final art and the overall engine
+goal remain unfinished.

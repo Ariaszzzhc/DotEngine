@@ -113,6 +113,7 @@ namespace Dot::Project {
                                         : Json(nullptr)},
               {"source", std::move(source)},
               {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
+              {"retiringAudio", stats.retiringAudio},
               {"failureCount", std::to_string(m_failures)},
               {"diagnostics", m_diagnostics}};
     }

@@ -50,6 +50,7 @@ export namespace Dot::Editor {
      * 发布前初始任务/旧结果计数，与运行中的重载尝试分开。 */
     std::uint64_t preparationCompileAttempts{};
     std::uint64_t discardedScriptCompilations{};
+    bool retiringAudio{};
   };
 
   struct PlayFrame {

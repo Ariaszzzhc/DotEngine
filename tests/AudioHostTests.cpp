@@ -215,9 +215,13 @@ TEST_CASE("audio_host_moves_threads_shared_lifetime_and_failed_initialization_re
     CHECK_FALSE(audio.bindings());
     CHECK_FALSE(audio.synchronize());
     CHECK_FALSE(audio.reset());
+    CHECK_FALSE(audio.requestPlaybackClose());
+    CHECK_FALSE(audio.pollPlaybackClosed());
+    CHECK_FALSE(audio.closePlayback());
     bool rejected = false;
     std::thread worker([&] {
-      rejected = !moved.bindings() && !moved.synchronize()
+      rejected = !moved.bindings() && !moved.synchronize() && !moved.requestPlaybackClose()
+                 && !moved.pollPlaybackClosed() && !moved.closePlayback()
                  && !invoke(services, "audio.voice", Json::array({id(entity)}));
     });
     worker.join();
@@ -233,6 +237,19 @@ TEST_CASE("audio_host_moves_threads_shared_lifetime_and_failed_initialization_re
   retained.reset();
   services.clear();
   CHECK(weak.expired());
+
+  {
+    auto original = scene();
+    add(original, "tone.wav");
+    auto audio = AudioSession::create(original, files).value();
+    auto invalidated = std::move(*original);
+    CHECK_FALSE(audio.synchronize());
+    REQUIRE(audio.requestPlaybackClose());
+    CHECK(audio.pollPlaybackClosed().value());
+    REQUIRE(audio.closePlayback());
+    CHECK(invalidated.entityCount().value() == 1);
+  }
+
   CHECK(Dot::Audio::Mixer::backendMemory().bytes == memory.bytes);
   CHECK(Dot::Audio::Mixer::backendMemory().allocations == memory.allocations);
 }

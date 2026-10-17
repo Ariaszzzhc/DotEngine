@@ -153,13 +153,13 @@ namespace Dot::Script {
           m_playback(playback) {
     }
 
-    auto check() const -> Core::Result<void> {
-      if (m_thread != std::this_thread::get_id() || m_scene->id() != m_identity) {
+    auto check(bool requireScene = true) const -> Core::Result<void> {
+      if (m_thread != std::this_thread::get_id() || (requireScene && m_scene->id() != m_identity)) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Audio session requires original scene/owner thread");
       }
 
-      return m_scene->name().transform([](const auto&) {});
+      return requireScene ? m_scene->name().transform([](const auto&) {}) : Core::Result<void>{};
     }
 
     auto dispatch(std::string_view method, const Json& args) -> Reply {
@@ -395,9 +395,18 @@ namespace Dot::Script {
       return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
     }
 
-    auto checked = m_impl->check();
+    auto checked = m_impl->check(false);
     return checked ? m_impl->m_audio.requestPlaybackClose()
                    : Core::Result<void>{std::unexpected(checked.error())};
+  }
+
+  auto AudioSession::closePlayback() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
+    }
+
+    auto checked = m_impl->check(false);
+    return checked ? m_impl->m_audio.closePlayback() : checked;
   }
 
   auto AudioSession::pollPlaybackClosed() const -> Core::Result<bool> {
@@ -405,7 +414,7 @@ namespace Dot::Script {
       return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
     }
 
-    auto checked = m_impl->check();
+    auto checked = m_impl->check(false);
     return checked ? m_impl->m_audio.pollPlaybackClosed()
                    : Core::Result<bool>{std::unexpected(checked.error())};
   }

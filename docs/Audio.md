@@ -158,6 +158,24 @@ GameSession beginStart keeps state Starting until pollStart confirms native
 activation; gameplay/input advancement rejects during Starting. Editor Play uses
 this boundary to keep native opening/activation waits off its owner thread.
 
+Scene replacement requests old native teardown after Stop and retains only its
+AudioSession in one retirement slot. The old realm/physics/animation are released
+on the owner; the audio slot retains clips and its old scene until native completion
+is polled. Update and pollScene reap it without advancing extra gameplay time.
+A following scene request can queue, but preparation waits for retirement, keeping
+at most two game-owned endpoints (including a prepared candidate). `retiringAudio`
+in GameSession/Play/native player status means unreaped ownership, even when the
+worker has already finished. Terminal teardown errors fault the current session
+with retired-scene context. Synchronous close/destruction still join both active
+and retired playback. `SceneAudio::closePlayback` and `AudioSession::closePlayback`
+expose that same blocking native completion and its error; offline mode is a no-op.
+Scheduler teardown remains valid after scene invalidation, on the creating thread.
+
+Already buffered PCM may finish a tail while native stop completes, so a successful
+replacement is not a sample-accurate crossfade or a guarantee of zero audio overlap.
+Native endpoint preparation/activation, failed-candidate cleanup, non-audio service
+retirement and final close are still synchronous owner work.
+
 Creating client-thread calls synchronously dispatch validated voice operations
 and return the worker's actual results. There is at most one pending command;
 arguments retain owned Clip copies until execution. Startup waits for successful

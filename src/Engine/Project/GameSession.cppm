@@ -50,6 +50,9 @@ export namespace Dot::Project {
     Script::SceneLocation location{};
     std::optional<Script::SceneRequest> transition;
     std::optional<Script::LiveScriptsStats> source{};
+    /** Owns one retired endpoint until real teardown is reaped; not an audible-state flag.
+     * 真实清理回收前拥有一个退役端点，不表示当前是否可听。 */
+    bool retiringAudio{};
   };
 
   /** Owns the active project scene and its input, scripts, real physics,
@@ -57,12 +60,15 @@ export namespace Dot::Project {
    * the creating thread without reentry; moves keep stable service ownership.
    * Destruction only releases resources; close invokes stop hooks and releases
    * services even after faults. Native audio is prepared silently and activated
-   * after the first start dispatch and successful initial pose synchronization.
+   * after the first start dispatch and successful initial pose synchronization. Scene
+   * cuts retain one old audio service until actual worker teardown; the next cut
+   * waits for that ownership to be reaped. Close/destruction join both endpoints.
    * The shared scene remains inspectable after close.
    * 拥有新加载项目场景及输入、脚本、真实物理和离线/原生音频，不打开窗口或渲染器。
    * 操作限创建线程且不可重入，移动保持服务所有权稳定；销毁仅释放资源，close 执行停止
    * 钩子且在故障后也释放服务；原生音频静默准备，首次启动分发结束且初始位姿同步成功后才激活。
-   * 关闭后仍可检查共享场景。 */
+   * 场景切换保留一个旧音频服务直至工作线程真实清理；回收前不开始下次切换。
+   * 关闭/销毁等待两个端点退出，关闭后仍可检查共享场景。 */
   class GameSession {
   public:
     [[nodiscard]] static auto create(const Project& project,
@@ -120,16 +126,18 @@ export namespace Dot::Project {
     /** Owned game-wide control handle; close/fault/destruction retires writes.
      * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
-    /** Queue replacement at the end of the next variable update. Acceptance is
+    /** Queue replacement at the next variable boundary with no retired audio. Acceptance is
      * not completion; query the retained request result. Prepare failures keep the
      * old scene running. A committed stop/start failure faults the new session.
-     * 下一变动帧末尾替换场景；接受不等于完成，须查询请求结果。准备失败保留旧场景；
+     * 在无退役音频的下一变动帧末尾开始替换；接受不等于完成，须查询请求结果。准备失败保留旧场景；
      * 提交后的停止/启动失败使新会话故障。 */
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
-    /** Poll resource preflight without advancing game Update/fixed time. A ready
-     * replacement may dispatch Stop/Start and rebuild owner-thread services.
-     * 不推进游戏 Update/固定时间地轮询资源预检；完成后可执行 Stop/Start 并重建主线程服务。 */
+    /** Poll resource preflight/retired audio without advancing Update/fixed time
+     * or beginning pending cuts. A ready replacement may dispatch Stop/Start and
+     * rebuild owner-thread services. Retired teardown faults remain errors.
+     * 不推进 Update/固定时间或开始待处理切换地轮询预检/退役音频；完成后可执行 Stop/Start
+     * 并重建主线程服务，退役清理故障仍报告错误。 */
     [[nodiscard]] auto pollScene() -> Core::Result<Script::ScriptReport>;
     [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false)
         -> Core::Result<std::uint64_t>;
@@ -186,7 +194,8 @@ export namespace Dot::Project {
         const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {},
         const Script::GameData* progress = nullptr, Audio::Playback* preparedPlayback = nullptr,
         const PreparedScene* preflight = nullptr) -> Core::Result<GameSession>;
-    [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report) -> Core::Result<void>;
+    [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report, bool beginPending)
+        -> Core::Result<void>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

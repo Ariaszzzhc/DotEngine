@@ -253,8 +253,11 @@ marked `truncated` and retain valid UTF-8. Hot-reload errors remain visible unde
 
 Mailbox polling shares the native owner loop. GameSession now validates scene
 graphics/images/HDR/skins on an owned CPU worker while the old game keeps running.
-Scene rehydration, script/VM/native service setup and retirement still run on the
-owner and may delay rendering/replies. Native profiles retain actual fixed-time
-drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
+Retired audio uses one owned asynchronous teardown slot, observed as
+`player.retiringAudio`; the next cut stays Pending until it is reaped. This reports
+ownership, not whether buffered PCM is audible. Close/destruction join all native
+work. Scene rehydration, script/VM/native service setup, activation and non-audio
+retirement still run on the owner and may delay rendering/replies. Native profiles
+retain actual fixed-time drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
 validation, ownership and cancellation; this does not complete background streaming
 or game-specific checkpoint restoration/feedback.

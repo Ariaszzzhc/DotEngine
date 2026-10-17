@@ -1475,6 +1475,7 @@ namespace Dot::Editor {
                {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)}};
         status["transition"]
             = stats.transition ? sceneRequestJson(*stats.transition) : Json(nullptr);
+        status["retiringAudio"] = stats.retiringAudio;
 
         if (stats.source) {
           status["source"]
@@ -8442,6 +8443,10 @@ namespace Dot::Editor {
         }
 
         ImGui::EndDisabled();
+
+        if (stats.retiringAudio) {
+          ImGui::TextUnformatted("Releasing previous scene audio...");
+        }
 
         if (stats.transition && stats.transition->error) {
           ImGui::TextWrapped("%s", stats.transition->error->message.c_str());

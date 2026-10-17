@@ -51,7 +51,12 @@ export namespace Dot::Script {
      * 非阻塞激活/清理轮询，离线音频已就绪。 */
     [[nodiscard]] auto beginPlayback() -> Core::Result<void>;
     [[nodiscard]] auto pollPlayback() -> Core::Result<bool>;
+    /** Teardown requires the owner thread, but remains valid after scene invalidation.
+     * 清理要求所有者线程，场景失效后仍可执行。 */
     [[nodiscard]] auto requestPlaybackClose() -> Core::Result<void>;
+    /** Join real backend teardown and retain its error; offline is a no-op.
+     * 等待真实后端清理并保留错误；离线模式无操作。 */
+    [[nodiscard]] auto closePlayback() -> Core::Result<void>;
     /** Terminal backend errors are reported only after native teardown completes.
      * 仅在原生清理完成后报告终止后端错误。 */
     [[nodiscard]] auto pollPlaybackClosed() const -> Core::Result<bool>;
