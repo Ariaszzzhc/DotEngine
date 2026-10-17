@@ -18,6 +18,8 @@
 #include "ScriptCompilation.hpp"
 
 import Dot.Animation.Files;
+import Dot.Editor.AnimationPreview;
+import Dot.World.SceneFiles;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
 import Dot.Assets.Material;
@@ -1210,4 +1212,60 @@ export class TextRequest extends ScriptComponent {
   report(session.close());
   REQUIRE(ui.perform(R"({"command":"events","after":"0"})"));
   CHECK_FALSE(ui.perform(R"({"command":"activate","key":"menu-0-return"})"));
+}
+
+TEST_CASE("prism.authored_action_scene_keeps_gameplay_separate_and_animates_real_joints") {
+  auto project = Dot::Project::Project::open(DOT_EXAMPLE_SOURCE).value();
+  const auto files = project.files().value();
+  auto scene = Dot::World::loadScene(files, "scenes/character-action.dotscene").value();
+  const auto players = scene.animationPlayers().value();
+  REQUIRE(players.size() == 1);
+  const auto& player = players.front();
+  REQUIRE(player.properties.clip < player.properties.clips.size());
+  CHECK(player.properties.clips[player.properties.clip]
+        == "assets/actions/inspection.dotanimation");
+  CHECK(player.properties.playOnStart);
+  CHECK(player.properties.enabled);
+  const auto value
+      = Dot::Animation::loadClip(files, player.properties.clips[player.properties.clip]).value();
+  CHECK(value.duration().value() == 2);
+  const auto* description = value.description().value();
+  CHECK(description->tracks.size() == 201);
+  std::size_t keys{};
+
+  for (const auto& track : description->tracks) {
+    keys += track.keys.size();
+  }
+
+  CHECK(keys == 405);
+  const auto entities = scene.entities().value();
+  const auto controller = std::ranges::find_if(
+      entities, [](const auto& entity) { return entity.character.has_value(); });
+  REQUIRE(controller != entities.end());
+  CHECK_FALSE(controller->script);
+  const auto main = project.loadStartup().value();
+  REQUIRE(main.entity(main.findEntity(controller->id.value).value())->script);
+  auto preview = Dot::Editor::AnimationPreview::create(scene, files, player.entity.value).value();
+
+  for (const auto* name : {"head", "upper_arm.L", "upper_arm.R"}) {
+    const auto target
+        = std::ranges::find_if(entities, [&](const auto& entity) { return entity.name == name; });
+    REQUIRE(target != entities.end());
+    CHECK(std::ranges::any_of(player.properties.targets, [&](const auto& binding) {
+      return binding.entity == target->id.value;
+    }));
+    REQUIRE(preview.seek(0));
+    auto posed = preview.scene().value();
+    const auto start = posed->transform(posed->findEntity(target->id.value).value()).value();
+    REQUIRE(preview.seek(.75));
+    posed = preview.scene().value();
+    const auto peak = posed->transform(posed->findEntity(target->id.value).value()).value();
+    const auto dot = start.rotation.x * peak.rotation.x + start.rotation.y * peak.rotation.y
+                     + start.rotation.z * peak.rotation.z + start.rotation.w * peak.rotation.w;
+    CHECK(std::abs(dot) < .999F);
+    REQUIRE(preview.seek(2));
+    posed = preview.scene().value();
+    const auto end = posed->transform(posed->findEntity(target->id.value).value()).value();
+    CHECK(start.rotation == end.rotation);
+  }
 }

@@ -397,7 +397,7 @@ discards the ghost. Independent tools share clips; synchronize mutable access. T
 editor scopes the selection/gesture to current document identity/revision and native
 preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
 for shared GUI/agent selection, move and relative TRS value adjustment operations.
-Complete dope-sheet, tangent handles and state/layer authoring remain unfinished.
+Frame-grid/snapping, graphical tangent handles and state/layer authoring remain unfinished.
 
 多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
 同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。
@@ -439,10 +439,25 @@ target references, without changing the clipboard or any resource/preview/histor
 The editor performs its actual native pose/skin preflight before one publication;
 source/destination resources remain distinct from the authoring scene. Every UI action
 has the same strict [editor operation](Editor.md#animation-clip-editing). Retargeting,
-complete dope-sheet, bulk value authoring and layered/state-machine tools remain open.
+frame-grid/snapping, graphical tangent handles and layered/state-machine tools remain open.
 
 KeyGroup 拥有不可变、有序的所选记录及原模式/时间范围，可包含部分三次键；源片段销毁/
 修改不影响它，放置结果独立拥有，时间越界或 float 重叠时不改原组。PasteKeys 按时间归并，
 默认拒绝占用，显式替换只覆盖同时间键；模式转换、切线缩放和绑定重定向均不隐式发生。
 AnimationClipboard 在无窗口/文件/设备环境中校验来源与节点绑定、管理单调标识及拥有快照；
 同场景/播放器/完整映射才可准备候选，实际姿态/蒙皮及一步历史由编辑器统一处理。
+
+## Multitrack timing and key removal
+
+Dot.Editor.AnimationTimeline owns an immutable native clip and a sorted node/path
+index. It provides bounded exact/density row pages and inclusive rectangular key
+selection, without window/device/files or mutable shared caches. Dense bins retain
+actual first/last times and counts; selection still resolves source keys within the
+native 16384-key limit. Source retirement and const concurrent queries are supported.
+
+RemoveKeys is one ClipEdit operation over 1..16384 unique existing exact references.
+It removes emptied channels and preserves all remaining key payloads/modes. Final
+native validation rejects an empty clip or a single-key cubic channel; no hold key
+or interpolation fallback is inserted. Ordered batches remain atomic. The editor's
+Delete selected keys uses ordinary history and native skin/authority preflight.
+See [the shared editor workflow](Editor.md#multitrack-dope-sheet--多轨时间表).

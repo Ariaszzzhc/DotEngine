@@ -184,6 +184,52 @@ namespace Dot::Animation {
                 }
 
                 return {};
+              } else if constexpr (std::is_same_v<T, RemoveKeys>) {
+                if (edit.keys.empty() || edit.keys.size() > MaxSelectedKeys) {
+                  return Core::fail(Core::ErrorCode::InvalidArgument,
+                                    "Remove requires 1..16384 unique source keys");
+                }
+
+                std::map<std::pair<std::uint32_t, Path>, std::size_t> channels;
+
+                for (std::size_t i = 0; i < candidate.tracks.size(); ++i) {
+                  channels.emplace(std::pair{candidate.tracks[i].node, candidate.tracks[i].path},
+                                   i);
+                }
+
+                std::map<std::size_t, std::set<float>> removals;
+
+                for (const auto& item : edit.keys) {
+                  if (!std::isfinite(item.time) || item.time < 0 || item.time > 86400) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid removal key time");
+                  }
+
+                  const auto channel = channels.find({item.node, item.path});
+
+                  if (channel == channels.end()) {
+                    return Core::fail(Core::ErrorCode::NotFound, "Removal track does not exist");
+                  }
+
+                  const auto& keys = candidate.tracks[channel->second].keys;
+                  const auto key = std::ranges::lower_bound(keys, item.time, {}, &Key::time);
+
+                  if (key == keys.end() || key->time != item.time) {
+                    return Core::fail(Core::ErrorCode::NotFound, "Removal key does not exist");
+                  }
+
+                  if (!removals[channel->second].insert(item.time).second) {
+                    return Core::fail(Core::ErrorCode::InvalidArgument, "Duplicate removal key");
+                  }
+                }
+
+                for (const auto& [channel, times] : removals) {
+                  std::erase_if(candidate.tracks[channel].keys,
+                                [&](const auto& key) { return times.contains(key.time); });
+                }
+
+                std::erase_if(candidate.tracks,
+                              [](const auto& track) { return track.keys.empty(); });
+                return {};
               } else if constexpr (std::is_same_v<T, PasteKeys>) {
                 if (edit.collision != KeyCollision::Reject
                     && edit.collision != KeyCollision::Replace) {

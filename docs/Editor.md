@@ -1828,7 +1828,7 @@ Apply 会再次调整；打开片段重置参数。候选选择、原生姿态�
 保留文档、历史、预览、选择和参数。恒等操作保留修订、重做与预览时钟。
 
 This workflow edits bound library clips, including newly created and applied pose clips.
-Dope-sheet and graphical tangent-handle editing, skeleton retargeting, state graphs/layers, root motion/events
+Frame-grid/snapping, graphical tangent-handle editing, skeleton retargeting, state graphs/layers, root motion/events
 and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
@@ -1840,8 +1840,81 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键相对 TRS 调整已实现，完整 dope sheet、图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
+多键相对 TRS 调整已实现，完整帧网格/吸附、图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
 
+
+## Multitrack dope sheet / 多轨时间表
+
+The animation editor defaults to **Dope sheet**. Switch to **Curves** for native value
+sampling and individual tangent fields; both views share key selection, time range,
+clipboard, group moves, resource history and the isolated native preview. View changes
+never edit the clip or seek playback. From/To and Fit time define the shared seconds
+axis. Rows are sorted by logical node then translation/rotation/scale, independently
+of the asset's stored channel order; row indices belong to the current resource
+revision and must be refreshed after tracks change.
+
+Each row shows actual key diamonds on that axis. Drag empty row space to select a
+rectangle across rows/time; dragging beyond the visible body scrolls through rows.
+Ctrl/Cmd toggles the rectangle's exact keys, and Shift-click between keys spans their
+rows and times (Ctrl/Cmd+Shift adds). Clicking a row name selects its keys in the
+current time range. Clicking empty space or the ruler seeks the isolated preview.
+A normal click on a selected key starts the existing whole-selection move, including
+keys on other rows. Ghosts show occupied destinations in red; release uses the same
+native atomic retime/pose preflight as the curve view. Escape/focus loss, retired
+geometry or a hidden Animation panel cancels pointer-only feedback/moves. A failed
+commit retains the move and permits correction/cancel.
+
+The row list is clipped to the visible viewport. Up to 256 visible keys per row are
+exact diamonds; denser rows explicitly show occupied density bins. Each bin reports
+its actual first/last native float time and count. Selected bins indicate that they
+contain selected keys, not that every key is selected. Clicking a bin selects its
+exact interval; zoom to resolve individual keys. Neither the density display nor a
+page budget silently drops keys. A rectangle resolves exact source keys, fails
+before changing selection above 16384, and may legitimately select no keys.
+
+Strict agent commands use the same model and selection/publication paths:
+
+```json
+{"command":"set-animation-editor-view","buffer":"1","revision":"1","mode":"dope-sheet"}
+{"command":"set-animation-editor-view","buffer":"1","revision":"1","mode":"curves"}
+{"command":"read-animation-timeline","buffer":"1","revision":"1","from":0,"to":2,"offset":0,"count":32,"columns":128}
+{"command":"select-animation-range","buffer":"1","revision":"1","from":0.5,"to":1.5,"first":0,"last":31,"mode":"replace"}
+{"command":"delete-animation-selection","buffer":"1","revision":"1"}
+```
+
+Fields are exact. Timeline pages require current buffer/revision, seconds in
+[0,86400] with at least a 1us span, offset <= total rows, count 1..32 and density
+columns 1..128. Empty tail pages succeed. Responses contain total/offset and rows
+with index, node/path, actual bound entity/name, total/visible counts, exact `times`
+or explicit `bins` (first/last/count). Queries may read the underlying document
+while a move is active; ghosts remain in `animationClip.move`. Results own their
+values and never expose mutable clip or scene pointers.
+
+Selection uses inclusive row/time bounds and replace/add/toggle modes. Equal times
+select only that exact instant, using native float values returned by the query;
+interval bounds themselves are double precision and are not rounded toward nearby
+keys. Empty matches are allowed. Add deduplicates; toggle preserves existing keys
+outside the rectangle. Newly included keys follow row/time order, with the last key
+anchoring a move. Mode changes, range selection and deletion require no pending key
+form/move/dialog. Reads remain observational. `animationClip.editorView` reports
+the active mode; old resource identities cannot affect a new clip.
+
+**Delete selected keys** handles 1..16384 unique exact keys in one native edit,
+independent of the <=256 batch-operation limit. Empty channels are removed; other
+values/tangents/interpolation stay intact. An empty final clip or cubic channel with
+only one key fails without inventing a replacement. Native pose/skin preflight,
+file conflict behavior and Undo/Redo remain shared with ordinary edits. The batch
+form is also available:
+
+```json
+{"command":"edit-animation-clip","buffer":"1","revision":"1","operations":[{"op":"remove-keys","keys":[{"node":8,"path":"rotation","time":1}]}]}
+```
+
+多轨视图使用同一时间轴展示真实通道，框选、跨轨 Shift 选择、拖动整组、复制/粘贴及批量
+删除共用原生文档与严格接口。密集行显示实际首尾时间与数量，不把聚合标记当成单个键；
+框选仍解析全部精确键，越界/过量/冲突保留此前状态。删除空通道后校验原生片段，拒绝空片段
+与单键三次通道，不造替代数据。完整帧网格/吸附、图形切线手柄、骨骼重定向与分层/状态图
+制作仍未完成，不能仅因时间表存在就宣称动画生产能力成熟。
 
 ## Live script compilation
 

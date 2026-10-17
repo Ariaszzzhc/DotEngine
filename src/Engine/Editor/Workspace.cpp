@@ -42,6 +42,7 @@ import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
 import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
+import Dot.Editor.AnimationTimeline;
 import Dot.Editor.AnimationClipboard;
 import Dot.Animation.Files;
 import Dot.Animation.Source;
@@ -583,6 +584,23 @@ namespace Dot::Editor {
     bool m_exportDataOnly{};
     std::optional<AnimationPreview> m_animationPreview;
     std::optional<AnimationDocument> m_clipDocument;
+    std::optional<AnimationTimeline> m_clipTimeline;
+    std::uint64_t m_timelineBuffer{};
+    std::uint64_t m_timelineRevision{};
+    bool m_dopeSheet{true};
+
+    struct TimelineBox {
+      std::uint64_t buffer;
+      std::uint64_t revision;
+      std::size_t row;
+      double time;
+      ImVec2 start;
+      float minX;
+      float maxX;
+      std::string mode;
+    };
+
+    std::optional<TimelineBox> m_timelineBox;
 
     AnimationClipboard m_animationClipboard;
     AnimationClipboardContext m_clipContext;
@@ -2308,6 +2326,7 @@ namespace Dot::Editor {
     }
 
     auto publishClipSelection(ClipSelection prepared) -> void {
+      m_timelineBox.reset();
       m_clipSelection = std::move(prepared.keys);
       m_clipSelected = std::move(prepared.selected);
       m_clipForm = std::move(prepared.form);
@@ -2326,6 +2345,22 @@ namespace Dot::Editor {
 
       publishClipSelection(std::move(*prepared));
       return {};
+    }
+
+    auto timeline(const AnimationSnapshot& state) -> Core::Result<const AnimationTimeline*> {
+      if (!m_clipTimeline || m_timelineBuffer != m_buffer || m_timelineRevision != state.revision) {
+        auto created = AnimationTimeline::create(state.value);
+
+        if (!created) {
+          return std::unexpected(created.error());
+        }
+
+        m_clipTimeline.emplace(std::move(*created));
+        m_timelineBuffer = m_buffer;
+        m_timelineRevision = state.revision;
+      }
+
+      return &*m_clipTimeline;
     }
 
     static auto clipAdjustment(const Json& value) -> Json {
@@ -2380,6 +2415,9 @@ namespace Dot::Editor {
                                                     {t[0], t[1], t[2]},
                                                     {r[0], r[1], r[2], r[3]},
                                                     {s[0], s[1], s[2]}});
+        } else if (op == "remove-keys") {
+          Codec::requireFields(operation, {"op", "keys"});
+          result.push_back(Animation::RemoveKeys{clipReferences(operation["keys"])});
         } else if (op == "retime-keys") {
           Codec::requireFields(operation, {"op", "keys"});
           const auto& keys = operation["keys"];
@@ -2495,6 +2533,7 @@ namespace Dot::Editor {
       }
 
       return {{"buffer", std::to_string(m_buffer)},
+              {"editorView", m_dopeSheet ? "dope-sheet" : "curves"},
               {"revision", std::to_string(state->revision)},
               {"path", state->path},
               {"name", value->name},
@@ -2669,6 +2708,7 @@ namespace Dot::Editor {
       }
 
       m_animationPreview.emplace(std::move(*preview));
+      m_timelineBox.reset();
       ++m_animationSession;
       m_previewReady = false;
       m_renderedView.reset();
@@ -3051,6 +3091,8 @@ namespace Dot::Editor {
         m_material.reset();
         resetMaterialForm();
         m_clipDocument.emplace(std::move(*document));
+        m_clipTimeline.reset();
+        m_timelineBox.reset();
         m_animationPreview.emplace(std::move(*preview));
         m_clipBindings.swap(bindings);
         m_clipContext = std::move(context);
@@ -3112,6 +3154,7 @@ namespace Dot::Editor {
             return std::unexpected(move.error());
           }
 
+          m_timelineBox.reset();
           m_clipMove.emplace(std::move(*move), m_buffer, state->revision, ++m_keyMoveSession);
         } else {
           if (!m_clipMove || Codec::id(parsed["session"]) != m_clipMove->session
@@ -3163,6 +3206,151 @@ namespace Dot::Editor {
               return Core::fail(selected.error().code, "Key move committed; selection failed: "
                                                            + selected.error().message);
             }
+          }
+        }
+
+        return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+            .dump();
+      }
+
+      if (command == "read-animation-timeline" || command == "select-animation-range"
+          || command == "set-animation-editor-view" || command == "delete-animation-selection") {
+        if (command == "read-animation-timeline") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "from", "to", "offset",
+                                        "count", "columns"});
+        } else if (command == "select-animation-range") {
+          Codec::requireFields(
+              parsed, {"command", "buffer", "revision", "from", "to", "first", "last", "mode"});
+        } else if (command == "set-animation-editor-view") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "mode"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        }
+
+        if (!m_clipDocument || !m_animationPreview || Codec::id(parsed["buffer"]) != m_buffer) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Animation timeline buffer is stale");
+        }
+
+        const auto state = m_clipDocument->snapshot().value();
+        const bool read = command == "read-animation-timeline";
+
+        if (Codec::id(parsed["revision"]) != state.revision
+            || (!read
+                && (m_clipMove || m_clipForm != m_clipOriginal || m_pendingClose
+                    || m_captureDialog))) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Timeline requires current revision and no pending form/move/dialog");
+        }
+
+        if (command == "set-animation-editor-view") {
+          const auto mode = parsed["mode"].get<std::string>();
+
+          if (mode != "dope-sheet" && mode != "curves") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown animation editor view");
+          }
+
+          m_dopeSheet = mode == "dope-sheet";
+          m_timelineBox.reset();
+        } else if (command == "delete-animation-selection") {
+          const std::array<Animation::ClipEdit, 1> changes{Animation::RemoveKeys{m_clipSelection}};
+          auto candidate = Animation::editClip(state.value, changes);
+
+          if (!candidate) {
+            return std::unexpected(candidate.error());
+          }
+
+          auto selected = prepareClipSelection(*candidate, {});
+
+          if (!selected) {
+            return std::unexpected(selected.error());
+          }
+
+          auto published = publishClipValue(state, *candidate);
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+
+          publishClipSelection(std::move(*selected));
+        } else {
+          auto indexed = timeline(state);
+
+          if (!indexed) {
+            return std::unexpected(indexed.error());
+          }
+
+          const auto from = curveTime(parsed["from"]);
+          const auto to = curveTime(parsed["to"]);
+
+          if (read) {
+            auto page = (*indexed)->page(from, to, clipIndex(parsed["offset"], 30000),
+                                         clipIndex(parsed["count"], 32),
+                                         clipIndex(parsed["columns"], 128));
+
+            if (!page) {
+              return std::unexpected(page.error());
+            }
+
+            Json rows = Json::array();
+            constexpr std::array paths{"translation", "rotation", "scale"};
+
+            for (const auto& row : page->rows) {
+              Json bins = Json::array();
+
+              for (const auto& bin : row.bins) {
+                bins.push_back({{"first", bin.first}, {"last", bin.last}, {"count", bin.count}});
+              }
+
+              rows.push_back({{"index", row.index},
+                              {"node", row.node},
+                              {"path", paths.at(static_cast<std::size_t>(row.path))},
+                              {"entity", std::to_string(m_clipBindings.at(row.node).first)},
+                              {"name", m_clipBindings.at(row.node).second},
+                              {"total", row.total},
+                              {"visible", row.visible},
+                              {"times", row.times},
+                              {"bins", std::move(bins)}});
+            }
+
+            return Json{{"ok", true},
+                        {"total", page->total},
+                        {"offset", page->offset},
+                        {"rows", std::move(rows)}}
+                .dump();
+          }
+
+          const auto mode = parsed["mode"].get<std::string>();
+
+          if (mode != "replace" && mode != "add" && mode != "toggle") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown timeline selection mode");
+          }
+
+          auto selected = (*indexed)->select(from, to, clipIndex(parsed["first"], 30000),
+                                             clipIndex(parsed["last"], 30000));
+
+          if (!selected) {
+            return std::unexpected(selected.error());
+          }
+
+          auto keys = mode == "replace" ? std::vector<Animation::KeyReference>{} : m_clipSelection;
+          std::set<std::tuple<std::uint32_t, Animation::Path, float>> toggled;
+
+          for (const auto& key : *selected) {
+            if (mode == "toggle" && m_clipSelected.contains({key.node, key.path, key.time})) {
+              toggled.emplace(key.node, key.path, key.time);
+            } else if (mode == "replace"
+                       || !m_clipSelected.contains({key.node, key.path, key.time})) {
+              keys.push_back(key);
+            }
+          }
+
+          std::erase_if(keys, [&](const auto& key) {
+            return toggled.contains({key.node, key.path, key.time});
+          });
+          auto changed = selectClipKeys(state, std::move(keys));
+
+          if (!changed) {
+            return std::unexpected(changed.error());
           }
         }
 
@@ -3411,6 +3599,7 @@ namespace Dot::Editor {
 
           m_curveFrom = from;
           m_curveTo = to;
+          m_timelineBox.reset();
           m_curveDrag.reset();
           return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
         }
@@ -3484,6 +3673,8 @@ namespace Dot::Editor {
           }
 
           m_clipDocument.reset();
+          m_clipTimeline.reset();
+          m_timelineBox.reset();
           m_clipContext = {};
           m_animationPreview.reset();
           m_clipForm = m_clipOriginal = nullptr;
@@ -3819,6 +4010,8 @@ namespace Dot::Editor {
           }
 
           m_clipDocument.reset();
+          m_clipTimeline.reset();
+          m_timelineBox.reset();
           m_clipContext = {};
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
@@ -5431,6 +5624,8 @@ namespace Dot::Editor {
           m_pendingClose = false;
           m_animationPreview.reset();
           m_clipDocument.reset();
+          m_clipTimeline.reset();
+          m_timelineBox.reset();
           m_clipContext = {};
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
@@ -5559,6 +5754,8 @@ namespace Dot::Editor {
           m_playError.reset();
           m_playDiagnostics.clear();
           m_clipDocument.reset();
+          m_clipTimeline.reset();
+          m_timelineBox.reset();
           m_clipContext = {};
           m_clipForm = m_clipOriginal = nullptr;
           setClipSelection({});
@@ -10004,6 +10201,53 @@ namespace Dot::Editor {
       clipAction({{"command", "select-animation-keys"}, {"keys", referencesJson(keys)}});
     }
 
+    auto updateClipPointerMove(float minX, float maxX) -> void {
+      const auto mouse = ImGui::GetMousePos();
+      if (m_curveDrag) {
+        const auto drag = *m_curveDrag;
+        const auto focused = m_application->window().focused();
+
+        if (!m_clipMove || m_clipMove->session != drag.session) {
+          m_curveDrag.reset();
+        } else if (!focused || !*focused || minX != drag.minX || maxX != drag.maxX
+                   || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
+                       && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+                   || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          sessionAction({{"command", "finish-animation-key-move"},
+                         {"session", std::to_string(drag.session)},
+                         {"commit", false}});
+        } else {
+          const auto value = m_clipMove->move.snapshot().value();
+
+          /** Include final release displacement even without an earlier held
+           * motion frame. Returning to origin restores a semantic no-op.
+           * 即使没有更早的按住移动帧，也纳入释放位置；回到起点恢复语义无变化。 */
+          if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
+               || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+              && (std::abs(mouse.x - drag.mouseStart) >= 3 || value.changed)) {
+            const auto target = static_cast<float>(
+                std::clamp(double(drag.sourceTime)
+                               + (mouse.x - drag.mouseStart) / (drag.maxX - drag.minX)
+                                     * (m_curveTo - m_curveFrom),
+                           0., 86400.));
+
+            if (target != value.time) {
+              sessionAction({{"command", "update-animation-key-move"},
+                             {"session", std::to_string(drag.session)},
+                             {"time", target}});
+            }
+          }
+
+          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            m_curveDrag.reset();
+            sessionAction({{"command", "finish-animation-key-move"},
+                           {"session", std::to_string(drag.session)},
+                           {"commit", true}});
+          }
+        }
+      }
+    }
+
     auto animationCurve(const AnimationSnapshot& state, const Animation::Track& track) -> void {
       constexpr std::array paths{"translation", "rotation", "scale"};
       const auto* path = paths.at(static_cast<std::size_t>(track.path));
@@ -10217,49 +10461,7 @@ namespace Dot::Editor {
         }
       }
 
-      if (m_curveDrag) {
-        const auto drag = *m_curveDrag;
-        const auto focused = m_application->window().focused();
-
-        if (!m_clipMove || m_clipMove->session != drag.session) {
-          m_curveDrag.reset();
-        } else if (!focused || !*focused || minimum.x != drag.minX || maximum.x != drag.maxX
-                   || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
-                       && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-                   || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-          sessionAction({{"command", "finish-animation-key-move"},
-                         {"session", std::to_string(drag.session)},
-                         {"commit", false}});
-        } else {
-          const auto value = m_clipMove->move.snapshot().value();
-
-          /** Include final release displacement even without an earlier held
-           * motion frame. Returning to origin restores a semantic no-op.
-           * 即使没有更早的按住移动帧，也纳入释放位置；回到起点恢复语义无变化。 */
-          if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
-               || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-              && (std::abs(mouse.x - drag.mouseStart) >= 3 || value.changed)) {
-            const auto target = static_cast<float>(
-                std::clamp(double(drag.sourceTime)
-                               + (mouse.x - drag.mouseStart) / (drag.maxX - drag.minX)
-                                     * (m_curveTo - m_curveFrom),
-                           0., 86400.));
-
-            if (target != value.time) {
-              sessionAction({{"command", "update-animation-key-move"},
-                             {"session", std::to_string(drag.session)},
-                             {"time", target}});
-            }
-          }
-
-          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            m_curveDrag.reset();
-            sessionAction({{"command", "finish-animation-key-move"},
-                           {"session", std::to_string(drag.session)},
-                           {"commit", true}});
-          }
-        }
-      }
+      updateClipPointerMove(minimum.x, maximum.x);
 
       if (m_clipMove) {
         const auto value = m_clipMove->move.snapshot().value();
@@ -10282,6 +10484,308 @@ namespace Dot::Editor {
       }
 
       draw->PopClipRect();
+    }
+
+    /** One row per native channel on a shared time axis. Geometry-only marquee
+     * feedback commits through the same bounded range command as agents; key drags
+     * reuse the curve editor's group transaction and native pose preflight.
+     * 原生通道共用时间轴；框选标记仅为几何反馈，释放后通过智能体共用的有界范围命令提交，
+     * 拖键复用曲线编辑器的整组事务与原生姿态预检。 */
+    auto animationDopeSheet(const AnimationSnapshot& state) -> void {
+      /** Toolbar history/deletion may commit earlier in this GUI frame. Never
+       * interpret the former positional row numbers against a newer document.
+       * 工具栏可能已在本帧提交历史/删除，禁止把旧位置行号解释为新文档的行。 */
+      if (state.revision != m_clipDocument->snapshot()->revision) {
+        return;
+      }
+
+      auto indexed = timeline(state);
+
+      if (!indexed) {
+        ImGui::TextWrapped("%s", indexed.error().message.c_str());
+        return;
+      }
+
+      const auto height = std::max(100.F, ImGui::GetContentRegionAvail().y);
+
+      if (!ImGui::BeginTable("Animation dope sheet", 2,
+                             ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY
+                                 | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV,
+                             {0, height})) {
+        return;
+      }
+
+      ImGui::TableSetupColumn("Node / channel", ImGuiTableColumnFlags_WidthFixed, 210);
+      ImGui::TableSetupColumn("Time (seconds)", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupScrollFreeze(1, 2);
+      ImGui::TableHeadersRow();
+      ImGui::TableNextRow();
+      ImGui::TableSetColumnIndex(0);
+      ImGui::TextUnformatted("Drag empty rows to box select");
+      ImGui::TableSetColumnIndex(1);
+      ImGui::InvisibleButton("Time ruler", {std::max(1.F, ImGui::GetContentRegionAvail().x), 24});
+      const auto minimum = ImGui::GetItemRectMin();
+      const auto maximum = ImGui::GetItemRectMax();
+      const auto x = [&](double time) {
+        return minimum.x
+               + static_cast<float>((time - m_curveFrom) / (m_curveTo - m_curveFrom))
+                     * (maximum.x - minimum.x);
+      };
+      const auto at = [&](float pixel) {
+        return std::clamp(
+            m_curveFrom + (pixel - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
+            m_curveFrom, m_curveTo);
+      };
+      auto* draw = ImGui::GetWindowDrawList();
+      const auto mouse = ImGui::GetMousePos();
+      const auto& io = ImGui::GetIO();
+      const bool pending = m_clipForm != m_clipOriginal;
+
+      for (int tick = 0; tick <= 8; ++tick) {
+        const auto time = m_curveFrom + (m_curveTo - m_curveFrom) * tick / 8;
+        const float pixel = x(time);
+        char label[32];
+        std::snprintf(label, sizeof(label), "%.4g", time);
+        const auto width = ImGui::CalcTextSize(label).x;
+        draw->AddText(
+            {std::clamp(pixel - width * .5F, minimum.x, std::max(minimum.x, maximum.x - width)),
+             minimum.y},
+            ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
+      }
+
+      if (ImGui::IsItemClicked() && !pending && !m_clipMove && !m_timelineBox) {
+        sessionAction({{"command", "control-animation-preview"},
+                       {"session", std::to_string(m_animationSession)},
+                       {"action", "seek"},
+                       {"seconds", at(mouse.x)}});
+      }
+
+      struct RowRect {
+        std::size_t row;
+        ImVec2 min;
+        ImVec2 max;
+      };
+
+      const auto playback = m_animationPreview->stats();
+      const auto ghosts = m_clipMove
+                              ? std::optional<KeyMoveSnapshot>{m_clipMove->move.snapshot().value()}
+                              : std::nullopt;
+      std::vector<RowRect> visible;
+      const auto rowHeight = ImGui::GetTextLineHeight() + 12;
+      ImGuiListClipper clipper;
+      clipper.Begin(static_cast<int>((*indexed)->rows().value()), rowHeight);
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      const auto chooseRange = [&](double from, double to, std::size_t first, std::size_t last,
+                                   const std::string& mode) {
+        return clipAction({{"command", "select-animation-range"},
+                           {"from", from},
+                           {"to", to},
+                           {"first", first},
+                           {"last", last},
+                           {"mode", mode}});
+      };
+
+      while (clipper.Step()) {
+        for (int offset = clipper.DisplayStart; offset < clipper.DisplayEnd; offset += 32) {
+          auto page = (*indexed)->page(
+              m_curveFrom, m_curveTo, static_cast<std::size_t>(offset),
+              static_cast<std::size_t>(std::min(32, clipper.DisplayEnd - offset)), 128);
+
+          if (!page) {
+            m_message = page.error().message;
+            break;
+          }
+
+          for (const auto& row : page->rows) {
+            ImGui::PushID(static_cast<int>(row.index));
+            ImGui::TableNextRow(0, rowHeight);
+            ImGui::TableSetColumnIndex(0);
+            const auto label = std::to_string(row.node) + " / " + m_clipBindings.at(row.node).second
+                               + " / " + paths.at(static_cast<std::size_t>(row.path));
+            const bool selected = std::ranges::any_of(m_clipSelection, [&](const auto& key) {
+              return key.node == row.node && key.path == row.path;
+            });
+            ImGui::BeginDisabled(pending || m_clipMove.has_value());
+
+            if (ImGui::Selectable(label.c_str(), selected)) {
+              chooseRange(m_curveFrom, m_curveTo, row.index, row.index,
+                          io.KeyCtrl || io.KeySuper ? "toggle" : "replace");
+            }
+
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("%s\n%zu keys / %zu in this time range", label.c_str(), row.total,
+                                  row.visible);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::InvisibleButton("Keys", {std::max(1.F, ImGui::GetContentRegionAvail().x),
+                                            rowHeight - ImGui::GetStyle().CellPadding.y * 2});
+            const auto low = ImGui::GetItemRectMin();
+            const auto high = ImGui::GetItemRectMax();
+            visible.push_back({row.index, low, high});
+            const float center = (low.y + high.y) * .5F;
+            const bool hovered = ImGui::IsItemHovered();
+            std::optional<float> hit;
+            std::optional<TimelineBin> denseHit;
+            float distance = 7;
+            draw->PushClipRect(low, high, true);
+
+            for (float time : row.times) {
+              const float pixel = x(time);
+              const bool chosen = m_clipSelected.contains({row.node, row.path, time});
+              const auto color
+                  = ImGui::GetColorU32(chosen ? ImGuiCol_ButtonActive : ImGuiCol_TextDisabled);
+              draw->AddQuadFilled({pixel, center - 4}, {pixel + 4, center}, {pixel, center + 4},
+                                  {pixel - 4, center}, color);
+
+              if (hovered && std::abs(mouse.x - pixel) < distance) {
+                hit = time;
+                distance = std::abs(mouse.x - pixel);
+              }
+            }
+
+            for (const auto& bin : row.bins) {
+              const float left = x(bin.first);
+              const float right = std::max(left + 2, x(bin.last));
+              const auto chosen = m_clipSelected.lower_bound({row.node, row.path, bin.first});
+              const bool marked = chosen != m_clipSelected.end() && std::get<0>(*chosen) == row.node
+                                  && std::get<1>(*chosen) == row.path
+                                  && std::get<2>(*chosen) <= bin.last;
+              draw->AddRectFilled(
+                  {left, center - 3}, {right, center + 3},
+                  ImGui::GetColorU32(marked ? ImGuiCol_ButtonActive : ImGuiCol_TextDisabled));
+
+              if (hovered && mouse.x >= left - 2 && mouse.x <= right + 2) {
+                denseHit = bin;
+              }
+            }
+
+            if (ghosts) {
+              for (const auto& key : ghosts->keys) {
+                if (key.node == row.node && key.path == row.path) {
+                  const auto pixel = x(key.key.time);
+                  draw->AddLine({pixel, low.y}, {pixel, high.y},
+                                key.occupied ? IM_COL32(230, 75, 75, 255)
+                                             : ImGui::GetColorU32(ImGuiCol_ButtonActive),
+                                2);
+                }
+              }
+            }
+
+            if (playback) {
+              const auto pixel = x(playback->player.playback.time);
+              draw->AddLine({pixel, low.y}, {pixel, high.y}, ImGui::GetColorU32(ImGuiCol_Text));
+            }
+
+            draw->PopClipRect();
+
+            if (hovered && hit) {
+              ImGui::SetTooltip("%.9g s / drag selected keys together", double(*hit));
+            } else if (hovered && denseHit) {
+              ImGui::SetTooltip(
+                  "%zu keys / %.9g to %.9g s\nClick to select exact keys; zoom to edit individual "
+                  "keys",
+                  denseHit->count, double(denseHit->first), double(denseHit->last));
+            }
+
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !pending && !m_clipMove
+                && !m_timelineBox) {
+              if (hit) {
+                if (io.KeyShift && !m_clipSelection.empty()) {
+                  const auto anchor = m_clipSelection.back();
+                  auto anchorRow = (*indexed)->row(anchor.node, anchor.path);
+
+                  if (anchorRow) {
+                    chooseRange(std::min(double(anchor.time), double(*hit)),
+                                std::max(double(anchor.time), double(*hit)),
+                                std::min(*anchorRow, row.index), std::max(*anchorRow, row.index),
+                                io.KeyCtrl || io.KeySuper ? "add" : "replace");
+                  }
+                } else if (io.KeyCtrl || io.KeySuper) {
+                  chooseClipKey(row.node, row.path, *hit);
+                } else {
+                  const bool chosen = m_clipSelected.contains({row.node, row.path, *hit});
+
+                  if ((chosen
+                       || clipAction({{"command", "select-animation-key"},
+                                      {"node", row.node},
+                                      {"path", paths.at(static_cast<std::size_t>(row.path))},
+                                      {"time", *hit}}))
+                      && clipAction({{"command", "begin-animation-key-move"}})) {
+                    m_curveDrag.emplace(m_clipMove->session, m_clipSelection.back().time, mouse.x,
+                                        minimum.x, maximum.x);
+                  }
+                }
+              } else if (denseHit) {
+                chooseRange(denseHit->first, denseHit->last, row.index, row.index,
+                            io.KeyCtrl || io.KeySuper ? "toggle" : "replace");
+              } else {
+                m_timelineBox.emplace(m_buffer, state.revision, row.index, at(mouse.x), mouse,
+                                      minimum.x, maximum.x,
+                                      io.KeyCtrl || io.KeySuper ? "toggle" : "replace");
+              }
+            }
+
+            ImGui::PopID();
+          }
+        }
+      }
+
+      if (m_timelineBox && !visible.empty()) {
+        const auto box = *m_timelineBox;
+        const auto focused = m_application->window().focused();
+
+        if (box.buffer != m_buffer || box.revision != state.revision || !focused || !*focused
+            || minimum.x != box.minX || maximum.x != box.maxX
+            || ImGui::IsKeyPressed(ImGuiKey_Escape)
+            || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
+                && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))) {
+          m_timelineBox.reset();
+        } else {
+          auto end = visible.begin();
+
+          for (auto it = visible.begin(); it != visible.end(); ++it) {
+            if (mouse.y >= it->min.y) {
+              end = it;
+            }
+          }
+
+          const auto first = std::min(box.row, end->row);
+          const auto last = std::max(box.row, end->row);
+          const auto from = std::min(box.time, at(mouse.x));
+          const auto to = std::max(box.time, at(mouse.x));
+          const bool moved
+              = std::abs(mouse.x - box.start.x) >= 3 || std::abs(mouse.y - box.start.y) >= 3;
+          auto anchor = std::ranges::find(visible, box.row, &RowRect::row);
+          const float y = anchor != visible.end()         ? (anchor->min.y + anchor->max.y) * .5F
+                          : box.row < visible.front().row ? visible.front().min.y
+                                                          : visible.back().max.y;
+          draw->PushClipRect({minimum.x, maximum.y}, {maximum.x, visible.back().max.y}, true);
+          draw->AddRectFilled({x(from), std::min(y, mouse.y)}, {x(to), std::max(y, mouse.y)},
+                              IM_COL32(95, 155, 235, 45));
+          draw->AddRect({x(from), std::min(y, mouse.y)}, {x(to), std::max(y, mouse.y)},
+                        ImGui::GetColorU32(ImGuiCol_ButtonActive));
+          draw->PopClipRect();
+
+          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            m_timelineBox.reset();
+
+            if (moved) {
+              chooseRange(from, to, first, last, box.mode);
+            } else {
+              sessionAction({{"command", "control-animation-preview"},
+                             {"session", std::to_string(m_animationSession)},
+                             {"action", "seek"},
+                             {"seconds", at(mouse.x)}});
+            }
+          } else if (mouse.y < visible.front().min.y + 8) {
+            ImGui::SetScrollY(std::max(0.F, ImGui::GetScrollY() - rowHeight * .6F));
+          } else if (mouse.y > visible.back().max.y - 8) {
+            ImGui::SetScrollY(ImGui::GetScrollY() + rowHeight * .6F);
+          }
+        }
+      }
+
+      updateClipPointerMove(minimum.x, maximum.x);
+      ImGui::EndTable();
     }
 
     auto animationPanel() -> void {
@@ -10428,6 +10932,10 @@ namespace Dot::Editor {
           clipAction({{"command", "begin-animation-key-move"}});
         }
 
+        if (nextButton("Delete selected keys")) {
+          clipAction({{"command", "delete-animation-selection"}});
+        }
+
         if (nextButton("Copy keys")) {
           clipAction({{"command", "copy-animation-keys"}});
         }
@@ -10534,6 +11042,28 @@ namespace Dot::Editor {
         if (move.occupied) {
           ImGui::TextUnformatted("Destination time is occupied; choose another time or cancel.");
         }
+      }
+
+      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+
+      if (ImGui::RadioButton("Dope sheet", m_dopeSheet)) {
+        clipAction({{"command", "set-animation-editor-view"}, {"mode", "dope-sheet"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::RadioButton("Curves", !m_dopeSheet)) {
+        clipAction({{"command", "set-animation-editor-view"}, {"mode", "curves"}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (m_dopeSheet) {
+        ImGui::TextWrapped(
+            "Box drag selects rows/time. Ctrl/Cmd toggles; Shift-click spans tracks. "
+            "Drag a selected key to move the group; Escape cancels.");
+        animationDopeSheet(*state);
+        return;
       }
 
       if (!ImGui::BeginTable("Animation editor", 3,
@@ -11086,6 +11616,12 @@ namespace Dot::Editor {
 
       if (beginPanel("Animation", "animation", "animation")) {
         animationPanel();
+      } else {
+        m_timelineBox.reset();
+
+        if (m_curveDrag) {
+          cancelKeyMove();
+        }
       }
 
       ImGui::End();
@@ -11344,6 +11880,7 @@ namespace Dot::Editor {
         }
 
         if (input.key(Platform::Key::Escape).pressed || m_pendingClose) {
+          m_timelineBox.reset();
           captureInput(false);
           m_agentInput.cancel();
 
@@ -11655,6 +12192,7 @@ namespace Dot::Editor {
               if (std::holds_alternative<Platform::Focus>(event.data)
                   && !std::get<Platform::Focus>(event.data).focused) {
                 state->captureInput(false);
+                state->m_timelineBox.reset();
 
                 if (state->m_curveDrag) {
                   state->cancelKeyMove();

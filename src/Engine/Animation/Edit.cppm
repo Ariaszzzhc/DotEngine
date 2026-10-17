@@ -45,6 +45,15 @@ export namespace Dot::Animation {
     std::vector<KeyTimeChange> keys;
   };
 
+  /** Remove 1..16384 unique exact keys atomically, dropping emptied channels.
+   * Remaining channels keep values/tangents/modes; final native validation rejects
+   * an empty clip or cubic tracks with fewer than two keys. Never invent a hold key.
+   * 原子删除 1..16384 个唯一精确键并移除空通道，保留其余值/切线/模式；最终原生校验
+   * 拒绝空片段或不足两键的三次通道，不伪造保留键。 */
+  struct RemoveKeys {
+    std::vector<KeyReference> keys;
+  };
+
   /** Adjust 1..16384 unique existing keys without retiming. Translation adds a
    * local channel offset; scale multiplies componentwise; rotation postmultiplies
    * XYZW by a finite unit quaternion. Cubic scale/rotation derivatives receive
@@ -84,8 +93,8 @@ export namespace Dot::Animation {
     std::string name;
   };
 
-  using ClipEdit = std::variant<PutKey, UpdateKey, RetimeKeys, TransformKeys, PasteKeys, RemoveKey,
-                                RemoveTrack, SetInterpolation, RenameClip>;
+  using ClipEdit = std::variant<PutKey, UpdateKey, RetimeKeys, RemoveKeys, TransformKeys, PasteKeys,
+                                RemoveKey, RemoveTrack, SetInterpolation, RenameClip>;
 
   /** Atomic ordered batch, <=256 edits, keyed by logical node/path and exact float
    * seconds. Put replaces an equal-time key or inserts in order; new tracks use

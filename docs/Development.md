@@ -11866,3 +11866,152 @@ reports the Mac locked; physical mouse/keyboard, popup layout and narrow-panel
 acceptance are unverified. Complete dope sheet/tangent handles, rig construction/
 retargeting, state/layer production, large-scene workflow/performance, final Prism
 art and the overall production engine/editor goal remain unfinished.
+
+## 2026-10-18 — Multitrack timing and action study
+
+Continue from clean tracked main at 147e99a, equal to origin/main, after the pose
+creation/binding milestone. Preserve local untracked reference/output material.
+Follow engine-development and engine-validation without subagents or compiler/
+linker/dependency changes. The next actual production gap was comparing/editing
+several character channels on one time axis, rather than visiting each curve.
+
+Add the CPU-only Dot.Editor.AnimationTimeline module. It owns an immutable clip and
+node/path-sorted channel index, without reordering stored tracks or borrowing scene/
+file data. Pages are bounded to 32 rows and 128 density columns: rows with <=256
+visible keys return exact times, denser rows return occupied bins with actual first/
+last times and counts. Binary searches keep density reads bounded without scanning
+one million keys every frame. Inclusive rectangle queries resolve exact original
+keys in row/time order and reject more than 16384 before publication. Equal bounds
+mean that actual instant; double interval bounds are not rounded to nearby float
+keys. Empty matches/tail pages are valid; malformed ranges fail. Moved handles fail,
+owned data survives source retirement, and const queries share no mutable cache.
+
+The editor defaults to Dope sheet, with Curves retained for values/tangent fields.
+Both views share selection, time range, clipboard, existing whole-group retime,
+resource history and native pose/skin preflight. Add strict read-animation-timeline,
+select-animation-range and set-animation-editor-view operations, including current
+buffer/revision, exact numeric/mode fields and existing form/move/dialog guards.
+Selection supports replace/add/toggle without duplicates. Inspection reports the
+active view; reads during moves show source keys, with ghosts still reported by the
+existing move state. Cache the immutable index per buffer/revision and release it
+when the clip is replaced/closed. Do not interpret former positional rows after a
+toolbar history/deletion commit earlier in the same GUI frame.
+
+The clipped GUI table renders native row labels/key diamonds, density intervals and
+the playhead. Empty-space marquee uses the same exact range command on release;
+Ctrl/Cmd toggles and Shift-click spans rows/time. Row names select the visible time
+range, bins select their exact source interval, and ruler/empty clicks seek native
+preview. Key drags reuse the existing curve pointer transaction, including occupied
+red ghosts, final-release displacement, focus/layout guards and Escape cancellation.
+Pointer-only feedback/moves retire when the Animation panel is hidden. Marquee can
+scroll through rows; sparse/dense display never substitutes a bin for one key.
+Selected-bin color means at least one selected key, not every key in that bin.
+
+Add native RemoveKeys over 1..16384 unique exact references as one ClipEdit, dropping
+emptied channels while retaining other payloads/modes. Final validation rejects empty
+clips and remaining single-key cubic channels; do not fabricate hold keys or change
+interpolation. Ordered batches remain atomic. The strict delete-animation-selection
+and remove-keys batch form use this same edit layer. Prepare the cleared selection
+before ordinary native preview/history publication. Existing file-conflict/save and
+Undo/Redo semantics remain unchanged; timeline queries never write scenes/files.
+
+Nine durable unit cases in the existing DotUnitTests cover sorted/paged inclusive
+queries, real float boundaries, zero-duration/invalid inputs, exact density coverage,
+selection capacity/recovery, moved/source-retired ownership and concurrent reads,
+shared group retiming, bulk deletion/payload preservation, duplicate/missing/later
+batch failures and cubic minimums. They initialize no windows/devices. A separate
+existing-target example integration case reads the saved action, validates its full
+binding/auto-play setup and native head/upper-arm samples, and verifies that main
+still has its movement script. It uses CPU-only animation audition, not a device.
+No acceptance executable or new graphics regression target is introduced.
+
+Checks on arm64 macOS, with the existing CMake presets/environment:
+
+- Initial nine focused cases: 9/9, 1.48 s. Initial full Debug: 1461/1461, 243.29 s.
+- After row/publication review, rebuilt Debug and passed 44 relevant animation cases
+  in 7.63 s. Initial full Release: 1461/1461, 35.78 s.
+- With the durable action artifact and its regression, focused 10/10 in 2.42 s;
+  rebuilt and ran full Debug 1462/1462 in 243.88 s and Release 1462/1462 in 35.70 s.
+  Release assertions are disabled. Labels: 447 unit, 1015 integration, 185 offscreen
+  GPU and 233 compiler; overlapping labels are not additive. Windows/Linux execution
+  is unverified.
+- Final artifact regression checks absolute quaternion dot products, rejecting a
+  sign-only quaternion difference as fake motion. Rebuilt both test targets and
+  reran that case: Debug 1/1 in 0.91 s, Release 1/1 in 0.09 s; product hashes remain
+  identical to the exercised editor/native copies.
+
+Actual CLI/JSON DotEditor creates a fresh Prism template project. Create a pose clip,
+apply/undo/redo/save its player, then author a dense head curve and two upper-arm peak
+keys: 201 channels/915 keys. The real head bone is node eight (head), distinct from
+mesh-part Head1. Native timeline page reports 513 head keys as 128 exact-count bins.
+Delete its entire channel, observe 200 rows, reject a stale row revision, then Undo.
+Copy the head peak, select/delete 511 intermediate samples in one operation and paste
+the peak back. Select three joints' peaks at one second across all rows; add deduplicates
+and toggle removes the selected head key. An occupied move to zero fails while
+retaining the correction session; moving to 0.75 succeeds as one history step.
+Undo/Redo and a no-op move preserve the expected values/revision. Refuse deleting
+all keys instead of creating an empty/synthetic clip.
+
+Eleven real negative request cases retain document scene/revision/dirty state,
+resource status and file bytes: zero page count, excess columns, boolean/reversed
+time, out-of-range offset, unknown view/range modes, stale row revision, occupied
+move commit, view change during a move and empty-final-clip deletion. Current-mode
+changes preserve preview identity/clock and dirty state. Native posed captures at
+zero and 0.75 show actual skinned head/arm changes with the same camera. Save/reopen
+retains 201 tracks/405 keys and the shared peak at 0.75. Scene authoring is untouched
+by resource edits/audition. Main gameplay still passes movement/jump, actual menu
+checkpoint save/restore/pause/Space resume, Stop restoration and fresh isolated Play.
+Saved/stopped authoring PNGs are byte-identical, retaining SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Through ordinary resource import, Inspector edits and scene-name/save-as operations,
+also save the edited motion as assets/actions/inspection.dotanimation and the action
+study as scenes/character-action.dotscene. Compare the latter semantically against
+main: only its name, Surveyor animation library/selection and Player script attachment
+differ. The study removes the movement script so auto-play owns this action; main's
+seven locomotion slots/script are unchanged. Publish these actual product-produced
+files under examples/PrismRelay, with source/hash notes and opening instructions.
+The motion is 47530 bytes, SHA-256
+89677748aa67488d7a227563877df65539c9282ace793a0b1a1e3db98d393d8e;
+the 439433-byte scene has SHA-256
+3ebc3d43db8e505b71fe0a9c6021a860c948977797630d1c2f610b197f566d98.
+It reuses the existing character/materials/licenses. This is a small authored timing
+study, not final cinematic motion or the finished realistic-art requirement.
+
+Compare all 119 exported content files (67189282 bytes) to the saved authoring
+project, relocate the native package and temporarily hide that owned project. Real
+DotGame runs the main gameplay/checkpoint loop, loads the saved character-action
+scene, samples 16 changing head-joint quaternions (maximum Euclidean distance
+0.2759411), returns to main/restores the checkpoint, then restarts with fresh live
+data and restores the persistent slot again. Both processes exit zero, retire
+controls and retain profiles with no callback errors. Own slot SHA-256 is
+43373ddac657b3707f09144a228cf4f25fb021b5509c7c7ab3e048a667f9510e.
+No universal frame-time/FPS or shipping-maturity claim follows from these runs.
+
+Finally create another project from the rebuilt packaged template. Its action files
+match the checked-in example bytes. Open/edit/audition the study, run it in actual
+editor Play (head rotation distance 0.2568627), Stop without authoring mutation and
+export with character-action as the actual startup scene. The fresh native package
+has 117 content files/66703704 bytes. Relocate it and hide its owned source project:
+--frames 1 exits zero after a real successful presentation, with 130 retained profile
+samples including loading and no callback errors. Loading iterations are not counted
+as the successful presentation. The image/pose proof comes from the product, not a
+bespoke renderer or fake control hook.
+
+Before cleanup record binary hashes, arm64 Mach-O architecture, dependencies/load
+commands and executable-relative native LLVM runtimes. Both workspace editor copies
+match current Release; both exported players match its runtime kit. Packaged font
+hash stays 81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Restore both owned source paths and verify twelve prior persistent save hashes.
+Keep editable validation projects, saves, actual requests/results, captures, profiles,
+semantic source review, manifests and delivery evidence in ignored build/timeline-review.
+Remove only owned temporary App/native copies and helpers/cache files; preserve
+existing build caches and local references. No distribution archive is created.
+
+Review correctness, ownership/cache retirement, range bounds, publication/failure
+semantics, native authority/skin integration, module/platform assumptions, formatting,
+example provenance and focused coverage before committing; whitespace and clang-format
+checks pass. Computer use still reports the Mac locked: physical marquee/key drags,
+narrow-panel layout and pointer/IME acceptance remain unverified. Frame-grid/snapping,
+graphical tangent handles, rig/retargeting/state/layer authoring, larger-game pacing/
+scale, final Prism art and overall production readiness remain unfinished.

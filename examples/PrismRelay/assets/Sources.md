@@ -97,3 +97,16 @@ Straight/support scene assets were extracted and edited through product operatio
 then instantiated/grouped in the main scene. Cabinets use fitted box colliders;
 duct runs use simple box proxies. No mesh-generation helper or external authoring script is
 required to open, edit or export the project.
+
+## Authored character action study
+
+`actions/inspection.dotanimation` is original project motion authored and saved through
+DotEditor's pose creation, key editing, dope-sheet range selection, clipboard, bulk
+deletion and group retiming. It uses the existing Surveyor binding map; no external
+animation clip was copied into this action. The character/source licenses above
+remain unchanged. It keys the actual head and upper-arm joints, preserving the rest
+of the authoring pose. The editable `scenes/character-action.dotscene` selects this
+auto-playing action with the locomotion script removed; main remains the movement/
+jump/checkpoint template. This is a timing/authoring example, not final cinematic art.
+
+- `actions/inspection.dotanimation`: `89677748aa67488d7a227563877df65539c9282ace793a0b1a1e3db98d393d8e`

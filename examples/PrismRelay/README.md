@@ -121,3 +121,22 @@ script in that copy and select the new auto-playing clip. The regular editor and
 native exporter can then run the authored action without the locomotion script
 selecting another clip. Keep the original gameplay scene to test movement, jumping,
 checkpoints and camera behavior. This does not add animation layers or retargeting.
+
+Use the Animation panel's **Dope sheet** to compare head, arm and other channel times
+on a shared axis. Box-select a time/row region or Shift-click across tracks, then drag
+a selected key to retime the whole group. Dense rows report actual key counts; zoom
+or select a bounded range before editing. **Delete selected keys** removes the exact
+group in one undoable edit and drops empty channels, while refusing an empty final
+clip. Curves, clipboard and native audition share this selection and history. For an
+inspection gesture, key the actual `head` and `upper_arm.L`/`upper_arm.R` joints from
+the imported binding map; these are distinct from mesh-part roots such as Head1.
+Keep the action-only scene and main locomotion scene separately playable.
+
+The saved **Character action study** is available at `scenes/character-action.dotscene`.
+Open it in the editor, select Surveyor and edit library slot 7, or press Play to see
+the head/upper-arm action. Its peak keys share 0.75 seconds; its complete 201-channel
+clip remains editable at `assets/actions/inspection.dotanimation`. The study removes
+the Player movement script so native auto-play owns the action. Open `scenes/main.dotscene`
+to return to movement, jumping, camera and checkpoints. The main scene's seven
+locomotion slots are unchanged. The action is a small authoring example, not finished
+cinematic animation or final character art.
