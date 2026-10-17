@@ -17,7 +17,7 @@ open goals. Tests establish specific contracts, not a completion percentage.
 | Docked editor, scene/resource/material authoring, picking/gizmos/multiselection/history, isolated Play and export | Consistent content production, background work and application performance/debugging tools remain unfinished |
 | Recursive linked sources with persistent layered identities, three-way refresh, paged override inspection/revert, inline field counts and whole-field restore | Variants, apply-to-source, retargeting and runtime scene composition/streaming remain unfinished |
 | Strict CLI/JSON/live-mailbox operations sharing product implementations; external script editing | Every future user operation needs equivalent agent control; native simulated pointer acceptance has specific unresolved limits |
-| Editable Feature Lab and Prism Relay under examples/ | Rigged mannequin, shoulder camera and industrial linked assemblies exist; final realistic sci-fi character/environment art and game-scale evidence remain unfinished |
+| Editable Feature Lab and Prism Relay under examples/ | Textured maintenance armor, shoulder camera and industrial linked assemblies exist; final realistic sci-fi character/environment art and game-scale evidence remain unfinished |
 
 ## Verification scope
 

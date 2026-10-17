@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+import Dot.Animation.Files;
+import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
 import Dot.Assets.Material;
 import Dot.Assets.Mesh;
@@ -410,7 +412,7 @@ TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inp
   CHECK(shadowed == 4);
   CHECK(surfaces.size() >= 10);
   CHECK(materials.size() >= 8);
-  unsigned photographic{};
+  unsigned textured{};
 
   for (const auto& [path, material] : materials) {
     if (!material.baseColorTexture) {
@@ -418,7 +420,7 @@ TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inp
     }
 
     INFO(path);
-    ++photographic;
+    ++textured;
     REQUIRE(material.metallicRoughnessTexture);
     REQUIRE(material.normalTexture);
     REQUIRE(material.occlusionTexture);
@@ -430,10 +432,84 @@ TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inp
                                &*material.normalTexture, &*material.occlusionTexture}) {
       auto image = Assets::loadImage(files, source->path);
       REQUIRE_MESSAGE(image, (image ? "" : image.error().message));
-      CHECK(image->width == 1024);
-      CHECK(image->height == 1024);
+      const auto size = path.starts_with("assets/surveyor/") ? 2048U : 1024U;
+      CHECK(image->width == size);
+      CHECK(image->height == size);
     }
   }
 
-  CHECK(photographic >= 2);
+  CHECK(textured >= 3);
+}
+
+TEST_CASE("prism.surveyor_retains_textured_armor_eight_slot_skinning_and_seven_roles") {
+  auto project = Project::Project::open(DOT_EXAMPLE_SOURCE).value();
+  auto files = project.files().value();
+  auto scene = project.loadStartup().value();
+  const auto models = scene.findEntities("Surveyor").value();
+  REQUIRE(models.size() == 1);
+  auto model = scene.entity(models[0]).value();
+  REQUIRE(model.animation);
+  CHECK(model.animation->enabled);
+  REQUIRE(model.animation->clips.size() == 7);
+  const std::array names{"Idle_Loop",  "Walk_Loop", "Jog_Fwd_Loop", "Sprint_Loop",
+                         "Jump_Start", "Jump_Loop", "Jump_Land"};
+
+  for (std::size_t index = 0; index < names.size(); ++index) {
+    auto clip = Animation::loadClip(files, model.animation->clips[index]);
+    REQUIRE_MESSAGE(clip, (clip ? "" : clip.error().message));
+    CHECK(clip->description().value()->name == names[index]);
+    CHECK(clip->duration().value() > 0);
+    auto sample = clip->sample(clip->duration().value() / 2);
+    REQUIRE(sample);
+    CHECK_FALSE(sample->empty());
+  }
+
+  unsigned skinned{};
+  bool extendedWeights{};
+  std::set<std::string> textures;
+
+  for (const auto& entity : scene.entities().value()) {
+    if (!entity.mesh || !entity.mesh->asset.starts_with("assets/surveyor/")) {
+      continue;
+    }
+
+    ++skinned;
+    REQUIRE(entity.skin);
+    REQUIRE(entity.material);
+    auto skin = Animation::loadSkin(files, entity.skin->asset);
+    auto mesh = Assets::loadMesh(files, entity.mesh->asset);
+    REQUIRE(skin);
+    REQUIRE(mesh);
+    const auto* data = skin->description().value();
+    CHECK(data->inverseBindMatrices.size() == 63);
+    CHECK(entity.skin->joints.size() == 63);
+    CHECK(data->vertices.size() == mesh->data.vertices.size());
+    extendedWeights = extendedWeights
+                      || std::ranges::any_of(
+                          data->vertices, [](const auto& vertex) { return vertex.weights[4] > 0; });
+    auto material = Assets::loadMaterial(files, entity.material->asset).value();
+    REQUIRE(material.baseColorTexture);
+    REQUIRE(material.normalTexture);
+    REQUIRE(material.metallicRoughnessTexture);
+    REQUIRE(material.occlusionTexture);
+    REQUIRE(material.emissiveTexture);
+    CHECK(material.occlusionTexture->path == material.metallicRoughnessTexture->path);
+    CHECK(material.emissive.x > 1);
+
+    for (const auto* texture : {&*material.baseColorTexture, &*material.normalTexture,
+                                &*material.metallicRoughnessTexture, &*material.emissiveTexture}) {
+      textures.insert(texture->path);
+    }
+  }
+
+  CHECK(skinned == 3);
+  CHECK(extendedWeights);
+  REQUIRE(textures.size() == 4);
+
+  for (const auto& path : textures) {
+    auto image = Assets::loadImage(files, path);
+    REQUIRE(image);
+    CHECK(image->width == 2048);
+    CHECK(image->height == 2048);
+  }
 }

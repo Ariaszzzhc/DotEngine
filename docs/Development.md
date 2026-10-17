@@ -8802,3 +8802,79 @@ removed after preserving manifests/results. Useful raw evidence stays in ignored
 build/character-research, build/named-query-feature-lab and build/named-query-* logs.
 The complete engine/editor/game goal, production loading/compilation and final Prism
 visual quality remain unfinished.
+
+## Textured Prism maintenance character workflow
+
+Replaced Prism's functional mannequin rendering with an editable blue maintenance
+armor/closed-helmet character, adapted from Irondust's CC0 Sci-fi soldier. Kept
+Body, Head1 and HandSimple; no weapon or alternate heads are used. The real
+63-joint rig retains all positive source influences, up to eight per vertex,
+across three skinned parts. Four 2048px images provide sRGB base/emission and
+linear normal/packed occlusion-roughness-metallic data. Source specular/glossiness
+is converted to metallic/roughness during external authoring; the source emission
+factor 1.3 is retained. Provenance, licenses and original/adapted hashes are recorded
+in the project. The old CC0 Quaternius source remains a named animation donor,
+not an alternate runtime path. No engine dependency or authoring executable is added.
+
+Blender 4.5.14 LTS, confined to ignored build storage, transfers the seven existing
+idle/walk/jog/sprint/jump-start/airborne/landing clips to the target's corrected rest
+pose. Per-bone roll corrections and target leg-proportion/contact adjustments are
+baked into ordinary animation tracks. This is external content authoring, not runtime
+IK or a procedural skeleton. An initial export retained only four influences and
+omitted a viewport-hidden helmet; both are corrected before adoption. Final GLB
+contains all three parts and eight-slot influences, is 15,711,772 bytes and has SHA-256
+d57844c3205a3d00f9815f7dd1c2dded758c9fb9bff38ae7866b040c9bc373d5.
+The editable GLB, native resources and inputs/licenses remain with the example;
+working DCC scripts/files stay ignored and are not required to open/run the project.
+
+Actual Release editor operations import the GLB, instantiate the native source,
+parent the animated Surveyor under Player, normalize height, preserve facing and
+apply the native preview's idle joint transforms through ordinary document edits.
+The final scene has 342 entities. All other 272 entity records and all 26 linked
+placements are unchanged. After correcting influence export, the same product
+importer regenerates the native bundle without changing scene bindings. Owned
+editors exit zero and retire controls. Temporary investigation code is not promoted
+into product tooling or acceptance executables.
+
+The example regression checks the unique animated role, seven named valid sampled
+clips, three 63-joint skins, vertex counts, retained extended weights, all five PBR
+texture slots and four unique 2K images. Existing surface checks now cover the
+textured character as well as 1K industrial inputs. Focused Debug passes 14/14
+(9.57s). Complete Debug passes 1301/1301 (193.23s); Release/NDEBUG passes 1301/1301
+(21.76s): 409 unit and 892 integration, with overlapping labels including 198 compiler,
+142 offscreen, 33 platform, 32 audio-native and 20 process cases. Only macOS arm64
+is executed. Changed C++ formatting and whitespace checks pass.
+
+Created Prism Maintenance Review from the actual bundled Prism template: the new
+GLB is byte-identical, with all native parts/images/licenses present. The actual
+editor previews and captures all seven clips, ends preview, saves cleanly, closes
+and reopens the project. Release Play then observes the Player airborne at
+[-3,0.8501253,2], reaches an observed 1.7851506m, and lands near [-3,0,2], with no
+Play diagnostics/error. One W/Space frame proves jump operation here; this sample
+does not establish forward travel. Stop retains the exact clean authoring scene.
+Author/stopped PNGs are byte-identical, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The 12 retained application samples have median total step 7.103771ms; this short
+observation is not a controlled optimization comparison or game-scale FPS claim.
+
+Export from the real reopened editor succeeds. The 115 exported content files total
+66,210,361 bytes. All but main scene match source bytes; main scene has one quaternion
+normalization difference of 3.7252903e-9, with identical structure, other values and
+linked records. Relocated DotGame runs 180 sampled frames from an unrelated directory
+while its owned temporary authoring project is renamed away; it exits zero. All
+120 retained samples are unpaused/error-free. Initial render still costs 5132.842875ms,
+whole step 5149.062292ms, dropping 5016.666466ms fixed time on the following step.
+The explicit one-second/drop warnings remain. The later retained median step is
+11.579854ms; this does not resolve or hide the cold startup stall. Temporary native
+export is removed after preserving its manifests, hashes, profiles and results.
+
+Mac computer use reports the desktop locked during final review, so these new asset
+checks use the real editor's strict operations and native viewport PNGs; they do not
+claim a fresh human mouse/keyboard acceptance run. No UI behavior changes in this
+stage. Evidence stays under build/character-research and build/surveyor-* logs.
+Reviewed source licensing, color-space/packed-channel meaning, complete skin weights,
+clip order/names, scene ownership, template propagation, unrelated scene/link stability
+and export independence. No renderer/runtime budgets, dependencies, clock limits,
+compatibility paths or distribution archives change. Final realistic art direction,
+cohesive environment, background loading/compilation, large-game evidence and the
+overall engine/editor/game objective remain unfinished.

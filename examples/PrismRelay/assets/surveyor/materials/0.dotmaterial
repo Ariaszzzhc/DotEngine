@@ -2,25 +2,75 @@
   "alphaCutoff": 0.5,
   "alphaMode": "opaque",
   "baseColor": [
-    0.20999999344348907,
-    0.27000001072883606,
-    0.3199999928474426,
+    1.0,
+    1.0,
+    1.0,
     1.0
   ],
-  "baseColorTexture": null,
-  "doubleSided": false,
+  "baseColorTexture": {
+    "path": "assets/surveyor/images/3.png",
+    "sampling": {
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "colorSpace": "srgb",
+      "filter": "linear",
+      "maxAnisotropy": 1,
+      "mipmaps": true
+    }
+  },
+  "doubleSided": true,
   "emissive": [
-    0.0,
-    0.0,
-    0.0
+    1.2999999523162842,
+    1.2999999523162842,
+    1.2999999523162842
   ],
-  "emissiveTexture": null,
-  "metallic": 0.6499999761581421,
-  "metallicRoughnessTexture": null,
+  "emissiveTexture": {
+    "path": "assets/surveyor/images/0.png",
+    "sampling": {
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "colorSpace": "srgb",
+      "filter": "linear",
+      "maxAnisotropy": 1,
+      "mipmaps": true
+    }
+  },
+  "metallic": 1.0,
+  "metallicRoughnessTexture": {
+    "path": "assets/surveyor/images/2.png",
+    "sampling": {
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "colorSpace": "linear",
+      "filter": "linear",
+      "maxAnisotropy": 1,
+      "mipmaps": true
+    }
+  },
   "model": "metallicRoughness",
-  "normalScale": 0.0,
-  "normalTexture": null,
-  "occlusionStrength": 0.0,
-  "occlusionTexture": null,
-  "roughness": 0.3499999940395355
+  "normalScale": 1.0,
+  "normalTexture": {
+    "path": "assets/surveyor/images/1.png",
+    "sampling": {
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "colorSpace": "linear",
+      "filter": "linear",
+      "maxAnisotropy": 1,
+      "mipmaps": true
+    }
+  },
+  "occlusionStrength": 1.0,
+  "occlusionTexture": {
+    "path": "assets/surveyor/images/2.png",
+    "sampling": {
+      "addressU": "repeat",
+      "addressV": "repeat",
+      "colorSpace": "linear",
+      "filter": "linear",
+      "maxAnisotropy": 1,
+      "mipmaps": true
+    }
+  },
+  "roughness": 1.0
 }

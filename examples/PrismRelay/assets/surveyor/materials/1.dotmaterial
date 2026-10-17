@@ -2,9 +2,9 @@
   "alphaCutoff": 0.5,
   "alphaMode": "opaque",
   "baseColor": [
-    0.02500000037252903,
-    0.03200000151991844,
-    0.03999999910593033,
+    1.0,
+    1.0,
+    1.0,
     1.0
   ],
   "baseColorTexture": null,
@@ -15,12 +15,12 @@
     0.0
   ],
   "emissiveTexture": null,
-  "metallic": 0.0,
+  "metallic": 1.0,
   "metallicRoughnessTexture": null,
   "model": "metallicRoughness",
-  "normalScale": 0.0,
+  "normalScale": 1.0,
   "normalTexture": null,
-  "occlusionStrength": 0.0,
+  "occlusionStrength": 1.0,
   "occlusionTexture": null,
-  "roughness": 0.7200000286102295
+  "roughness": 1.0
 }

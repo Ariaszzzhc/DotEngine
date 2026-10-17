@@ -48,14 +48,18 @@ changes. Inspector field markers identify applied local overrides; Restore field
 returns a whole component to the last refreshed baseline without changing siblings.
 Play and exported games consume the saved instances without source-file refresh.
 Lighting uses directional cascades and three local point-light shadow sources, SSAO and HDR tone
-mapping. Local maps use 512px faces within the shared depth-atlas budget. The adapted Quaternius
-CC0 mannequin includes idle, walk, jog, sprint, jump start, airborne and landing
-clips without root motion. The editable source GLB, native resources and license
-stay with the project. [Sources and hashes](assets/Sources.md) record provenance.
+mapping. Local maps use 512px faces within the shared depth-atlas budget.
+Surveyor uses blue maintenance armor, a closed helmet and ordinary hands, with three
+skinned parts sharing a real 63-joint rig and up to eight influences per vertex.
+Four 2K images provide base color, tangent normals, packed occlusion/roughness/metallic
+and emission. Idle, walk, jog, sprint, jump start, airborne and landing clips are
+baked from the CC0 Quaternius locomotion donor, without gameplay root motion.
+The editable source GLB, animation donor, native resources and licenses stay with
+the project. [Sources and hashes](assets/Sources.md) record provenance.
 
-The current mannequin is a functional animation/template asset. Finished realistic
-character art, a cohesive sci-fi suit, environment polish and populated-game
-performance remain work; this is not the final requested visual-quality claim.
+The hard-surface maintenance character is an editable content step. Final realistic
+art direction, environment polish and populated-game performance remain work;
+this is not the final requested visual-quality claim.
 
 To inspect the imported character without running gameplay, select Surveyor and use
 Preview animation in the Inspector. The Scene controls provide Frame model, clip
