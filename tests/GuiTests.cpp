@@ -390,6 +390,10 @@ TEST_CASE("graphics.gui_callback_failures_unbalanced_stacks_reentry_and_recovery
         CHECK_FALSE(gpu.closeGui());
         CHECK_FALSE(gpu.renderGui(rect, 96, 96));
         CHECK_FALSE(gpu.createTarget(1, 1));
+        REQUIRE(gpu.setProfiling(true));
+        CHECK(gpu.profiling()->enabled);
+        CHECK(gpu.profiling()->cpu.empty());
+        REQUIRE(gpu.setProfiling(false));
         auto observed = gpu.guiStats();
         REQUIRE(observed);
         CHECK(observed->enabled);

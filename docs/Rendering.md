@@ -510,6 +510,52 @@ offscreen regressions cover pixel equality, independent local updates, shared-pa
 neighbours, resource expiry, camera/coverage changes, skin buffer reuse and abandoned
 encoding recovery.
 
+### Renderer CPU and GPU profiling
+
+`Renderer::setProfiling` enables optional mesh sampling, disabled by default.
+Changing enablement clears history; repeating the current value is a no-op.
+Each enabled interval has a monotonically identified session. `profiling()` returns
+at most 120 CPU and 120 GPU samples, sorted by submitted serial within that session,
+with adapter/backend, pixel dimensions and the exact work report for each sample.
+Input/encoding/submission-validation failures publish no CPU sample; failures
+after validated submission, such as pixel mapping, may retain a submitted-work
+sample. Picking, standalone GUI passes, target
+readback and other renderer calls do not create mesh samples.
+
+CPU nanoseconds are steady-clock wall durations for renderer draw preparation,
+command encoding and post-encoding finish/readback setup/queue validation. Presentation
+calls also include presentation in the last interval. Scene loading, separate skin
+updates, scripts/physics, surface acquisition and pixel-map waiting are excluded.
+These values are neither thread CPU utilization nor complete application frame time.
+
+When the adapter supports WebGPU `timestamp-query`, device creation requests that
+feature and enabled profiling uses render/compute pass-boundary writes. Query results
+are [nanoseconds specified by WebGPU](https://gpuweb.github.io/gpuweb/#timestamp),
+with implementation-dependent precision/quantization. Each physical pass gets a
+complete start/end pair; the four ordered categories sum shadow depth, SSAO
+geometry/filtering, HDR surfaces/sky and tone mapping.
+GPU stage work may overlap, so these sums are not mutually exclusive slices. Total GPU
+duration spans the earliest physical-pass start through the latest end, excluding
+query resolution, pixel copies, GUI and separate skin work. Null range duration
+means no pass ran, including fully cached shadows; a present zero is valid.
+
+Four query/readback slots collect results asynchronously using process-event
+callbacks. Mesh submissions and inspection poll completed work without waiting
+for a timestamp result. A busy ring drops GPU samples and increments `dropped`,
+while CPU sampling continues. Each outstanding callback owns its readback state,
+without borrowing a renderer or profiler. Disabling/destruction cancels readbacks
+and releases query storage; late results cannot enter a later profiling session.
+Each slot bounds 384 shadow pages, three AO passes and two color/post passes,
+using 778 counters. The four slots use 49,792 logical data-buffer bytes, reported
+separately as `gpuBufferBytes`; this excludes opaque driver query allocations.
+
+Unsupported devices explicitly report `gpuSupported=false`, with CPU samples and
+no fabricated GPU durations. Empty raw counter records, readback/timestamp faults
+and overflowing sums remain observable as `error`; results are asynchronous, so
+CPU and GPU latest serials may differ. These scoped
+measurements do not establish game FPS, application-wide throughput or production
+readiness. The editor exposes the same operation and samples described below.
+
 点光使用独立于相机的六面透视阴影，聚光使用外半角两倍的透视视角（投影时半角须小于
 90 度）。局部阴影径向覆盖不超过光源 range 与 shadows.distance 的较小值；级数及
 分段混合仅用于方向光。点光内部使用硬件 PCF；仅跨面边缘逐纹素重映射，与接收平面

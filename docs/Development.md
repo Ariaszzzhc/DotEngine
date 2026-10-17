@@ -8371,3 +8371,103 @@ useful logs/responses and native PNGs in ignored build storage. Existing caches,
 archives and untracked user references remain preserved. Finished realistic
 character/environment art, measured populated-scene frame costs, streaming and
 the overall engine/editor/game objective remain unfinished.
+
+## Renderer CPU/GPU profiling
+
+Added an opt-in renderer profiler as a separate private implementation unit. It
+retains at most 120 owned CPU and GPU records, with profiling session/submission
+identities, actual adapter/backend, pixel resolution and that submission's work
+report. Same-value enablement is a no-op; toggling starts a clean session. CPU wall
+intervals cover renderer preparation, encoding and post-encoding submission/
+validation, excluding scene loading/skinning/scripts/physics, surface acquisition
+and pixel-map waiting. They are not complete application frame costs or CPU usage.
+
+GPU timestamp support is negotiated from adapter capabilities. Four bounded async
+query/readback slots sample complete physical-pass start/end pairs and sum them
+into shadows, SSAO, HDR surface/sky and tone-mapping categories. Their GPU pipeline
+intervals can overlap and are explicitly labelled nonadditive in the UI. The total
+is the earliest-start to latest-end envelope, excluding query resolution/copies, GUI
+and separate skin work. Each slot permits 384 shadow pages, three AO passes and
+two color/post passes: 778 counters and 49,792 logical data-buffer bytes across
+four slots, excluding opaque driver query allocation. Unlabelled query sets retain
+Dawn's native counter pooling. No per-frame wait is added to obtain timings; busy
+slots drop GPU samples explicitly while CPU sampling continues. Late callbacks own
+readback state, never a departed profiler/renderer. Disabling cancels mappings and
+releases query storage. Empty raw counters, nonmonotonic/overflowing ranges and
+readback/capacity failures are observable rather than published as valid data.
+Present zero differences remain valid when nonempty counters are quantized.
+
+The Rendering pane's checkbox/history and strict set-profiling/inspect-profile
+operations use the same product API. Regular viewport inspection includes latest
+records/capabilities; explicit inspection returns bounded sample windows. Session/
+serial/nanosecond integers use decimal strings. Profiling remains usable during
+transform/animation inspection and never changes document history or scene files.
+GUI callbacks may explicitly toggle/read profiling; ordinary renderer reentry
+remains rejected. Added four durable offscreen regressions for pixels/pass metadata,
+history bounds/rejected frames, pending shutdown/thread/move lifetime and separate
+devices. Existing GUI recovery regression now covers the shared toggle operation.
+
+Initial test compilation corrected a member-array deduction error and an explicit
+vector include. An initial grouped timer design split begin-only/end-only writes
+across physical passes. Tests allowed valid quantized zero durations, but the real
+PrismRelay measurement exposed all-zero GPU records, so those measurements were
+rejected. One earlier pixel readback was also all zero. Debugger inspection then
+captured Metal command-buffer Insufficient Memory/aborted execution and empty raw
+counters on this pattern, while complete color/post pairs returned real nonzero
+absolute counters without those errors. Counter pooling alone did not fix it.
+Explicit transfer-clearing was investigated but removed from the final implementation.
+The final design pairs every physical pass and aggregates its ranges; empty raw
+records now fail the GPU measurement even if the public map callback succeeds.
+No pixel assertion was loosened. A separate-device test's incorrect pure-channel
+assumption was replaced by exact independent unprofiled references because the
+actual tone mapper mixes channels. Diagnostic logs remain in ignored build storage.
+
+The corrected Release product workflow runs on Apple M4 Pro / Metal, macOS 27.0.1
+(build 26A434), at 1480x574, with 180 scene mesh inputs and 34 color batches. Two
+120-sample windows report no dropped GPU samples. Static Game view reuses all seven
+shadow pages and has no shadow interval; GPU envelope median/p95 is 5.799936/
+6.291456ms, with CPU preparation/encoding/submission medians .041230/.288292/
+.086209ms. During actual W/Space Play input, GPU envelope median/p95 is 5.373952/
+6.160384ms; CPU medians are .041875/.417209/.181604ms, and median new shadow draws
+is 211. These are different visible workloads and overlapping GPU intervals, not
+a controlled before/after benchmark, FPS claim or whole-game throughput claim.
+
+All original, profiled and stopped authoring PNGs compare byte-for-byte equal to
+the previous saved viewport. Actual Play moves Player from [-3,0,2] to approximately
+[-3,0,-1.1277], with no Play/render diagnostics or dropped fixed time. Stop restores
+a clean revision-one document, and disabling reports zero profiling buffer bytes.
+The complete corrected native process exits 0 with empty stderr and retired private
+control directory. Earlier prototype zero-timing data is retained only as failure
+evidence. One additional helper launch ran a prior binary before rebuilding had
+finished; its nonzero-timing gate rejected it, its process was closed and it supplies
+no final validation evidence. No native distribution archive was created.
+
+Repeated paired sampling exposed an invalid test assumption that a sum of AO
+physical-pass intervals must fit inside the overall GPU range. GPU stages can
+overlap. Total duration now uses the minimum observed start and maximum end;
+the regression bounds individual single-pass categories and preserves strict
+pixel, nonempty-counter and metadata checks. No pixel comparison or failure check
+is bypassed. Final local records above use that envelope implementation. Four
+profiling cases plus GUI recovery each pass ten consecutive Debug runs (50 actual
+executions, 40.49s), followed by the complete suite below. All four owned native
+control directories are retired with empty stderr; only corrected native results
+are used as current performance evidence.
+
+Final Debug/Release builds succeed. Full Debug CTest passes 1278/1278 (193.77s);
+full Release passes 1278/1278 (20.43s, assertions disabled). The suites contain
+398 unit and 880 integration cases, including 194 compiler, 142 durable offscreen,
+32 native-audio, 28 platform and 20 process cases. Automated suites open no desktop
+windows; unit tests initialize no windows, graphics devices or audio devices.
+Only macOS arm64 is executed; Windows/Linux source support is not a validation claim.
+
+Reviewed timestamp range/counter bounds, validated-submission publication, pending
+callback lifetime, partial allocation/shutdown, thread/move guards, unsupported-device
+behavior and shared GUI/agent commands. Seven changed C++ sources/interfaces/private
+headers pass clang-format; whitespace checks pass. No dependency, compiler/linker,
+serialized-layout, project-asset or test-executable changes. Removed 129 owned temporary
+helper/request files, preserving measurement JSON, responses, logs and viewport PNGs
+in ignored build storage, plus existing caches, archives and untracked user references.
+The earlier physical W observation was Chinese IME interception, not evidence of a
+movement defect; this stage's movement evidence uses structured product input.
+Finished realistic character/environment art, whole-application performance,
+resource streaming and the overall engine/editor/game objective remain unfinished.

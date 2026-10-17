@@ -134,6 +134,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Math/Math.cpp
     src/Engine/Graphics/Renderer.cpp
     src/Engine/Graphics/GuiBackend.cpp
+    src/Engine/Graphics/FrameProfiler.cpp
     src/Engine/Graphics/SceneRenderer.cpp
     src/Engine/Graphics/Lighting.cpp
     src/Engine/Graphics/PostProcess.cpp

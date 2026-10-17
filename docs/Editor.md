@@ -868,6 +868,35 @@ still provide shadows, with no depth draws or instance uploads; `shadow` and
 `shadowDraws` count only work submitted this frame. Camera/caster/coverage changes
 invalidate relevant depth automatically through the shared renderer implementation.
 
+Rendering provides an opt-in **Profile mesh rendering** checkbox, recent GPU history,
+per-pass GPU milliseconds and renderer CPU wall intervals. It names the device and
+shows unsupported timestamps, pending/dropped samples and errors explicitly. The
+control is session state; it does not edit the scene or mark the document dirty.
+The corresponding strict mailbox operations are:
+
+```json
+{"command":"set-profiling","enabled":true}
+{"command":"inspect-profile"}
+{"command":"set-profiling","enabled":false}
+```
+
+`enabled` must be boolean and unknown fields fail. Both operations remain available
+during transform/animation inspection. The standard `workspace.view.profiling`
+snapshot includes capability, adapter/backend, session, sample counts and latest
+CPU/GPU records; `inspect-profile.profile` additionally includes bounded `cpu` and
+`gpu` arrays. Session/serials and nanoseconds are decimal strings, dimensions/work
+counts remain JSON integers, and absent passes are null. GPU category order is shadows,
+SSAO, HDR surface/sky, tone mapping, each summing complete physical-pass pairs. Every
+timing record owns its resolution and work report rather than borrowing the current
+viewport's counters.
+
+Changing enablement resets history and starts a new session on enable; repeating
+the current value preserves it. Disabling releases query storage. Async GPU results
+may lag CPU samples, busy slots drop GPU samples, and timestamp precision can produce
+zero differences. These are renderer scopes, excluding scene preparation, separate
+skinning, scripts/physics, GUI and full application/presentation pacing. See the
+[exact timing boundaries](Rendering.md#renderer-cpu-and-gpu-profiling).
+
 The Rendering pane also shows actual CPU visibility tests: BVH nodes, world AABBs,
 exact local-box tests and unindexed homogeneous tests. `inspect.workspace.view.draws.spatial`
 includes indexed/changed/refitted quantities and rebuild status for the last successful

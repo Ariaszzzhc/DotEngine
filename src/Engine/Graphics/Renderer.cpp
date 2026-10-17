@@ -37,6 +37,7 @@ import Dot.Platform.System;
 import Dot.Platform.Events;
 
 #include "BuiltinShaders.hpp"
+#include "FrameProfiler.hpp"
 #include "GuiBackend.hpp"
 
 namespace Dot::Graphics {
@@ -676,6 +677,38 @@ namespace Dot::Graphics {
     SpatialIndex spatialIndex;
     SpatialStats preparedSpatial;
     std::uint64_t maxInstanceBufferBytes{};
+    bool m_timestampQueries{};
+    std::uint64_t m_profilingSession{};
+    std::unique_ptr<Detail::FrameProfiler> m_profiler;
+
+    struct ProfileScope {
+      Detail::FrameProfiler* profiler;
+
+      explicit ProfileScope(Impl& owner) : profiler(owner.m_profiler.get()) {
+        if (profiler) {
+          profiler->begin();
+        }
+      }
+
+      ProfileScope(const ProfileScope&) = delete;
+      auto operator=(const ProfileScope&) -> ProfileScope& = delete;
+
+      ~ProfileScope() {
+        if (profiler) {
+          profiler->cancel();
+        }
+      }
+
+      auto prepared() -> void {
+        if (profiler) {
+          profiler->prepared();
+        }
+      }
+    };
+
+    auto profileWrites(Detail::ProfilePass pass) -> wgpu::PassTimestampWrites {
+      return m_profiler ? m_profiler->writes(pass) : wgpu::PassTimestampWrites{};
+    }
 
     struct GuiFrameScope {
       Impl& owner;
@@ -751,6 +784,7 @@ namespace Dot::Graphics {
     }
 
     ~Impl() {
+      m_profiler.reset();
       guiTargets.clear();
       guiTextures.clear();
       gui.reset();
@@ -1406,7 +1440,8 @@ namespace Dot::Graphics {
     }
 
     auto encodePost(const wgpu::CommandEncoder& encoder, const wgpu::Texture& hdr,
-                    const wgpu::Texture& output) -> void {
+                    const wgpu::Texture& output,
+                    const wgpu::PassTimestampWrites* timestamps = nullptr) -> void {
       const auto format = output.GetFormat();
       const auto hardwareSrgb = format == wgpu::TextureFormat::RGBA8UnormSrgb
                                 || format == wgpu::TextureFormat::BGRA8UnormSrgb;
@@ -1439,6 +1474,7 @@ namespace Dot::Graphics {
       wgpu::RenderPassDescriptor passDescriptor;
       passDescriptor.colorAttachmentCount = 1;
       passDescriptor.colorAttachments = &color;
+      passDescriptor.timestampWrites = timestamps;
       auto pass = encoder.BeginRenderPass(&passDescriptor);
       pass.SetPipeline(renderPipeline);
       pass.SetBindGroup(0, group);
@@ -1449,7 +1485,8 @@ namespace Dot::Graphics {
     template <typename F>
     auto encodePass(const wgpu::Texture& target, std::uint32_t width, std::uint32_t height,
                     Math::Vec4 clear, F&& draw, wgpu::TextureView depthView = {},
-                    wgpu::CommandEncoder encoder = {}) -> wgpu::CommandEncoder {
+                    wgpu::CommandEncoder encoder = {},
+                    const wgpu::PassTimestampWrites* timestamps = nullptr) -> wgpu::CommandEncoder {
       wgpu::TextureDescriptor depthDescriptor;
       depthDescriptor.size = {width, height, 1};
       depthDescriptor.format = wgpu::TextureFormat::Depth24Plus;
@@ -1475,6 +1512,7 @@ namespace Dot::Graphics {
       descriptor.colorAttachmentCount = 1;
       descriptor.colorAttachments = &color;
       descriptor.depthStencilAttachment = &depthAttachment;
+      descriptor.timestampWrites = timestamps;
 
       if (!encoder) {
         encoder = device.CreateCommandEncoder();
@@ -2296,6 +2334,8 @@ namespace Dot::Graphics {
         depth.depthClearValue = 1;
         wgpu::RenderPassDescriptor descriptor;
         descriptor.depthStencilAttachment = &depth;
+        auto timestamps = profileWrites(Detail::ProfilePass::Shadows);
+        descriptor.timestampWrites = timestamps.querySet ? &timestamps : nullptr;
         auto pass = encoder.BeginRenderPass(&descriptor);
         pass.SetPipeline(shadowDepthPipeline);
 
@@ -2433,6 +2473,8 @@ namespace Dot::Graphics {
       descriptor.colorAttachmentCount = 1;
       descriptor.colorAttachments = &normal;
       descriptor.depthStencilAttachment = &depth;
+      auto timestamps = profileWrites(Detail::ProfilePass::Occlusion);
+      descriptor.timestampWrites = timestamps.querySet ? &timestamps : nullptr;
       auto pass = encoder.BeginRenderPass(&descriptor);
       pass.SetPipeline(geometryPipeline);
       pass.SetBindGroup(1, bindLighting(geometryPipeline));
@@ -2489,7 +2531,10 @@ namespace Dot::Graphics {
         group.layout = pipeline.GetBindGroupLayout(0);
         group.entryCount = phase == 0 ? 4 : 5;
         group.entries = entries.data();
-        auto compute = encoder.BeginComputePass();
+        auto computeTime = profileWrites(Detail::ProfilePass::Occlusion);
+        wgpu::ComputePassDescriptor computeDescriptor;
+        computeDescriptor.timestampWrites = computeTime.querySet ? &computeTime : nullptr;
+        auto compute = encoder.BeginComputePass(&computeDescriptor);
         compute.SetPipeline(pipeline);
         compute.SetBindGroup(0, device.CreateBindGroup(&group));
         compute.DispatchWorkgroups((occlusionWidth + 7) / 8, (occlusionHeight + 7) / 8);
@@ -2504,6 +2549,10 @@ namespace Dot::Graphics {
                       const Math::Mat4& viewProjection, std::uint32_t width, std::uint32_t height,
                       Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
         -> Core::Result<wgpu::CommandEncoder> {
+      if (m_profiler) {
+        m_profiler->encoding(width, height);
+      }
+
       occlusionPending = false;
       auto sorted = surfaceQueue(draws);
 
@@ -2700,6 +2749,7 @@ namespace Dot::Graphics {
         blendPipeline = blendPipelines[index];
       }
 
+      auto surfaceTime = profileWrites(Detail::ProfilePass::Surface);
       auto encoder = encodePass(
           hdr, width, height, clear,
           [&](const wgpu::RenderPassEncoder& pass) {
@@ -2744,8 +2794,15 @@ namespace Dot::Graphics {
               emit(sorted->blended, blendPipeline, static_cast<std::uint32_t>(solidCount));
             }
           },
-          depthView, shadowEncoder);
-      encodePost(encoder, hdr, target);
+          depthView, shadowEncoder, surfaceTime.querySet ? &surfaceTime : nullptr);
+      auto postTime = profileWrites(Detail::ProfilePass::Post);
+      encodePost(encoder, hdr, target, postTime.querySet ? &postTime : nullptr);
+
+      if (m_profiler) {
+        m_profiler->resolve(encoder);
+        m_profiler->encoded();
+      }
+
       return encoder;
     }
 
@@ -2824,6 +2881,10 @@ namespace Dot::Graphics {
 
       if (commitMeshState) {
         commitShadowCache();
+
+        if (m_profiler) {
+          m_profiler->submitted(pendingVisibility);
+        }
       }
 
       if (commitMeshState && occlusionPending) {
@@ -3016,6 +3077,10 @@ namespace Dot::Graphics {
 
       if (commitMeshState) {
         commitShadowCache();
+
+        if (m_profiler) {
+          m_profiler->submitted(pendingVisibility);
+        }
       }
 
       if (commitMeshState && occlusionPending) {
@@ -3125,6 +3190,14 @@ namespace Dot::Graphics {
     impl->info.name = copied(adapterInfo.device);
     impl->info.description = copied(adapterInfo.description);
     wgpu::DeviceDescriptor deviceDescriptor;
+    const auto timestampFeature = wgpu::FeatureName::TimestampQuery;
+    impl->m_timestampQueries = impl->adapter.HasFeature(timestampFeature);
+
+    if (impl->m_timestampQueries) {
+      deviceDescriptor.requiredFeatureCount = 1;
+      deviceDescriptor.requiredFeatures = &timestampFeature;
+    }
+
     auto diagnostics = impl->diagnostics;
     deviceDescriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
@@ -3914,6 +3987,73 @@ namespace Dot::Graphics {
                    : std::unexpected(checked.error());
   }
 
+  auto Renderer::setProfiling(bool enabled) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (static_cast<bool>(m_impl->m_profiler) == enabled) {
+      return {};
+    }
+
+    if (!enabled) {
+      m_impl->m_profiler.reset();
+      return {};
+    }
+
+    if (m_impl->m_profilingSession == std::numeric_limits<std::uint64_t>::max()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Mesh profiling session exhausted");
+    }
+
+    ErrorScope scope(m_impl->instance, m_impl->device);
+    auto profiler = Detail::FrameProfiler::create(m_impl->instance, m_impl->device,
+                                                  m_impl->m_timestampQueries);
+    checked = scope.finish();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!profiler) {
+      return std::unexpected(profiler.error());
+    }
+
+    m_impl->m_profiler = std::move(*profiler);
+    ++m_impl->m_profilingSession;
+    return {};
+  }
+
+  auto Renderer::profiling() const -> Core::Result<MeshProfiling> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      auto result = m_impl->m_profiler ? m_impl->m_profiler->snapshot() : MeshProfiling{};
+      result.gpuSupported = m_impl->m_timestampQueries;
+      result.adapter = m_impl->info;
+      result.session = m_impl->m_profilingSession;
+      checked = m_impl->check(true);
+      return checked ? Core::Result<MeshProfiling>{std::move(result)}
+                     : std::unexpected(checked.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Read mesh profiling: " + std::string(error.what()));
+    }
+  }
+
   auto Renderer::resourceStats() const -> Core::Result<ResourceStats> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
@@ -4559,11 +4699,14 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::Unavailable, "Render target frame index exhausted");
     }
 
+    Impl::ProfileScope profile{*m_impl};
     auto prepared = m_impl->prepare(draws, viewProjection, clear);
 
     if (!prepared) {
       return std::unexpected(prepared.error());
     }
+
+    profile.prepared();
 
     ErrorScope scope(m_impl->instance, m_impl->device);
     auto encoder
@@ -4589,6 +4732,11 @@ namespace Dot::Graphics {
     }
 
     m_impl->commitShadowCache();
+
+    if (m_impl->m_profiler) {
+      m_impl->m_profiler->submitted(m_impl->pendingVisibility);
+    }
+
     ++target.m_impl->info.frames;
     m_impl->visibility.mesh = m_impl->pendingVisibility;
     return {};
@@ -5084,11 +5232,14 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
+    Impl::ProfileScope profile{*m_impl};
     auto prepared = m_impl->prepare(draws, viewProjection, clear);
 
     if (!prepared) {
       return std::unexpected(prepared.error());
     }
+
+    profile.prepared();
 
     auto image = m_impl->readback(
         width, height,
@@ -5224,11 +5375,14 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
+    Impl::ProfileScope profile{*m_impl};
     auto prepared = m_impl->prepare(draws, viewProjection, clear);
 
     if (!prepared) {
       return std::unexpected(prepared.error());
     }
+
+    profile.prepared();
 
     auto presented = m_impl->presentFrame(
         [&](const wgpu::Texture& texture, auto width, auto height) {

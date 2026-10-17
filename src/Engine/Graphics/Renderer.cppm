@@ -1,5 +1,6 @@
 module;
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -113,6 +114,43 @@ export namespace Dot::Graphics {
     std::size_t draws{};
     std::size_t culledInstances{};
     auto operator==(const PickFrameStats&) const -> bool = default;
+  };
+
+  struct MeshCpuTiming {
+    std::uint64_t serial{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint64_t prepareNanoseconds{};
+    std::uint64_t encodeNanoseconds{};
+    std::uint64_t submitNanoseconds{};
+    MeshFrameStats work;
+  };
+
+  struct MeshGpuTiming {
+    std::uint64_t serial{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint64_t totalNanoseconds{};
+    /** Summed physical-pass durations: shadows, SSAO guides/filtering, HDR
+     * surface/sky, tone mapping. GPU stages may overlap. Null means
+     * no pass executed; a present zero is a valid quantized timestamp difference.
+     * 物理通道耗时汇总：阴影、SSAO 几何/过滤、HDR 表面/天空、色调映射；GPU 阶段可重叠，
+     * 空值表示未执行通道，零可为有效量化差值。 */
+    std::array<std::optional<std::uint64_t>, 4> passNanoseconds;
+    MeshFrameStats work;
+  };
+
+  struct MeshProfiling {
+    bool enabled{};
+    bool gpuSupported{};
+    AdapterInfo adapter{};
+    std::uint64_t session{};
+    std::uint64_t pending{};
+    std::uint64_t dropped{};
+    std::uint64_t gpuBufferBytes{};
+    std::optional<std::string> error;
+    std::vector<MeshCpuTiming> cpu;
+    std::vector<MeshGpuTiming> gpu;
   };
 
   struct VisibilityStats {
@@ -487,6 +525,26 @@ export namespace Dot::Graphics {
      * Owner-thread read-only query is allowed during GUI layout.
      * 分别保留最近成功网格/拾取调用，不触发隐式工作；GUI 布局时可在所属线程只读查询。 */
     [[nodiscard]] auto visibilityStats() const -> Core::Result<VisibilityStats>;
+    /** Opt-in mesh profiling, off by default. Changing enablement resets samples.
+     * Keep at most 120 CPU and 120 GPU samples, ordered by serial within the
+     * monotonically identified profiling session. Equal enablement is a no-op. CPU
+     * wall timings cover renderer input preparation, encoding and queue/validation
+     * (plus presentation for presentMeshes), excluding scene loading/skinning,
+     * surface acquisition, scripts/physics and pixel mapping. GPU pass-boundary
+     * timestamps exclude query resolution, pixel copies, GUI and separate skin work.
+     * Four asynchronous slots never wait for timings; busy slots drop GPU samples.
+     * Unsupported hardware reports CPU samples and gpuSupported=false. Results may
+     * be delayed/quantized; serial, dimensions and work identify each actual sample.
+     * Reject wrong-thread/moved/device failures; disabling releases query storage.
+     * 显式启用网格分析，默认关闭；切换时清空样本，最多各保留 120 个按提交序号排序的
+     * CPU/GPU 样本，序号属于单调标识的分析会话；同值开关不改变状态。
+     * CPU 墙钟涵盖渲染器输入准备、编码、队列/校验（presentMeshes 含呈现），
+     * 不含场景加载/蒙皮、表面获取、脚本/物理或像素映射；GPU 通道边界时间戳不含查询解析、
+     * 像素复制、GUI 或独立蒙皮工作。四个异步槽不等待计时，繁忙时丢弃 GPU 样本。
+     * 不支持时仍报告 CPU 与 gpuSupported=false；结果可能延迟/量化，以序号、尺寸和工作量
+     * 关联实际样本；拒绝跨线程/移动后/设备失败，关闭即释放查询存储。 */
+    [[nodiscard]] auto setProfiling(bool enabled) -> Core::Result<void>;
+    [[nodiscard]] auto profiling() const -> Core::Result<MeshProfiling>;
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
      * with ordinary textures. Failure publishes no partial resource.
@@ -576,16 +634,16 @@ export namespace Dot::Graphics {
     /** Own an isolated Dear ImGui context and official WebGPU/optional SDL3
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
-     * the callback may append GUI images/viewports and read guiStats/visibilityStats,
+     * the callback may append GUI images/viewports, toggle profiling and read
+     * guiStats/visibilityStats/profiling,
      * but must not replace/change ImGui context or reenter other renderer operations.
      * Input events are explicitly forwarded.
      * Empty font uses the built-in font; an explicit font must load successfully.
      * Frame failures do not roll back widget/native side effects. No ini file or
      * detached viewport is implicitly created. 拥有独立 Dear ImGui 上下文及官方
      * WebGPU/可选 SDL3 后端，GUI 所有权限进程主线程；控件仅在本线程绘制回调内执行，回调可调用
-     * GUI 图像/视口和读取 guiStats/visibilityStats，但不得替换/更改 ImGui 上下文或
-     * 重入其他渲染器操作；
-     * 输入事件须显式转发。空字体用内置
+     * GUI 图像/视口、切换分析及读取 guiStats/visibilityStats/profiling，但不得替换/更改 ImGui
+     * 上下文或 重入其他渲染器操作； 输入事件须显式转发。空字体用内置
      * 字体，显式字体须加载成功；帧失败不回滚控件/原生副作用，不隐式创建 ini 文件或
      * 独立视口。 */
     [[nodiscard]] auto enableGui(const GuiConfig& config = {}) -> Core::Result<void>;

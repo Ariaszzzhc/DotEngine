@@ -84,6 +84,91 @@ namespace Dot::Editor {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
 
+    auto meshWorkJson(const Graphics::MeshFrameStats& frame) -> Json {
+      return {{"input", frame.inputInstances},
+              {"visible", frame.visibleInstances},
+              {"culled", frame.culledInstances},
+              {"shadow", frame.shadowInstances},
+              {"occlusion", frame.occlusionInstances},
+              {"colorDraws", frame.colorDraws},
+              {"solid", frame.solidInstances},
+              {"blended", frame.blendedInstances},
+              {"solidDraws", frame.solidDraws},
+              {"blendedDraws", frame.blendedDraws},
+              {"shadowDraws", frame.shadowDraws},
+              {"shadowPagesUpdated", frame.shadowPagesUpdated},
+              {"shadowPagesReused", frame.shadowPagesReused},
+              {"occlusionDraws", frame.occlusionDraws},
+              {"spatial",
+               {{"indexed", frame.spatial.indexedInstances},
+                {"nodes", frame.spatial.nodeTests},
+                {"bounds", frame.spatial.boundsTests},
+                {"exact", frame.spatial.exactTests},
+                {"unindexed", frame.spatial.unindexedTests},
+                {"changed", frame.spatial.changedBounds},
+                {"refitted", frame.spatial.refittedNodes},
+                {"rebuilt", frame.spatial.rebuilt}}}};
+    }
+
+    auto cpuTimingJson(const Graphics::MeshCpuTiming& sample) -> Json {
+      return {{"serial", std::to_string(sample.serial)},
+              {"size", {sample.width, sample.height}},
+              {"prepareNanoseconds", std::to_string(sample.prepareNanoseconds)},
+              {"encodeNanoseconds", std::to_string(sample.encodeNanoseconds)},
+              {"submitNanoseconds", std::to_string(sample.submitNanoseconds)},
+              {"work", meshWorkJson(sample.work)}};
+    }
+
+    auto gpuTimingJson(const Graphics::MeshGpuTiming& sample) -> Json {
+      Json passes = Json::array();
+
+      for (const auto& value : sample.passNanoseconds) {
+        passes.push_back(value ? Json(std::to_string(*value)) : Json(nullptr));
+      }
+
+      return {{"serial", std::to_string(sample.serial)},
+              {"size", {sample.width, sample.height}},
+              {"totalNanoseconds", std::to_string(sample.totalNanoseconds)},
+              {"passNanoseconds", std::move(passes)},
+              {"work", meshWorkJson(sample.work)}};
+    }
+
+    auto profilingJson(const Graphics::MeshProfiling& profile, bool samples) -> Json {
+      constexpr std::array backends{"Metal", "D3D12", "Vulkan"};
+      Json result{
+          {"enabled", profile.enabled},
+          {"gpuSupported", profile.gpuSupported},
+          {"session", std::to_string(profile.session)},
+          {"adapter",
+           {{"name", profile.adapter.name},
+            {"description", profile.adapter.description},
+            {"backend", backends[static_cast<std::size_t>(profile.adapter.backend)]},
+            {"maxTextureDimension", profile.adapter.maxTextureDimension}}},
+          {"pending", profile.pending},
+          {"dropped", std::to_string(profile.dropped)},
+          {"gpuBufferBytes", std::to_string(profile.gpuBufferBytes)},
+          {"error", profile.error ? Json(*profile.error) : Json(nullptr)},
+          {"cpuSamples", profile.cpu.size()},
+          {"gpuSamples", profile.gpu.size()},
+          {"latestCpu", profile.cpu.empty() ? Json(nullptr) : cpuTimingJson(profile.cpu.back())},
+          {"latestGpu", profile.gpu.empty() ? Json(nullptr) : gpuTimingJson(profile.gpu.back())}};
+
+      if (samples) {
+        result["cpu"] = Json::array();
+        result["gpu"] = Json::array();
+
+        for (const auto& value : profile.cpu) {
+          result["cpu"].push_back(cpuTimingJson(value));
+        }
+
+        for (const auto& value : profile.gpu) {
+          result["gpu"].push_back(gpuTimingJson(value));
+        }
+      }
+
+      return result;
+    }
+
     struct ActiveScope {
       bool& value;
       bool previous;
@@ -3466,6 +3551,26 @@ namespace Dot::Editor {
         return raised ? execute("{\"command\":\"inspect\"}") : std::unexpected(raised.error());
       }
 
+      if (command == "set-profiling") {
+        Codec::requireFields(parsed, {"command", "enabled"});
+
+        if (!parsed["enabled"].is_boolean()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Profiling enabled must be boolean");
+        }
+
+        auto changed = m_renderer->setProfiling(parsed["enabled"].get<bool>());
+        return changed ? execute("{\"command\":\"inspect\"}") : std::unexpected(changed.error());
+      }
+
+      if (command == "inspect-profile") {
+        Codec::requireFields(parsed, {"command"});
+        auto profile = m_renderer->profiling();
+        return profile ? Core::Result<std::string>{Json{{"ok", true},
+                                                        {"profile", profilingJson(*profile, true)}}
+                                                       .dump()}
+                       : std::unexpected(profile.error());
+      }
+
       if (m_animationPreview && command != "inspect" && command != "close" && command != "set-theme"
           && command != "filter-panel" && command != "dock-panel" && command != "reset-layout"
           && command != "show-pane" && command != "set-view" && command != "navigate-view"
@@ -5294,6 +5399,11 @@ namespace Dot::Editor {
       return view ? Core::Result<Graphics::SceneView>(*view) : std::unexpected(view.error());
     }
 
+    auto profileStatus() const -> Json {
+      auto profile = m_renderer->profiling();
+      return profile ? profilingJson(*profile, false) : errorJson(profile.error());
+    }
+
     auto viewStatus() const -> Json {
       const auto state = m_editorCamera.state();
       const bool ready = viewportCurrent();
@@ -5305,29 +5415,7 @@ namespace Dot::Editor {
         draws = errorJson(stats.error());
       } else if (stats->mesh) {
         const auto& frame = *stats->mesh;
-        draws = {{"input", frame.inputInstances},
-                 {"visible", frame.visibleInstances},
-                 {"culled", frame.culledInstances},
-                 {"shadow", frame.shadowInstances},
-                 {"occlusion", frame.occlusionInstances},
-                 {"colorDraws", frame.colorDraws},
-                 {"solid", frame.solidInstances},
-                 {"blended", frame.blendedInstances},
-                 {"solidDraws", frame.solidDraws},
-                 {"blendedDraws", frame.blendedDraws},
-                 {"shadowDraws", frame.shadowDraws},
-                 {"shadowPagesUpdated", frame.shadowPagesUpdated},
-                 {"shadowPagesReused", frame.shadowPagesReused},
-                 {"occlusionDraws", frame.occlusionDraws},
-                 {"spatial",
-                  {{"indexed", frame.spatial.indexedInstances},
-                   {"nodes", frame.spatial.nodeTests},
-                   {"bounds", frame.spatial.boundsTests},
-                   {"exact", frame.spatial.exactTests},
-                   {"unindexed", frame.spatial.unindexedTests},
-                   {"changed", frame.spatial.changedBounds},
-                   {"refitted", frame.spatial.refittedNodes},
-                   {"rebuilt", frame.spatial.rebuilt}}}};
+        draws = meshWorkJson(frame);
       }
 
       return {
@@ -5336,6 +5424,7 @@ namespace Dot::Editor {
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
+          {"profiling", profileStatus()},
           {"textInput", m_renderer->guiStats().value().text},
           {"source", m_animationPreview ? "animation"
                      : playing()        ? "play"
@@ -6601,6 +6690,74 @@ namespace Dot::Editor {
     /** Native controls and agent requests share the saved document transaction.
      * 原生控件与 agent 请求共用可保存的文档事务，未应用草稿不会悄悄丢失。 */
     auto renderingPanel() -> void {
+      auto profile = m_renderer->profiling();
+
+      if (!profile) {
+        ImGui::TextWrapped("Mesh profiling: %s", profile.error().message.c_str());
+      } else {
+        bool enabled = profile->enabled;
+
+        if (ImGui::Checkbox("Profile mesh rendering", &enabled)) {
+          sessionAction({{"command", "set-profiling"}, {"enabled", enabled}});
+          profile = m_renderer->profiling();
+        }
+
+        if (profile && profile->enabled) {
+          ImGui::TextWrapped("GPU: %s", profile->adapter.name.c_str());
+          ImGui::TextWrapped(
+              "Renderer work only; scene, scripts, physics and skin updates excluded.");
+
+          if (!profile->cpu.empty()) {
+            const auto& cpu = profile->cpu.back();
+            ImGui::TextWrapped("CPU wall ms: prepare %.3f, encode %.3f, submit %.3f",
+                               static_cast<double>(cpu.prepareNanoseconds) / 1e6,
+                               static_cast<double>(cpu.encodeNanoseconds) / 1e6,
+                               static_cast<double>(cpu.submitNanoseconds) / 1e6);
+          }
+
+          if (!profile->gpuSupported) {
+            ImGui::TextUnformatted("GPU timestamps unavailable on this device.");
+          } else if (profile->gpu.empty()) {
+            ImGui::TextUnformatted("Waiting for GPU timing samples.");
+          } else {
+            const auto& gpu = profile->gpu.back();
+            ImGui::TextUnformatted("GPU intervals may overlap; do not add them as frame time.");
+            ImGui::TextWrapped(
+                "GPU sample %llu: %.3f ms at %ux%u", static_cast<unsigned long long>(gpu.serial),
+                static_cast<double>(gpu.totalNanoseconds) / 1e6, gpu.width, gpu.height);
+            constexpr std::array labels{"Shadows", "SSAO", "Surface / sky", "Tone mapping"};
+
+            for (std::size_t i = 0; i < labels.size(); ++i) {
+              if (gpu.passNanoseconds[i]) {
+                ImGui::Text("%s: %.3f ms", labels[i],
+                            static_cast<double>(*gpu.passNanoseconds[i]) / 1e6);
+              } else {
+                ImGui::Text("%s: no pass", labels[i]);
+              }
+            }
+
+            std::vector<float> history;
+            history.reserve(profile->gpu.size());
+
+            for (const auto& value : profile->gpu) {
+              history.push_back(static_cast<float>(value.totalNanoseconds) / 1e6F);
+            }
+
+            ImGui::PlotLines("Mesh GPU (ms)", history.data(), static_cast<int>(history.size()), 0,
+                             nullptr, 0, std::numeric_limits<float>::max(), {0, 64});
+          }
+
+          ImGui::TextWrapped("GPU samples: %zu, pending %llu, dropped %llu", profile->gpu.size(),
+                             static_cast<unsigned long long>(profile->pending),
+                             static_cast<unsigned long long>(profile->dropped));
+
+          if (profile->error) {
+            ImGui::TextWrapped("Profiling error: %s", profile->error->c_str());
+          }
+        }
+      }
+
+      ImGui::Separator();
       auto stats = m_renderer->visibilityStats();
 
       if (!stats) {
