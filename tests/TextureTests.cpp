@@ -40,6 +40,33 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("texture.precomputed_levels_validate_before_allocation_and_preserve_authored_mips") {
+  auto renderer
+      = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})
+            .value();
+  TextureOptions options{.colorSpace = ColorSpace::Linear};
+  std::vector<Image> levels{{2, 2, std::vector<std::uint8_t>(16, 255)}, {1, 1, {0, 255, 0, 255}}};
+  CHECK_FALSE(renderer.uploadTextureLevels({}));
+  auto invalid = levels;
+  invalid[1] = {2, 1, std::vector<std::uint8_t>(8, 255)};
+  CHECK_FALSE(renderer.uploadTextureLevels(invalid, options));
+  invalid = levels;
+  invalid[1].pixels.pop_back();
+  CHECK_FALSE(renderer.uploadTextureLevels(invalid, options));
+  CHECK_FALSE(renderer.uploadTextureLevels(std::span(levels).first(1), options));
+  auto single = options;
+  single.mipmaps = false;
+  CHECK_FALSE(renderer.uploadTextureLevels(levels, single));
+  CHECK(renderer.resourceStats()->textures == 0);
+  auto texture = renderer.uploadTextureLevels(levels, options).value();
+  CHECK(texture.info()->mipLevels == 2);
+  CHECK(renderer.resourceStats()->textureBytes == 20);
+  auto mesh = renderer.upload(quad({2, 2}).value()).value();
+  std::array draws{MeshDraw{&mesh, {}, {1, 1, 1, 1}, Material{{1, 1, 1, 1}, texture}}};
+  auto pixel = renderer.renderMeshes(draws, {}, 1, 1).value();
+  CHECK(pixel.pixels == std::vector<std::uint8_t>{0, 255, 0, 255});
+}
+
 TEST_CASE("texture.gpu_sampling_retains_owned_rgba_top_left_uv_and_material_factor") {
   auto renderer
       = Renderer::create(nullptr, {.postProcess = {0, ToneMap::LinearClamp, ColorSpace::Linear}})

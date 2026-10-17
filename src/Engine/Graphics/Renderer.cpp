@@ -4400,6 +4400,20 @@ namespace Dot::Graphics {
 
   auto Renderer::uploadTexture(const Image& image, const TextureOptions& options)
       -> Core::Result<Texture> {
+    return uploadTextureImpl(image, options, {});
+  }
+
+  auto Renderer::uploadTextureLevels(std::span<const Image> levels, const TextureOptions& options)
+      -> Core::Result<Texture> {
+    if (levels.empty()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Texture levels must not be empty");
+    }
+
+    return uploadTextureImpl(levels.front(), options, levels);
+  }
+
+  auto Renderer::uploadTextureImpl(const Image& image, const TextureOptions& options,
+                                   std::span<const Image> prepared) -> Core::Result<Texture> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
@@ -4443,6 +4457,26 @@ namespace Dot::Graphics {
       width = std::max(1U, width / 2);
       height = std::max(1U, height / 2);
     } while (true);
+
+    if (!prepared.empty()) {
+      if (prepared.size() != levels) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Texture mip level count mismatch");
+      }
+
+      width = image.width;
+      height = image.height;
+
+      for (const auto& level : prepared) {
+        auto valid = validateImage(level);
+
+        if (!valid || level.width != width || level.height != height) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid prepared texture mip level");
+        }
+
+        width = std::max(1U, width / 2);
+        height = std::max(1U, height / 2);
+      }
+    }
 
     if (m_impl->diagnostics->textures.load() >= m_impl->config.maxTextures
         || m_impl->diagnostics->textureBytes.load() + m_impl->diagnostics->environmentBytes.load()
@@ -4494,6 +4528,10 @@ namespace Dot::Graphics {
       std::optional<Image> ownedMip;
 
       for (std::uint32_t level = 0; level < levels; ++level) {
+        if (!prepared.empty()) {
+          mip = &prepared[level];
+        }
+
         wgpu::TexelCopyTextureInfo destination;
         destination.texture = texture->texture;
         destination.mipLevel = level;
@@ -4503,6 +4541,10 @@ namespace Dot::Graphics {
         const wgpu::Extent3D extent{mip->width, mip->height, 1};
         m_impl->queue.WriteTexture(&destination, mip->pixels.data(), mip->pixels.size(), &layout,
                                    &extent);
+
+        if (!prepared.empty()) {
+          continue;
+        }
 
         if (level + 1 == levels) {
           break;
@@ -5536,7 +5578,9 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    return m_impl->gui ? m_impl->gui->stats() : GuiStats{};
+    auto stats = m_impl->gui ? m_impl->gui->stats() : GuiStats{};
+    stats.building = m_impl->gui && m_impl->gui->building();
+    return stats;
   }
 
   auto Renderer::guiImage(const RenderTarget& target, float width, float height)

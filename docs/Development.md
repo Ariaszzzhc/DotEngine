@@ -9261,3 +9261,94 @@ PNGs, application/native profiles, process sample, content hashes, runtime/game
 manifests and executable hash. Verified temporary native output and the latest owned
 editor copy are removed after source restoration. Formal example files are unchanged.
 The overall engine/editor/game goal remains unfinished.
+
+## Background visible-material image preparation
+
+The previous native sample places LDR decode/mip work on the main thread. Added
+incremental visible-material preparation to SceneRenderer::prepare/readiness and
+ScenePreparationStage, replacing the pipeline-only API names without aliases.
+Current requirements now include Materials; workspace.view.loading adds
+material-textures and native initial loading names this phase before Start.
+Explicit drawing/material resolution remain synchronous; meshes, small material
+JSON, HDR I/O/baking, skin work and GPU uploads are not made generally asynchronous.
+
+Each scene renderer owns at most one CPU image job. It captures its own filesystem
+value, path/options and result state, never a scene/renderer/GUI borrow. The worker
+reads/decodes and builds the same exact linear/sRGB mip chain. Existing image bounds
+limit one logical pyramid below 86 MiB, plus file/codec working storage. Each poll
+uploads at most one prepared texture on the owner. New textures remain staged until
+the complete material resolves. Failure releases them and retains context; clear,
+obsolete-scene or draft cancellation requests stop and discards late results without
+waiting for a running codec on a frame. Destruction joins remaining work. A codec/read
+already in progress may finish; there are no detached threads or forced interruption.
+The pinned stb backend uses thread-local failure state. No dependency is changed.
+
+Renderer::uploadTextureLevels validates every complete floor-half level before GPU
+allocation and preserves its bytes. It shares the existing allocation/sampler/upload
+implementation; ordinary upload still borrows level zero and generates lower levels,
+without reintroducing the earlier base-image copy. Shared material resolution still
+publishes only complete texture sets. Pruning is shared with actual rendering and
+keeps textures still referenced by an active material/draft. GPU/cache byte and 4096
+material/texture bounds apply to staging as well. Interleaved direct loads reuse the
+published cache rather than publishing duplicate staged keys. GUI stats exposes the
+actual building flag so preparation rejects GUI reentry even with ready pipelines;
+readiness remains pure/GUI-safe. Draft synchronization now precedes preparation and
+the Play guard, preventing a reset/closed draft's old cache from implying readiness.
+
+Four new durable offscreen cases verify authored mip sampling and malformed levels
+without allocation; async/direct pixel equivalence with no premature target/material
+publication; moves, threads and GUI rejection; missing later textures releasing earlier
+staging, explicit reload/recovery and a one-byte budget failing before upload; scene
+visibility cancellation, clear/draft replacement, actual green preview pixels and
+repeated teardown without GPU texture leaks. Initial focused Debug passes 9/9 (7.35s).
+An assertion-message parenthesis error in the new test and a moved previewKey reference
+are corrected during builds. Three full Debug checkpoints pass 1318/1318 (203.49s,
+203.34s, 203.79s) as ordering/budget review is integrated. The last full Debug precedes
+the final immediate-Play synchronization call; the final Debug build and six focused
+workspace/GUI/material/mip cases then pass 6/6 (4.83s). Final Release/NDEBUG passes
+1318/1318 (27.37s). Builds and tests remain sequential. Counts: 410 unit, 908
+integration; overlapping 198 compiler, 156 offscreen, 33 platform, 32 audio-native
+and 20 process cases. Eleven changed C++ files pass clang-format and whitespace
+checks pass. Reviewed capture/result/thread lifetimes, cancel/late-result races,
+scene/draft changes, staging rollback/publication, cache reuse, budget arithmetic,
+all mip dimensions/storage, owner/device/GUI checks and unchanged timing limits.
+Only macOS arm64 is executed; caller compiler/linker and sanitizer settings are unchanged.
+
+Actual Release editor observes material-textures: seven inspect requests have median
+47.355ms / maximum 51.894ms client wall time, including CLI/poll overhead. Play rejects
+with resources still preparing; queued capture finishes failed, saving rejects and
+writes no file. The ready inspect takes 98.048ms. Application sampling retains a
+96.227375ms step with 92.014542ms in preparation and 4.193167ms render. This is an
+observation of the owned run, not a general responsiveness bound. Real W/Space Play
+observes [-3,1.3340256,1.4860593], no Play error/diagnostics, clean exact authoring
+restoration on Stop and successful Save/export. A fresh editor reopens/saves twice
+with identical scene/disk bytes. Ready/stopped/reopened pixels retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+A third real editor stages concrete's base-color source to its existing normal image,
+without saving. The owned draft capture reports materialPreview=true and changes
+hash to 623663c4610bd62f4c218afd91a370eab3db4b14d683f5cd55130fea3da65c6a.
+Reset/close restores the baseline hash, with byte-identical material file and clean,
+unchanged authoring scene. This warm draft probe observes only the ready result,
+not its pending interval. All three editors exit zero with empty stderr and retired
+control directories. Fresh native mouse/keyboard acceptance remains unverified since
+the locked-Mac report; no computer-use acceptance is claimed.
+
+The physically relocated native export runs with authoring hidden and matches all
+116 content files / 66,649,969 bytes. It logs environment/shadow/SSAO/material phases,
+then exits zero after 360 game steps: 756 sampled steps (396 initial preparation plus
+360 game). The 120 retained samples are unpaused/error-free. First-game render is
+41.728375ms, whole step 76.275250ms; longest interval is 77.538708ms with no dropped
+fixed time, and stderr has no dropped-time warning. Retained median step is
+12.347396ms. Cache/context conditions are not matched to earlier runs; these figures
+are not a speedup percentage or FPS claim. The process sample places LDR load/mip
+work on background threads rather than the main thread. Main-thread skin status
+readback and HDR completion waits remain. Initial/dynamic game-session work and
+other assets still require broader background loading/streaming work; clocks, budgets
+and warnings are unchanged. The full engine/editor/game objective remains unfinished.
+
+Raw requests/responses, five PNGs, application/native profiles, process sample,
+content hashes, runtime/game manifests and executable hash remain under
+build/material-preparation-review. Verified temporary native output and the latest
+owned editor copy are removed after source restoration. Formal example files and
+user-owned reference/output material remain unchanged and untracked where requested.

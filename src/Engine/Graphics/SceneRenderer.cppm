@@ -23,7 +23,7 @@ export namespace Dot::Graphics {
    * 游戏主相机、指定场景相机或独立编辑/工具视图。 */
   using SceneView = std::variant<std::monostate, World::EntityId, View>;
 
-  enum class ScenePipelineStage { Ready, Environment, Shadows, Occlusion };
+  enum class ScenePreparationStage { Ready, Environment, Shadows, Occlusion, Materials };
 
   struct SceneRenderStats {
     std::size_t meshes;
@@ -81,19 +81,24 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
-    /** Start/poll required environment/shadow/SSAO pipeline groups; report the pending
-     * group or Ready. No files, maps, bindings or cache entries change. Rendering
-     * still validates/loads/bakes resources synchronously. Completed groups reuse
-     * the renderer's pipelines even when the scene changes.
-     * 启动/轮询所需环境/阴影/SSAO 管线组，返回当前等待组或 Ready；不改文件、地图、绑定或缓存。
-     * 绘制仍同步校验/加载/预处理资源，已完成组在场景变更后继续共用。 */
-    [[nodiscard]] auto preparePipelines(const World::Scene& scene)
-        -> Core::Result<ScenePipelineStage>;
-    /** Pure current-scene readiness, including inside GUI layout. No implicit
-     * polling/preparation; pending requirements are checked against current data.
-     * 只读当前场景就绪状态，允许 GUI 布局调用；不隐式轮询/准备，按当前数据检查所需组。 */
-    [[nodiscard]] auto pipelineReadiness(const World::Scene& scene) const
-        -> Core::Result<ScenePipelineStage>;
+    /** Prepare required pipelines and visible materials incrementally. CPU image
+     * reads/decode/mips use one owned worker, at most one bounded image pyramid;
+     * each poll uploads at most one texture on the owner. Publish complete materials
+     * only. Small material JSON reads, GPU uploads/bakes and other assets remain
+     * synchronous. No pixels are produced. Explicit rendering remains synchronous.
+     * Clear/draft/scene cancellation discards late work without joining a codec;
+     * destruction requests stop and joins active work before renderer teardown.
+     * 渐进准备所需管线和可见材质；单个拥有的工作线程读取/解码/生成至多一张有界
+     * mip 金字塔，每次轮询在所属线程至多上传一张纹理，仅完整材质发布到缓存。
+     * 小型材质 JSON、GPU 上传/烘焙及其他资产仍同步，不生成像素；显式绘制仍同步。
+     * 清缓存/草稿/场景取消丢弃迟到结果，不在帧内等待编解码；销毁请求停止并等待工作结束。 */
+    [[nodiscard]] auto prepare(const World::Scene& scene) -> Core::Result<ScenePreparationStage>;
+    /** Pure current-scene readiness, including inside GUI layout. No I/O, polling,
+     * preparation or cache mutation. Ready concerns only the prepared requirements.
+     * 只读当前场景就绪状态，允许 GUI 布局调用；不读文件、轮询、准备或修改缓存；
+     * Ready 仅代表上述准备项已完成。 */
+    [[nodiscard]] auto readiness(const World::Scene& scene) const
+        -> Core::Result<ScenePreparationStage>;
 
     /** Entity view must belong to the scene; monostate selects its primary camera.
      * Independent views require no scene camera and never mutate its entities.

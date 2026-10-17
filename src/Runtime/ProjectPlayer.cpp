@@ -170,7 +170,7 @@ namespace Dot::Runtime {
       auto lastTitle = description->name;
       bool delayed = false;
       bool started = false;
-      std::optional<Graphics::ScenePipelineStage> loadingStage;
+      std::optional<Graphics::ScenePreparationStage> loadingStage;
       std::size_t gameFrames{};
       const auto dispatch
           = [&](Core::Result<Script::LiveScriptReport> report) -> Core::Result<void> {
@@ -209,19 +209,21 @@ namespace Dot::Runtime {
         }
 
         if (!started) {
-          auto prepared = sceneRenderer->preparePipelines(**scene);
+          auto prepared = sceneRenderer->prepare(**scene);
 
           if (!prepared) {
             return std::unexpected(prepared.error());
           }
 
-          if (*prepared != Graphics::ScenePipelineStage::Ready) {
+          if (*prepared != Graphics::ScenePreparationStage::Ready) {
             if (loadingStage != *prepared) {
-              const auto phase = *prepared == Graphics::ScenePipelineStage::Environment
+              const auto phase = *prepared == Graphics::ScenePreparationStage::Environment
                                      ? "environment lighting"
-                                 : *prepared == Graphics::ScenePipelineStage::Shadows
+                                 : *prepared == Graphics::ScenePreparationStage::Shadows
                                      ? "shadow shaders"
-                                     : "ambient occlusion shaders";
+                                 : *prepared == Graphics::ScenePreparationStage::Occlusion
+                                     ? "ambient occlusion shaders"
+                                     : "material textures";
               std::println(stderr, "Preparing {}", phase);
               auto changed
                   = application->window().setTitle(description->name + " - Preparing " + phase);
@@ -251,7 +253,7 @@ namespace Dot::Runtime {
           started = true;
 
           if (loadingStage) {
-            std::println(stderr, "Rendering pipelines ready; starting game");
+            std::println(stderr, "Scene resources ready; starting game");
             lastTitle.clear();
           }
         }

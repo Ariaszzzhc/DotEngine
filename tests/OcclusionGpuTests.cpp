@@ -140,48 +140,48 @@ TEST_CASE("occlusion.gpu_scene_current_requirements_and_gui_reads_preserve_bindi
   auto renderer = createRenderer();
   auto drawing = SceneRenderer::create(renderer).value();
   auto scene = Dot::World::Scene::create().value();
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setOcclusion(OcclusionSettings{}));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Occlusion);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Occlusion);
   REQUIRE(renderer.enableGui());
   REQUIRE(renderer.renderGui(
       [&]() -> Dot::Core::Result<void> {
-        CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Occlusion);
+        CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Occlusion);
         CHECK_FALSE(renderer.occlusionPipelinesReady().value());
-        CHECK_FALSE(drawing.preparePipelines(scene));
+        CHECK_FALSE(drawing.prepare(scene));
         return {};
       },
       16, 16));
   CHECK_FALSE(renderer.occlusionPipelinesReady().value());
   REQUIRE(renderer.closeGui());
   REQUIRE(scene.setOcclusion(std::nullopt));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setOcclusion(OcclusionSettings{}));
-  auto stage = drawing.preparePipelines(scene);
+  auto stage = drawing.prepare(scene);
   REQUIRE(stage);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
-  while (*stage != ScenePipelineStage::Ready && std::chrono::steady_clock::now() < deadline) {
+  while (*stage != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    stage = drawing.preparePipelines(scene);
+    stage = drawing.prepare(scene);
     REQUIRE(stage);
   }
 
-  REQUIRE(*stage == ScenePipelineStage::Ready);
+  REQUIRE(*stage == ScenePreparationStage::Ready);
   CHECK(renderer.occlusionPipelinesReady().value());
   CHECK_FALSE(renderer.occlusion().value());
   CHECK(renderer.resourceStats()->occlusionBytes == 0);
   CHECK(drawing.stats()->bytes == 0);
   REQUIRE(scene.setOcclusion(std::nullopt));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setOcclusion(OcclusionSettings{}));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   auto moved = std::move(drawing);
-  CHECK_FALSE(drawing.preparePipelines(scene));
-  CHECK(moved.preparePipelines(scene).value() == ScenePipelineStage::Ready);
+  CHECK_FALSE(drawing.prepare(scene));
+  CHECK(moved.prepare(scene).value() == ScenePreparationStage::Ready);
   auto retained = std::move(scene);
-  CHECK_FALSE(moved.pipelineReadiness(scene));
-  CHECK(moved.pipelineReadiness(retained).value() == ScenePipelineStage::Ready);
+  CHECK_FALSE(moved.readiness(scene));
+  CHECK(moved.readiness(retained).value() == ScenePreparationStage::Ready);
 }
 
 TEST_CASE("occlusion.gpu_plane_background_contact_and_lifted_objects_use_real_guides") {

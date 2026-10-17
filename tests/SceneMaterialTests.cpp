@@ -1,16 +1,19 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <numbers>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "EnvironmentFixture.hpp"
 
+import Dot.Core.Result;
 import Dot.Assets.Material;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
@@ -73,6 +76,166 @@ namespace {
     return image.pixels.at((static_cast<std::size_t>(y) * image.width + x) * 4);
   }
 }  // namespace
+
+TEST_CASE("scene_material.async_preparation_keeps_frames_private_and_matches_direct_pixels") {
+  Fixture fixture;
+  fixture.texture("surface.png", "color.png");
+  Dot::Assets::MaterialDescription value;
+  value.model = Dot::Graphics::SurfaceModel::Unlit;
+  value.baseColorTexture = Dot::Assets::TextureSource{"color.png"};
+  REQUIRE(Dot::Assets::saveMaterial(fixture.files, "surface.dotmaterial", value));
+  auto device = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  auto target = device.createTarget(3, 3).value();
+  CHECK(drawing.readiness(fixture.scene).value()
+        == Dot::Graphics::ScenePreparationStage::Materials);
+  REQUIRE(drawing.prepare(fixture.scene).value()
+          == Dot::Graphics::ScenePreparationStage::Materials);
+  CHECK(drawing.stats()->materials == 0);
+  CHECK(drawing.stats()->textures == 0);
+  CHECK(target.info()->frames == 0);
+  REQUIRE(device.enableGui());
+  REQUIRE(device.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        CHECK(device.guiStats()->building);
+        CHECK(drawing.readiness(fixture.scene).value()
+              == Dot::Graphics::ScenePreparationStage::Materials);
+        CHECK_FALSE(drawing.prepare(fixture.scene));
+        return {};
+      },
+      8, 8));
+  REQUIRE(device.closeGui());
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !drawing.prepare(fixture.scene) && !drawing.readiness(fixture.scene); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(drawing);
+  CHECK_FALSE(drawing.prepare(fixture.scene));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  auto state = moved.prepare(fixture.scene);
+
+  while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < deadline) {
+    CHECK(moved.stats()->materials == 0);
+    CHECK(target.info()->frames == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = moved.prepare(fixture.scene);
+  }
+
+  REQUIRE_MESSAGE(state, (state ? "" : state.error().message));
+  REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Ready);
+  CHECK(moved.stats()->materials == 1);
+  CHECK(moved.stats()->textures == 1);
+  REQUIRE(moved.renderInto(fixture.scene, target));
+  const auto pixels = device.readHdrTarget(target)->pixels;
+  auto direct = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  REQUIRE(direct.renderInto(fixture.scene, target));
+  CHECK(device.readHdrTarget(target)->pixels == pixels);
+}
+
+TEST_CASE("scene_material.async_failure_retires_staged_textures_and_clear_allows_recovery") {
+  Fixture fixture;
+  fixture.texture("surface.png", "color.png");
+  Dot::Assets::MaterialDescription value;
+  value.baseColorTexture = Dot::Assets::TextureSource{"color.png"};
+  value.emissiveTexture = Dot::Assets::TextureSource{"missing.png"};
+  REQUIRE(Dot::Assets::saveMaterial(fixture.files, "surface.dotmaterial", value));
+  auto device = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  auto state = drawing.prepare(fixture.scene);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (state && std::chrono::steady_clock::now() < deadline) {
+    REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Materials);
+    CHECK(drawing.stats()->materials == 0);
+    CHECK(drawing.stats()->textures == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = drawing.prepare(fixture.scene);
+  }
+
+  REQUIRE_FALSE(state);
+  CHECK_FALSE(drawing.readiness(fixture.scene));
+  CHECK(drawing.stats()->textures == 0);
+  CHECK(device.resourceStats()->textures == 0);
+  fixture.texture("surface.png", "missing.png");
+  REQUIRE(drawing.clearCache());
+  const auto retryDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  state = drawing.prepare(fixture.scene);
+
+  while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < retryDeadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = drawing.prepare(fixture.scene);
+  }
+
+  REQUIRE(state);
+  REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Ready);
+  CHECK(drawing.stats()->materials == 1);
+  CHECK(drawing.stats()->textures == 2);
+  const auto held = device.resourceStats()->textures;
+  auto tiny = Dot::Graphics::SceneRenderer::create(device, fixture.files, 1).value();
+  state = tiny.prepare(fixture.scene);
+  const auto budgetDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (state && std::chrono::steady_clock::now() < budgetDeadline) {
+    REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Materials);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = tiny.prepare(fixture.scene);
+  }
+
+  REQUIRE_FALSE(state);
+  CHECK(state.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(tiny.stats()->textures == 0);
+  CHECK(tiny.stats()->bytes == 0);
+  CHECK(device.resourceStats()->textures == held);
+}
+
+TEST_CASE("scene_material.async_cancel_and_draft_replace_discard_late_codec_results") {
+  Fixture fixture;
+  fixture.texture("surface.png", "color.png");
+  Dot::Assets::MaterialDescription value;
+  value.baseColorTexture = Dot::Assets::TextureSource{"color.png"};
+  REQUIRE(Dot::Assets::saveMaterial(fixture.files, "surface.dotmaterial", value));
+  auto device = renderer();
+
+  for (int round = 0; round < 3; ++round) {
+    auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+    REQUIRE(drawing.prepare(fixture.scene).value()
+            == Dot::Graphics::ScenePreparationStage::Materials);
+    auto component = fixture.scene.entity(fixture.mesh)->mesh.value();
+    component.visible = false;
+    REQUIRE(fixture.scene.setMeshRenderer(fixture.mesh, component));
+    REQUIRE(drawing.prepare(fixture.scene).value() == Dot::Graphics::ScenePreparationStage::Ready);
+    component.visible = true;
+    REQUIRE(fixture.scene.setMeshRenderer(fixture.mesh, component));
+    REQUIRE(drawing.clearCache());
+    Dot::Assets::MaterialDescription draft;
+    draft.model = Dot::Graphics::SurfaceModel::Unlit;
+    draft.baseColor = {0, 1, 0, 1};
+    REQUIRE(drawing.previewMaterial(Dot::Graphics::MaterialPreview{"surface.dotmaterial", draft}));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto state = drawing.prepare(fixture.scene);
+
+    while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      state = drawing.prepare(fixture.scene);
+    }
+
+    REQUIRE(state);
+    REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Ready);
+    CHECK(drawing.stats()->textures == 0);
+    auto target = device.createTarget(3, 3).value();
+    REQUIRE(drawing.renderInto(fixture.scene, target));
+    auto image = device.readHdrTarget(target).value();
+    CHECK(image.pixels[16] == 0);
+    CHECK(image.pixels[17] == 1);
+    CHECK(image.pixels[18] == 0);
+  }
+
+  CHECK(device.resourceStats()->textures == 0);
+}
 
 TEST_CASE("scene_material.saved_physical_factors_and_hierarchical_light_pose_drive_gpu_pixels") {
   Fixture fixture;

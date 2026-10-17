@@ -1742,14 +1742,16 @@ cross-scene gameplay state are not implemented by this operation.
 
 Required environment bake/surface/sky, shadow and SSAO pipelines compile asynchronously
 while editor events, agent requests and GUI continue. `workspace.view.loading` is
-`"environment-pipeline"`, `"shadow-pipelines"` or `"occlusion-pipelines"` while pending,
+`"environment-pipeline"`, `"shadow-pipelines"` or `"occlusion-pipelines"` or `"material-textures"` while pending,
 null otherwise, independently of `error`. A pending view has no completed pixels for picking or
 capture. Screenshot requests still use the normal queue/confirmation protocol;
 inspect their final state, since queued is not pixel success. Scene names environment
 lighting, shadow or ambient occlusion shaders. Play checks current requirements and
 returns an explicit pending error until preparation completes. No synthetic progress percentage or
 completed-scene image is reported. HDR loading/uploads and subsequent
-GPU baking still run synchronously; this is not general asset streaming.
+GPU baking still run synchronously. Visible material images decode and generate mips
+on an owned CPU worker; uploads happen incrementally, with complete-material
+publication. Cancellation discards late results. This is not general runtime streaming.
 
 Window → Game state provides owned state inspection and explicit save-slot controls.
 Play uses a fresh temporary store, deleted on Stop; it cannot access player saves.

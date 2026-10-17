@@ -658,7 +658,7 @@ namespace Dot::Editor {
     std::string m_scenePath{"scenes/new.dotscene"};
     std::string m_sceneName{"New Scene"};
     bool m_previewReady{};
-    Graphics::ScenePipelineStage m_pipelineStage{Graphics::ScenePipelineStage::Ready};
+    Graphics::ScenePreparationStage m_preparationStage{Graphics::ScenePreparationStage::Ready};
     bool m_active{};
     bool m_applying{};
     std::optional<Core::Error> m_mailboxFault;
@@ -1236,19 +1236,54 @@ namespace Dot::Editor {
       return {};
     }
 
+    auto synchronizeMaterialPreview() -> Core::Result<void> {
+      const auto previewKey = m_material && !playing()
+                                  ? std::to_string(m_buffer) + m_materialForm.dump()
+                                  : std::string{};
+
+      if (previewKey != m_materialPreviewKey) {
+        std::optional<Graphics::MaterialPreview> material;
+
+        if (m_material && !playing()) {
+          auto value = Assets::decodeMaterial(m_materialForm.dump());
+
+          if (!value) {
+            return std::unexpected(value.error());
+          }
+
+          material = Graphics::MaterialPreview{m_material->snapshot()->path, std::move(*value)};
+        }
+
+        auto changed = m_drawing->previewMaterial(std::move(material));
+
+        if (!changed) {
+          return changed;
+        }
+
+        m_materialPreviewKey = previewKey;
+      }
+
+      return {};
+    }
+
     auto startPlay() -> Core::Result<void> {
+      auto materialPreview = synchronizeMaterialPreview();
+
+      if (!materialPreview) {
+        return materialPreview;
+      }
+
       auto scene = m_document->scene();
-      auto stage = scene
-                       ? m_drawing->pipelineReadiness(**scene)
-                       : Core::Result<Graphics::ScenePipelineStage>{std::unexpected(scene.error())};
+      auto stage
+          = scene ? m_drawing->readiness(**scene)
+                  : Core::Result<Graphics::ScenePreparationStage>{std::unexpected(scene.error())};
 
       if (!stage) {
         return std::unexpected(stage.error());
       }
 
-      if (*stage != Graphics::ScenePipelineStage::Ready) {
-        return Core::fail(Core::ErrorCode::Unavailable,
-                          "Scene rendering pipelines are still preparing");
+      if (*stage != Graphics::ScenePreparationStage::Ready) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene resources are still preparing");
       }
 
       if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
@@ -5551,12 +5586,14 @@ namespace Dot::Editor {
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
-          {"loading", m_pipelineStage == Graphics::ScenePipelineStage::Environment
+          {"loading", m_preparationStage == Graphics::ScenePreparationStage::Environment
                           ? Json("environment-pipeline")
-                      : m_pipelineStage == Graphics::ScenePipelineStage::Shadows
+                      : m_preparationStage == Graphics::ScenePreparationStage::Shadows
                           ? Json("shadow-pipelines")
-                      : m_pipelineStage == Graphics::ScenePipelineStage::Occlusion
+                      : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
                           ? Json("occlusion-pipelines")
+                      : m_preparationStage == Graphics::ScenePreparationStage::Materials
+                          ? Json("material-textures")
                           : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
@@ -5783,10 +5820,18 @@ namespace Dot::Editor {
         return std::unexpected(scene.error());
       }
 
-      auto prepared = m_drawing->preparePipelines(**scene);
-      m_pipelineStage = prepared ? *prepared : Graphics::ScenePipelineStage::Ready;
+      auto materialPreview = synchronizeMaterialPreview();
 
-      if (!prepared || m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
+      if (!materialPreview) {
+        m_previewReady = false;
+        m_previewError = materialPreview.error().message;
+        return {};
+      }
+
+      auto prepared = m_drawing->prepare(**scene);
+      m_preparationStage = prepared ? *prepared : Graphics::ScenePreparationStage::Ready;
+
+      if (!prepared || m_preparationStage != Graphics::ScenePreparationStage::Ready) {
         m_previewReady = false;
         m_previewError = prepared ? "" : prepared.error().message;
         return {};
@@ -5796,36 +5841,6 @@ namespace Dot::Editor {
 
       if (!view) {
         return std::unexpected(view.error());
-      }
-
-      const auto previewKey = m_material && !playing()
-                                  ? std::to_string(m_buffer) + m_materialForm.dump()
-                                  : std::string{};
-
-      if (previewKey != m_materialPreviewKey) {
-        std::optional<Graphics::MaterialPreview> material;
-
-        if (m_material && !playing()) {
-          auto value = Assets::decodeMaterial(m_materialForm.dump());
-
-          if (!value) {
-            m_previewReady = false;
-            m_previewError = value.error().message;
-            return {};
-          }
-
-          material = Graphics::MaterialPreview{m_material->snapshot()->path, std::move(*value)};
-        }
-
-        auto changed = m_drawing->previewMaterial(std::move(material));
-
-        if (!changed) {
-          m_previewReady = false;
-          m_previewError = changed.error().message;
-          return {};
-        }
-
-        m_materialPreviewKey = previewKey;
       }
 
       if (m_viewFrame == std::numeric_limits<std::uint64_t>::max()) {
@@ -5873,7 +5888,7 @@ namespace Dot::Editor {
                                        width,
                                        height,
                                        *projection,
-                                       !previewKey.empty(),
+                                       !m_materialPreviewKey.empty(),
                                        animation};
       }
 
@@ -10020,12 +10035,14 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
-        if (m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
-          ImGui::TextUnformatted(m_pipelineStage == Graphics::ScenePipelineStage::Environment
+        if (m_preparationStage != Graphics::ScenePreparationStage::Ready) {
+          ImGui::TextUnformatted(m_preparationStage == Graphics::ScenePreparationStage::Environment
                                      ? "Preparing environment lighting..."
-                                 : m_pipelineStage == Graphics::ScenePipelineStage::Shadows
+                                 : m_preparationStage == Graphics::ScenePreparationStage::Shadows
                                      ? "Preparing shadow shaders..."
-                                     : "Preparing ambient occlusion shaders...");
+                                 : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
+                                     ? "Preparing ambient occlusion shaders..."
+                                     : "Preparing material textures...");
         }
 
         if (m_animationPreview) {
@@ -10396,14 +10413,18 @@ namespace Dot::Editor {
           return {};
         }
 
+        auto materialPreview = synchronizeMaterialPreview();
         auto scene = displayedScene();
         auto prepared
-            = scene ? m_drawing->preparePipelines(**scene)
-                    : Core::Result<Graphics::ScenePipelineStage>{std::unexpected(scene.error())};
+            = !materialPreview ? Core::Result<Graphics::ScenePreparationStage>{std::unexpected(
+                                     materialPreview.error())}
+              : scene
+                  ? m_drawing->prepare(**scene)
+                  : Core::Result<Graphics::ScenePreparationStage>{std::unexpected(scene.error())};
 
-        m_pipelineStage = prepared ? *prepared : Graphics::ScenePipelineStage::Ready;
+        m_preparationStage = prepared ? *prepared : Graphics::ScenePreparationStage::Ready;
 
-        if (!prepared || m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
+        if (!prepared || m_preparationStage != Graphics::ScenePreparationStage::Ready) {
           m_previewReady = false;
           m_previewError = prepared ? "" : prepared.error().message;
         }

@@ -73,7 +73,7 @@ DotEditor export <project-root> <existing-parent> <new-folder> <absolute-compile
 ```
 
 The finite budget counts game render steps after initial environment/shadow/SSAO
-pipeline preparation. Loading keeps processing events and showing a clear surface/title;
+pipeline and visible-material preparation. Loading keeps processing events and showing a clear surface/title;
 script Start callbacks run once the required groups are ready. It does not count loading as completed
 gameplay or make all asset loading asynchronous. A zero budget runs until closed.
 

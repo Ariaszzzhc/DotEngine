@@ -144,19 +144,19 @@ TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings
   auto renderer = Renderer::create().value();
   auto drawing = SceneRenderer::create(renderer).value();
   auto scene = Dot::World::Scene::create().value();
-  CHECK(drawing.preparePipelines(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.prepare(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
-  auto ready = drawing.preparePipelines(scene);
+  auto ready = drawing.prepare(scene);
   REQUIRE(ready);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
-  while (*ready != ScenePipelineStage::Ready && std::chrono::steady_clock::now() < deadline) {
+  while (*ready != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ready = drawing.preparePipelines(scene);
+    ready = drawing.prepare(scene);
     REQUIRE(ready);
   }
 
-  REQUIRE(*ready == ScenePipelineStage::Ready);
+  REQUIRE(*ready == ScenePreparationStage::Ready);
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(renderer.environment().value());
   auto target = renderer.createTarget(4, 4).value();
@@ -164,12 +164,12 @@ TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings
   CHECK(drawing.stats()->bytes == 0);
   CHECK(renderer.resourceStats()->environments == 0);
   auto moved = std::move(drawing);
-  CHECK_FALSE(drawing.preparePipelines(scene));
-  CHECK(moved.preparePipelines(scene).value() == ScenePipelineStage::Ready);
+  CHECK_FALSE(drawing.prepare(scene));
+  CHECK(moved.prepare(scene).value() == ScenePreparationStage::Ready);
   auto invalid = std::move(scene);
-  CHECK_FALSE(moved.preparePipelines(scene));
+  CHECK_FALSE(moved.prepare(scene));
   REQUIRE(invalid.setEnvironment(std::nullopt));
-  CHECK(moved.preparePipelines(invalid).value() == ScenePipelineStage::Ready);
+  CHECK(moved.prepare(invalid).value() == ScenePreparationStage::Ready);
 }
 
 TEST_CASE("environment.gpu_constant_energy_hdr_diffuse_specular_mips_and_brdf_are_real") {

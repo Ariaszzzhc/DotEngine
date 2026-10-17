@@ -196,6 +196,7 @@ export namespace Dot::Graphics {
     bool keyboard{};
     bool text{};
     GuiInputStats input;
+    bool building{};
   };
 
   using GuiDraw = std::function<Core::Result<void>()>;
@@ -517,6 +518,14 @@ export namespace Dot::Graphics {
      * 最近采样各向异性须为一，线性采样支持 1..16；UV (0,0) 对应图像左上纹素。 */
     [[nodiscard]] auto uploadTexture(const Image& image, const TextureOptions& options = {})
         -> Core::Result<Texture>;
+    /** Upload complete precomputed levels without CPU mip generation. Require
+     * exact floor-half dimensions through 1x1 when mipmaps are enabled, otherwise
+     * only level zero. Validate every image before GPU allocation; preserve bytes.
+     * 上传完整预计算层级，不生成 CPU mip；启用 mip 时要求精确向下取半至 1x1，
+     * 否则仅接受基础层。GPU 分配前校验每层图像，保持输入字节。 */
+    [[nodiscard]] auto uploadTextureLevels(std::span<const Image> levels,
+                                           const TextureOptions& options = {})
+        -> Core::Result<Texture>;
     /** Logical bytes owned by live mesh/texture/target resources, including shared copies once.
      * A coherent snapshot requires resource destruction to be quiescent.
      * 活跃网格/目标资源拥有的逻辑字节数，共享副本仅统计一次；一致快照要求资源销毁处于静止状态。 */
@@ -771,6 +780,8 @@ export namespace Dot::Graphics {
         -> Core::Result<PresentResult>;
 
   private:
+    [[nodiscard]] auto uploadTextureImpl(const Image& image, const TextureOptions& options,
+                                         std::span<const Image> levels) -> Core::Result<Texture>;
     struct Impl;
     explicit Renderer(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

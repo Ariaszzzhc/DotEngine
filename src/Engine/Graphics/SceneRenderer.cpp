@@ -7,6 +7,11 @@ module;
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <memory>
+#include <mutex>
+#include <stop_token>
+#include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -110,6 +115,26 @@ namespace Dot::Graphics {
       std::vector<std::string> textures;
     };
 
+    struct ImageResult {
+      std::mutex mutex;
+      std::optional<Core::Result<std::vector<Image>>> value;
+    };
+
+    struct ImageJob {
+      std::shared_ptr<ImageResult> result;
+      std::jthread thread;
+      bool canceled{};
+    };
+
+    struct PendingMaterial {
+      std::string path;
+      Assets::MaterialDescription description;
+      std::vector<std::pair<std::string, Assets::TextureSource>> sources;
+      std::unordered_map<std::string, TextureEntry> staged;
+      std::size_t cursor{};
+      std::optional<Core::Error> error;
+    };
+
     struct Frame {
       Math::Mat4 camera;
       std::vector<Mesh> meshes;
@@ -138,6 +163,8 @@ namespace Dot::Graphics {
     std::unordered_map<std::uint64_t, SkinEntry> skins;
     std::unordered_map<std::string, Animation::Skin> skinAssets;
     std::optional<MaterialPreview> preview;
+    std::optional<PendingMaterial> pendingMaterial;
+    std::unique_ptr<ImageJob> imageJob;
 
     struct EnvironmentEntry {
       std::string asset;
@@ -199,6 +226,8 @@ namespace Dot::Graphics {
        * retained binding. Destruction itself must not throw.
        * 设备故障可能阻止解绑；渲染器销毁会释放其绑定，析构本身不得抛异常。 */
       try {
+        cancelPreparation();
+        imageJob.reset();
         static_cast<void>(detachEnvironment());
         static_cast<void>(detachOcclusion());
       } catch (...) {
@@ -476,7 +505,9 @@ namespace Dot::Graphics {
       return resolveMaterial(*description);
     }
 
-    auto resolveMaterial(const Assets::MaterialDescription& value) -> Core::Result<MaterialEntry> {
+    auto resolveMaterial(const Assets::MaterialDescription& value,
+                         std::unordered_map<std::string, TextureEntry> pending = {})
+        -> Core::Result<MaterialEntry> {
       auto checked = Assets::validateMaterial(value);
 
       if (!checked) {
@@ -502,8 +533,15 @@ namespace Dot::Graphics {
                              &result.material.metallicRoughnessTexture,
                              &result.material.normalTexture, &result.material.emissiveTexture,
                              &result.material.occlusionTexture};
-      std::unordered_map<std::string, TextureEntry> pending;
       std::uint64_t pendingBytes{};
+
+      for (const auto& [identity, entry] : pending) {
+        pendingBytes += entry.bytes;
+      }
+
+      if (pendingBytes > budget - bytes) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene staged texture budget exhausted");
+      }
 
       for (std::size_t index = 0; index < sources.size(); ++index) {
         if (!*sources[index]) {
@@ -561,6 +599,7 @@ namespace Dot::Graphics {
         const auto inserted = textures.insert(std::move(node));
         bytes += inserted.position->second.bytes;
       }
+
       return result;
     }
 
@@ -651,6 +690,362 @@ namespace Dot::Graphics {
       return validatedLighting(result);
     }
 
+    /** Cancellation never joins a running codec on a frame; canceled output is
+     * discarded when polled. Destruction joins before borrowed renderer teardown.
+     * 帧内取消不等待活动编解码，轮询时丢弃迟到结果；销毁在借用渲染器退出前等待线程。 */
+    auto cancelPreparation() -> void {
+      pendingMaterial.reset();
+
+      if (imageJob) {
+        imageJob->canceled = true;
+        imageJob->thread.request_stop();
+      }
+    }
+
+    auto takeImage() -> std::optional<Core::Result<std::vector<Image>>> {
+      if (!imageJob) {
+        return std::nullopt;
+      }
+
+      std::optional<Core::Result<std::vector<Image>>> result;
+
+      {
+        std::lock_guard lock(imageJob->result->mutex);
+        result = std::move(imageJob->result->value);
+      }
+
+      if (result) {
+        imageJob.reset();
+      }
+
+      return result;
+    }
+
+    auto startImage(const Assets::TextureSource& source) -> void {
+      auto job = std::make_unique<ImageJob>();
+      job->result = std::make_shared<ImageResult>();
+      job->thread
+          = std::jthread([state = job->result, files = *assets, source](std::stop_token stop) {
+              Core::Result<std::vector<Image>> result
+                  = Core::fail(Core::ErrorCode::External, "Image preparation did not run");
+
+              try {
+                const auto build = [&]() -> Core::Result<std::vector<Image>> {
+                  if (stop.stop_requested()) {
+                    return Core::fail(Core::ErrorCode::Unavailable, "Image preparation canceled");
+                  }
+
+                  auto image = Assets::loadImage(files, assetPath(source.path));
+
+                  if (!image) {
+                    return std::unexpected(image.error());
+                  }
+
+                  std::vector<Image> levels;
+                  levels.reserve(14);
+                  levels.push_back(std::move(*image));
+
+                  while (source.sampling.mipmaps
+                         && (levels.back().width > 1 || levels.back().height > 1)) {
+                    if (stop.stop_requested()) {
+                      return Core::fail(Core::ErrorCode::Unavailable, "Image preparation canceled");
+                    }
+
+                    auto next = downsampleImage(levels.back(), source.sampling.colorSpace);
+
+                    if (!next) {
+                      return std::unexpected(next.error());
+                    }
+
+                    levels.push_back(std::move(*next));
+                  }
+
+                  return levels;
+                };
+
+                result = build();
+              } catch (const std::exception& error) {
+                result = Core::fail(Core::ErrorCode::External,
+                                    "Prepare image: " + std::string(error.what()));
+              } catch (...) {
+                result = Core::fail(Core::ErrorCode::External, "Unknown image preparation failure");
+              }
+
+              std::lock_guard lock(state->mutex);
+              state->value.emplace(std::move(result));
+            });
+      imageJob = std::move(job);
+    }
+
+    struct Requirements {
+      std::size_t draws;
+      std::vector<std::string> materials;
+    };
+
+    auto prune(const World::Scene& scene, const std::vector<World::EntityInfo>& entities)
+        -> Core::Result<Requirements> {
+      std::unordered_set<std::string> needed;
+      std::unordered_set<std::string> neededMaterials;
+      std::size_t drawCount = 0;
+
+      for (const auto& entity : entities) {
+        if (entity.mesh && entity.mesh->visible) {
+          auto resourceKey = key(*entity.mesh);
+
+          if (!resourceKey) {
+            return std::unexpected(resourceKey.error());
+          }
+
+          needed.insert(*resourceKey);
+
+          if (entity.material) {
+            neededMaterials.insert(entity.material->asset);
+          }
+          ++drawCount;
+        }
+      }
+
+      if (drawCount > 10000) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Visible scene exceeds 10000 mesh instances");
+      }
+
+      if (pendingMaterial
+          && (!neededMaterials.contains(pendingMaterial->path)
+              || materials.contains(pendingMaterial->path))) {
+        cancelPreparation();
+      }
+
+      pruneSkins(scene, entities, true);
+
+      for (auto iterator = cache.begin(); iterator != cache.end();) {
+        if (!needed.contains(iterator->first)) {
+          bytes -= iterator->second.bytes;
+          iterator = cache.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+
+      for (auto iterator = materials.begin(); iterator != materials.end();) {
+        if (!neededMaterials.contains(iterator->first)) {
+          iterator = materials.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+
+      std::unordered_set<std::string> neededTextures;
+
+      for (const auto& [path, material] : materials) {
+        neededTextures.insert(material.textures.begin(), material.textures.end());
+      }
+
+      if (pendingMaterial) {
+        for (const auto& [identity, source] : pendingMaterial->sources) {
+          neededTextures.insert(identity);
+        }
+      }
+
+      if (preview && neededMaterials.contains(preview->path)) {
+        const auto& value = preview->value;
+        const std::array sources{&value.baseColorTexture, &value.metallicRoughnessTexture,
+                                 &value.normalTexture, &value.emissiveTexture,
+                                 &value.occlusionTexture};
+
+        for (const auto* source : sources) {
+          if (*source) {
+            neededTextures.insert(textureKey(**source));
+          }
+        }
+      }
+
+      for (auto iterator = textures.begin(); iterator != textures.end();) {
+        if (!neededTextures.contains(iterator->first)) {
+          bytes -= iterator->second.bytes;
+          iterator = textures.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+
+      std::vector<std::string> paths(neededMaterials.begin(), neededMaterials.end());
+      std::ranges::sort(paths);
+      return Requirements{drawCount, std::move(paths)};
+    }
+
+    auto prepareMaterials(const World::Scene& scene) -> Core::Result<bool> {
+      try {
+        auto entities = scene.entities();
+
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
+
+        auto requirements = prune(scene, *entities);
+
+        if (!requirements) {
+          return std::unexpected(requirements.error());
+        }
+
+        if (imageJob && imageJob->canceled) {
+          static_cast<void>(takeImage());
+        }
+
+        const auto missing = std::ranges::find_if(
+            requirements->materials, [&](const auto& path) { return !materials.contains(path); });
+
+        if (missing == requirements->materials.end()) {
+          return true;
+        }
+
+        if (imageJob && imageJob->canceled) {
+          return false;
+        }
+
+        if (!pendingMaterial) {
+          if (materials.size() >= 4096) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Scene material cache capacity exhausted");
+          }
+
+          if (!assets) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Scene material has no asset root");
+          }
+
+          auto description = preview && preview->path == *missing
+                                 ? Core::Result<Assets::MaterialDescription>{preview->value}
+                                 : Assets::loadMaterial(*assets, assetPath(*missing));
+
+          if (!description) {
+            pendingMaterial.emplace();
+            pendingMaterial->path = *missing;
+            pendingMaterial->error = description.error();
+            return std::unexpected(description.error());
+          }
+
+          PendingMaterial pending;
+          pending.path = *missing;
+          pending.description = std::move(*description);
+          const auto& value = pending.description;
+          const std::array sources{&value.baseColorTexture, &value.metallicRoughnessTexture,
+                                   &value.normalTexture, &value.emissiveTexture,
+                                   &value.occlusionTexture};
+          std::unordered_set<std::string> seen;
+
+          for (const auto* source : sources) {
+            if (*source) {
+              auto identity = textureKey(**source);
+
+              if (seen.insert(identity).second) {
+                pending.sources.emplace_back(std::move(identity), **source);
+              }
+            }
+          }
+
+          pendingMaterial = std::move(pending);
+        }
+
+        auto& pending = *pendingMaterial;
+
+        if (pending.error) {
+          return std::unexpected(*pending.error);
+        }
+
+        const auto fail = [&](Core::Error error) -> Core::Result<bool> {
+          error.message = "Prepare scene material '" + pending.path + "': " + error.message;
+          pending.error = std::move(error);
+          pending.staged.clear();
+          return std::unexpected(*pending.error);
+        };
+
+        std::erase_if(pending.staged,
+                      [&](const auto& entry) { return textures.contains(entry.first); });
+
+        while (pending.cursor < pending.sources.size()) {
+          const auto& [identity, source] = pending.sources[pending.cursor];
+
+          if (imageJob) {
+            auto result = takeImage();
+
+            if (!result) {
+              return false;
+            }
+
+            if (!*result) {
+              return fail(result->error());
+            }
+
+            if (!textures.contains(identity)) {
+              std::uint64_t stagedBytes{};
+
+              for (const auto& [name, entry] : pending.staged) {
+                stagedBytes += entry.bytes;
+              }
+
+              const auto size = textureBytes(result->value().front(), source.sampling.mipmaps);
+
+              if (stagedBytes > budget - bytes || size > budget - bytes - stagedBytes
+                  || textures.size() + pending.staged.size() >= 4096) {
+                return fail(
+                    Core::fail(Core::ErrorCode::Unavailable, "Scene texture cache budget exhausted")
+                        .error());
+              }
+
+              auto uploaded = renderer->uploadTextureLevels(result->value(), source.sampling);
+
+              if (!uploaded) {
+                return fail(uploaded.error());
+              }
+
+              pending.staged.emplace(identity, TextureEntry{std::move(*uploaded), size});
+            }
+
+            ++pending.cursor;
+            return false;
+          }
+
+          if (textures.contains(identity) || pending.staged.contains(identity)) {
+            ++pending.cursor;
+            continue;
+          }
+
+          startImage(source);
+          return false;
+        }
+
+        for (std::size_t index = 0; index < pending.sources.size(); ++index) {
+          const auto& identity = pending.sources[index].first;
+
+          if (!textures.contains(identity) && !pending.staged.contains(identity)) {
+            pending.cursor = index;
+            return false;
+          }
+        }
+
+        auto resolved = resolveMaterial(pending.description, std::move(pending.staged));
+
+        if (!resolved) {
+          return fail(resolved.error());
+        }
+
+        materials.emplace(pending.path, std::move(*resolved));
+        pendingMaterial.reset();
+        return std::ranges::all_of(requirements->materials,
+                                   [&](const auto& path) { return materials.contains(path); });
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare scene materials: " + std::string(error.what()));
+
+        if (pendingMaterial) {
+          pendingMaterial->error = failure.error();
+          pendingMaterial->staged.clear();
+        }
+
+        return failure;
+      }
+    }
+
     auto frame(const World::Scene& scene, float aspect, const SceneView& camera)
         -> Core::Result<Frame> {
       try {
@@ -688,64 +1083,10 @@ namespace Dot::Graphics {
           return std::unexpected(lights.error());
         }
 
-        std::unordered_set<std::string> needed;
-        std::unordered_set<std::string> neededMaterials;
-        std::size_t drawCount = 0;
+        auto requirements = prune(scene, *entities);
 
-        for (const auto& entity : *entities) {
-          if (entity.mesh && entity.mesh->visible) {
-            auto resourceKey = key(*entity.mesh);
-
-            if (!resourceKey) {
-              return std::unexpected(resourceKey.error());
-            }
-
-            needed.insert(*resourceKey);
-
-            if (entity.material) {
-              neededMaterials.insert(entity.material->asset);
-            }
-            ++drawCount;
-          }
-        }
-
-        if (drawCount > 10000) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Visible scene exceeds 10000 mesh instances");
-        }
-
-        pruneSkins(scene, *entities, true);
-
-        for (auto iterator = cache.begin(); iterator != cache.end();) {
-          if (!needed.contains(iterator->first)) {
-            bytes -= iterator->second.bytes;
-            iterator = cache.erase(iterator);
-          } else {
-            ++iterator;
-          }
-        }
-
-        for (auto iterator = materials.begin(); iterator != materials.end();) {
-          if (!neededMaterials.contains(iterator->first)) {
-            iterator = materials.erase(iterator);
-          } else {
-            ++iterator;
-          }
-        }
-
-        std::unordered_set<std::string> neededTextures;
-
-        for (const auto& [path, material] : materials) {
-          neededTextures.insert(material.textures.begin(), material.textures.end());
-        }
-
-        for (auto iterator = textures.begin(); iterator != textures.end();) {
-          if (!neededTextures.contains(iterator->first)) {
-            bytes -= iterator->second.bytes;
-            iterator = textures.erase(iterator);
-          } else {
-            ++iterator;
-          }
+        if (!requirements) {
+          return std::unexpected(requirements.error());
         }
 
         Frame frame;
@@ -754,8 +1095,8 @@ namespace Dot::Graphics {
          * move-only so their addresses remain stable throughout submission.
          * 绘制指针借用这些网格句柄；一次性预留空间并仅允许移动帧，确保提交期间地址稳定。
          */
-        frame.meshes.reserve(drawCount);
-        frame.draws.reserve(drawCount);
+        frame.meshes.reserve(requirements->draws);
+        frame.draws.reserve(requirements->draws);
         std::vector<std::vector<Math::Mat4>> palettes;
         std::vector<SkinUpdate> updates;
         std::vector<SkinEntry*> changedSkins;
@@ -929,8 +1270,8 @@ namespace Dot::Graphics {
     return SceneRenderer(std::move(impl));
   }
 
-  auto SceneRenderer::pipelineReadiness(const World::Scene& scene) const
-      -> Core::Result<ScenePipelineStage> {
+  auto SceneRenderer::readiness(const World::Scene& scene) const
+      -> Core::Result<ScenePreparationStage> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -951,7 +1292,7 @@ namespace Dot::Graphics {
     }
 
     if (*environment && !*environmentReady) {
-      return ScenePipelineStage::Environment;
+      return ScenePreparationStage::Environment;
     }
 
     if (!*shadowsReady) {
@@ -964,7 +1305,7 @@ namespace Dot::Graphics {
       if (std::ranges::any_of(*entities, [](const auto& entity) {
             return entity.light && entity.light->enabled && entity.light->shadows;
           })) {
-        return ScenePipelineStage::Shadows;
+        return ScenePreparationStage::Shadows;
       }
     }
 
@@ -976,15 +1317,34 @@ namespace Dot::Graphics {
       }
 
       if (*occlusion) {
-        return ScenePipelineStage::Occlusion;
+        return ScenePreparationStage::Occlusion;
       }
     }
 
-    return ScenePipelineStage::Ready;
+    auto entities = scene.entities();
+
+    if (!entities) {
+      return std::unexpected(entities.error());
+    }
+
+    bool missingMaterial{};
+
+    for (const auto& entity : *entities) {
+      if (entity.mesh && entity.mesh->visible && entity.material
+          && !m_impl->materials.contains(entity.material->asset)) {
+        if (m_impl->pendingMaterial && m_impl->pendingMaterial->path == entity.material->asset
+            && m_impl->pendingMaterial->error) {
+          return std::unexpected(*m_impl->pendingMaterial->error);
+        }
+
+        missingMaterial = true;
+      }
+    }
+
+    return missingMaterial ? ScenePreparationStage::Materials : ScenePreparationStage::Ready;
   }
 
-  auto SceneRenderer::preparePipelines(const World::Scene& scene)
-      -> Core::Result<ScenePipelineStage> {
+  auto SceneRenderer::prepare(const World::Scene& scene) -> Core::Result<ScenePreparationStage> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -995,13 +1355,21 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    auto stage = pipelineReadiness(scene);
+    auto gui = m_impl->renderer->guiStats();
+
+    if (!gui || gui->building) {
+      return gui ? Core::fail(Core::ErrorCode::InvalidState,
+                              "Scene preparation inside GUI callback")
+                 : Core::Result<ScenePreparationStage>{std::unexpected(gui.error())};
+    }
+
+    auto stage = readiness(scene);
 
     if (!stage) {
       return std::unexpected(stage.error());
     }
 
-    if (*stage == ScenePipelineStage::Environment) {
+    if (*stage == ScenePreparationStage::Environment) {
       auto ready = m_impl->renderer->prepareEnvironmentPipelines();
 
       if (!ready) {
@@ -1012,14 +1380,14 @@ namespace Dot::Graphics {
         return *stage;
       }
 
-      stage = pipelineReadiness(scene);
+      stage = readiness(scene);
 
       if (!stage) {
         return std::unexpected(stage.error());
       }
     }
 
-    if (*stage == ScenePipelineStage::Shadows) {
+    if (*stage == ScenePreparationStage::Shadows) {
       auto ready = m_impl->renderer->prepareShadowPipelines();
 
       if (!ready) {
@@ -1030,14 +1398,14 @@ namespace Dot::Graphics {
         return *stage;
       }
 
-      stage = pipelineReadiness(scene);
+      stage = readiness(scene);
 
       if (!stage) {
         return std::unexpected(stage.error());
       }
     }
 
-    if (*stage == ScenePipelineStage::Occlusion) {
+    if (*stage == ScenePreparationStage::Occlusion) {
       auto ready = m_impl->renderer->prepareOcclusionPipelines();
 
       if (!ready) {
@@ -1049,7 +1417,17 @@ namespace Dot::Graphics {
       }
     }
 
-    return ScenePipelineStage::Ready;
+    if (*stage == ScenePreparationStage::Ready && !m_impl->pendingMaterial && !m_impl->imageJob) {
+      return ScenePreparationStage::Ready;
+    }
+
+    auto materials = m_impl->prepareMaterials(scene);
+
+    if (!materials) {
+      return std::unexpected(materials.error());
+    }
+
+    return *materials ? ScenePreparationStage::Ready : ScenePreparationStage::Materials;
   }
 
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
@@ -1382,6 +1760,8 @@ namespace Dot::Graphics {
       }
     }
 
+    m_impl->cancelPreparation();
+
     if (m_impl->preview) {
       m_impl->materials.erase(m_impl->preview->path);
     }
@@ -1405,6 +1785,7 @@ namespace Dot::Graphics {
       return checked;
     }
 
+    m_impl->cancelPreparation();
     checked = m_impl->detachEnvironment();
 
     if (!checked) {

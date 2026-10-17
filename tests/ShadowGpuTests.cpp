@@ -137,52 +137,52 @@ TEST_CASE("shadows.gpu_scene_readiness_observes_current_requirements_and_gui_rea
   auto gpu = Renderer::create().value();
   auto drawing = SceneRenderer::create(gpu).value();
   auto scene = Dot::World::Scene::create().value();
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   const auto lamp = scene.createEntity("Lamp").value();
   Dot::World::Light light;
   light.shadows = ShadowSettings{};
   light.enabled = false;
   REQUIRE(scene.setLight(lamp, light));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   light.enabled = true;
   REQUIRE(scene.setLight(lamp, light));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Shadows);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Shadows);
   REQUIRE(gpu.enableGui());
   REQUIRE(gpu.renderGui(
       [&]() -> Dot::Core::Result<void> {
-        CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Shadows);
+        CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Shadows);
         CHECK_FALSE(gpu.shadowPipelinesReady().value());
-        CHECK_FALSE(drawing.preparePipelines(scene));
+        CHECK_FALSE(drawing.prepare(scene));
         return {};
       },
       16, 16));
   CHECK_FALSE(gpu.shadowPipelinesReady().value());
   REQUIRE(gpu.closeGui());
   REQUIRE(scene.setLight(lamp, std::nullopt));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setLight(lamp, light));
   REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
-  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Environment);
-  auto stage = drawing.preparePipelines(scene);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Environment);
+  auto stage = drawing.prepare(scene);
   REQUIRE(stage);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
 
-  while (*stage != ScenePipelineStage::Ready && std::chrono::steady_clock::now() < deadline) {
+  while (*stage != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
     CHECK(gpu.resourceStats()->shadowBytes == 0);
     CHECK(gpu.resourceStats()->environments == 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    stage = drawing.preparePipelines(scene);
+    stage = drawing.prepare(scene);
     REQUIRE_MESSAGE(stage, (stage ? "" : stage.error().message));
   }
 
-  REQUIRE(*stage == ScenePipelineStage::Ready);
+  REQUIRE(*stage == ScenePreparationStage::Ready);
   CHECK(gpu.shadowPipelinesReady().value());
   CHECK(gpu.environmentPipelinesReady().value());
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(gpu.environment().value());
   auto moved = std::move(scene);
-  CHECK_FALSE(drawing.pipelineReadiness(scene));
-  CHECK(drawing.pipelineReadiness(moved).value() == ScenePipelineStage::Ready);
+  CHECK_FALSE(drawing.readiness(scene));
+  CHECK(drawing.readiness(moved).value() == ScenePreparationStage::Ready);
 }
 
 TEST_CASE("shadows.gpu_real_occlusion_moves_with_casters_and_cast_receive_flags") {

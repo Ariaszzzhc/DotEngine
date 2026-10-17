@@ -292,24 +292,37 @@ synchronous wait.
 The surface/depth descriptor builders are shared with ordinary rendering; shader,
 blend, depth and vertex-layout semantics are unchanged.
 
-`SceneRenderer::preparePipelines(scene)` prepares groups required by the scene's
-environment, enabled shadow lights and SSAO setting, returning Ready, Environment,
-Shadows or Occlusion.
-`pipelineReadiness(scene)` only reads current requirements/results, including during
-GUI layout; it starts/polls no work. Once shadow pipelines are ready, this check
-needs no entity enumeration. No image/file reads or resource-cache entries occur.
-Retained preparation failures remain errors; these states do not mean scene assets
-or pixels have loaded.
+`SceneRenderer::prepare(scene)` incrementally prepares environment/shadow/SSAO
+pipelines and visible materials. `ScenePreparationStage` reports Ready, Environment,
+Shadows, Occlusion or Materials. `readiness(scene)` is a GUI-safe pure query: it reads
+current requirements/caches without I/O, polling or mutation. Ready covers these
+requirements; meshes, HDR loading/baking, skinning and other resource work can still
+run synchronously during drawing. These APIs replace the earlier pipeline-only names.
 
-The editor keeps event/agent/GUI work active while these jobs are pending. Scene
-names the preparation group; `workspace.view.loading` is `"environment-pipeline"`,
-`"shadow-pipelines"` or `"occlusion-pipelines"`. Pending views have `ready=false`;
-capture/Play cannot claim a completed scene. Play checks the current requirements even before the next preparation tick.
-The native player presents a clear loading surface and names the phase in its title
-before script Start callbacks/game updates. Ordinary rendering still validates,
-loads and bakes real content synchronously. Other pipeline groups, image/upload
-work and resource streaming remain unfinished; these are preparation states, not
-substitute scene pixels or a general background resource loader.
+Material preparation reads the small material description on the owner, then reads,
+decodes and generates each missing image's exact linear/sRGB mips on one owned CPU
+worker. At most one image pyramid is in flight (the existing 16,777,216-pixel limit
+bounds its logical base/mip storage below 86 MiB, plus codec/file working memory).
+Each poll uploads at most one texture on the renderer thread. New textures stay
+private until the whole material succeeds. Errors release staged textures and remain
+observable until cancellation/reload; no missing-file substitute is published.
+Shared resident textures reuse their sampling/color keys. Explicit drawing and
+material resolution remain synchronous and share the same binding/cache logic.
+`uploadTextureLevels` validates complete dimensions/storage and uploads authored or
+precomputed mip bytes without regenerating them; ordinary image upload still borrows
+level zero and generates only lower levels.
+
+Cache clear, draft replacement or an obsolete scene cancels work without waiting for
+an active codec on a frame. Late results are discarded; destruction requests stop and
+joins remaining work. No worker borrows a scene, renderer, GUI or image storage. A
+codec/read already in progress may need to finish; GPU upload/bake waits remain
+synchronous. This is bounded material preparation, not general runtime streaming.
+
+The editor keeps agent/event/GUI work active while preparing. `workspace.view.loading`
+also reports `"material-textures"`; pending views have no completed pixels for capture
+or picking. Play checks current requirements before starting. Native initial loading
+names the phase and defers Start until ready; its finite game-frame budget excludes
+these initial preparation steps. No clock, warning or fixed-step limit is changed.
 
 `Renderer::prepareOcclusionPipelines()` prepares geometry, search/filter compute and
 both environment composition variants atomically with the same bounded async jobs.
