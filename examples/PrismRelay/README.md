@@ -64,8 +64,11 @@ caller-owned `--data-directory`. Startup remains fresh until F7 is pressed. The
 game displays controls and checkpoint success/failure through the native
 [text layer](../../docs/GameUi.md). The authored `uiFontSize` script property controls
 its text size relative to viewport height. Full diagnostics remain available as
-`relayProgressStatus` in Game state/product inspection. A checkpoint menu and
-visual UI layout authoring remain unfinished.
+`relayProgressStatus` in Game state/product inspection. M opens the keyboard checkpoint menu and pauses native simulation; F6/F7 remain
+usable there, and M returns to the game. Relative pointer capture is released while
+open. Audio playback continues independently. New scenes start unpaused; reload
+retains the current menu. Clickable widgets and visual UI layout authoring remain
+unfinished.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

@@ -818,7 +818,7 @@ namespace Dot::Editor {
     }
 
     auto report(const Script::ScriptReport& report) -> void {
-      constexpr std::array phases{"prepare", "start", "update", "fixedUpdate", "stop"};
+      constexpr std::array phases{"prepare", "start", "update", "fixedUpdate", "stop", "frame"};
 
       for (const auto& failure : report.failures) {
         auto value = errorJson(failure.error);
@@ -1480,6 +1480,10 @@ namespace Dot::Editor {
         status["transition"]
             = stats.transition ? sceneRequestJson(*stats.transition) : Json(nullptr);
         status["retiringAudio"] = stats.retiringAudio;
+        status["clock"] = stats.clock ? Json{{"paused", stats.clock->paused},
+                                             {"revision", std::to_string(stats.clock->revision)}}
+                                      : Json(nullptr);
+        status["simulatedUpdates"] = std::to_string(stats.simulatedUpdates);
 
         if (stats.source) {
           status["source"]
@@ -4707,6 +4711,31 @@ namespace Dot::Editor {
         }
 
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "clock") {
+        Codec::requireFields(parsed, {"command", "session", "scope", "value"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Clock requires current Play session");
+        }
+
+        auto stats = m_play->stats();
+        const auto operation = parsed["value"].at("command").get<std::string>();
+
+        if (!stats || Codec::id(parsed["scope"]) != stats->location.scope
+            || ((m_pendingClose || stats->state != PlayState::Running)
+                && operation != "snapshot")) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Clock requires current running scope");
+        }
+
+        auto service = m_play->gameClock();
+        auto result = service ? service->perform(parsed["value"].dump())
+                              : Core::Result<std::string>{std::unexpected(service.error())};
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
       }
 
       if (command == "hud") {
@@ -8506,6 +8535,20 @@ namespace Dot::Editor {
                                         : "Preparing Play; Stop cancels preparation.")
                                  : "Cancelling Play; waiting for native services to close.");
         }
+
+        ImGui::BeginDisabled(stats.state != PlayState::Running || m_pendingClose);
+
+        if (ImGui::Button(stats.clock && stats.clock->paused ? "Resume simulation"
+                                                             : "Pause simulation")) {
+          sessionAction(
+              {{"command", "clock"},
+               {"session", std::to_string(m_playSession)},
+               {"scope", std::to_string(stats.location.scope)},
+               {"value",
+                {{"command", "set-paused"}, {"paused", !(stats.clock && stats.clock->paused)}}}});
+        }
+
+        ImGui::EndDisabled();
 
         if (stats.source && stats.source->compiling) {
           ImGui::TextWrapped("Compiling scripts; Play continues with the current code.");

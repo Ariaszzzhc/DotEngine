@@ -11017,3 +11017,119 @@ presentation tokens do not establish human pointer or final wrapped-panel sight
 acceptance. Buttons/menu/layout authoring, full international text shaping, remaining
 startup/service work, larger production workflows, final art and overall engine
 readiness remain unfinished.
+
+## 2026-10-18 — Simulation pause and live checkpoint menu
+
+Prism Relay now has a keyboard checkpoint menu backed by native simulation pause.
+Stopping only movement input would leave gravity, scripts and animation advancing;
+implement a scene-local GameClock and independent onFrame lifecycle phase first.
+The static C++26/module structure and caller toolchain environment remain intact.
+The editor's Pause simulation/Resume simulation buttons, strict product commands
+and script gameClock service share the native implementation. Menu input/checkpoint
+intent remains in the ordinary editable Prism script.
+
+GameClock owns a boolean pause request and monotonic uint64 revision, exported as
+an owned decimal-string snapshot. Same-value requests are no-ops. Strict complete
+JSON, bounded arguments, thread ownership and contextual expected errors preserve
+state on rejection. Constructor/migration writes are denied by the normal host
+preparation guard; native handles/closures retain observations after retirement.
+Fault/Stop/close retire writes; scene replacement creates a fresh unpaused clock.
+Failed uncommitted cuts keep the previous one. No pause flag is persisted in saves.
+
+GameSession dispatches unscaled onFrame before variable gameplay. Pause is latched
+at each gameplay boundary: paused fixed calls skip game hooks and Jolt advancement;
+paused variable calls skip Update and advance animation by zero, synchronizing
+explicit configuration changes without advancing clip clocks. An already-started
+phase completes, without rollback. Fixed work precedes the variable UI phase in
+current native/editor loops, so a menu opened there cannot undo earlier fixed steps.
+Frame callbacks may intentionally edit native state, including checkpoint placement;
+pause is not a world write lock. Source polling, explicit cuts, controls and rendering
+continue. LiveScripts dispatchPrepared keeps Frame and conditional Update on the
+same prepared generation/source result, without a second poll between them.
+
+The scheduler consumes paused wall time without accumulating resume debt. Session
+inspection exposes completed simulatedFixedSteps/simulatedUpdates; Play fixedSteps
+counts actual phases across its lifetime. Read only the small clock snapshot on
+Play's fixed path. An unpublished Play clock is null until actual activation;
+prepared default values are not presented as a started clock. Application profiling
+still measures scheduled callbacks and UI/update/render work; its paused flag is
+separate focus-loss policy. No FPS or whole-frame performance conclusion follows.
+Audio playback is intentionally independent: devices/voices/queued PCM continue,
+with ordinary spatial synchronization. This does not claim audible pause or silence.
+
+Prism M toggles the native clock and a real rendered text menu, releasing/requesting
+relative pointer capture. F6/F7 execute in onFrame, including while paused, with the
+existing grounded-save/schema/atomic-file contracts. Restore explicitly places the
+native character, restores idle/camera/listener and requests the existing audio
+motion baseline. Unrelated live data survives. Native HUD/clock/input ownership and
+progress-edge watermarks survive realm reload; a new scene starts closed/unpaused.
+The menu is keyboard-operated; clickable widgets and visual layout authoring remain
+unfinished. Feature Lab exercises the new SDK/Frame hooks with a same-state clock
+request that preserves the caller's pause choice.
+
+Boundary review reproduces a shared strict-codec defect: a request with an embedded
+raw NUL after a valid JSON prefix is accepted by the pinned lexer's end-of-input
+handling and can change pause. Reject raw NUL before parsing in the private shared
+codec. Escaped Unicode U+0000 remains legal JSON data. Keep the first failing clock
+regression log and add a durable parser case; malformed requests now preserve the
+prior model. A separate initial full Debug failure is the newly extended self-delete
+case calling Update for an onFrame-only deletion. Correct that driver to dispatch
+the corresponding phase and retain exact entity/component/instance cleanup checks.
+It is not an engine self-delete failure or a relaxed resource assertion.
+
+Six new cases in existing targets cover clock boundaries/no-ops/owned snapshots,
+retained bindings/moves/retirement/owner thread, raw-NUL/duplicate/depth parsing and
+escaped Unicode, independent async Frame failures and phase diagnostics, actual
+character/animation freeze with live UI/reload, pause checkpoint save/restore and
+scene replacement, and Play rigid-body pause with no resume backlog. Extend existing
+preparation/self-delete/realm-fault cases for the new service/phase, including a
+faulted paused Frame and real compiler-child/generation cleanup. Unit cases open no
+windows/devices; no automatic integration opens a desktop window or adds an executable.
+
+Full Debug passes 1412/1412 in 227.71s after the codec/driver corrections. Final
+unpublished-clock metadata review and rebuild pass focused Debug 43/43 in 15.41s.
+Full Release/NDEBUG passes 1412/1412 in 33.60s with all runtime changes. Counts:
+432 unit, 980 integration; overlapping labels include 231 compiler, 164 offscreen,
+37 audio-native, 34 platform and 21 process. The earlier 64-case lifecycle check
+and final 30-case boundary check pass in 17.00s/14.56s respectively. Build/test/product
+runs remain sequential; only arm64 macOS is executed.
+
+The real Release editor creates PrismPause from the current template, edits the
+Inspector uiFontSize property 20 to 22, applies/undoes/redoes, saves/closes/reopens,
+and enters Play. An airborne menu preserves exact player pose, actual fixed/update
+counters and visible scene/skin pixels under 60 frames of attempted movement/jump.
+Frozen target captures have distinct actual serials 163 and 275 and Play frames
+117 and 229, with HUD revision 5, equal matrices and byte-identical PNGs. These are
+new completed target frames, not reuse of a historical screenshot. Airborne save is
+refused; product clock resume permits landing; menu save/restore succeeds while
+simulation remains paused. Malformed requests preserve the clock/document. Stop
+restores exact clean authoring; retained clock observation is readable and writes
+fail. Saved/stopped PNG SHA-256 remains
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+A fresh Play has a new unpaused clock and isolated empty save store.
+
+Export from that workspace, relocate the native game and physically hide authoring.
+All 115 content files / 66,213,112 bytes match the saved edited project; no TypeScript
+or map sources ship. The pinned font and notice are present; font SHA-256 remains
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Two actual native processes prove airborne freeze/refusal, paused grounded save,
+fresh unpaused startup after a paused exit, corrupt-slot pose preservation, exact
+file restoration/retry, paused restore, later resumed movement, and scene replacement
+starting a new unpaused scope. Old scoped clock requests reject. Every recorded menu
+state reaches actual presented HUD scope/revision without overflow or script failures.
+Audio playback initialization/synchronization does not fault; no listening claim is made.
+
+The two editor and two native processes exit zero and retire their controls. Source
+is physically restored and all three prior persistent checkpoint hashes match their
+recorded evidence. Raw requests/results, profiles, source/binary hashes, arm64 and
+load-command/dependency inspection, editable projects, saves and PNGs remain under
+ignored build/pause-review. Remove owned validation App/native copies and compiled
+helper cache after inspection, preserving evidence and build caches. No distribution
+archive is made. Formatting/whitespace and correctness/ownership/error/platform/
+coverage review pass before commit.
+
+Computer use still reports the Mac locked. Agent input through the actual products,
+target PNG inspection and native presentation evidence do not establish physical
+keyboard/IME, pointer or wrapped-panel human acceptance. Clickable UI/layout tooling,
+finished game art, remaining startup/service work, resource streaming, broader game
+scale and the overall production engine/editor goal remain unfinished.

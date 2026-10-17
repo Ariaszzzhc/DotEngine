@@ -114,6 +114,36 @@ TEST_CASE("play.independent_unsaved_scene_fixed_physics_and_stop_hooks") {
   CHECK(Dot::World::encodeScene(authoring).value() == initial);
 }
 
+TEST_CASE("play.pause_consumes_scheduler_time_without_simulation_or_resume_debt") {
+  Fixture fixture;
+  fixture.controller();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto actor = authoring.entities()->at(1).id;
+  REQUIRE(authoring.setRigidBody(actor, Dot::World::RigidBody{}));
+  const auto saved = Dot::World::encodeScene(authoring).value();
+  auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  auto clock = play.gameClock().value();
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  const auto before = play.scene().value()->entities()->at(1).transform.position;
+  REQUIRE(play.advance(held(), 1s));
+  REQUIRE(play.advance(held(), 1s));
+  CHECK(play.stats()->clock->paused);
+  CHECK(play.stats()->fixedSteps == 0);
+  CHECK(play.stats()->simulatedUpdates == 0);
+  CHECK(play.stats()->frames == 2);
+  CHECK(play.scene().value()->entities()->at(1).transform.position == before);
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  REQUIRE(play.advance(held(), 16666666ns));
+  CHECK(play.stats()->fixedSteps == 1);
+  CHECK(play.stats()->simulatedUpdates == 1);
+  CHECK(play.scene().value()->entities()->at(1).transform.position.x
+        == doctest::Approx(before.x + 2.0 / 60));
+  CHECK(Dot::World::encodeScene(authoring).value() == saved);
+  REQUIRE(play.stop());
+  CHECK_FALSE(clock.perform(R"({"command":"set-paused","paused":true})"));
+}
+
 TEST_CASE("play.pointer_capture_ack_is_published_without_initializing_a_window") {
   Fixture fixture;
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
@@ -445,6 +475,8 @@ TEST_CASE("play.preparation_freezes_authoring_and_publishes_only_after_activatio
                   .value();
   CHECK(play.stats()->state == PlayState::Preparing);
   CHECK_FALSE(play.stats()->started);
+  CHECK_FALSE(play.stats()->clock);
+  CHECK_FALSE(play.gameClock());
   CHECK(play.stats()->preparation == PlayPreparation::Scene);
   CHECK_FALSE(play.scene());
   CHECK_FALSE(play.gameData());
@@ -456,6 +488,8 @@ TEST_CASE("play.preparation_freezes_authoring_and_publishes_only_after_activatio
   CHECK(play.stats()->frames == 0);
   REQUIRE(awaitPreparation(play, PlayState::Running));
   CHECK(play.stats()->started);
+  REQUIRE(play.stats()->clock);
+  CHECK_FALSE(play.stats()->clock->paused);
   CHECK_FALSE(play.stats()->preparation);
   CHECK(play.scene().value()->entities()->at(1).name == "frozen");
   REQUIRE(play.advance(held(), 17ms));

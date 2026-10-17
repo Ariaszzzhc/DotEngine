@@ -16,9 +16,15 @@
 namespace Dot::Serialization::Detail {
   using Json = nlohmann::json;
 
-  /** Private codec helper: reject duplicates and stop before deep recursion.
-   * 私有编解码辅助函数：拒绝重复字段，在深层递归前停止解析。 */
+  /** Reject duplicates, raw NUL and deep recursion. The lexer can otherwise treat
+   * NUL as end-of-input and silently accept only a request prefix. Escaped JSON
+   * Unicode values remain valid. 拒绝重复字段、原始 NUL 和过深递归；底层词法器可能
+   * 将 NUL 当作输入结束而静默接受请求前缀，转义的 JSON Unicode 值仍然有效。 */
   inline auto parseJson(std::string_view source, int maxDepth = 64) -> Json {
+    if (source.find('\0') != std::string_view::npos) {
+      throw std::invalid_argument("JSON contains raw NUL");
+    }
+
     std::vector<std::unordered_set<std::string>> keys;
     return Json::parse(
         source.begin(), source.end(), [&](int depth, Json::parse_event_t event, Json& value) {

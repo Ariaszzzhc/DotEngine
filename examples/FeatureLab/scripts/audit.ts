@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, gameState, type HostError, hud, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -511,6 +511,17 @@ export class Audit extends ScriptComponent<{contract: string}> {
 
     this.check('ScriptComponent.onFixedUpdate', super.onFixedUpdate(seconds) === undefined);
     this.entity('Dynamic').setVelocity({x: input.key('D').down ? 1 : 0, y: 0, z: 0});
+  }
+
+  onFrame(seconds: number): void {
+    this.check('ScriptComponent.onFrame', super.onFrame(seconds) === undefined);
+
+    if (!this.#checked.has('gameClock.setPaused')) {
+      const before = gameClock.snapshot();
+      this.check('gameClock.snapshot', typeof before.paused === 'boolean');
+      const revision = gameClock.setPaused(before.paused);
+      this.check('gameClock.setPaused', revision === before.revision);
+    }
   }
 
   onUpdate(seconds: number): void {

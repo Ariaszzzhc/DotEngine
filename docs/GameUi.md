@@ -3,7 +3,7 @@
 `dot:engine` exposes a scene-local `hud` service for game-authored text. The native
 engine owns validation, font rasterization, wrapping, texture reuse and composition.
 Scripts describe labels and gameplay feedback; they do not implement a renderer.
-This first layer has no buttons, input interception, layout designer, images, rich
+This text layer has no buttons, input interception, layout designer, images, rich
 text, general shaping/bidi or automatic persistence.
 
 ```ts
@@ -125,7 +125,9 @@ closing/non-running state permits only an available snapshot. Mutations alter li
 UI, not saved script properties or the authoring scene. Persist a UI design in normal
 game scripts and their authored properties; visual layout authoring remains work.
 
-Prism Relay uses this layer for controls and checkpoint success/failure messages.
+Prism Relay uses this layer for controls, checkpoint success/failure messages and
+a keyboard pause menu. Its native [game clock](GameClock.md) freezes simulation
+while frame/UI callbacks continue.
 Its uiFontSize script property controls both labels. Full checkpoint diagnostics
 remain in relayProgressStatus; the in-game failure line gives a bounded user-facing
 message. Feature Lab exercises the real API and displays an ordinary bilingual label.

@@ -406,38 +406,48 @@ TEST_CASE("game_session_ordinary_script_failure_is_reported_and_isolated") {
 }
 
 TEST_CASE("game_session_realm_timeout_faults_dispatch_but_close_releases_resources") {
-  for (const bool enabled : {false, true}) {
-    Fixture fixture(enabled);
-    REQUIRE(fixture.project.files()->writeTextAtomic(
-        "scripts/mover.ts",
-        "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
-        "onUpdate(){while(true){}}}"));
-    GameSessionConfig config;
-    config.scripts.runtime.milliseconds = 10;
-    auto session = fixture.session(config);
-    good(session.start());
-    const auto resources = Dot::Core::processResources();
-    const auto generations = Dot::Script::compilerGenerations();
+  for (const auto* hook : {"onUpdate", "onFrame"}) {
+    for (const bool enabled : {false, true}) {
+      Fixture fixture(enabled);
+      REQUIRE(fixture.project.files()->writeTextAtomic(
+          "scripts/mover.ts",
+          "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
+              + std::string(hook) + "(){while(true){}}}"));
+      GameSessionConfig config;
+      config.scripts.runtime.milliseconds = 10;
+      auto session = fixture.session(config);
+      good(session.start());
+      auto clock = session.gameClock().value();
 
-    if (enabled) {
-      CHECK(session.pollScripts(true)->compiling);
+      if (std::string_view(hook) == "onFrame") {
+        REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+      }
+
+      const auto resources = Dot::Core::processResources();
+      const auto generations = Dot::Script::compilerGenerations();
+
+      if (enabled) {
+        CHECK(session.pollScripts(true)->compiling);
+      }
+
+      auto report = session.update(0);
+      REQUIRE(report);
+      CHECK(report->frame.realmFaulted);
+      CHECK(session.stats()->state == SessionState::Faulted);
+      CHECK_FALSE(session.pollScripts());
+      const auto source = session.stats()->source;
+      CHECK_FALSE((source && source->compiling));
+      CHECK(Dot::Core::processResources().children == resources.children);
+      CHECK(Dot::Core::processResources().handles == resources.handles);
+      CHECK(Dot::Script::compilerGenerations() == generations);
+      CHECK_FALSE(clock.perform(R"({"command":"set-paused","paused":false})"));
+      CHECK(session.stats()->simulatedUpdates == 0);
+      CHECK_FALSE(session.fixedUpdate());
+      auto closed = session.close();
+      REQUIRE(closed);
+      CHECK(closed->realmFaulted);
+      CHECK(session.stats()->state == SessionState::Closed);
     }
-
-    auto report = session.update(0);
-    REQUIRE(report);
-    CHECK(report->frame.realmFaulted);
-    CHECK(session.stats()->state == SessionState::Faulted);
-    CHECK_FALSE(session.pollScripts());
-    const auto source = session.stats()->source;
-    CHECK_FALSE((source && source->compiling));
-    CHECK(Dot::Core::processResources().children == resources.children);
-    CHECK(Dot::Core::processResources().handles == resources.handles);
-    CHECK(Dot::Script::compilerGenerations() == generations);
-    CHECK_FALSE(session.fixedUpdate());
-    auto closed = session.close();
-    REQUIRE(closed);
-    CHECK(closed->realmFaulted);
-    CHECK(session.stats()->state == SessionState::Closed);
   }
 }
 

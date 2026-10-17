@@ -81,6 +81,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/Text.cpp
     src/Engine/Graphics/TextRenderer.cpp
     src/Engine/Script/Hud.cpp
+    src/Engine/Script/GameClock.cpp
     src/Engine/Animation/Skin.cpp
     src/Engine/Animation/SkinFiles.cpp
     src/Engine/Animation/SceneSkin.cpp
@@ -222,6 +223,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/Text.cppm
         src/Engine/Graphics/TextRenderer.cppm
         src/Engine/Script/Hud.cppm
+        src/Engine/Script/GameClock.cppm
         src/Engine/Core/Text.cppm
         src/Engine/Core/Result.cppm
         src/Engine/Core/Logging.cppm

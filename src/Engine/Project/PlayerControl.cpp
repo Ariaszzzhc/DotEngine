@@ -98,24 +98,29 @@ namespace Dot::Project {
                   {"error", stats.source->error ? errorJson(*stats.source->error) : Json(nullptr)}};
       }
 
-      return {{"state", states.at(static_cast<std::size_t>(stats.state))},
-              {"closing", m_closing},
-              {"scope", std::to_string(m_scope)},
-              {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)},
-              {"input",
-               {{"source", m_agent ? "agent" : "native"},
-                {"active", held.active},
-                {"remaining", held.remaining},
-                {"published", held.published}}},
-              {"scripts", stats.scripts ? Json{{"running", stats.scripts->running},
-                                               {"failed", stats.scripts->failed},
-                                               {"faulted", stats.scripts->faulted}}
-                                        : Json(nullptr)},
-              {"source", std::move(source)},
-              {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
-              {"retiringAudio", stats.retiringAudio},
-              {"failureCount", std::to_string(m_failures)},
-              {"diagnostics", m_diagnostics}};
+      return {
+          {"state", states.at(static_cast<std::size_t>(stats.state))},
+          {"closing", m_closing},
+          {"scope", std::to_string(m_scope)},
+          {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)},
+          {"input",
+           {{"source", m_agent ? "agent" : "native"},
+            {"active", held.active},
+            {"remaining", held.remaining},
+            {"published", held.published}}},
+          {"scripts", stats.scripts ? Json{{"running", stats.scripts->running},
+                                           {"failed", stats.scripts->failed},
+                                           {"faulted", stats.scripts->faulted}}
+                                    : Json(nullptr)},
+          {"source", std::move(source)},
+          {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
+          {"retiringAudio", stats.retiringAudio},
+          {"clock",
+           {{"paused", stats.clock.paused}, {"revision", std::to_string(stats.clock.revision)}}},
+          {"simulatedFixedSteps", std::to_string(stats.simulatedFixedSteps)},
+          {"simulatedUpdates", std::to_string(stats.simulatedUpdates)},
+          {"failureCount", std::to_string(m_failures)},
+          {"diagnostics", m_diagnostics}};
     }
   };
 
@@ -180,6 +185,26 @@ namespace Dot::Project {
                                                         {"scene", Codec::parseJson(*encoded)}}
                                                        .dump()}
                        : std::unexpected(encoded.error());
+      }
+
+      if (command == "clock") {
+        Codec::requireFields(value, {"command", "scope", "value"});
+        const auto inner = value["value"].at("command").get<std::string>();
+
+        if (Codec::id(value["scope"]) != m_impl->m_scope
+            || ((m_impl->m_closing || stats->state != SessionState::Running)
+                && inner != "snapshot")) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Clock requires current running scope");
+        }
+
+        auto clock = m_impl->m_session->gameClock();
+        effects = inner != "snapshot";
+        auto result = clock ? clock->perform(value["value"].dump())
+                            : Core::Result<std::string>{std::unexpected(clock.error())};
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
       }
 
       if (command == "hud") {

@@ -55,6 +55,8 @@ add_executable(DotUnitTests
     GameStateTests.cpp
     GameDataTests.cpp
     HudTests.cpp
+    GameClockTests.cpp
+    JsonTests.cpp
     SceneAnimatorTests.cpp
     AnimationTransitionTests.cpp
     SkinTests.cpp

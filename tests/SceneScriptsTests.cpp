@@ -284,7 +284,7 @@ TEST_CASE("components_all_pending_starts_finish_before_frame_updates_in_creation
 }
 
 TEST_CASE("components_self_deletion_during_start_and_update_releases_bindings_immediately") {
-  for (const auto* hook : {"onStart", "onUpdate"}) {
+  for (const auto* hook : {"onStart", "onUpdate", "onFrame"}) {
     Project project;
     project.write(
         "import {ScriptComponent} from 'dot:engine';export class Actor extends "
@@ -294,7 +294,7 @@ TEST_CASE("components_self_deletion_during_start_and_update_releases_bindings_im
     auto native = scene();
     entity(native, "{}");
     auto scripts = service(native, program);
-    good(scripts.update(0));
+    good(std::string_view(hook) == "onFrame" ? scripts.frame(0) : scripts.update(0));
     CHECK(native->entityCount().value() == 0);
     CHECK(scripts.stats()->components == 0);
     CHECK(scripts.stats()->runtime.instances == 0);
@@ -627,4 +627,44 @@ export class Actor extends ScriptComponent {
   CHECK(scripts.stats()->runtime.instances == 1);
   good(scripts.stop());
   CHECK(scripts.stats()->runtime.instances == 0);
+}
+
+TEST_CASE("scene_scripts.unscaled_frame_is_independent_and_failures_have_their_own_phase") {
+  Project project;
+  project.write(R"ts(
+import {ScriptComponent} from 'dot:engine';
+export class Actor extends ScriptComponent<{fail?:boolean}> {
+  async onFrame(seconds: number): Promise<void> {
+    await Promise.resolve();
+    if (this.properties.fail) { throw Error('frame failed'); }
+    const pose = this.self.transform;
+    pose.position.y += seconds;
+    this.self.transform = pose;
+  }
+  onUpdate(seconds: number): void {
+    const pose = this.self.transform;
+    pose.position.x += seconds;
+    this.self.transform = pose;
+  }
+}
+)ts");
+  auto world = scene();
+  const auto healthy = entity(world, "{}");
+  entity(world, R"({"fail":true})");
+  auto scripts = service(world, project.compile());
+  REQUIRE(scripts.start());
+  CHECK_FALSE(scripts.frame(1.01));
+  auto framed = scripts.frame(.25);
+  REQUIRE(framed);
+  REQUIRE(framed->failures.size() == 1);
+  CHECK(framed->failures[0].phase == ScriptPhase::Frame);
+  CHECK(world->entity(healthy)->transform.position.x == 0);
+  CHECK(world->entity(healthy)->transform.position.y == doctest::Approx(.25));
+  REQUIRE(scripts.update(.5));
+  CHECK(world->entity(healthy)->transform.position.x == doctest::Approx(.5));
+  CHECK(world->entity(healthy)->transform.position.y == doctest::Approx(.25));
+  auto moved = std::move(scripts);
+  CHECK_FALSE(scripts.frame(0));
+  REQUIRE(moved.stop());
+  CHECK_FALSE(moved.frame(0));
 }

@@ -13,7 +13,7 @@ import Dot.Script.Runtime;
 export import Dot.Script.Host;
 
 export namespace Dot::Script {
-  enum class ScriptPhase { Prepare, Start, Update, FixedUpdate, Stop };
+  enum class ScriptPhase { Prepare, Start, Update, FixedUpdate, Stop, Frame };
 
   struct ScriptFailure {
     World::EntityId entity;
@@ -87,7 +87,7 @@ export namespace Dot::Script {
      * 初始化/构造/钩子查询只允许读场景，普通准备失败保留绑定，但不回滚 realm 全局
      * JS 状态；加载/资源故障释放全部句柄。 */
     [[nodiscard]] auto sync() -> Core::Result<ScriptReport>;
-    /** Start once, then dispatch optional void/Promise<void> hooks. Both frame
+    /** Start once, then dispatch optional void/Promise<void> hooks. Frame
      * operations sync authoring first; seconds must be finite in [0,1]. Changes
      * caused by callbacks are visible to later callbacks; missing owners are
      * skipped and removed. Ordinary callback failures stop/release only that
@@ -98,6 +98,9 @@ export namespace Dot::Script {
      * 仅停止/释放该组件，realm 故障中止后续分发。报告明确含回调错误，分发成功不
      * 表示脚本成功。 */
     [[nodiscard]] auto start() -> Core::Result<ScriptReport>;
+    /** Unscaled frame/UI hooks, independently dispatched while simulation is paused.
+     * 暂停模拟时仍独立分发的非缩放帧/UI 钩子。 */
+    [[nodiscard]] auto frame(double seconds) -> Core::Result<ScriptReport>;
     [[nodiscard]] auto update(double seconds) -> Core::Result<ScriptReport>;
     [[nodiscard]] auto fixedUpdate(double seconds) -> Core::Result<ScriptReport>;
     /** Prepare a new realm/generation before touching old state. Optional paired

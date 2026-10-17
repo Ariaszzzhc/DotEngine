@@ -172,8 +172,9 @@ FeatureLab audits the real SDK and supplies F6/F7 camera checkpoints across scen
 Tests do not open desktop windows; actual editor checks use its product agent API.
 
 Save I/O is synchronous and can stall a frame. Background scheduling, directory
-crash recovery, authentication/cloud sync, broader game-specific schemas, menus
+crash recovery, authentication/cloud sync, broader game-specific schemas, richer menus
 and finished gameplay remain separate work. Prism Relay now displays controls and
 checkpoint success/failure through [native game text](GameUi.md); full diagnostics
-remain in relayProgressStatus. These contracts do not establish overall
+remain in relayProgressStatus. Its keyboard checkpoint menu uses the
+[native game clock](GameClock.md), so save/restore remains available during simulation pause. These contracts do not establish overall
 engine production readiness.

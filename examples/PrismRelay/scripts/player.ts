@@ -1,4 +1,4 @@
-import {audio, Entity, hud, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, gameClock, hud, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
 import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from './progress';
@@ -36,6 +36,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #jumpBuffer = 0;
   #grounded = true;
   #clip = 0;
+  #menuVisible = false;
 
   private bind(): void {
     const camera = scene.primaryCamera;
@@ -68,7 +69,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.listen();
     hud.set('controls', hud.label({
       text:
-          'PRISM RELAY | WASD move | Shift sprint | Space jump | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint',
+          'PRISM RELAY | WASD move | Shift sprint | Space jump | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu',
       size: {x: .96, y: .14},
       fontSize: this.properties.uiFontSize
     }));
@@ -144,13 +145,16 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#grounded = grounded;
   }
 
-  onUpdate(seconds: number): void {
+  onFrame(_seconds: number): void {
     const frame = input.snapshot();
-    this.edges(frame);
     let progressMessage: string|null = null;
 
     if (frame.index !== this.#progressFrame) {
       this.#progressFrame = frame.index;
+
+      if (frame.keys.M.pressed) {
+        gameClock.setPaused(!gameClock.snapshot().paused);
+      }
 
       try {
         if (frame.keys.F7.pressed) {
@@ -164,6 +168,8 @@ export class RelayPlayer extends ScriptComponent<Settings> {
           this.#clip = 0;
           this.#model.configureAnimation(1, true);
           this.#model.playAnimation(0, true);
+          this.#camera.update(this.self.characterState.position, 0);
+          this.listen();
           progressMessage = 'Checkpoint restored';
         } else if (frame.keys.F6.pressed) {
           const state = this.self.characterState;
@@ -189,6 +195,34 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       }
     }
 
+    if (progressMessage !== null) {
+      progressStatus(progressMessage, this.properties.uiFontSize);
+    }
+
+    const paused = gameClock.snapshot().paused;
+
+    if (paused !== this.#menuVisible) {
+      this.#menuVisible = paused;
+      input.capturePointer(!paused);
+
+      if (paused) {
+        hud.set('menu', hud.label({
+          text: 'GAME PAUSED\nF6 Save checkpoint\nF7 Restore checkpoint\nM Return to game',
+          position: {x: .26, y: .32},
+          size: {x: .48, y: .36},
+          fontSize: this.properties.uiFontSize,
+          background: {x: .02, y: .03, z: .05, w: .96}
+        }));
+      } else {
+        hud.remove('menu');
+      }
+    }
+  }
+
+  onUpdate(seconds: number): void {
+    const frame = input.snapshot();
+    this.edges(frame);
+
     if (frame.index !== this.#lookFrame) {
       this.#lookFrame = frame.index;
       this.#camera.look(frame);
@@ -197,10 +231,6 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#camera.update(this.self.characterState.position, seconds);
     this.listen();
     this.animate();
-
-    if (progressMessage !== null) {
-      progressStatus(progressMessage, this.properties.uiFontSize);
-    }
   }
 
   /**
@@ -241,6 +271,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     }
 
     this.bind();
+    this.#menuVisible = gameClock.snapshot().paused;
     this.#camera.restore(state.camera);
     this.#velocity = {...state.velocity};
     this.#edgeFrame = state.edgeFrame;

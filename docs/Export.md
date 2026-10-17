@@ -219,6 +219,7 @@ Commands use strict complete objects with no unknown fields:
 | cancel-input | scope | Schedule one release frame for an active input request |
 | game-data | value | Existing strict GameData protocol, shared with scripts/editor |
 | hud | scope, value | Scene-local strict text operations, shared with scripts/editor |
+| clock | scope, value | Scene-local pause snapshot/set-paused, shared with scripts/editor |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
 | scene-status | request | Retained actual replacement result |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |
@@ -274,3 +275,9 @@ Native inspection also exposes `hudText.textureBytes`, `rasterizations`, `overfl
 surface presentation; a successful HUD mutation response alone proves no pixels.
 Scope changes retire the previous text service. Native text uses the same post-tone-
 mapping path as editor capture and offscreen rendering, independently of scene exposure.
+
+Player inspection reports clock.paused/revision and completed simulatedFixedSteps/
+simulatedUpdates for the current scene; scene replacement resets those counters
+and starts an unpaused clock. Native application profile step counts still measure
+scheduled callbacks. Input/rendering/frame UI and independent audio playback remain
+active while game simulation is paused. See [game clock contracts](GameClock.md).

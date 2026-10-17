@@ -51,6 +51,8 @@ export namespace Dot::Editor {
     std::uint64_t preparationCompileAttempts{};
     std::uint64_t discardedScriptCompilations{};
     bool retiringAudio{};
+    std::optional<Script::GameClockSnapshot> clock{};
+    std::uint64_t simulatedUpdates{};
   };
 
   struct PlayFrame {
@@ -109,6 +111,7 @@ export namespace Dot::Editor {
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
+    [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto stop() -> Core::Result<Script::ScriptReport>;

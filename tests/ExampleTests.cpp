@@ -133,7 +133,7 @@ namespace {
       m_input.beginFrame();
       constexpr std::array keys{Platform::Key::A,  Platform::Key::D,     Platform::Key::W,
                                 Platform::Key::S,  Platform::Key::Space, Platform::Key::LeftShift,
-                                Platform::Key::F6, Platform::Key::F7};
+                                Platform::Key::F6, Platform::Key::F7,    Platform::Key::M};
 
       for (auto key : keys) {
         const bool desired = std::ranges::find(down, key) != down.end();
@@ -191,10 +191,11 @@ export class Observer extends ScriptComponent {
 TEST_CASE("prism.hud_feedback_is_native_scoped_and_preparation_cannot_publish_labels") {
   Fixture f;
   REQUIRE(f.project.files()->writeTextAtomic("scripts/ui-guard.ts", R"ts(
-import {hud, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
+import {gameClock, hud, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
 function preparing(): void {
   hud.snapshot();
-  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear()]) {
+  gameClock.snapshot();
+  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true)]) {
     let denied = false;
     try { attempt(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
     if (!denied) { throw Error('HUD write escaped preparation guard'); }
@@ -277,6 +278,126 @@ export class UiGuard extends ScriptComponent {
   report(session.close());
   CHECK_FALSE(current.perform(R"({"command":"clear"})"));
   CHECK(current.snapshot()->labels.size() == 2);
+}
+
+TEST_CASE("prism.pause_menu_freezes_simulation_keeps_frame_ui_and_resets_on_scene_change") {
+  Fixture f;
+  REQUIRE(f.project.files()->writeTextAtomic("scripts/pause-observer.ts", R"ts(
+import {gameState, scene, ScriptComponent} from 'dot:engine';
+export class PauseObserver extends ScriptComponent {
+  #frames=0; #fixed=0; #updates=0;
+  onFrame(): void {
+    gameState.set('pauseProbe', {frames: ++this.#frames, fixed: this.#fixed,
+      updates: this.#updates, time: scene.findEntities('Surveyor')[0]!.animationState.timeSeconds});
+  }
+  onUpdate(): void { ++this.#updates; }
+  onFixedUpdate(): void { ++this.#fixed; }
+}
+)ts"));
+  auto authoring = f.project.loadStartup().value();
+  const auto observer = authoring.createEntity("Pause observer").value();
+  REQUIRE(
+      authoring.setScript(observer, World::ScriptComponent{"pause-observer.ts", "PauseObserver"}));
+  REQUIRE(f.project.saveStartup(authoring));
+  auto session = f.session(true, f.storage.files().value());
+  report(session.start());
+  auto clock = session.gameClock().value();
+  Driver driver(session);
+  const auto probe = [&] {
+    return Json::parse(
+        session.gameData()->perform(R"({"command":"snapshot"})").value())["data"]["pauseProbe"];
+  };
+
+  for (int i = 0; i < 10; ++i) {
+    driver.frame({Platform::Key::W, Platform::Key::Space});
+  }
+
+  driver.frame({Platform::Key::M});
+  CHECK(clock.snapshot()->paused);
+  CHECK_FALSE(session.pointerCaptureRequested().value());
+  REQUIRE(session.hud()->snapshot()->labels.size() == 3);
+  const auto before = entity(session, "Player").transform;
+  CHECK(before.position.y > .1F);
+  const auto counters = session.stats().value();
+  const auto measured = probe();
+
+  for (int i = 0; i < 60; ++i) {
+    driver.frame({Platform::Key::D, Platform::Key::Space});
+  }
+
+  CHECK(entity(session, "Player").transform.position == before.position);
+  CHECK(session.stats()->simulatedFixedSteps == counters.simulatedFixedSteps);
+  CHECK(session.stats()->simulatedUpdates == counters.simulatedUpdates);
+  CHECK(probe()["frames"].get<int>() > measured["frames"].get<int>());
+  CHECK(probe()["fixed"] == measured["fixed"]);
+  CHECK(probe()["updates"] == measured["updates"]);
+  CHECK(probe()["time"] == measured["time"]);
+  const auto files = f.project.files().value();
+  const auto source = files.readText("scripts/progress.ts").value();
+  REQUIRE(files.writeTextAtomic("scripts/progress.ts", source + "\n"));
+  auto reloaded = Tests::awaitCompilation([&] { return session.pollScripts(); });
+  REQUIRE(reloaded->committed);
+  CHECK(clock.snapshot()->paused);
+  const auto uiRevision = session.hud()->snapshot()->revision;
+  driver.frame({Platform::Key::D});
+  CHECK(entity(session, "Player").transform.position == before.position);
+  CHECK(session.hud()->snapshot()->revision == uiRevision);
+  CHECK(session.stats()->simulatedFixedSteps == counters.simulatedFixedSteps);
+
+  driver.frame({Platform::Key::F6});
+  CHECK(session.hud()->snapshot()->labels.front().value.text.find("land before saving")
+        != std::string::npos);
+  CHECK(clock.snapshot()->paused);
+  driver.frame({Platform::Key::M});
+  CHECK_FALSE(clock.snapshot()->paused);
+  CHECK(session.pointerCaptureRequested().value());
+
+  for (int i = 0; i < 120; ++i) {
+    driver.frame();
+  }
+
+  driver.frame({Platform::Key::M});
+  driver.frame({Platform::Key::F6});
+  auto stored = session.gameData()->perform(R"({"command":"read-save","slot":"relay-checkpoint"})");
+  REQUIRE_MESSAGE(stored, (stored ? "" : stored.error().message));
+  const auto saved = Json::parse(*stored)["data"]["relayCheckpoint"]["feet"];
+  auto control = Project::PlayerControl::create(session).value();
+  const auto scope = session.stats()->location.scope;
+  CHECK_FALSE(control.perform(Json{{"command", "clock"},
+                                   {"scope", std::to_string(scope + 1)},
+                                   {"value", {{"command", "set-paused"}, {"paused", false}}}}
+                                  .dump()));
+  REQUIRE(control.perform(Json{{"command", "clock"},
+                               {"scope", std::to_string(scope)},
+                               {"value", {{"command", "set-paused"}, {"paused", false}}}}
+                              .dump()));
+
+  for (int i = 0; i < 30; ++i) {
+    driver.frame({Platform::Key::D});
+  }
+
+  driver.frame({Platform::Key::M});
+  const auto paused = session.stats().value();
+  driver.frame({Platform::Key::F7});
+  CHECK(clock.snapshot()->paused);
+  const auto restored = entity(session, "Player").transform.position;
+  CHECK(restored.x == doctest::Approx(saved["x"].get<float>()).epsilon(.001));
+  CHECK(restored.y == doctest::Approx(saved["y"].get<float>()).epsilon(.001));
+  CHECK(restored.z == doctest::Approx(saved["z"].get<float>()).epsilon(.001));
+  CHECK(session.stats()->simulatedFixedSteps == paused.simulatedFixedSteps);
+  CHECK(session.stats()->simulatedUpdates == paused.simulatedUpdates);
+  const auto request = session.requestScene("scenes/main.dotscene").value();
+  report(session.update(0));
+  report(Tests::awaitScene(session, request));
+  CHECK(session.stats()->location.scope != scope);
+  CHECK_FALSE(session.gameClock()->snapshot()->paused);
+  CHECK(session.stats()->simulatedFixedSteps == 0);
+  CHECK_FALSE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  auto current = session.gameClock().value();
+  REQUIRE(current.perform(R"({"command":"set-paused","paused":true})"));
+  report(session.close());
+  CHECK(current.snapshot()->paused);
+  CHECK_FALSE(current.perform(R"({"command":"set-paused","paused":false})"));
 }
 
 TEST_CASE("prism.character_moves_relative_to_acknowledged_camera_and_blocks_at_walls") {

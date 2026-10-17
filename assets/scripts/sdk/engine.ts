@@ -175,6 +175,23 @@ export interface Vec4 extends Vec3 {
   w: number;
 }
 
+export interface GameClockSnapshot {
+  revision: string;
+  paused: boolean;
+}
+
+/** Scene-local simulation pause; unscaled onFrame, input, loading, rendering and
+ * audio playback continue. 场景模拟暂停；非缩放 onFrame、输入、加载、渲染及音频播放继续。 */
+export const gameClock = Object.freeze({
+  snapshot(): GameClockSnapshot {
+    return invoke('gameClock.snapshot', []) as GameClockSnapshot;
+  },
+
+  setPaused(paused: boolean): string {
+    return (invoke('gameClock.setPaused', [paused]) as GameClockSnapshot).revision;
+  },
+});
+
 export interface HudLabel {
   text: string;
   position: Vec2;
@@ -1109,6 +1126,11 @@ export class ScriptComponent<Properties extends object = Record<string, unknown>
   }
 
   onStart(): void|Promise<void> {
+  }
+
+  /** Unscaled UI/input work runs before variable gameplay, including while paused.
+   * 非缩放界面/输入工作先于变动游戏回调运行，暂停时也执行。 */
+  onFrame(_seconds: number): void|Promise<void> {
   }
 
   onUpdate(_seconds: number): void|Promise<void> {

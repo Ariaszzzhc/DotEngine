@@ -100,8 +100,14 @@ export namespace Dot::Script {
      * reload diagnostics and lifecycle failures explicitly. Invalid deltas fail
      * before polling or script effects. 轮询后分发旧/已提交新代，明确报告重载诊断与
      * 生命周期错误；无效时间在轮询或脚本副作用之前失败。 */
+    [[nodiscard]] auto frame(double seconds) -> Core::Result<LiveScriptReport>;
     [[nodiscard]] auto update(double seconds) -> Core::Result<LiveScriptReport>;
     [[nodiscard]] auto fixedUpdate(double seconds) -> Core::Result<LiveScriptReport>;
+    /** Dispatch one prepared phase without polling/replacing its generation.
+     * Allows a frame/UI phase and conditional gameplay to share one source result.
+     * 分发已准备阶段，不轮询/替换编译代；帧/UI 与条件游戏阶段共用一次源码结果。 */
+    [[nodiscard]] auto dispatchPrepared(ScriptPhase phase, double seconds)
+        -> Core::Result<ScriptReport>;
     [[nodiscard]] auto stop() -> Core::Result<ScriptReport>;
     /** Quiescent cancellation, including another destruction thread. Release
      * outstanding compilation without invoking hooks or stopping the generation;

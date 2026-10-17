@@ -7,6 +7,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <source_location>
@@ -88,6 +89,9 @@ namespace Dot::Project {
     std::optional<Script::SceneFlow> m_flow;
     std::optional<Script::GameData> m_progress;
     std::optional<Script::Hud> m_hud;
+    std::optional<Script::GameClock> m_clock;
+    std::uint64_t m_fixedSteps{};
+    std::uint64_t m_updates{};
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -123,6 +127,10 @@ namespace Dot::Project {
 
       if (m_hud) {
         m_hud->retire();
+      }
+
+      if (m_clock) {
+        m_clock->retire();
       }
     }
 
@@ -184,6 +192,10 @@ namespace Dot::Project {
         m_hud->retire();
       }
 
+      if (m_clock) {
+        m_clock->retire();
+      }
+
       if (m_audio) {
         auto closed = retirement && m_audioMode == SessionAudio::Playback
                           ? m_audio->requestPlaybackClose()
@@ -227,12 +239,14 @@ namespace Dot::Project {
       ActiveScope active{m_active};
 
       try {
-        auto result = m_live
-                          ? (fixed ? m_live->fixedUpdate(seconds) : m_live->update(seconds))
-                          : (fixed ? m_scripts->fixedUpdate(seconds) : m_scripts->update(seconds))
-                                .transform([](auto report) {
-                                  return Script::LiveScriptReport{{}, std::move(report)};
-                                });
+        Core::Result<Script::LiveScriptReport> result{Script::LiveScriptReport{}};
+
+        if (!fixed) {
+          result = m_live ? m_live->frame(seconds)
+                          : m_scripts->frame(seconds).transform([](auto report) {
+                              return Script::LiveScriptReport{{}, std::move(report)};
+                            });
+        }
 
         if (!result || result->frame.realmFaulted) {
           m_state = SessionState::Faulted;
@@ -240,7 +254,45 @@ namespace Dot::Project {
           return result;
         }
 
-        if (fixed) {
+        auto clock = m_clock->snapshot();
+
+        if (!clock) {
+          return std::unexpected(clock.error());
+        }
+
+        const auto paused = clock->paused;
+
+        if (!paused) {
+          if ((fixed ? m_fixedSteps : m_updates) == std::numeric_limits<std::uint64_t>::max()) {
+            return Core::fail(Core::ErrorCode::Unavailable, "Game simulation counter exhausted");
+          }
+
+          if (fixed) {
+            result = m_live ? m_live->fixedUpdate(seconds)
+                            : m_scripts->fixedUpdate(seconds).transform([](auto report) {
+                                return Script::LiveScriptReport{{}, std::move(report)};
+                              });
+          } else {
+            auto game = m_live ? m_live->dispatchPrepared(Script::ScriptPhase::Update, seconds)
+                               : m_scripts->update(seconds);
+
+            if (!game) {
+              m_state = SessionState::Faulted;
+              retireServices();
+              return std::unexpected(game.error());
+            }
+
+            append(result->frame, std::move(*game));
+          }
+        }
+
+        if (!result || result->frame.realmFaulted) {
+          m_state = SessionState::Faulted;
+          retireServices();
+          return result;
+        }
+
+        if (fixed && !paused) {
           auto advanced = m_physics->advance(seconds);
 
           if (!advanced) {
@@ -251,7 +303,7 @@ namespace Dot::Project {
         }
 
         if (!fixed) {
-          auto animated = m_animations->advance(seconds);
+          auto animated = m_animations->advance(paused ? 0 : seconds);
 
           if (!animated) {
             m_state = SessionState::Faulted;
@@ -266,6 +318,10 @@ namespace Dot::Project {
             retireServices();
             return std::unexpected(synchronized.error());
           }
+        }
+
+        if (!paused) {
+          ++(fixed ? m_fixedSteps : m_updates);
         }
 
         return result;
@@ -501,6 +557,13 @@ namespace Dot::Project {
       }
 
       impl->m_hud.emplace(std::move(*hud));
+      auto clock = Script::GameClock::create();
+
+      if (!clock) {
+        return std::unexpected(clock.error());
+      }
+
+      impl->m_clock.emplace(std::move(*clock));
       auto input = Script::InputSource::create(config.input);
 
       if (!input) {
@@ -554,7 +617,7 @@ namespace Dot::Project {
       for (auto bindings :
            {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_audio->bindings(),
             impl->m_animations->bindings(), impl->m_progress->bindings(), impl->m_hud->bindings(),
-            impl->m_flow->bindings(impl->m_identity, scenePath)}) {
+            impl->m_clock->bindings(), impl->m_flow->bindings(impl->m_identity, scenePath)}) {
         if (!bindings) {
           return std::unexpected(bindings.error());
         }
@@ -662,6 +725,15 @@ namespace Dot::Project {
     result.location = std::move(*location);
     result.transition = std::move(*latest);
     result.retiringAudio = m_impl->m_retiredAudio.has_value();
+    auto clock = m_impl->m_clock->snapshot();
+
+    if (!clock) {
+      return std::unexpected(clock.error());
+    }
+
+    result.clock = *clock;
+    result.simulatedFixedSteps = m_impl->m_fixedSteps;
+    result.simulatedUpdates = m_impl->m_updates;
 
     if (m_impl->m_state != SessionState::Closed) {
       if (m_impl->m_live) {
@@ -727,6 +799,17 @@ namespace Dot::Project {
     auto checked = m_impl->check(true);
     return checked ? Core::Result<Script::GameData>{*m_impl->m_progress}
                    : Core::Result<Script::GameData>{std::unexpected(checked.error())};
+  }
+
+  auto GameSession::gameClock() const -> Core::Result<Script::GameClock> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check(true);
+    return checked && m_impl->m_clock ? Core::Result<Script::GameClock>{*m_impl->m_clock}
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Game clock is not prepared")
+                     : std::unexpected(checked.error());
   }
 
   auto GameSession::hud() const -> Core::Result<Script::Hud> {

@@ -30,7 +30,7 @@ import Dot.Script.SceneHost;
 namespace Dot::Script {
   namespace {
     using Json = Serialization::Detail::Json;
-    constexpr std::array hooks{"onStart", "onUpdate", "onFixedUpdate", "onStop"};
+    constexpr std::array hooks{"onStart", "onUpdate", "onFixedUpdate", "onStop", "onFrame"};
 
     struct Access {
       bool preparing{};
@@ -105,7 +105,7 @@ namespace Dot::Script {
       World::EntityId entity;
       ComponentProperties description;
       std::unique_ptr<Object> object;
-      std::array<bool, 4> methods{};
+      std::array<bool, 5> methods{};
       bool started{};
       bool failed{};
     };
@@ -350,7 +350,9 @@ namespace Dot::Script {
 
       auto report = std::move(*synced);
       const auto args = std::format("[{}]", seconds);
-      const auto hook = phase == ScriptPhase::FixedUpdate ? 2U : 1U;
+      const auto hook = phase == ScriptPhase::Frame         ? 4U
+                        : phase == ScriptPhase::FixedUpdate ? 2U
+                                                            : 1U;
 
       const auto visit = [&](bool startPass) -> void {
         for (auto iterator = m_records.begin(); iterator != m_records.end();) {
@@ -507,6 +509,33 @@ namespace Dot::Script {
       m_impl->m_faulted = true;
       return Core::fail(Core::ErrorCode::External,
                         "Start scene scripts: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneScripts::frame(double seconds) -> Core::Result<ScriptReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene scripts were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Script frame seconds must be finite in [0,1]");
+    }
+
+    ActiveScope active{m_impl->m_active};
+
+    try {
+      return m_impl->dispatch(ScriptPhase::Frame, seconds);
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = true;
+      return Core::fail(Core::ErrorCode::External,
+                        "Frame scene scripts: " + std::string(error.what()));
     }
   }
 

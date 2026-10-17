@@ -46,6 +46,11 @@ fixed-clock iteration count, supplied elapsed time and dropped fixed time, plus 
 callback error. A null fixed phase means no fixed callback executed even if that
 clock advanced. Editor Play retains its separate fixed-step/drop counters under
 `workspace.play`; its simulation runs in the exact-frame update phase.
+The application sample's paused flag describes application focus-loss scheduling,
+independently of gameClock.paused. Game pause still runs scheduled callbacks,
+frame/UI work, spatial audio synchronization and rendering. Its update cost remains
+measurable; completed game simulation counters establish which gameplay phases ran.
+See [game clock scheduling](GameClock.md).
 `elapsedNanoseconds` is the input to step; during the normal run loop it describes
 the preceding work/idle interval. It is distinct from the current step's measured
 `totalNanoseconds`. A paused sample explicitly distinguishes intentionally skipped

@@ -23,6 +23,7 @@ export import Dot.Script.InputSource;
 export import Dot.Script.SceneFlow;
 export import Dot.Script.GameData;
 export import Dot.Script.Hud;
+export import Dot.Script.GameClock;
 export import Dot.Script.PhysicsSource;
 export import Dot.Audio.SceneAudio;
 
@@ -54,6 +55,9 @@ export namespace Dot::Project {
     /** Owns one retired endpoint until real teardown is reaped; not an audible-state flag.
      * 真实清理回收前拥有一个退役端点，不表示当前是否可听。 */
     bool retiringAudio{};
+    Script::GameClockSnapshot clock{1, false};
+    std::uint64_t simulatedFixedSteps{};
+    std::uint64_t simulatedUpdates{};
   };
 
   /** Owns the active project scene and its input, scripts, real physics,
@@ -127,6 +131,9 @@ export namespace Dot::Project {
     /** Owned game-wide control handle; close/fault/destruction retires writes.
      * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
+    /** Current scene pause service; replacement starts a fresh unpaused clock.
+     * 当前场景暂停服务；场景替换建立新的非暂停时钟。 */
+    [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
     /** Current scene-local UI; reacquire after replacement. Retained handles
      * become read-only after retirement. 当前场景 UI，替换后须重新获取；退役句柄仅可读。 */
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
@@ -162,7 +169,15 @@ export namespace Dot::Project {
      * 后续 close 也跳过钩子。 */
     [[nodiscard]] auto requestPreparationClose() -> Core::Result<void>;
     [[nodiscard]] auto pollPreparationClosed() const -> Core::Result<bool>;
-    /** Requires start. Fixed steps dispatch scripts using the preceding contact
+    /** Requires start. Each variable call first dispatches unscaled onFrame,
+     * including while paused. Latch pause before each gameplay phase: paused fixed
+     * calls skip scripts/physics; paused variable calls skip Update and use zero
+     * animation delta. Input, explicit cuts, rendering and audio playback continue;
+     * frame callbacks may intentionally edit native state. No paused time debt.
+     * 要求启动；每次变动帧先执行非缩放 onFrame，暂停时也运行；各游戏阶段前锁存暂停，
+     * 暂停固定帧跳过脚本/物理，暂停变动帧跳过 Update 并以零动画时长同步。输入、显式切换、
+     * 渲染和音频继续，帧回调可显式修改原生状态，不累积暂停时间债务。
+     * Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then
      * advances animation then synchronizes audio once after all fixed steps, then
      * polls at most one scene request, retaining old gameplay during CPU resource preflight. New

@@ -111,6 +111,12 @@ namespace Dot::Editor {
       if (hud) {
         hud->retire();
       }
+
+      auto clock = m_session->gameClock();
+
+      if (clock) {
+        clock->retire();
+      }
     }
 
     auto record(Core::Result<Script::LiveScriptReport> result) -> Core::Result<void> {
@@ -552,13 +558,24 @@ namespace Dot::Editor {
       ++m_impl->m_stats.frames;
 
       for (std::size_t step = 0; step < timing.updates; ++step) {
+        auto clock = m_impl->m_session->gameClock();
+        auto before = clock
+                          ? clock->snapshot()
+                          : Core::Result<Script::GameClockSnapshot>{std::unexpected(clock.error())};
+
+        if (!before) {
+          return std::unexpected(before.error());
+        }
+
         auto dispatched = m_impl->record(m_impl->m_session->fixedUpdate());
 
         if (!dispatched) {
           return dispatched;
         }
 
-        ++m_impl->m_stats.fixedSteps;
+        if (!before->paused) {
+          ++m_impl->m_stats.fixedSteps;
+        }
       }
 
       const auto seconds = std::min(1.0, std::chrono::duration<double>(elapsed).count());
@@ -663,6 +680,17 @@ namespace Dot::Editor {
                    : Core::Result<Script::GameData>{std::unexpected(checked.error())};
   }
 
+  auto PlaySession::gameClock() const -> Core::Result<Script::GameClock> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked && m_impl->m_session ? m_impl->m_session->gameClock()
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Play clock is not prepared")
+                     : std::unexpected(checked.error());
+  }
+
   auto PlaySession::hud() const -> Core::Result<Script::Hud> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
@@ -741,6 +769,8 @@ namespace Dot::Editor {
     result.transition = std::move(game->transition);
     result.source = std::move(game->source);
     result.retiringAudio = game->retiringAudio;
+    result.clock = game->clock;
+    result.simulatedUpdates = game->simulatedUpdates;
     return result;
   }
 

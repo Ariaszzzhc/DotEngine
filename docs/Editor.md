@@ -1940,6 +1940,13 @@ retirement and read-only phases are described in [native game text](GameUi.md).
 capture frame hudRevision proves which completed UI model supplied the frozen pixels.
 Stopped authoring and animation preview contain no running HUD.
 
+Play viewport controls expose Pause simulation/Resume simulation. They use
+`{"command":"clock","session":"1","scope":"83","value":{"command":"set-paused","paused":true}}`
+through the same native product route. Current Play status reports clock.paused,
+clock.revision and simulatedUpdates; fixedSteps counts actual simulation phases.
+The unscaled frame/UI hook and product controls continue during pause, and Stop
+retains its usual authoring restoration. See [pause scheduling](GameClock.md).
+
 Terminal close retires the private control directory, so a supervising agent must
 verify the owned editor process exits rather than waiting indefinitely for a response
 file that may already have been removed. Rejected/pending close remains observable

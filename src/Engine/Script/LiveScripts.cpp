@@ -228,14 +228,16 @@ namespace Dot::Script {
       return finish();
     }
 
-    auto frame(double seconds, bool fixed) -> Core::Result<LiveScriptReport> {
+    auto frame(double seconds, ScriptPhase phase) -> Core::Result<LiveScriptReport> {
       auto polled = poll(false);
 
       if (!polled) {
         return std::unexpected(polled.error());
       }
 
-      auto dispatched = fixed ? m_scripts.fixedUpdate(seconds) : m_scripts.update(seconds);
+      auto dispatched = phase == ScriptPhase::Frame         ? m_scripts.frame(seconds)
+                        : phase == ScriptPhase::FixedUpdate ? m_scripts.fixedUpdate(seconds)
+                                                            : m_scripts.update(seconds);
 
       if (!dispatched) {
         return std::unexpected(dispatched.error());
@@ -374,6 +376,32 @@ namespace Dot::Script {
     return m_impl->m_scripts.start();
   }
 
+  auto LiveScripts::frame(double seconds) -> Core::Result<LiveScriptReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Live scripts were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Live frame seconds must be finite in [0,1]");
+    }
+
+    ActiveScope active{m_impl->m_active};
+
+    try {
+      return m_impl->frame(seconds, ScriptPhase::Frame);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Frame live scripts: " + std::string(error.what()));
+    }
+  }
+
   auto LiveScripts::update(double seconds) -> Core::Result<LiveScriptReport> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Live scripts were moved");
@@ -393,7 +421,7 @@ namespace Dot::Script {
     ActiveScope active{m_impl->m_active};
 
     try {
-      return m_impl->frame(seconds, false);
+      return m_impl->frame(seconds, ScriptPhase::Update);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Update live scripts: " + std::string(error.what()));
@@ -419,11 +447,35 @@ namespace Dot::Script {
     ActiveScope active{m_impl->m_active};
 
     try {
-      return m_impl->frame(seconds, true);
+      return m_impl->frame(seconds, ScriptPhase::FixedUpdate);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Fixed update live scripts: " + std::string(error.what()));
     }
+  }
+
+  auto LiveScripts::dispatchPrepared(ScriptPhase phase, double seconds)
+      -> Core::Result<ScriptReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Live scripts were moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 1
+        || (phase != ScriptPhase::Frame && phase != ScriptPhase::Update
+            && phase != ScriptPhase::FixedUpdate)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid prepared script dispatch");
+    }
+
+    ActiveScope active{m_impl->m_active};
+    return phase == ScriptPhase::Frame    ? m_impl->m_scripts.frame(seconds)
+           : phase == ScriptPhase::Update ? m_impl->m_scripts.update(seconds)
+                                          : m_impl->m_scripts.fixedUpdate(seconds);
   }
 
   auto LiveScripts::stop() -> Core::Result<ScriptReport> {

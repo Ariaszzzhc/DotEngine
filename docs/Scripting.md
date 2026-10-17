@@ -1078,3 +1078,13 @@ and shared-parent behavior. Grouping does not provide linked instances or prefab
 rasterization/composition in both Play and exported games. Constructors/migration
 may inspect but cannot mutate them. Scene replacement starts a fresh HUD; game-wide
 save data is independent. See [text, fonts, limits and product controls](GameUi.md).
+
+
+## Unscaled frame callbacks and pause
+
+`ScriptComponent.onFrame(seconds)` runs before variable gameplay, even when native
+simulation is paused. Use it for menu input and HUD changes. `gameClock.snapshot()`
+and `gameClock.setPaused(boolean)` share the strict scene-local native service.
+Paused fixed calls skip game callbacks/physics; paused variable calls skip Update
+and advance animation by zero. Audio, input, rendering, reload and explicit scene
+requests continue. See [phase ordering, ownership and product controls](GameClock.md).

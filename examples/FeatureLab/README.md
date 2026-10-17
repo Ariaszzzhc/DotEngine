@@ -198,3 +198,7 @@ The demo's stored identity is `dotengine-feature-lab`; template instances receiv
 The ordinary SDK audit exercises `hud.label/snapshot/set/remove/clear` and leaves a
 bilingual native label in Play and exported games. It shares the game text path
 with Prism Relay; this is not an editor-only overlay or a visual layout designer.
+
+The audit also exercises the native game clock and unscaled onFrame hook, preserving
+the caller's current pause state. Pausing simulation keeps frame/UI work and audio
+playback active; it does not freeze the editor or its controls.
