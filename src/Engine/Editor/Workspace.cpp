@@ -40,6 +40,7 @@ import Dot.Platform.AgentInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
+import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationClipboard;
 import Dot.Animation.Files;
@@ -518,6 +519,9 @@ namespace Dot::Editor {
     std::string m_selectedResource;
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
+    std::string m_animationPath{"assets/new.dotanimation"};
+    std::string m_animationName{"New animation"};
+    double m_animationDuration{1};
     std::string m_contentName{"Scene content"};
     Json m_overrideQuery;
     Json m_overridePage;
@@ -4235,6 +4239,79 @@ namespace Dot::Editor {
         return Json{{"ok", true}, {"previews", previewStatus()}}.dump();
       }
 
+      /** File publication is separate from scene history. Prepare the draft and
+       * response first, then stage by no-throw swaps; catalog errors report commit.
+       * 文件发布独立于场景历史；先准备草稿/响应，再无抛出交换暂存，目录错误须说明已发布。 */
+      if (command == "create-animation") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "path", "name", "duration"});
+        const auto state = m_document->stats().value();
+        const auto owner = Codec::id(parsed["entity"]);
+
+        if (playing() || m_animationPreview || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || m_text || m_material || m_pendingClose
+            || m_captureDialog || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision
+            || !state.selected || state.selected->value != owner) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Creating animation requires the selected authoring entity, current "
+                            "revision and no other mode/draft/dialog/resource editor");
+        }
+
+        if (!parsed["duration"].is_number()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Animation duration must be numeric");
+        }
+
+        auto created = preparePoseAnimation(
+            *m_document->scene().value(), m_project->files().value(), owner,
+            parsed["path"].get<std::string>(), parsed["name"].get<std::string>(),
+            parsed["duration"].get<double>());
+
+        if (!created) {
+          return std::unexpected(created.error());
+        }
+
+        syncInspector();
+        auto candidate = m_edit;
+        candidate["animation"]
+            = Codec::parseJson(Animation::encodePlayerProperties(created->player).value());
+        auto prepared = m_document->prepareEntityEdit(candidate.dump(), state.revision);
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        auto path = parsed["path"].get<std::string>();
+        auto response = Json{{"ok", true},
+                             {"path", path},
+                             {"staged", true},
+                             {"entity", std::to_string(owner)},
+                             {"revision", std::to_string(state.revision)}}
+                            .dump();
+        auto published = m_resources->createText(path, created->text);
+
+        if (!published) {
+          return std::unexpected(published.error());
+        }
+
+        m_edit.swap(candidate);
+        m_selectedResource.swap(path);
+
+        try {
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(refreshed.error().code,
+                              "Animation created and player staged; catalog refresh failed: "
+                                  + refreshed.error().message);
+          }
+        } catch (const std::exception& error) {
+          return Core::fail(Core::ErrorCode::External,
+                            "Animation created and player staged; catalog refresh failed: "
+                                + std::string(error.what()));
+        }
+
+        return response;
+      }
+
       if (command == "create-material") {
         Codec::requireFields(parsed, {"command", "path"});
         const auto name = parsed["path"].get<std::string>();
@@ -6896,6 +6973,9 @@ namespace Dot::Editor {
                     const auto asset = entry["path"].get<std::string>();
 
                     if (asset.ends_with(".dotanimation")
+                        && (asset == path
+                            || std::ranges::find(player["clips"], Json(asset))
+                                   == player["clips"].end())
                         && ImGui::Selectable(asset.c_str(), asset == path)) {
                       player["clips"][i] = asset;
                     }
@@ -6904,9 +6984,124 @@ namespace Dot::Editor {
                   ImGui::EndCombo();
                 }
 
+                ImGui::BeginDisabled(player["clips"].size() <= 1);
+                const bool remove = ImGui::SmallButton("Remove clip");
+                ImGui::EndDisabled();
+
                 ImGui::PopID();
+
+                if (remove) {
+                  player["clips"].erase(player["clips"].begin()
+                                        + static_cast<Json::difference_type>(i));
+                  player["clip"] = selected > i ? selected - 1
+                                                : std::min(selected, player["clips"].size() - 1);
+                  break;
+                }
               }
 
+              ImGui::BeginDisabled(player["clips"].size() >= 1024);
+
+              if (ImGui::SmallButton("Add clip")) {
+                ImGui::OpenPopup("add-clip");
+              }
+
+              if (ImGui::BeginPopup("add-clip")) {
+                bool available{};
+
+                for (const auto& entry : m_catalog) {
+                  const auto asset = entry["path"].get<std::string>();
+
+                  if (asset.ends_with(".dotanimation")
+                      && std::ranges::find(player["clips"], Json(asset)) == player["clips"].end()) {
+                    available = true;
+
+                    if (ImGui::Selectable(asset.c_str())) {
+                      player["clips"].push_back(asset);
+                      break;
+                    }
+                  }
+                }
+
+                if (!available) {
+                  ImGui::TextDisabled("No unused animation assets. Create or import a clip first.");
+                }
+
+                ImGui::EndPopup();
+              }
+
+              ImGui::EndDisabled();
+              ImGui::TextWrapped(
+                  "Removing a clip changes later indices. Update scripts that select indices.");
+
+              ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNode("Node bindings")) {
+              auto& targets = player["targets"];
+
+              for (std::size_t i = 0; i < targets.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto node = targets[i]["node"].get<std::uint32_t>();
+
+                if (PropertyRow row{"Clip node"};
+                    row.visible() && ImGui::InputScalar("##value", ImGuiDataType_U32, &node)) {
+                  targets[i]["node"] = node;
+                }
+
+                const auto boundEntity = targets[i]["entity"].get<std::string>();
+
+                if (PropertyRow row{"Scene entity"};
+                    row.visible() && ImGui::BeginCombo("##value", boundEntity.c_str())) {
+                  for (const auto& entity : m_snapshot["scene"]["entities"]) {
+                    const bool used = std::ranges::any_of(targets, [&](const Json& target) {
+                      return target["entity"] == entity["id"] && target["entity"] != boundEntity;
+                    });
+                    const auto entityTitle = entity["name"].get<std::string>() + "##"
+                                             + entity["id"].get<std::string>();
+
+                    if (!used
+                        && ImGui::Selectable(entityTitle.c_str(), entity["id"] == boundEntity)) {
+                      targets[i]["entity"] = entity["id"];
+                    }
+                  }
+
+                  ImGui::EndCombo();
+                }
+
+                ImGui::BeginDisabled(targets.size() <= 1);
+                const bool remove = ImGui::SmallButton("Remove binding");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+
+                if (remove) {
+                  targets.erase(targets.begin() + static_cast<Json::difference_type>(i));
+                  break;
+                }
+              }
+
+              ImGui::BeginDisabled(targets.size() >= 10000);
+
+              if (ImGui::SmallButton("Add binding")) {
+                std::uint32_t node{};
+
+                while (node < 10000
+                       && std::ranges::any_of(
+                           targets, [&](const Json& target) { return target["node"] == node; })) {
+                  ++node;
+                }
+
+                for (const auto& entity : m_snapshot["scene"]["entities"]) {
+                  if (node < 10000
+                      && !std::ranges::any_of(
+                          targets,
+                          [&](const Json& target) { return target["entity"] == entity["id"]; })) {
+                    targets.push_back({{"node", node}, {"entity", entity["id"]}});
+                    break;
+                  }
+                }
+              }
+
+              ImGui::EndDisabled();
               ImGui::TreePop();
             }
           } else {
@@ -6946,6 +7141,31 @@ namespace Dot::Editor {
       }
 
       ImGui::Separator();
+
+      if (ImGui::TreeNode("New animation from authoring pose")) {
+        ImGui::InputText("Clip path", &m_animationPath);
+        ImGui::InputText("Clip name", &m_animationName);
+        ImGui::InputDouble("Duration (seconds)", &m_animationDuration);
+        ImGui::TextWrapped(
+            "Creates a clip file and stages its player. Apply changes to attach it. "
+            "Scene Undo/Reset keeps the created file. Existing players capture all bindings; "
+            "ordinary objects bind themselves as node zero.");
+        ImGui::BeginDisabled(playing() || m_animationPreview || m_transform || pendingInspector()
+                             || pendingEnvironment() || pendingOcclusion() || m_text || m_material
+                             || m_pendingClose || m_captureDialog || m_sceneDialog);
+
+        if (ImGui::Button("Create clip and stage player")) {
+          action({{"command", "create-animation"},
+                  {"entity", m_edit["id"]},
+                  {"path", m_animationPath},
+                  {"name", m_animationName},
+                  {"duration", m_animationDuration}});
+        }
+
+        ImGui::EndDisabled();
+        ImGui::TreePop();
+      }
+
       ImGui::BeginDisabled(!pendingInspector());
 
       if (ImGui::Button("Apply changes")) {

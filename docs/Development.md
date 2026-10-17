@@ -11749,3 +11749,120 @@ whitespace/clang-format checks pass. Computer use reports the Mac locked; physic
 keyboard/IME/pointer and wrapped-panel acceptance remain unverified. Full streaming,
 stable larger-game pacing, final Prism art, long-run production evidence and the
 overall engine/editor goal remain unfinished.
+
+## 2026-10-18 — Pose animation creation and bindings
+
+Continue from the real Prism Relay authoring workflow after verifying clean tracked main at
+5c765b1, equal to origin/main. Preserve untracked local reference/output material.
+The missing production step was creating a native clip from the current authoring
+pose and attaching/editing its library/bindings without manually composing asset
+JSON. Use the repository development/validation skills; no subagents, dependencies,
+compiler/linker environment changes or distribution archives.
+
+Add the CPU-only Dot.Editor.AnimationCreation module. It owns an immutable clip,
+encoded native text and suggested player description. Existing players preserve
+all bindings, library entries and playback settings, append the new path and select
+its index; ordinary objects bind logical node zero to themselves. Every bound local
+TRS field gets identical linear keys at zero/end. Native float duration must remain
+positive and at most 86400 seconds. Shared codecs enforce paths/names/capacities.
+A cloned candidate and the actual AnimationPreview preflight validate enabled players' libraries,
+writer/physics authority and initial skins, including an enabled validation of a
+player whose saved settings remain disabled. No source scene or file is changed by
+preparation; failed work releases owned intermediate scenes, previews and clips.
+
+Inspector's New animation from authoring pose and strict create-animation share
+one implementation. Require active selection/current revision and stopped authoring
+without conflicting modes/forms/dialogs or another resource editor. Preallocate the
+candidate/response, prepare the ordinary entity edit, then publish through exclusive
+ResourceStore creation. Only after publication swap the staged Inspector component.
+Apply creates normal scene history; Reset/scene Undo keeps the separate resource.
+Existing files are preserved. Post-publication catalog failures explicitly report
+that the file was created and the player staged, including exception paths.
+
+The Animation Inspector now supports clip addition by explicit asset choice,
+replacement/removal with selected-index adjustment, and node binding add/remove or
+node/entity changes. These are ordinary staged fields, validated/applied through the
+same Inspector transport as agents. Duplicate clip choices/entities are filtered;
+invalid node/capacity/component values fail native validation. Removing a library row
+shifts later indices: the UI/docs warn that index-selecting scripts need updating.
+Keep at least one clip/binding. Update editor contracts, roadmap and Prism guidance;
+this is explicit mapping, not automatic rig generation, retargeting or layering.
+
+Six durable filesystem integration cases in the existing DotTests target cover local
+TRS seeds/source invariance, sparse bindings and disabled/reverse settings, invalid
+paths/names/durations/owners/duplicates, physics ancestors/competing writers/missing
+libraries, exclusive publication and actual document edit/history/save/preview, plus
+owned prepared data after source retirement and repeated failure/recovery. No new
+acceptance executable, desktop test window or graphics/audio device is introduced.
+
+Actual arm64 macOS checks, using the caller's existing CMake/LLVM environment:
+
+- Debug configure/build and full CTest: 1452/1452, 243.43 s. Final editor publication/
+  asset-picker refinements rebuilt Debug and passed 73 relevant tests in 17.46 s.
+- Release configure/build and full CTest: 1452/1452, 35.56 s; after the final asset
+  picker refinement, rebuilt Release and repeated 1452/1452 in 35.21 s. Release
+  assertions are disabled. Inventory is 438 unit, 1014 integration, 185 offscreen
+  GPU and 232 compiler labels; overlapping labels are not additive.
+- The six new focused cases pass independently. Unit tests remain device-free;
+  existing offscreen regressions remain separate from unit tests. Windows/Linux
+  execution is unverified.
+
+Actual CLI/JSON-controlled DotEditor creates a fresh editable Prism project from the
+packaged template. Create an ordinary light pose file, Reset without deleting it,
+refuse overwrite, Apply/Undo/Redo, append/remove a second clip, add/remove/retarget a
+binding, and audition the actual mapped player. Reject duplicate bindings. For the
+real Surveyor, preserve 67 bindings and seven locomotion slots, append Survey,
+Apply/Undo/Redo and save. New clip has 201 TRS tracks and 402 initial keys. Edit a
+head rotation key at one second (35-degree local yaw), rename, Undo/Redo, save and
+reopen: 403 keys, native mid-pose quaternion differs from the authored endpoint.
+Capture real skinned pixels/provenance. Native initial-skin validation succeeds;
+this is an authored action, not a final character-art/animation quality claim.
+
+Ten actual negative request cases cover unknown fields, boolean/zero duration,
+wrong selection/stale revision, existing file, duplicate binding, pending creation/
+Play and creation during audition. Failures retain scene/revision/dirty state and
+create no rejected destination. An initial verification helper misread the clip
+command's top-level response; retain its failure record, retire its owned editor
+through cancel-close/discard-clip/close, correct the helper and rerun successfully.
+No product behavior was substituted to satisfy that helper.
+
+Save an ordinary editable Survey scene copy with the Player movement script removed
+so native auto-play can exercise the new action without locomotion selecting a
+separate clip. Main remains a playable scene. The final current Release editor
+repeats the complete creation/binding/key workflow, then reopens from disk, runs
+movement/jump, actual menu save/restore/pause/Space resume, Stop and fresh isolated
+Play, and exports a temporary unpacked native game. Saved/stopped authoring pixels
+are byte-identical, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Compare every exported content file to the saved project, relocate the native
+package, temporarily hide its owned source project and run actual DotGame twice.
+119 content files total 66,702,500 bytes; no TS/source maps are shipped. Main movement/
+jump/menu checkpoint works. Load the saved Survey scene through the actual scene
+service: player has clip seven, movement script is absent, and 16 inspected head
+quaternions vary with a maximum Euclidean distance of 0.2726977. This proves the new
+clip is actually playing in the standalone product, not merely included in export.
+Return to main and restore the checkpoint; restart the process, observe fresh live
+data, read the persistent slot and restore it again. Both processes exit zero,
+control directories retire, and retained profiles contain no callback errors.
+Own native slot hash is
+b7114b3bcd797f2e397b7bd671955707594d84cdc7636c743709361425d87001.
+No FPS, latency bound or broad performance improvement is inferred from these runs.
+
+Record architecture, hashes, dependencies and load commands before cleanup. The
+current workspace editor matches the Release binary, exported game matches the
+current runtime kit, both are arm64 Mach-O, and native LLVM dependencies resolve
+relative to the executable. Packaged font hash remains
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Restore the owned source path and verify eleven prior persistent save hashes.
+Retain editable projects, saves, actual requests/responses, captures, profiles,
+manifests and delivery evidence under ignored build/animation-creation-review;
+remove only owned temporary App/native copies and helper/cache files.
+
+Review correctness, explicit ownership/error paths, separate file/history semantics,
+strict input/mode guards, module/platform assumptions, formatting and test coverage
+before committing. Whitespace and clang-format checks pass. Computer use still
+reports the Mac locked; physical mouse/keyboard, popup layout and narrow-panel
+acceptance are unverified. Complete dope sheet/tangent handles, rig construction/
+retargeting, state/layer production, large-scene workflow/performance, final Prism
+art and the overall production engine/editor goal remain unfinished.

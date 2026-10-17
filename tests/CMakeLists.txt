@@ -112,6 +112,7 @@ add_executable(DotTests
     ImageTests.cpp
     ImageExportTests.cpp
     AnimationPreviewTests.cpp
+    AnimationCreationTests.cpp
     AnimationDocumentTests.cpp
     SkeletonViewTests.cpp
     MaterialTests.cpp

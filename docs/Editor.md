@@ -1275,6 +1275,58 @@ retry. Agent clients normally use `dialog:false` and direct `save-capture`, with
 与字节数。已有目标须明确允许覆盖，拒绝链接、特殊/只读文件及大小写别名；原子替换前校验
 字节基线。系统对话框打开时保留父窗口并拒绝冲突操作；智能体通常直接指定路径保存。
 
+## Create animation from authoring pose / 从编辑姿态创建动画
+
+Select an ordinary scene object or an existing animation owner. In Inspector, expand
+**New animation from authoring pose**, choose an unused `assets/*.dotanimation` path,
+name and duration, then **Create clip and stage player**. This creates an exclusive
+resource file and stages the Animation component; **Apply changes** attaches/selects
+it in scene history. Reset or scene Undo keeps the separately created file. The same
+operation is available to agents:
+
+```json
+{"command":"create-animation","revision":"1","entity":"281","path":"assets/survey.dotanimation","name":"Survey","duration":2}
+```
+
+The fields are exact. The entity must be the active selection at the current authoring
+revision, while stopped, with no other preview/gesture/dialog, pending scene form or
+open text/material editor. Existing animation players keep every logical node binding,
+library entry and playback setting, append the new path and select its index. Disabled
+settings remain disabled, but creation preflights the candidate enabled. An ordinary
+object gets node zero bound to itself and normal player defaults. This does not guess
+rig bindings or retarget clips.
+
+Each bound entity contributes translation, rotation and scale channels from its current
+**authoring local pose**, with identical linear keys at zero and the requested end.
+Duration must be finite, positive after native float32 conversion and at most 86400
+seconds. Names, paths, library/binding/channel/key limits use the native codecs. Missing
+libraries of enabled players, conflicting animation writers, physics authority and invalid skin poses
+fail before file creation. Preparation uses the actual isolated animation implementation;
+it never saves a sampled preview pose or changes the source scene.
+
+Success returns `ok`, `path`, `staged:true`, `entity` and the unchanged scene `revision`.
+Inspect exposes the pending component; applying it creates one normal scene history
+entry. The file uses ResourceStore's path, metadata, size and exclusive-publication
+checks. Existing files are not overwritten. A failure refreshing the asset catalog
+explicitly reports that the file was created and the component staged; inspect/reset
+or apply that staged component before retrying. Scene history and resource publication
+are separate, serialized local operations.
+
+The Animation Inspector's **Clip library** supports Add, replacement and Remove;
+**Node bindings** supports Add, node/entity changes and Remove. These edit the ordinary
+staged Inspector value, using the same `stage-inspector` / `apply-inspector` transport.
+At least one clip and binding remain; native validation rejects duplicate/out-of-range
+nodes, duplicate entities/paths and missing targets. Removing a clip remaps the selected
+index and shifts later library indices; scripts that choose indices must be updated.
+Apply first, then **Edit animation clip** to use existing key editing, audition,
+undo/redo and save. Actual preview/Play/export validates referenced clip coverage.
+
+创建使用当前编辑局部姿态：已有播放器保留全部逻辑绑定及设置并追加资源，普通物体绑定自身。
+生成文件并暂存组件后，需明确应用到场景；重置/场景撤销不会删除资源文件。创建前用真实动画
+预览校验完整库、写入权限、物理与蒙皮，失败不发布新文件。绑定和库列表使用普通 Inspector
+草稿与严格接口，删除片段会改变后续索引，须相应修改按索引播放的脚本。此功能不包含自动
+重定向、骨骼制作、分层或完整 dope sheet。
+
 ## Isolated animation audition / 独立动画预览
 
 Select an entity with an enabled Animation player and use Preview animation in the
@@ -1350,7 +1402,7 @@ Stale generations cannot be read as a current viewport frame.
 恢复完整编辑场景，选择/历史/修订/保存状态不变。所有操作共用严格 JSON 实现；检查可读取
 实际预览场景、片段、时间及绑定姿态标记，过期会话无法影响新预览。PNG 同时记录该来源，
 结束预览后仍可保存已固定的画面。本功能用于动作检查；现有片段关键帧可通过下述编辑
-流程修改，骨架绑定、曲线和状态图工具仍待完成。
+流程修改；片段创建、库与节点映射见上文。骨骼结构制作、完整曲线/切线与状态图工具仍待完成。
 
 ## Live skeleton inspection
 
@@ -1775,20 +1827,20 @@ binding remap, quaternion sign correction or tangent rescaling is implicit.
 Apply 会再次调整；打开片段重置参数。候选选择、原生姿态和蒙皮预检后提交一步历史，失败
 保留文档、历史、预览、选择和参数。恒等操作保留修订、重做与预览时钟。
 
-This workflow edits existing bound library clips. Dope-sheet and graphical tangent-
-handle editing, visual binding/retargeting, state graphs/layers, root motion/events
+This workflow edits bound library clips, including newly created and applied pose clips.
+Dope-sheet and graphical tangent-handle editing, skeleton retargeting, state graphs/layers, root motion/events
 and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
 值和三次切线。键表单需显式应用/重置；插入与替换按原生 float 时间判断，不隐式移动旧键。
 候选片段和当前蒙皮姿态预检后才提交历史，失败保留旧草稿、姿态、时钟及会话。资源保存/
 撤销独立于场景历史，磁盘冲突不覆盖外部修改；关闭须保存或明确丢弃。所有操作有同源严格
-JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话。图形切线、绑定、状态图和大规模
+JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话。图形切线、骨骼制作/重定向、状态图和大规模
 动画生产能力仍待完成。
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键相对 TRS 调整已实现，完整 dope sheet、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
+多键相对 TRS 调整已实现，完整 dope sheet、图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
 
 
 ## Live script compilation

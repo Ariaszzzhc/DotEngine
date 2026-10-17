@@ -105,3 +105,19 @@ playback, pause, time scrubbing, speed/loop settings and bind pose. End preview 
 the untouched authoring scene. These operations use the same native animation players
 as Play; they do not run player/camera scripts, physics or audio. Agent commands and
 viewport PNG provenance are documented in [editor operations](../../docs/Editor.md).
+
+To author a separate action, select Surveyor while stopped and expand **New animation
+from authoring pose** in Inspector. Create an unused `assets/*.dotanimation` with a
+name and duration, then Apply the staged player. This appends a clip while preserving
+the imported binding map and seven locomotion entries. Use Edit animation clip to
+add keys, audition, undo/redo and save; the initial two keys hold the authored local
+pose, rather than copying a sampled locomotion clip. Clip library and Node bindings
+are editable Inspector lists with the same strict agent transport. Scene Undo keeps
+the separately created resource. Player scripts select library indices, so keep the
+seven locomotion entries in place or update the corresponding script indices.
+
+For a saved action-only scene, save a copy of the scene, remove the Player movement
+script in that copy and select the new auto-playing clip. The regular editor and
+native exporter can then run the authored action without the locomotion script
+selecting another clip. Keep the original gameplay scene to test movement, jumping,
+checkpoints and camera behavior. This does not add animation layers or retargeting.

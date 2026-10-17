@@ -122,6 +122,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Platform/AgentInput.cpp
     src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/AnimationPreview.cpp
+    src/Engine/Editor/AnimationCreation.cpp
     src/Engine/Editor/AnimationDocument.cpp
     src/Engine/Editor/AnimationClipboard.cpp
     src/Engine/Editor/AnimationKeyMove.cpp
@@ -270,6 +271,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Platform/AgentInput.cppm
         src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/AnimationPreview.cppm
+        src/Engine/Editor/AnimationCreation.cppm
         src/Engine/Editor/AnimationDocument.cppm
         src/Engine/Editor/AnimationClipboard.cppm
         src/Engine/Editor/AnimationKeyMove.cppm
