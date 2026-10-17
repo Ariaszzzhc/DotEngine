@@ -206,12 +206,13 @@ namespace Dot::Editor {
     return m_impl->apply([&] { return m_impl->m_players.pause(m_impl->m_owner); });
   }
 
-  auto AnimationPreview::seek(double seconds) -> Core::Result<void> {
+  auto AnimationPreview::seek(double seconds, bool pause) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
     }
 
-    auto applied = m_impl->apply([&] { return m_impl->m_players.seek(m_impl->m_owner, seconds); });
+    auto applied
+        = m_impl->apply([&] { return m_impl->m_players.seek(m_impl->m_owner, seconds, pause); });
 
     if (applied) {
       m_impl->m_bindPose = false;

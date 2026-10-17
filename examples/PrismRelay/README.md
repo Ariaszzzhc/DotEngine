@@ -134,9 +134,15 @@ Keep the action-only scene and main locomotion scene separately playable.
 
 The saved **Character action study** is available at `scenes/character-action.dotscene`.
 Open it in the editor, select Surveyor and edit library slot 7, or press Play to see
-the head/upper-arm action. Its peak keys share 0.75 seconds; its complete 201-channel
+the head/upper-arm action. Its peak keys share frame 24 at 30fps (0.8 seconds); its complete 201-channel
 clip remains editable at `assets/actions/inspection.dotanimation`. The study removes
 the Player movement script so native auto-play owns the action. Open `scenes/main.dotscene`
 to return to movement, jumping, camera and checkpoints. The main scene's seven
 locomotion slots are unchanged. The action is a small authoring example, not finished
 cinematic animation or final character art.
+
+For precise timing, open Frame options and choose 30/1, then enter frame 24 in
+Frame target. Previous/Next frame pause and sample the native pose atomically. Enable
+anchor snapping to move a group while preserving offsets, or Snap selected keys to
+quantize each selected key with collision rejection. Grid/display choices are workspace
+preferences, so choose the rate explicitly after opening a new editor process.

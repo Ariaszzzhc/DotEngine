@@ -109,4 +109,10 @@ of the authoring pose. The editable `scenes/character-action.dotscene` selects t
 auto-playing action with the locomotion script removed; main remains the movement/
 jump/checkpoint template. This is a timing/authoring example, not final cinematic art.
 
-- `actions/inspection.dotanimation`: `89677748aa67488d7a227563877df65539c9282ace793a0b1a1e3db98d393d8e`
+- `actions/inspection.dotanimation`: `6689bf19834626066af0f9292b101126e3a28473501a8c7103e265a19b8c2434`
+
+The inspection peak was subsequently aligned through DotEditor's shared rational frame
+grid and native group retime to frame 24 at 30fps (nominal 0.8 seconds; native float
+0.800000011920929). Only the three head/upper-arm key times changed; values, tangents,
+channels, bindings and the scene remain unchanged. Frame rate is an editor view
+preference; the asset retains seconds and does not alter runtime simulation timing.

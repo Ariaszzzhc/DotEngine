@@ -1828,7 +1828,7 @@ Apply 会再次调整；打开片段重置参数。候选选择、原生姿态�
 保留文档、历史、预览、选择和参数。恒等操作保留修订、重做与预览时钟。
 
 This workflow edits bound library clips, including newly created and applied pose clips.
-Frame-grid/snapping, graphical tangent-handle editing, skeleton retargeting, state graphs/layers, root motion/events
+Graphical tangent-handle editing, skeleton retargeting, state graphs/layers, root motion/events
 and production animation scalability remain unfinished.
 
 选择动画播放器后可编辑已有库片段：底部选择具名轨道、关键帧及时间，Inspector 编辑局部
@@ -1840,7 +1840,7 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 
 曲线面板现可查看原生 XYZ/XYZW 采样、选择键和时间范围。显式更新/移动已有键保持数量，
 新时间冲突时不覆盖原键；插入仍是独立操作。曲线仅是有界近似显示，不能证明全部中间姿态；
-多键相对 TRS 调整已实现，完整帧网格/吸附、图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
+多键相对 TRS 调整已实现，图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
 
 
 ## Multitrack dope sheet / 多轨时间表
@@ -1913,8 +1913,73 @@ form is also available:
 多轨视图使用同一时间轴展示真实通道，框选、跨轨 Shift 选择、拖动整组、复制/粘贴及批量
 删除共用原生文档与严格接口。密集行显示实际首尾时间与数量，不把聚合标记当成单个键；
 框选仍解析全部精确键，越界/过量/冲突保留此前状态。删除空通道后校验原生片段，拒绝空片段
-与单键三次通道，不造替代数据。完整帧网格/吸附、图形切线手柄、骨骼重定向与分层/状态图
+与单键三次通道，不造替代数据。图形切线手柄、骨骼重定向与分层/状态图
 制作仍未完成，不能仅因时间表存在就宣称动画生产能力成熟。
+
+## Animation frame grid / 动画帧网格
+
+**Frame options** selects an editing rate (integer presets and exact 24000/1001,
+30000/1001, 60000/1001), display units and snapping. Rates are normalized rational
+values between 1 and 240fps, with bounded input terms (numerator <=240000,
+denominator <=1001). The default workspace preference is 30/1, seconds display and
+snapping off. It persists across clips in that workspace, not into clip files or
+new editor processes. Clips remain continuous native float seconds. This is not
+a simulation-rate change, clip resampling, or drop-frame/SMPTE timecode.
+
+The ruler shows bounded aligned frame ticks when frame display or snapping is active.
+From/To fields then show frame coordinates (fractional view bounds are allowed);
+Curves retains the same native time geometry and shows frame coordinates/ruler lines.
+Frame tooltips distinguish on-grid native samples from approximate off-grid frame
+coordinates. **Frame target**, **Previous frame** and **Next frame** use exact zero-based
+frame indices. Successful frame/time scrubbing pauses with its native pose/clock
+transaction; invalid bounds or samples preserve the preceding playing/paused state.
+The ordinary audition `control-animation-preview` seek remains continuous and preserves
+playing state, independently of these explicit editing controls.
+
+Strict shared operations, each with exactly the fields shown:
+
+```json
+{"command":"set-animation-frame-grid","buffer":"1","revision":"1","numerator":30,"denominator":1,"snap":true,"display":"frames"}
+{"command":"set-animation-frame-view","buffer":"1","revision":"1","from":0,"to":60}
+{"command":"seek-animation-frame","buffer":"1","revision":"1","frame":24}
+{"command":"step-animation-frame","buffer":"1","revision":"1","direction":-1}
+{"command":"seek-animation-time","buffer":"1","revision":"1","seconds":0.798}
+{"command":"snap-animation-selection","buffer":"1","revision":"1"}
+{"command":"update-animation-key-move-frame","session":"1","frame":24}
+```
+
+Frame/rate fields are unsigned JSON integers, not strings/booleans/decimal approximations;
+frame zero is valid. Step direction is exactly integer -1 or 1. Grid/display changes, explicit seeks and selected-key snapping require the current resource
+buffer/revision and no pending key form/move/dialog. Frame views use the existing
+curve-view guards and never edit key forms. Frame-move updates use
+the existing move session. The frame rate cannot change during that move.
+`animationClip.frameGrid` reports canonical rate, snap/display, current continuous frame
+coordinate, nearest global grid sample (index/nominal seconds/native float), onGrid
+and an optional precision error. A nearest global grid sample may exceed a short clip;
+a mutation still validates actual clip duration before changing playback.
+
+With snapping enabled, dope-sheet/curve ruler clicks and scrubbing choose the nearest
+valid grid frame and pause only on success. Ordinary key-move time updates snap the
+**anchor**, retaining relative offsets for all selected keys. An exact return to its
+original source time restores original floats and a semantic no-op, even when that
+source was off-grid. An explicit frame update always uses the requested grid point.
+**Snap selected keys** instead quantizes each key independently in one native retime,
+with normal pose/skin preflight/history; occupied or collapsed times fail the entire
+edit. Repeated already-aligned snapping preserves revision, redo and preview identity.
+No snapping overwrites an unselected key or invents replacement keys.
+
+Nearest ties at a computed positive half-frame round upward. At the native 24-hour
+limit, neighboring high-rate frames can share one float time. An editing sample must
+round back to its intended nearest valid frame; otherwise it fails explicitly. Nominal
+ruler ticks do not promise that every tick can be stored. Frame stepping recognizes the
+same native float grid sample, so rounding at .8 seconds/30fps does not repeatedly step
+to frame 24 instead of frame 23. Off-grid times step strictly forward/back; no available
+adjacent frame or a frame past clip duration is an error, rather than a silent clamp.
+
+帧网格为工作区视图偏好，不写入资源、不改变游戏步频。设置帧率本身不改姿态、历史或时钟。
+显式定位/步进通过同一原生事务提交姿态、时钟与暂停，失败保留此前播放状态。拖动只吸附锚点，
+保留整组选中键的相对时间；“吸附所选键”则逐键量化，冲突整次拒绝。长时高帧率不能明确
+表示的 float 帧不自动改成邻帧。新进程应明确选择所需编辑帧率，运行时按保存的秒数播放。
 
 ## Live script compilation
 

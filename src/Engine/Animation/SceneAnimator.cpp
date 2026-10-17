@@ -371,7 +371,7 @@ namespace Dot::Animation {
     return {};
   }
 
-  auto SceneAnimator::seek(World::Scene& scene, double time) -> Core::Result<void> {
+  auto SceneAnimator::seek(World::Scene& scene, double time, bool pause) -> Core::Result<void> {
     auto checked = state();
 
     if (!checked) {
@@ -386,6 +386,11 @@ namespace Dot::Animation {
 
     if (applied) {
       m_impl->playback.time = time;
+
+      if (pause) {
+        m_impl->playback.playing = false;
+      }
+
       m_impl->playback.transition.reset();
       m_impl->m_transition.reset();
     }

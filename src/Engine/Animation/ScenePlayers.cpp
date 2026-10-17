@@ -705,7 +705,7 @@ namespace Dot::Animation {
     return stopped;
   }
 
-  auto ScenePlayers::seek(World::EntityId owner, double seconds) -> Core::Result<void> {
+  auto ScenePlayers::seek(World::EntityId owner, double seconds, bool pause) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
     }
@@ -716,7 +716,7 @@ namespace Dot::Animation {
       return std::unexpected(player.error());
     }
 
-    auto positioned = (*player)->animator.seek(*m_impl->scene, seconds);
+    auto positioned = (*player)->animator.seek(*m_impl->scene, seconds, pause);
 
     if (positioned) {
       (*player)->primed = true;

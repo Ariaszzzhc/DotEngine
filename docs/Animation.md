@@ -397,7 +397,7 @@ discards the ghost. Independent tools share clips; synchronize mutable access. T
 editor scopes the selection/gesture to current document identity/revision and native
 preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
 for shared GUI/agent selection, move and relative TRS value adjustment operations.
-Frame-grid/snapping, graphical tangent handles and state/layer authoring remain unfinished.
+Graphical tangent handles and state/layer authoring remain unfinished.
 
 多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
 同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。
@@ -439,7 +439,7 @@ target references, without changing the clipboard or any resource/preview/histor
 The editor performs its actual native pose/skin preflight before one publication;
 source/destination resources remain distinct from the authoring scene. Every UI action
 has the same strict [editor operation](Editor.md#animation-clip-editing). Retargeting,
-frame-grid/snapping, graphical tangent handles and layered/state-machine tools remain open.
+graphical tangent handles and layered/state-machine tools remain open.
 
 KeyGroup 拥有不可变、有序的所选记录及原模式/时间范围，可包含部分三次键；源片段销毁/
 修改不影响它，放置结果独立拥有，时间越界或 float 重叠时不改原组。PasteKeys 按时间归并，
@@ -461,3 +461,18 @@ native validation rejects an empty clip or a single-key cubic channel; no hold k
 or interpolation fallback is inserted. Ordered batches remain atomic. The editor's
 Delete selected keys uses ordinary history and native skin/authority preflight.
 See [the shared editor workflow](Editor.md#multitrack-dope-sheet--多轨时间表).
+
+
+## Rational frame editing and paused seeks
+
+Dot.Editor.AnimationFrames provides bounded rational view grids, nominal ruler ticks,
+nearest native samples and adjacent frame stepping. Rates are editor preferences;
+assets remain float seconds. Mutations reject a native float sample that maps to a
+different nearest valid frame, rather than silently accepting a long-duration alias.
+See [frame editing](Editor.md#animation-frame-grid--动画帧网格) for limits and strict controls.
+
+SceneAnimator, ScenePlayers and AnimationPreview seek accept an optional pause flag
+(default false). The animator commits that flag only after successful pose application,
+together with the new clock and transition cancellation. Invalid times/samples retain
+the prior pose, clock and playing state; controls still synchronize player descriptions
+according to the existing ScenePlayers contract. Existing runtime seek behavior is unchanged.

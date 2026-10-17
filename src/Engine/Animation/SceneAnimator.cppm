@@ -60,10 +60,12 @@ export namespace Dot::Animation {
     [[nodiscard]] auto pause() -> Core::Result<void>;
     /** Finite time within [0,duration]. Unanimated fields use current scene values.
      * All channel evaluation and local updates commit together through setTransforms;
-     * invalid samples/scene failures preserve every pose and playback state.
+     * invalid samples/scene failures preserve every pose and playback state. Optional
+     * pause commits only after the pose succeeds, atomically with the new clock.
      * 有限时间须在 [0,时长]，未动画字段使用当前场景值；通道求值及局部批量修改一起提交，
-     * 无效采样/场景失败保留全部姿态及播放状态。 */
-    [[nodiscard]] auto seek(World::Scene& scene, double time) -> Core::Result<void>;
+     * 无效采样/场景失败保留全部姿态及播放状态；可选暂停仅随成功姿态/时钟一起提交。 */
+    [[nodiscard]] auto seek(World::Scene& scene, double time, bool pause = false)
+        -> Core::Result<void>;
     /** Finite elapsed seconds [0,86400]. Loop wraps in either direction; nonlooping
      * playback holds the terminal sample and pauses. No hidden wall clock.
      * 有限经过秒数 [0,86400]；循环支持双向回绕，非循环到端点后保持并暂停，无隐藏时钟。 */

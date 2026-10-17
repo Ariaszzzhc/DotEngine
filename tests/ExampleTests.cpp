@@ -1257,7 +1257,17 @@ TEST_CASE("prism.authored_action_scene_keeps_gameplay_separate_and_animates_real
     REQUIRE(preview.seek(0));
     auto posed = preview.scene().value();
     const auto start = posed->transform(posed->findEntity(target->id.value).value()).value();
-    REQUIRE(preview.seek(.75));
+    const auto binding = std::ranges::find_if(player.properties.targets, [&](const auto& item) {
+      return item.entity == target->id.value;
+    });
+    REQUIRE(binding != player.properties.targets.end());
+    const auto track = std::ranges::find_if(description->tracks, [&](const auto& item) {
+      return item.node == binding->node && item.path == Dot::Animation::Path::Rotation;
+    });
+    REQUIRE(track != description->tracks.end());
+    REQUIRE(track->keys.size() == 3);
+    CHECK(track->keys[1].time == .8F);
+    REQUIRE(preview.seek(.8F));
     posed = preview.scene().value();
     const auto peak = posed->transform(posed->findEntity(target->id.value).value()).value();
     const auto dot = start.rotation.x * peak.rotation.x + start.rotation.y * peak.rotation.y

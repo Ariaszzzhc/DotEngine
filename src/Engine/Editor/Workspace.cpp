@@ -43,6 +43,7 @@ import Dot.Editor.AnimationDocument;
 import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
+import Dot.Editor.AnimationFrames;
 import Dot.Editor.AnimationClipboard;
 import Dot.Animation.Files;
 import Dot.Animation.Source;
@@ -588,6 +589,13 @@ namespace Dot::Editor {
     std::uint64_t m_timelineBuffer{};
     std::uint64_t m_timelineRevision{};
     bool m_dopeSheet{true};
+    AnimationFrames m_frames = AnimationFrames::create().value();
+    bool m_frameSnap{};
+    bool m_frameDisplay{};
+    ImU64 m_frameInput{};
+    AnimationRate m_frameRateForm{};
+    bool m_frameSnapForm{};
+    bool m_frameDisplayForm{};
 
     struct TimelineBox {
       std::uint64_t buffer;
@@ -2514,6 +2522,25 @@ namespace Dot::Editor {
               {"occupied", value->occupied}};
     }
 
+    auto frameStatus() const -> Json {
+      const auto rate = m_frames.rate();
+      Json result{{"numerator", rate.numerator},
+                  {"denominator", rate.denominator},
+                  {"snap", m_frameSnap},
+                  {"display", m_frameDisplay ? "frames" : "seconds"}};
+      const auto preview = m_animationPreview->stats().value();
+      const auto seconds = preview.player.playback.time;
+      const auto nearest = m_frames.nearest(seconds);
+      result["coordinate"] = m_frames.coordinate(seconds).value();
+      result["nearest"] = nearest ? Json{{"index", nearest->index},
+                                         {"seconds", nearest->seconds},
+                                         {"native", nearest->native}}
+                                  : Json(nullptr);
+      result["onGrid"] = nearest && static_cast<float>(seconds) == nearest->native;
+      result["error"] = nearest ? Json(nullptr) : errorJson(nearest.error())["error"];
+      return result;
+    }
+
     auto clipStatus() const -> Json {
       if (!m_clipDocument) {
         return nullptr;
@@ -2534,6 +2561,7 @@ namespace Dot::Editor {
 
       return {{"buffer", std::to_string(m_buffer)},
               {"editorView", m_dopeSheet ? "dope-sheet" : "curves"},
+              {"frameGrid", frameStatus()},
               {"revision", std::to_string(state->revision)},
               {"path", state->path},
               {"name", value->name},
@@ -2665,6 +2693,30 @@ namespace Dot::Editor {
       request["buffer"] = std::to_string(m_buffer);
       request["revision"] = std::to_string(m_clipDocument->snapshot()->revision);
       return sessionAction(request);
+    }
+
+    auto seekClipTime(double seconds) -> bool {
+      return clipAction({{"command", "seek-animation-time"}, {"seconds", seconds}});
+    }
+
+    auto clipTimeLabel(double seconds) const -> std::string {
+      char label[128];
+
+      if (m_frameDisplay) {
+        const auto near = m_frames.nearest(seconds);
+
+        if (near && static_cast<float>(seconds) == near->native) {
+          std::snprintf(label, sizeof(label), "%llu f / %.9g s",
+                        static_cast<unsigned long long>(near->index), seconds);
+        } else {
+          std::snprintf(label, sizeof(label), "~%.4f f / %.9g s",
+                        m_frames.coordinate(seconds).value(), seconds);
+        }
+      } else {
+        std::snprintf(label, sizeof(label), "%.9g s", seconds);
+      }
+
+      return label;
     }
 
     auto cancelKeyMove() noexcept -> void {
@@ -3115,6 +3167,7 @@ namespace Dot::Editor {
       }
 
       if (command == "begin-animation-key-move" || command == "update-animation-key-move"
+          || command == "update-animation-key-move-frame"
           || command == "finish-animation-key-move") {
         const bool begin = command == "begin-animation-key-move";
         const bool finish = command == "finish-animation-key-move";
@@ -3122,7 +3175,10 @@ namespace Dot::Editor {
         if (begin) {
           Codec::requireFields(parsed, {"command", "buffer", "revision"});
         } else {
-          Codec::requireFields(parsed, {"command", "session", finish ? "commit" : "time"});
+          Codec::requireFields(parsed, {"command", "session",
+                                        finish                                         ? "commit"
+                                        : command == "update-animation-key-move-frame" ? "frame"
+                                                                                       : "time"});
         }
 
         const bool cancel = finish && !parsed["commit"].get<bool>();
@@ -3165,7 +3221,25 @@ namespace Dot::Editor {
           if (cancel) {
             cancelKeyMove();
           } else if (!finish) {
-            auto updated = m_clipMove->move.update(Codec::number(parsed["time"]));
+            const bool frame = command == "update-animation-key-move-frame";
+            const auto original = m_clipMove->move.snapshot()->keys.back().sourceTime;
+            const auto time = frame ? 0. : curveTime(parsed["time"]);
+            float target{};
+
+            if (frame || (m_frameSnap && time != double(original))) {
+              auto sampled = frame ? m_frames.sample(clipIndex(parsed["frame"], 20736000))
+                                   : m_frames.nearest(time);
+
+              if (!sampled) {
+                return std::unexpected(sampled.error());
+              }
+
+              target = sampled->native;
+            } else {
+              target = Codec::number(parsed["time"]);
+            }
+
+            auto updated = m_clipMove->move.update(target);
 
             if (!updated) {
               return std::unexpected(updated.error());
@@ -3207,6 +3281,148 @@ namespace Dot::Editor {
                                                            + selected.error().message);
             }
           }
+        }
+
+        return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+            .dump();
+      }
+
+      if (command == "set-animation-frame-grid" || command == "seek-animation-frame"
+          || command == "step-animation-frame" || command == "seek-animation-time"
+          || command == "snap-animation-selection") {
+        if (command == "set-animation-frame-grid") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "numerator", "denominator",
+                                        "snap", "display"});
+        } else if (command == "snap-animation-selection") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision",
+                                        command == "seek-animation-frame"   ? "frame"
+                                        : command == "step-animation-frame" ? "direction"
+                                                                            : "seconds"});
+        }
+
+        if (!m_clipDocument || !m_animationPreview || Codec::id(parsed["buffer"]) != m_buffer
+            || Codec::id(parsed["revision"]) != m_clipDocument->snapshot()->revision || m_clipMove
+            || m_clipForm != m_clipOriginal || m_pendingClose || m_captureDialog) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Frame editing requires current clip and no pending form/move/dialog");
+        }
+
+        if (command == "set-animation-frame-grid") {
+          auto grid = AnimationFrames::create(
+              {clipIndex(parsed["numerator"], 240000), clipIndex(parsed["denominator"], 1001)});
+          const auto display = parsed["display"].get<std::string>();
+
+          if (!grid || !parsed["snap"].is_boolean()
+              || (display != "frames" && display != "seconds")) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid animation frame grid settings");
+          }
+
+          m_frames = *grid;
+          m_frameSnap = parsed["snap"].get<bool>();
+          m_frameDisplay = display == "frames";
+          m_timelineBox.reset();
+        } else if (command == "snap-animation-selection") {
+          Animation::RetimeKeys edit;
+
+          for (const auto& key : m_clipSelection) {
+            auto target = m_frames.nearest(key.time);
+
+            if (!target) {
+              return std::unexpected(target.error());
+            }
+
+            edit.keys.push_back({key.node, key.path, key.time, target->native});
+          }
+
+          const auto state = m_clipDocument->snapshot().value();
+          const std::array<Animation::ClipEdit, 1> operations{edit};
+          auto candidate = Animation::editClip(state.value, operations);
+
+          if (!candidate) {
+            return std::unexpected(candidate.error());
+          }
+
+          std::vector<Animation::KeyReference> keys;
+
+          for (const auto& key : edit.keys) {
+            keys.push_back({key.node, key.path, key.target});
+          }
+
+          auto selected = prepareClipSelection(*candidate, std::move(keys));
+
+          if (!selected) {
+            return std::unexpected(selected.error());
+          }
+
+          auto published = publishClipValue(state, *candidate);
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+
+          if (*published) {
+            publishClipSelection(std::move(*selected));
+          }
+        } else {
+          const auto playback = m_animationPreview->stats()->player;
+          Core::Result<AnimationFrame> frame
+              = Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation frame request");
+
+          if (command == "seek-animation-frame") {
+            frame = m_frames.sample(clipIndex(parsed["frame"], 20736000));
+          } else if (command == "step-animation-frame") {
+            if (!parsed["direction"].is_number_integer()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Frame step direction must be -1 or 1");
+            }
+
+            const auto direction = parsed["direction"].get<double>();
+
+            if (direction != -1 && direction != 1) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Frame step direction must be -1 or 1");
+            }
+
+            frame = m_frames.adjacent(playback.playback.time, static_cast<int>(direction));
+          } else {
+            const auto seconds = curveTime(parsed["seconds"]);
+
+            if (!m_frameSnap) {
+              auto positioned = m_animationPreview->seek(seconds, true);
+
+              if (!positioned) {
+                return std::unexpected(positioned.error());
+              }
+
+              m_previewReady = false;
+              return Json{
+                  {"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+                  .dump();
+            }
+
+            frame = m_frames.nearest(seconds);
+          }
+
+          if (!frame) {
+            return std::unexpected(frame.error());
+          }
+
+          if (frame->seconds > playback.duration || frame->native > playback.duration) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Animation frame exceeds this clip's duration");
+          }
+
+          auto positioned = m_animationPreview->seek(frame->native, true);
+
+          if (!positioned) {
+            return std::unexpected(positioned.error());
+          }
+
+          m_frameInput = frame->index;
+          m_previewReady = false;
         }
 
         return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
@@ -3366,9 +3582,10 @@ namespace Dot::Editor {
           || command == "apply-animation-key-adjustment" || command == "stage-animation-key"
           || command == "reset-animation-key" || command == "apply-animation-key"
           || command == "move-animation-key" || command == "read-animation-curve"
-          || command == "set-animation-curve-view" || command == "edit-animation-clip"
-          || command == "undo-animation-clip" || command == "redo-animation-clip"
-          || command == "save-animation-clip" || command == "close-animation") {
+          || command == "set-animation-curve-view" || command == "set-animation-frame-view"
+          || command == "edit-animation-clip" || command == "undo-animation-clip"
+          || command == "redo-animation-clip" || command == "save-animation-clip"
+          || command == "close-animation") {
         if (command == "inspect-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer"});
         } else if (command == "list-animation-tracks") {
@@ -3390,7 +3607,7 @@ namespace Dot::Editor {
         } else if (command == "read-animation-curve") {
           Codec::requireFields(
               parsed, {"command", "buffer", "revision", "node", "path", "from", "to", "samples"});
-        } else if (command == "set-animation-curve-view") {
+        } else if (command == "set-animation-curve-view" || command == "set-animation-frame-view") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "from", "to"});
         } else if (command == "edit-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "operations"});
@@ -3588,9 +3805,19 @@ namespace Dot::Editor {
                        : Core::Result<std::string>{std::unexpected(curve.error())};
         }
 
-        if (command == "set-animation-curve-view") {
-          const auto from = curveTime(parsed["from"]);
-          const auto to = curveTime(parsed["to"]);
+        if (command == "set-animation-curve-view" || command == "set-animation-frame-view") {
+          const bool frames = command == "set-animation-frame-view";
+          auto fromValue = frames ? m_frames.seconds(curveTime(parsed["from"]))
+                                  : Core::Result<double>{curveTime(parsed["from"])};
+          auto toValue = frames ? m_frames.seconds(curveTime(parsed["to"]))
+                                : Core::Result<double>{curveTime(parsed["to"])};
+
+          if (!fromValue || !toValue) {
+            return std::unexpected(!fromValue ? fromValue.error() : toValue.error());
+          }
+
+          const auto from = *fromValue;
+          const auto to = *toValue;
 
           if (from < 0 || to > 86400 || to - from < 1e-6) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -10203,6 +10430,7 @@ namespace Dot::Editor {
 
     auto updateClipPointerMove(float minX, float maxX) -> void {
       const auto mouse = ImGui::GetMousePos();
+
       if (m_curveDrag) {
         const auto drag = *m_curveDrag;
         const auto focused = m_application->window().focused();
@@ -10225,11 +10453,11 @@ namespace Dot::Editor {
           if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
                || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
               && (std::abs(mouse.x - drag.mouseStart) >= 3 || value.changed)) {
-            const auto target = static_cast<float>(
-                std::clamp(double(drag.sourceTime)
-                               + (mouse.x - drag.mouseStart) / (drag.maxX - drag.minX)
-                                     * (m_curveTo - m_curveFrom),
-                           0., 86400.));
+            const auto target
+                = std::clamp(double(drag.sourceTime)
+                                 + (mouse.x - drag.mouseStart) / (drag.maxX - drag.minX)
+                                       * (m_curveTo - m_curveFrom),
+                             0., 86400.);
 
             if (target != value.time) {
               sessionAction({{"command", "update-animation-key-move"},
@@ -10249,6 +10477,19 @@ namespace Dot::Editor {
     }
 
     auto animationCurve(const AnimationSnapshot& state, const Animation::Track& track) -> void {
+      std::vector<FrameTick> frameTicks;
+
+      if (m_frameDisplay || m_frameSnap) {
+        auto ticks = m_frames.ticks(m_curveFrom, m_curveTo);
+
+        if (!ticks) {
+          ImGui::TextWrapped("%s", ticks.error().message.c_str());
+          return;
+        }
+
+        frameTicks = std::move(*ticks);
+      }
+
       constexpr std::array paths{"translation", "rotation", "scale"};
       const auto* path = paths.at(static_cast<std::size_t>(track.path));
       const auto cacheKey
@@ -10339,9 +10580,21 @@ namespace Dot::Editor {
                     ImGui::GetColorU32(ImGuiCol_TextDisabled), valuesLabel);
 
       char range[100];
-      std::snprintf(range, sizeof(range), "%.6g - %.6g s", m_curveFrom, m_curveTo);
+      if (m_frameDisplay) {
+        std::snprintf(range, sizeof(range), "%.4f - %.4f f",
+                      m_frames.coordinate(m_curveFrom).value(),
+                      m_frames.coordinate(m_curveTo).value());
+      } else {
+        std::snprintf(range, sizeof(range), "%.6g - %.6g s", m_curveFrom, m_curveTo);
+      }
+
       draw->AddText({minimum.x, maximum.y + 3}, ImGui::GetColorU32(ImGuiCol_Text), range);
       draw->PushClipRect(minimum, maximum, true);
+
+      for (const auto& tick : frameTicks) {
+        const auto pixel = x(tick.seconds);
+        draw->AddLine({pixel, minimum.y}, {pixel, maximum.y}, ImGui::GetColorU32(ImGuiCol_Border));
+      }
 
       for (int line = 0; line <= 4; ++line) {
         const auto at = minimum.y + (maximum.y - minimum.y) * static_cast<float>(line) / 4;
@@ -10409,7 +10662,7 @@ namespace Dot::Editor {
       }
 
       if (hovered && hit) {
-        ImGui::SetTooltip("%.9g s / drag horizontally to move key", double(hit->time));
+        ImGui::SetTooltip("%s / drag horizontally to move key", clipTimeLabel(hit->time).c_str());
       } else if (hovered && !m_clipMove) {
         const auto time = std::clamp(
             m_curveFrom
@@ -10454,10 +10707,7 @@ namespace Dot::Editor {
               m_curveFrom
                   + (mouse.x - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
               m_curveFrom, m_curveTo);
-          sessionAction({{"command", "control-animation-preview"},
-                         {"session", std::to_string(m_animationSession)},
-                         {"action", "seek"},
-                         {"seconds", time}});
+          seekClipTime(time);
         }
       }
 
@@ -10492,6 +10742,19 @@ namespace Dot::Editor {
      * 原生通道共用时间轴；框选标记仅为几何反馈，释放后通过智能体共用的有界范围命令提交，
      * 拖键复用曲线编辑器的整组事务与原生姿态预检。 */
     auto animationDopeSheet(const AnimationSnapshot& state) -> void {
+      std::vector<FrameTick> frameTicks;
+
+      if (m_frameDisplay || m_frameSnap) {
+        auto ticks = m_frames.ticks(m_curveFrom, m_curveTo);
+
+        if (!ticks) {
+          ImGui::TextWrapped("%s", ticks.error().message.c_str());
+          return;
+        }
+
+        frameTicks = std::move(*ticks);
+      }
+
       /** Toolbar history/deletion may commit earlier in this GUI frame. Never
        * interpret the former positional row numbers against a newer document.
        * 工具栏可能已在本帧提交历史/删除，禁止把旧位置行号解释为新文档的行。 */
@@ -10516,7 +10779,8 @@ namespace Dot::Editor {
       }
 
       ImGui::TableSetupColumn("Node / channel", ImGuiTableColumnFlags_WidthFixed, 210);
-      ImGui::TableSetupColumn("Time (seconds)", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn(m_frameDisplay ? "Time (frames)" : "Time (seconds)",
+                              ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupScrollFreeze(1, 2);
       ImGui::TableHeadersRow();
       ImGui::TableNextRow();
@@ -10541,11 +10805,24 @@ namespace Dot::Editor {
       const auto& io = ImGui::GetIO();
       const bool pending = m_clipForm != m_clipOriginal;
 
-      for (int tick = 0; tick <= 8; ++tick) {
-        const auto time = m_curveFrom + (m_curveTo - m_curveFrom) * tick / 8;
-        const float pixel = x(time);
-        char label[32];
-        std::snprintf(label, sizeof(label), "%.4g", time);
+      std::vector<FrameTick> ruler = frameTicks;
+
+      if (!m_frameDisplay && !m_frameSnap) {
+        for (int tick = 0; tick <= 8; ++tick) {
+          ruler.push_back({0, m_curveFrom + (m_curveTo - m_curveFrom) * tick / 8});
+        }
+      }
+
+      for (const auto& tick : ruler) {
+        const float pixel = x(tick.seconds);
+        char label[40];
+
+        if (m_frameDisplay) {
+          std::snprintf(label, sizeof(label), "%llu", static_cast<unsigned long long>(tick.index));
+        } else {
+          std::snprintf(label, sizeof(label), "%.4g", tick.seconds);
+        }
+
         const auto width = ImGui::CalcTextSize(label).x;
         draw->AddText(
             {std::clamp(pixel - width * .5F, minimum.x, std::max(minimum.x, maximum.x - width)),
@@ -10554,10 +10831,7 @@ namespace Dot::Editor {
       }
 
       if (ImGui::IsItemClicked() && !pending && !m_clipMove && !m_timelineBox) {
-        sessionAction({{"command", "control-animation-preview"},
-                       {"session", std::to_string(m_animationSession)},
-                       {"action", "seek"},
-                       {"seconds", at(mouse.x)}});
+        seekClipTime(at(mouse.x));
       }
 
       struct RowRect {
@@ -10628,6 +10902,11 @@ namespace Dot::Editor {
             float distance = 7;
             draw->PushClipRect(low, high, true);
 
+            for (const auto& tick : frameTicks) {
+              const auto pixel = x(tick.seconds);
+              draw->AddLine({pixel, low.y}, {pixel, high.y}, ImGui::GetColorU32(ImGuiCol_Border));
+            }
+
             for (float time : row.times) {
               const float pixel = x(time);
               const bool chosen = m_clipSelected.contains({row.node, row.path, time});
@@ -10678,7 +10957,7 @@ namespace Dot::Editor {
             draw->PopClipRect();
 
             if (hovered && hit) {
-              ImGui::SetTooltip("%.9g s / drag selected keys together", double(*hit));
+              ImGui::SetTooltip("%s / drag selected keys together", clipTimeLabel(*hit).c_str());
             } else if (hovered && denseHit) {
               ImGui::SetTooltip(
                   "%zu keys / %.9g to %.9g s\nClick to select exact keys; zoom to edit individual "
@@ -10771,10 +11050,7 @@ namespace Dot::Editor {
             if (moved) {
               chooseRange(from, to, first, last, box.mode);
             } else {
-              sessionAction({{"command", "control-animation-preview"},
-                             {"session", std::to_string(m_animationSession)},
-                             {"action", "seek"},
-                             {"seconds", at(mouse.x)}});
+              seekClipTime(at(mouse.x));
             }
           } else if (mouse.y < visible.front().min.y + 8) {
             ImGui::SetScrollY(std::max(0.F, ImGui::GetScrollY() - rowHeight * .6F));
@@ -10885,20 +11161,100 @@ namespace Dot::Editor {
         }
       }
 
+      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+      ImGui::SetNextItemWidth(90);
+
+      if (ImGui::InputScalar("Frame target", ImGuiDataType_U64, &m_frameInput, nullptr, nullptr,
+                             "%llu", ImGuiInputTextFlags_EnterReturnsTrue)) {
+        clipAction({{"command", "seek-animation-frame"}, {"frame", m_frameInput}});
+      }
+
+      if (nextButton("Previous frame")) {
+        clipAction({{"command", "step-animation-frame"}, {"direction", -1}});
+      }
+
+      if (nextButton("Next frame")) {
+        clipAction({{"command", "step-animation-frame"}, {"direction", 1}});
+      }
+
+      if (nextButton("Frame options")) {
+        m_frameRateForm = m_frames.rate();
+        m_frameSnapForm = m_frameSnap;
+        m_frameDisplayForm = m_frameDisplay;
+        ImGui::OpenPopup("Animation frame grid");
+      }
+
+      ImGui::EndDisabled();
+      ImGui::TextDisabled("%s", clipTimeLabel(preview->player.playback.time).c_str());
+
+      if (ImGui::BeginPopup("Animation frame grid")) {
+        constexpr std::array presets{std::pair{"24", AnimationRate{24, 1}},
+                                     std::pair{"25", AnimationRate{25, 1}},
+                                     std::pair{"30", AnimationRate{30, 1}},
+                                     std::pair{"48", AnimationRate{48, 1}},
+                                     std::pair{"50", AnimationRate{50, 1}},
+                                     std::pair{"60", AnimationRate{60, 1}},
+                                     std::pair{"120", AnimationRate{120, 1}},
+                                     std::pair{"240", AnimationRate{240, 1}},
+                                     std::pair{"23.976 (24000/1001)", AnimationRate{24000, 1001}},
+                                     std::pair{"29.97 (30000/1001)", AnimationRate{30000, 1001}},
+                                     std::pair{"59.94 (60000/1001)", AnimationRate{60000, 1001}}};
+        const auto rateText = std::to_string(m_frameRateForm.numerator) + "/"
+                              + std::to_string(m_frameRateForm.denominator) + " fps";
+
+        if (ImGui::BeginCombo("Editing rate", rateText.c_str())) {
+          for (const auto& [name, rate] : presets) {
+            if (ImGui::Selectable(name, m_frameRateForm == rate)) {
+              m_frameRateForm = rate;
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        if (ImGui::TreeNode("Custom rate")) {
+          ImGui::InputScalar("Numerator", ImGuiDataType_U32, &m_frameRateForm.numerator);
+          ImGui::InputScalar("Denominator", ImGuiDataType_U32, &m_frameRateForm.denominator);
+          ImGui::TreePop();
+        }
+
+        ImGui::Checkbox("Snap drag anchor and scrubbing", &m_frameSnapForm);
+        ImGui::Checkbox("Display frames", &m_frameDisplayForm);
+        ImGui::TextWrapped(
+            "Workspace view preference; this does not change game timing or resample the clip. "
+            "Explicit frame operations pause after a successful seek. No drop-frame timecode.");
+
+        if (ImGui::Button("Apply frame grid")) {
+          if (clipAction({{"command", "set-animation-frame-grid"},
+                          {"numerator", m_frameRateForm.numerator},
+                          {"denominator", m_frameRateForm.denominator},
+                          {"snap", m_frameSnapForm},
+                          {"display", m_frameDisplayForm ? "frames" : "seconds"}})) {
+            ImGui::CloseCurrentPopup();
+          }
+        }
+
+        if (!m_message.empty()) {
+          ImGui::TextWrapped("%s", m_message.c_str());
+        }
+
+        ImGui::EndPopup();
+      }
+
       float time = static_cast<float>(preview->player.playback.time);
       const bool compact = ImGui::GetContentRegionAvail().x >= 600;
+      ImGui::BeginDisabled(pending || m_clipMove.has_value());
       ImGui::SetNextItemWidth(compact ? ImGui::GetContentRegionAvail().x - 320 : -1);
 
       if (ImGui::SliderFloat("##clip-time", &time, 0, static_cast<float>(preview->player.duration),
                              "%.6f s")) {
-        sessionAction({{"command", "control-animation-preview"},
-                       {"session", std::to_string(m_animationSession)},
-                       {"action", "seek"},
-                       {"seconds", time}});
+        seekClipTime(time);
       }
 
-      auto from = m_curveFrom;
-      auto to = m_curveTo;
+      ImGui::EndDisabled();
+
+      auto from = m_frameDisplay ? m_frames.coordinate(m_curveFrom).value() : m_curveFrom;
+      auto to = m_frameDisplay ? m_frames.coordinate(m_curveTo).value() : m_curveTo;
 
       if (compact) {
         ImGui::SameLine();
@@ -10906,15 +11262,19 @@ namespace Dot::Editor {
 
       ImGui::BeginDisabled(m_clipMove.has_value());
       ImGui::SetNextItemWidth(80);
-      bool rangeChanged = ImGui::InputDouble("From##curve", &from, 0, 0, "%.6g",
-                                             ImGuiInputTextFlags_EnterReturnsTrue);
+      bool rangeChanged
+          = ImGui::InputDouble(m_frameDisplay ? "From (f)##curve" : "From (s)##curve", &from, 0, 0,
+                               "%.6g", ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::SameLine();
       ImGui::SetNextItemWidth(80);
-      rangeChanged |= ImGui::InputDouble("To##curve", &to, 0, 0, "%.6g",
-                                         ImGuiInputTextFlags_EnterReturnsTrue);
+      rangeChanged |= ImGui::InputDouble(m_frameDisplay ? "To (f)##curve" : "To (s)##curve", &to, 0,
+                                         0, "%.6g", ImGuiInputTextFlags_EnterReturnsTrue);
 
       if (rangeChanged) {
-        clipAction({{"command", "set-animation-curve-view"}, {"from", from}, {"to", to}});
+        clipAction(
+            {{"command", m_frameDisplay ? "set-animation-frame-view" : "set-animation-curve-view"},
+             {"from", from},
+             {"to", to}});
       }
 
       if (nextButton("Fit time")) {
@@ -10930,6 +11290,10 @@ namespace Dot::Editor {
 
         if (ImGui::Button("Move selected keys")) {
           clipAction({{"command", "begin-animation-key-move"}});
+        }
+
+        if (nextButton("Snap selected keys")) {
+          clipAction({{"command", "snap-animation-selection"}});
         }
 
         if (nextButton("Delete selected keys")) {

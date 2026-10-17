@@ -59,7 +59,9 @@ export namespace Dot::Editor {
     /** Seek within [0,duration], preserving paused/playing state. Bind pose resets
      * animated fields and pauses; neither operation changes saved descriptions.
      * 在 [0,时长] 内定位，保留播放/暂停状态；bindPose 恢复动画字段并暂停，均不修改保存描述。 */
-    [[nodiscard]] auto seek(double seconds) -> Core::Result<void>;
+    /** Pause, if requested, commits only with a successful native seek.
+     * 若请求暂停，仅随成功的原生定位一起提交。 */
+    [[nodiscard]] auto seek(double seconds, bool pause = false) -> Core::Result<void>;
     [[nodiscard]] auto bindPose() -> Core::Result<void>;
     [[nodiscard]] auto configure(double speed, bool looping) -> Core::Result<void>;
     /** Explicit elapsed seconds [0,1], without a hidden wall clock. Native sample

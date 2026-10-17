@@ -12015,3 +12015,158 @@ checks pass. Computer use still reports the Mac locked: physical marquee/key dra
 narrow-panel layout and pointer/IME acceptance remain unverified. Frame-grid/snapping,
 graphical tangent handles, rig/retargeting/state/layer authoring, larger-game pacing/
 scale, final Prism art and overall production readiness remain unfinished.
+
+## 2026-10-18 — Rational animation frames and snapping
+
+Continue from clean tracked main at 1c33697, equal to origin/main. The previous
+multitrack/action-study milestone was concrete progress; overall engine/editor/art/
+scale requirements remain open. Follow the development/validation skills, keep local
+untracked reference/output material, and preserve compiler/linker environment and
+pinned dependencies. No subagents or distribution archives.
+
+Add CPU-only Dot.Editor.AnimationFrames: normalized rational rates from 1..240fps
+with bounded input terms, nominal frame coordinates/ruler ticks, explicit native
+samples, nearest points and adjacent-frame stepping. Integer and 24000/1001,
+30000/1001, 60000/1001 presets share exact rational arithmetic until native float
+conversion. A native edit must map back to its intended nearest valid frame;
+long-duration high-rate aliases fail instead of silently selecting another frame.
+Positive computed half-frame ties round upward; nearest global points stay in the
+24-hour domain. Stepping recognizes the same native float grid sample, so floating
+error near .8 seconds/30fps does not step back onto frame 24 again. Off-grid steps
+are directional; missing boundary frames fail. Nominal ruler ticks do not guarantee
+native float representability. Fractional view coordinates remain double precision.
+The grid is an immutable value without files, devices, scene or mutable shared cache.
+
+Extend native SceneAnimator/ScenePlayers/AnimationPreview seek with optional pause,
+default false. Apply the pose first; only success commits the clock, optional pause
+and existing transition retirement. Failed time/sample validation preserves the prior
+pose/clock/playing state. Description synchronization retains its existing service
+contract. This avoids pausing first or cloning a complete scene on every frame step,
+while preserving normal runtime/script seek behavior.
+
+Frame options, frame-target/Previous/Next controls, frame-coordinate views, rational
+ruler/grid lines and frame-aware tooltips share strict product commands. Workspace
+preferences default to 30/1, seconds and snap off, persist across clips in that
+workspace and are not written as asset FPS or retained by a new process. Native
+clips remain seconds; changing the editing rate never resamples data or changes the
+game's fixed step. No drop-frame timecode is claimed. Metadata reports the continuous
+coordinate, nearest nominal/native sample, on-grid state and precision errors.
+
+set-animation-frame-grid, seek-animation-frame, step-animation-frame,
+seek-animation-time, set-animation-frame-view, snap-animation-selection and
+update-animation-key-move-frame enforce current buffer/revision/session and the
+relevant existing draft/move/dialog guards. Frame/rate fields are exact unsigned
+integers (zero frame valid); direction is integer -1 or 1. Validate before narrowing,
+including unsigned-maximum directions. Frame changes are blocked during moves.
+Explicit frame/time scrubbing pauses atomically only on success; ordinary audition
+seek stays continuous and preserves playback. Both dope-sheet/curve scrubbers use
+the same frame policy. UI scalar storage matches the vendor's 64-bit scalar type.
+
+Snapped moves quantize the anchor and preserve group offsets. An exact return to
+the original source float restores a no-op even for an off-grid source. Explicit
+frame updates always use their requested point. Snap selected keys quantizes each
+reference in one existing RetimeKeys/native pose/skin/history publication. Occupied
+or collapsed times fail atomically; no implicit overwrite or replacement key.
+Already aligned snapping preserves history/revision/redo/preview. Rate/view settings
+never mark the resource dirty. Update contracts, roadmap and example guidance.
+
+Five enduring unit cases in existing DotUnitTests cover rational normalization,
+native samples, positive-half ties, frame coordinates, boundary/float stepping,
+invalid rates/times/counts, ambiguous 24-hour frames, bounded aligned nominal ticks,
+and shared anchor offsets/collision/origin recovery. A CPU-only existing-target
+AnimationPreview integration case verifies successful pause/seek and failed range/
+zero-scale midpoint seeks retaining playing state/clock/generation. No window,
+render/audio device or new acceptance executable is introduced.
+
+Actual arm64 macOS checks with existing CMake presets/environment:
+
+- Initial focused 6/6 in 1.02 s; final rebuilt focused 6/6 in 1.02 s.
+- Full Debug 1468/1468, 244.53 s; full Release 1468/1468, 35.59 s, with assertions
+  disabled in Release. Following the three-key example update, focused Debug 7/7
+  in 2.02 s and full Release 1468/1468 in 35.48 s. No engine behavior changed after
+  those runs; the later engine-source edit only adds a required blank line.
+- Labels: 452 unit, 1016 integration, 185 offscreen GPU and 233 compiler, not additive.
+  Windows/Linux execution remains unverified.
+
+Actual DotEditor creates a fresh Prism project and opens the saved character-action
+study. Set/reduce 60000/1000 to 60/1 and return to 30/1 without changing preview or
+resource dirtiness; set a 0..60 frame view to the existing 0..2-second range. Seek
+frame 24, step to 23/back to 24, and step from an off-grid 22.5-frame instant. Play
+then issue an invalid frame seek: playback remains playing; a valid frame seek
+pauses. At 30000/1001, frame 24 is native 0.8008000254631042 seconds; reject frame
+60 beyond the two-second clip. Temporarily extend an actual head track to 86400
+seconds, seek valid frame 20736000 at 240fps, reject alias frame 20735999 and Undo
+back to the real action. No long-duration placeholder file is published.
+
+Select the three peak keys and snap them individually, Undo/Redo/Undo. Add a nearby
+head key through ordinary editing, reject a collapse into the same snapped frame,
+and Undo the temporary edit. Exercise a snapped anchor update from .798 to frame
+24, explicit frame-25 update, rejection of grid changes during the move and an
+exact return to .75 preserving revision/redo. A real frame-24 group commit changes
+one history state; Undo/Redo and already-aligned snapping work. The first helper
+incorrectly assumed history retained selection; the product correctly rejected an
+empty selection. Retain that attempt, correct the helper to reselect according to
+the existing contract, and rerun the complete product flow successfully without
+changing engine behavior to fit it.
+
+Twenty real negative cases include wrong frame types/fractional/string/bool/unsigned
+maximum, frame past clip duration, zero/bool/unsigned-maximum direction, invalid
+rate/denominator/snap/display, negative/collapsed views, previous-before-start,
+invalid seek while playing, fractional-rate end bounds, native float alias, snap
+collision and grid change during a move. Paused failures retain authoring/resource
+state and file bytes; the playing failure retains playing state rather than faking
+a frozen wall clock. Explicitly verify resource/history/preview no-ops.
+
+Save/reopen the 201-channel/405-key action with the three peaks at frame 24/30fps:
+nominal .8, native 0.800000011920929 seconds. With the same camera its peak PNG is
+byte-identical to the previous .75-second peak, proving timing-only editing of the
+same actual skinned pose. Main gameplay still passes movement/jump, menu checkpoint
+save/restore/pause/Space resume, Stop restoring authoring and fresh isolated Play.
+Saved/stopped authoring PNG hash stays
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Real native export matches all 117 authoring content files (66703743 bytes). Relocate
+it, temporarily hide its owned source, run the main gameplay/checkpoint loop and
+load character-action through the actual scene service. Sixteen head-joint samples
+vary with maximum quaternion distance 0.2668685; return to main/restore, restart with
+fresh live data and restore the persistent slot again. Both processes exit zero,
+retire control directories and retain profiles without callback errors. Own slot hash
+97cf7644034b025b700469bb72e1d5ea7b7f539adffb5760d51c910bc851a74a.
+No FPS, latency bound or general production-readiness claim follows from these runs.
+
+Synchronize only the actual product-saved motion into examples/PrismRelay. A semantic
+review proves that exactly three rotation-key times (nodes eight, ten, thirty-three)
+change from .75 to native .8; values/tangents/modes/bindings/name/scene are unchanged.
+The 47569-byte motion now has SHA-256
+6689bf19834626066af0f9292b101126e3a28473501a8c7103e265a19b8c2434.
+Update its provenance/instructions and strengthen the source regression to require
+the three real joints' middle keys at native .8 and sample that peak. Scene SHA-256
+remains 3ebc3d43db8e505b71fe0a9c6021a860c948977797630d1c2f610b197f566d98.
+Main's seven locomotion entries, scene and scripts remain unchanged.
+
+Create another project from the rebuilt packaged template; action files match the
+updated checked-in bytes. At 30fps frame 24 and 60fps frame 48 produce byte-identical
+viewport images without dirtying/resampling the clip. Actual editor Play samples
+changing head poses (maximum distance 0.2667046); Stop restores authoring. Export
+with character-action as startup: 117 content files/66704602 bytes. Its description
+still has fixedHz 60. Relocate/hide that owned source and run --frames 1: exit zero
+after a real successful game presentation, 132 retained samples including loading,
+no callback errors. Loading iterations do not count as that presentation.
+
+Record current binary hashes, arm64 Mach-O architecture, dependencies and load
+commands before cleanup. Both workspace editor copies match Release; native exports
+match its runtime kit. Native LLVM dependencies are executable-relative; the font
+hash remains 81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Restore owned project paths and verify thirteen prior persistent save hashes. Keep
+editable projects, saves, actual requests/results, images, profiles, semantic motion
+review and delivery evidence under ignored build/frames-review. Remove only owned
+temporary App/native copies and helpers/cache files, preserving build caches and
+local references. No release archive is created.
+
+Review native pause atomicity/default behavior, numeric conversions/bounds,
+source-origin no-ops, cache/selection ownership, error propagation, shared GUI/JSON
+paths, module/platform assumptions, formatting and coverage before committing.
+Whitespace/clang-format checks pass. Computer use still reports the Mac locked;
+physical frame controls, snapped pointer gestures, narrow-panel layout and IME
+acceptance are unverified. Graphical tangent handles, rig/retargeting/state/layer
+workflows, larger-game pacing/scale, final Prism art and overall maturity remain open.

@@ -103,7 +103,10 @@ export namespace Dot::Animation {
         -> Core::Result<void>;
     [[nodiscard]] auto pause(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto stop(World::EntityId owner) -> Core::Result<void>;
-    [[nodiscard]] auto seek(World::EntityId owner, double seconds) -> Core::Result<void>;
+    /** Optional pause is part of the native successful pose/clock transaction.
+     * 可选暂停属于原生成功姿态/时钟事务的一部分。 */
+    [[nodiscard]] auto seek(World::EntityId owner, double seconds, bool pause = false)
+        -> Core::Result<void>;
     [[nodiscard]] auto configure(World::EntityId owner, double speed, bool looping)
         -> Core::Result<void>;
 

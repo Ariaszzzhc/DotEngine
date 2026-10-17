@@ -405,3 +405,33 @@ TEST_CASE(
   CHECK(World::encodeScene(fixture.source).value() == source);
   CHECK_FALSE(original.stats()->error);
 }
+
+TEST_CASE("animation_preview.seek_pause_is_atomic_with_native_pose_and_clock") {
+  Fixture fixture;
+  auto preview = fixture.create();
+  REQUIRE(preview.play(0, true));
+  const auto before = preview.stats().value();
+  CHECK_FALSE(preview.seek(3, true));
+  CHECK(preview.stats()->generation == before.generation);
+  CHECK(preview.stats()->player.playback.playing);
+  REQUIRE(preview.seek(.8, true));
+  CHECK_FALSE(preview.stats()->player.playback.playing);
+  CHECK(preview.stats()->player.playback.time == .8);
+  const auto pose = fixture.x(preview);
+  REQUIRE(preview.advance(.5));
+  CHECK(fixture.x(preview) == pose);
+  auto invalid = Animation::Clip::create({"Invalid midpoint",
+                                          {{0,
+                                            Animation::Path::Scale,
+                                            Animation::Interpolation::Linear,
+                                            {{0, {1, 1, 1, 0}}, {2, {-1, 1, 1, 0}}}}}})
+                     .value();
+  REQUIRE(Animation::saveClip(fixture.files, fixture.properties.clips[0], invalid));
+  auto failure = fixture.create();
+  REQUIRE(failure.play(0, true));
+  const auto generation = failure.stats()->generation;
+  CHECK_FALSE(failure.seek(1, true));
+  CHECK(failure.stats()->player.playback.playing);
+  CHECK(failure.stats()->player.playback.time == 0);
+  CHECK(failure.stats()->generation == generation);
+}
