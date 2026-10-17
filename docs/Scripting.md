@@ -1095,6 +1095,9 @@ save data is independent. See [text, fonts, limits and product controls](GameUi.
 `ScriptComponent.onFrame(seconds)` runs before variable gameplay, even when native
 simulation is paused. Use it for menu input and HUD changes. `gameClock.snapshot()`
 and `gameClock.setPaused(boolean)` share the strict scene-local native service.
+While paused, `gameClock.step()` queues one native fixed/update/physics/animation
+quantum at 1/fixedHz and returns its request ID. Inspect snapshot().step for actual
+completion/cancellation/failure; this does not unpause or advance audio by simulation time.
 Paused fixed calls skip game callbacks/physics; paused variable calls skip Update
 and advance animation by zero. Audio, input, rendering, reload and explicit scene
 requests continue. See [phase ordering, ownership and product controls](GameClock.md).

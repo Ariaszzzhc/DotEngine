@@ -10,6 +10,9 @@ This replaces the earlier collection/timer prototype.
 - Shift: sprint.
 - Space: jump; short input buffering retains presses between fixed steps.
 - E: trigger/cancel the masked inspection gesture while moving; native fades blend it in/out.
+- M: pause/resume the checkpoint menu. While paused, N advances one native simulation
+  step at fixedHz, including the airborne capsule, gameplay and animation layers;
+  holding N does not repeat presses. Audio/frame UI remain unscaled.
 - Mouse: orbit the shoulder camera; wheel: adjust distance.
 - F6: save a grounded resume point. F7: explicitly restore that point, including
   after restarting the exported game. Airborne saves are refused. Loading clears

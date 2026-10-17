@@ -80,7 +80,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   private showControls(): void {
     hud.set('controls', hud.label({
       text:
-          'PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu',
+          'PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu | N step paused',
       size: {x: .96, y: .14},
       fontSize: this.properties.uiFontSize
     }));
@@ -235,6 +235,10 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
       if (frame.keys.M.pressed) {
         gameClock.setPaused(!gameClock.snapshot().paused);
+      }
+
+      if (frame.keys.N.pressed && gameClock.snapshot().paused) {
+        gameClock.step();
       }
 
       if (frame.keys.F7.pressed) {

@@ -196,7 +196,7 @@ function preparing(): void {
   gameClock.snapshot();
   hud.events('0');
   hud.inputState();
-  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true), () => hud.setButton('x', hud.button()), () => hud.focus(null), () => hud.activate('x'), () => input.requestTextInput(true)]) {
+  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true), () => gameClock.step(), () => hud.setButton('x', hud.button()), () => hud.focus(null), () => hud.activate('x'), () => input.requestTextInput(true)]) {
     let denied = false;
     try { attempt(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
     if (!denied) { throw Error('HUD write escaped preparation guard'); }
@@ -775,6 +775,50 @@ TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
   const auto finished = session.animationState(model).value();
   CHECK_FALSE(finished.layers[0].playback.active);
   CHECK(finished.layers[0].playback.time == 0);
+  report(session.close());
+}
+
+TEST_CASE("prism.paused_single_step_advances_airborne_character_and_layer_once_after_reload") {
+  Fixture fixture;
+  auto session = fixture.session(true);
+  report(session.start());
+  Driver driver(session);
+  driver.frame({Platform::Key::E, Platform::Key::Space});
+  driver.frame();
+  driver.frame({Platform::Key::M});
+  auto clock = session.gameClock().value();
+  REQUIRE(clock.snapshot()->paused);
+  const auto model = entity(session, "Surveyor").id;
+  const auto before = session.animationState(model).value();
+  REQUIRE(before.layers.front().playback.active);
+  const auto position = entity(session, "Player").transform.position;
+  REQUIRE(position.y > 0);
+  const auto counters = session.stats().value();
+  driver.frame({Platform::Key::N});
+  const auto stepped = session.animationState(model).value();
+  CHECK(clock.snapshot()->paused);
+  CHECK(clock.snapshot()->step->state == Script::GameStepState::Completed);
+  CHECK(session.stats()->simulatedFixedSteps == counters.simulatedFixedSteps + 1);
+  CHECK(session.stats()->simulatedUpdates == counters.simulatedUpdates + 1);
+  CHECK(entity(session, "Player").transform.position.y > position.y);
+  CHECK(stepped.layers.front().playback.time
+        == doctest::Approx(before.layers.front().playback.time + 1.0 / 60));
+  const auto frozen = World::encodeScene(*session.scene().value()).value();
+  driver.frame({Platform::Key::N});
+  driver.frame();
+  CHECK(World::encodeScene(*session.scene().value()).value() == frozen);
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  const auto files = fixture.project.files().value();
+  REQUIRE(files.writeTextAtomic("scripts/player.ts",
+                                files.readText("scripts/player.ts").value() + "\n"));
+  REQUIRE(Tests::awaitCompilation([&] { return session.pollScripts(); })->committed);
+  CHECK(clock.snapshot()->step->state == Script::GameStepState::Pending);
+  driver.frame();
+  CHECK(clock.snapshot()->step->state == Script::GameStepState::Completed);
+  CHECK(clock.snapshot()->step->id == 2);
+  CHECK(session.stats()->simulatedFixedSteps == counters.simulatedFixedSteps + 2);
+  CHECK(session.animationState(model)->layers.front().playback.time
+        == doctest::Approx(before.layers.front().playback.time + 2.0 / 60));
   report(session.close());
 }
 

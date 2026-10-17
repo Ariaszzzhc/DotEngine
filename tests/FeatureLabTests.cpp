@@ -270,7 +270,7 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   CHECK(snapshot["fixed"] == 1);
   CHECK(snapshot["updates"] == 3);
   CHECK(snapshot["stops"] == 1);
-  CHECK(snapshot["errors"] == 9);
+  CHECK(snapshot["errors"] == 10);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);

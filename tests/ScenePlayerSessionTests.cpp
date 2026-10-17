@@ -71,6 +71,40 @@ TEST_CASE("animation.layer_controls_preserve_unprimed_reverse_base_start") {
   CHECK(players.state(fixture.owner)->playback.time == 1);
 }
 
+TEST_CASE("animation.single_step_native_failure_reports_failed_request_and_partial_fixed_work") {
+  Fixture fixture;
+  auto description = fixture.project.description().value();
+  description.fixedHz = 1;
+  REQUIRE(fixture.project.save(description));
+  constexpr float delta = 1;
+  const auto clip = Animation::Clip::create({"Singular step",
+                                             {{0,
+                                               Animation::Path::Scale,
+                                               Animation::Interpolation::Linear,
+                                               {{0, {1, 1, 1, 0}}, {2 * delta, {-1, 1, 1, 0}}}}}})
+                        .value();
+  REQUIRE(Animation::saveClip(fixture.files, "assets/move.dotanimation", clip));
+  REQUIRE(fixture.project.saveStartup(*fixture.scene));
+  const auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto session = Project::GameSession::create(fixture.project, compiler).value();
+  REQUIRE(session.start());
+  auto clock = session.gameClock().value();
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  CHECK_FALSE(session.update(.5));
+  CHECK(session.stats()->state == Project::SessionState::Faulted);
+  CHECK(session.stats()->simulatedFixedSteps == 1);
+  CHECK(session.stats()->lifetimeFixedSteps == 1);
+  CHECK(session.stats()->simulatedUpdates == 0);
+  CHECK(clock.snapshot()->paused);
+  CHECK(clock.snapshot()->step->state == Script::GameStepState::Failed);
+  CHECK_FALSE(clock.perform(R"({"command":"step"})"));
+  const auto target = session.scene().value()->findEntity(fixture.target.value).value();
+  CHECK(session.scene().value()->transform(target)->scale.x == 1);
+  REQUIRE(session.close());
+  CHECK(clock.snapshot()->step->state == Script::GameStepState::Failed);
+}
+
 TEST_CASE("animation.product_inspection_reads_actual_layer_clocks_with_strict_running_scope") {
   Fixture fixture;
   fixture.properties.layers

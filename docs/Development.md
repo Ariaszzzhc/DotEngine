@@ -12482,3 +12482,132 @@ scoped controls, shared GUI paths, source provenance, modules/platform assumptio
 formatting and coverage before committing. Override layers advance this complete
 workflow; additive/state-machine/rig authoring, final art and large-game maturity
 remain open work.
+
+## 2026-10-18 — Paused native simulation stepping
+
+Continue debugging the actual Prism movement/inspection workflow: pause a jump,
+advance one deterministic simulation quantum and inspect both the native capsule
+and independent animation layers. Existing pause froze simulation but supplied no
+single-step operation. This adds native scheduling and shared product controls,
+not script-based physics or a render-frame/time-scale substitute.
+
+The scene-local GameClock queues at most one step while paused and returns a
+monotonic decimal request ID. Owned snapshots retain the last pending/running/
+completed/cancelled/failed status. Duplicate pending/running requests and unpaused
+requests fail. Reserve all three lifecycle revisions before acceptance and prepare
+JSON before publishing a request. Resume cancels pending work; retirement cancels
+pending work and fails running work. Retained handles stay readable, reject writes
+and do not own a scene. Constructor/migration bindings remain read-only.
+
+GameSession consumes a pending request after the next valid variable call's unscaled
+onFrame. Dispatch one prepared fixed hook, real physics, one Update and native
+animation with 1/fixedHz seconds, without changing pause. A live generation is
+polled once and shared by all these phases. Frame/UI/audio use ordinary wall time;
+normal paused fixed calls cannot consume the request, and invalid deltas cannot
+dispatch or consume it. Zero is a valid wall delta. During execution, new step and
+pause writes fail, so gameplay cannot silently turn this into continuous simulation.
+There is no input injection/replay, multi-step backlog or paused-time debt. Native/
+realm failures fault the session and report the actual failed request. Completed
+physics is retained/countable even if subsequent animation fails; completed callback
+or native effects are not rolled back. Isolated component errors keep their normal
+script reports rather than masquerading as realm failure.
+
+Add a native lifetime fixed-phase counter preserved through committed scene swaps;
+per-scene counters still reset. Play fixedSteps now derives from completed native
+work instead of inferring it from scheduled callbacks/pause. The native player
+exposes lifetimeFixedSteps and both frontends expose clock.step. A manual fixed
+phase belongs to the application update callback's CPU envelope; application
+callback counts are not proof of simulated phases. Document this distinction.
+
+The editor viewport's Step simulation button uses the existing strict scoped clock
+product route with inner {command:step}. The SDK gameClock.step uses the same native
+service; there is no test-only dispatch path. Prism's N key requests one step from
+the ordinary onFrame edge watermark while its menu stays paused; holding N does not
+repeat, and the watermark survives reload. Feature Lab's inventory/audit adds the
+actual unpaused-refusal contract without changing the caller's pause state or hook
+budget. Current SDK types/status, authoring/example guidance and capability summaries
+are synchronized. This does not implement rewind, timeline recording, time scaling,
+audio pause or final animation/state-machine/art production tools.
+
+Add two pure clock cases in existing DotUnitTests for bounded lifecycle/revisions,
+owned observations, strict controls, binding permissions, cancellation, failed
+completion/retirement and wrong-thread access. Existing moved-handle/retirement
+checks still cover the service. CPU integration exercises static/live generations
+at 30Hz: fixed scripts move a real body, native animation advances exactly one
+quantum, Update sees that same delta while onFrame sees the actual .8-second wall
+interval, zero-wall SDK input can request the next step and repeated paused frames
+stay frozen. Invalid delta retains a pending request. A valid negative-scale clip
+fails at its interpolated zero midpoint: fixed count increments, Update completion
+does not, pose stays valid and the step becomes failed. Extend Play's long-pause/
+resume check and scene-cut cancellation/lifetime-counter coverage. A Prism regression
+steps the airborne character/layer exactly once with N, holds/release without another
+step, retains a pending request through source reload and completes it afterward.
+
+Actual arm64 macOS validation with inherited presets/toolchain and no sanitizers:
+
+- Initial four clock cases pass, 0.20 s. Expanded integrated focus 61/61, 20.28 s;
+  the additional actual Prism single-step/reload case passes, 1.23 s.
+- Full Debug 1501/1501, 254.11 s. Full Release/NDEBUG 1501/1501, 36.43 s, run
+  sequentially. Labels: 474 unit and 1027 integration, including overlapping
+  185 offscreen GPU/242 compiler/37 native audio/34 platform/21 process cases.
+  Automatic tests open no desktop windows; units initialize no devices.
+- Initial compilation rejected ambiguous logical grouping, an implicit optional
+  component initializer and narrowed clip times; make the grouping/types explicit.
+  The first failure fixture used a forbidden zero-scale authored key and failed
+  construction before dispatch. Replace it with valid signed endpoints and an
+  invalid interpolated midpoint, then run the actual native failure case above.
+  These failures/corrections remain in ignored logs. No Windows/Linux execution claim.
+
+Actual Release editor creates PrismStepAuthor from the current template, opens the
+real main scene and starts Play. Unpaused step rejects. E/Space use bounded product
+input; wait for actual airborne height, then M pauses. Three distinct requests
+advance completed fixed/Update counters once each and the active layer by exactly
+1/60 second. The middle request comes from held N over 80 actual input frames and
+still advances only once. Between requests complete scenes remain frozen. Malformed
+step fields and stale scopes reject without changes. An external source-file edit
+reloads while paused with exact scene/layer state retained, then the next step works.
+F6 while airborne leaves saves empty; after resume/landing it creates the isolated
+Play checkpoint. Stop/reopen restore authoring, and fresh Play has an unpaused clock
+with no request. The actual viewport shows N instructions and the airborne save
+refusal; PNG SHA-256 is
+b2620d9da4a98d0ddec629e6a6c130ae3c7e9c25a4612d9ebcf482fb534e0898.
+
+Export through the editor, compare every one of 117 game/content files to the owned
+editable project, relocate the native game and hide only that source project.
+The standalone executes the same jump/pause/native-step and held-N checks, rejects
+malformed/stale controls, refuses airborne saves, and retains lifetime fixed work
+through travel to the actual character-action scene/back. New scene clocks have no
+request. The first successful checkpoint loop happened to save the initial position;
+retain it as earlier evidence, then strengthen validation by moving to a distinct
+point before saving in a separate owned data root. Final fresh position [-3,0,2]
+differs from saved/restored [-3,-1.3038506097018399e-7,1.4133769273757935]. Restart
+and F7 restore that point exactly in this run, with an inactive inspection layer,
+empty debugger request and unchanged slot bytes. Final owned slot SHA-256 is
+a8db2c687b943cd3227cee1e93f5f3148b82b98fc3b96ed0997065ce3a402fcc.
+Control-free --frames 1 completes an actual native presentation and exits zero with
+the source hidden. All first/restart/finite processes exit zero; native control
+folders retire. Source paths are restored. Retained profile histories each hold
+120 error-free samples; they include loading/eviction and are not performance/FPS
+claims. Native stderr records ordinary preparation progress, without script failures.
+
+Actual FeatureStepAuthor creation matches source scene/audit/inventory bytes. Play
+executes all 147 declared SDK members; retained Stop data has 164 checked labels
+and ten deliberate errors. A real paused product step advances the lift clock by
+1/60 and both native phase counters once, staying paused; Stop restores authoring.
+Both editor closes can retire the acknowledgement before the helper reads it;
+record queued receipt, actual zero exit and retired control rather than fabricate
+an applied response. Computer use again reports locked Mac/failed automatic unlock;
+physical Step button, native key/IME and narrow-layout acceptance remain unverified.
+
+Review native ownership, failure/partial-work semantics, lifecycle capacity, source
+and phase ordering, scope guards, shared UI/SDK implementation, counter preservation
+through scene replacement, formatting and platform assumptions. Inspect arm64
+binaries/dependencies and native executable-relative LLVM libraries. Final editor
+SHA-256 is 72229347c00340984d3a6df0c4cde955601ad57888baea4de8b7004fed099606;
+the native export matches the current runtime kit with SHA-256
+67e9c2588c1dadc96cfe247fad9775e6e57c33c7cc63d521f437a4bc23d98f8a. Preserve actual
+requests/results, PNG, manifests, profiles, editable projects and both new slots in
+ignored build/step-review. Reverify all seventeen earlier save hashes and both new
+slots. Remove only owned helper/cache/App/native copies after recording final proof;
+retain build caches, reference material and saved projects. No distribution archive.
+Large-game scalability, finished art and mature authoring remain open goals.

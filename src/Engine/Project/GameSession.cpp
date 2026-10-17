@@ -93,6 +93,7 @@ namespace Dot::Project {
     std::optional<Script::GameClock> m_clock;
     std::uint64_t m_fixedSteps{};
     std::uint64_t m_updates{};
+    std::uint64_t m_lifetimeFixedSteps{};
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -262,20 +263,71 @@ namespace Dot::Project {
         }
 
         const auto paused = clock->paused;
+        const bool pendingStep
+            = !fixed && clock->step && clock->step->state == Script::GameStepState::Pending;
+        bool stepping{};
+        auto simulationSeconds = seconds;
 
-        if (!paused) {
-          if ((fixed ? m_fixedSteps : m_updates) == std::numeric_limits<std::uint64_t>::max()) {
-            return Core::fail(Core::ErrorCode::Unavailable, "Game simulation counter exhausted");
+        const bool fixedCounterFull
+            = (fixed || pendingStep)
+              && (m_fixedSteps == std::numeric_limits<std::uint64_t>::max()
+                  || m_lifetimeFixedSteps == std::numeric_limits<std::uint64_t>::max());
+        const bool updateCounterFull
+            = !fixed && m_updates == std::numeric_limits<std::uint64_t>::max();
+
+        if ((!paused || pendingStep) && (fixedCounterFull || updateCounterFull)) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Game simulation counter exhausted");
+        }
+
+        if (pendingStep) {
+          auto begun = m_clock->beginStep();
+
+          if (!begun) {
+            return std::unexpected(begun.error());
           }
 
+          stepping = *begun;
+          simulationSeconds = 1.0 / m_description.fixedHz;
+          auto fixedReport = m_live ? m_live->dispatchPrepared(Script::ScriptPhase::FixedUpdate,
+                                                               simulationSeconds)
+                                    : m_scripts->fixedUpdate(simulationSeconds);
+
+          if (!fixedReport) {
+            m_state = SessionState::Faulted;
+            retireServices();
+            return std::unexpected(fixedReport.error());
+          }
+
+          append(result->frame, std::move(*fixedReport));
+
+          if (result->frame.realmFaulted) {
+            m_state = SessionState::Faulted;
+            retireServices();
+            return result;
+          }
+
+          auto advanced = m_physics->advance(simulationSeconds);
+
+          if (!advanced) {
+            m_state = SessionState::Faulted;
+            retireServices();
+            return std::unexpected(advanced.error());
+          }
+
+          ++m_fixedSteps;
+          ++m_lifetimeFixedSteps;
+        }
+
+        if (!paused || stepping) {
           if (fixed) {
             result = m_live ? m_live->fixedUpdate(seconds)
                             : m_scripts->fixedUpdate(seconds).transform([](auto report) {
                                 return Script::LiveScriptReport{{}, std::move(report)};
                               });
           } else {
-            auto game = m_live ? m_live->dispatchPrepared(Script::ScriptPhase::Update, seconds)
-                               : m_scripts->update(seconds);
+            auto game
+                = m_live ? m_live->dispatchPrepared(Script::ScriptPhase::Update, simulationSeconds)
+                         : m_scripts->update(simulationSeconds);
 
             if (!game) {
               m_state = SessionState::Faulted;
@@ -304,7 +356,7 @@ namespace Dot::Project {
         }
 
         if (!fixed) {
-          auto animated = m_animations->advance(paused ? 0 : seconds);
+          auto animated = m_animations->advance(paused && !stepping ? 0 : simulationSeconds);
 
           if (!animated) {
             m_state = SessionState::Faulted;
@@ -321,8 +373,22 @@ namespace Dot::Project {
           }
         }
 
-        if (!paused) {
+        if (!paused || stepping) {
           ++(fixed ? m_fixedSteps : m_updates);
+
+          if (fixed) {
+            ++m_lifetimeFixedSteps;
+          }
+        }
+
+        if (stepping) {
+          auto completed = m_clock->finishStep(true);
+
+          if (!completed) {
+            m_state = SessionState::Faulted;
+            retireServices();
+            return std::unexpected(completed.error());
+          }
         }
 
         return result;
@@ -735,6 +801,7 @@ namespace Dot::Project {
     result.clock = *clock;
     result.simulatedFixedSteps = m_impl->m_fixedSteps;
     result.simulatedUpdates = m_impl->m_updates;
+    result.lifetimeFixedSteps = m_impl->m_lifetimeFixedSteps;
 
     if (m_impl->m_state != SessionState::Closed) {
       if (m_impl->m_live) {
@@ -1043,6 +1110,7 @@ namespace Dot::Project {
        * before acceptance; retire old writers and allow the next Start to queue.
        * Stop 钩子不可回滚；先准备全部服务及路径所有权，再接受替换，使旧写入失效并允许
        * 新 Start 排队下一请求。 */
+      replacement->m_lifetimeFixedSteps = m_impl->m_lifetimeFixedSteps;
       auto accepted
           = m_impl->m_flow->commit(request.id, replacement->m_identity, std::move(request.path));
 

@@ -71,6 +71,10 @@ export namespace Dot::Project {
     Script::GameClockSnapshot clock{1, false};
     std::uint64_t simulatedFixedSteps{};
     std::uint64_t simulatedUpdates{};
+    /** Completed native fixed phases across scene replacement, including debugger
+     * steps; per-scene counters above still reset on replacement.
+     * 跨场景的已完成原生固定阶段（含调试单步）；上方场景计数仍随替换重置。 */
+    std::uint64_t lifetimeFixedSteps{};
   };
 
   /** Owns the active project scene and its input, scripts, real physics,
@@ -200,9 +204,14 @@ export namespace Dot::Project {
      * calls skip scripts/physics; paused variable calls skip Update and use zero
      * animation delta. Input, explicit cuts, rendering and audio playback continue;
      * frame callbacks may intentionally edit native state. No paused time debt.
+     * A queued debugger step is consumed after onFrame: dispatch one prepared
+     * fixed hook/physics and one Update/animation at 1/fixedHz without unpausing.
+     * Audio/frame delta stays unscaled. Invalid delta cannot consume a request.
      * 要求启动；每次变动帧先执行非缩放 onFrame，暂停时也运行；各游戏阶段前锁存暂停，
      * 暂停固定帧跳过脚本/物理，暂停变动帧跳过 Update 并以零动画时长同步。输入、显式切换、
      * 渲染和音频继续，帧回调可显式修改原生状态，不累积暂停时间债务。
+     * 排队调试单步在 onFrame 后执行同代固定脚本/物理及 Update/动画，各推进 1/fixedHz，
+     * 不解除暂停；音频/帧时长仍非缩放，无效时长不消耗请求。
      * Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then
      * advances animation then synchronizes audio once after all fixed steps, then

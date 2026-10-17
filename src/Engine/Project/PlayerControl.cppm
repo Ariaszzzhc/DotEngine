@@ -31,7 +31,7 @@ export namespace Dot::Project {
     ~PlayerControl();
 
     /** Strict JSON: inspect/close; input(scope,value), cancel-input(scope),
-     * game-data(value), request-scene(scope,path), scene-status(request),
+     * game-data(value), clock(scope,value), request-scene(scope,path), scene-status(request),
      * animation-state(scope,entity), animation-layer(scope,entity,name,value).
      * Mutations require Running; pre-start/closing game data permits snapshot/get.
      * Layer control commits a native pose even while scheduling is paused.

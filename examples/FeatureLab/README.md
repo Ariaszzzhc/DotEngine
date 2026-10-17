@@ -207,6 +207,9 @@ with Prism Relay; this is not an editor-only overlay or a visual layout designer
 The audit also exercises the native game clock and unscaled onFrame hook, preserving
 the caller's current pause state. Pausing simulation keeps frame/UI work and audio
 playback active; it does not freeze the editor or its controls.
+The SDK audit explicitly checks that `gameClock.step()` refuses an unpaused request.
+Use the editor's Step simulation button while paused to advance one real fixedHz
+physics/gameplay/animation quantum; inspect its request status and native counters.
 
 
 The existing Animated panel now has a saved PanelTurn layer using the turn clip,

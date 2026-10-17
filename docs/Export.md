@@ -221,7 +221,7 @@ Commands use strict complete objects with no unknown fields:
 | cancel-input | scope | Schedule one release frame for an active input request |
 | game-data | value | Existing strict GameData protocol, shared with scripts/editor |
 | hud | scope, value | Scene-local strict text operations, shared with scripts/editor |
-| clock | scope, value | Scene-local pause snapshot/set-paused, shared with scripts/editor |
+| clock | scope, value | Scene-local pause snapshot/set-paused and queued single step, shared with scripts/editor |
 | animation-state | scope, entity | Owned native base/layer clocks and weight-fade snapshot |
 | animation-layer | scope, entity, name, value | Shared native layer control; does not edit saved definitions or advance time |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
@@ -280,9 +280,11 @@ surface presentation; a successful HUD mutation response alone proves no pixels.
 Scope changes retire the previous text service. Native text uses the same post-tone-
 mapping path as editor capture and offscreen rendering, independently of scene exposure.
 
-Player inspection reports clock.paused/revision and completed simulatedFixedSteps/
+Player inspection reports clock.paused/revision/step and completed simulatedFixedSteps/
 simulatedUpdates for the current scene; scene replacement resets those counters
-and starts an unpaused clock. Native application profile step counts still measure
+and starts an unpaused clock without a step request. lifetimeFixedSteps retains
+actual completed fixed phases across scene replacement, including debugger steps.
+Native application profile step counts still measure
 scheduled callbacks. Input/rendering/frame UI and independent audio playback remain
 active while game simulation is paused. See [game clock contracts](GameClock.md).
 
@@ -326,7 +328,8 @@ still have synchronous costs. A finite presentation budget retains its meaning.
 The native animation-state and animation-layer commands require the actual current
 running scope and an enabled synchronized player entity. Their state/control object
 shapes match the script SDK and editor's live animation panel. Game simulation pause
-does not forbid explicit layer pose controls; elapsed clocks remain frozen. Wrong
+does not forbid explicit layer pose controls; elapsed clocks stay frozen unless a
+native simulation step is explicitly requested. Wrong
 scopes, fields, numeric types, names and invalid final poses fail. Stop/restart and
 scene replacement retire the usual scoped state. For example:
 

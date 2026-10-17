@@ -85,6 +85,7 @@
     "components.script",
     "gameClock.setPaused",
     "gameClock.snapshot",
+    "gameClock.step",
     "gameState.get",
     "gameState.remove",
     "gameState.replace",

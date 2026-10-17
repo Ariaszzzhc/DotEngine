@@ -100,29 +100,34 @@ namespace Dot::Project {
                   {"error", stats.source->error ? errorJson(*stats.source->error) : Json(nullptr)}};
       }
 
-      return {
-          {"state", states.at(static_cast<std::size_t>(stats.state))},
-          {"closing", m_closing},
-          {"scope", std::to_string(m_scope)},
-          {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)},
-          {"input",
-           {{"source", m_agent ? "agent" : "native"},
-            {"active", held.active},
-            {"remaining", held.remaining},
-            {"published", held.published}}},
-          {"scripts", stats.scripts ? Json{{"running", stats.scripts->running},
-                                           {"failed", stats.scripts->failed},
-                                           {"faulted", stats.scripts->faulted}}
-                                    : Json(nullptr)},
-          {"source", std::move(source)},
-          {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
-          {"retiringAudio", stats.retiringAudio},
-          {"clock",
-           {{"paused", stats.clock.paused}, {"revision", std::to_string(stats.clock.revision)}}},
-          {"simulatedFixedSteps", std::to_string(stats.simulatedFixedSteps)},
-          {"simulatedUpdates", std::to_string(stats.simulatedUpdates)},
-          {"failureCount", std::to_string(m_failures)},
-          {"diagnostics", m_diagnostics}};
+      return {{"state", states.at(static_cast<std::size_t>(stats.state))},
+              {"closing", m_closing},
+              {"scope", std::to_string(m_scope)},
+              {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)},
+              {"input",
+               {{"source", m_agent ? "agent" : "native"},
+                {"active", held.active},
+                {"remaining", held.remaining},
+                {"published", held.published}}},
+              {"scripts", stats.scripts ? Json{{"running", stats.scripts->running},
+                                               {"failed", stats.scripts->failed},
+                                               {"faulted", stats.scripts->faulted}}
+                                        : Json(nullptr)},
+              {"source", std::move(source)},
+              {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
+              {"retiringAudio", stats.retiringAudio},
+              {"clock",
+               {{"paused", stats.clock.paused},
+                {"revision", std::to_string(stats.clock.revision)},
+                {"step", stats.clock.step
+                             ? Json{{"id", std::to_string(stats.clock.step->id)},
+                                    {"state", Script::gameStepStateName(stats.clock.step->state)}}
+                             : Json(nullptr)}}},
+              {"simulatedFixedSteps", std::to_string(stats.simulatedFixedSteps)},
+              {"simulatedUpdates", std::to_string(stats.simulatedUpdates)},
+              {"lifetimeFixedSteps", std::to_string(stats.lifetimeFixedSteps)},
+              {"failureCount", std::to_string(m_failures)},
+              {"diagnostics", m_diagnostics}};
     }
   };
 

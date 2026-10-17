@@ -194,6 +194,7 @@ export interface Vec4 extends Vec3 {
 export interface GameClockSnapshot {
   revision: string;
   paused: boolean;
+  step: {id: string; state: 'pending'|'running'|'completed'|'cancelled'|'failed'}|null;
 }
 
 /** Scene-local simulation pause; unscaled onFrame, input, loading, rendering and
@@ -205,6 +206,12 @@ export const gameClock = Object.freeze({
 
   setPaused(paused: boolean): string {
     return (invoke('gameClock.setPaused', [paused]) as GameClockSnapshot).revision;
+  },
+
+  /** Queue one fixedHz simulation step while staying paused; inspect its completion.
+   * 保持暂停并请求一个 fixedHz 模拟步；须读取实际完成状态。 */
+  step(): string {
+    return (invoke('gameClock.step', []) as GameClockSnapshot).step!.id;
   },
 });
 

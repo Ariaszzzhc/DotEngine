@@ -30,6 +30,8 @@ import Dot.Audio.Mixer;
 import Dot.Game.State;
 import Dot.Game.Saves;
 import Dot.Physics.Body;
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
 
 namespace {
   using namespace Dot::Project;
@@ -170,6 +172,105 @@ TEST_CASE("game_session_orders_input_scripts_real_physics_audio_and_explicit_shu
   CHECK_FALSE(session.publish(held()));
   CHECK_FALSE(session.renderAudio(samples));
   CHECK(scene->entityCount().value() == 2);
+}
+
+TEST_CASE("game_session_single_step_pairs_native_fixed_update_animation_without_pause_debt") {
+  using Json = nlohmann::json;
+
+  for (const bool live : {false, true}) {
+    Fixture fixture(live, 30);
+    fixture.controller();
+    const auto files = fixture.project.files().value();
+    REQUIRE(files.writeTextAtomic("scripts/mover.ts", R"ts(
+import {ScriptComponent, gameClock, input} from 'dot:engine';
+export class Mover extends ScriptComponent {
+  #frames = 0; #fixed = 0; #updates = 0; #fixedDt = 0; #updateDt = 0;
+  #wall = 0; #order = ''; #edge = '';
+  private publish(): void {
+    this.self.name = JSON.stringify({frames: this.#frames, fixed: this.#fixed,
+      updates: this.#updates, fixedDt: this.#fixedDt, updateDt: this.#updateDt,
+      wall: this.#wall, order: this.#order, paused: gameClock.snapshot().paused});
+  }
+  onStart(): void { gameClock.setPaused(true); this.publish(); }
+  onFrame(seconds: number): void {
+    ++this.#frames; this.#wall = seconds;
+    if (input.index !== this.#edge && input.key('N').pressed) {
+      this.#edge = input.index; gameClock.step();
+    }
+    this.publish();
+  }
+  onFixedUpdate(seconds: number): void {
+    ++this.#fixed; this.#fixedDt = seconds; this.#order += 'F';
+    this.self.setVelocity({x:3,y:0,z:0});
+  }
+  onUpdate(seconds: number): void {
+    ++this.#updates; this.#updateDt = seconds; this.#order += 'U'; this.publish();
+  }
+}
+)ts"));
+    auto scene = fixture.project.loadStartup().value();
+    const auto animated = scene.createEntity("Animated").value();
+    auto clip = Dot::Animation::Clip::create({"Move",
+                                              {{0,
+                                                Dot::Animation::Path::Translation,
+                                                Dot::Animation::Interpolation::Linear,
+                                                {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                    .value();
+    REQUIRE(Dot::Animation::saveClip(files, "assets/step.dotanimation", clip));
+    REQUIRE(scene.setAnimationPlayer(
+        animated,
+        Dot::World::AnimationPlayer{{"assets/step.dotanimation"}, {{0, animated.value}}}));
+    REQUIRE(fixture.project.saveStartup(scene));
+    GameSessionConfig config;
+    config.physics.simulation.gravity = {};
+    auto session = fixture.session(config);
+    good(session.start());
+    auto clock = session.gameClock().value();
+    const auto initial = actor(session).transform.position;
+    good(session.fixedUpdate());
+    good(session.update(.25));
+    CHECK(actor(session).transform.position == initial);
+    REQUIRE(clock.perform(R"({"command":"step"})"));
+    CHECK_FALSE(session.update(std::numeric_limits<double>::quiet_NaN()));
+    CHECK(clock.snapshot()->step->state == Dot::Script::GameStepState::Pending);
+    good(session.fixedUpdate());
+    CHECK(session.stats()->simulatedFixedSteps == 0);
+    good(session.update(.8));
+    auto observed = Json::parse(actor(session).name);
+    CHECK(observed["frames"] == 2);
+    CHECK(observed["order"] == "FU");
+    CHECK(observed["wall"] == .8);
+    CHECK(observed["fixedDt"].get<double>() == doctest::Approx(1.0 / 30));
+    CHECK(observed["updateDt"] == observed["fixedDt"]);
+    CHECK(observed["paused"] == true);
+    CHECK(actor(session).transform.position.x == doctest::Approx(initial.x + .1F));
+    CHECK(session.stats()->simulatedFixedSteps == 1);
+    CHECK(session.stats()->simulatedUpdates == 1);
+    CHECK(session.stats()->lifetimeFixedSteps == 1);
+    CHECK(clock.snapshot()->step->state == Dot::Script::GameStepState::Completed);
+    const auto position = actor(session).transform.position;
+    const auto target = session.scene().value()->findEntity(animated.value).value();
+    CHECK(session.scene().value()->transform(target)->position.x == doctest::Approx(1.0 / 30));
+    good(session.update(.8));
+    CHECK(actor(session).transform.position == position);
+    CHECK(session.stats()->simulatedUpdates == 1);
+    Dot::Platform::InputState input;
+    REQUIRE(input.consume({0, 0, Dot::Platform::KeyChanged{Dot::Platform::Key::N, true, false}}));
+    REQUIRE(session.publish(input));
+    good(session.update(0));
+    CHECK(Json::parse(actor(session).name)["order"] == "FUFU");
+    CHECK(clock.snapshot()->step->id == 2);
+    CHECK(session.stats()->simulatedFixedSteps == 2);
+    CHECK(session.stats()->simulatedUpdates == 2);
+    CHECK(session.stats()->lifetimeFixedSteps == 2);
+    REQUIRE(clock.perform(R"({"command":"step"})"));
+    REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
+    good(session.update(0));
+    CHECK(clock.snapshot()->step->state == Dot::Script::GameStepState::Cancelled);
+    CHECK(session.stats()->simulatedFixedSteps == 2);
+    CHECK(session.stats()->simulatedUpdates == 3);
+    good(session.close());
+  }
 }
 
 TEST_CASE("game_session_pointer_request_and_native_ack_do_not_require_a_window") {

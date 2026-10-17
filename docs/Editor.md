@@ -349,7 +349,7 @@ system's selected input method is unchanged.
 Released capture publishes released edges from the last game input, then
 empty frames. Capture does not pause simulation/audio. Native simulation pause
 uses the separate
-[game clock](GameClock.md); single-step is unfinished. F5 and Escape are reserved
+[game clock](GameClock.md), including explicit paused single steps. F5 and Escape are reserved
 editor controls.
 
 `workspace.play.pointerCaptureRequested` reports the running script request;
@@ -2190,10 +2190,14 @@ retirement and read-only phases are described in [native game text](GameUi.md).
 capture frame hudRevision proves which completed UI model supplied the frozen pixels.
 Stopped authoring and animation preview contain no running HUD.
 
-Play viewport controls expose Pause simulation/Resume simulation. They use
+Play viewport controls expose Pause simulation/Resume simulation and Step simulation.
+The latter requires a paused running session without pending work and uses
+`{"command":"clock","session":"1","scope":"83","value":{"command":"step"}}`.
+Pause/resume uses
 `{"command":"clock","session":"1","scope":"83","value":{"command":"set-paused","paused":true}}`
 through the same native product route. Current Play status reports clock.paused,
-clock.revision and simulatedUpdates; fixedSteps counts actual simulation phases.
+clock.revision, clock.step and simulatedUpdates; fixedSteps counts actual completed
+native fixed phases, including single steps, across scene replacement.
 The unscaled frame/UI hook and product controls continue during pause, and Stop
 retains its usual authoring restoration. See [pause scheduling](GameClock.md).
 

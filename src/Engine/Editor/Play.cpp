@@ -536,9 +536,7 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Play elapsed time must be nonnegative");
     }
 
-    if (m_impl->m_stats.frames == std::numeric_limits<std::uint64_t>::max()
-        || m_impl->m_stats.fixedSteps
-               > std::numeric_limits<std::uint64_t>::max() - m_impl->m_maxUpdates) {
+    if (m_impl->m_stats.frames == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play frame counters exhausted");
     }
 
@@ -559,23 +557,10 @@ namespace Dot::Editor {
       ++m_impl->m_stats.frames;
 
       for (std::size_t step = 0; step < timing.updates; ++step) {
-        auto clock = m_impl->m_session->gameClock();
-        auto before = clock
-                          ? clock->snapshot()
-                          : Core::Result<Script::GameClockSnapshot>{std::unexpected(clock.error())};
-
-        if (!before) {
-          return std::unexpected(before.error());
-        }
-
         auto dispatched = m_impl->record(m_impl->m_session->fixedUpdate());
 
         if (!dispatched) {
           return dispatched;
-        }
-
-        if (!before->paused) {
-          ++m_impl->m_stats.fixedSteps;
         }
       }
 
@@ -835,6 +820,7 @@ namespace Dot::Editor {
     result.retiringAudio = game->retiringAudio;
     result.clock = game->clock;
     result.simulatedUpdates = game->simulatedUpdates;
+    result.fixedSteps = game->lifetimeFixedSteps;
     return result;
   }
 

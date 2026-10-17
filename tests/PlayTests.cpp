@@ -133,12 +133,23 @@ TEST_CASE("play.pause_consumes_scheduler_time_without_simulation_or_resume_debt"
   CHECK(play.stats()->simulatedUpdates == 0);
   CHECK(play.stats()->frames == 2);
   CHECK(play.scene().value()->entities()->at(1).transform.position == before);
-  REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
-  REQUIRE(play.advance(held(), 16666666ns));
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  REQUIRE(play.advance(held(), 1s));
+  CHECK(play.stats()->clock->paused);
+  CHECK(play.stats()->clock->step->state == Dot::Script::GameStepState::Completed);
   CHECK(play.stats()->fixedSteps == 1);
   CHECK(play.stats()->simulatedUpdates == 1);
   CHECK(play.scene().value()->entities()->at(1).transform.position.x
         == doctest::Approx(before.x + 2.0 / 60));
+  REQUIRE(play.advance(held(), 1s));
+  CHECK(play.stats()->fixedSteps == 1);
+  CHECK(play.stats()->simulatedUpdates == 1);
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  REQUIRE(play.advance(held(), 16666666ns));
+  CHECK(play.stats()->fixedSteps == 2);
+  CHECK(play.stats()->simulatedUpdates == 2);
+  CHECK(play.scene().value()->entities()->at(1).transform.position.x
+        == doctest::Approx(before.x + 4.0 / 60));
   CHECK(Dot::World::encodeScene(authoring).value() == saved);
   REQUIRE(play.stop());
   CHECK_FALSE(clock.perform(R"({"command":"set-paused","paused":true})"));

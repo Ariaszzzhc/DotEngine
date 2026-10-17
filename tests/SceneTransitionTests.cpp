@@ -177,7 +177,14 @@ TEST_CASE("scene_transition.prepares_before_stop_rebuilds_services_and_preserves
   CHECK_FALSE(session.update(-1));
   CHECK(session.sceneRequest(id)->state == Script::SceneRequestState::Pending);
   good(session.update(0));
+  auto oldClock = session.gameClock().value();
+  REQUIRE(oldClock.perform(R"({"command":"set-paused","paused":true})"));
+  REQUIRE(oldClock.perform(R"({"command":"step"})"));
   good(Dot::Tests::awaitScene(session, id));
+  CHECK(oldClock.snapshot()->step->state == Script::GameStepState::Cancelled);
+  CHECK_FALSE(session.gameClock()->snapshot()->step);
+  CHECK(session.stats()->simulatedFixedSteps == 0);
+  CHECK(session.stats()->lifetimeFixedSteps == 1);
   CHECK(session.scene().value()->id() != old->id());
   CHECK(session.scene().value()->name().value() == "Next");
   CHECK_FALSE(session.scene().value()->entity(oldActor));

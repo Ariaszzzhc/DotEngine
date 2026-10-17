@@ -6,6 +6,67 @@
 
 import Dot.Script.GameClock;
 
+TEST_CASE("game_clock.single_step_lifecycle_is_bounded_cancelled_and_observable") {
+  using namespace Dot::Script;
+  auto clock = GameClock::create().value();
+  CHECK_FALSE(clock.perform(R"({"command":"step"})"));
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  const auto queued = clock.snapshot().value();
+  REQUIRE(queued.step);
+  CHECK(queued.step->id == 1);
+  CHECK(queued.step->state == GameStepState::Pending);
+  CHECK_FALSE(clock.perform(R"({"command":"step"})"));
+  CHECK_FALSE(clock.perform(R"({"command":"step","count":2})"));
+  CHECK(clock.snapshot()->revision == queued.revision);
+  CHECK(clock.beginStep().value());
+  CHECK_FALSE(clock.beginStep());
+  CHECK_FALSE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  CHECK_FALSE(clock.perform(R"({"command":"step"})"));
+  REQUIRE(clock.finishStep(true));
+  CHECK_FALSE(clock.finishStep(true));
+  CHECK(clock.snapshot()->paused);
+  CHECK(clock.snapshot()->step->state == GameStepState::Completed);
+  CHECK(clock.snapshot()->revision == queued.revision + 2);
+  CHECK(queued.step->state == GameStepState::Pending);
+  CHECK_FALSE(clock.beginStep().value());
+  auto bindings = clock.bindings().value();
+  CHECK(bindings[2].access == HostAccess::ReadWrite);
+  REQUIRE(bindings[2].callback("[]"));
+  CHECK_FALSE(bindings[2].callback("[1]"));
+  CHECK(clock.snapshot()->step->id == 2);
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  CHECK(clock.snapshot()->step->state == GameStepState::Cancelled);
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  clock.retire();
+  CHECK(clock.snapshot()->step->state == GameStepState::Cancelled);
+  CHECK_FALSE(clock.beginStep());
+  CHECK_FALSE(clock.finishStep(true));
+  CHECK_FALSE(clock.perform(R"({"command":"step"})"));
+}
+
+TEST_CASE("game_clock.failed_running_steps_and_foreign_calls_preserve_final_status") {
+  using namespace Dot::Script;
+  auto clock = GameClock::create().value();
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  CHECK(clock.beginStep().value());
+  bool denied{};
+  std::thread worker([&] { denied = !clock.beginStep() && !clock.finishStep(true); });
+  worker.join();
+  CHECK(denied);
+  REQUIRE(clock.finishStep(false));
+  CHECK(clock.snapshot()->step->state == GameStepState::Failed);
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  REQUIRE(clock.beginStep().value());
+  clock.retire();
+  const auto failed = clock.snapshot().value();
+  CHECK(failed.step->state == GameStepState::Failed);
+  clock.retire();
+  CHECK(clock.snapshot()->revision == failed.revision);
+}
+
 TEST_CASE("game_clock.strict_pause_noops_and_bindings_preserve_owned_state") {
   using namespace Dot::Script;
   auto clock = GameClock::create().value();

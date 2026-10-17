@@ -581,6 +581,11 @@ export class Audit extends ScriptComponent<{contract: string}> {
       const revision = gameClock.setPaused(before.paused);
       this.check('gameClock.setPaused', revision === before.revision);
     }
+
+    if (!this.#checked.has('gameClock.step') && !gameClock.snapshot().paused) {
+      this.expectedError(() => { gameClock.step(); }, 'InvalidState');
+      this.check('gameClock.step', gameClock.snapshot().step === null);
+    }
   }
 
   onUpdate(seconds: number): void {

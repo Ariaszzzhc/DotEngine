@@ -1562,9 +1562,16 @@ namespace Dot::Editor {
         status["transition"]
             = stats.transition ? sceneRequestJson(*stats.transition) : Json(nullptr);
         status["retiringAudio"] = stats.retiringAudio;
-        status["clock"] = stats.clock ? Json{{"paused", stats.clock->paused},
-                                             {"revision", std::to_string(stats.clock->revision)}}
-                                      : Json(nullptr);
+        status["clock"]
+            = stats.clock
+                  ? Json{{"paused", stats.clock->paused},
+                         {"revision", std::to_string(stats.clock->revision)},
+                         {"step",
+                          stats.clock->step
+                              ? Json{{"id", std::to_string(stats.clock->step->id)},
+                                     {"state", Script::gameStepStateName(stats.clock->step->state)}}
+                              : Json(nullptr)}}
+                  : Json(nullptr);
         status["simulatedUpdates"] = std::to_string(stats.simulatedUpdates);
 
         if (stats.source) {
@@ -10028,6 +10035,27 @@ namespace Dot::Editor {
         }
 
         ImGui::EndDisabled();
+
+        ImGui::BeginDisabled(
+            stats.state != PlayState::Running || m_pendingClose || !stats.clock
+            || !stats.clock->paused
+            || (stats.clock->step
+                && (stats.clock->step->state == Script::GameStepState::Pending
+                    || stats.clock->step->state == Script::GameStepState::Running)));
+
+        if (ImGui::Button("Step simulation")) {
+          sessionAction({{"command", "clock"},
+                         {"session", std::to_string(m_playSession)},
+                         {"scope", std::to_string(stats.location.scope)},
+                         {"value", {{"command", "step"}}}});
+        }
+
+        ImGui::EndDisabled();
+
+        if (stats.clock && stats.clock->step) {
+          ImGui::Text("Step %llu: %s", static_cast<unsigned long long>(stats.clock->step->id),
+                      Script::gameStepStateName(stats.clock->step->state).data());
+        }
 
         if (stats.source && stats.source->compiling) {
           ImGui::TextWrapped("Compiling scripts; Play continues with the current code.");

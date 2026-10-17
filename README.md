@@ -60,7 +60,7 @@ native export. These features do not establish a mature editor or large-game
 production readiness. Prism Relay has textured rigged maintenance armor, native character traversal,
 sphere-swept shoulder camera, a masked inspection action over locomotion, linked industrial assemblies and explicit checkpoints
 with [native game text](docs/GameUi.md) for controls/save feedback and a
-[keyboard pause menu](docs/GameClock.md). Finished realistic
+[keyboard pause menu and native single-step debugging](docs/GameClock.md). Finished realistic
 character/environment art, production workflows and populated-scene scalability
 remain unfinished.
 
