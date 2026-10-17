@@ -39,6 +39,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #grounded = true;
   #clip = 0;
   #menuVisible = false;
+  #controlsDirty = true;
 
   private bind(): void {
     const camera = scene.primaryCamera;
@@ -48,6 +49,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
     if (!camera || !model || !listener || listener.parent !== null || !listener.audioListener
         || model.parent?.id.value !== this.self.id.value || !this.self.character
+        || !model.animationState.layers.some(layer => layer.name === 'Inspection')
         || !Number.isFinite(this.properties.walkSpeed) || this.properties.walkSpeed <= 0
         || !Number.isFinite(this.properties.runSpeed) || this.properties.runSpeed > 12
         || this.properties.runSpeed < this.properties.walkSpeed
@@ -69,13 +71,20 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#model.playAnimation(0, true);
     this.#camera.update(this.self.characterState.position, 0);
     this.listen();
+    this.showControls();
+    progressStatus('F6 saves a grounded checkpoint; F7 restores it', this.properties.uiFontSize);
+  }
+
+  /** Publish changed instructions on the first live frame after migration.
+   * 迁移后的首个运行帧更新操作说明，不在准备阶段写入 HUD。 */
+  private showControls(): void {
     hud.set('controls', hud.label({
       text:
-          'PRISM RELAY | WASD move | Shift sprint | Space jump | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu',
+          'PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu',
       size: {x: .96, y: .14},
       fontSize: this.properties.uiFontSize
     }));
-    progressStatus('F6 saves a grounded checkpoint; F7 restores it', this.properties.uiFontSize);
+    this.#controlsDirty = false;
   }
 
   private edges(frame: InputFrame): void {
@@ -145,6 +154,26 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     }
 
     this.#grounded = grounded;
+
+    const inspection = this.#model.animationState.layers.find(layer => layer.name === 'Inspection')!;
+
+    if (inspection.active && !inspection.playing && !inspection.paused && !inspection.fade) {
+      this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 0, seconds: .15, stop: true});
+    }
+  }
+
+  /** Trigger/cancel intent only; native layers own clocks, fades and masked mixing.
+   * 仅表达触发/取消意图；时钟、淡化及遮罩混合均由原生动画层负责。 */
+  private inspectAction(): void {
+    const layer = this.#model.animationState.layers.find(value => value.name === 'Inspection')!;
+
+    if (layer.active) {
+      this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 0, seconds: .12, stop: true});
+    } else {
+      this.#model.controlAnimationLayer('Inspection', {action: 'weight', weight: 0});
+      this.#model.controlAnimationLayer('Inspection', {action: 'play', restart: true});
+      this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 1, seconds: .12, stop: false});
+    }
   }
 
   private checkpoint(load: boolean): void {
@@ -162,6 +191,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         this.#clip = 0;
         this.#model.configureAnimation(1, true);
         this.#model.playAnimation(0, true);
+        this.#model.controlAnimationLayer('Inspection', {action: 'stop'});
         this.#camera.update(this.self.characterState.position, 0);
         this.listen();
         progressMessage = 'Checkpoint restored';
@@ -194,6 +224,10 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   }
 
   onFrame(_seconds: number): void {
+    if (this.#controlsDirty) {
+      this.showControls();
+    }
+
     const frame = input.snapshot();
 
     if (frame.index !== this.#progressFrame) {
@@ -207,6 +241,10 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         this.checkpoint(true);
       } else if (frame.keys.F6.pressed) {
         this.checkpoint(false);
+      }
+
+      if (!gameClock.snapshot().paused && frame.keys.E.pressed && !hud.inputState().keyboard) {
+        this.inspectAction();
       }
     }
 

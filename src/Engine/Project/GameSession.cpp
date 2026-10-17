@@ -792,6 +792,66 @@ namespace Dot::Project {
     return result;
   }
 
+  auto GameSession::animationState(World::EntityId owner) const
+      -> Core::Result<Animation::ScenePlayerState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_animations) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation inspection requires a running session");
+    }
+
+    return m_impl->m_animations->state(owner);
+  }
+
+  auto GameSession::controlAnimationLayer(World::EntityId owner, std::string_view name,
+                                          const Animation::LayerControl& operation)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_animations) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation control requires a running session");
+    }
+
+    return m_impl->m_animations->controlLayer(owner, name, operation);
+  }
+
+  auto GameSession::inspectAnimation(World::EntityId owner) const -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_animations) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation inspection requires a running session");
+    }
+
+    return m_impl->m_animations->inspect(owner);
+  }
+
   auto GameSession::gameData() const -> Core::Result<Script::GameData> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");

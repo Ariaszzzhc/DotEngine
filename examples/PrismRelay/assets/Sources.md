@@ -124,3 +124,14 @@ are zero; its key times/poses and all other tracks remain unchanged. Candidate
 curves, failed zero-scale publication/recovery, Undo/Redo, save/reopen, Play and a
 relocated standalone export were exercised with the actual products. The mode and
 derivative change is explicit, not an import/resample or external motion donor.
+
+
+The saved main scene now appends this existing motion to the seven unchanged
+locomotion slots and authors an Inspection masked override layer through the actual
+editor Inspector. Only logical rotation channels 8/10/33 (head/left/right upper arm)
+participate. The action resource itself is unchanged from the cubic authoring pass.
+Layer controls/native fades are engine functionality; no new motion donor, baked
+replacement, mesh generator or external art is introduced. Required empty layer
+arrays were added to current imported/action scene player transports without a
+legacy decoder. The original GLB, textures, meshes/skins and locomotion files remain
+unchanged, with their existing licenses/hashes above.

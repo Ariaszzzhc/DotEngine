@@ -96,6 +96,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/ScenePlayers.cpp
     src/Engine/Animation/Files.cpp
     src/Engine/Animation/SceneAnimator.cpp
+    src/Engine/Animation/Layers.cpp
     src/Engine/Core/Clock.cpp
     src/Engine/Core/Files.cpp
     src/Engine/Core/Paths.cpp
@@ -245,6 +246,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/ScenePlayers.cppm
         src/Engine/Animation/Files.cppm
         src/Engine/Animation/SceneAnimator.cppm
+        src/Engine/Animation/Layers.cppm
         src/Engine/Core/Clock.cppm
         src/Engine/Core/Memory.cppm
         src/Engine/Core/Process.cppm

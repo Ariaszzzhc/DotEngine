@@ -8,12 +8,29 @@ module;
 export module Dot.Animation.Source;
 
 import Dot.Core.Result;
+export import Dot.Animation.Layers;
 
 export namespace Dot::Animation {
   struct Target {
     std::uint32_t node;
     std::uint64_t entity;
     auto operator==(const Target&) const -> bool = default;
+  };
+
+  /** Ordered override layer using a library clip and explicit logical channels.
+   * Stable names address runtime controls; masked channels reserve writer authority
+   * even while stopped/zero-weight. Definitions never borrow entity handles.
+   * 有序覆盖层，使用库内片段和显式逻辑通道；稳定名称用于运行时控制，停止/零权重仍保留
+   * 遮罩通道写入权。定义不借用实体句柄。 */
+  struct LayerProperties {
+    std::string name;
+    std::uint32_t clip{};
+    std::vector<LayerChannel> mask;
+    double weight{1};
+    double speed{1};
+    bool looping{};
+    bool playOnStart{};
+    auto operator==(const LayerProperties&) const -> bool = default;
   };
 
   /** Scene-local IDs, not borrowed handles; cloning/remapping must rewrite them.
@@ -30,6 +47,7 @@ export namespace Dot::Animation {
     bool looping{true};
     bool playOnStart{true};
     bool enabled{true};
+    std::vector<LayerProperties> layers{};
     auto operator==(const PlayerProperties&) const -> bool = default;
   };
 

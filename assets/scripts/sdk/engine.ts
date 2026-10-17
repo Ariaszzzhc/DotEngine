@@ -818,8 +818,29 @@ export interface AnimationState {
   speed: number;
   looping: boolean;
   playing: boolean;
+  paused: boolean;
+  layers: AnimationLayerState[];
   transition: AnimationTransition|null;
 }
+
+export interface AnimationLayerState {
+  name: string;
+  durationSeconds: number;
+  timeSeconds: number;
+  weight: number;
+  speed: number;
+  looping: boolean;
+  playing: boolean;
+  active: boolean;
+  paused: boolean;
+  fade: {from: number; to: number; elapsedSeconds: number; durationSeconds: number; stop: boolean}|null;
+}
+
+export type AnimationLayerControl =
+    {action: 'play'; restart: boolean}|{action: 'pause'}|{action: 'stop'}|
+    {action: 'seek'; seconds: number}|{action: 'weight'; weight: number}|
+    {action: 'configure'; speed: number; looping: boolean}|
+    {action: 'fade'; weight: number; seconds: number; stop: boolean};
 
 /**
  * Native animation controls; saved descriptions remain unchanged. Same-clip play
@@ -864,6 +885,18 @@ export const animation = Object.freeze({
 
   configure(entity: EntityId, speed: number, looping: boolean): void {
     invoke('animation.configure', [entity, speed, looping]);
+  },
+
+  /**
+   * Control one authored masked override layer, independently of the base clip.
+   * Pause holds its contribution; stop removes it. Global player pause freezes all
+   * clocks. Native sampling/mixing/pose publication is atomic; saved definitions
+   * stay unchanged. Layer order and channel weights come from the editor scene.
+   * 独立控制已制作的遮罩覆盖层；暂停保持贡献，停止移除，总暂停冻结所有时钟。原生采样/
+   * 混合/姿态发布原子生效，不改保存定义；层顺序和通道权重由编辑场景定义。
+   */
+  layer(entity: EntityId, name: string, value: AnimationLayerControl): void {
+    invoke('animation.layer', [entity, name, value]);
   },
 });
 
@@ -1021,6 +1054,10 @@ export class Entity {
 
   crossFadeAnimation(clip: number, seconds: number): void {
     animation.crossFade(this.id, clip, seconds);
+  }
+
+  controlAnimationLayer(name: string, value: AnimationLayerControl): void {
+    animation.layer(this.id, name, value);
   }
 
   pauseAnimation(): void {

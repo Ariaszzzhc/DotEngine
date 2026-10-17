@@ -2361,3 +2361,65 @@ geometry through the same implementation. Ready includes all visible sources; a
 loading/error acknowledgement is not a completed view. Capture waits for actual
 completed matching pixels. Material drafts continue independently while geometry
 prepares; Stop, source changes and resource cache refresh retire obsolete results.
+
+
+## Animation layer authoring and live controls / 动画层制作与运行控制
+
+Select an animation player in the stopped scene's Inspector and expand Override
+layers. Add/remove/reorder up to eight named layers. Choose their library clip,
+weight/speed/loop/auto-play settings and explicit node/path/channel weights. The
+virtualized mask list uses the player's real binding map and scene names. Names
+are stable ASCII identifiers, 1..64 letters/digits/_/-, starting with a letter.
+Apply/reset/undo/save/reopen use the ordinary strict stage-inspector and component
+implementation. Apply validates shape/bindings/budgets without file IO; Preview,
+Play and export validate actual masked clip channels and native writer authority.
+A referencing layer prevents the GUI from removing its clip; removing an earlier
+unused slot adjusts layer indices to keep their assets, while scripts still need
+updated numeric indices. Transport/document/history byte budgets apply together
+with element limits; maximum element counts do not promise a single transport fits.
+
+Preview animation exposes the same layer rows as the running game's Animation
+panel: restart, resume, pause, stop, time, weight, speed/loop, and 0.15-second fade
+in/out-and-stop. Native independent clocks and weight fades are visible. Layer pause
+freezes its own clip and fade while holding contribution; player pause freezes all.
+Layer controls do not dirty saved definitions. When editing a clip, native draft
+recreation restores the complete layer snapshot together with the base, preserving
+weights/fades/clocks and checking the resulting pose/skin before resource history.
+Normal clip-form/gesture/dialog guards also protect layer controls.
+
+```json
+{"command":"control-animation-preview-layer","session":"2","name":"Inspection","value":{"action":"seek","seconds":0.8}}
+{"command":"control-animation-preview-layer","session":"2","name":"Inspection","value":{"action":"fade","weight":0,"seconds":0.15,"stop":true}}
+```
+
+During Play the Animation panel chooses among the actual running scene's enabled
+players and shows their live base clock and layer state. Selection is view state,
+not authoring; source entity/scene replacements do not reuse an old scope. The
+panel and strict operations call the same native layer controls. These explicit
+controls can recompose a pose while game simulation is paused, without advancing
+any clock or editing the source scene. Restarting Play starts authored definitions;
+native script reload preserves the running animation service. Stop discards live
+changes and restores the authoring scene.
+
+```json
+{"command":"select-play-animation","session":"1","scope":"12","entity":"589"}
+{"command":"inspect-play-animation","session":"1","scope":"12","entity":"589"}
+{"command":"control-play-animation-layer","session":"1","scope":"12","entity":"589","name":"Inspection","value":{"action":"stop"}}
+```
+
+Use the actual current Play session and runtime scene scope from inspect/inspect-play;
+entity IDs are canonical decimal strings. Unknown fields, wrong types, retired
+sessions/scopes, disabled/missing players and nonrunning Play fail. The read returns
+animation with the same units/shape as the SDK's AnimationState. workspace.playAnimation
+reports a current scoped UI selection or null. The complete strict layer control
+objects are specified in [animation layers](Animation.md#masked-override-layers--遮罩覆盖层).
+Native player control exposes equivalent animation-state/animation-layer operations.
+A CPU pose commit is synchronous; actual presentation/capture still follows normal
+completed-frame provenance. Physical layer buttons/dragging, narrow layout and IME
+acceptance remain unverified on the locked Mac.
+
+停止时在 Inspector 编辑有序层及通道遮罩，沿用普通草稿/Apply/撤销/保存。预览和实际游戏
+的 Animation 面板共用层控制行及原生实现；运行控制带会话/场景范围，不写作者场景。
+暂停游戏时仍可显式重构姿态供逐通道检查，时钟不会自行推进；Stop 恢复作者场景。
+完整草稿重建一次恢复全部层，避免分步重放导致暂时无效的混合。原生交互/窄布局/输入法
+验收仍待完成，不以 JSON 操作成功替代。

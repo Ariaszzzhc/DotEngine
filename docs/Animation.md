@@ -154,10 +154,10 @@ library clips can be edited through the editor's animation track/key workflow.
 
 An entity may own an `animation` description: `clips` (unique assets paths), `targets`
 (unique `{node, entity}` bindings with canonical string scene-local entity IDs),
-`clip` (selected library index), `speed` (-16..16), `looping`, `playOnStart` and
-`enabled`. `Dot.Animation.Source` validates/transports this strict description without
+`clip` (selected library index), `speed` (-16..16), `looping`, `playOnStart`,
+`enabled` and the required `layers` array (empty when unused). `Dot.Animation.Source` validates/transports this strict description without
 IO/devices. Scenes allow at most 128 players, aggregate 10000 bindings/1024 clip
-paths. Targets must exist when authoring is published. Removing a referenced target
+paths, and 30000 masked layer channels. Targets must exist when authoring is published. Removing a referenced target
 requires removing/rebinding its external player; a deletion containing the player
 and all its targets is valid. Description snapshots copy no unrelated components.
 
@@ -496,3 +496,95 @@ retains the transaction for correction. See the editor's tangent handle contract
 切线工具持有现有三次键的一个分量/有效侧，导数按秒，四元数保留原生 XYZW。快照拥有键值，
 更新只改一个有限标量，失败保留候选；回原值恢复位表示。原生 UpdateKey 候选保留其他数据，
 无变化共享原片段；不触及场景/文件/设备/历史，编辑器负责身份检查、姿态/蒙皮预检和一次发布。
+
+
+## Masked override layers / 遮罩覆盖层
+
+`Dot.Animation.Layers` owns up to eight ordered layers and 30000 aggregate masked
+channels. A layer uses one library clip, a unique 1..64-character ASCII identifier
+(letters/digits/_/-, starting with a letter), a nonempty list of unique logical
+node/path/weight entries, weight [0,1], speed [-16,16], looping and playOnStart.
+Each channel must actually exist in that clip; even stopped layers validate their
+masks and reserve their bound entity writers. Different layers may affect the same
+channel, composing in list order. Scene authoring checks structure/bindings/budgets
+without reading files; audition, Play and export validate actual clip channels and
+native authority. No fallback decoder or format-version layer is added; current
+saved player descriptions explicitly carry layers, including empty arrays.
+
+```json
+{"name":"Inspection","clip":7,"mask":[{"node":8,"path":"rotation","weight":1}],"weight":1,"speed":1,"looping":false,"playOnStart":false}
+```
+
+Native base/cross-fade samples compose first, then each active channel uses the
+product of layer/channel weights: local translation/scale interpolate linearly and
+rotation uses shortest-arc quaternion SLERP. A masked channel absent from the base
+starts at its captured bind value, not last frame's layered result. Unmasked fields
+remain owned by the base/current scene. Zero effective contributions and unmasked
+layer tracks are not sampled; a missing mask channel is still a definition error.
+Intrinsic base sample failures are not hidden by an overriding layer. All layers
+and the base share one final scene-transform transaction. Invalid samples or a
+singular final mixed scale preserve all poses, base/transition/layer clocks, weights
+and ownership. Cross-fade interruption captures an unlayered origin, so overlays
+are applied exactly once. Independent layer clocks survive base clip switches/fades.
+
+Native `Layers` functional candidates share immutable clips/masks and own small
+playback vectors. Snapshots own names, clock/weight/fade data and do not borrow the
+service. SceneAnimator applies and then publishes the prepared clocks without
+allocating after pose commit. Clock-only/unchanged/inactive controls do not prime
+an unapplied base pose. ScenePlayers reserves every masked entity even at zero
+weight/while stopped, retaining the existing whole-entity writer exclusion and
+rigid-body/character-root authority checks. Earlier successful players are not
+rolled back if another player fails. Owner-thread and scene-scope rules still apply.
+
+Explicit player pause freezes every clock. A naturally ended base clip holds while
+layers continue. Player `playOnStart:false` starts with this global pause; layer
+`playOnStart` selects active layers, which advance once the player resumes.
+播放器的 `playOnStart:false` 初始总暂停；各层自动播放只设置初始活动状态，恢复播放器后才推进。
+Base speed zero freezes its own clip clocks; layer clocks and
+weight fades remain independent. Layer pause freezes its clip and fade while
+holding contribution; play with restart:false resumes, restart:true selects its
+directional start. Stop removes that layer and resets its clock. Nonlooping layers
+hold their terminal contribution until explicitly stopped/faded. Fade uses unscaled
+seconds [0,86400], can be interrupted from its current weight and optionally stops
+at zero. Only zero-target fades may request stop. Zero duration applies immediately.
+Game simulation pause supplies zero elapsed time, freezing base and layers together;
+explicit scoped diagnostic controls can still recompose the paused pose.
+
+The strict shared control objects are:
+
+```json
+{"action":"play","restart":true}
+{"action":"pause"}
+{"action":"stop"}
+{"action":"seek","seconds":0.8}
+{"action":"weight","weight":0.5}
+{"action":"configure","speed":1,"looping":false}
+{"action":"fade","weight":0,"seconds":0.15,"stop":true}
+```
+
+`animation.layer(entityId,name,value)` and `Entity.controlAnimationLayer(name,value)`
+use the same native implementation. Native scheduling alone advances time; no JS
+pose mixing, manual animation update or hidden clock is introduced. Saved definitions
+are unchanged by controls. `animation.state`/`Entity.animationState` now include
+explicit player `paused` and owned `layers` with name/duration/time/weight/speed/
+looping/playing/active/paused/fade. playing describes the clip clock, active the
+contribution, paused an explicit clock freeze; these are different states. The
+player's paused flag is separate from the scene's game-clock pause. Weight fade
+snapshots include from/to/elapsedSeconds/durationSeconds/stop, or null.
+
+Editor draft recreation restores a complete ordered layer snapshot with the base
+in one transaction, never replaying partial combinations. It validates count/name
+identity, clamps times only when edited durations shrink, preserves weights/fades/
+active/play/pause state and retains ordinary native/skin preflight. A singular
+intermediate partial combination can therefore be avoided when the complete final
+composition is valid. Controls and failed edits retain the preceding resource and
+preview. Existing initial-pose validation still applies during preview creation.
+
+遮罩层保存库片段及显式逻辑通道，按顺序覆盖本地 TRS；权重为层/通道乘积，旋转走最短
+SLERP。未被基础片段动画的遮罩字段从绑定值开始，不反馈累积。零贡献/未遮罩轨道不采样，
+但定义必须有效且始终保留实体写入权。一次原生事务提交基础和全部层，失败保留全部姿态/
+时钟/权重。基础自然结束不阻止层推进；总暂停、层暂停、片段结束及停止有不同语义。
+权重淡化由原生未缩放时钟推进，可在零权重退休；场景暂停冻结调度，显式调试控制仍可重构
+暂停姿态。编辑器、SDK、独立游戏共用控制与校验，草稿重建一次恢复完整层状态。
+Override layers do not implement additive/reference-pose blending, state machines,
+IK, root-motion extraction, rig/retarget authoring or production-scale guarantees.

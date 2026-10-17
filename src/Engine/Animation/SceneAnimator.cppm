@@ -4,10 +4,13 @@ module;
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
+#include <vector>
 
 export module Dot.Animation.SceneAnimator;
 
 import Dot.Animation.Clip;
+export import Dot.Animation.Layers;
 import Dot.Core.Result;
 import Dot.World.Scene;
 
@@ -31,6 +34,9 @@ export namespace Dot::Animation {
     bool looping{true};
     bool playing{true};
     std::optional<TransitionProgress> transition{};
+    /** Explicit player-wide pause; a naturally ended base clip does not pause layers.
+     * 显式播放器总暂停；基础片段自然结束不会暂停独立层。 */
+    bool paused{};
   };
 
   /** Owns immutable clip and node bindings, not a borrowed scene address. All
@@ -43,7 +49,8 @@ export namespace Dot::Animation {
   class SceneAnimator {
   public:
     [[nodiscard]] static auto bind(const World::Scene& scene, Clip clip,
-                                   std::span<const NodeBinding> bindings)
+                                   std::span<const NodeBinding> bindings,
+                                   std::span<const LayerDefinition> layers = {})
         -> Core::Result<SceneAnimator>;
     SceneAnimator(const SceneAnimator&) = delete;
     auto operator=(const SceneAnimator&) -> SceneAnimator& = delete;
@@ -52,26 +59,46 @@ export namespace Dot::Animation {
     ~SceneAnimator();
     [[nodiscard]] auto state() const -> Core::Result<PlaybackState>;
     [[nodiscard]] auto configure(double speed, bool looping) -> Core::Result<void>;
+    [[nodiscard]] auto layers() const -> Core::Result<std::vector<LayerSnapshot>>;
+    /** Native base/cross-fade and ordered masked layers compose before one scene
+     * transaction. Layer controls never advance/reset the base clock or transition;
+     * failed sampling/pose publication retains every clock, weight and pose.
+     * Unanimated masked channels start from bind values, avoiding feedback drift.
+     * 基础/淡化及有序遮罩层在一次场景事务前混合。层控制不推进/重置基础时钟或过渡；
+     * 采样/姿态发布失败保留全部时钟、权重与姿态。基础未动画的遮罩通道从绑定值开始，避免反馈漂移。
+     */
+    [[nodiscard]] auto controlLayer(World::Scene& scene, std::string_view name,
+                                    const LayerControl& operation) -> Core::Result<void>;
+    /** Restore one complete current-clip playback snapshot with no transition.
+     * Sample all layers together; no partial replay poses are published. Used by
+     * ordinary editor draft recreation. Never changes clip/bindings/definitions.
+     * 恢复当前片段的完整无过渡播放快照；一起采样所有层，不发布分步重放姿态。用于普通
+     * 编辑器草稿重建，不更改片段/绑定/定义。 */
+    [[nodiscard]] auto restorePlayback(World::Scene& scene, PlaybackState state,
+                                       std::span<const LayerPlayback> layers) -> Core::Result<void>;
     /** State only; pose is applied by seek/advance. Speed [-16,16], reverse and
-     * zero supported. Pause freezes scene and clock; play optionally rewinds.
+     * zero supported. Pause freezes all clocks; play optionally rewinds only the base.
      * 仅修改播放状态，由 seek/advance 应用姿态；速度 [-16,16]，支持反向及零速。
-     * 暂停冻结场景/时钟，播放可选择回到起点。 */
+     * 总暂停冻结所有时钟，播放可选择只重置基础片段。 */
     [[nodiscard]] auto play(bool restart = false) -> Core::Result<void>;
     [[nodiscard]] auto pause() -> Core::Result<void>;
-    /** Finite time within [0,duration]. Unanimated fields use current scene values.
+    /** Finite time within [0,duration]. Unanimated/unmasked fields use current scene
+     * values; unanimated masked fields use bind values without feedback drift.
      * All channel evaluation and local updates commit together through setTransforms;
      * invalid samples/scene failures preserve every pose and playback state. Optional
      * pause commits only after the pose succeeds, atomically with the new clock.
-     * 有限时间须在 [0,时长]，未动画字段使用当前场景值；通道求值及局部批量修改一起提交，
+     * 有限时间须在 [0,时长]，未动画/未遮罩字段使用当前场景值，未动画遮罩字段使用绑定值；
+     * 通道求值及局部批量修改一起提交，
      * 无效采样/场景失败保留全部姿态及播放状态；可选暂停仅随成功姿态/时钟一起提交。 */
     [[nodiscard]] auto seek(World::Scene& scene, double time, bool pause = false)
         -> Core::Result<void>;
-    /** Finite elapsed seconds [0,86400]. Loop wraps in either direction; nonlooping
-     * playback holds the terminal sample and pauses. No hidden wall clock.
-     * 有限经过秒数 [0,86400]；循环支持双向回绕，非循环到端点后保持并暂停，无隐藏时钟。 */
+    /** Finite elapsed seconds [0,86400]. Loop wraps in either direction; an ended
+     * nonlooping base holds its terminal sample while independent layers continue.
+     * No hidden wall clock. 有限经过秒数 [0,86400]；循环支持双向回绕，非循环基础片段
+     * 结束后保持末姿态，独立层继续推进，无隐藏时钟。 */
     [[nodiscard]] auto advance(World::Scene& scene, double seconds) -> Core::Result<void>;
-    /** Restore only animated fields to bind pose and stop at time zero atomically.
-     * 仅恢复动画字段的绑定姿态，同时停止并归零；事务失败时保留此前状态。 */
+    /** Restore base/transition/masked fields to bind pose and stop all clocks atomically.
+     * 原子恢复基础/过渡/遮罩字段的绑定姿态并停止所有时钟，失败保留此前状态。 */
     [[nodiscard]] auto stop(World::Scene& scene) -> Core::Result<void>;
     /** Switch the clip using original binding poses. Restore former channels and
      * apply the new directional start in one scene transaction, then play. All
@@ -84,7 +111,8 @@ export namespace Dot::Animation {
      * switches immediately. Both clips advance; missing destination channels fade
      * to bind values, missing source channels start from the visible local pose.
      * Rotation uses shortest-arc SLERP. Interruptions retain one frozen visible
-     * pose instead of stacking layers. Fade time is unscaled; pause freezes both
+     * unlayered origin instead of stacking interrupted fades. Explicit layers apply
+     * once after the base fade. Fade time is unscaled; pause freezes both
      * clocks and fade, while speed zero freezes clip clocks only. A paused or
      * unapplied source is frozen. Both live clips use current speed/loop settings.
      * Nonlooping ends
@@ -92,7 +120,8 @@ export namespace Dot::Animation {
      * pose transaction. Invalid samples preserve all poses, clips and clocks.
      * 用有限秒数 [0,86400] 淡化到新片段正/反向起点，零为立即切换。双片段同时推进；目标
      * 缺失通道淡回绑定值，源缺失通道取当前可见局部姿态，旋转走最短 SLERP。打断冻结当前
-     * 姿态，不叠加无限图层。淡化使用未缩放时间，暂停冻结全部时钟，零速仅冻结片段。
+     * 未分层姿态，不累积被打断的淡化；显式层在基础淡化之后仅应用一次。淡化使用未缩放
+     * 时间，暂停冻结全部时钟，零速仅冻结基础片段。
      * 暂停或尚未应用的源保持冻结；两个活动片段共用当前速度/循环设置。
      * 非循环端点保持至淡化完成；seek/stop/setClip 成功提交后才取消。失败保留全部状态。 */
     [[nodiscard]] auto crossFade(World::Scene& scene, Clip clip, double seconds)

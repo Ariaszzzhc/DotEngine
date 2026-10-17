@@ -909,6 +909,11 @@ namespace Dot::World {
     }
 
     std::size_t count{1}, targets{player->targets.size()}, clips{player->clips.size()};
+    std::size_t masks{};
+
+    for (const auto& layer : player->layers) {
+      masks += layer.mask.size();
+    }
 
     for (const auto entry : m_impl->registry.view<AnimationPlayer>()) {
       if (entry != *native) {
@@ -916,10 +921,14 @@ namespace Dot::World {
         ++count;
         targets += existing.targets.size();
         clips += existing.clips.size();
+
+        for (const auto& layer : existing.layers) {
+          masks += layer.mask.size();
+        }
       }
     }
 
-    if (count > 128 || targets > 10000 || clips > 1024) {
+    if (count > 128 || targets > 10000 || clips > 1024 || masks > 30000) {
       return Core::fail(Core::ErrorCode::Unavailable,
                         "Scene animation authoring capacity exceeded");
     }

@@ -403,6 +403,38 @@ export class Audit extends ScriptComponent<{contract: string}> {
     panel.playAnimation(0, true);
   }
 
+  private layerChecks(): void {
+    const panel = this.entity('Animated panel');
+    panel.pauseAnimation();
+    panel.seekAnimation(1);
+    const base = panel.transform;
+    animation.layer(panel.id, 'PanelTurn', {action: 'configure', speed: 2, looping: true});
+    animation.layer(panel.id, 'PanelTurn', {action: 'play', restart: true});
+    panel.controlAnimationLayer('PanelTurn', {action: 'seek', seconds: 1});
+    const posed = panel.transform;
+    const state = panel.animationState.layers[0]!;
+    this.check('animation.layer', equal(posed.position, base.position)
+        && equal(posed.scale, base.scale) && !equal(posed.rotation, base.rotation));
+    this.check('Entity.controlAnimationLayer', state.name === 'PanelTurn' && state.timeSeconds === 1
+        && state.weight === .5 && state.speed === 2 && state.active);
+    state.weight = 99;
+    this.check('animation.layer.snapshot', panel.animationState.layers[0]!.weight === .5);
+    panel.controlAnimationLayer('PanelTurn', {action: 'pause'});
+    this.check('animation.layer.pause', panel.animationState.layers[0]!.paused);
+    panel.controlAnimationLayer('PanelTurn', {action: 'weight', weight: .75});
+    this.check('animation.layer.weight', panel.animationState.layers[0]!.weight === .75);
+    panel.controlAnimationLayer('PanelTurn', {action: 'fade', weight: 0, seconds: .15, stop: true});
+    this.check('animation.layer.fade', panel.animationState.layers[0]!.fade?.durationSeconds === .15);
+    panel.controlAnimationLayer('PanelTurn', {action: 'stop'});
+    this.check('animation.layer.stop', !panel.animationState.layers[0]!.active && equal(panel.transform, base));
+    this.expectedError(() => {
+      panel.controlAnimationLayer('PanelTurn', {action: 'weight', weight: 2});
+    }, 'InvalidArgument');
+    this.check('animation.layer.failedControl', !panel.animationState.layers[0]!.active);
+    panel.configureAnimation(1, true);
+    panel.playAnimation(0, true);
+  }
+
   private publish(): void {
     const report = this.entity('Report');
     const description = report.script;
@@ -427,7 +459,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     report.script = description;
     scene.rename(
         'Feature Lab | ' + this.#checked.size
-        + ' checks | D move | T reset CCD | 1/2 animation | Space pause | L studio');
+        + ' checks | D move | T reset CCD | 1/2 animation | 3 layer | Space pause | L studio');
   }
 
   private sceneFlowChecks(): void {
@@ -583,6 +615,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
 
     if (!this.#checked.has('animation.failedControl')) {
       this.animationChecks();
+    } else if (!this.#checked.has('animation.layer.failedControl')) {
+      this.layerChecks();
     } else if (!this.#checked.has('Entity.setCharacterYaw')) {
       this.characterChecks();
     }
@@ -597,6 +631,18 @@ export class Audit extends ScriptComponent<{contract: string}> {
 
     if (input.key('Digit1').pressed || input.key('Digit2').pressed) {
       panel.crossFadeAnimation(input.key('Digit2').pressed ? 1 : 0, 0.25);
+    }
+
+    if (input.key('Digit3').pressed) {
+      const layer = panel.animationState.layers[0]!;
+
+      if (layer.active) {
+        panel.controlAnimationLayer('PanelTurn', {action: 'fade', weight: 0, seconds: .15, stop: true});
+      } else {
+        panel.controlAnimationLayer('PanelTurn', {action: 'weight', weight: 0});
+        panel.controlAnimationLayer('PanelTurn', {action: 'play', restart: true});
+        panel.controlAnimationLayer('PanelTurn', {action: 'fade', weight: .5, seconds: .15, stop: false});
+      }
     }
 
     if (input.key('Space').pressed) {

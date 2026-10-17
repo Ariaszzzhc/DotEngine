@@ -780,6 +780,23 @@
           "assets/panel-turn.dotanimation"
         ],
         "enabled": true,
+        "layers": [
+          {
+            "clip": 1,
+            "looping": true,
+            "mask": [
+              {
+                "node": 0,
+                "path": "rotation",
+                "weight": 1.0
+              }
+            ],
+            "name": "PanelTurn",
+            "playOnStart": false,
+            "speed": 1.0,
+            "weight": 0.5
+          }
+        ],
         "looping": true,
         "playOnStart": false,
         "speed": 1.0,

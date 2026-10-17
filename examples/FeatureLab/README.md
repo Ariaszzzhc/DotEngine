@@ -117,12 +117,14 @@ materials currently contribute no shadow/SSAO geometry and use object-level sort
 ## Native animation
 
 The saved Animated panel has a PBR material and two ordinary .dotanimation clips.
-Digit 1 fades/restarts lift, Digit 2 fades to turn, and Space pauses/resumes.
+Digit 1 fades/restarts lift, Digit 2 fades to turn, Digit 3 toggles the masked turn
+layer with native weight fades, and Space pauses/resumes the player.
 Both clips advance during each 0.25-second fade; outgoing-only channels return to
 their binding pose. Interruptions retain the visible composite pose; Stop
 restores the original binding pose. The script uses the engine-owned `dot:engine`
 module's animation service and Entity methods, not scripted transform simulation.
-Animation assertions run on the first update, following initialization checks, so
+Base animation assertions run on the first update, masked layer assertions on the
+next, following initialization checks, so
 the full audit stays within the unchanged per-hook host-call limit. Fixed authored
 entity names resolve once per script realm; getters still read actual native state.
 Hot reload preserves completed checks and native playback without replaying start.
@@ -205,3 +207,12 @@ with Prism Relay; this is not an editor-only overlay or a visual layout designer
 The audit also exercises the native game clock and unscaled onFrame hook, preserving
 the caller's current pause state. Pausing simulation keeps frame/UI work and audio
 playback active; it does not freeze the editor or its controls.
+
+
+The existing Animated panel now has a saved PanelTurn layer using the turn clip,
+rotation-only node-zero mask and half weight. It can turn while the lift clip still
+owns translation. A separate audit phase exercises the generic/native entity layer
+control, independent time/weight snapshots, pause, seek, speed/loop, weight, fade,
+stop and failed control, retaining the per-hook host-call limit. Character/state
+checks continue on the following phase. The inventory records the two new SDK
+members rather than treating implementation-specific assertion totals as completion.

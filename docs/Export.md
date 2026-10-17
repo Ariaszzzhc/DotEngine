@@ -222,6 +222,8 @@ Commands use strict complete objects with no unknown fields:
 | game-data | value | Existing strict GameData protocol, shared with scripts/editor |
 | hud | scope, value | Scene-local strict text operations, shared with scripts/editor |
 | clock | scope, value | Scene-local pause snapshot/set-paused, shared with scripts/editor |
+| animation-state | scope, entity | Owned native base/layer clocks and weight-fade snapshot |
+| animation-layer | scope, entity, name, value | Shared native layer control; does not edit saved definitions or advance time |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
 | scene-status | request | Retained actual replacement result |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |
@@ -319,3 +321,19 @@ Only then do initial GPU skin poses finish and script Start run. The normal even
 control/loading loop continues; closing during preparation owns and joins outstanding
 work. GPU uploads, earlier whole-project/session preparation and other services
 still have synchronous costs. A finite presentation budget retains its meaning.
+
+
+The native animation-state and animation-layer commands require the actual current
+running scope and an enabled synchronized player entity. Their state/control object
+shapes match the script SDK and editor's live animation panel. Game simulation pause
+does not forbid explicit layer pose controls; elapsed clocks remain frozen. Wrong
+scopes, fields, numeric types, names and invalid final poses fail. Stop/restart and
+scene replacement retire the usual scoped state. For example:
+
+```json
+{"command":"animation-state","scope":"4","entity":"589"}
+{"command":"animation-layer","scope":"4","entity":"589","name":"Inspection","value":{"action":"seek","seconds":0.8}}
+```
+
+独立游戏的动画查询/层控制共用原生播放器，要求当前运行范围，返回真实基础/层时钟及权重
+淡化。显式控制可在调度暂停时改当前姿态，不改保存定义、不推进时间；旧范围和无效请求拒绝。

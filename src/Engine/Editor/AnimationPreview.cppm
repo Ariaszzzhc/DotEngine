@@ -3,7 +3,9 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 export module Dot.Editor.AnimationPreview;
@@ -64,6 +66,11 @@ export namespace Dot::Editor {
     [[nodiscard]] auto seek(double seconds, bool pause = false) -> Core::Result<void>;
     [[nodiscard]] auto bindPose() -> Core::Result<void>;
     [[nodiscard]] auto configure(double speed, bool looping) -> Core::Result<void>;
+    [[nodiscard]] auto controlLayer(std::string_view name, const Animation::LayerControl& operation)
+        -> Core::Result<void>;
+    [[nodiscard]] auto restorePlayback(Animation::PlaybackState state,
+                                       std::span<const Animation::LayerPlayback> layers)
+        -> Core::Result<void>;
     /** Explicit elapsed seconds [0,1], without a hidden wall clock. Native sample
      * failures retain the last valid pose and fault audition until recreation.
      * Invalid controls preserve pose/state; generations invalidate stale readbacks.

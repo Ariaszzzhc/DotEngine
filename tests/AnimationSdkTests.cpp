@@ -81,6 +81,78 @@ namespace {
   }
 }  // namespace
 
+TEST_CASE("animation_sdk_masked_layers_fade_pause_stop_and_owned_native_snapshots") {
+  Fixture fixture;
+  fixture.player.layers = {{"Action", 1, {{0, Animation::Path::Scale}}, 0, 1, false, false}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.actor, fixture.player));
+  auto compiled = fixture.compile(R"ts(
+import {animation, ScriptComponent, type AnimationLayerState} from 'dot:engine';
+
+export class Actor extends ScriptComponent {
+  #phase = 0;
+
+  onStart(): void {
+    this.self.playAnimation(0, true);
+    this.self.controlAnimationLayer('Action', {action: 'play', restart: true});
+    animation.layer(this.self.id, 'Action', {action: 'fade', weight: 1, seconds: 1, stop: false});
+  }
+
+  onUpdate(): void {
+    const snapshot: AnimationLayerState = this.self.animationState.layers[0]!;
+
+    if (this.#phase === 0) {
+      if (snapshot.name !== 'Action' || snapshot.weight !== .5 || snapshot.timeSeconds !== .5
+          || this.self.transform.scale.x !== 1.25 || this.self.transform.position.x !== 1) {
+        throw Error('native masked blend');
+      }
+
+      snapshot.weight = 99;
+
+      if (this.self.animationState.layers[0]!.weight !== .5) {
+        throw Error('layer snapshot is borrowed');
+      }
+
+      this.self.controlAnimationLayer('Action', {action: 'pause'});
+    } else if (this.#phase === 1) {
+      if (snapshot.timeSeconds !== .5 || snapshot.weight !== .5 || !snapshot.paused) {
+        throw Error('layer pause must freeze clock and fade');
+      }
+
+      this.self.controlAnimationLayer('Action', {action: 'configure', speed: 0, looping: false});
+      this.self.controlAnimationLayer('Action', {action: 'play', restart: false});
+      this.self.controlAnimationLayer('Action', {action: 'fade', weight: 0, seconds: .5, stop: true});
+    } else if (this.#phase === 2) {
+      if (snapshot.weight !== .25 || snapshot.timeSeconds !== .5
+          || this.self.transform.scale.x !== 1.125) {
+        throw Error('weight fade must use unscaled time');
+      }
+    } else if (snapshot.active || snapshot.fade !== null || this.self.transform.scale.x !== 1) {
+      throw Error('fade completion must remove layer contribution');
+    }
+
+    ++this.#phase;
+  }
+}
+)ts");
+  REQUIRE_MESSAGE(compiled, (compiled ? "" : compiled.error().message));
+  auto session = Script::AnimationSession::create(fixture.scene, fixture.files).value();
+  auto scripts = fixture.scripts(*compiled, session);
+  good(scripts.start());
+  REQUIRE(session.advance(.5));
+  good(scripts.update(.01));
+  REQUIRE(session.advance(.5));
+  good(scripts.update(.01));
+  REQUIRE(session.advance(.25));
+  good(scripts.update(.01));
+  REQUIRE(session.advance(.25));
+  good(scripts.update(.01));
+  auto observed = session.inspect(fixture.actor);
+  REQUIRE(observed);
+  CHECK(Json::parse(*observed)["layers"][0]["active"] == false);
+  good(scripts.stop());
+  CHECK(fixture.scene->entity(fixture.actor)->animation.value() == fixture.player);
+}
+
 TEST_CASE("animation_sdk_real_typescript_controls_native_pose_clock_library_and_snapshots") {
   Fixture fixture;
   auto compiled = fixture.compile(R"ts(
@@ -151,6 +223,8 @@ function inspect(self: ScriptComponent['self']): void {
   for (const action of [() => self.playAnimation(), () => self.pauseAnimation(),
                        () => self.stopAnimation(), () => self.seekAnimation(1),
                        () => self.configureAnimation(1, false),
+                       () => self.controlAnimationLayer('Action', {action: 'stop'}),
+                       () => animation.layer(self.id, 'Action', {action: 'play', restart: true}),
                        () => self.crossFadeAnimation(1, 1),
                        () => animation.crossFade(self.id, 1, 1)]) {
     let denied = false;
@@ -317,6 +391,11 @@ TEST_CASE("animation_sdk_typecheck_rejects_wrong_ids_controls_and_script_schedul
        {"import {animation} from 'dot:engine';animation.play({scene:1,value:2});",
         "import {animation} from 'dot:engine';animation.seek({scene:'1',value:'1'},'1');",
         "import {animation} from 'dot:engine';animation.advance(1);",
+        "import {animation} from "
+        "'dot:engine';animation.layer({scene:'1',value:'1'},'Action',{action:'play'});",
+        "import {scene} from "
+        "'dot:engine';scene.create().controlAnimationLayer('Action',{action:'fade',weight:0,"
+        "seconds:'1',stop:true});",
         "import {animation} from 'dot:engine';animation.crossFade({scene:'1',value:'1'},null,1);",
         "import {scene} from 'dot:engine';scene.create().crossFadeAnimation(1,'1');",
         "import {animation} from 'dot:engine';animation.play({scene:'1',value:'1'},'Move');",

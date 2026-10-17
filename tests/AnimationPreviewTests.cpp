@@ -7,6 +7,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
@@ -64,6 +65,47 @@ namespace {
     }
   };
 }  // namespace
+
+TEST_CASE(
+    "animation_preview.draft_recreation_restores_all_layer_clocks_and_weight_fades_together") {
+  Fixture fixture;
+  fixture.properties.layers
+      = {{"Action", 1, {{0, Animation::Path::Translation}}, .5, 1, true, true}};
+  REQUIRE(fixture.source.setAnimationPlayer(fixture.owner, fixture.properties));
+  auto preview = fixture.create();
+  REQUIRE(preview.seek(.5));
+  REQUIRE(preview.controlLayer("Action", Animation::SeekLayer{.25}));
+  REQUIRE(preview.play(0, false));
+  REQUIRE(preview.controlLayer("Action", Animation::FadeLayer{1, 1, false}));
+  REQUIRE(preview.advance(.25));
+  REQUIRE(preview.pause());
+  const auto state = preview.stats().value();
+  auto replacement = Animation::Clip::create({"Edited",
+                                              {{0,
+                                                Animation::Path::Translation,
+                                                Animation::Interpolation::Linear,
+                                                {{0, {}}, {2, {4, 0, 0, 0}}}}}})
+                         .value();
+  auto recreated = Editor::AnimationPreview::create(
+                       fixture.source, fixture.files, fixture.owner.value,
+                       Animation::ClipAsset{fixture.properties.clips[0], replacement})
+                       .value();
+  const std::array clocks{state.player.layers.front().playback};
+  REQUIRE(recreated.restorePlayback(state.player.playback, clocks));
+  CHECK(recreated.stats()->player.layers == state.player.layers);
+  CHECK(recreated.stats()->player.playback.time == state.player.playback.time);
+  CHECK(recreated.stats()->player.playback.paused);
+  const auto weight = state.player.layers.front().playback.weight;
+  CHECK(fixture.x(recreated) == doctest::Approx(1.5 * (1 - weight) + 20.5 * weight));
+  const auto pose = fixture.x(recreated);
+  REQUIRE(recreated.advance(.5));
+  CHECK(fixture.x(recreated) == pose);
+  auto bad = clocks;
+  bad[0].time = 99;
+  CHECK_FALSE(recreated.restorePlayback(state.player.playback, bad));
+  CHECK(fixture.x(recreated) == pose);
+  CHECK(recreated.stats()->player.layers == state.player.layers);
+}
 
 TEST_CASE("animation_preview.isolated_scrubbing_play_pause_switch_and_bind_pose") {
   Fixture fixture;

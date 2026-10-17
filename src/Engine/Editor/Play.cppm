@@ -11,6 +11,8 @@ module;
 
 export module Dot.Editor.Play;
 
+import Dot.Animation.ScenePlayers;
+
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Project;
@@ -113,6 +115,12 @@ export namespace Dot::Editor {
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
+    [[nodiscard]] auto inspectAnimation(World::EntityId owner) const -> Core::Result<std::string>;
+    [[nodiscard]] auto animationState(World::EntityId owner) const
+        -> Core::Result<Animation::ScenePlayerState>;
+    [[nodiscard]] auto controlAnimationLayer(World::EntityId owner, std::string_view name,
+                                             const Animation::LayerControl& operation)
+        -> Core::Result<void>;
     [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
     [[nodiscard]] auto textInputRequested() const -> Core::Result<bool>;

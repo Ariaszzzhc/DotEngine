@@ -13,6 +13,7 @@
           "assets/surveyor/animations/6.dotanimation"
         ],
         "enabled": true,
+        "layers": [],
         "looping": true,
         "playOnStart": true,
         "speed": 1.0,

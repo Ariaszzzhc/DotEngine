@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <nlohmann/json.hpp>
+#include <optional>
 #include <thread>
 #include <utility>
 
@@ -15,6 +17,7 @@ import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.PlayerControl;
 import Dot.Script.Compiler;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -47,6 +50,131 @@ namespace {
     }
   };
 }  // namespace
+
+TEST_CASE("animation.layer_controls_preserve_unprimed_reverse_base_start") {
+  Fixture fixture;
+  fixture.properties.speed = -1;
+  fixture.properties.looping = false;
+  fixture.properties.layers
+      = {{"Action", 0, {{0, Animation::Path::Translation}}, 0, 1, false, false}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  auto authored = fixture.scene->transform(fixture.target).value();
+  authored.position.x = 9;
+  REQUIRE(fixture.scene->setTransform(fixture.target, authored));
+  auto players = Animation::ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.controlLayer(fixture.owner, "Action", Animation::WeightLayer{.5}));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 9);
+  REQUIRE(players.advance(.5));
+  CHECK(players.state(fixture.owner)->playback.time == 1.5);
+  CHECK(fixture.scene->transform(fixture.target)->position.x == 1.5F);
+  REQUIRE(players.advance(.5));
+  CHECK(players.state(fixture.owner)->playback.time == 1);
+}
+
+TEST_CASE("animation.product_inspection_reads_actual_layer_clocks_with_strict_running_scope") {
+  Fixture fixture;
+  fixture.properties.layers
+      = {{"Action", 0, {{0, Animation::Path::Translation}}, .5, 2, true, true}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(fixture.project.saveStartup(*fixture.scene));
+  const auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto session = Project::GameSession::create(fixture.project, compiler).value();
+  auto control = Project::PlayerControl::create(session).value();
+  CHECK_FALSE(session.inspectAnimation(fixture.owner));
+  REQUIRE(session.start());
+  REQUIRE(session.update(.5));
+  auto playing = session.scene().value();
+  const auto owner = playing->findEntity(fixture.owner.value).value();
+  using Json = nlohmann::json;
+  const auto before = session.inspectAnimation(owner).value();
+  const auto state = Json::parse(before);
+  CHECK(state["timeSeconds"] == .5);
+  CHECK(state["layers"][0]["timeSeconds"] == 1);
+  auto request = Json{{"command", "animation-state"},
+                      {"scope", std::to_string(playing->id())},
+                      {"entity", std::to_string(owner.value)}};
+  const auto reply = control.perform(request.dump());
+  REQUIRE(reply);
+  CHECK(Json::parse(*reply)["animation"] == state);
+  request["scope"] = std::to_string(fixture.scene->id());
+  CHECK_FALSE(control.perform(request.dump()));
+  request["scope"] = std::to_string(playing->id());
+  request["extra"] = 0;
+  CHECK_FALSE(control.perform(request.dump()));
+  CHECK(session.inspectAnimation(owner).value() == before);
+  request = Json{{"command", "animation-layer"},
+                 {"scope", std::to_string(playing->id())},
+                 {"entity", std::to_string(owner.value)},
+                 {"name", "Action"},
+                 {"value", {{"action", "stop"}}}};
+  REQUIRE(control.perform(request.dump()));
+  CHECK_FALSE(session.animationState(owner)->layers.front().playback.active);
+  CHECK(session.animationState(owner)->playback.time == .5);
+  CHECK(playing->transform(playing->findEntity(fixture.target.value).value())->position.x == .5F);
+  const auto stopped = session.inspectAnimation(owner).value();
+  request["scope"] = std::to_string(fixture.scene->id());
+  CHECK_FALSE(control.perform(request.dump()));
+  request["scope"] = std::to_string(playing->id());
+  request["value"] = {{"action", "weight"}, {"weight", true}};
+  CHECK_FALSE(control.perform(request.dump()));
+  CHECK(session.inspectAnimation(owner).value() == stopped);
+  REQUIRE(session.close());
+  CHECK_FALSE(session.inspectAnimation(owner));
+  CHECK_FALSE(control.perform(Json{{"command", "animation-state"},
+                                   {"scope", std::to_string(playing->id())},
+                                   {"entity", std::to_string(owner.value)}}
+                                  .dump()));
+}
+
+TEST_CASE("animation.layer_writer_reservations_survive_inactivity_clip_switch_and_stop") {
+  using namespace Animation;
+  Fixture fixture;
+  auto extra = fixture.scene->createEntity("Extra").value();
+  auto overlay = Clip::create({"Overlay",
+                               {{1,
+                                 Path::Translation,
+                                 Interpolation::Linear,
+                                 {{0, {10, 0, 0, 0}}, {2, {12, 0, 0, 0}}}}}})
+                     .value();
+  REQUIRE(saveClip(fixture.files, "assets/overlay.dotanimation", overlay));
+  fixture.properties.clips.push_back("assets/overlay.dotanimation");
+  fixture.properties.targets.push_back({1, extra.value});
+  fixture.properties.layers = {{"Action", 1, {{1, Path::Translation}}, 1, 1, false, false}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  auto players = ScenePlayers::create(fixture.scene, fixture.files).value();
+  REQUIRE(players.advance(0));
+  REQUIRE(players.controlLayer(fixture.owner, "Action", PlayLayer{true}));
+  REQUIRE(players.advance(.5));
+  CHECK(fixture.scene->transform(fixture.target)->position.x == .5F);
+  CHECK(fixture.scene->transform(extra)->position.x == 10.5F);
+  REQUIRE(players.stop(fixture.owner));
+  CHECK_FALSE(players.state(fixture.owner)->layers.front().playback.active);
+  auto other = fixture.scene->createEntity("Other player").value();
+  World::AnimationPlayer conflict{{"assets/overlay.dotanimation"}, {{1, extra.value}}};
+  REQUIRE(fixture.scene->setAnimationPlayer(other, conflict));
+  CHECK_FALSE(players.advance(0));
+  CHECK_FALSE(ScenePlayers::create(fixture.scene, fixture.files));
+  REQUIRE(fixture.scene->setAnimationPlayer(other, std::nullopt));
+  REQUIRE(players.play(fixture.owner, 0, true));
+  REQUIRE(players.crossFade(fixture.owner, 1, .1));
+  REQUIRE(players.advance(.1));
+  REQUIRE(players.play(fixture.owner, 0, true));
+  REQUIRE(fixture.scene->setRigidBody(extra, World::RigidBody{}));
+  CHECK_FALSE(players.advance(0));
+  CHECK_FALSE(ScenePlayers::create(fixture.scene, fixture.files));
+}
+
+TEST_CASE("animation.layer_masks_validate_actual_library_channels_and_character_authority") {
+  using namespace Animation;
+  Fixture fixture;
+  fixture.properties.layers = {{"Bad", 0, {{0, Path::Scale}}}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  CHECK_FALSE(ScenePlayers::create(fixture.scene, fixture.files));
+  fixture.properties.layers[0].mask[0].path = Path::Translation;
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.owner, fixture.properties));
+  REQUIRE(fixture.scene->setCharacterController(fixture.target, World::CharacterController{}));
+  CHECK_FALSE(ScenePlayers::create(fixture.scene, fixture.files));
+}
 
 TEST_CASE("animation.character_root_protects_physics_without_blocking_child_bones") {
   Fixture fixture;

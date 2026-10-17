@@ -107,6 +107,12 @@ namespace Dot::Animation {
         unique.insert(targets.at(track.node));
       }
 
+      for (const auto& layer : player.properties.layers) {
+        for (const auto& channel : layer.mask) {
+          unique.insert(targets.at(channel.node));
+        }
+      }
+
       return {unique.begin(), unique.end()};
     }
 
@@ -278,7 +284,14 @@ namespace Dot::Animation {
 
             const auto& selected = library[properties.clip];
             const auto duration = take(selected.duration());
-            auto animator = take(SceneAnimator::bind(*scene, selected, bindings));
+            std::vector<LayerDefinition> layers;
+
+            for (const auto& layer : properties.layers) {
+              layers.push_back({layer.name, library[layer.clip], layer.mask, layer.weight,
+                                layer.speed, layer.looping, layer.playOnStart});
+            }
+
+            auto animator = take(SceneAnimator::bind(*scene, selected, bindings, layers));
             auto configured = animator.configure(properties.speed, properties.looping);
 
             if (!configured) {
@@ -297,6 +310,12 @@ namespace Dot::Animation {
 
             for (const auto& track : take(selected.description())->tracks) {
               selectedWriters.insert(targets.at(track.node));
+            }
+
+            for (const auto& layer : properties.layers) {
+              for (const auto& channel : layer.mask) {
+                selectedWriters.insert(targets.at(channel.node));
+              }
             }
 
             player = std::make_shared<Player>(
@@ -524,14 +543,18 @@ namespace Dot::Animation {
 
     const auto& player = **result;
     auto playback = player.animator.state();
+    auto layers = player.animator.layers();
 
-    if (!playback) {
-      return std::unexpected(playback.error());
+    if (!playback || !layers) {
+      return std::unexpected(!playback ? playback.error() : layers.error());
     }
 
-    return ScenePlayerState{player.clip, player.properties.clips[player.clip],
+    return ScenePlayerState{player.clip,
+                            player.properties.clips[player.clip],
                             player.library[player.clip].description().value()->name,
-                            player.duration, *playback};
+                            player.duration,
+                            *playback,
+                            std::move(*layers)};
   }
 
   auto ScenePlayers::play(World::EntityId owner, std::optional<std::uint32_t> clip, bool restart)
@@ -734,5 +757,44 @@ namespace Dot::Animation {
 
     auto player = m_impl->controlled(owner);
     return player ? (*player)->animator.configure(speed, looping) : std::unexpected(player.error());
+  }
+
+  auto ScenePlayers::restorePlayback(World::EntityId owner, PlaybackState state,
+                                     std::span<const LayerPlayback> layers) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    auto restored = (*player)->animator.restorePlayback(*m_impl->scene, state, layers);
+
+    if (restored) {
+      (*player)->primed = true;
+      m_impl->retireWriters(**player);
+    }
+
+    return restored;
+  }
+
+  auto ScenePlayers::controlLayer(World::EntityId owner, std::string_view name,
+                                  const LayerControl& operation) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto player = m_impl->controlled(owner);
+
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    /** Layer-only controls preserve the pending base directional start.
+     * 仅层控制保留尚未应用的基础片段方向起点。 */
+    return (*player)->animator.controlLayer(*m_impl->scene, name, operation);
   }
 }  // namespace Dot::Animation

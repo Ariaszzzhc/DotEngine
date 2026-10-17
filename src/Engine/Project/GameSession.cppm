@@ -10,6 +10,8 @@ module;
 
 export module Dot.Project.GameSession;
 
+import Dot.Animation.ScenePlayers;
+
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Project;
@@ -142,6 +144,17 @@ export namespace Dot::Project {
     /** Owned game-wide control handle; close/fault/destruction retires writes.
      * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
+    /** Read the current native animation clocks/layers without syncing or advancing.
+     * 只读当前原生动画时钟/层，不触发同步或推进。 */
+    [[nodiscard]] auto inspectAnimation(World::EntityId owner) const -> Core::Result<std::string>;
+    [[nodiscard]] auto animationState(World::EntityId owner) const
+        -> Core::Result<Animation::ScenePlayerState>;
+    /** Running scoped native control, including explicit pose changes while game
+     * scheduling is paused. Never edits saved definitions or advances time.
+     * 当前运行范围的原生控制，允许游戏调度暂停时显式改姿态；不改保存定义、不推进时间。 */
+    [[nodiscard]] auto controlAnimationLayer(World::EntityId owner, std::string_view name,
+                                             const Animation::LayerControl& operation)
+        -> Core::Result<void>;
     /** Current scene pause service; replacement starts a fresh unpaused clock.
      * 当前场景暂停服务；场景替换建立新的非暂停时钟。 */
     [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;

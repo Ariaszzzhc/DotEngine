@@ -12,6 +12,7 @@ module;
 #include <thread>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module Dot.Animation.SceneAnimator;
@@ -97,6 +98,8 @@ namespace Dot::Animation {
     };
 
     Clip clip;
+    Layers m_layers;
+    Values m_baseValues;
     std::optional<Transition> m_transition;
     bool m_applied{};
     std::uint64_t scope{};
@@ -141,6 +144,11 @@ namespace Dot::Animation {
         values[{track.node, track.path}] = channelValue(targets.at(track.node).rest, track.path);
       }
 
+      for (const auto& channel : m_layers.channels().value()) {
+        values[{channel.node, channel.path}]
+            = channelValue(targets.at(channel.node).rest, channel.path);
+      }
+
       if (m_transition) {
         for (const auto& [channel, value] : m_transition->origin) {
           values[channel] = channelValue(targets.at(channel.first).rest, channel.second);
@@ -152,7 +160,8 @@ namespace Dot::Animation {
 
     auto apply(World::Scene& scene, double time, bool restore = false,
                const Clip* replacement = nullptr, const Transition* fade = nullptr,
-               double sourceTime = 0, double weight = 0) -> Core::Result<void> {
+               double sourceTime = 0, double weight = 0, const Layers* layerCandidate = nullptr)
+        -> Core::Result<void> {
       auto checked = checkScene(scene);
 
       if (!checked) {
@@ -165,6 +174,11 @@ namespace Dot::Animation {
 
         if (restore || replacement || (m_transition && !fade)) {
           values = restValues();
+        }
+
+        for (const auto& channel : m_layers.channels().value()) {
+          values.try_emplace(std::pair{channel.node, channel.path},
+                             channelValue(targets.at(channel.node).rest, channel.path));
         }
 
         if (!restore) {
@@ -214,6 +228,32 @@ namespace Dot::Animation {
           }
         }
 
+        Values base;
+
+        if (!m_layers.channels()->empty()) {
+          base = values;
+        }
+
+        if (!restore) {
+          auto overlay = (layerCandidate ? *layerCandidate : m_layers).sample();
+
+          if (!overlay) {
+            return std::unexpected(overlay.error());
+          }
+
+          for (const auto& layer : *overlay) {
+            const auto key = std::pair{layer.channel.node, layer.channel.path};
+            auto value
+                = mixed(layer.channel.path, values.at(key), layer.channel.value, layer.weight);
+
+            if (!value) {
+              return std::unexpected(value.error());
+            }
+
+            values[key] = *value;
+          }
+        }
+
         std::map<std::uint32_t, World::Transform> poses;
 
         for (const auto& [channel, value] : values) {
@@ -246,6 +286,7 @@ namespace Dot::Animation {
 
         if (result) {
           m_applied = true;
+          m_baseValues = std::move(base);
         }
 
         return result;
@@ -264,7 +305,9 @@ namespace Dot::Animation {
   SceneAnimator::~SceneAnimator() = default;
 
   auto SceneAnimator::bind(const World::Scene& scene, Clip clip,
-                           std::span<const NodeBinding> bindings) -> Core::Result<SceneAnimator> {
+                           std::span<const NodeBinding> bindings,
+                           std::span<const LayerDefinition> definitions)
+      -> Core::Result<SceneAnimator> {
     auto description = clip.description();
 
     if (!description) {
@@ -307,6 +350,19 @@ namespace Dot::Animation {
         }
       }
 
+      auto layers = Layers::create(definitions);
+
+      if (!layers) {
+        return std::unexpected(layers.error());
+      }
+
+      for (const auto& channel : layers->channels().value()) {
+        if (!nodes.contains(channel.node)) {
+          return Core::fail(Core::ErrorCode::NotFound, "Animation layer target is not bound");
+        }
+      }
+
+      impl->m_layers = std::move(*layers);
       impl->targets = std::move(nodes);
       impl->clip = std::move(clip);
       return SceneAnimator(std::move(impl));
@@ -324,6 +380,87 @@ namespace Dot::Animation {
     auto checked = m_impl->check();
     return checked ? Core::Result<PlaybackState>{m_impl->playback}
                    : std::unexpected(checked.error());
+  }
+
+  auto SceneAnimator::layers() const -> Core::Result<std::vector<LayerSnapshot>> {
+    auto checked = state();
+    return checked ? m_impl->m_layers.states() : std::unexpected(checked.error());
+  }
+
+  auto SceneAnimator::controlLayer(World::Scene& scene, std::string_view name,
+                                   const LayerControl& operation) -> Core::Result<void> {
+    auto checked = state();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto candidate = m_impl->m_layers.updated(name, operation);
+
+    if (!candidate) {
+      return std::unexpected(candidate.error());
+    }
+
+    auto same = m_impl->m_layers.contributesLike(*candidate);
+
+    if (!same) {
+      return std::unexpected(same.error());
+    }
+
+    if (*same) {
+      auto live = m_impl->checkScene(scene);
+
+      if (!live) {
+        return live;
+      }
+
+      m_impl->m_layers = std::move(*candidate);
+      return {};
+    }
+
+    const auto* fade = m_impl->m_transition ? &*m_impl->m_transition : nullptr;
+    const double weight
+        = checked->transition ? checked->transition->elapsed / checked->transition->duration : 0;
+    auto applied = m_impl->apply(scene, checked->time, false, nullptr, fade,
+                                 fade ? fade->sourceTime : 0, weight, &*candidate);
+
+    if (applied) {
+      m_impl->m_layers = std::move(*candidate);
+    }
+
+    return applied;
+  }
+
+  auto SceneAnimator::restorePlayback(World::Scene& scene, PlaybackState playback,
+                                      std::span<const LayerPlayback> clocks) -> Core::Result<void> {
+    auto checked = state();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!std::isfinite(playback.time) || playback.time < 0
+        || playback.time > m_impl->clip.duration().value() || !std::isfinite(playback.speed)
+        || std::abs(playback.speed) > 16 || playback.transition
+        || (playback.paused && playback.playing)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation playback snapshot");
+    }
+
+    auto layers = m_impl->m_layers.restored(clocks);
+
+    if (!layers) {
+      return std::unexpected(layers.error());
+    }
+
+    auto applied = m_impl->apply(scene, playback.time, false, nullptr, nullptr, 0, 0, &*layers);
+
+    if (applied) {
+      m_impl->playback = playback;
+      m_impl->m_layers = std::move(*layers);
+      m_impl->m_transition.reset();
+    }
+
+    return applied;
   }
 
   auto SceneAnimator::configure(double speed, bool looping) -> Core::Result<void> {
@@ -351,6 +488,7 @@ namespace Dot::Animation {
     }
 
     m_impl->playback.playing = true;
+    m_impl->playback.paused = false;
 
     if (restart) {
       m_impl->playback.time = 0;
@@ -368,6 +506,7 @@ namespace Dot::Animation {
     }
 
     m_impl->playback.playing = false;
+    m_impl->playback.paused = true;
     return {};
   }
 
@@ -389,6 +528,7 @@ namespace Dot::Animation {
 
       if (pause) {
         m_impl->playback.playing = false;
+        m_impl->playback.paused = true;
       }
 
       m_impl->playback.transition.reset();
@@ -412,8 +552,14 @@ namespace Dot::Animation {
 
     auto live = m_impl->checkScene(scene);
 
-    if (!live || !checked->playing) {
+    if (!live || checked->paused || (!checked->playing && !m_impl->m_layers.running().value())) {
       return live;
+    }
+
+    auto layers = m_impl->m_layers.advanced(seconds);
+
+    if (!layers) {
+      return std::unexpected(layers.error());
     }
 
     auto next = clockAfter(*checked, m_impl->clip.duration().value(), seconds);
@@ -440,7 +586,7 @@ namespace Dot::Animation {
 
     auto applied = m_impl->apply(scene, next.time, false, nullptr,
                                  m_impl->m_transition ? &*m_impl->m_transition : nullptr,
-                                 sourceTime, weight);
+                                 sourceTime, weight, &*layers);
 
     if (applied) {
       if (m_impl->m_transition && weight < 1) {
@@ -452,6 +598,7 @@ namespace Dot::Animation {
       }
 
       m_impl->playback = next;
+      m_impl->m_layers = std::move(*layers);
     }
 
     return applied;
@@ -464,9 +611,17 @@ namespace Dot::Animation {
       return std::unexpected(checked.error());
     }
 
+    auto layers = m_impl->m_layers.stopped();
+
+    if (!layers) {
+      return std::unexpected(layers.error());
+    }
+
     auto applied = m_impl->apply(scene, 0, true);
 
     if (applied) {
+      m_impl->m_layers = std::move(*layers);
+      m_impl->playback.paused = true;
       m_impl->playback.time = 0;
       m_impl->playback.playing = false;
       m_impl->playback.transition.reset();
@@ -503,6 +658,7 @@ namespace Dot::Animation {
       m_impl->clip = std::move(clip);
       m_impl->playback.time = time;
       m_impl->playback.playing = true;
+      m_impl->playback.paused = false;
       m_impl->playback.transition.reset();
       m_impl->m_transition.reset();
     }
@@ -547,8 +703,12 @@ namespace Dot::Animation {
       }
 
       for (auto& [channel, value] : fade.origin) {
-        value = channelValue(scene.transform(m_impl->targets.at(channel.first).entity).value(),
-                             channel.second);
+        const auto base = m_impl->m_baseValues.find(channel);
+        value
+            = !m_impl->m_layers.channels()->empty() && base != m_impl->m_baseValues.end()
+                  ? base->second
+                  : channelValue(scene.transform(m_impl->targets.at(channel.first).entity).value(),
+                                 channel.second);
       }
 
       if (!m_impl->m_transition && m_impl->m_applied && current->playing) {
@@ -565,6 +725,7 @@ namespace Dot::Animation {
         m_impl->m_transition = std::move(fade);
         m_impl->playback.time = time;
         m_impl->playback.playing = true;
+        m_impl->playback.paused = false;
         m_impl->playback.transition = TransitionProgress{0, seconds};
       }
 

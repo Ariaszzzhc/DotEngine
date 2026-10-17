@@ -12491,6 +12491,7 @@
           "assets/actions/inspection.dotanimation"
         ],
         "enabled": true,
+        "layers": [],
         "looping": true,
         "playOnStart": true,
         "speed": 1.0,

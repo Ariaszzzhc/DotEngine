@@ -23,9 +23,9 @@ namespace Dot::Script {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
     using Reply = Core::Result<std::optional<std::string>>;
-    constexpr std::array methods{"animation.state",    "animation.play", "animation.pause",
-                                 "animation.stop",     "animation.seek", "animation.configure",
-                                 "animation.crossFade"};
+    constexpr std::array methods{"animation.state",     "animation.play", "animation.pause",
+                                 "animation.stop",      "animation.seek", "animation.configure",
+                                 "animation.crossFade", "animation.layer"};
 
     auto written(Core::Result<void> value) -> Reply {
       return value ? Reply{std::optional<std::string>{}} : std::unexpected(value.error());
@@ -54,7 +54,7 @@ namespace Dot::Script {
       try {
         const auto args = Codec::parseJson(arguments, 8);
         const auto count = method == "animation.play" || method == "animation.configure"
-                                   || method == "animation.crossFade"
+                                   || method == "animation.crossFade" || method == "animation.layer"
                                ? 3U
                            : method == "animation.seek" ? 2U
                                                         : 1U;
@@ -74,6 +74,27 @@ namespace Dot::Script {
           }
 
           Json transition = nullptr;
+          Json layers = Json::array();
+
+          for (const auto& layer : state->layers) {
+            layers.push_back(
+                {{"name", layer.name},
+                 {"durationSeconds", layer.duration},
+                 {"timeSeconds", layer.playback.time},
+                 {"weight", layer.playback.weight},
+                 {"speed", layer.playback.speed},
+                 {"looping", layer.playback.looping},
+                 {"playing", layer.playback.playing},
+                 {"active", layer.playback.active},
+                 {"paused", layer.playback.paused},
+                 {"fade", layer.playback.fade
+                              ? Json{{"from", layer.playback.fade->from},
+                                     {"to", layer.playback.fade->to},
+                                     {"elapsedSeconds", layer.playback.fade->elapsed},
+                                     {"durationSeconds", layer.playback.fade->duration},
+                                     {"stop", layer.playback.fade->stop}}
+                              : Json(nullptr)}});
+          }
 
           if (state->playback.transition) {
             transition = {{"elapsedSeconds", state->playback.transition->elapsed},
@@ -88,6 +109,8 @@ namespace Dot::Script {
                                     {"speed", state->playback.speed},
                                     {"looping", state->playback.looping},
                                     {"playing", state->playback.playing},
+                                    {"paused", state->playback.paused},
+                                    {"layers", std::move(layers)},
                                     {"transition", std::move(transition)}}
                                    .dump()};
         }
@@ -104,6 +127,13 @@ namespace Dot::Script {
           }
 
           return written(m_players.play(owner, clip, args[2].get<bool>()));
+        }
+
+        if (method == "animation.layer") {
+          const auto name = args[1].get<std::string>();
+          auto operation = Animation::decodeLayerControl(args[2].dump());
+          return operation ? written(m_players.controlLayer(owner, name, *operation))
+                           : Reply{std::unexpected(operation.error())};
         }
 
         if (method == "animation.pause") {
@@ -189,6 +219,40 @@ namespace Dot::Script {
   auto AnimationSession::advance(double seconds) -> Core::Result<void> {
     return m_impl ? m_impl->m_players.advance(seconds)
                   : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
+  auto AnimationSession::state(World::EntityId owner) const
+      -> Core::Result<Animation::ScenePlayerState> {
+    return m_impl ? m_impl->m_players.state(owner)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
+  auto AnimationSession::controlLayer(World::EntityId owner, std::string_view name,
+                                      const Animation::LayerControl& operation)
+      -> Core::Result<void> {
+    return m_impl ? m_impl->m_players.controlLayer(owner, name, operation)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
+  auto AnimationSession::inspect(World::EntityId owner) const -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+    }
+
+    auto result
+        = m_impl->invoke("animation.state", Json::array({{{"scene", std::to_string(owner.scene)},
+                                                          {"value", std::to_string(owner.value)}}})
+                                                .dump());
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    if (!*result) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation state produced no snapshot");
+    }
+
+    return std::move(**result);
   }
 
   auto AnimationSession::bindings() const -> Core::Result<HostBindings> {

@@ -674,6 +674,7 @@ namespace Dot::Editor {
     std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
+    std::optional<World::EntityId> m_playAnimationOwner;
     bool m_closeAfterPlay{};
     std::uint64_t m_playSession{};
     std::string m_saveSlot{"checkpoint"};
@@ -1754,6 +1755,16 @@ namespace Dot::Editor {
       return m_transform ? m_transform->scene() : m_document->scene();
     }
 
+    static auto animationRunning(const Animation::ScenePlayerState& player) -> bool {
+      return !player.playback.paused
+             && (player.playback.playing
+                 || std::ranges::any_of(player.layers, [](const auto& layer) {
+                      return layer.playback.active && !layer.playback.paused
+                             && ((layer.playback.playing && layer.playback.speed != 0)
+                                 || layer.playback.fade);
+                    }));
+    }
+
     auto animationStatus() const -> Json {
       if (!m_animationPreview) {
         return nullptr;
@@ -1766,6 +1777,27 @@ namespace Dot::Editor {
       }
 
       const auto& player = state->player;
+      Json layers = Json::array();
+
+      for (const auto& layer : player.layers) {
+        layers.push_back(
+            {{"name", layer.name},
+             {"duration", layer.duration},
+             {"time", layer.playback.time},
+             {"weight", layer.playback.weight},
+             {"speed", layer.playback.speed},
+             {"looping", layer.playback.looping},
+             {"playing", layer.playback.playing},
+             {"active", layer.playback.active},
+             {"paused", layer.playback.paused},
+             {"fade", layer.playback.fade ? Json{{"from", layer.playback.fade->from},
+                                                 {"to", layer.playback.fade->to},
+                                                 {"elapsed", layer.playback.fade->elapsed},
+                                                 {"duration", layer.playback.fade->duration},
+                                                 {"stop", layer.playback.fade->stop}}
+                                          : Json(nullptr)}});
+      }
+
       return {{"session", std::to_string(m_animationSession)},
               {"entity", std::to_string(state->owner)},
               {"source", std::to_string(state->source)},
@@ -1777,6 +1809,8 @@ namespace Dot::Editor {
               {"duration", player.duration},
               {"time", player.playback.time},
               {"playing", player.playback.playing},
+              {"paused", player.playback.paused},
+              {"layers", std::move(layers)},
               {"speed", player.playback.speed},
               {"looping", player.playback.looping},
               {"bindPose", state->bindPose},
@@ -2704,24 +2738,30 @@ namespace Dot::Editor {
         return std::unexpected(next.error());
       }
 
-      auto configured
-          = preview->configure(state->player.playback.speed, state->player.playback.looping);
-      auto posed = configured
-                       ? (state->bindPose ? preview->bindPose()
-                                          : preview->seek(std::min(state->player.playback.time,
-                                                                   next->player.duration)))
-                       : configured;
+      auto playback = state->player.playback;
+      playback.time = std::min(playback.time, next->player.duration);
+      playback.transition.reset();
+      std::vector<Animation::LayerPlayback> layers;
+
+      if (next->player.layers.size() != state->player.layers.size()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Preview layer definitions changed");
+      }
+
+      for (std::size_t i = 0; i < state->player.layers.size(); ++i) {
+        if (state->player.layers[i].name != next->player.layers[i].name) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Preview layer identities changed");
+        }
+
+        auto layer = state->player.layers[i].playback;
+        layer.time = std::min(layer.time, next->player.layers[i].duration);
+        layers.push_back(layer);
+      }
+
+      auto posed
+          = state->bindPose ? preview->bindPose() : preview->restorePlayback(playback, layers);
 
       if (!posed) {
         return std::unexpected(posed.error());
-      }
-
-      if (state->player.playback.playing) {
-        auto played = preview->play(next->player.clip, false);
-
-        if (!played) {
-          return std::unexpected(played.error());
-        }
       }
 
       auto posedScene = preview->scene();
@@ -3263,7 +3303,7 @@ namespace Dot::Editor {
           if (clipGesture() || Codec::id(parsed["buffer"]) != m_buffer
               || Codec::id(parsed["revision"]) != state.revision || m_clipSelection.size() != 1
               || m_clipForm != m_clipOriginal
-              || m_animationPreview->stats()->player.playback.playing
+              || animationRunning(m_animationPreview->stats()->player)
               || m_keyMoveSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
             return Core::fail(Core::ErrorCode::InvalidState,
                               "Tangent requires one current key, clean form and paused preview");
@@ -4365,6 +4405,34 @@ namespace Dot::Editor {
         m_previewReady = false;
         m_requestedPane = "viewport";
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "control-animation-preview-layer") {
+        Codec::requireFields(parsed, {"command", "session", "name", "value"});
+
+        if (!m_animationPreview || Codec::id(parsed["session"]) != m_animationSession
+            || clipGesture() || m_pendingClose || m_captureDialog
+            || (m_clipDocument && m_clipForm != m_clipOriginal)) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Layer control requires a current preview without a gesture/form/dialog");
+        }
+
+        auto operation = Animation::decodeLayerControl(parsed["value"].dump());
+
+        if (!operation) {
+          return std::unexpected(operation.error());
+        }
+
+        auto controlled
+            = m_animationPreview->controlLayer(parsed["name"].get<std::string>(), *operation);
+
+        if (!controlled) {
+          return std::unexpected(controlled.error());
+        }
+
+        m_previewReady = false;
+        return Json{{"ok", true}, {"preview", animationStatus()}}.dump();
       }
 
       if (command == "control-animation-preview" || command == "inspect-animation-preview") {
@@ -5620,6 +5688,48 @@ namespace Dot::Editor {
             .dump();
       }
 
+      if (command == "inspect-play-animation" || command == "control-play-animation-layer"
+          || command == "select-play-animation") {
+        const bool control = command == "control-play-animation-layer";
+        const bool select = command == "select-play-animation";
+        Codec::requireFields(
+            parsed, control ? std::initializer_list<std::string_view>{"command", "session", "scope",
+                                                                      "entity", "name", "value"}
+                            : std::initializer_list<std::string_view>{"command", "session", "scope",
+                                                                      "entity"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession
+            || ((control || select) && (m_pendingClose || m_captureDialog))) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Play session is stale");
+        }
+
+        const World::EntityId owner{Codec::id(parsed["scope"]), Codec::id(parsed["entity"])};
+
+        if (control) {
+          auto operation = Animation::decodeLayerControl(parsed["value"].dump());
+
+          if (!operation) {
+            return std::unexpected(operation.error());
+          }
+
+          auto changed
+              = m_play->controlAnimationLayer(owner, parsed["name"].get<std::string>(), *operation);
+          return changed ? Core::Result<std::string>{"{\"ok\":true}"}
+                         : std::unexpected(changed.error());
+        }
+
+        auto state = m_play->inspectAnimation(owner);
+
+        if (state && select) {
+          m_playAnimationOwner = owner;
+        }
+
+        return state ? Core::Result<std::string>{Json{{"ok", true},
+                                                      {"animation", Codec::parseJson(*state)}}
+                                                     .dump()}
+                     : std::unexpected(state.error());
+      }
+
       if (command == "inspect-play") {
         Codec::requireFields(parsed, {"command"});
 
@@ -6330,6 +6440,7 @@ namespace Dot::Editor {
           {"propertiesText", m_propertiesText},
           {"propertiesInvalid", m_propertiesInvalid},
           {"play", playStatus()},
+          {"playAnimation", playAnimationSelection()},
           {"animationPreview", animationStatus()},
           {"animationClip", clipStatus()},
           {"animationClipboard", clipboardStatus()},
@@ -7293,6 +7404,205 @@ namespace Dot::Editor {
       }
     }
 
+    /** Layer edits remain in the ordinary staged component form; Apply uses the
+     * same strict native player transport as agents. Masks are virtualized so a
+     * bounded large mask does not draw every channel each frame.
+     * 层编辑沿用普通组件草稿；Apply 与智能体共用严格原生播放器传输。遮罩列表虚拟化，
+     * 有界大遮罩不要求每帧绘制全部通道。 */
+    auto animationLayerFields(Json& player) -> void {
+      if (!ImGui::TreeNode("Override layers")) {
+        return;
+      }
+
+      auto& layers = player["layers"];
+      ImGui::TextWrapped(
+          "Layers override only explicit logical channels, in list order. "
+          "Names use letters/digits/_/-, starting with a letter. "
+          "Apply validates structure; native preview/Play/export validates clip channels and "
+          "authority.");
+      std::map<std::string, std::string> names;
+
+      for (const auto& entity : m_snapshot["scene"]["entities"]) {
+        names.emplace(entity["id"].get<std::string>(), entity["name"].get<std::string>());
+      }
+
+      for (std::size_t i = 0; i < layers.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        auto& layer = layers[i];
+        bool remove{}, up{}, down{};
+
+        if (ImGui::TreeNode("Layer", "%s", layer["name"].get_ref<const std::string&>().c_str())) {
+          auto settings = layer;
+          settings.erase("clip");
+          settings.erase("mask");
+          fields(settings);
+
+          for (const auto& [key, value] : settings.items()) {
+            layer[key] = value;
+          }
+
+          const auto selected = layer["clip"].get<std::size_t>();
+          const auto current = selected < player["clips"].size()
+                                   ? player["clips"][selected].get<std::string>()
+                                   : "Choose clip";
+
+          if (PropertyRow row{"Layer clip"};
+              row.visible() && ImGui::BeginCombo("##value", current.c_str())) {
+            for (std::size_t index = 0; index < player["clips"].size(); ++index) {
+              if (ImGui::Selectable(player["clips"][index].get_ref<const std::string&>().c_str(),
+                                    index == selected)) {
+                layer["clip"] = index;
+              }
+            }
+
+            ImGui::EndCombo();
+          }
+
+          auto& mask = layer["mask"];
+          ImGui::Text("%zu masked channels", mask.size());
+          ImGui::BeginChild("Layer mask", {0, 220}, ImGuiChildFlags_Borders);
+          ImGuiListClipper rows;
+          rows.Begin(static_cast<int>(mask.size()));
+          bool removed{};
+
+          while (rows.Step()) {
+            for (int at = rows.DisplayStart; at < rows.DisplayEnd; ++at) {
+              auto& channel = mask[static_cast<std::size_t>(at)];
+              ImGui::PushID(at);
+              const auto node = channel["node"].get<std::uint32_t>();
+              const auto title = std::to_string(node);
+
+              if (PropertyRow row{"Logical node"};
+                  row.visible() && ImGui::BeginCombo("##value", title.c_str())) {
+                for (const auto& binding : player["targets"]) {
+                  const auto id = binding["entity"].get<std::string>();
+                  const auto name = names.find(id);
+                  const auto label
+                      = std::to_string(binding["node"].get<std::uint32_t>()) + " / "
+                        + (name != names.end() ? name->second : "Missing entity " + id);
+
+                  if (ImGui::Selectable(label.c_str(), binding["node"] == node)) {
+                    channel["node"] = binding["node"];
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+
+              constexpr std::array paths{"translation", "rotation", "scale"};
+              const auto path = channel["path"].get<std::string>();
+
+              if (PropertyRow row{"Channel"};
+                  row.visible() && ImGui::BeginCombo("##value", path.c_str())) {
+                for (const auto* choice : paths) {
+                  if (ImGui::Selectable(choice, path == choice)) {
+                    channel["path"] = choice;
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+
+              if (PropertyRow row{"Channel weight"}; row.visible()) {
+                scalar(channel["weight"]);
+              }
+
+              ImGui::BeginDisabled(mask.size() <= 1);
+              removed = ImGui::SmallButton("Remove channel");
+              ImGui::EndDisabled();
+              ImGui::PopID();
+
+              if (removed) {
+                mask.erase(mask.begin() + at);
+                break;
+              }
+            }
+
+            if (removed) {
+              break;
+            }
+          }
+
+          rows.End();
+          ImGui::EndChild();
+          std::size_t count{};
+
+          for (const auto& item : layers) {
+            count += item["mask"].size();
+          }
+
+          ImGui::BeginDisabled(count >= 30000);
+
+          if (ImGui::SmallButton("Add channel")) {
+            bool added{};
+
+            for (const auto& binding : player["targets"]) {
+              for (const auto* path : {"rotation", "translation", "scale"}) {
+                if (!std::ranges::any_of(mask, [&](const Json& channel) {
+                      return channel["node"] == binding["node"] && channel["path"] == path;
+                    })) {
+                  mask.push_back({{"node", binding["node"]}, {"path", path}, {"weight", 1.0}});
+                  added = true;
+                  break;
+                }
+              }
+
+              if (added) {
+                break;
+              }
+            }
+          }
+
+          ImGui::EndDisabled();
+          ImGui::BeginDisabled(i == 0);
+          up = ImGui::SmallButton("Move layer up");
+          ImGui::EndDisabled();
+          ImGui::BeginDisabled(i + 1 == layers.size());
+          down = ImGui::SmallButton("Move layer down");
+          ImGui::EndDisabled();
+          remove = ImGui::SmallButton("Remove layer");
+          ImGui::TreePop();
+        }
+
+        ImGui::PopID();
+
+        if (remove) {
+          layers.erase(layers.begin() + static_cast<Json::difference_type>(i));
+          break;
+        }
+
+        if (up || down) {
+          std::swap(layers[i], layers[up ? i - 1 : i + 1]);
+          break;
+        }
+      }
+
+      ImGui::BeginDisabled(layers.size() >= 8);
+
+      if (ImGui::SmallButton("Add override layer")) {
+        std::size_t index{1};
+
+        while (std::ranges::any_of(layers, [&](const Json& layer) {
+          return layer["name"] == "Layer" + std::to_string(index);
+        })) {
+          ++index;
+        }
+
+        layers.push_back({{"name", "Layer" + std::to_string(index)},
+                          {"clip", player["clip"]},
+                          {"mask", Json::array({{{"node", player["targets"].front()["node"]},
+                                                 {"path", "rotation"},
+                                                 {"weight", 1.0}}})},
+                          {"weight", 1.0},
+                          {"speed", 1.0},
+                          {"looping", false},
+                          {"playOnStart", false}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::TreePop();
+    }
+
     auto inspector() -> void {
       const auto stats = m_document->stats().value();
       refreshFieldOverrides();
@@ -7390,7 +7700,8 @@ namespace Dot::Editor {
                      {"speed", 1.0},
                      {"looping", true},
                      {"playOnStart", true},
-                     {"enabled", true}};
+                     {"enabled", true},
+                     {"layers", Json::array()}};
             } else {
               m_edit[component] = m_presets[component];
             }
@@ -7538,6 +7849,7 @@ namespace Dot::Editor {
             settings.erase("clips");
             settings.erase("targets");
             settings.erase("clip");
+            settings.erase("layers");
             fields(settings);
 
             for (const auto& [key, value] : settings.items()) {
@@ -7562,6 +7874,7 @@ namespace Dot::Editor {
             }
 
             ImGui::TextDisabled("%zu node bindings", player["targets"].size());
+            animationLayerFields(player);
 
             if (ImGui::TreeNode("Clip library")) {
               for (std::size_t i = 0; i < player["clips"].size(); ++i) {
@@ -7585,7 +7898,9 @@ namespace Dot::Editor {
                   ImGui::EndCombo();
                 }
 
-                ImGui::BeginDisabled(player["clips"].size() <= 1);
+                const bool usedByLayer = std::ranges::any_of(
+                    player["layers"], [&](const Json& layer) { return layer["clip"] == i; });
+                ImGui::BeginDisabled(player["clips"].size() <= 1 || usedByLayer);
                 const bool remove = ImGui::SmallButton("Remove clip");
                 ImGui::EndDisabled();
 
@@ -7596,6 +7911,15 @@ namespace Dot::Editor {
                                         + static_cast<Json::difference_type>(i));
                   player["clip"] = selected > i ? selected - 1
                                                 : std::min(selected, player["clips"].size() - 1);
+
+                  for (auto& layer : player["layers"]) {
+                    const auto index = layer["clip"].get<std::size_t>();
+
+                    if (index > i) {
+                      layer["clip"] = index - 1;
+                    }
+                  }
+
                   break;
                 }
               }
@@ -7632,7 +7956,9 @@ namespace Dot::Editor {
 
               ImGui::EndDisabled();
               ImGui::TextWrapped(
-                  "Removing a clip changes later indices. Update scripts that select indices.");
+                  "Remove a referencing layer before its clip. Other layer references keep their "
+                  "asset; "
+                  "update scripts that select changed indices.");
 
               ImGui::TreePop();
             }
@@ -9279,6 +9605,214 @@ namespace Dot::Editor {
       return result;
     }
 
+    template <class Command>
+    auto animationLayerRows(std::span<const Animation::LayerSnapshot> layers, Command&& send)
+        -> void {
+      for (const auto& layer : layers) {
+        ImGui::PushID(layer.name.c_str());
+        const auto command = [&](Json value) { return send(layer.name, std::move(value)); };
+        ImGui::Text("%s / %s", layer.name.c_str(),
+                    !layer.playback.active   ? "stopped"
+                    : layer.playback.paused  ? "paused"
+                    : layer.playback.playing ? "playing"
+                                             : "held");
+
+        if (ImGui::Button("Play / restart layer")) {
+          command({{"action", "play"}, {"restart", true}});
+        }
+
+        if (ImGui::Button("Resume layer")) {
+          command({{"action", "play"}, {"restart", false}});
+        }
+
+        if (ImGui::Button("Pause layer")) {
+          command({{"action", "pause"}});
+        }
+
+        if (ImGui::Button("Stop layer")) {
+          command({{"action", "stop"}});
+        }
+
+        ImGui::BeginDisabled(!layer.playback.active);
+
+        if (ImGui::Button("Fade in (0.15 s)")) {
+          command({{"action", "fade"}, {"weight", 1}, {"seconds", .15}, {"stop", false}});
+        }
+
+        if (ImGui::Button("Fade out and stop (0.15 s)")) {
+          command({{"action", "fade"}, {"weight", 0}, {"seconds", .15}, {"stop", true}});
+        }
+
+        ImGui::EndDisabled();
+        auto time = layer.playback.time;
+        const double zero = 0;
+
+        if (PropertyRow row{"Layer time (s)"};
+            row.visible()
+            && ImGui::SliderScalar("##value", ImGuiDataType_Double, &time, &zero, &layer.duration,
+                                   "%.6f")) {
+          command({{"action", "seek"}, {"seconds", time}});
+        }
+
+        auto weight = layer.playback.weight;
+
+        if (PropertyRow row{"Layer weight"};
+            row.visible() && ImGui::InputDouble("##value", &weight, 0, 0, "%.6g")) {
+          command({{"action", "weight"}, {"weight", weight}});
+        }
+
+        auto speed = layer.playback.speed;
+        auto looping = layer.playback.looping;
+
+        if (PropertyRow row{"Layer speed"};
+            row.visible() && ImGui::InputDouble("##value", &speed, .1, 1, "%.6g")) {
+          command({{"action", "configure"}, {"speed", speed}, {"looping", looping}});
+        }
+
+        if (ImGui::Checkbox("Loop layer", &looping)) {
+          command({{"action", "configure"}, {"speed", speed}, {"looping", looping}});
+        }
+
+        if (layer.playback.fade) {
+          ImGui::Text("Fade %.3f / %.3f s", layer.playback.fade->elapsed,
+                      layer.playback.fade->duration);
+        }
+
+        ImGui::PopID();
+      }
+    }
+
+    auto animationLayerControls(const AnimationPreviewStats& state) -> void {
+      if (state.player.layers.empty() || !ImGui::TreeNode("Animation layers")) {
+        return;
+      }
+
+      ImGui::TextWrapped(
+          "Ordered masked overrides. Layer pause freezes its clip and fade; stop removes it. "
+          "Player pause freezes every clock. Fade uses unscaled seconds.");
+      ImGui::BeginDisabled(state.error.has_value() || clipGesture() || m_pendingClose
+                           || m_captureDialog || (m_clipDocument && m_clipForm != m_clipOriginal));
+      animationLayerRows(state.player.layers, [&](std::string_view name, Json value) {
+        return sessionAction({{"command", "control-animation-preview-layer"},
+                              {"session", std::to_string(m_animationSession)},
+                              {"name", name},
+                              {"value", std::move(value)}});
+      });
+      ImGui::EndDisabled();
+      ImGui::TreePop();
+    }
+
+    auto playAnimationSelection() const -> Json {
+      if (!m_play || !m_playAnimationOwner || m_play->stats()->state != PlayState::Running) {
+        return nullptr;
+      }
+
+      auto scene = m_play->scene();
+
+      if (!scene || (*scene)->id() != m_playAnimationOwner->scene) {
+        return nullptr;
+      }
+
+      auto entity = (*scene)->entity(*m_playAnimationOwner);
+      return entity && entity->animation && entity->animation->enabled
+                 ? Json{{"scope", std::to_string(m_playAnimationOwner->scene)},
+                        {"entity", std::to_string(m_playAnimationOwner->value)}}
+                 : Json(nullptr);
+    }
+
+    auto playAnimationPanel() -> void {
+      if (!m_play || m_play->stats()->state != PlayState::Running) {
+        return;
+      }
+
+      auto scene = m_play->scene();
+      auto players = scene ? (*scene)->animationPlayers()
+                           : Core::Result<std::vector<World::AnimationPlayerInfo>>{
+                                 std::unexpected(scene.error())};
+
+      if (!players) {
+        ImGui::TextWrapped("%s", players.error().message.c_str());
+        return;
+      }
+
+      const auto scope = (*scene)->id();
+      const auto first = std::ranges::find_if(
+          *players, [](const auto& player) { return player.properties.enabled; });
+
+      if (first == players->end()) {
+        ImGui::TextUnformatted("No enabled animation players in the running scene.");
+        return;
+      }
+
+      const auto choose = [&](World::EntityId owner) {
+        return sessionAction({{"command", "select-play-animation"},
+                              {"session", std::to_string(m_playSession)},
+                              {"scope", std::to_string(owner.scene)},
+                              {"entity", std::to_string(owner.value)}});
+      };
+
+      if (!m_playAnimationOwner || m_playAnimationOwner->scene != scope
+          || !std::ranges::any_of(*players, [&](const auto& player) {
+               return player.entity == *m_playAnimationOwner && player.properties.enabled;
+             })) {
+        choose(first->entity);
+      }
+
+      const auto name
+          = m_playAnimationOwner
+                ? (*scene)->entity(*m_playAnimationOwner).transform([](const auto& entity) {
+                    return entity.name;
+                  })
+                : Core::Result<std::string>{
+                      Core::fail(Core::ErrorCode::InvalidState, "Choose a player")};
+      ImGui::TextUnformatted("Running-game animation");
+
+      if (ImGui::BeginCombo("Player", name ? name->c_str() : "Choose player")) {
+        for (const auto& player : *players) {
+          if (!player.properties.enabled) {
+            continue;
+          }
+
+          const auto info = (*scene)->entity(player.entity);
+          const auto title = info ? info->name + "##" + std::to_string(player.entity.value)
+                                  : std::to_string(player.entity.value);
+
+          if (ImGui::Selectable(title.c_str(),
+                                m_playAnimationOwner && player.entity == *m_playAnimationOwner)) {
+            choose(player.entity);
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      if (!m_playAnimationOwner || m_playAnimationOwner->scene != scope) {
+        return;
+      }
+
+      auto state = m_play->animationState(*m_playAnimationOwner);
+
+      if (!state) {
+        ImGui::TextWrapped("%s", state.error().message.c_str());
+        return;
+      }
+
+      ImGui::Text("%s / %.6f s", state->name.c_str(), state->playback.time);
+      ImGui::TextWrapped(
+          "These are live native clocks and overrides. Game pause freezes scheduling; "
+          "explicit layer controls still recompose the current pose.");
+      ImGui::BeginDisabled(m_pendingClose || m_captureDialog);
+      animationLayerRows(state->layers, [&](std::string_view layer, Json value) {
+        return sessionAction({{"command", "control-play-animation-layer"},
+                              {"session", std::to_string(m_playSession)},
+                              {"scope", std::to_string(scope)},
+                              {"entity", std::to_string(m_playAnimationOwner->value)},
+                              {"name", layer},
+                              {"value", std::move(value)}});
+      });
+      ImGui::EndDisabled();
+    }
+
     auto animationControls() -> void {
       auto state = m_animationPreview->stats();
 
@@ -9309,8 +9843,8 @@ namespace Dot::Editor {
 
       ImGui::BeginDisabled(state->error.has_value());
 
-      if (ImGui::Button(state->player.playback.playing ? "Pause animation" : "Play animation")) {
-        if (state->player.playback.playing) {
+      if (ImGui::Button(animationRunning(state->player) ? "Pause animation" : "Play animation")) {
+        if (animationRunning(state->player)) {
           command({{"action", "pause"}});
         } else {
           command({{"action", "play"}, {"clip", state->player.clip}, {"restart", false}});
@@ -9335,6 +9869,8 @@ namespace Dot::Editor {
       if (nextButton("Frame model")) {
         action({{"command", "focus-view"}, {"entity", std::to_string(state->owner)}});
       }
+
+      animationLayerControls(*state);
 
       if (m_clipDocument) {
         return;
@@ -11417,6 +11953,11 @@ namespace Dot::Editor {
     }
 
     auto animationPanel() -> void {
+      if (m_play && m_play->stats()->state == PlayState::Running) {
+        playAnimationPanel();
+        return;
+      }
+
       const auto clipboard = m_animationClipboard.snapshot();
 
       if (!m_clipDocument) {

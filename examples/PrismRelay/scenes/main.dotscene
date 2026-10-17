@@ -12496,9 +12496,37 @@
           "assets/surveyor/animations/3.dotanimation",
           "assets/surveyor/animations/4.dotanimation",
           "assets/surveyor/animations/5.dotanimation",
-          "assets/surveyor/animations/6.dotanimation"
+          "assets/surveyor/animations/6.dotanimation",
+          "assets/actions/inspection.dotanimation"
         ],
         "enabled": true,
+        "layers": [
+          {
+            "clip": 7,
+            "looping": false,
+            "mask": [
+              {
+                "node": 8,
+                "path": "rotation",
+                "weight": 1.0
+              },
+              {
+                "node": 10,
+                "path": "rotation",
+                "weight": 1.0
+              },
+              {
+                "node": 33,
+                "path": "rotation",
+                "weight": 1.0
+              }
+            ],
+            "name": "Inspection",
+            "playOnStart": false,
+            "speed": 1.0,
+            "weight": 1.0
+          }
+        ],
         "looping": true,
         "playOnStart": true,
         "speed": 1.0,

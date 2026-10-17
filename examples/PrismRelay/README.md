@@ -9,6 +9,7 @@ This replaces the earlier collection/timer prototype.
 - WASD or arrows: camera-relative movement, with normalized diagonals and acceleration.
 - Shift: sprint.
 - Space: jump; short input buffering retains presses between fixed steps.
+- E: trigger/cancel the masked inspection gesture while moving; native fades blend it in/out.
 - Mouse: orbit the shoulder camera; wheel: adjust distance.
 - F6: save a grounded resume point. F7: explicitly restore that point, including
   after restarting the exported game. Airborne saves are refused. Loading clears
@@ -120,7 +121,7 @@ For a saved action-only scene, save a copy of the scene, remove the Player movem
 script in that copy and select the new auto-playing clip. The regular editor and
 native exporter can then run the authored action without the locomotion script
 selecting another clip. Keep the original gameplay scene to test movement, jumping,
-checkpoints and camera behavior. This does not add animation layers or retargeting.
+checkpoints and camera behavior. The action-only scene is separate from the main scene's masked layer; retargeting is not implemented.
 
 Use the Animation panel's **Dope sheet** to compare head, arm and other channel times
 on a shared axis. Box-select a time/row region or Shift-click across tracks, then drag
@@ -157,3 +158,22 @@ Frame target. Previous/Next frame pause and sample the native pose atomically. E
 anchor snapping to move a group while preserving offsets, or Snap selected keys to
 quantize each selected key with collision rejection. Grid/display choices are workspace
 preferences, so choose the rate explicitly after opening a new editor process.
+
+
+The main scene now appends the saved inspection action at library slot 7 and defines
+one Inspection override layer. Its explicit mask contains only the real head and
+left/right upper-arm rotation channels (logical nodes 8/10/33); legs, root, local
+positions and scales remain driven by the selected locomotion clip. The seven
+locomotion assets/indices stay in place. E triggers a native 0.12-second weight fade
+while the native layer clock plays the action; a second E fades out and stops. At
+natural completion the script requests a 0.15-second fade-out/stop. Script code only
+chooses intent; clocks, quaternion/vector mixing, weights and atomic pose publication
+belong to the native engine. The checkpoint excludes animation state and explicitly
+stops the transient layer on restore. Menu pause freezes base/layer/fade clocks.
+Source hot reload retains these native clocks while preserving script intent state.
+
+In the stopped Inspector, expand Override layers to edit the saved clip/mask. During
+Preview or Play, the Animation panel exposes actual independent clocks and strict
+layer controls. Pause the game to inspect/stop/seek a layer without moving the legs
+or advancing time. This is a masked override example, not additive/IK/state-machine
+animation or a finished art/animation-quality claim.

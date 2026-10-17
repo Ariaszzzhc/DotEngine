@@ -1,13 +1,88 @@
 #include <doctest/doctest.h>
 
+#include <cstdint>
 #include <limits>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Animation.Source;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+
+TEST_CASE("animation.scene_layer_mask_budget_rejects_replacement_without_changing_properties") {
+  using namespace Dot::Animation;
+  auto scene = Dot::World::Scene::create().value();
+  std::vector<Dot::World::EntityId> owners;
+  std::vector<PlayerProperties> players;
+
+  for (const auto count : {500U, 500U, 250U}) {
+    owners.push_back(scene.createEntity().value());
+    PlayerProperties player{{"assets/motion.dotanimation"}, {}};
+    std::vector<LayerChannel> mask;
+
+    for (std::uint32_t node = 0; node < count; ++node) {
+      auto entity = scene.createEntity().value();
+      player.targets.push_back({node, entity.value});
+
+      for (const auto path : {Path::Translation, Path::Rotation, Path::Scale}) {
+        mask.push_back({node, path});
+      }
+    }
+
+    for (int index = 0; index < 8; ++index) {
+      player.layers.push_back({"Layer" + std::to_string(index), 0, mask});
+    }
+
+    REQUIRE(scene.setAnimationPlayer(owners.back(), player));
+    players.push_back(std::move(player));
+  }
+
+  auto extra = scene.createEntity().value();
+  auto candidate = players.back();
+  candidate.targets.push_back({250, extra.value});
+  candidate.layers.front().mask.push_back({250, Path::Rotation});
+  CHECK_FALSE(scene.setAnimationPlayer(owners.back(), candidate));
+  CHECK(scene.entity(owners.back())->animation.value() == players.back());
+}
+
+TEST_CASE("animation.layer_authoring_round_trip_and_strict_masks_preserve_source") {
+  using namespace Dot::Animation;
+  using Json = nlohmann::json;
+  PlayerProperties player{{"assets/base.dotanimation", "assets/action.dotanimation"},
+                          {{0, 1}, {1, 2}}};
+  player.layers
+      = {{"UpperBody", 1, {{0, Path::Rotation, .5}, {1, Path::Translation}}, .75, -1, false, true}};
+  const auto encoded = encodePlayerProperties(player).value();
+  CHECK(decodePlayerProperties(encoded).value() == player);
+  auto bad = player;
+  bad.layers.push_back(bad.layers.front());
+  CHECK_FALSE(validatePlayerProperties(bad));
+  bad = player;
+  bad.layers[0].clip = 2;
+  CHECK_FALSE(validatePlayerProperties(bad));
+  bad = player;
+  bad.layers[0].mask[0].node = 7;
+  CHECK_FALSE(validatePlayerProperties(bad));
+  bad = player;
+  bad.layers[0].mask.push_back(bad.layers[0].mask.front());
+  CHECK_FALSE(validatePlayerProperties(bad));
+  bad = player;
+  bad.layers[0].mask[0].weight = 2;
+  CHECK_FALSE(validatePlayerProperties(bad));
+  auto json = Json::parse(encoded);
+  json.erase("layers");
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  json = Json::parse(encoded);
+  json["layers"][0]["clip"] = true;
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  json = Json::parse(encoded);
+  json["layers"][0]["mask"][0]["extra"] = 0;
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  CHECK(encodePlayerProperties(player).value() == encoded);
+}
 
 TEST_CASE("animation.player_authoring_strict_codec_and_boundaries_without_devices") {
   using namespace Dot::Animation;

@@ -12329,3 +12329,156 @@ Formatting/diff checks pass before commit. Computer use reports the Mac locked a
 automatic unlock failed; do not change credentials/IME or claim physical dragging,
 narrow-layout or IME acceptance. Skeleton/retargeting/state/layer authoring, larger
 project pacing/scalability, final Prism art and overall requested maturity remain open.
+
+## 2026-10-18 — Masked actions over locomotion
+
+Continue the actual Prism Relay production workflow: use the existing authored
+inspection action over the moving rig instead of replacing locomotion with a
+whole-body study. This implements ordered override layers, not additive animation,
+a state machine, IK/retargeting or final character/environment art.
+
+Add the native Animation.Layers module to the static engine. Immutable shared
+clips/masks and owned playback candidates support eight uniquely named layers,
+30000 aggregate mask entries, explicit logical-node TRS channels, per-channel and
+layer weights, independent forward/reverse/loop/terminal clocks and interruptible
+unscaled weight fades. Names are ASCII identifiers, 1..64 bytes. Explicit layer
+pause freezes its clip/fade while retaining contribution; stop removes contribution
+and resets time. Nonlooping completion holds until stopped/faded. Zero effective
+weights and unmasked tracks are not sampled. Player-wide pause freezes all clocks;
+natural base completion does not stop independent layers. A player configured not
+to play on start begins globally paused, even if a layer starts active.
+
+SceneAnimator composes the base/cross-fade and ordered layers before one native
+transform transaction. Cache unlayered channel values for interrupted cross-fades;
+use binding values for channels absent from the base, preventing feedback/drift.
+Sample/pose failure retains every clock/weight/transition/pose. Layer controls that
+change no contribution do not prime the base. Strong copy assignment preserves the
+configuration/playback pairing on allocation failure; moves retire the source.
+ScenePlayers reserves masked entities even when layers are inactive/zero-weight,
+retaining competing-player, rigid-body and character-root authority checks. No
+whole-scene rollback is promised for a later failing player.
+
+Saved players require an explicit layers array; replace the unpublished current
+format without a compatibility decoder. Bound/unique masks are checked structurally;
+actual clip-channel/binding/authority checks remain in native preview/Play/export.
+The Inspector stages layer definitions, order and virtualized channel masks through
+the ordinary strict component form. Preview and the running-game Animation panel
+share native playback controls, including resume/restart, seek, weights and fades.
+Scoped editor/player JSON controls and TypeScript animation.layer /
+Entity.controlAnimationLayer use those same implementations. SDK snapshots own
+layer/fade data; prepare/migration cannot mutate playback. Editor clip recreation
+restores the complete layer/base snapshot together, avoiding invalid intermediate
+poses during sequential replay. Existing skin preflight still checks actual drafts;
+bounded sampling does not prove all interpolated poses renderable.
+
+Actual editor authoring appends inspection at slot seven in the main Prism library,
+preserving all seven original locomotion roles. Save/reopen the three rotation masks
+for head/upper_arm.L/upper_arm.R (logical nodes 8/10/33); apply the .8-second preview
+and compare every entity. Exactly those three rotations change, no positions/scales
+or other transforms. Stop restores all transforms and byte-identical PNGs. The saved
+main SHA-256 is bb8de74af8720ae4a3e5a8bee37c9ff3d7f813e65d54e1487bfd68e4915edab9.
+The existing cubic inspection asset stays unchanged, including its .8F peak and
+first head outgoing Y derivative .15F; it remains 47767 bytes with SHA-256
+97046f1fdf5492d1ca2e80bc7982d3ccdca4c8400935424fefa98295b9a82411.
+Required empty arrays are added to the model and separate action-study scene.
+
+Prism E now triggers/cancels native inspection fades over walking/jumping; native
+clocks/mixing own the pose. Natural completion fades out, and checkpoint restore
+stops the transient action. Feature Lab's actual Inspector saves PanelTurn, a half-
+weight rotation mask over the lift animation; only rotation changes at preview time
+one. Its Digit3 control uses native fades. Run its expanded SDK audit in a separate
+normal update phase rather than increasing the existing per-hook host-call budget.
+
+Actual arm64 macOS checks with inherited toolchain/presets, no sanitizers:
+
+- Foundation focused 9/9 and integrated 20/20 pass. Expanded animation focus passes
+  148/148; after adapting the real example/SDK expectations, broader focus passes
+  174/174. Four earlier example expectations failed because the library/inventory/
+  audit phase count changed; fix these explicitly, without weakening native budgets.
+- Full Debug 1494/1494, 260.23 s. Add the durable Prism moving-layer/paused-reload
+  regression afterward: focused Debug 1/1, 11.81 s. The actual product then exposes
+  stale instruction text after loading new source into an existing HUD. Refresh
+  controls on the first live frame after migration, without mutating during
+  preparation or replacing pause/checkpoint state. Rebuild and run all 18 Prism
+  Debug cases, 18/18, 16.19 s. Full Debug is not repeated after this script-only fix.
+- After the HUD fix, full Release/NDEBUG 1495/1495, 36.85 s: 472 unit and 1023 integration cases,
+  including overlapping 185 offscreen GPU/238 compiler/37 native audio/34 platform/
+  21 process labels. Tests open no desktop windows; unit tests initialize no devices.
+  No Windows/Linux execution claim.
+
+Final pre-commit review finds that a layer-only control marked an unprimed scene
+player primed, skipping its pending reverse base start. Preserve that pending base
+initialization; an inactive weight change must leave the authored pose untouched
+and the first .5-second reverse advance must start from duration two and reach 1.5,
+then one. Add this enduring ScenePlayerSession regression. Rebuild both presets:
+focused Debug 18/18, 1.00 s, and final full Release 1496/1496, 36.66 s (472 unit,
+1024 integration; 239 compiler, other label counts unchanged). Full Debug is not
+repeated after this small native initialization correction.
+
+Actual final Release editor reopens the authored project and plays its old script,
+then accepts an external source-file update while running. W/E use normal bounded
+product input, M pauses; inspect the native state and complete scene. Stop Inspection
+while paused and only entities 600/602/625 change rotation; restore the sampled layer
+and recover every transform exactly. Current-scope controls reject invalid numeric/
+boolean/unknown-field/fade inputs and a stale scope while retaining clocks/pose.
+Select the running player in the Animation pane through the shared product operation.
+A second external reload while paused preserves exact base/layer/fade state. Resume,
+observe natural fade-out/stop, exercise W/Space, stop back to unchanged authoring,
+and restart with the layer initially inactive. No running diagnostics. The final
+viewport shows E inspect after the reload; final paused PNG SHA-256 is
+9a369f78a89dfaced778fad68c93c3ae2f82d5dfee9ac5187928495fe6bdeb44.
+
+The first helper requested Play before scene readiness and received the explicit
+Unavailable error; wait for the real ready state and retry in a new owned run.
+Earlier author helpers likewise used obsolete selection/save revisions and were
+corrected to re-inspect current revisions. Retain those rejected requests. Refreshing
+the owned App resources initially encountered read-only copied libraries; replace
+only that owned resource subtree and preserve source/build caches. These helper
+corrections are not engine success substitutions. An earlier successful editor/
+native run predates the instruction refresh; retain it separately from final evidence.
+
+Export through the actual editor, compare all 117 game/content files to editable
+source, relocate the native output and hide only its owned source directory. The
+final standalone game executes W/E/M and the same three-joint mask/negative control
+checks, lands and F6 saves. A fresh native process begins with inactive inspection;
+F7 restores the checkpoint within normal simulation tolerance, with unchanged saved
+slot bytes. The owned final slot SHA-256 is
+6695a8e56360c5762111e2cdb623d4e2a995dfb238d8dac370fa18e50b5dfe59.
+First/restart/control-free one-presentation processes exit zero; control directories
+retire. Each retained profile has 120 samples and no callback error; loading/retained
+histories do not establish all-time performance or game FPS. Restore the source path.
+Final native stderr contains ordinary resource-preparation progress. The earlier
+pre-HUD run additionally reported 116666662 ns of dropped fixed-update time;
+retain that warning without presenting the workflow as a latency benchmark.
+
+Create fresh current Prism/Feature Lab templates and compare saved layer scenes,
+scripts and inventory to source. Actual Feature Lab Play completes its live SDK
+checks, triggers Digit3 and proves only the panel rotation changes while paused;
+Stop retains the lifecycle audit and restores authoring. Inspect arm64 binaries and
+native exported dependencies; bundled LLVM libraries remain executable-relative.
+Computer use again reports the Mac locked/automatic unlock failed. Physical layer
+buttons, pointer gestures, narrow layouts and IME behavior remain unverified.
+
+After that final native correction, rebuild a fresh owned App from the reviewed
+Release product and reopen the freshly created Prism template. Actual E/M input,
+live Animation selection/stop and complete pose comparison again change only the
+three masked rotations, with no running diagnostics. Stop restores authoring;
+export matches all 117 source files. Relocate/hide its source and one actual native
+presentation exits zero, retaining 120 error-free profile samples. Restore the source
+and retire the editor control. Reviewed editor SHA-256 is
+1cdabd142c922e910a70fcb5c1e1a7d5ddf4e20e53bf34b4b6e431f1aae58979;
+the relocated game matches the current runtime kit, SHA-256
+b86aa192ef8b2244ce36de99366747248e2d98cf65e457f588fe1b134120b820.
+Keep final-reviewed evidence separate from the earlier full reload/checkpoint loops;
+only the base's pending first-frame initialization changed after those loops.
+
+Keep actual requests/results, semantic scene comparisons, images, profiles, manifests,
+editable projects and new persistent saves under ignored build/layers-review. Verify
+all fifteen prior save hashes and the first run's additional slot unchanged. Remove
+only owned helper scripts/cache and validation App/native copies after recording
+proof; retain build caches, references and saved projects. No distribution archive.
+Review native ownership/failure transactions, masks/budgets, format replacement,
+scoped controls, shared GUI paths, source provenance, modules/platform assumptions,
+formatting and coverage before committing. Override layers advance this complete
+workflow; additive/state-machine/rig authoring, final art and large-game maturity
+remain open work.

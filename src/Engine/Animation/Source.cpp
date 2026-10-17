@@ -1,5 +1,7 @@
 module;
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
 #include <expected>
@@ -25,12 +27,13 @@ namespace Dot::Animation {
 
     try {
       const auto root = Codec::parseJson(source);
-      Codec::requireFields(
-          root, {"clips", "targets", "clip", "speed", "looping", "playOnStart", "enabled"});
+      Codec::requireFields(root, {"clips", "targets", "clip", "speed", "looping", "playOnStart",
+                                  "enabled", "layers"});
 
       if (!root["clips"].is_array() || root["clips"].size() > 1024 || !root["targets"].is_array()
           || root["targets"].size() > 10000 || !root["clip"].is_number_unsigned()
-          || root["clip"] > 1023 || !root["speed"].is_number()) {
+          || root["clip"] > 1023 || !root["speed"].is_number() || !root["layers"].is_array()
+          || root["layers"].size() > 8) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid animation player JSON types/capacities");
       }
@@ -54,6 +57,47 @@ namespace Dot::Animation {
             {target["node"].get<std::uint32_t>(), Codec::id(target["entity"])});
       }
 
+      constexpr std::array paths{"translation", "rotation", "scale"};
+      std::size_t masks{};
+
+      for (const auto& layer : root["layers"]) {
+        Codec::requireFields(layer,
+                             {"name", "clip", "mask", "weight", "speed", "looping", "playOnStart"});
+
+        if (!layer["clip"].is_number_unsigned() || layer["clip"] > 1023 || !layer["mask"].is_array()
+            || layer["mask"].size() > 30000 - masks || !layer["weight"].is_number()
+            || !layer["speed"].is_number()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation layer JSON");
+        }
+
+        LayerProperties value{layer["name"].get<std::string>(),
+                              layer["clip"].get<std::uint32_t>(),
+                              {},
+                              layer["weight"].get<double>(),
+                              layer["speed"].get<double>(),
+                              layer["looping"].get<bool>(),
+                              layer["playOnStart"].get<bool>()};
+
+        for (const auto& item : layer["mask"]) {
+          Codec::requireFields(item, {"node", "path", "weight"});
+          const auto path = item["path"].get<std::string>();
+          const auto at = std::ranges::find(paths, path);
+
+          if (!item["node"].is_number_unsigned() || item["node"] > 9999 || at == paths.end()
+              || !item["weight"].is_number()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid animation layer mask JSON");
+          }
+
+          value.mask.push_back({item["node"].get<std::uint32_t>(),
+                                static_cast<Path>(at - paths.begin()),
+                                item["weight"].get<double>()});
+        }
+
+        masks += value.mask.size();
+        result.layers.push_back(std::move(value));
+      }
+
       auto valid = validatePlayerProperties(result);
       return valid ? Core::Result<PlayerProperties>{std::move(result)}
                    : std::unexpected(valid.error());
@@ -73,15 +117,35 @@ namespace Dot::Animation {
     try {
       using Json = Serialization::Detail::Json;
       Json targets = Json::array();
+      Json layers = Json::array();
+      constexpr std::array paths{"translation", "rotation", "scale"};
 
       for (const auto& target : properties.targets) {
         targets.push_back({{"node", target.node}, {"entity", std::to_string(target.entity)}});
       }
 
+      for (const auto& layer : properties.layers) {
+        Json mask = Json::array();
+
+        for (const auto& channel : layer.mask) {
+          mask.push_back({{"node", channel.node},
+                          {"path", paths.at(static_cast<std::size_t>(channel.path))},
+                          {"weight", channel.weight}});
+        }
+
+        layers.push_back({{"name", layer.name},
+                          {"clip", layer.clip},
+                          {"mask", std::move(mask)},
+                          {"weight", layer.weight},
+                          {"speed", layer.speed},
+                          {"looping", layer.looping},
+                          {"playOnStart", layer.playOnStart}});
+      }
+
       return Json{{"clips", properties.clips},     {"targets", std::move(targets)},
                   {"clip", properties.clip},       {"speed", properties.speed},
                   {"looping", properties.looping}, {"playOnStart", properties.playOnStart},
-                  {"enabled", properties.enabled}}
+                  {"enabled", properties.enabled}, {"layers", std::move(layers)}}
           .dump();
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -117,6 +181,38 @@ namespace Dot::Animation {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid/duplicate animation node binding");
       }
+    }
+
+    if (properties.layers.size() > 8) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Animation supports at most eight layers");
+    }
+
+    std::set<std::string> names;
+    std::size_t masks{};
+
+    for (const auto& layer : properties.layers) {
+      if (!validLayerName(layer.name) || !names.insert(layer.name).second
+          || layer.clip >= properties.clips.size() || layer.mask.empty()
+          || layer.mask.size() > 30000 - masks || !std::isfinite(layer.weight) || layer.weight < 0
+          || layer.weight > 1 || !std::isfinite(layer.speed) || std::abs(layer.speed) > 16) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation layer properties");
+      }
+
+      std::set<std::pair<std::uint32_t, Path>> unique;
+
+      for (const auto& channel : layer.mask) {
+        if (!nodes.contains(channel.node)
+            || (channel.path != Path::Translation && channel.path != Path::Rotation
+                && channel.path != Path::Scale)
+            || !std::isfinite(channel.weight) || channel.weight < 0 || channel.weight > 1
+            || !unique.emplace(channel.node, channel.path).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid animation layer channel mask");
+        }
+      }
+
+      masks += layer.mask.size();
     }
 
     return {};

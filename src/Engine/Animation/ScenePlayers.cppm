@@ -6,6 +6,7 @@ module;
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 export module Dot.Animation.ScenePlayers;
 
@@ -33,6 +34,7 @@ export namespace Dot::Animation {
     std::string name;
     double duration;
     PlaybackState playback;
+    std::vector<LayerSnapshot> layers;
   };
 
   /** Owns playback and a shared scene, no window/device/wall clock. Synchronizes
@@ -109,6 +111,15 @@ export namespace Dot::Animation {
         -> Core::Result<void>;
     [[nodiscard]] auto configure(World::EntityId owner, double speed, bool looping)
         -> Core::Result<void>;
+    /** Layer masks reserve their entities for the player even while inactive.
+     * The native animator commits all layers and base pose atomically; controls
+     * synchronize descriptions, never rewrite saved layer definitions.
+     * 层遮罩在未活动时也为播放器保留实体写入权；原生动画器原子提交基础/全部层，控制同步
+     * 描述但不改写保存的层定义。 */
+    [[nodiscard]] auto controlLayer(World::EntityId owner, std::string_view name,
+                                    const LayerControl& operation) -> Core::Result<void>;
+    [[nodiscard]] auto restorePlayback(World::EntityId owner, PlaybackState state,
+                                       std::span<const LayerPlayback> layers) -> Core::Result<void>;
 
   private:
     [[nodiscard]] static auto createPlayers(std::shared_ptr<World::Scene> scene,

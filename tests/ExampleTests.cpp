@@ -18,6 +18,7 @@
 #include "ScriptCompilation.hpp"
 
 import Dot.Animation.Files;
+import Dot.Animation.Layers;
 import Dot.Editor.AnimationPreview;
 import Dot.World.SceneFiles;
 import Dot.Animation.SkinFiles;
@@ -696,6 +697,87 @@ TEST_CASE("prism.hot_reload_keeps_native_rig_character_motion_and_orbit") {
   report(session.close());
 }
 
+TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
+  Fixture fixture;
+  const auto files = fixture.project.files().value();
+  const auto currentSource = files.readText("scripts/player.ts").value();
+  auto oldSource = currentSource;
+  const auto instruction = oldSource.find("E inspect | ");
+  REQUIRE(instruction != std::string::npos);
+  oldSource.erase(instruction, std::string_view{"E inspect | "}.size());
+  REQUIRE(files.writeTextAtomic("scripts/player.ts", oldSource));
+  auto session = fixture.session(true);
+  report(session.start());
+  Driver driver(session);
+  const auto model = entity(session, "Surveyor").id;
+  const auto start = entity(session, "Player").transform.position;
+
+  for (int frame = 0; frame < 30; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  driver.frame({Platform::Key::W, Platform::Key::E});
+
+  for (int frame = 0; frame < 20; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  CHECK(entity(session, "Player").transform.position.z < start.z);
+  const auto moving = session.animationState(model).value();
+  REQUIRE(moving.layers.size() == 1);
+  CHECK(moving.layers[0].playback.active);
+  CHECK(moving.layers[0].playback.playing);
+  CHECK(moving.layers[0].playback.time > .3);
+  CHECK(moving.layers[0].playback.weight == 1);
+  driver.frame({Platform::Key::M});
+  REQUIRE(session.gameClock()->snapshot()->paused);
+  const auto paused = session.animationState(model).value();
+  const auto pose = Json::parse(World::encodeScene(*session.scene().value()).value());
+  REQUIRE(files.writeTextAtomic("scripts/player.ts", currentSource + "\n"));
+  auto reloaded = Tests::awaitCompilation([&] { return session.pollScripts(); });
+  REQUIRE(reloaded->committed);
+  driver.frame({Platform::Key::W});
+  const auto labels = session.hud()->snapshot()->labels;
+  const auto controls
+      = std::ranges::find(labels, std::string{"controls"}, &Graphics::TextLayer::key);
+  REQUIRE(controls != labels.end());
+  CHECK(controls->value.text.find("E inspect") != std::string::npos);
+  CHECK(session.animationState(model)->layers == paused.layers);
+  CHECK(Json::parse(World::encodeScene(*session.scene().value()).value()) == pose);
+  REQUIRE(session.controlAnimationLayer(model, "Inspection", Animation::StopLayer{}));
+  const auto stopped = Json::parse(World::encodeScene(*session.scene().value()).value());
+  std::set<std::string> changed;
+
+  for (std::size_t i = 0; i < pose["entities"].size(); ++i) {
+    const auto& before = pose["entities"][i];
+    const auto& after = stopped["entities"][i];
+
+    if (before["transform"] != after["transform"]) {
+      changed.insert(before["name"].get<std::string>());
+      CHECK(before["transform"]["position"] == after["transform"]["position"]);
+      CHECK(before["transform"]["scale"] == after["transform"]["scale"]);
+    }
+  }
+
+  CHECK(changed == std::set<std::string>{"head", "upper_arm.L", "upper_arm.R"});
+  driver.frame({Platform::Key::M});
+
+  for (int frame = 0; frame < 180; ++frame) {
+    driver.frame();
+  }
+
+  driver.frame({Platform::Key::E});
+
+  for (int frame = 0; frame < 180; ++frame) {
+    driver.frame();
+  }
+
+  const auto finished = session.animationState(model).value();
+  CHECK_FALSE(finished.layers[0].playback.active);
+  CHECK(finished.layers[0].playback.time == 0);
+  report(session.close());
+}
+
 TEST_CASE("prism.authored_steps_climb_with_native_support_and_tall_rise_requires_jump") {
   Fixture fixture;
   auto authored = fixture.project.loadStartup().value();
@@ -821,7 +903,27 @@ TEST_CASE("prism.surveyor_retains_textured_armor_eight_slot_skinning_and_seven_r
   auto model = scene.entity(models[0]).value();
   REQUIRE(model.animation);
   CHECK(model.animation->enabled);
-  REQUIRE(model.animation->clips.size() == 7);
+  REQUIRE(model.animation->clips.size() == 8);
+  CHECK(model.animation->clips.back() == "assets/actions/inspection.dotanimation");
+  REQUIRE(model.animation->layers.size() == 1);
+  CHECK(model.animation->layers.front().name == "Inspection");
+  CHECK(model.animation->layers.front().clip == 7);
+  CHECK(model.animation->layers.front().mask.size() == 3);
+  CHECK_FALSE(model.animation->layers.front().looping);
+  CHECK_FALSE(model.animation->layers.front().playOnStart);
+
+  for (const auto* name : {"head", "upper_arm.L", "upper_arm.R"}) {
+    const auto joints = scene.findEntities(name).value();
+    REQUIRE(joints.size() == 1);
+    const auto binding = std::ranges::find(model.animation->targets, joints.front().value,
+                                           &Animation::Target::entity);
+    REQUIRE(binding != model.animation->targets.end());
+    CHECK(std::ranges::any_of(model.animation->layers.front().mask, [&](const auto& channel) {
+      return channel.node == binding->node && channel.path == Animation::Path::Rotation
+             && channel.weight == 1;
+    }));
+  }
+
   const std::array names{"Idle_Loop",  "Walk_Loop", "Jog_Fwd_Loop", "Sprint_Loop",
                          "Jump_Start", "Jump_Loop", "Jump_Land"};
 

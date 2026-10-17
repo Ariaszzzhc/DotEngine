@@ -206,6 +206,40 @@ namespace Dot::Editor {
     return m_impl->apply([&] { return m_impl->m_players.pause(m_impl->m_owner); });
   }
 
+  auto AnimationPreview::restorePlayback(Animation::PlaybackState state,
+                                         std::span<const Animation::LayerPlayback> layers)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
+    }
+
+    auto result = m_impl->apply(
+        [&] { return m_impl->m_players.restorePlayback(m_impl->m_owner, state, layers); });
+
+    if (result) {
+      m_impl->m_bindPose = false;
+    }
+
+    return result;
+  }
+
+  auto AnimationPreview::controlLayer(std::string_view name,
+                                      const Animation::LayerControl& operation)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
+    }
+
+    auto result = m_impl->apply(
+        [&] { return m_impl->m_players.controlLayer(m_impl->m_owner, name, operation); });
+
+    if (result) {
+      m_impl->m_bindPose = false;
+    }
+
+    return result;
+  }
+
   auto AnimationPreview::seek(double seconds, bool pause) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
@@ -265,7 +299,12 @@ namespace Dot::Editor {
       return std::unexpected(state.error());
     }
 
-    if (!state->playback.playing || seconds == 0) {
+    const bool layerPlaying = std::ranges::any_of(state->layers, [](const auto& layer) {
+      return layer.playback.active && !layer.playback.paused
+             && ((layer.playback.playing && layer.playback.speed != 0) || layer.playback.fade);
+    });
+
+    if (state->playback.paused || (!state->playback.playing && !layerPlaying) || seconds == 0) {
       return {};
     }
 

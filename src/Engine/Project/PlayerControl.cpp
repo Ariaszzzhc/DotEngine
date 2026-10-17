@@ -17,6 +17,8 @@ module;
 
 module Dot.Project.PlayerControl;
 
+import Dot.Animation.Layers;
+
 import Dot.Core.Text;
 import Dot.Platform.AgentInput;
 import Dot.World.SceneFiles;
@@ -264,6 +266,10 @@ namespace Dot::Project {
         Codec::requireFields(value, {"command", "scope"});
       } else if (command == "request-scene") {
         Codec::requireFields(value, {"command", "scope", "path"});
+      } else if (command == "animation-state") {
+        Codec::requireFields(value, {"command", "scope", "entity"});
+      } else if (command == "animation-layer") {
+        Codec::requireFields(value, {"command", "scope", "entity", "name", "value"});
       } else {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown player control command");
       }
@@ -272,6 +278,30 @@ namespace Dot::Project {
           || Codec::id(value["scope"]) != m_impl->m_scope) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Player operation requires its current running scope");
+      }
+
+      if (command == "animation-state") {
+        auto result
+            = m_impl->m_session->inspectAnimation({m_impl->m_scope, Codec::id(value["entity"])});
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"animation", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
+      }
+
+      if (command == "animation-layer") {
+        auto operation = Animation::decodeLayerControl(value["value"].dump());
+
+        if (!operation) {
+          return std::unexpected(operation.error());
+        }
+
+        effects = true;
+        auto result = m_impl->m_session->controlAnimationLayer(
+            {m_impl->m_scope, Codec::id(value["entity"])}, value["name"].get<std::string>(),
+            *operation);
+        return result ? Core::Result<std::string>{"{\"ok\":true}"}
+                      : std::unexpected(result.error());
       }
 
       if (command == "request-scene") {

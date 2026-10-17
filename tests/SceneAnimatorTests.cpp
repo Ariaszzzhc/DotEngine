@@ -4,6 +4,7 @@
 #include <limits>
 #include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Animation.Clip;
 import Dot.Animation.SceneAnimator;
@@ -23,6 +24,197 @@ namespace {
         .value();
   }
 }  // namespace
+
+TEST_CASE("animation.inactive_layer_clock_weight_controls_do_not_prime_base_pose") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  REQUIRE(scene.setTransform(entity, {{7, 0, 0}}));
+  auto clip
+      = Clip::create(
+            {"Scale",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {2, 1, 1, 0}}, {2, {2, 1, 1, 0}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array definitions{LayerDefinition{"Action", clip, {{0, Path::Scale}}}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, definitions).value();
+  REQUIRE(player.controlLayer(scene, "Action", WeightLayer{.5}));
+  REQUIRE(player.controlLayer(scene, "Action", PauseLayer{}));
+  REQUIRE(player.controlLayer(scene, "Action", ConfigureLayer{2, false}));
+  REQUIRE(player.controlLayer(scene, "Action", StopLayer{}));
+  CHECK(scene.transform(entity)->position.x == 7);
+  CHECK(scene.transform(entity)->scale.x == 1);
+  REQUIRE(player.controlLayer(scene, "Action", PlayLayer{true}));
+  CHECK(scene.transform(entity)->position.x == 0);
+  CHECK(scene.transform(entity)->scale.x == 1.5F);
+}
+
+TEST_CASE("animation.layers_mask_pose_without_feedback_and_preserve_other_channels") {
+  auto scene = World::Scene::create().value();
+  auto root = scene.createEntity("Root").value();
+  auto head = scene.createEntity("Head").value();
+  REQUIRE(scene.setTransform(head, {{7, 2, 3}}));
+  const auto overlay = Clip::create({"Head",
+                                     {{1,
+                                       Path::Translation,
+                                       Interpolation::Linear,
+                                       {{0, {10, 2, 3, 0}}, {2, {14, 2, 3, 0}}}}}})
+                           .value();
+  const std::array bindings{NodeBinding{0, root}, NodeBinding{1, head}};
+  const std::array layers{
+      LayerDefinition{"Head", overlay, {{1, Path::Translation, .5}}, 1, 1, true, true}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, layers).value();
+  REQUIRE(player.controlLayer(scene, "Head", PauseLayer{}));
+  REQUIRE(player.controlLayer(scene, "Head", PlayLayer{}));
+  REQUIRE(player.seek(scene, 1));
+  CHECK(scene.transform(root)->position.x == 2);
+  CHECK(scene.transform(head)->position.x == 8.5F);
+  REQUIRE(player.seek(scene, 1));
+  CHECK(scene.transform(head)->position.x == 8.5F);
+  REQUIRE(player.advance(scene, .5));
+  CHECK(scene.transform(root)->position.x == 3);
+  CHECK(scene.transform(head)->position.x == 9);
+  CHECK(scene.transform(head)->scale.x == 1);
+  REQUIRE(player.controlLayer(scene, "Head", StopLayer{}));
+  CHECK(scene.transform(head)->position.x == 7);
+  CHECK(player.state()->time == 1.5);
+}
+
+TEST_CASE("animation.layer_order_and_crossfade_use_unlayered_origins") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  auto ten = Clip::create({"Ten",
+                           {{0,
+                             Path::Translation,
+                             Interpolation::Linear,
+                             {{0, {10, 0, 0, 0}}, {2, {10, 0, 0, 0}}}}}})
+                 .value();
+  auto twenty = Clip::create({"Twenty",
+                              {{0,
+                                Path::Translation,
+                                Interpolation::Linear,
+                                {{0, {20, 0, 0, 0}}, {2, {20, 0, 0, 0}}}}}})
+                    .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array definitions{
+      LayerDefinition{"First", ten, {{0, Path::Translation}}, .5, 1, true, true},
+      LayerDefinition{"Second", twenty, {{0, Path::Translation}}, .5, 1, true, false}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, definitions).value();
+  REQUIRE(player.seek(scene, 0));
+  CHECK(scene.transform(entity)->position.x == 5);
+  REQUIRE(player.crossFade(scene, twenty, 1));
+  CHECK(scene.transform(entity)->position.x == 5);
+  REQUIRE(player.advance(scene, .5));
+  CHECK(scene.transform(entity)->position.x == doctest::Approx(10.25));
+  const auto before = scene.transform(entity)->position.x;
+  REQUIRE(player.crossFade(scene, ten, 1));
+  CHECK(scene.transform(entity)->position.x == before);
+  REQUIRE(player.controlLayer(scene, "Second", PlayLayer{true}));
+  CHECK(scene.transform(entity)->position.x == doctest::Approx((before + 20) / 2));
+  CHECK(player.state()->transition->elapsed == 0);
+  REQUIRE(player.controlLayer(scene, "First", StopLayer{}));
+  REQUIRE(player.controlLayer(scene, "Second", StopLayer{}));
+  CHECK(scene.transform(entity)->position.x == doctest::Approx(10.5));
+}
+
+TEST_CASE("animation.layer_failure_preserves_every_clock_weight_pose_and_allows_repair") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  auto invalid
+      = Clip::create(
+            {"Scale",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {2, {-1, 1, 1, 0}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array layers{
+      LayerDefinition{"Action", invalid, {{0, Path::Scale}}, 1, 1, false, true}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, layers).value();
+  REQUIRE(player.seek(scene, 0));
+  const auto pose = scene.transform(entity).value();
+  const auto clocks = player.layers().value();
+  CHECK_FALSE(player.advance(scene, 1));
+  CHECK(scene.transform(entity)->position == pose.position);
+  CHECK(scene.transform(entity)->rotation == pose.rotation);
+  CHECK(scene.transform(entity)->scale == pose.scale);
+  CHECK(player.state()->time == 0);
+  CHECK(player.layers().value() == clocks);
+  CHECK_FALSE(player.controlLayer(scene, "Action", SeekLayer{1}));
+  CHECK(player.layers().value() == clocks);
+  REQUIRE(player.controlLayer(scene, "Action", WeightLayer{0}));
+  REQUIRE(player.advance(scene, 1));
+  CHECK(player.layers()->front().playback.time == 1);
+  CHECK(scene.transform(entity)->position.x == 2);
+  CHECK_FALSE(player.controlLayer(scene, "Action", WeightLayer{1}));
+  CHECK(player.layers()->front().playback.weight == 0);
+  CHECK(scene.transform(entity)->scale.x == 1);
+  REQUIRE(player.controlLayer(scene, "Action", SeekLayer{.5}));
+  REQUIRE(player.controlLayer(scene, "Action", WeightLayer{1}));
+  CHECK(scene.transform(entity)->scale.x == .5F);
+}
+
+TEST_CASE("animation.layers_continue_after_base_end_and_global_pause_stop_freeze_all") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  auto overlay
+      = Clip::create(
+            {"Layer",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {4, {5, 1, 1, 0}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array layers{
+      LayerDefinition{"Action", overlay, {{0, Path::Scale}}, 1, 1, false, true}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, layers).value();
+  REQUIRE(player.configure(1, false));
+  REQUIRE(player.advance(scene, 2));
+  CHECK_FALSE(player.state()->playing);
+  CHECK_FALSE(player.state()->paused);
+  REQUIRE(player.advance(scene, .5));
+  CHECK(player.state()->time == 2);
+  CHECK(player.layers()->front().playback.time == 2.5);
+  CHECK(scene.transform(entity)->scale.x == 3.5F);
+  REQUIRE(player.pause());
+  REQUIRE(player.advance(scene, 1));
+  CHECK(player.layers()->front().playback.time == 2.5);
+  REQUIRE(player.play());
+  REQUIRE(player.configure(0, true));
+  REQUIRE(player.advance(scene, .5));
+  CHECK(player.state()->time == 2);
+  CHECK(player.layers()->front().playback.time == 3);
+  REQUIRE(player.stop(scene));
+  CHECK(player.state()->paused);
+  CHECK_FALSE(player.layers()->front().playback.active);
+  CHECK(scene.transform(entity)->position.x == 0);
+  CHECK(scene.transform(entity)->scale.x == 1);
+}
+
+TEST_CASE("animation.complete_layer_restore_samples_all_contributions_before_publication") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  auto negative
+      = Clip::create(
+            {"Negative",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {-1, 1, 1, 0}}, {2, {-1, 1, 1, 0}}}}}})
+            .value();
+  auto positive
+      = Clip::create(
+            {"Positive",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {2, {1, 1, 1, 0}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array definitions{LayerDefinition{"Negative", negative, {{0, Path::Scale}}, .5},
+                               LayerDefinition{"Positive", positive, {{0, Path::Scale}}}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, definitions).value();
+  REQUIRE(player.pause());
+  CHECK_FALSE(player.controlLayer(scene, "Negative", SeekLayer{0}));
+  CHECK_FALSE(player.layers()->front().playback.active);
+  const std::array clocks{LayerPlayback{0, .5, 1, false, false, true},
+                          LayerPlayback{0, 1, 1, false, false, true}};
+  REQUIRE(player.restorePlayback(scene, player.state().value(), clocks));
+  CHECK(scene.transform(entity)->scale.x == 1);
+  CHECK(player.layers()->front().playback.active);
+  CHECK(player.layers()->back().playback.active);
+  CHECK_FALSE(player.restorePlayback(scene, player.state().value(), {}));
+  CHECK(scene.transform(entity)->scale.x == 1);
+}
 
 TEST_CASE("animation.scene_clock_forward_reverse_loop_seek_pause_zero_rate_and_endpoints") {
   auto scene = World::Scene::create().value();

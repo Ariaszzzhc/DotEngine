@@ -2,6 +2,8 @@ module;
 
 #include <memory>
 #include <span>
+#include <string>
+#include <string_view>
 
 export module Dot.Script.AnimationSession;
 
@@ -39,6 +41,13 @@ export namespace Dot::Script {
      * 仅原生调度，脚本不能推进或重建自己的播放器。 */
     [[nodiscard]] auto advance(double seconds) -> Core::Result<void>;
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
+    /** The same observational native state transport used by the script SDK.
+     * 与脚本 SDK 共用的只读原生状态传输。 */
+    [[nodiscard]] auto inspect(World::EntityId owner) const -> Core::Result<std::string>;
+    [[nodiscard]] auto state(World::EntityId owner) const
+        -> Core::Result<Animation::ScenePlayerState>;
+    [[nodiscard]] auto controlLayer(World::EntityId owner, std::string_view name,
+                                    const Animation::LayerControl& operation) -> Core::Result<void>;
 
   private:
     [[nodiscard]] static auto createSession(std::shared_ptr<World::Scene> scene,
