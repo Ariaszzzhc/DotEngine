@@ -658,7 +658,7 @@ namespace Dot::Editor {
     std::string m_scenePath{"scenes/new.dotscene"};
     std::string m_sceneName{"New Scene"};
     bool m_previewReady{};
-    bool m_environmentPreparing{};
+    Graphics::ScenePipelineStage m_pipelineStage{Graphics::ScenePipelineStage::Ready};
     bool m_active{};
     bool m_applying{};
     std::optional<Core::Error> m_mailboxFault;
@@ -1238,25 +1238,17 @@ namespace Dot::Editor {
 
     auto startPlay() -> Core::Result<void> {
       auto scene = m_document->scene();
-      auto environment
-          = scene ? (*scene)->environment()
-                  : Core::Result<std::optional<World::Environment>>{std::unexpected(scene.error())};
+      auto stage = scene
+                       ? m_drawing->pipelineReadiness(**scene)
+                       : Core::Result<Graphics::ScenePipelineStage>{std::unexpected(scene.error())};
 
-      if (!environment) {
-        return std::unexpected(environment.error());
+      if (!stage) {
+        return std::unexpected(stage.error());
       }
 
-      if (*environment) {
-        auto ready = m_renderer->environmentPipelineReady();
-
-        if (!ready) {
-          return std::unexpected(ready.error());
-        }
-
-        if (!*ready) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Environment lighting is still preparing");
-        }
+      if (*stage != Graphics::ScenePipelineStage::Ready) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Scene rendering pipelines are still preparing");
       }
 
       if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
@@ -5559,7 +5551,11 @@ namespace Dot::Editor {
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
-          {"loading", m_environmentPreparing ? Json("environment-pipeline") : Json(nullptr)},
+          {"loading", m_pipelineStage == Graphics::ScenePipelineStage::Environment
+                          ? Json("environment-pipeline")
+                      : m_pipelineStage == Graphics::ScenePipelineStage::Shadows
+                          ? Json("shadow-pipelines")
+                          : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
@@ -5785,13 +5781,13 @@ namespace Dot::Editor {
         return std::unexpected(scene.error());
       }
 
-      auto prepared = m_drawing->prepareEnvironment(**scene);
-      m_environmentPreparing = prepared && !*prepared;
+      auto prepared = m_drawing->preparePipelines(**scene);
+      m_pipelineStage = prepared ? *prepared : Graphics::ScenePipelineStage::Ready;
 
-      if (!prepared || m_environmentPreparing) {
+      if (!prepared || m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
         m_previewReady = false;
         m_previewError = prepared ? "" : prepared.error().message;
-        return prepared ? Core::Result<void>{} : std::unexpected(prepared.error());
+        return {};
       }
 
       auto view = currentView();
@@ -10022,8 +10018,10 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
-        if (m_environmentPreparing) {
-          ImGui::TextUnformatted("Preparing environment lighting...");
+        if (m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
+          ImGui::TextUnformatted(m_pipelineStage == Graphics::ScenePipelineStage::Environment
+                                     ? "Preparing environment lighting..."
+                                     : "Preparing shadow shaders...");
         }
 
         if (m_animationPreview) {
@@ -10395,18 +10393,15 @@ namespace Dot::Editor {
         }
 
         auto scene = displayedScene();
-        auto prepared = scene ? m_drawing->prepareEnvironment(**scene)
-                              : Core::Result<bool>{std::unexpected(scene.error())};
+        auto prepared
+            = scene ? m_drawing->preparePipelines(**scene)
+                    : Core::Result<Graphics::ScenePipelineStage>{std::unexpected(scene.error())};
 
-        if (!prepared) {
-          return std::unexpected(prepared.error());
-        }
+        m_pipelineStage = prepared ? *prepared : Graphics::ScenePipelineStage::Ready;
 
-        m_environmentPreparing = !*prepared;
-
-        if (m_environmentPreparing) {
+        if (!prepared || m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
           m_previewReady = false;
-          m_previewError.clear();
+          m_previewError = prepared ? "" : prepared.error().message;
         }
 
         if (input.key(Platform::Key::Escape).pressed || m_pendingClose) {

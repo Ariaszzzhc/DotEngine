@@ -929,7 +929,45 @@ namespace Dot::Graphics {
     return SceneRenderer(std::move(impl));
   }
 
-  auto SceneRenderer::prepareEnvironment(const World::Scene& scene) -> Core::Result<bool> {
+  auto SceneRenderer::pipelineReadiness(const World::Scene& scene) const
+      -> Core::Result<ScenePipelineStage> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto environment = scene.environment();
+    auto environmentReady = m_impl->renderer->environmentPipelineReady();
+    auto shadowsReady = m_impl->renderer->shadowPipelinesReady();
+
+    if (!environment || !environmentReady || !shadowsReady) {
+      return std::unexpected(!environment        ? environment.error()
+                             : !environmentReady ? environmentReady.error()
+                                                 : shadowsReady.error());
+    }
+
+    if (*environment && !*environmentReady) {
+      return ScenePipelineStage::Environment;
+    }
+
+    if (!*shadowsReady) {
+      auto entities = scene.entities();
+
+      if (!entities) {
+        return std::unexpected(entities.error());
+      }
+
+      if (std::ranges::any_of(*entities, [](const auto& entity) {
+            return entity.light && entity.light->enabled && entity.light->shadows;
+          })) {
+        return ScenePipelineStage::Shadows;
+      }
+    }
+
+    return ScenePipelineStage::Ready;
+  }
+
+  auto SceneRenderer::preparePipelines(const World::Scene& scene)
+      -> Core::Result<ScenePipelineStage> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -940,13 +978,43 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    auto environment = scene.environment();
+    auto stage = pipelineReadiness(scene);
 
-    if (!environment) {
-      return std::unexpected(environment.error());
+    if (!stage) {
+      return std::unexpected(stage.error());
     }
 
-    return *environment ? m_impl->renderer->prepareEnvironmentPipeline() : Core::Result<bool>{true};
+    if (*stage == ScenePipelineStage::Environment) {
+      auto ready = m_impl->renderer->prepareEnvironmentPipeline();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return *stage;
+      }
+
+      stage = pipelineReadiness(scene);
+
+      if (!stage) {
+        return std::unexpected(stage.error());
+      }
+    }
+
+    if (*stage == ScenePipelineStage::Shadows) {
+      auto ready = m_impl->renderer->prepareShadowPipelines();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return *stage;
+      }
+    }
+
+    return ScenePipelineStage::Ready;
   }
 
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,

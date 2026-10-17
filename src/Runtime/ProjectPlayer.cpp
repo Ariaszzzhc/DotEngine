@@ -170,7 +170,7 @@ namespace Dot::Runtime {
       auto lastTitle = description->name;
       bool delayed = false;
       bool started = false;
-      bool loadingAnnounced = false;
+      std::optional<Graphics::ScenePipelineStage> loadingStage;
       std::size_t gameFrames{};
       const auto dispatch
           = [&](Core::Result<Script::LiveScriptReport> report) -> Core::Result<void> {
@@ -209,23 +209,26 @@ namespace Dot::Runtime {
         }
 
         if (!started) {
-          auto prepared = sceneRenderer->prepareEnvironment(**scene);
+          auto prepared = sceneRenderer->preparePipelines(**scene);
 
           if (!prepared) {
             return std::unexpected(prepared.error());
           }
 
-          if (!*prepared) {
-            if (!loadingAnnounced) {
-              std::println(stderr, "Preparing environment lighting");
-              auto changed = application->window().setTitle(description->name
-                                                            + " - Preparing environment lighting");
+          if (*prepared != Graphics::ScenePipelineStage::Ready) {
+            if (loadingStage != *prepared) {
+              const auto phase = *prepared == Graphics::ScenePipelineStage::Environment
+                                     ? "environment lighting"
+                                     : "shadow shaders";
+              std::println(stderr, "Preparing {}", phase);
+              auto changed
+                  = application->window().setTitle(description->name + " - Preparing " + phase);
 
               if (!changed) {
                 return changed;
               }
 
-              loadingAnnounced = true;
+              loadingStage = *prepared;
             }
 
             return {};
@@ -245,8 +248,8 @@ namespace Dot::Runtime {
 
           started = true;
 
-          if (loadingAnnounced) {
-            std::println(stderr, "Environment lighting pipeline ready; starting game");
+          if (loadingStage) {
+            std::println(stderr, "Rendering pipelines ready; starting game");
             lastTitle.clear();
           }
         }

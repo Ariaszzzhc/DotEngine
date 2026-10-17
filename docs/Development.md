@@ -8963,3 +8963,90 @@ callback ownership, retained errors, device/thread/move boundaries, no partial m
 publication, existing bake budgets/output, strict pending-state/capture/Play handling,
 mailbox-first close, session cleanup and frame-budget/profile meaning. Only macOS
 arm64 is executed. Full passing suites do not resolve the recorded cold waits.
+
+## Asynchronous shadow pipeline group
+
+The previous slow native sample identifies three main-thread shadow render-pipeline
+creations. Added a bounded asynchronous group for direct-lit shadows, environment-lit
+shadows and depth coverage. All three owned futures/results must complete before
+publishing the group; preparation allocates no shadow maps, changes no light bindings
+and renders no frame. The ordinary synchronous draw path waits on those same jobs.
+Surface and depth descriptor construction is shared, preserving shader text, vertex/
+blend/depth state and raster behavior. Compute and render compilation now share one
+callback-owned job with zero-wait polling, retained contextual failures and a remaining
+pending-time budget of ten seconds; later synchronous waits use that remaining time.
+No custom renderer thread, dependency, compatibility path or probe executable is added.
+
+SceneRenderer preparePipelines/pipelineReadiness replace the environment-only scene
+operation. They examine actual environment/enabled-shadow-light requirements and
+report Ready/Environment/Shadows. Pure reads are allowed during GUI layout and do
+not start/poll work. Ready shadow groups avoid further entity enumeration. Workspace
+and native startup use this same implementation; Play checks current document data,
+including same-frame added lights. workspace.view.loading distinguishes environment-
+pipeline and shadow-pipelines. Native title/stderr report phase changes before Start
+callbacks/game updates; the finite game-frame budget still excludes loading steps.
+
+Viewport preparation failures now retain the error/unready state and allow editor
+save/close operations while the GUI device remains available; they do not become
+fake completed images or successful Play. Device/GUI failure can still stop the loop.
+Descriptor validation, other pipeline families, HDR/image work, uploads and GPU bake
+completion remain synchronous. This does not implement general resource streaming.
+
+Three new offscreen cases verify real caster occlusion after preparation, no premature
+map/target publication, reuse, foreign threads/moves, abandoned compilation, current
+light enable/remove/add requirements, GUI-safe pure reads and no image I/O/cache
+mutation. Existing HDR and GUI reentry cases use the shared scene preparation API.
+Focused Debug passes 38/38 (33.08s). Initial builds reject a shadowed member name and
+an omitted direct Core.Result import in the new test; both are corrected without
+weakening warnings or changing the caller's compiler/linker settings.
+
+The first full Debug run passes 1306/1307 (197.79s): Feature Lab audit onUpdate hits
+the unchanged 100ms execution limit in its character/input/hot-reload case. That run
+incorrectly overlaps a Release build. The same case then passes ten isolated runs
+(21.37s); a full rerun without parallel building passes 1307/1307 (194.84s). This is
+consistent with load-sensitive wall-time enforcement, not proof of a new runtime
+cause or a reason to weaken the guard. Final Release/NDEBUG passes 1307/1307 (26.53s).
+Counts: 409 unit, 898 integration, with overlapping 198 compiler, 148 offscreen,
+33 platform, 32 audio-native and 20 process cases. Only macOS arm64 is executed.
+
+Actual Release editor still starts/stops Play cleanly. Observed W/Space positions
+include [-3,1.3340256,1.4826196] and [-3,1.5105758,1.3173810], with no Play error or
+diagnostics. Before/stopped/captured pixels retain the character-stage SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695. An early probe
+observes environment-pipeline, ready=false/error=null, and an actual pending Play
+rejection. Its screenshot assertion incorrectly expected immediate rejection:
+capture-viewport correctly acknowledges queued work, not owned pixels. The corrected
+warm probes do not observe that interval, so they do not establish a pending-shadow
+capture terminal result. Later real missing-camera recovery confirms queued capture
+fails with no completed frame and saving those failed pixels writes no file.
+
+Native export/relocation with the owned authoring project renamed away succeeds:
+115 content files, 66,210,361 bytes, with unchanged source bytes except the previously
+observed single 3.7252903e-9 scene quaternion normalization difference. Native logs
+both environment lighting and shadow shaders before starting the game. It records
+183 application steps (three loading plus 180 game render steps), exits zero and
+retains 120 unpaused/error-free samples. This run's first game render is 629.010958ms,
+whole step 662.261000ms; 533.333312ms fixed time is still dropped with the explicit
+warning. Retained median step is 12.393271ms. Cache contexts differ from the old slow
+run, so these are observations, not a matched speedup/FPS claim. The sampler catches
+ordinary skin-status waits; it does not reproduce the previous long shadow compile.
+
+One editor run still has a 3468.446ms synchronous render / 3.498870s inspect request;
+a subsequent sampled run has a 590.727083ms render / 0.630941s request. The latter
+sample does not reproduce the cold wait. Other synchronous pipeline/resource work
+remains to be prepared/measured; general editor startup responsiveness is unproven.
+Computer use again reports the Mac locked. No fresh native human interaction is
+claimed. Raw requests/responses, actual PNGs, profiles, native samples and manifests
+remain under build/shadow-loading-review; verified temporary native output is removed.
+
+The real missing-camera/save/undo/recovery workflow exposes a separate persistence
+bug: Save after Undo falsely reports the file changed externally. The protected
+restored scene is saved through Save as to the owned project's
+scenes/surveyor-recovery.dotscene; its PNG matches the original bytes and the owned
+editor exits cleanly. Comparing the actual save response with a fresh disk load
+finds exactly one float quaternion component changing by 3.7252903e-9; allocation,
+other components and links agree. Repeated normalization during loading is the next
+concrete investigation. The owned temporary startup scene currently lacks its camera
+from the deliberate recovery probe; repair it through product operations after that
+fix. The formal source example is unchanged. Do not treat this recovery loop or the
+overall engine/editor/game objective as complete.

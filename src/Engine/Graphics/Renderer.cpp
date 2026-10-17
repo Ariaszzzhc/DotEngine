@@ -223,6 +223,121 @@ namespace Dot::Graphics {
       }
     }
 
+    /** Callback-owned pipeline results are published only by owner-thread polling.
+     * The explicit synchronous path shares the same job and remaining deadline.
+     * 管线回调拥有结果，仅所属线程轮询发布；显式同步路径共用任务与剩余期限。 */
+    template <typename Pipeline>
+    struct PipelineJob {
+      Pipeline pipeline;
+      std::shared_ptr<Pending<Pipeline>> pending;
+      wgpu::Future future{};
+      std::chrono::steady_clock::time_point started;
+      std::string context;
+      std::optional<Core::Error> error;
+
+      auto poll(const wgpu::Instance& instance) -> Core::Result<bool> {
+        if (error) {
+          return std::unexpected(*error);
+        }
+
+        if (pipeline) {
+          return true;
+        }
+
+        if (!pending) {
+          error = Core::fail(Core::ErrorCode::InvalidState, "Pipeline job was not started").error();
+          return std::unexpected(*error);
+        }
+
+        const auto status = instance.WaitAny(future, 0);
+
+        if (status == wgpu::WaitStatus::TimedOut
+            && std::chrono::steady_clock::now() - started < std::chrono::seconds(10)) {
+          return false;
+        }
+
+        if (status != wgpu::WaitStatus::Success || !pending->value) {
+          error
+              = Core::fail(Core::ErrorCode::Unavailable,
+                           status == wgpu::WaitStatus::Success ? pending->error
+                           : status == wgpu::WaitStatus::TimedOut
+                               ? std::format("{}: compilation timed out after ten seconds", context)
+                               : std::format("{}: GPU poll failed ({})", context,
+                                             static_cast<unsigned>(status)))
+                    .error();
+          return std::unexpected(*error);
+        }
+
+        pipeline = std::move(pending->value);
+        pending.reset();
+        return true;
+      }
+
+      auto finish(const wgpu::Instance& instance) -> Core::Result<void> {
+        auto ready = poll(instance);
+
+        if (!ready || *ready) {
+          return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+        }
+
+        const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            started + std::chrono::seconds(10) - std::chrono::steady_clock::now());
+        const auto status = instance.WaitAny(
+            future, static_cast<std::uint64_t>(std::max<std::int64_t>(0, remaining.count())));
+
+        if (status != wgpu::WaitStatus::Success) {
+          error = Core::fail(Core::ErrorCode::Unavailable,
+                             status == wgpu::WaitStatus::TimedOut
+                                 ? context + ": compilation wait timed out"
+                                 : std::format("{}: GPU wait failed ({})", context,
+                                               static_cast<unsigned>(status)))
+                      .error();
+          return std::unexpected(*error);
+        }
+
+        ready = poll(instance);
+
+        if (!ready) {
+          return std::unexpected(ready.error());
+        }
+
+        if (!*ready) {
+          return Core::fail(Core::ErrorCode::Unavailable, context + ": pipeline did not complete");
+        }
+
+        return {};
+      }
+    };
+
+    template <typename Pipeline, typename Descriptor>
+    auto compilePipeline(const wgpu::Device& device, const Descriptor& descriptor,
+                         std::string context) -> PipelineJob<Pipeline> {
+      PipelineJob<Pipeline> job;
+      job.context = std::move(context);
+      job.pending = std::make_shared<Pending<Pipeline>>();
+      job.pending->error = job.context + " failed";
+      job.started = std::chrono::steady_clock::now();
+      auto callback = [pending = job.pending, context = job.context](
+                          wgpu::CreatePipelineAsyncStatus status, Pipeline pipeline,
+                          wgpu::StringView message) noexcept {
+        if (status == wgpu::CreatePipelineAsyncStatus::Success && pipeline) {
+          pending->value = std::move(pipeline);
+        } else {
+          describeFailure(pending->error, context, static_cast<unsigned>(status), message);
+        }
+      };
+
+      if constexpr (std::is_same_v<Pipeline, wgpu::ComputePipeline>) {
+        job.future = device.CreateComputePipelineAsync(&descriptor, wgpu::CallbackMode::WaitAnyOnly,
+                                                       std::move(callback));
+      } else {
+        job.future = device.CreateRenderPipelineAsync(&descriptor, wgpu::CallbackMode::WaitAnyOnly,
+                                                      std::move(callback));
+      }
+
+      return job;
+    }
+
     /** Error scopes always balance, including early exits. Callbacks own their
      * state so timeout/cancellation cannot dereference a departed stack frame.
      * 错误作用域在提前退出时也保持配对；回调拥有其状态，超时或取消不会访问失效栈帧。
@@ -570,14 +685,16 @@ namespace Dot::Graphics {
 
     struct EnvironmentPreparation {
       wgpu::BindGroupLayout layout;
-      wgpu::ComputePipeline pipeline;
-      std::shared_ptr<Pending<wgpu::ComputePipeline>> pending;
-      wgpu::Future future{};
-      std::chrono::steady_clock::time_point started;
+      PipelineJob<wgpu::ComputePipeline> job;
+    };
+
+    struct ShadowPreparation {
+      std::array<PipelineJob<wgpu::RenderPipeline>, 3> jobs;
       std::optional<Core::Error> error;
     };
 
     std::optional<EnvironmentPreparation> m_environmentPreparation;
+    std::optional<ShadowPreparation> m_shadowPreparation;
     wgpu::BindGroupLayout m_skinLayout;
     wgpu::ComputePipeline m_skinVertices;
     wgpu::ComputePipeline m_skinFaces;
@@ -924,9 +1041,10 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false,
-                  bool withShadows = false, bool withOcclusion = false, bool blend = false)
-        -> wgpu::RenderPipeline {
+    template <typename Create>
+    auto surfacePipeline(wgpu::TextureFormat format, bool withEnvironment, bool withShadows,
+                         bool withOcclusion, bool blend, Create create)
+        -> std::invoke_result_t<Create, const wgpu::RenderPipelineDescriptor*> {
       wgpu::ShaderSourceWGSL source;
       const auto shaderCode
           = std::string(withEnvironment ? Detail::surfaceEnvironmentShader
@@ -986,7 +1104,16 @@ namespace Dot::Graphics {
       descriptor.primitive.cullMode = wgpu::CullMode::None;
       descriptor.depthStencil = &depth;
       descriptor.fragment = &fragment;
-      return device.CreateRenderPipeline(&descriptor);
+      return create(&descriptor);
+    }
+
+    auto pipeline(wgpu::TextureFormat format, bool withEnvironment = false,
+                  bool withShadows = false, bool withOcclusion = false, bool blend = false)
+        -> wgpu::RenderPipeline {
+      return surfacePipeline(format, withEnvironment, withShadows, withOcclusion, blend,
+                             [&](const wgpu::RenderPipelineDescriptor* descriptor) {
+                               return device.CreateRenderPipeline(descriptor);
+                             });
     }
 
     auto postPipelineFor(wgpu::TextureFormat format) -> wgpu::RenderPipeline {
@@ -1027,14 +1154,9 @@ namespace Dot::Graphics {
                              shadowLayerLimit);
     }
 
-    auto ensureShadowPipelines() -> Core::Result<void> {
-      if (shadowDepthPipeline) {
-        return {};
-      }
-
-      ErrorScope scope(instance, device);
-      auto direct = pipeline(wgpu::TextureFormat::RGBA16Float, false, true);
-      auto environmentSurface = pipeline(wgpu::TextureFormat::RGBA16Float, true, true);
+    template <typename Create>
+    auto shadowDepthPipelineFor(Create create)
+        -> std::invoke_result_t<Create, const wgpu::RenderPipelineDescriptor*> {
       wgpu::ShaderSourceWGSL source;
       const auto shadowCode
           = std::string(Detail::coverageShader) + "\n" + Detail::shadowDepthShader;
@@ -1069,20 +1191,133 @@ namespace Dot::Graphics {
       descriptor.vertex.buffers = &layout;
       descriptor.depthStencil = &depth;
       descriptor.fragment = &fragment;
-      auto depthPipeline = device.CreateRenderPipeline(&descriptor);
-      auto checked = scope.finish();
+      return create(&descriptor);
+    }
 
-      if (!checked) {
-        return checked;
+    /** Finish synchronous descriptor validation before issuing asynchronous work;
+     * compilation errors belong to the job callback, never a borrowed error scope.
+     * 异步提交前完成同步描述校验；编译错误归任务回调，不借用错误作用域。 */
+    template <typename Build>
+    auto compileRenderPipeline(Build build, std::string context)
+        -> Core::Result<PipelineJob<wgpu::RenderPipeline>> {
+      ErrorScope scope(instance, device);
+      return build([&](const wgpu::RenderPipelineDescriptor* descriptor)
+                       -> Core::Result<PipelineJob<wgpu::RenderPipeline>> {
+        auto checked = scope.finish();
+
+        if (!checked) {
+          return Core::fail(checked.error().code, context + ": " + checked.error().message);
+        }
+
+        return compilePipeline<wgpu::RenderPipeline>(device, *descriptor, std::move(context));
+      });
+    }
+
+    auto prepareShadowPipelines() -> Core::Result<bool> {
+      if (shadowScenePipeline && shadowEnvironmentPipeline && shadowDepthPipeline) {
+        return true;
       }
 
-      if (!direct || !environmentSurface || !depthPipeline) {
-        return Core::fail(Core::ErrorCode::External, "Create shadow pipelines failed");
+      if (m_shadowPreparation && m_shadowPreparation->error) {
+        return std::unexpected(*m_shadowPreparation->error);
       }
 
-      shadowScenePipeline = std::move(direct);
-      shadowEnvironmentPipeline = std::move(environmentSurface);
-      shadowDepthPipeline = std::move(depthPipeline);
+      try {
+        if (!m_shadowPreparation) {
+          m_shadowPreparation.emplace();
+          auto direct = compileRenderPipeline(
+              [&](auto create) {
+                return surfacePipeline(wgpu::TextureFormat::RGBA16Float, false, true, false, false,
+                                       std::move(create));
+              },
+              "Shadow direct pipeline");
+
+          if (!direct) {
+            m_shadowPreparation->error = direct.error();
+            return std::unexpected(direct.error());
+          }
+
+          m_shadowPreparation->jobs[0] = std::move(*direct);
+          auto ambient = compileRenderPipeline(
+              [&](auto create) {
+                return surfacePipeline(wgpu::TextureFormat::RGBA16Float, true, true, false, false,
+                                       std::move(create));
+              },
+              "Shadow environment pipeline");
+
+          if (!ambient) {
+            m_shadowPreparation->error = ambient.error();
+            return std::unexpected(ambient.error());
+          }
+
+          m_shadowPreparation->jobs[1] = std::move(*ambient);
+          auto depth = compileRenderPipeline(
+              [&](auto create) { return shadowDepthPipelineFor(std::move(create)); },
+              "Shadow depth pipeline");
+
+          if (!depth) {
+            m_shadowPreparation->error = depth.error();
+            return std::unexpected(depth.error());
+          }
+
+          m_shadowPreparation->jobs[2] = std::move(*depth);
+        }
+
+        bool complete = true;
+
+        for (auto& job : m_shadowPreparation->jobs) {
+          auto ready = job.poll(instance);
+
+          if (!ready) {
+            m_shadowPreparation->error = ready.error();
+            return std::unexpected(ready.error());
+          }
+
+          complete = complete && *ready;
+        }
+
+        if (!complete) {
+          return false;
+        }
+
+        shadowScenePipeline = std::move(m_shadowPreparation->jobs[0].pipeline);
+        shadowEnvironmentPipeline = std::move(m_shadowPreparation->jobs[1].pipeline);
+        shadowDepthPipeline = std::move(m_shadowPreparation->jobs[2].pipeline);
+        return true;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare shadow pipelines: " + std::string(error.what()));
+        m_shadowPreparation->error = failure.error();
+        return failure;
+      }
+    }
+
+    auto ensureShadowPipelines() -> Core::Result<void> {
+      auto ready = prepareShadowPipelines();
+
+      if (!ready || *ready) {
+        return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+      }
+
+      for (auto& job : m_shadowPreparation->jobs) {
+        auto finished = job.finish(instance);
+
+        if (!finished) {
+          m_shadowPreparation->error = finished.error();
+          return finished;
+        }
+      }
+
+      ready = prepareShadowPipelines();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Shadow pipelines did not complete");
+      }
+
       return {};
     }
 
@@ -4059,6 +4294,34 @@ namespace Dot::Graphics {
                          stats.m_skinBytes.load()};
   }
 
+  auto Renderer::shadowPipelinesReady() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_shadowPreparation && m_impl->m_shadowPreparation->error) {
+      return std::unexpected(*m_impl->m_shadowPreparation->error);
+    }
+
+    return m_impl->shadowScenePipeline && m_impl->shadowEnvironmentPipeline
+           && m_impl->shadowDepthPipeline;
+  }
+
+  auto Renderer::prepareShadowPipelines() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->prepareShadowPipelines() : std::unexpected(checked.error());
+  }
+
   auto Renderer::environmentPipelineReady() const -> Core::Result<bool> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
@@ -4072,11 +4335,11 @@ namespace Dot::Graphics {
 
     const auto& preparation = m_impl->m_environmentPreparation;
 
-    if (preparation && preparation->error) {
-      return std::unexpected(*preparation->error);
+    if (preparation && preparation->job.error) {
+      return std::unexpected(*preparation->job.error);
     }
 
-    return preparation && preparation->pipeline;
+    return preparation && preparation->job.pipeline;
   }
 
   auto Renderer::prepareEnvironmentPipeline() -> Core::Result<bool> {
@@ -4129,59 +4392,16 @@ namespace Dot::Graphics {
           return std::unexpected(checked.error());
         }
 
-        preparation.pending = std::make_shared<Pending<wgpu::ComputePipeline>>();
-        preparation.pending->error = "Environment pipeline compilation failed";
-        preparation.started = std::chrono::steady_clock::now();
         wgpu::ComputePipelineDescriptor descriptor;
         descriptor.layout = layout;
         descriptor.compute.module = shader;
         descriptor.compute.entryPoint = "bake";
-        preparation.future = gpu.device.CreateComputePipelineAsync(
-            &descriptor, wgpu::CallbackMode::WaitAnyOnly,
-            [pending = preparation.pending](wgpu::CreatePipelineAsyncStatus status,
-                                            wgpu::ComputePipeline pipeline,
-                                            wgpu::StringView message) noexcept {
-              if (status == wgpu::CreatePipelineAsyncStatus::Success && pipeline) {
-                pending->value = std::move(pipeline);
-              } else {
-                describeFailure(pending->error, "Environment pipeline compilation",
-                                static_cast<unsigned>(status), message);
-              }
-            });
+        preparation.job = compilePipeline<wgpu::ComputePipeline>(
+            gpu.device, descriptor, "Environment pipeline compilation");
         gpu.m_environmentPreparation = std::move(preparation);
       }
 
-      auto& preparation = *gpu.m_environmentPreparation;
-
-      if (preparation.error) {
-        return std::unexpected(*preparation.error);
-      }
-
-      if (preparation.pipeline) {
-        return true;
-      }
-
-      const auto status = gpu.instance.WaitAny(preparation.future, 0);
-
-      if (status == wgpu::WaitStatus::TimedOut
-          && std::chrono::steady_clock::now() - preparation.started < std::chrono::seconds(10)) {
-        return false;
-      }
-
-      if (status != wgpu::WaitStatus::Success || !preparation.pending->value) {
-        preparation.error
-            = Core::fail(Core::ErrorCode::Unavailable,
-                         status == wgpu::WaitStatus::Success
-                             ? preparation.pending->error
-                             : std::format("Environment pipeline preparation: GPU poll failed ({})",
-                                           static_cast<unsigned>(status)))
-                  .error();
-        return std::unexpected(*preparation.error);
-      }
-
-      preparation.pipeline = std::move(preparation.pending->value);
-      preparation.pending.reset();
-      return true;
+      return gpu.m_environmentPreparation->job.poll(gpu.instance);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare environment pipeline: " + std::string(error.what()));
@@ -4241,16 +4461,10 @@ namespace Dot::Graphics {
       }
 
       if (!*ready) {
-        checked = wait(gpu.instance, gpu.m_environmentPreparation->future, "Environment pipeline");
+        checked = gpu.m_environmentPreparation->job.finish(gpu.instance);
 
         if (!checked) {
           return std::unexpected(checked.error());
-        }
-
-        ready = prepareEnvironmentPipeline();
-
-        if (!ready) {
-          return std::unexpected(ready.error());
         }
       }
 
@@ -4325,7 +4539,7 @@ namespace Dot::Graphics {
       }
 
       const auto& layout = gpu.m_environmentPreparation->layout;
-      const auto& pipeline = gpu.m_environmentPreparation->pipeline;
+      const auto& pipeline = gpu.m_environmentPreparation->job.pipeline;
       const std::array sizes{config.radianceSize, config.diffuseSize, config.specularSize,
                              config.brdfSize};
       const std::array levels{description->radianceLevels, 1U, description->specularLevels, 1U};

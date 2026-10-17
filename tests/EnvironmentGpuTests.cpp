@@ -92,19 +92,19 @@ TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings
   auto renderer = Renderer::create().value();
   auto drawing = SceneRenderer::create(renderer).value();
   auto scene = Dot::World::Scene::create().value();
-  CHECK(drawing.prepareEnvironment(scene).value());
+  CHECK(drawing.preparePipelines(scene).value() == ScenePipelineStage::Ready);
   REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
-  auto ready = drawing.prepareEnvironment(scene);
+  auto ready = drawing.preparePipelines(scene);
   REQUIRE(ready);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
-  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+  while (*ready != ScenePipelineStage::Ready && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ready = drawing.prepareEnvironment(scene);
+    ready = drawing.preparePipelines(scene);
     REQUIRE(ready);
   }
 
-  REQUIRE(*ready);
+  REQUIRE(*ready == ScenePipelineStage::Ready);
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(renderer.environment().value());
   auto target = renderer.createTarget(4, 4).value();
@@ -112,12 +112,12 @@ TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings
   CHECK(drawing.stats()->bytes == 0);
   CHECK(renderer.resourceStats()->environments == 0);
   auto moved = std::move(drawing);
-  CHECK_FALSE(drawing.prepareEnvironment(scene));
-  CHECK(moved.prepareEnvironment(scene).value());
+  CHECK_FALSE(drawing.preparePipelines(scene));
+  CHECK(moved.preparePipelines(scene).value() == ScenePipelineStage::Ready);
   auto invalid = std::move(scene);
-  CHECK_FALSE(moved.prepareEnvironment(scene));
+  CHECK_FALSE(moved.preparePipelines(scene));
   REQUIRE(invalid.setEnvironment(std::nullopt));
-  CHECK(moved.prepareEnvironment(invalid).value());
+  CHECK(moved.preparePipelines(invalid).value() == ScenePipelineStage::Ready);
 }
 
 TEST_CASE("environment.gpu_constant_energy_hdr_diffuse_specular_mips_and_brdf_are_real") {

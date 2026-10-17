@@ -559,6 +559,17 @@ export namespace Dot::Graphics {
      * 只读当前就绪状态，不启动/轮询工作，允许 GUI 布局期间调用；未准备/处理中为 false，
      * 已保留故障返回错误。 */
     [[nodiscard]] auto environmentPipelineReady() const -> Core::Result<bool>;
+    /** Start/poll the direct, environment-lit and depth shadow pipelines as one
+     * atomic group. Pending publishes none; no shadow maps or bindings are made.
+     * Still-pending jobs time out after ten seconds. Explicit rendering waits on
+     * the same jobs within their remaining budget; teardown may finish driver work.
+     * 将直接光、环境光和深度阴影管线作为一组启动/轮询，整组就绪才发布；不创建阴影图
+     * 或修改绑定。仍未完成的任务十秒后超时；显式绘制按剩余期限等待同组任务，销毁时驱动
+     * 仍可能完成未结束工作。 */
+    [[nodiscard]] auto prepareShadowPipelines() -> Core::Result<bool>;
+    /** Pure owner-thread readiness, also allowed during GUI layout.
+     * 仅查询所属线程就绪状态，允许在 GUI 布局期间调用，不启动/轮询工作。 */
+    [[nodiscard]] auto shadowPipelinesReady() const -> Core::Result<bool>;
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
      * with ordinary textures. Failure publishes no partial resource. Explicitly
@@ -651,7 +662,7 @@ export namespace Dot::Graphics {
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
      * the callback may append GUI images/viewports, toggle profiling and read
-     * guiStats/visibilityStats/profiling/environmentPipelineReady,
+     * guiStats/visibilityStats/profiling/environmentPipelineReady/shadowPipelinesReady,
      * but must not replace/change ImGui context or reenter other renderer operations.
      * Input events are explicitly forwarded.
      * Empty font uses the built-in font; an explicit font must load successfully.

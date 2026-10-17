@@ -519,6 +519,8 @@ TEST_CASE("graphics.gui_validation_budget_thread_moves_and_disabled_context") {
         REQUIRE(ready);
         CHECK_FALSE(*ready);
         CHECK_FALSE(moved.prepareEnvironmentPipeline());
+        CHECK_FALSE(moved.shadowPipelinesReady().value());
+        CHECK_FALSE(moved.prepareShadowPipelines());
         return rect();
       },
       96, 96));

@@ -1740,12 +1740,15 @@ cross-scene gameplay state are not implemented by this operation.
 
 ## Play game state and saves
 
-Environment compute pipeline compilation runs asynchronously while editor events,
-agent requests and GUI continue. `workspace.view.loading` is `"environment-pipeline"`
-while pending and null otherwise; it is independent from `error`. A pending view is
-not ready for capture/picking. Scene displays Preparing environment lighting; Play
-returns an explicit pending error until preparation completes. There is no synthetic
-progress percentage or completed-scene image. HDR loading/uploads and subsequent
+Required environment compute and shadow render pipelines compile asynchronously
+while editor events, agent requests and GUI continue. `workspace.view.loading` is
+`"environment-pipeline"` or `"shadow-pipelines"` while pending, null otherwise; it is
+independent from `error`. A pending view has no completed pixels for picking or
+capture. Screenshot requests still use the normal queue/confirmation protocol;
+inspect their final state, since queued is not pixel success. Scene names environment
+lighting or shadow shaders. Play checks current requirements and returns an explicit
+pending error until preparation completes. No synthetic progress percentage or
+completed-scene image is reported. HDR loading/uploads and subsequent
 GPU baking still run synchronously; this is not general asset streaming.
 
 Window → Game state provides owned state inspection and explicit save-slot controls.

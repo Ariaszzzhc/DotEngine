@@ -23,6 +23,8 @@ export namespace Dot::Graphics {
    * 游戏主相机、指定场景相机或独立编辑/工具视图。 */
   using SceneView = std::variant<std::monostate, World::EntityId, View>;
 
+  enum class ScenePipelineStage { Ready, Environment, Shadows };
+
   struct SceneRenderStats {
     std::size_t meshes;
     std::uint64_t bytes;
@@ -79,12 +81,19 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
-    /** Start/poll environment pipeline compilation only when this scene needs it.
-     * No files, maps, bindings or cache entries change; false means pending, not
-     * a rendered frame. Actual render still validates/loads/bakes scene resources.
-     * 仅在场景需要时启动/轮询环境管线编译；不改文件、地图、绑定或缓存项；false 表示
-     * 准备中，并非渲染成功。实际绘制仍负责校验/加载/预处理场景资源。 */
-    [[nodiscard]] auto prepareEnvironment(const World::Scene& scene) -> Core::Result<bool>;
+    /** Start/poll required environment/shadow pipeline groups; report the pending
+     * group or Ready. No files, maps, bindings or cache entries change. Rendering
+     * still validates/loads/bakes resources synchronously. Completed groups reuse
+     * the renderer's pipelines even when the scene changes.
+     * 启动/轮询所需环境/阴影管线组，返回当前等待组或 Ready；不改文件、地图、绑定或缓存。
+     * 绘制仍同步校验/加载/预处理资源，已完成组在场景变更后继续共用。 */
+    [[nodiscard]] auto preparePipelines(const World::Scene& scene)
+        -> Core::Result<ScenePipelineStage>;
+    /** Pure current-scene readiness, including inside GUI layout. No implicit
+     * polling/preparation; pending requirements are checked against current data.
+     * 只读当前场景就绪状态，允许 GUI 布局调用；不隐式轮询/准备，按当前数据检查所需组。 */
+    [[nodiscard]] auto pipelineReadiness(const World::Scene& scene) const
+        -> Core::Result<ScenePipelineStage>;
 
     /** Entity view must belong to the scene; monostate selects its primary camera.
      * Independent views require no scene camera and never mutate its entities.

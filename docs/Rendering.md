@@ -278,14 +278,33 @@ outstanding driver work. `bakeEnvironment` is explicitly synchronous and waits f
 when necessary. Repeated bakes reuse it; HDR decoding, source mips/uploads, GPU
 dispatch/completion and other pipelines remain synchronous.
 
-`SceneRenderer::prepareEnvironment(scene)` performs this compilation only when the
-scene contains environment lighting, without reading images or populating caches.
-The editor polls it while continuing event/agent/GUI work; Scene shows a preparation
-message, `workspace.view.loading` is `"environment-pipeline"`, `ready` is false and
-capture/Play cannot claim a completed scene. Once ready, ordinary rendering validates
-and loads the real content. The native player presents a clear loading surface and
-names the phase in its window title before starting gameplay. These are preparation
-states, not substitute scene pixels or a general background resource loader.
+`Renderer::prepareShadowPipelines` starts three asynchronous render pipelines for
+shadowed direct/environment lighting and depth coverage. Results publish together;
+no shadow maps, lighting bindings or frames are created. `shadowPipelinesReady` is
+its pure GUI-safe query. Explicit synchronous rendering waits on the same jobs when
+needed. Compute/render jobs share callback ownership, zero-wait polling, retained
+errors and a ten-second budget for still-pending jobs, including any later
+synchronous wait.
+The surface/depth descriptor builders are shared with ordinary rendering; shader,
+blend, depth and vertex-layout semantics are unchanged.
+
+`SceneRenderer::preparePipelines(scene)` prepares groups required by the scene's
+environment and enabled shadow lights, returning Ready, Environment or Shadows.
+`pipelineReadiness(scene)` only reads current requirements/results, including during
+GUI layout; it starts/polls no work. Once shadow pipelines are ready, this check
+needs no entity enumeration. No image/file reads or resource-cache entries occur.
+Retained preparation failures remain errors; these states do not mean scene assets
+or pixels have loaded.
+
+The editor keeps event/agent/GUI work active while these jobs are pending. Scene
+names the preparation group; `workspace.view.loading` is `"environment-pipeline"` or
+`"shadow-pipelines"`, `ready` is false and capture/Play cannot claim a completed
+scene. Play checks the current requirements even before the next preparation tick.
+The native player presents a clear loading surface and names the phase in its title
+before script Start callbacks/game updates. Ordinary rendering still validates,
+loads and bakes real content synchronously. Other pipeline groups, image/upload
+work and resource streaming remain unfinished; these are preparation states, not
+substitute scene pixels or a general background resource loader.
 
 Defaults are radiance 256, diffuse 32, specular 128, BRDF 128, 256 samples. Radiance/
 specular allow 16..512; diffuse 4..128; BRDF 16..256; dimensions are powers of two,
