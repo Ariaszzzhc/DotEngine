@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -59,6 +61,53 @@ namespace {
     }
   };
 }  // namespace
+
+TEST_CASE("skin.scene_gpu_preparation_follows_visibility_without_loading_or_publishing_pose") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer).value();
+  auto mesh = f.scene.entity(f.owner)->mesh.value();
+  mesh.visible = false;
+  REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
+  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK_FALSE(renderer.skinPipelinesReady().value());
+  mesh.visible = true;
+  REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
+  f.properties.enabled = false;
+  REQUIRE(f.scene.setSkin(f.owner, f.properties));
+  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK_FALSE(renderer.skinPipelinesReady().value());
+  f.properties.enabled = true;
+  REQUIRE(f.scene.setSkin(f.owner, f.properties));
+  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::Skins);
+  auto ready = service.prepare(f.scene);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (ready && *ready != ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = service.prepare(f.scene);
+  }
+
+  REQUIRE(ready);
+  REQUIRE(*ready == ScenePreparationStage::Ready);
+  CHECK(renderer.skinPipelinesReady().value());
+  CHECK(service.stats()->bytes == 0);
+  CHECK(renderer.resourceStats()->skins == 0);
+  CHECK(renderer.resourceStats()->meshes == 0);
+  auto target = renderer.createTarget(32, 32).value();
+  CHECK_FALSE(service.renderInto(f.scene, target));
+  CHECK(target.info()->frames == 0);
+  auto loaded = SceneRenderer::create(renderer, f.files).value();
+  CHECK(loaded.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
+  REQUIRE(loaded.renderInto(f.scene, target));
+  CHECK(target.info()->frames == 1);
+  CHECK(loaded.bounds(f.scene, f.owner)->minimum.x == doctest::Approx(.5));
+  CHECK(loaded.pick(f.scene, 32, 32, {.75F, .5F}).value() == f.owner);
+  CHECK(renderer.resourceStats()->skins == 1);
+}
 
 TEST_CASE("skin.scene_gpu_matches_saved_cpu_reference_bounds_picking_and_persistent_target") {
   Fixture f;

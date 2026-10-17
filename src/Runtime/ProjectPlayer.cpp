@@ -217,15 +217,16 @@ namespace Dot::Runtime {
 
           if (*prepared != Graphics::ScenePreparationStage::Ready) {
             if (loadingStage != *prepared) {
-              const auto phase = *prepared == Graphics::ScenePreparationStage::Environment
-                                     ? "environment lighting"
-                                 : *prepared == Graphics::ScenePreparationStage::Shadows
-                                     ? "shadow shaders"
-                                 : *prepared == Graphics::ScenePreparationStage::Occlusion
-                                     ? "ambient occlusion shaders"
-                                 : *prepared == Graphics::ScenePreparationStage::EnvironmentMap
-                                     ? "HDR environment"
-                                     : "material textures";
+              const auto phase
+                  = *prepared == Graphics::ScenePreparationStage::Environment
+                        ? "environment lighting"
+                    : *prepared == Graphics::ScenePreparationStage::Shadows ? "shadow shaders"
+                    : *prepared == Graphics::ScenePreparationStage::Occlusion
+                        ? "ambient occlusion shaders"
+                    : *prepared == Graphics::ScenePreparationStage::Skins ? "skinning shaders"
+                    : *prepared == Graphics::ScenePreparationStage::EnvironmentMap
+                        ? "HDR environment"
+                        : "material textures";
               std::println(stderr, "Preparing {}", phase);
               auto changed
                   = application->window().setTitle(description->name + " - Preparing " + phase);

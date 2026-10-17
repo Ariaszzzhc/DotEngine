@@ -28,6 +28,7 @@ export namespace Dot::Graphics {
     Environment,
     Shadows,
     Occlusion,
+    Skins,
     EnvironmentMap,
     Materials
   };

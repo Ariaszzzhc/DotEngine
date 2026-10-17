@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <optional>
@@ -35,6 +36,93 @@ namespace {
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
   }
 }  // namespace
+
+TEST_CASE("skin.gpu_async_preparation_is_pure_thread_bound_and_preserves_pose_validation") {
+  auto renderer = Renderer::create().value();
+  CHECK_FALSE(renderer.skinPipelinesReady().value());
+  const std::array invalid{SkinUpdate{}};
+  CHECK_FALSE(renderer.updateSkins(invalid));
+  CHECK_FALSE(renderer.skinPipelinesReady().value());
+  auto ready = renderer.prepareSkinPipelines();
+  REQUIRE(ready);
+
+  for (int i = 0; i < 10; ++i) {
+    CHECK(renderer.skinPipelinesReady().value() == *ready);
+  }
+
+  CHECK(renderer.resourceStats()->skins == 0);
+  CHECK(renderer.resourceStats()->meshes == 0);
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !renderer.prepareSkinPipelines() && !renderer.skinPipelinesReady(); });
+  worker.join();
+  CHECK(rejected);
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Core::Result<void> {
+        CHECK_FALSE(renderer.prepareSkinPipelines());
+        CHECK(renderer.skinPipelinesReady().value() == *ready);
+        return {};
+      },
+      8, 8));
+  REQUIRE(renderer.closeGui());
+  auto moved = std::move(renderer);
+  CHECK_FALSE(renderer.prepareSkinPipelines());
+  CHECK_FALSE(renderer.skinPipelinesReady());
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = moved.prepareSkinPipelines();
+  }
+
+  REQUIRE(ready);
+  REQUIRE(*ready);
+  CHECK(moved.skinPipelinesReady().value());
+  CHECK(moved.prepareSkinPipelines().value());
+  const auto geometry = quad().value();
+  auto mesh = moved.upload(geometry).value();
+  auto skin = skinFor(geometry);
+  auto controller = moved.createSkin(mesh, skin).value();
+  std::array<Math::Mat4, 2> palette;
+  palette[0] = Math::compose({.5F, .25F, 0}, {}, {1, 1, 1}).value();
+  changed(moved, controller, palette);
+  auto vertices = moved.readSkin(controller).value();
+  CHECK(same(vertices, deformMesh(geometry, skin, palette)->vertices));
+  const auto count = controller.info()->updates;
+  const std::array wrong{SkinUpdate{&controller, {}}};
+  CHECK_FALSE(moved.updateSkins(wrong));
+  CHECK(controller.info()->updates == count);
+  CHECK(same(moved.readSkin(controller).value(), vertices));
+}
+
+TEST_CASE("skin.gpu_started_jobs_share_direct_updates_and_abandoned_renderer_lifetime") {
+  const auto geometry = quad().value();
+  const auto skin = skinFor(geometry);
+  std::array<Math::Mat4, 2> palette;
+  palette[0] = Math::compose({.5F, 0, 0}, {}, {1, 1, 1}).value();
+
+  for (int i = 0; i < 3; ++i) {
+    auto renderer = Renderer::create().value();
+    REQUIRE(renderer.prepareSkinPipelines());
+    auto source = renderer.upload(geometry).value();
+    auto controller = renderer.createSkin(source, skin).value();
+    changed(renderer, controller, palette);
+    CHECK(renderer.skinPipelinesReady().value());
+    CHECK(controller.info()->updates == 1);
+    CHECK(
+        same(renderer.readSkin(controller).value(), deformMesh(geometry, skin, palette)->vertices));
+    controller = {};
+    CHECK(renderer.resourceStats()->skins == 0);
+    CHECK(renderer.resourceStats()->skinBytes == 0);
+  }
+
+  for (int i = 0; i < 3; ++i) {
+    auto abandoned = Renderer::create().value();
+    REQUIRE(abandoned.prepareSkinPipelines());
+    CHECK(abandoned.resourceStats()->skins == 0);
+  }
+}
 
 TEST_CASE(
     "skin.gpu_eight_weights_match_reference_positions_normal_tangent_bounds_and_physical_pixels") {

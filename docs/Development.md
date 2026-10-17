@@ -9445,3 +9445,81 @@ build/hdr-preparation-review. Source restoration and clean retained samples are
 verified before removing owned native/editor copies. No distribution archive is
 created. Formal examples and user-owned untracked reference/output material remain
 unchanged.
+
+## 2026-10-17 — prepare shared skin pipelines before drawing
+
+The preceding actual editor run still retains a 98.972500ms rendering phase, and
+native stacks include first-use synchronous skin pipeline creation as well as
+per-pose status readback. Renderer now starts the existing skinVertices and
+validateFaces compute pipelines through the shared owned PipelineJob mechanism.
+prepareSkinPipelines polls both with zero wait; skinPipelinesReady is pure and
+GUI-safe. A pair is ready only when both jobs complete. Contextual errors and the
+existing ten-second per-job deadlines remain; callback state borrows no renderer.
+Direct updateSkins validates the whole input batch before finishing these same
+jobs if needed, with no duplicate synchronous compilation path.
+
+Scene readiness requires these pipelines only for visible enabled saved skins,
+without loading mesh/skin files or allocating controllers. Shader preparation
+never publishes poses or target pixels. Editor/native initial loading exposes
+skin-pipelines/skinning shaders and gates Play/current captures through the shared
+scene implementation. The post-SSAO readiness refresh also ensures skins are not
+skipped when multiple requirements become ready in one call. Actual deformation,
+compact synchronous GPU status readback, batch-atomic buffer/bounds publication,
+normal/tangent validation, shadow/SSAO/picking inputs and timing limits are unchanged.
+Other assets/pipelines and populated-game CPU/GPU synchronization remain open work.
+
+Three new durable offscreen cases cover pure queries, invalid inputs before any
+compilation, owner/move/GUI checks, polling/repeated readiness, direct updates sharing
+already-started jobs, independent CPU vertex comparison, failed pose retention,
+repeated cancellation/teardown, hidden/disabled scene requirements, asset-root-free
+preparation, no premature mesh/skin/target publication and actual bounds/picking.
+Initial test build corrects two calls to a nonexistent Math helper; product code
+builds. The focused Debug group passes 17/17 (14.91s), including existing physical
+pixels, eight weights, reflection/failure atomicity, shadow/SSAO and resource budgets.
+
+Final Debug passes 1326/1326 (211.66s); Release/NDEBUG passes 1326/1326 (29.86s),
+sequentially with builds. Counts: 412 unit / 914 integration, including overlapping
+162 offscreen, 198 compiler, 33 platform, 32 audio-native and 20 process labels.
+Eight changed C++ files pass clang-format and whitespace checks pass. Review covers
+pair readiness, callback/destructor lifetime, partial failure retention, shared
+remaining deadlines, pre-compilation validation, unchanged layouts/shaders/dispatch,
+visible-scene requirements and the GUI/thread/device boundaries. Only macOS arm64
+is executed, preserving caller settings and target/sanitizer scope.
+
+Actual Release editor observes skin-pipelines (one inspect request, 50.333ms client
+wall including CLI/poll overhead, not a bound). Play rejects during preparation;
+queued capture fails and saving rejects without a file. Real W/Space Play observes
+[-3,1.4705257,1.3769660], no Play errors/diagnostics, and exact clean restoration on
+Stop. Save/export succeed. A fresh editor reopens and saves twice with identical
+scene and file bytes. Ready/stopped/reopened pixels retain baseline SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The separate concrete draft changes pixels to
+623663c4610bd62f4c218afd91a370eab3db4b14d683f5cd55130fea3da65c6a;
+Reset/close restores baseline with unchanged material/scene bytes. Application
+sampling retains a 97.485834ms step, including 93.126459ms preparation and 4.339625ms
+render. That observed hitch remains unresolved; it is not an aggregate speedup claim.
+All three editors exit zero with empty stderr and retired control directories.
+Fresh native mouse/keyboard acceptance remains unverified since the locked-Mac report.
+
+The physically relocated native export again matches 116 content files /
+66,649,969 bytes with authoring hidden, logs skinning along with the other real
+preparation phases and exits zero after 360 game steps (769 sampled: 409 preparing
+plus 360 game). Its retained 120 samples are unpaused/error-free with no dropped
+fixed time or dropped-time warning. Retained global slowest is the first game step
+409: 41.232709ms total, 33.544792ms preparation, 7.046625ms render. Longest supplied
+interval is 43.880417ms and retained median is 11.682125ms. Because earlier runs can
+evict first-game history, a separate 120-game-step run deliberately retains that
+entire interval: first game step 415 is 40.932625ms total, 33.552250ms preparation,
+6.729584ms render; all 120 samples are clean with no dropped time. Both runs retain
+source relocation/isolation; only the 360-step run has an external process sample.
+Cache/context/sampling conditions are not matched to older runs, so these are not
+speedup percentages or FPS. The process sample still places mappedSkinWords/WaitAny
+on the main thread; no per-pose synchronization improvement is claimed. Startup
+session work, other assets, production art and the full engine/editor/game goals
+remain unfinished.
+
+Raw product requests/responses, five PNGs, editor/native profiles, first-game
+history, process sample, content hashes and runtime/game/executable metadata remain
+under build/skin-preparation-review. Source restoration, retired editors and clean
+retained native history are checked before owned native/editor copies are removed.
+No distribution archive or formal-example change is produced.

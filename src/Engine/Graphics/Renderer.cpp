@@ -747,14 +747,18 @@ namespace Dot::Graphics {
       std::optional<Core::Error> error;
     };
 
+    struct SkinPreparation {
+      wgpu::BindGroupLayout layout;
+      std::array<PipelineJob<wgpu::ComputePipeline>, 2> jobs;
+      std::optional<Core::Error> error;
+    };
+
     std::optional<EnvironmentPreparation> m_environmentPreparation;
     std::optional<EnvironmentSurfacePreparation> m_environmentSurfacePreparation;
     std::optional<ShadowPreparation> m_shadowPreparation;
     std::optional<OcclusionPreparation> m_occlusionPreparation;
     mutable std::vector<std::shared_ptr<EnvironmentBake::Impl>> m_environmentBakes;
-    wgpu::BindGroupLayout m_skinLayout;
-    wgpu::ComputePipeline m_skinVertices;
-    wgpu::ComputePipeline m_skinFaces;
+    std::optional<SkinPreparation> m_skinPreparation;
     wgpu::Surface surface;
 #if defined(__APPLE__)
     SDL_MetalView metalView{};
@@ -1819,6 +1823,103 @@ namespace Dot::Graphics {
       descriptor.fragment = &fragment;
       descriptor.depthStencil = &depth;
       return create(&descriptor);
+    }
+
+    auto prepareSkinPipelines() -> Core::Result<bool> {
+      if (m_skinPreparation && m_skinPreparation->error) {
+        return std::unexpected(*m_skinPreparation->error);
+      }
+
+      try {
+        if (!m_skinPreparation) {
+          m_skinPreparation.emplace();
+          auto& preparation = *m_skinPreparation;
+          ErrorScope scope(instance, device);
+          std::array<wgpu::BindGroupLayoutEntry, 7> entries{};
+
+          for (std::uint32_t i = 0; i < entries.size(); ++i) {
+            entries[i].binding = i;
+            entries[i].visibility = wgpu::ShaderStage::Compute;
+            entries[i].buffer.type = i == 6             ? wgpu::BufferBindingType::Uniform
+                                     : i == 3 || i == 4 ? wgpu::BufferBindingType::Storage
+                                                        : wgpu::BufferBindingType::ReadOnlyStorage;
+          }
+
+          wgpu::BindGroupLayoutDescriptor layoutDescriptor;
+          layoutDescriptor.entryCount = entries.size();
+          layoutDescriptor.entries = entries.data();
+          preparation.layout = device.CreateBindGroupLayout(&layoutDescriptor);
+          wgpu::PipelineLayoutDescriptor pipelineLayout;
+          pipelineLayout.bindGroupLayoutCount = 1;
+          pipelineLayout.bindGroupLayouts = &preparation.layout;
+          auto layout = device.CreatePipelineLayout(&pipelineLayout);
+          wgpu::ShaderSourceWGSL source;
+          source.code = Detail::skinningShader;
+          wgpu::ShaderModuleDescriptor shaderDescriptor;
+          shaderDescriptor.nextInChain = &source;
+          auto shader = device.CreateShaderModule(&shaderDescriptor);
+          auto checked = scope.finish();
+
+          if (!checked) {
+            preparation.error = checked.error();
+            return std::unexpected(checked.error());
+          }
+
+          const std::array entriesNames{"skinVertices", "validateFaces"};
+          wgpu::ComputePipelineDescriptor pipeline;
+          pipeline.layout = layout;
+          pipeline.compute.module = shader;
+
+          for (std::size_t i = 0; i < entriesNames.size(); ++i) {
+            pipeline.compute.entryPoint = entriesNames[i];
+            preparation.jobs[i] = compilePipeline<wgpu::ComputePipeline>(
+                device, pipeline, std::format("Skin pipeline {}", entriesNames[i]));
+          }
+        }
+
+        bool ready = true;
+
+        for (auto& job : m_skinPreparation->jobs) {
+          auto polled = job.poll(instance);
+
+          if (!polled) {
+            m_skinPreparation->error = polled.error();
+            return std::unexpected(polled.error());
+          }
+
+          ready = *polled && ready;
+        }
+
+        return ready;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare skin pipelines: " + std::string(error.what()));
+
+        if (m_skinPreparation) {
+          m_skinPreparation->error = failure.error();
+        }
+
+        return failure;
+      }
+    }
+
+    auto ensureSkinPipelines() -> Core::Result<void> {
+      auto ready = prepareSkinPipelines();
+
+      if (!ready || *ready) {
+        return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+      }
+
+      for (auto& job : m_skinPreparation->jobs) {
+        auto checked = job.finish(instance);
+
+        if (!checked) {
+          m_skinPreparation->error = checked.error();
+          return checked;
+        }
+      }
+
+      return {};
     }
 
     auto prepareEnvironmentBake() -> Core::Result<bool> {
@@ -4242,6 +4343,35 @@ namespace Dot::Graphics {
     }
   }
 
+  auto Renderer::prepareSkinPipelines() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->prepareSkinPipelines() : std::unexpected(checked.error());
+  }
+
+  auto Renderer::skinPipelinesReady() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto& preparation = m_impl->m_skinPreparation;
+
+    if (preparation && preparation->error) {
+      return std::unexpected(*preparation->error);
+    }
+
+    return preparation && preparation->jobs[0].pipeline && preparation->jobs[1].pipeline;
+  }
+
   auto Renderer::updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
@@ -4289,41 +4419,14 @@ namespace Dot::Graphics {
       vertices += state.m_info.vertices;
     }
 
+    valid = gpu.ensureSkinPipelines();
+
+    if (!valid) {
+      return valid;
+    }
+
     try {
       ErrorScope scope(gpu.instance, gpu.device);
-
-      if (!gpu.m_skinVertices) {
-        std::array<wgpu::BindGroupLayoutEntry, 7> entries{};
-
-        for (std::uint32_t i = 0; i < entries.size(); ++i) {
-          entries[i].binding = i;
-          entries[i].visibility = wgpu::ShaderStage::Compute;
-          entries[i].buffer.type = i == 6             ? wgpu::BufferBindingType::Uniform
-                                   : i == 3 || i == 4 ? wgpu::BufferBindingType::Storage
-                                                      : wgpu::BufferBindingType::ReadOnlyStorage;
-        }
-
-        wgpu::BindGroupLayoutDescriptor layoutDescriptor;
-        layoutDescriptor.entryCount = entries.size();
-        layoutDescriptor.entries = entries.data();
-        gpu.m_skinLayout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
-        wgpu::PipelineLayoutDescriptor pipelineLayout;
-        pipelineLayout.bindGroupLayoutCount = 1;
-        pipelineLayout.bindGroupLayouts = &gpu.m_skinLayout;
-        auto layout = gpu.device.CreatePipelineLayout(&pipelineLayout);
-        wgpu::ShaderSourceWGSL source;
-        source.code = Detail::skinningShader;
-        wgpu::ShaderModuleDescriptor shaderDescriptor;
-        shaderDescriptor.nextInChain = &source;
-        auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
-        wgpu::ComputePipelineDescriptor pipeline;
-        pipeline.layout = layout;
-        pipeline.compute.module = shader;
-        pipeline.compute.entryPoint = "skinVertices";
-        gpu.m_skinVertices = gpu.device.CreateComputePipeline(&pipeline);
-        pipeline.compute.entryPoint = "validateFaces";
-        gpu.m_skinFaces = gpu.device.CreateComputePipeline(&pipeline);
-      }
 
       wgpu::BufferDescriptor readbackDescriptor;
       readbackDescriptor.size = updates.size() * 32;
@@ -4353,17 +4456,17 @@ namespace Dot::Graphics {
         }
 
         wgpu::BindGroupDescriptor groupDescriptor;
-        groupDescriptor.layout = gpu.m_skinLayout;
+        groupDescriptor.layout = gpu.m_skinPreparation->layout;
         groupDescriptor.entryCount = entries.size();
         groupDescriptor.entries = entries.data();
         auto group = gpu.device.CreateBindGroup(&groupDescriptor);
         auto pass = encoder.BeginComputePass();
-        pass.SetPipeline(gpu.m_skinVertices);
+        pass.SetPipeline(gpu.m_skinPreparation->jobs[0].pipeline);
         pass.SetBindGroup(0, group);
         pass.DispatchWorkgroups((mesh.info.vertices + 63) / 64);
         pass.End();
         pass = encoder.BeginComputePass();
-        pass.SetPipeline(gpu.m_skinFaces);
+        pass.SetPipeline(gpu.m_skinPreparation->jobs[1].pipeline);
         pass.SetBindGroup(0, group);
         const auto faces = (mesh.info.indices == 0 ? mesh.info.vertices : mesh.info.indices) / 3;
         pass.DispatchWorkgroups((faces + 63) / 64);
@@ -4376,9 +4479,7 @@ namespace Dot::Graphics {
       valid = scope.finish();
 
       if (!valid) {
-        gpu.m_skinVertices = {};
-        gpu.m_skinFaces = {};
-        gpu.m_skinLayout = {};
+        gpu.m_skinPreparation->error = valid.error();
         return valid;
       }
 

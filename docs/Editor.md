@@ -672,8 +672,10 @@ with revision/value, followed by `apply-environment` or `reset-environment` with
 revision. `inspect` reports pendingEnvironment/environmentDraft. `show-pane` with
 pane `scene`, `viewport`, `inspector`, `environment`, `rendering`, `resources` or `console` controls graphical navigation without a
 scene edit/revision. Resource failures appear with their paths; no substitute HDRI
-is supplied. Higher quality increases first-bake work; background import/bake jobs
-and advanced environment controls are still planned.
+is supplied. Higher quality increases first-bake work. Live scene preparation uses
+owned background HDR decoding/mips and zero-wait GPU completion polling; uploads
+remain on the renderer owner. This is not general background import/streaming;
+advanced environment controls remain planned.
 
 ## Directional and local shadows
 
@@ -1740,14 +1742,14 @@ cross-scene gameplay state are not implemented by this operation.
 
 ## Play game state and saves
 
-Required environment bake/surface/sky, shadow and SSAO pipelines compile asynchronously
+Required environment bake/surface/sky, shadow, SSAO and skin compute pipelines compile asynchronously
 while editor events, agent requests and GUI continue. `workspace.view.loading` is
 `"environment-pipeline"`, `"shadow-pipelines"`, `"occlusion-pipelines"`,
-`"environment-map"` or `"material-textures"` while pending,
+`"skin-pipelines"`, `"environment-map"` or `"material-textures"` while pending,
 null otherwise, independently of `error`. A pending view has no completed pixels for picking or
 capture. Screenshot requests still use the normal queue/confirmation protocol;
 inspect their final state, since queued is not pixel success. Scene names environment
-lighting, shadow or ambient occlusion shaders, HDR environment or material textures.
+lighting, shadow, ambient occlusion or skinning shaders, HDR environment or material textures.
 Play checks current requirements and
 returns an explicit pending error until preparation completes. No synthetic progress percentage or
 completed-scene image is reported. HDR and visible material reads/decode/mips share
@@ -1757,6 +1759,10 @@ enter the scene cache, and the previous binding/pixels survive until actual draw
 Only complete materials publish. Cancellation discards late CPU results; abandoned
 GPU work remains budgeted until completion or renderer teardown. This is not
 general runtime streaming; explicit synchronous rendering APIs remain available.
+Only visible, enabled saved skins require skin pipeline preparation; no mesh/skin
+files are loaded and no poses published by that pipeline stage. Direct skin updates
+finish the same two jobs if necessary. Actual GPU pose-status readback remains
+synchronous so invalid deformation cannot publish buffers, bounds or picking state.
 
 Window → Game state provides owned state inspection and explicit save-slot controls.
 Play uses a fresh temporary store, deleted on Stop; it cannot access player saves.

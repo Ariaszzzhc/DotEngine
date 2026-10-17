@@ -523,6 +523,15 @@ export namespace Dot::Graphics {
      * 拒绝跨设备/动态源及数量不匹配，并执行驻留预算。 */
     [[nodiscard]] auto createSkin(const Mesh& source, Animation::Skin skin)
         -> Core::Result<SkinnedMesh>;
+    /** Start/poll both shared skin compute pipelines with zero compilation wait;
+     * readiness is true only when both complete. Retain errors/ten-second deadlines.
+     * No skin/pose resources are created. Direct updates finish these same jobs.
+     * 零编译等待启动/轮询两条共享蒙皮计算管线，仅两者完成才就绪，保留错误和十秒期限；
+     * 不创建蒙皮/姿态资源，直接更新会等待同一任务。 */
+    [[nodiscard]] auto prepareSkinPipelines() -> Core::Result<bool>;
+    /** Pure owner-thread readiness; allowed in GUI, never starts/polls jobs.
+     * 所属线程只读就绪查询，允许 GUI 调用，不启动/轮询任务。 */
+    [[nodiscard]] auto skinPipelinesReady() const -> Core::Result<bool>;
     /** At most 128 distinct skins / four million vertices per call. Validate on
      * CPU, compute vertices/frames/bounds on GPU, read one compact status batch,
      * then publish every posed buffer/bound together. Failure retains all previous

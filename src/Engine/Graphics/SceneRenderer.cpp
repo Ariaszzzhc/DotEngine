@@ -1510,6 +1510,7 @@ namespace Dot::Graphics {
     auto environmentReady = m_impl->renderer->environmentPipelinesReady();
     auto shadowsReady = m_impl->renderer->shadowPipelinesReady();
     auto occlusionReady = m_impl->renderer->occlusionPipelinesReady();
+    auto skinsReady = m_impl->renderer->skinPipelinesReady();
 
     if (!environment || !environmentReady || !shadowsReady) {
       return std::unexpected(!environment        ? environment.error()
@@ -1519,6 +1520,10 @@ namespace Dot::Graphics {
 
     if (!occlusionReady) {
       return std::unexpected(occlusionReady.error());
+    }
+
+    if (!skinsReady) {
+      return std::unexpected(skinsReady.error());
     }
 
     if (*environment && !*environmentReady) {
@@ -1551,6 +1556,18 @@ namespace Dot::Graphics {
       }
     }
 
+    auto entities = scene.entities();
+
+    if (!entities) {
+      return std::unexpected(entities.error());
+    }
+
+    if (!*skinsReady && std::ranges::any_of(*entities, [](const auto& entity) {
+          return entity.mesh && entity.mesh->visible && entity.skin && entity.skin->enabled;
+        })) {
+      return ScenePreparationStage::Skins;
+    }
+
     if (*environment
         && (!m_impl->environment || m_impl->environment->asset != (**environment).asset
             || m_impl->environment->processing != (**environment).processing)) {
@@ -1562,12 +1579,6 @@ namespace Dot::Graphics {
       }
 
       return ScenePreparationStage::EnvironmentMap;
-    }
-
-    auto entities = scene.entities();
-
-    if (!entities) {
-      return std::unexpected(entities.error());
     }
 
     bool missingMaterial{};
@@ -1650,6 +1661,24 @@ namespace Dot::Graphics {
 
     if (*stage == ScenePreparationStage::Occlusion) {
       auto ready = m_impl->renderer->prepareOcclusionPipelines();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return *stage;
+      }
+
+      stage = readiness(scene);
+
+      if (!stage) {
+        return std::unexpected(stage.error());
+      }
+    }
+
+    if (*stage == ScenePreparationStage::Skins) {
+      auto ready = m_impl->renderer->prepareSkinPipelines();
 
       if (!ready) {
         return std::unexpected(ready.error());
