@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
@@ -187,4 +188,126 @@ TEST_CASE("control.owner_reentry_move_and_close_keep_parent_and_release_owned_di
   CHECK_FALSE(std::filesystem::exists(root));
   CHECK(f.parent.files());
   CHECK_FALSE(submitControlRequest(root, "after", "{}"));
+}
+
+TEST_CASE("control.orphan_receipts_never_acknowledge_a_new_request") {
+  Fixture f;
+  REQUIRE(f.files.writeTextAtomic("responses/new.json",
+                                  R"({"source":"{}","response":{"ok":true,"old":true}})"));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "new", R"({"command":"change"})"));
+  CHECK_FALSE(std::filesystem::exists(f.files.root() / "requests/new.json"));
+  REQUIRE(std::filesystem::remove(f.files.root() / "responses/new.json"));
+  f.submit("new", R"({"command":"change"})");
+  std::size_t effects{};
+  REQUIRE(f.control.process([&](std::string_view) -> Result<std::string> {
+    ++effects;
+    return R"({"ok":true,"new":true})";
+  }));
+  CHECK(effects == 1);
+  CHECK(f.response("new")["response"]["new"] == true);
+}
+
+TEST_CASE("control.response_spelling_and_nonregular_leaves_reject_before_queue_or_dispatch") {
+  for (int kind = 0; kind < 4; ++kind) {
+#if defined(_WIN32)
+    if (kind == 1 || kind == 2) {
+      continue;
+    }
+#endif
+
+    Fixture f;
+    f.submit("one");
+    const auto receipt = f.files.root() / "responses/one.json";
+
+    if (kind == 0) {
+      REQUIRE(std::filesystem::create_directory(receipt));
+    } else if (kind == 1) {
+      REQUIRE(f.files.writeTextAtomic("existing.json", "{}"));
+      std::filesystem::create_symlink(f.files.root() / "existing.json", receipt);
+    } else if (kind == 2) {
+      std::filesystem::create_symlink(f.files.root() / "missing.json", receipt);
+    } else {
+      REQUIRE(f.files.writeTextAtomic("responses/One.json", "{}"));
+    }
+
+    CHECK_FALSE(submitControlRequest(f.files.root(), "next", "{}"));
+    CHECK_FALSE(submitControlRequest(f.files.root(), "one", R"({"command":"inspect"})"));
+    CHECK_FALSE(std::filesystem::exists(f.files.root() / "requests/next.json"));
+    std::size_t effects{};
+    const auto handler = [&](std::string_view) -> Result<std::string> {
+      ++effects;
+      return R"({"ok":true})";
+    };
+    CHECK_FALSE(f.control.process(handler));
+    CHECK(effects == 0);
+    CHECK_FALSE(f.control.failure().value());
+    REQUIRE(std::filesystem::remove(kind == 3 ? f.files.root() / "responses/One.json" : receipt));
+    REQUIRE(f.control.process(handler));
+    CHECK(effects == 1);
+    CHECK(f.response("one")["response"]["ok"] == true);
+  }
+}
+
+TEST_CASE("control.malformed_request_leaves_reject_new_publication_and_recover_after_repair") {
+  Fixture f;
+  REQUIRE(std::filesystem::create_directory(f.files.root() / "requests/bad.json"));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "next", "{}"));
+  CHECK_FALSE(std::filesystem::exists(f.files.root() / "requests/next.json"));
+  REQUIRE(std::filesystem::remove(f.files.root() / "requests/bad.json"));
+  REQUIRE(f.files.writeTextAtomic("requests/invalid.name.json", "{}"));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "next", "{}"));
+  REQUIRE(std::filesystem::remove(f.files.root() / "requests/invalid.name.json"));
+  REQUIRE(f.files.writeTextAtomic("requests/Case.JSON", "{}"));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "Case", "{}"));
+  REQUIRE(std::filesystem::remove(f.files.root() / "requests/Case.JSON"));
+  f.submit("next", "{}");
+  CHECK(f.control.process([](std::string_view) -> Result<std::string> { return "{}"; }).value()
+        == 1);
+}
+
+TEST_CASE("control.full_retained_history_preserves_retries_and_rejects_new_or_overflow_entries") {
+  Fixture f;
+  const auto requests = f.files.resolve("requests").value();
+  const auto responses = f.files.resolve("responses").value();
+
+  for (int i = 0; i < 4096; ++i) {
+    const auto name = std::to_string(i) + ".json";
+    std::ofstream request(requests / name);
+    std::ofstream response(responses / name);
+    request << "{}";
+    response << R"({"source":"{}","response":{"ok":true}})";
+    request.close();
+    response.close();
+    REQUIRE(request);
+    REQUIRE(response);
+  }
+
+  std::size_t effects{};
+  const auto handler = [&](std::string_view) -> Result<std::string> {
+    ++effects;
+    return R"({"ok":true})";
+  };
+  CHECK(f.control.process(handler).value() == 0);
+  CHECK(f.submit("300", "{}") == responses / "300.json");
+  CHECK_FALSE(submitControlRequest(f.files.root(), "overflow", "{}"));
+  CHECK_FALSE(std::filesystem::exists(requests / "overflow.json"));
+  REQUIRE(f.files.writeTextAtomic("responses/extra.json", "{}"));
+  CHECK_FALSE(f.control.process(handler));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "300", "{}"));
+  CHECK(effects == 0);
+  CHECK_FALSE(f.control.failure().value());
+  REQUIRE(std::filesystem::remove(responses / "extra.json"));
+  REQUIRE(std::filesystem::remove(requests / "300.json"));
+  CHECK_FALSE(submitControlRequest(f.files.root(), "new", "{}"));
+  CHECK_FALSE(std::filesystem::exists(requests / "new.json"));
+  REQUIRE(f.files.writeTextAtomic("requests/injected.json", "{}"));
+  CHECK_FALSE(f.control.process(handler));
+  CHECK(effects == 0);
+  CHECK_FALSE(f.control.failure().value());
+  REQUIRE(std::filesystem::remove(requests / "injected.json"));
+  REQUIRE(f.files.writeTextAtomic("requests/300.json", "{}"));
+  REQUIRE(std::filesystem::remove(responses / "300.json"));
+  CHECK(f.control.process(handler).value() == 1);
+  CHECK(effects == 1);
+  CHECK(f.response("300")["response"]["ok"] == true);
 }

@@ -71,3 +71,9 @@ by next-frame failure, failed GPU deformation/retry and unchanged shadow identit
 Skeleton tests retain delayed pose/projection ownership. HUD unit tests distinguish
 button definition versions from cosmetic/input changes. Actual product workflows
 separately verify editor capture and native presentation provenance.
+
+Control transport cases also cover orphan receipt refusal before new publication,
+regular/directory/symlink/dangling response boundaries, case spelling, malformed
+request leaves, repair/retry, full 4096-entry retained history and response overflow.
+They use owned temporary files without devices/windows. Actual CLI/editor/player
+checks separately verify retained history, idempotent side effects and control cost.

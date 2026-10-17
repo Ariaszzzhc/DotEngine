@@ -649,8 +649,8 @@ Materials are owned resource files with the strict schema in [Rendering](Renderi
 Resource creation/import/save supports `.dotmaterial`; successful saves refresh the
 shared preview cache. Preview/Play/export load actual referenced data and expose
 failures. Feature Lab is an editable project demonstrating persisted PBR and normal
-mapping. This stage provides basic inspectors and resource/agent authoring; dedicated
-material panels, visual light tools and the requested mature editor layout remain
+mapping. The structured material Inspector below shares staging, history and save
+with agents. Visual light tools and the remaining mature editor workflow are still
 in development. External source editing and the engine script namespace are
 implemented; the remaining editor layout/tooling stays part of the roadmap.
 
@@ -2102,3 +2102,11 @@ blank target disables UI input until the first matching frame completes.
 Scene/layout/epoch/target changes retire old frames; Stop restores authoring through
 the existing exact path. This overlap does not make font rasterization, resource
 loading or every driver call asynchronous.
+
+Mailbox polling and submission share the bounded directory index described in
+[native control](Export.md#opt-in-native-player-control). Malformed request/response
+leaves, spelling conflicts and an orphan response for a new ID reject before new
+publication. Observe the actual error and repair malformed owned entries. For a
+selected orphan ID, a fresh ID is also available; a queued path alone is never
+completion. Filesystem scans,
+JSON dispatch and writes still run on the calling thread.

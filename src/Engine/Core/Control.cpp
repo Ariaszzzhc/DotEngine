@@ -9,7 +9,6 @@ module;
 #include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -45,6 +44,106 @@ namespace Dot::Core {
       }
 
       return value;
+    }
+
+    struct ResponseEntry {
+      std::string name;
+      bool regular;
+    };
+
+    struct MailboxIndex {
+      std::size_t requestEntries{};
+      std::map<std::string, std::string> requests;
+      std::map<std::string, ResponseEntry> responses;
+      std::vector<Fs::path> pending;
+    };
+
+    /** Index directory entries once, without resolving every retained receipt.
+     * Retained replies require matching regular non-symlink leaves. Actual reads and
+     * writes still use FileSystem confinement; callers serialize local access.
+     * 每次仅索引一次目录项，不逐项规范化保留回执路径；保留响应须为同名普通非符号链接
+     * 文件。实际读写仍通过 FileSystem 限制路径，调用者串行访问本地邮箱。 */
+    auto scan(const FileSystem& root) -> Result<MailboxIndex> {
+      auto requests = root.resolve("requests");
+      auto responses = root.resolve("responses");
+
+      if (!requests || !responses) {
+        return std::unexpected(!requests ? requests.error() : responses.error());
+      }
+
+      MailboxIndex result;
+      std::size_t entries{};
+
+      for (const auto& entry : Fs::directory_iterator(*responses)) {
+        if (++entries > 4096) {
+          return fail(ErrorCode::Unavailable, "Control response entry limit exceeded");
+        }
+
+        const auto utf = entry.path().filename().u8string();
+        const std::string name(utf.begin(), utf.end());
+
+        if (!result.responses
+                 .emplace(folded(name),
+                          ResponseEntry{name, Fs::is_regular_file(entry.symlink_status())})
+                 .second) {
+          return fail(ErrorCode::InvalidArgument, "Control response has a case alias");
+        }
+      }
+
+      for (const auto& entry : Fs::directory_iterator(*requests)) {
+        if (++result.requestEntries > 4096) {
+          return fail(ErrorCode::Unavailable, "Control session request limit exceeded");
+        }
+
+        const auto utf = entry.path().filename().u8string();
+        const std::string name(utf.begin(), utf.end());
+        const auto normalized = folded(name);
+
+        if (!result.requests.emplace(normalized, name).second) {
+          return fail(ErrorCode::InvalidArgument, "Control request has a case alias");
+        }
+
+        if (entry.path().extension() != ".json") {
+          continue;
+        }
+
+        const auto stem = entry.path().stem().u8string();
+        const std::string id(stem.begin(), stem.end());
+
+        if (!validId(id) || !Fs::is_regular_file(entry.symlink_status())) {
+          return fail(ErrorCode::InvalidArgument, "Invalid control request filename/type");
+        }
+
+        const auto previous = result.responses.find(normalized);
+
+        if (previous != result.responses.end()) {
+          if (previous->second.name != name) {
+            return fail(ErrorCode::InvalidArgument,
+                        "Control response spelling differs from request");
+          }
+
+          if (!previous->second.regular) {
+            return fail(ErrorCode::InvalidArgument, "Invalid control response file type");
+          }
+        } else {
+          result.pending.push_back(entry.path().filename());
+        }
+
+        if (result.pending.size() > 256) {
+          return fail(ErrorCode::Unavailable, "Control pending request capacity exceeded");
+        }
+      }
+
+      /** Orphan leaves still consume space; reserve every pending reply before
+       * any handler can commit effects.
+       * 孤立文件仍占容量；分发任何副作用前须预留全部待处理回复的空间。 */
+      if (result.pending.size() > 4096 - result.responses.size()) {
+        return fail(ErrorCode::Unavailable,
+                    "Control response capacity cannot hold pending replies");
+      }
+
+      std::ranges::sort(result.pending);
+      return result;
     }
 
     auto object(std::string_view text, std::size_t maximum) -> Result<Json> {
@@ -176,83 +275,15 @@ namespace Dot::Core {
     m_impl->m_processing = true;
 
     try {
-      auto requests = root->resolve("requests");
-      auto responses = root->resolve("responses");
+      auto index = scan(*root);
 
-      if (!requests || !responses) {
-        return std::unexpected(!requests ? requests.error() : responses.error());
+      if (!index) {
+        return std::unexpected(index.error());
       }
 
-      std::vector<Fs::path> pending;
-      std::set<std::string> requestNames;
-      std::map<std::string, std::string> responseNames;
-      std::size_t entries{};
-
-      for (const auto& entry : Fs::directory_iterator(*responses)) {
-        if (++entries > 4096) {
-          return fail(ErrorCode::Unavailable, "Control response entry limit exceeded");
-        }
-
-        const auto utf = entry.path().filename().u8string();
-        const std::string name(utf.begin(), utf.end());
-
-        if (!responseNames.emplace(folded(name), name).second) {
-          return fail(ErrorCode::InvalidArgument, "Control response has a case alias");
-        }
-      }
-
-      entries = 0;
-
-      for (const auto& entry : Fs::directory_iterator(*requests)) {
-        if (++entries > 4096) {
-          return fail(ErrorCode::Unavailable, "Control session request limit exceeded");
-        }
-
-        if (entry.path().extension() != ".json") {
-          continue;
-        }
-
-        const auto utf = entry.path().stem().u8string();
-        const std::string id(utf.begin(), utf.end());
-
-        if (!validId(id) || !Fs::is_regular_file(entry.symlink_status())) {
-          return fail(ErrorCode::InvalidArgument, "Invalid control request filename/type");
-        }
-
-        if (!requestNames.insert(folded(id)).second) {
-          return fail(ErrorCode::InvalidArgument, "Control request has a case alias");
-        }
-
-        const auto name = id + ".json";
-        const auto previous = responseNames.find(folded(name));
-
-        if (previous != responseNames.end() && previous->second != name) {
-          return fail(ErrorCode::InvalidArgument, "Control response spelling differs from request");
-        }
-
-        auto response = root->resolve(Fs::path{"responses"} / entry.path().filename());
-
-        if (!response) {
-          return std::unexpected(response.error());
-        }
-
-        if (Fs::exists(*response) && !Fs::is_regular_file(Fs::symlink_status(*response))) {
-          return fail(ErrorCode::InvalidArgument, "Invalid control response file type");
-        }
-
-        if (!Fs::exists(*response)) {
-          pending.push_back(entry.path().filename());
-        }
-
-        if (pending.size() > 256) {
-          return fail(ErrorCode::Unavailable, "Control pending request capacity exceeded");
-        }
-      }
-
-      std::ranges::sort(pending);
       std::size_t processed{};
 
-      for (const auto& name : pending) {
+      for (const auto& name : index->pending) {
         if (processed == 16 || (keepRunning && !keepRunning())) {
           break;
         }
@@ -346,48 +377,37 @@ namespace Dot::Core {
 
       const auto name = std::string(id) + ".json";
       const auto destination = Fs::path{"requests"} / name;
-      auto resolved = files->resolve(destination);
-      auto directory = files->resolve("requests");
+      auto index = scan(*files);
 
-      if (!resolved || !directory) {
-        return std::unexpected(!resolved ? resolved.error() : directory.error());
+      if (!index) {
+        return std::unexpected(index.error());
       }
 
-      std::size_t entries{};
-      std::size_t pending{};
+      const auto normalized = folded(name);
+      const auto existing = index->requests.find(normalized);
+      const auto response = index->responses.find(normalized);
 
-      for (const auto& entry : Fs::directory_iterator(*directory)) {
-        if (++entries > 4096) {
-          return fail(ErrorCode::Unavailable, "Control session request limit exceeded");
-        }
-
-        const auto utf = entry.path().filename().u8string();
-        const std::string existing(utf.begin(), utf.end());
-
-        if (folded(existing) == folded(name) && existing != name) {
+      if (existing != index->requests.end()) {
+        if (existing->second != name) {
           return fail(ErrorCode::InvalidState, "Control ID has a case alias");
         }
 
-        if (entry.path().extension() == ".json") {
-          auto response = files->resolve(Fs::path{"responses"} / entry.path().filename());
-
-          if (!response) {
-            return std::unexpected(response.error());
-          }
-
-          pending += static_cast<std::size_t>(!Fs::exists(*response));
-        }
-      }
-
-      if (Fs::exists(*resolved)) {
         auto old = files->readText(destination, 1024 * 1024);
 
         if (!old || *old != request) {
           return fail(ErrorCode::InvalidState, "Control ID already has different content");
         }
       } else {
-        if (entries == 4096 || pending >= 256) {
-          return fail(ErrorCode::Unavailable, "Control session request/pending limit exceeded");
+        /** An orphan response cannot acknowledge an unrelated new request.
+         * 孤立响应不能被当作无关新请求的回执。 */
+        if (response != index->responses.end()) {
+          return fail(ErrorCode::InvalidState, "Control response has no matching request");
+        }
+
+        if (index->requestEntries == 4096 || index->pending.size() >= 256
+            || index->pending.size() >= 4096 - index->responses.size()) {
+          return fail(ErrorCode::Unavailable,
+                      "Control session request/response/pending limit exceeded");
         }
 
         auto saved = files->writeTextAtomic(destination, request);

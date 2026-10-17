@@ -298,3 +298,16 @@ hudText.presentedScope/presentedRevision/presentedButtonRevision belong to actua
 presentation, which can lag simulation. UI input requires matching button definitions,
 scene scope and current surface size. A scene cut or minimized/changed surface
 discards obsolete pending work; normal game simulation remains independent.
+
+Control polling and submission share a bounded directory index. Historical request
+IDs are matched to regular non-symlink response entries without resolving each
+history path again. Actual request reads and atomic response writes still use the
+confined FileSystem operations. This reduces repeated filesystem work; directory
+scanning, JSON, handler work and writes still run on the caller/owner thread.
+Submission preflights malformed request/response leaves and spelling conflicts
+before publishing a new request. Pending replies must fit remaining response
+capacity, including unrelated retained entries, before dispatch can begin.
+A response without its original request cannot
+acknowledge a new request with that ID: repair the owned mailbox or use a fresh ID.
+This does not add authentication, hostile-race isolation, automatic receipt eviction
+or an unbounded session; the documented capacity and terminal failure rules apply.

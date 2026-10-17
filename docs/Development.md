@@ -11512,3 +11512,121 @@ Whitespace and clang-format checks pass. Computer use still reports the Mac lock
 physical keyboard/IME/pointer and wrapped-panel acceptance remain unverified. This
 stage does not finish owner-thread asset/text uploads, resource streaming, broader
 frame pacing, final Prism art, large-game/long-run evidence or the overall engine goal.
+
+## 2026-10-18 — Index retained product control history
+
+Continue from the actual native frame-pipeline trace, which still spends substantial
+owner time in Control::process / FileSystem::resolve / weakly_canonical. The source
+resolves and probes a response path again for every retained request on every poll;
+the CLI sender repeats that pattern. This cost grows during long AI authoring/game
+sessions, independent of actual new commands.
+
+Build one bounded request/response directory index per poll/submission. Match exact
+portable request names to regular non-symlink response entries directly, without
+canonicalizing every historical response path. Both frontends and both native/GUI
+senders share this core implementation. Actual source reads and atomic reply writes
+retain FileSystem confinement. Continue scanning current directory contents: no
+mtime shortcut, background cache or stale completion publication is introduced.
+Sorting, at most sixteen dispatches, 256 pending / 4096 retained entries, owner/reentry
+checks, byte-identical retry, ID conflicts and post-effect terminal failure semantics
+remain. This is a reduction of repeated work, not asynchronous control I/O or an
+unbounded control session.
+
+Submission now preflights malformed request/response leaves, response spelling and
+response-capacity failures before publishing a new request. Matching directories,
+live and dangling symlinks cannot stand in for a response. An orphan response whose
+original request is absent cannot acknowledge a new request with that ID; reject it
+without publishing, permitting explicit owned repair or a fresh ID. Ordinary command
+errors still become actual replies; ambiguous post-effect failures remain terminal.
+No authentication or hostile-filesystem-race guarantee is added.
+
+Add four enduring cases to existing ControlTests: orphan refusal/repair/new dispatch;
+response spelling/directory/live symlink/dangling symlink refusal and recovery;
+malformed request leaves and uppercase suffix aliases; full retained 4096-entry
+history with identical retry, new-publication refusal, response overflow and repaired
+pending dispatch. They use owned files without devices/windows. Symlink scenarios
+follow the existing non-Windows test scope rather than assuming Windows privileges.
+Focused Debug passes 9/9 in 1.61 s; full Debug passes 1,436/1,436 in 240.03 s,
+436 unit / 1000 integration, 177 offscreen GPU and 232 compiler cases. Preserve the
+caller LLVM/compiler/linker environment and pinned dependencies; no sanitizers.
+
+Full Release/NDEBUG passes 1,436/1,436 in 36.13 s. During final review, explicitly
+reserve reply capacity for all pending work: unrelated retained/orphan response
+entries still occupy the 4096-entry directory. Reject impossible injected batches
+before any effects and reject a new request before publication when replies cannot
+fit. Extend the full-history case with this boundary and repair/retry. Final focused
+Debug 9/9 (1.29 s) and Release 9/9 (0.93 s) pass; final product builds incorporate
+the reviewed code and contract comments. No Windows/Linux execution is claimed.
+
+A real pre-change native export and the final export run identical saved Prism
+content (115 files), with exactly 513 retained requests during an eight-second
+idle native sample. Both keep presenting/simulating without script failures. The
+last bounded profile histories report prepare medians 9,001,166.5 ns before and
+1,724,771 ns after; earlier indexed candidate 1,741,958.5 ns. The baseline stack is
+dominated by retained-receipt canonicalization; final sampling shows bounded index
+scanning with only occasional resolver samples. These are local wall-time envelopes,
+with driver/scheduler variation and different application iteration counts; they
+are not game FPS, a universal speedup or a frame-time bound. Directory traversal,
+index allocation, JSON/handler work and atomic file writes remain on the caller.
+The fixed 4096-entry session limit is still explicit; no receipt eviction is added.
+
+The baseline history helper completed all product assertions and normal close,
+then failed only while reporting a null close-frame phase as int(None). Preserve
+that reporting failure and recover its medians from the saved profile's present
+intervals. The corrected helper excludes absent phases instead of inventing zeros;
+current/final runs complete normally. Do not relabel this as a native product fault.
+
+Actual DotGame send reproduces the orphan boundary: baseline queues a new request
+but returns the deliberately supplied unrelated old response, leaving requested
+live game data unchanged. The new sender rejects before publishing the request,
+leaving the owned response bytes and game data intact. Remove only the known owned
+probe and retry the same ID; it dispatches and publishes the real matching source/
+response. Both baseline repair and final refusal/repair processes exit zero and
+retire controls. A separate retained-history workflow saves an owned slot, changes
+live data, resubmits the identical save ID and receives the same reply without
+rewriting that slot or undoing intervening live state.
+
+Use the actual Release editor to create an editable Prism project. Stage/apply/
+undo/redo uiFontSize 20→22 and directional intensity 3.4→3.74. Open the referenced
+physical material through its structured Inspector, stage/commit roughness 1→0.62,
+undo/redo and save. Scene and material histories remain independent. Save, close,
+reopen and verify the saved material value before Play. Real Play passes initial
+preparation, gameplay, airborne pause/save refusal, exact frozen pixels/pose/steps,
+grounded paused save, paused restore retaining unrelated live data, malformed clock
+refusal and Space Return without jumping. Stop restores exact clean saved authoring;
+a fresh isolated Play has a new source and empty temporary save store. Saved/stopped
+PNGs match SHA-256 69c7b60d720e3426b3826acb75d4aaad161704a7479e1f78c435c9bac3de9f6d.
+Paused before/after PNGs are byte identical. Actual target text is readable and
+reports no overflow. Both editor processes exit zero, retire controls and have
+empty stderr. This validates product operations, not physical pointer/IME input.
+
+Export the saved authored project through the workspace, relocate the unpacked game
+and physically hide only its owned source project. All 115 content files /
+66,213,373 bytes match saved sources, including the changed light/material, with no
+TypeScript/map files. The pinned font/notice ship and font SHA-256 stays
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Two real native processes pass airborne freeze/save refusal, observed landing and
+grounded paused save, fresh unpaused restart after paused exit, damaged owned slot
+refusal preserving pose/bytes, exact file repair/retry, paused restore, resumed
+movement, scene replacement and stale-scope rejection. Actual HUD revisions/button
+versions reach presentation without overflow or script failures. Space Return does
+not jump. Both processes exit zero and retire controls; ordinary preparation status
+remains in stderr. No audio listening claim is made.
+
+Following the final capacity review, repeat the entire editor/native workflow,
+matched history sample and actual orphan refusal/repair with final Release binaries.
+All pass. Final editor and both workspace/CLI-exported native hashes match current
+Release outputs. Record arm64 Mach-O, load commands, libraries and executable-relative
+native LLVM runtime references before removing only owned App/unpacked native copies
+and temporary helper/cache files. Recheck eight earlier persistent saves, restore
+both authoring project paths, and retain editable projects, saves, actual requests/
+responses, captures, manifests, profiles, stacks and hash evidence under ignored
+build/control-index-review. No distribution archive is created.
+
+Review directory confinement, exact/case identity, capacity reservation, no-dispatch
+failure/recovery, terminal post-effect behavior, ownership/moves, platform assumptions,
+module separation and appropriate behavioral coverage. Formatting and whitespace
+checks pass. Computer use again reports the Mac locked; human keyboard/IME/pointer
+and wrapped-panel acceptance remain unverified. This does not finish background
+control/resource I/O, streaming, stable populated-game frame pacing, final Prism art,
+large-game/long-running evidence or the overall engine/editor objective.
