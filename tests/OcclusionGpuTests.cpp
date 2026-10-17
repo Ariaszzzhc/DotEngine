@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -9,7 +10,10 @@
 #include <thread>
 #include <vector>
 
+import Dot.Core.Result;
 import Dot.Graphics.Renderer;
+import Dot.Graphics.SceneRenderer;
+import Dot.World.Scene;
 import Dot.Math;
 
 using namespace Dot::Graphics;
@@ -64,6 +68,121 @@ namespace {
     }
   };
 }  // namespace
+
+TEST_CASE("occlusion.gpu_async_group_preserves_settings_without_publishing_working_maps") {
+  Fixture fixture;
+  REQUIRE(fixture.renderer.setOcclusion(OcclusionSettings{}));
+  CHECK_FALSE(fixture.renderer.occlusionPipelinesReady().value());
+  auto ready = fixture.renderer.prepareOcclusionPipelines();
+  REQUIRE(ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+    CHECK_FALSE(fixture.renderer.occlusionPipelinesReady().value());
+    CHECK(fixture.renderer.resourceStats()->occlusionBytes == 0);
+    CHECK(fixture.target.info()->frames == 0);
+    CHECK_FALSE(fixture.renderer.readOcclusion());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = fixture.renderer.prepareOcclusionPipelines();
+    REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
+  }
+
+  REQUIRE(*ready);
+  CHECK(fixture.renderer.occlusionPipelinesReady().value());
+  CHECK(fixture.renderer.occlusion().value() == OcclusionSettings{});
+  CHECK(fixture.renderer.resourceStats()->occlusionBytes == 0);
+  CHECK(fixture.target.info()->frames == 0);
+  fixture.render();
+  const auto visibility = fixture.renderer.readOcclusion().value();
+  CHECK(*std::min_element(visibility.pixels.begin(), visibility.pixels.end()) < 235);
+  CHECK(fixture.renderer.resourceStats()->occlusionBytes == 129 * 129 * 24);
+  REQUIRE(fixture.renderer.prepareOcclusionPipelines().value());
+  fixture.render();
+  CHECK(fixture.renderer.readOcclusion()->pixels == visibility.pixels);
+  REQUIRE(fixture.renderer.setOcclusion(std::nullopt));
+  CHECK(fixture.renderer.prepareOcclusionPipelines().value());
+  CHECK_FALSE(fixture.renderer.occlusion().value());
+  CHECK(fixture.renderer.resourceStats()->occlusionBytes == 0);
+}
+
+TEST_CASE("occlusion.gpu_async_group_moves_threads_and_abandoned_compilation_release_safely") {
+  for (int index = 0; index < 3; ++index) {
+    auto renderer = createRenderer();
+    REQUIRE(renderer.prepareOcclusionPipelines());
+    bool rejected{};
+    std::thread worker([&] {
+      rejected = !renderer.prepareOcclusionPipelines() && !renderer.occlusionPipelinesReady();
+    });
+    worker.join();
+    CHECK(rejected);
+    auto moved = std::move(renderer);
+    CHECK_FALSE(renderer.prepareOcclusionPipelines());
+    CHECK_FALSE(renderer.occlusionPipelinesReady());
+
+    if (index == 1) {
+      auto ready = moved.prepareOcclusionPipelines();
+      REQUIRE(ready);
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+      while (!*ready && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ready = moved.prepareOcclusionPipelines();
+        REQUIRE(ready);
+      }
+
+      REQUIRE(*ready);
+      CHECK(moved.occlusionPipelinesReady().value());
+    }
+  }
+}
+
+TEST_CASE("occlusion.gpu_scene_current_requirements_and_gui_reads_preserve_bindings_and_cache") {
+  auto renderer = createRenderer();
+  auto drawing = SceneRenderer::create(renderer).value();
+  auto scene = Dot::World::Scene::create().value();
+  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  REQUIRE(scene.setOcclusion(OcclusionSettings{}));
+  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Occlusion);
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Occlusion);
+        CHECK_FALSE(renderer.occlusionPipelinesReady().value());
+        CHECK_FALSE(drawing.preparePipelines(scene));
+        return {};
+      },
+      16, 16));
+  CHECK_FALSE(renderer.occlusionPipelinesReady().value());
+  REQUIRE(renderer.closeGui());
+  REQUIRE(scene.setOcclusion(std::nullopt));
+  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  REQUIRE(scene.setOcclusion(OcclusionSettings{}));
+  auto stage = drawing.preparePipelines(scene);
+  REQUIRE(stage);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (*stage != ScenePipelineStage::Ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    stage = drawing.preparePipelines(scene);
+    REQUIRE(stage);
+  }
+
+  REQUIRE(*stage == ScenePipelineStage::Ready);
+  CHECK(renderer.occlusionPipelinesReady().value());
+  CHECK_FALSE(renderer.occlusion().value());
+  CHECK(renderer.resourceStats()->occlusionBytes == 0);
+  CHECK(drawing.stats()->bytes == 0);
+  REQUIRE(scene.setOcclusion(std::nullopt));
+  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  REQUIRE(scene.setOcclusion(OcclusionSettings{}));
+  CHECK(drawing.pipelineReadiness(scene).value() == ScenePipelineStage::Ready);
+  auto moved = std::move(drawing);
+  CHECK_FALSE(drawing.preparePipelines(scene));
+  CHECK(moved.preparePipelines(scene).value() == ScenePipelineStage::Ready);
+  auto retained = std::move(scene);
+  CHECK_FALSE(moved.pipelineReadiness(scene));
+  CHECK(moved.pipelineReadiness(retained).value() == ScenePipelineStage::Ready);
+}
 
 TEST_CASE("occlusion.gpu_plane_background_contact_and_lifted_objects_use_real_guides") {
   Fixture fixture;

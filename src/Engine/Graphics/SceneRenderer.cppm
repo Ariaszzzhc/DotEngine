@@ -23,7 +23,7 @@ export namespace Dot::Graphics {
    * 游戏主相机、指定场景相机或独立编辑/工具视图。 */
   using SceneView = std::variant<std::monostate, World::EntityId, View>;
 
-  enum class ScenePipelineStage { Ready, Environment, Shadows };
+  enum class ScenePipelineStage { Ready, Environment, Shadows, Occlusion };
 
   struct SceneRenderStats {
     std::size_t meshes;
@@ -81,11 +81,11 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
-    /** Start/poll required environment/shadow pipeline groups; report the pending
+    /** Start/poll required environment/shadow/SSAO pipeline groups; report the pending
      * group or Ready. No files, maps, bindings or cache entries change. Rendering
      * still validates/loads/bakes resources synchronously. Completed groups reuse
      * the renderer's pipelines even when the scene changes.
-     * 启动/轮询所需环境/阴影管线组，返回当前等待组或 Ready；不改文件、地图、绑定或缓存。
+     * 启动/轮询所需环境/阴影/SSAO 管线组，返回当前等待组或 Ready；不改文件、地图、绑定或缓存。
      * 绘制仍同步校验/加载/预处理资源，已完成组在场景变更后继续共用。 */
     [[nodiscard]] auto preparePipelines(const World::Scene& scene)
         -> Core::Result<ScenePipelineStage>;

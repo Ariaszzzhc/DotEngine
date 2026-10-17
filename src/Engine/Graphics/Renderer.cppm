@@ -570,6 +570,17 @@ export namespace Dot::Graphics {
     /** Pure owner-thread readiness, also allowed during GUI layout.
      * 仅查询所属线程就绪状态，允许在 GUI 布局期间调用，不启动/轮询工作。 */
     [[nodiscard]] auto shadowPipelinesReady() const -> Core::Result<bool>;
+    /** Start/poll geometry, search, filter and two environment SSAO pipelines as
+     * one atomic group. No settings, working textures, bindings or pixels change.
+     * Pending jobs have the same ten-second deadline and explicit render waits
+     * as shadow preparation; errors remain observable for this renderer.
+     * 将几何、搜索、过滤及两条环境 SSAO 管线作为一组启动/轮询，整组就绪才发布；
+     * 不改设置、工作纹理、绑定或像素。与阴影准备共用十秒期限和显式绘制等待契约，
+     * 错误在本渲染器内保留。 */
+    [[nodiscard]] auto prepareOcclusionPipelines() -> Core::Result<bool>;
+    /** Pure readiness, including during GUI layout; never starts/polls jobs.
+     * 仅查询就绪状态，允许 GUI 布局调用，不启动/轮询任务。 */
+    [[nodiscard]] auto occlusionPipelinesReady() const -> Core::Result<bool>;
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
      * with ordinary textures. Failure publishes no partial resource. Explicitly
@@ -662,7 +673,8 @@ export namespace Dot::Graphics {
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
      * the callback may append GUI images/viewports, toggle profiling and read
-     * guiStats/visibilityStats/profiling/environmentPipelineReady/shadowPipelinesReady,
+     * guiStats/visibilityStats/profiling/environmentPipelineReady/shadowPipelinesReady/
+     * occlusionPipelinesReady,
      * but must not replace/change ImGui context or reenter other renderer operations.
      * Input events are explicitly forwarded.
      * Empty font uses the built-in font; an explicit font must load successfully.

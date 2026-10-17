@@ -219,7 +219,9 @@ namespace Dot::Runtime {
             if (loadingStage != *prepared) {
               const auto phase = *prepared == Graphics::ScenePipelineStage::Environment
                                      ? "environment lighting"
-                                     : "shadow shaders";
+                                 : *prepared == Graphics::ScenePipelineStage::Shadows
+                                     ? "shadow shaders"
+                                     : "ambient occlusion shaders";
               std::println(stderr, "Preparing {}", phase);
               auto changed
                   = application->window().setTitle(description->name + " - Preparing " + phase);

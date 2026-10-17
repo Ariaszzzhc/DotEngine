@@ -289,7 +289,8 @@ The surface/depth descriptor builders are shared with ordinary rendering; shader
 blend, depth and vertex-layout semantics are unchanged.
 
 `SceneRenderer::preparePipelines(scene)` prepares groups required by the scene's
-environment and enabled shadow lights, returning Ready, Environment or Shadows.
+environment, enabled shadow lights and SSAO setting, returning Ready, Environment,
+Shadows or Occlusion.
 `pipelineReadiness(scene)` only reads current requirements/results, including during
 GUI layout; it starts/polls no work. Once shadow pipelines are ready, this check
 needs no entity enumeration. No image/file reads or resource-cache entries occur.
@@ -297,14 +298,22 @@ Retained preparation failures remain errors; these states do not mean scene asse
 or pixels have loaded.
 
 The editor keeps event/agent/GUI work active while these jobs are pending. Scene
-names the preparation group; `workspace.view.loading` is `"environment-pipeline"` or
-`"shadow-pipelines"`, `ready` is false and capture/Play cannot claim a completed
-scene. Play checks the current requirements even before the next preparation tick.
+names the preparation group; `workspace.view.loading` is `"environment-pipeline"`,
+`"shadow-pipelines"` or `"occlusion-pipelines"`. Pending views have `ready=false`;
+capture/Play cannot claim a completed scene. Play checks the current requirements even before the next preparation tick.
 The native player presents a clear loading surface and names the phase in its title
 before script Start callbacks/game updates. Ordinary rendering still validates,
 loads and bakes real content synchronously. Other pipeline groups, image/upload
 work and resource streaming remain unfinished; these are preparation states, not
 substitute scene pixels or a general background resource loader.
+
+`Renderer::prepareOcclusionPipelines()` prepares geometry, search/filter compute and
+both environment composition variants atomically with the same bounded async jobs.
+`occlusionPipelinesReady()` is a GUI-safe pure read. Preparation creates no working
+maps, changes no SSAO settings/bindings and renders no frame. Explicit rendering
+waits on the same jobs; failures remain observable and pending jobs have ten-second
+deadlines. Environment surface/sky, skin, picking and other pipeline families still
+have synchronous creation paths.
 
 Defaults are radiance 256, diffuse 32, specular 128, BRDF 128, 256 samples. Radiance/
 specular allow 16..512; diffuse 4..128; BRDF 16..256; dimensions are powers of two,

@@ -5555,6 +5555,8 @@ namespace Dot::Editor {
                           ? Json("environment-pipeline")
                       : m_pipelineStage == Graphics::ScenePipelineStage::Shadows
                           ? Json("shadow-pipelines")
+                      : m_pipelineStage == Graphics::ScenePipelineStage::Occlusion
+                          ? Json("occlusion-pipelines")
                           : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
@@ -10021,7 +10023,9 @@ namespace Dot::Editor {
         if (m_pipelineStage != Graphics::ScenePipelineStage::Ready) {
           ImGui::TextUnformatted(m_pipelineStage == Graphics::ScenePipelineStage::Environment
                                      ? "Preparing environment lighting..."
-                                     : "Preparing shadow shaders...");
+                                 : m_pipelineStage == Graphics::ScenePipelineStage::Shadows
+                                     ? "Preparing shadow shaders..."
+                                     : "Preparing ambient occlusion shaders...");
         }
 
         if (m_animationPreview) {

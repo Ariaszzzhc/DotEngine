@@ -9109,3 +9109,80 @@ families/resource work remain the next measured investigation; timing guards and
 warnings are unchanged. Raw requests/responses, four PNGs, manifests and profiles
 remain under build/rotation-persistence-review. Verified temporary native output is
 removed after retaining evidence. Overall engine/editor/game goals remain unfinished.
+
+## Asynchronous SSAO pipeline group
+
+After the rotation repair, another independent native sample reproduces a
+3429.286625ms first-game render / 3463.146625ms step. It records 305 application
+steps (125 preparation plus 180 game steps), then explicitly drops 3333.333200ms
+of fixed time. A six-second process sample places the main thread inside all five
+synchronous ensureOcclusionPipelines creations and the environment surface/sky
+creations in setEnvironment, reaching Metal newLibraryWithSource. This identifies
+concrete remaining creation paths rather than proving all render time is compilation.
+Raw before evidence remains under build/startup-stall-review. The first headless
+export attempt mistakenly supplies clang as the compiler argument; the product
+correctly rejects it because it requires TypeScript 7.0.2, publishing no package.
+The corrected export uses the existing bundled typescript-native/tsc.
+
+Added prepareOcclusionPipelines/occlusionPipelinesReady with three render and two
+compute jobs: geometry, search, bilateral filter and both environment composition
+variants. Every job must succeed before publishing any renderer pipeline handle.
+Descriptor/shader construction preserves prior vertex locations, formats, depth,
+entry points and blend settings. Synchronous descriptor validation finishes before
+asynchronous submission; callback context/results are owned. Explicit rendering
+waits on these same jobs with their remaining ten-second deadlines, not fresh
+pipeline creation. Retained errors prevent partial readiness. Preparation allocates
+no working maps, changes no settings/bindings and renders no pixels.
+
+SceneRenderer checks current SSAO requirements after environment/shadow requirements
+and reports Occlusion. GUI-safe reads start/poll no work. Workspace's shared status
+adds occlusion-pipelines and the visible ambient-occlusion preparation label; the
+existing Play guard reads current requirements. Native loading names the same phase
+and defers Start/game advancement until the required groups finish. Mailbox-first
+closure, capture ownership, frame budgets, clocks and timing warnings are unchanged.
+Environment surface/sky, skin, other pipeline families, images/uploads and GPU bake
+completion remain synchronous. This is not a general resource streaming solution.
+
+Three new durable offscreen cases cover current settings with no premature working
+maps/target frames, retained real contact occlusion and identical repeated pixels,
+reuse after settings removal, moves, foreign threads, abandoned jobs, GUI-safe pure
+reads, GUI reentry rejection and current scene add/remove requirements without
+asset/cache/binding mutation. Focused Debug passes 17/17 (18.71s), including the
+existing environment/shadow cases and CPU SSAO boundaries. A final additional
+pending-readiness assertion is covered by the complete suite. Complete Debug passes
+1313/1313 (199.60s); Release/NDEBUG passes 1313/1313 (27.32s), without overlapping
+builds/tests. Counts: 410 unit, 903 integration; overlapping 198 compiler,
+151 offscreen, 33 platform, 32 audio-native and 20 process cases. Builds succeed;
+seven changed C++ files pass clang-format and whitespace checks pass. Reviewed
+callback/descriptor ownership, atomic publication, sticky errors, remaining budgets,
+GUI/thread/device/move checks, scene requirement priority and unchanged shaders.
+Only macOS arm64 is executed; no dependency/compiler/linker/sanitizer changes occur.
+
+Actual Release editor observes environment-pipeline, shadow-pipelines and
+occlusion-pipelines. During the latter, 18 inspect requests complete with median
+51.674ms / maximum 77.984ms client wall time (including CLI/poll overhead). Play
+explicitly rejects with pipelines still preparing. A queued capture finishes failed
+with no completed frame; saving it rejects and writes no file. The subsequent ready
+inspect still takes 1.353386s; application profiling attributes 1303.432625ms to
+render. These measurements do not establish general editor responsiveness.
+Ready/stopped PNGs retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Real W/Space Play observes [-3,1.4705257,1.3672982], no Play error/diagnostics,
+clean exact authoring restoration on Stop and successful Save/export. The editor
+exits zero with empty stderr and a retired control directory. Native human input
+acceptance remains limited by the previously reported locked Mac; it is not rerun.
+
+The independent export again matches all 116 content files / 66,649,969
+bytes exactly while authoring is hidden. The native run logs all three preparation
+phases, exits zero after 360 game steps and records 364 steps (four preparation plus
+360 game). Its 120 retained samples are unpaused/error-free. First-game render is
+558.198667ms, whole step 593.143750ms; the following interval explicitly drops
+466.666648ms of fixed time. Retained median step is 11.679021ms. This run follows
+editor compilation and has different cache context/frame count from the earlier
+cold sample, so no matched speedup/FPS conclusion is drawn. Its main-thread sample
+does not reproduce the prior long synchronous SSAO creations; remaining synchronous
+work still needs preparation and measurement. Raw requests/responses, PNGs,
+profiles, samples, content hashes, runtime/game manifests and executable hashes are
+retained under build/occlusion-loading-review. Verified before/after native packages
+and the latest owned editor copy are removed. Formal example assets remain unchanged;
+overall engine/editor/game goals remain unfinished.

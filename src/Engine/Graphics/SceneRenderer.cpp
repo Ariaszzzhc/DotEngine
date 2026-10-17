@@ -938,11 +938,16 @@ namespace Dot::Graphics {
     auto environment = scene.environment();
     auto environmentReady = m_impl->renderer->environmentPipelineReady();
     auto shadowsReady = m_impl->renderer->shadowPipelinesReady();
+    auto occlusionReady = m_impl->renderer->occlusionPipelinesReady();
 
     if (!environment || !environmentReady || !shadowsReady) {
       return std::unexpected(!environment        ? environment.error()
                              : !environmentReady ? environmentReady.error()
                                                  : shadowsReady.error());
+    }
+
+    if (!occlusionReady) {
+      return std::unexpected(occlusionReady.error());
     }
 
     if (*environment && !*environmentReady) {
@@ -960,6 +965,18 @@ namespace Dot::Graphics {
             return entity.light && entity.light->enabled && entity.light->shadows;
           })) {
         return ScenePipelineStage::Shadows;
+      }
+    }
+
+    if (!*occlusionReady) {
+      auto occlusion = scene.occlusion();
+
+      if (!occlusion) {
+        return std::unexpected(occlusion.error());
+      }
+
+      if (*occlusion) {
+        return ScenePipelineStage::Occlusion;
       }
     }
 
@@ -1004,6 +1021,24 @@ namespace Dot::Graphics {
 
     if (*stage == ScenePipelineStage::Shadows) {
       auto ready = m_impl->renderer->prepareShadowPipelines();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return *stage;
+      }
+
+      stage = pipelineReadiness(scene);
+
+      if (!stage) {
+        return std::unexpected(stage.error());
+      }
+    }
+
+    if (*stage == ScenePipelineStage::Occlusion) {
+      auto ready = m_impl->renderer->prepareOcclusionPipelines();
 
       if (!ready) {
         return std::unexpected(ready.error());

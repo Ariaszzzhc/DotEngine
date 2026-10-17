@@ -693,8 +693,15 @@ namespace Dot::Graphics {
       std::optional<Core::Error> error;
     };
 
+    struct OcclusionPreparation {
+      std::array<PipelineJob<wgpu::RenderPipeline>, 3> render;
+      std::array<PipelineJob<wgpu::ComputePipeline>, 2> compute;
+      std::optional<Core::Error> error;
+    };
+
     std::optional<EnvironmentPreparation> m_environmentPreparation;
     std::optional<ShadowPreparation> m_shadowPreparation;
+    std::optional<OcclusionPreparation> m_occlusionPreparation;
     wgpu::BindGroupLayout m_skinLayout;
     wgpu::ComputePipeline m_skinVertices;
     wgpu::ComputePipeline m_skinFaces;
@@ -1414,12 +1421,9 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto ensureOcclusionPipelines() -> Core::Result<void> {
-      if (geometryPipeline) {
-        return {};
-      }
-
-      ErrorScope scope(instance, device);
+    template <typename Create>
+    auto geometryPipelineFor(Create create)
+        -> std::invoke_result_t<Create, const wgpu::RenderPipelineDescriptor*> {
       const auto module = [&](const char* code) {
         wgpu::ShaderSourceWGSL source;
         source.code = code;
@@ -1427,6 +1431,7 @@ namespace Dot::Graphics {
         descriptor.nextInChain = &source;
         return device.CreateShaderModule(&descriptor);
       };
+
       const auto geometryCode = std::string(Detail::coverageShader) + "\n" + Detail::geometryShader;
       auto shader = module(geometryCode.c_str());
       const std::array attributes{wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3,
@@ -1463,31 +1468,177 @@ namespace Dot::Graphics {
       descriptor.vertex.buffers = &layout;
       descriptor.depthStencil = &depth;
       descriptor.fragment = &fragment;
-      auto geometry = device.CreateRenderPipeline(&descriptor);
-      wgpu::ComputePipelineDescriptor compute;
-      compute.compute.module = module(Detail::occlusionShader);
-      compute.compute.entryPoint = "compute";
-      auto ao = device.CreateComputePipeline(&compute);
-      compute.compute.module = module(Detail::occlusionFilterShader);
-      compute.compute.entryPoint = "filterOcclusion";
-      auto filter = device.CreateComputePipeline(&compute);
-      auto ambient = pipeline(wgpu::TextureFormat::RGBA16Float, true, false, true);
-      auto shadowed = pipeline(wgpu::TextureFormat::RGBA16Float, true, true, true);
+      return create(&descriptor);
+    }
+
+    auto compileOcclusionCompute(const char* code, const char* entry, std::string context)
+        -> Core::Result<PipelineJob<wgpu::ComputePipeline>> {
+      ErrorScope scope(instance, device);
+      wgpu::ShaderSourceWGSL source;
+      source.code = code;
+      wgpu::ShaderModuleDescriptor shaderDescriptor;
+      shaderDescriptor.nextInChain = &source;
+      auto shader = device.CreateShaderModule(&shaderDescriptor);
+      wgpu::ComputePipelineDescriptor descriptor;
+      descriptor.compute.module = shader;
+      descriptor.compute.entryPoint = entry;
       auto checked = scope.finish();
+
+      if (!checked) {
+        return Core::fail(checked.error().code, context + ": " + checked.error().message);
+      }
+
+      return compilePipeline<wgpu::ComputePipeline>(device, descriptor, std::move(context));
+    }
+
+    auto prepareOcclusionPipelines() -> Core::Result<bool> {
+      if (geometryPipeline && occlusionPipeline && occlusionFilterPipeline
+          && occlusionEnvironmentPipeline && occlusionShadowEnvironmentPipeline) {
+        return true;
+      }
+
+      if (m_occlusionPreparation && m_occlusionPreparation->error) {
+        return std::unexpected(*m_occlusionPreparation->error);
+      }
+
+      try {
+        if (!m_occlusionPreparation) {
+          m_occlusionPreparation.emplace();
+          auto geometry = compileRenderPipeline(
+              [&](auto create) { return geometryPipelineFor(std::move(create)); },
+              "Occlusion geometry pipeline");
+
+          if (!geometry) {
+            m_occlusionPreparation->error = geometry.error();
+            return std::unexpected(geometry.error());
+          }
+
+          m_occlusionPreparation->render[0] = std::move(*geometry);
+          auto ao = compileOcclusionCompute(Detail::occlusionShader, "compute",
+                                            "Occlusion search pipeline");
+
+          if (!ao) {
+            m_occlusionPreparation->error = ao.error();
+            return std::unexpected(ao.error());
+          }
+
+          m_occlusionPreparation->compute[0] = std::move(*ao);
+          auto filter = compileOcclusionCompute(Detail::occlusionFilterShader, "filterOcclusion",
+                                                "Occlusion filter pipeline");
+
+          if (!filter) {
+            m_occlusionPreparation->error = filter.error();
+            return std::unexpected(filter.error());
+          }
+
+          m_occlusionPreparation->compute[1] = std::move(*filter);
+
+          for (std::size_t index = 0; index < 2; ++index) {
+            auto ambient = compileRenderPipeline(
+                [&](auto create) {
+                  return surfacePipeline(wgpu::TextureFormat::RGBA16Float, true, index == 1, true,
+                                         false, std::move(create));
+                },
+                index == 0 ? "Occlusion environment pipeline"
+                           : "Occlusion shadow environment pipeline");
+
+            if (!ambient) {
+              m_occlusionPreparation->error = ambient.error();
+              return std::unexpected(ambient.error());
+            }
+
+            m_occlusionPreparation->render[index + 1] = std::move(*ambient);
+          }
+        }
+
+        bool complete = true;
+        const auto poll = [&](auto& jobs) -> Core::Result<void> {
+          for (auto& job : jobs) {
+            auto ready = job.poll(instance);
+
+            if (!ready) {
+              return std::unexpected(ready.error());
+            }
+
+            complete = complete && *ready;
+          }
+
+          return {};
+        };
+
+        auto checked = poll(m_occlusionPreparation->render);
+
+        if (checked) {
+          checked = poll(m_occlusionPreparation->compute);
+        }
+
+        if (!checked) {
+          m_occlusionPreparation->error = checked.error();
+          return std::unexpected(checked.error());
+        }
+
+        if (!complete) {
+          return false;
+        }
+
+        geometryPipeline = std::move(m_occlusionPreparation->render[0].pipeline);
+        occlusionEnvironmentPipeline = std::move(m_occlusionPreparation->render[1].pipeline);
+        occlusionShadowEnvironmentPipeline = std::move(m_occlusionPreparation->render[2].pipeline);
+        occlusionPipeline = std::move(m_occlusionPreparation->compute[0].pipeline);
+        occlusionFilterPipeline = std::move(m_occlusionPreparation->compute[1].pipeline);
+        return true;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare occlusion pipelines: " + std::string(error.what()));
+
+        if (m_occlusionPreparation) {
+          m_occlusionPreparation->error = failure.error();
+        }
+
+        return failure;
+      }
+    }
+
+    auto ensureOcclusionPipelines() -> Core::Result<void> {
+      auto ready = prepareOcclusionPipelines();
+
+      if (!ready || *ready) {
+        return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+      }
+
+      const auto finish = [&](auto& jobs) -> Core::Result<void> {
+        for (auto& job : jobs) {
+          auto checked = job.finish(instance);
+
+          if (!checked) {
+            m_occlusionPreparation->error = checked.error();
+            return checked;
+          }
+        }
+
+        return {};
+      };
+
+      auto checked = finish(m_occlusionPreparation->render);
+
+      if (checked) {
+        checked = finish(m_occlusionPreparation->compute);
+      }
 
       if (!checked) {
         return checked;
       }
 
-      if (!geometry || !ao || !filter || !ambient || !shadowed) {
-        return Core::fail(Core::ErrorCode::External, "Create occlusion pipelines failed");
+      ready = prepareOcclusionPipelines();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
       }
 
-      geometryPipeline = std::move(geometry);
-      occlusionPipeline = std::move(ao);
-      occlusionFilterPipeline = std::move(filter);
-      occlusionEnvironmentPipeline = std::move(ambient);
-      occlusionShadowEnvironmentPipeline = std::move(shadowed);
+      if (!*ready) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Occlusion pipelines did not complete");
+      }
+
       return {};
     }
 
@@ -4320,6 +4471,34 @@ namespace Dot::Graphics {
 
     auto checked = m_impl->check();
     return checked ? m_impl->prepareShadowPipelines() : std::unexpected(checked.error());
+  }
+
+  auto Renderer::occlusionPipelinesReady() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_occlusionPreparation && m_impl->m_occlusionPreparation->error) {
+      return std::unexpected(*m_impl->m_occlusionPreparation->error);
+    }
+
+    return m_impl->geometryPipeline && m_impl->occlusionPipeline && m_impl->occlusionFilterPipeline
+           && m_impl->occlusionEnvironmentPipeline && m_impl->occlusionShadowEnvironmentPipeline;
+  }
+
+  auto Renderer::prepareOcclusionPipelines() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->prepareOcclusionPipelines() : std::unexpected(checked.error());
   }
 
   auto Renderer::environmentPipelineReady() const -> Core::Result<bool> {
