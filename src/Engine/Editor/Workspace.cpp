@@ -674,6 +674,15 @@ namespace Dot::Editor {
     std::uint64_t m_viewFrame{};
     std::optional<CaptureFrame> m_renderedFrame;
     ViewportCapture m_capture;
+
+    struct CaptureSave {
+      std::uint64_t id;
+      Assets::ImageExport plan;
+      bool cancelled{};
+    };
+
+    std::optional<CaptureSave> m_captureSave;
+    std::optional<Core::Error> m_captureSaveError;
     bool m_captureBrowse{};
     std::shared_ptr<Platform::DialogRequest> m_captureDialog;
     Json m_captureOutput = nullptr;
@@ -1716,12 +1725,16 @@ namespace Dot::Editor {
       constexpr std::array modes{"editor", "game", "play"};
       const auto state = m_capture.stats();
       const auto& frame = state.frame;
+      const bool saving
+          = m_captureSave && !m_captureSave->cancelled && m_captureSave->id == state.id;
+      const auto error = state.error ? state.error : m_captureSaveError;
       return {{"id", std::to_string(state.id)},
-              {"state", states.at(static_cast<std::size_t>(state.state))},
+              {"state", saving ? "saving" : states.at(static_cast<std::size_t>(state.state))},
+              {"savePending", m_captureSave.has_value()},
               {"dialog", bool(m_captureDialog) || m_captureBrowse},
               {"message", m_captureMessage},
               {"output", m_captureOutput},
-              {"error", state.error ? errorJson(*state.error)["error"] : Json(nullptr)},
+              {"error", error ? errorJson(*error)["error"] : Json(nullptr)},
               {"frame",
                {{"serial", std::to_string(frame.serial)},
                 {"revision", std::to_string(frame.context.revision)},
@@ -1779,7 +1792,28 @@ namespace Dot::Editor {
                                                      : "Viewport preview: " + m_previewError);
     }
 
+    /** Preserve an acknowledged save across close; explicit capture discard may
+     * cancel encoding, while a completed file is never rolled back.
+     * 关闭须保留已确认的保存意图；显式丢弃截图可取消编码，已提交文件不回滚。 */
+    auto captureCloseReady() const -> Core::Result<void> {
+      if (m_captureDialog) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Complete or cancel the native save dialog before closing");
+      }
+
+      if (m_captureSave && !m_captureSave->cancelled) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Wait for the PNG save or discard the capture before closing");
+      }
+
+      return {};
+    }
+
     auto browseCapture(std::uint64_t id) -> Core::Result<void> {
+      if (m_captureSave) {
+        return Core::fail(Core::ErrorCode::Unavailable, "A PNG export is still finishing");
+      }
+
       auto image = m_capture.image(id);
 
       if (!image) {
@@ -1808,6 +1842,10 @@ namespace Dot::Editor {
 
     auto saveCapture(std::uint64_t id, const std::string& parentText, const std::string& filename,
                      bool overwrite) -> Core::Result<void> {
+      if (m_captureSave) {
+        return Core::fail(Core::ErrorCode::Unavailable, "A PNG export is still finishing");
+      }
+
       auto image = m_capture.image(id);
 
       if (!image) {
@@ -1837,31 +1875,66 @@ namespace Dot::Editor {
         return std::unexpected(plan.error());
       }
 
-      auto report = plan->write(**image);
+      auto started = plan->begin(**image);
 
-      if (!report) {
-        return std::unexpected(report.error());
+      if (!started) {
+        return started;
       }
 
-      auto acknowledged = m_capture.saved(id);
-
-      if (!acknowledged) {
-        return std::unexpected(acknowledged.error());
-      }
-
-      m_captureOutput = {{"path", report->path}, {"bytes", std::to_string(report->bytes)}};
-      auto refreshed = catalog();
-
-      if (!refreshed) {
-        return Core::fail(
-            Core::ErrorCode::Io,
-            "PNG saved at " + report->path + "; catalog refresh: " + refreshed.error().message);
-      }
-
+      m_captureSave.emplace(CaptureSave{id, std::move(*plan)});
+      m_captureSaveError.reset();
+      m_message = m_captureMessage = "Saving PNG...";
       return {};
     }
 
+    auto resolveCaptureSave() -> void {
+      if (!m_captureSave) {
+        return;
+      }
+
+      auto report = m_captureSave->plan.poll();
+
+      if (report && !*report) {
+        return;
+      }
+
+      if (!m_captureSave->cancelled) {
+        auto completed = [&]() -> Core::Result<void> {
+          if (!report) {
+            return std::unexpected(report.error());
+          }
+
+          auto acknowledged = m_capture.saved(m_captureSave->id);
+
+          if (!acknowledged) {
+            return acknowledged;
+          }
+
+          m_captureOutput
+              = {{"path", (**report).path}, {"bytes", std::to_string((**report).bytes)}};
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(Core::ErrorCode::Io,
+                              "PNG saved at " + (**report).path
+                                  + "; catalog refresh: " + refreshed.error().message);
+          }
+
+          m_message = m_captureMessage = "PNG saved: " + (**report).path;
+          return {};
+        }();
+
+        if (!completed) {
+          m_captureSaveError = completed.error();
+          m_message = m_captureMessage = completed.error().message;
+        }
+      }
+
+      m_captureSave.reset();
+    }
+
     auto resolveCapture() -> void {
+      resolveCaptureSave();
       auto state = m_capture.stats();
 
       if (state.state == CaptureState::Queued) {
@@ -3555,6 +3628,10 @@ namespace Dot::Editor {
         Core::Result<void> applied;
 
         if (command == "capture-viewport") {
+          if (m_captureSave) {
+            return Core::fail(Core::ErrorCode::Unavailable, "A PNG export is still finishing");
+          }
+
           const auto dialog = parsed["dialog"].get<bool>();
 
           if (Codec::id(parsed["revision"]) != m_document->stats()->revision) {
@@ -3576,6 +3653,7 @@ namespace Dot::Editor {
           m_captureBrowse = dialog;
           m_captureOutput = nullptr;
           m_captureMessage.clear();
+          m_captureSaveError.reset();
         } else {
           const auto id = Codec::id(parsed["capture"]);
 
@@ -3586,14 +3664,28 @@ namespace Dot::Editor {
           } else if (command == "browse-capture") {
             applied = browseCapture(id);
           } else {
-            applied = m_capture.discard(id);
+            if (m_captureSave && m_captureSave->id == id) {
+              applied = m_captureSave->plan.cancel();
+
+              if (applied) {
+                m_captureSave->cancelled = true;
+              }
+            }
+
+            if (applied) {
+              applied = m_capture.discard(id);
+            }
 
             if (applied) {
               m_captureBrowse = false;
+              m_captureSaveError.reset();
+              m_message = "PNG save cancelled";
             }
           }
 
-          m_captureMessage = applied ? "" : applied.error().message;
+          if (!applied || command != "save-capture") {
+            m_captureMessage = applied ? "" : applied.error().message;
+          }
         }
 
         return applied ? execute("{\"command\":\"inspect\"}") : std::unexpected(applied.error());
@@ -4882,9 +4974,10 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "discard"});
         const bool discard = parsed["discard"].get<bool>();
 
-        if (m_captureDialog) {
-          return Core::fail(Core::ErrorCode::InvalidState,
-                            "Complete or cancel the native save dialog before closing");
+        auto captureReady = captureCloseReady();
+
+        if (!captureReady) {
+          return std::unexpected(captureReady.error());
         }
 
         if ((m_document->stats()->dirty || pendingInspector() || pendingEnvironment()
@@ -8519,10 +8612,14 @@ namespace Dot::Editor {
 
         const auto capture = m_capture.stats();
         const bool retained = capture.state == CaptureState::Ready;
-        const bool busy = m_captureDialog || capture.state == CaptureState::Queued;
+        const bool busy = m_captureDialog || capture.state == CaptureState::Queued || m_captureSave;
 
-        if (ImGui::MenuItem(retained ? "Save captured PNG..." : "Save viewport PNG...", nullptr,
-                            false, !busy)) {
+        if (ImGui::MenuItem(m_captureSave && m_captureSave->cancelled
+                                ? "Finishing cancelled save..."
+                            : m_captureSave ? "Saving captured PNG..."
+                            : retained      ? "Save captured PNG..."
+                                            : "Save viewport PNG...",
+                            nullptr, false, !busy)) {
           if (retained) {
             sessionAction({{"command", "browse-capture"}, {"capture", std::to_string(capture.id)}});
           } else {
@@ -8530,7 +8627,8 @@ namespace Dot::Editor {
           }
         }
 
-        if (ImGui::MenuItem("Discard viewport capture", nullptr, false, retained && !busy)) {
+        if (ImGui::MenuItem("Discard viewport capture", nullptr, false,
+                            retained && !m_captureDialog)) {
           sessionAction({{"command", "discard-capture"}, {"capture", std::to_string(capture.id)}});
         }
 
@@ -10383,8 +10481,10 @@ namespace Dot::Editor {
     auto callbacks() -> Core::LoopCallbacks {
       Core::LoopCallbacks callbacks;
       callbacks.acceptClose = [&]() -> Core::Result<bool> {
-        if (m_captureDialog) {
-          m_message = "Complete or cancel the native save dialog before closing";
+        auto captureReady = captureCloseReady();
+
+        if (!captureReady) {
+          m_message = captureReady.error().message;
           return false;
         }
 

@@ -9523,3 +9523,99 @@ history, process sample, content hashes and runtime/game/executable metadata rem
 under build/skin-preparation-review. Source restoration, retired editors and clean
 retained native history are checked before owned native/editor copies are removed.
 No distribution archive or formal-example change is produced.
+
+## 2026-10-17 — background encoding for frozen viewport PNGs
+
+Fresh actual editor sampling changes the next diagnosis: the roughly 97ms step
+retained after the preceding workflows includes synchronous screenshot saving.
+On the unchanged 541d24a build, one run snapshots application history before and
+after PNG save: the pre-capture maximum is 30.343334ms (frame 95); the later maximum
+is 97.020375ms (frame 135), including 92.824542ms preparation. Main-thread stacks
+explicitly pass through saveCapture -> ImageExport::write -> encodeImage ->
+stbi_write_png_to_mem/zlib. The application preparation envelope includes mailbox
+operations, so that observation must not be attributed wholesale to scene loading
+or first-frame drawing. Raw diagnosis remains in build/preparation-diagnosis.
+
+ImageExport now supports one owned asynchronous begin/poll/cancel attempt alongside
+its explicit synchronous write. Both paths share the unchanged baseline check and
+atomic commit implementation. The worker only encodes owned bounded RGBA pixels;
+it borrows no viewport/renderer and performs no filesystem work. Owner polling
+commits once, retains a completed report/error for repeated queries, and rechecks
+external file changes before writing. Cancellation never commits and retires only
+after the bounded codec returns; destruction joins an owned worker. Inputs remain
+bounded to 16,777,216 pixels, encoded/old files to 64 MiB and scans to 65536 entries.
+The PNG algorithm/settings and exact output bytes are unchanged.
+
+Workspace/menu/native-dialog and strict save-capture share this job. The response
+reports saving with null output, then inspection reports saved only after actual
+commit, or ready plus a retained error for retry/discard. One encoder owns an image
+copy in addition to the single retained capture; duplicate/new capture/save/browse
+requests reject until retirement. Read-only savePending exposes active/cancelled
+job lifetime. Discard cancels publication before releasing captured pixels. Native
+close and machine close share a guard requiring a pending save to complete or an
+explicit capture discard. Destination validation/write and catalog refresh remain
+on the owner thread; there is no general filesystem-I/O or frame-bound claim.
+
+Four durable cases add byte-identical sync/async output, owned input, owner/move and
+invalid-input guards, commit only on poll, repeated completion without rewriting,
+changed/created/lost destinations, cancellation/teardown without files, and frozen
+capture failure/retry without recapturing. A missing explicit Core.Result import in
+the new test is corrected during build. Focused Debug passes 12/12 (0.61s). A partial
+full run is interrupted to add the observable cancelled-job retirement field; final
+Debug passes 1330/1330 (211.95s), not the interrupted run. No desktop windows are
+opened by these tests.
+
+Final Release/NDEBUG passes 1330/1330 (29.90s), sequentially with builds/tests.
+Counts: 412 unit / 918 integration; overlapping labels include 162 offscreen,
+198 compiler, 33 platform, 32 audio-native and 20 process cases. Four changed C++
+files pass clang-format and whitespace checks pass. Review covers input/PNG bounds,
+worker/result/move/destructor ownership, cancellation before commit, external edits,
+sticky results, frozen-image retention, strict protocol states and shared native/
+machine close guards. Only macOS arm64 is executed; compiler/linker, targets,
+dependency pins, sanitizer settings, clock limits and warnings remain unchanged.
+
+Actual Release editor observes saving before saved with null then real output.
+The dedicated save request returns in 46.782ms client wall time; two later inspect
+requests observe saving/saved in 81.163/72.012ms, including CLI/poll/serialization
+cost, not responsiveness guarantees. A real external create after the accepted
+start causes the unchanged-baseline error, preserves external bytes and retains
+ready pixels; explicit-overwrite retry of that same capture writes the baseline
+PNG. Queued save followed by discard reports cancelled, eventually savePending=false,
+and never writes cancelled.png. Closing during an accepted save rejects with the
+explicit PNG-pending error; the file subsequently commits successfully. The actual
+thread sample places encodeImage/stbi PNG compression under ImageExport::begin's
+owned worker rather than saveCapture on the main thread. Its application history
+still retains a 43.205041ms step (42.937875ms render envelope); owner filesystem,
+readback and GUI work remain and that whole interval is not attributed to one task.
+
+The ordinary complete editor workflow still performs real W/Space Play to
+[-3,1.3340256,1.4860593] with no Play errors/diagnostics, exact clean Stop, Save and
+export. Fresh reopen and two saves preserve scene/file bytes. A separate unsaved
+concrete draft changes pixels to
+623663c4610bd62f4c218afd91a370eab3db4b14d683f5cd55130fea3da65c6a;
+Reset/close restores unchanged material/scene and baseline PNG bytes. All ready,
+stopped, reopened, reset, asynchronous, conflict-retry and close-guard PNGs retain
+SHA-256 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The ordinary loading workflow history retains 32.091959ms total, including
+21.049292ms preparation and 11.029958ms rendering. These runs have different
+cache/context/request workloads from earlier records; no speedup percentage or
+FPS is claimed. All four owned editors exit zero with empty stderr and retired
+control directories. Fresh native pointer/keyboard acceptance remains unverified
+since the locked-Mac report.
+
+The physically relocated native export runs with authoring hidden, matches all
+116 content files / 66,649,969 bytes and exits zero after 360 game steps (767 sampled:
+407 initial preparation + 360 game). The 120 retained samples are unpaused/error-free,
+with no dropped fixed time or dropped-time warning. Retained slowest is first game
+step 407: 41.651791ms total, 32.401541ms preparation, 8.630167ms render. Longest
+supplied interval is 42.913917ms; retained median is 12.290251ms. This verifies the
+export path, not a native gameplay speed improvement from editor PNG work. Process
+sampling still shows main-thread mappedSkinWords/WaitAny. Broader background I/O,
+large-game performance, editor maturity and finished production art remain open.
+
+Raw requests/responses, eight PNGs, application/native profiles, save/native thread
+samples, hashes and package/executable metadata remain in build/png-export-review;
+paired original-build diagnosis remains in build/preparation-diagnosis. Authoring
+restoration and retained native history are verified before removing owned native/
+editor copies, including the diagnostic copy. No distribution archive or formal
+example change is produced.

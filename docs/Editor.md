@@ -1197,7 +1197,7 @@ fields fail. Capture requires the current authoring revision and queues a new fr
 `workspace.capture.state` before saving: `queued` acknowledges the request only;
 `ready` means owned pixels exist. The next native render iteration resolves the request;
 a hidden/deferred/failed viewport or changed scene/revision/view mode/Play session
-fails rather than exporting an older frame. At most one queued/ready image is retained.
+fails rather than exporting an older frame. At most one queued/ready/saving image is retained.
 Finish or discard it before requesting another. IDs are canonical decimal strings,
 monotonically increasing for this workspace; stale IDs cannot save/discard newer images.
 
@@ -1205,11 +1205,24 @@ monotonically increasing for this workspace; stale IDs cannot save/discard newer
 scope, Play or animation-preview session (zero otherwise), Play frame (zero outside Play),
 mode/source, pixel dimensions, column-major
 view-projection matrix and material-preview flag. These describe a completed capture
-only in `ready`/`saved`; queued metadata describes the requested context and prior serial.
+only in `ready`/`saving`/`saved`; queued metadata describes the requested context and prior serial.
 Later rendering, camera movement, Stop and document edits do not change retained pixels
-or provenance. Save does not change document history/revision/dirty state. On success,
+or provenance. Save does not change document history/revision/dirty state. `save-capture`
+starts owned background PNG encoding and returns the `saving` state, with no output
+path yet. Poll `inspect` until the same capture becomes `saved`, or returns to
+`ready` with an error for retry/discard. A successful request receipt is not file
+completion. On successful owner-thread baseline check and atomic write,
 state becomes `saved`, pixels are released and `output` contains an owned absolute path
 and decimal byte count. Errors/cancellation are observable through inspection.
+At most one encoder is active, owning one bounded image copy in addition to the
+retained capture. Worker encoding never writes files or touches a renderer. Discard
+cancels publication immediately; the bounded codec may finish before its job retires.
+Further capture/save/browse requests wait for that retirement.
+Read-only `savePending` remains true until the active or cancelled encoder retires;
+wait for false before requesting another capture. Close requires the
+pending save to complete or an explicit capture discard. The menu/native close and
+agent guard share this rule. Destination checks/writes/catalog refresh remain on the
+owner thread; this is not general background filesystem I/O.
 
 The parent must be an existing absolute UTF-8 directory. The filename must be one
 portable component ending in `.png` (case-insensitive). Existing files require explicit
@@ -1229,7 +1242,10 @@ retry. Agent clients normally use `dialog:false` and direct `save-capture`, with
 `queued` 仅表示受理，`ready` 才表示像素已固定。隐藏、延后、失败或上下文变化的视口明确
 失败，不保存旧画面。一次至多保留一张图；过期编号不能作用于新图。检查结果包含实际帧号、
 修订、场景范围、Play 会话/帧、相机矩阵、像素尺寸及材质预览状态。后续运行、Stop 或编辑
-不改变已捕获图像，也不影响场景历史或保存状态。失败可重试，成功后释放像素并报告绝对路径
+不改变已捕获图像，也不影响场景历史或保存状态。保存请求返回 `saving`，须继续轮询至
+`saved` 才证明文件完成；异步失败保留 `ready` 图像并报告错误，可重试或丢弃。后台仅编码，
+所属线程完成目标基线检查与原子写入；丢弃会取消后续发布，编解码可在后台结束后回收。
+保存中关闭须等待完成或明确丢弃截图，菜单与机器接口遵守同一规则。成功后释放像素并报告绝对路径
 与字节数。已有目标须明确允许覆盖，拒绝链接、特殊/只读文件及大小写别名；原子替换前校验
 字节基线。系统对话框打开时保留父窗口并拒绝冲突操作；智能体通常直接指定路径保存。
 

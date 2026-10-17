@@ -4,7 +4,10 @@ module;
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -84,18 +87,63 @@ namespace Dot::Assets {
   }  // namespace
 
   struct ImageExport::Impl {
+    struct Encoding {
+      std::mutex mutex;
+      std::optional<Core::Result<std::vector<std::byte>>> result;
+    };
+
     Core::FileSystem files;
     Fs::path filename;
     Baseline original;
     std::string absolute;
     std::thread::id thread{std::this_thread::get_id()};
     bool written{};
+    bool started{};
+    bool cancelled{};
+    std::shared_ptr<Encoding> encoding;
+    std::jthread worker;
+    std::optional<Core::Error> error;
+    std::optional<ImageExportReport> report;
 
     Impl(Core::FileSystem parent, Fs::path name, Baseline before)
         : files(std::move(parent)),
           filename(std::move(name)),
           original(std::move(before)),
           absolute(utf(files.root() / filename)) {
+    }
+
+    auto unchanged() const -> Core::Result<void> {
+      auto current = baseline(files, filename);
+
+      if (!current) {
+        return std::unexpected(current.error());
+      }
+
+      if (*current != original) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "PNG destination changed after preparation");
+      }
+
+      return {};
+    }
+
+    auto commit(std::span<const std::byte> encoded) -> Core::Result<ImageExportReport> {
+      auto current = unchanged();
+
+      if (!current) {
+        return std::unexpected(current.error());
+      }
+
+      ImageExportReport result{absolute, encoded.size()};
+      auto saved = files.writeAtomic(filename, encoded);
+
+      if (!saved) {
+        return std::unexpected(saved.error());
+      }
+
+      written = true;
+      original.reset();
+      return result;
     }
   };
 
@@ -140,21 +188,17 @@ namespace Dot::Assets {
   }
 
   auto ImageExport::write(const Graphics::Image& image) -> Core::Result<ImageExportReport> {
-    if (!m_impl || m_impl->thread != std::this_thread::get_id() || m_impl->written) {
+    if (!m_impl || m_impl->thread != std::this_thread::get_id() || m_impl->written
+        || m_impl->started) {
       return Core::fail(Core::ErrorCode::InvalidState,
                         "PNG export requires its unused plan on the creating thread");
     }
 
     try {
-      auto before = baseline(m_impl->files, m_impl->filename);
+      auto before = m_impl->unchanged();
 
       if (!before) {
         return std::unexpected(before.error());
-      }
-
-      if (*before != m_impl->original) {
-        return Core::fail(Core::ErrorCode::InvalidState,
-                          "PNG destination changed after preparation");
       }
 
       auto encoded = encodeImage(image);
@@ -163,31 +207,127 @@ namespace Dot::Assets {
         return std::unexpected(encoded.error());
       }
 
-      ImageExportReport report{m_impl->absolute, encoded->size()};
-      auto current = baseline(m_impl->files, m_impl->filename);
-
-      if (!current) {
-        return std::unexpected(current.error());
-      }
-
-      if (*current != m_impl->original) {
-        return Core::fail(Core::ErrorCode::InvalidState, "PNG destination changed during encoding");
-      }
-
-      auto written = m_impl->files.writeAtomic(m_impl->filename, *encoded);
-
-      if (!written) {
-        return std::unexpected(written.error());
-      }
-
-      m_impl->written = true;
-      m_impl->original.reset();
-      return report;
+      return m_impl->commit(*encoded);
     } catch (const Fs::filesystem_error& error) {
       return Core::fail(Core::ErrorCode::Io, "Write PNG destination: " + std::string(error.what()));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Write PNG export: " + std::string(error.what()));
     }
+  }
+
+  auto ImageExport::begin(Graphics::Image image) -> Core::Result<void> {
+    if (!m_impl || m_impl->thread != std::this_thread::get_id() || m_impl->written
+        || m_impl->started) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "PNG encoding requires its unused plan on the creating thread");
+    }
+
+    try {
+      auto valid = Graphics::validateImage(image);
+
+      if (!valid) {
+        return valid;
+      }
+
+      valid = m_impl->unchanged();
+
+      if (!valid) {
+        return valid;
+      }
+
+      auto state = std::make_shared<Impl::Encoding>();
+      m_impl->worker = std::jthread([state, image = std::move(image)](std::stop_token stop) {
+        auto encode = [&]() -> Core::Result<std::vector<std::byte>> {
+          try {
+            return stop.stop_requested()
+                       ? Core::fail(Core::ErrorCode::Unavailable, "PNG encoding cancelled")
+                       : encodeImage(image);
+          } catch (const std::exception& error) {
+            return Core::fail(Core::ErrorCode::External,
+                              "Encode PNG: " + std::string(error.what()));
+          } catch (...) {
+            return Core::fail(Core::ErrorCode::External, "Unknown PNG encoding failure");
+          }
+        };
+        auto encoded = encode();
+        std::lock_guard lock(state->mutex);
+        state->result.emplace(std::move(encoded));
+      });
+      m_impl->encoding = std::move(state);
+      m_impl->started = true;
+      return {};
+    } catch (const std::filesystem::filesystem_error& error) {
+      return Core::fail(Core::ErrorCode::Io, "Begin PNG destination: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin PNG export: " + std::string(error.what()));
+    }
+  }
+
+  auto ImageExport::poll() -> Core::Result<std::optional<ImageExportReport>> {
+    if (!m_impl || m_impl->thread != std::this_thread::get_id() || !m_impl->started) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "PNG poll requires a started plan on the creating thread");
+    }
+
+    if (m_impl->error) {
+      return std::unexpected(*m_impl->error);
+    }
+
+    if (m_impl->report) {
+      return m_impl->report;
+    }
+
+    std::optional<Core::Result<std::vector<std::byte>>> encoded;
+
+    {
+      std::lock_guard lock(m_impl->encoding->mutex);
+      encoded = std::move(m_impl->encoding->result);
+    }
+
+    if (!encoded) {
+      return std::nullopt;
+    }
+
+    m_impl->worker = {};
+    m_impl->encoding.reset();
+
+    try {
+      auto result = m_impl->cancelled
+                        ? Core::fail(Core::ErrorCode::Unavailable, "PNG export cancelled")
+                    : *encoded ? m_impl->commit(**encoded)
+                               : Core::Result<ImageExportReport>{std::unexpected(encoded->error())};
+
+      if (!result) {
+        m_impl->error = result.error();
+        return std::unexpected(*m_impl->error);
+      }
+
+      m_impl->report = std::move(*result);
+      return m_impl->report;
+    } catch (const std::filesystem::filesystem_error& error) {
+      m_impl->error
+          = Core::fail(Core::ErrorCode::Io, "Commit PNG destination: " + std::string(error.what()))
+                .error();
+    } catch (const std::exception& error) {
+      m_impl->error
+          = Core::fail(Core::ErrorCode::External, "Commit PNG: " + std::string(error.what()))
+                .error();
+    }
+
+    return std::unexpected(*m_impl->error);
+  }
+
+  auto ImageExport::cancel() -> Core::Result<void> {
+    if (!m_impl || m_impl->thread != std::this_thread::get_id() || !m_impl->started
+        || m_impl->written || m_impl->error) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "PNG cancellation requires a pending plan on the creating thread");
+    }
+
+    m_impl->cancelled = true;
+    m_impl->worker.request_stop();
+    return {};
   }
 }  // namespace Dot::Assets

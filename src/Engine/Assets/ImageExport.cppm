@@ -2,6 +2,7 @@ module;
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -43,6 +44,22 @@ export namespace Dot::Assets {
      * 对画面的显示 RGBA 字节编码，不转换颜色。校验/编码失败保留目标与计划；
      * 成功通过原子替换提交，仅可使用一次，并返回独立的绝对路径。 */
     [[nodiscard]] auto write(const Graphics::Image& image) -> Core::Result<ImageExportReport>;
+    /** Encode one owned RGBA frame on a worker; no destination write until poll.
+     * Input is bounded to 16,777,216 pixels. Single asynchronous attempt per plan;
+     * poll returns empty while encoding, then commits with the same baseline guard.
+     * Repeated completed polls return the same report/error without another write.
+     * 在工作线程编码一张拥有的 RGBA 图像，poll 前不写目标；最多 16,777,216 像素。
+     * 每计划仅一次异步尝试；编码中轮询为空，完成后用相同基线保护提交；
+     * 重复完成轮询返回同一结果/错误，不重复写入。 */
+    [[nodiscard]] auto begin(Graphics::Image image) -> Core::Result<void>;
+    [[nodiscard]] auto poll() -> Core::Result<std::optional<ImageExportReport>>;
+    /** Cancel publication without joining a codec. Poll until terminal before
+     * releasing on an interactive thread; destruction joins any owned worker.
+     * Worker touches no filesystem or borrowed pixels. Completed commits cannot
+     * be cancelled. Owner-thread calls only, including after moving the plan.
+     * 取消发布但不等待编解码；交互线程须轮询至结束再释放，析构会等待拥有的工作线程。
+     * 工作线程不访问文件系统或借用像素；已提交文件不可取消，移动后仍仅限原所属线程。 */
+    [[nodiscard]] auto cancel() -> Core::Result<void>;
 
   private:
     struct Impl;
