@@ -1841,6 +1841,17 @@ actual rendered `workspace.hierarchyRows` states; wait for a later rendered fram
 to observe the view update. Opening another scene resets expansion; save-as of the
 same scene retains it. Deleted IDs are pruned. Group selection opens its new group.
 
+The hierarchy derives an immutable parent/child index from each authoring snapshot;
+roots and siblings keep scene order. Search computes matching rows and ancestors
+once per snapshot/query change, folding ASCII case and matching other UTF-8 bytes
+exactly. A matching parent does not automatically include unrelated descendants.
+Rendering and machine-visible row order consume that same projection; selection,
+expansion, drag scope and document edits retain their existing shared operations.
+The index validates the scene's 10000-node/256-level bounds, unique IDs, parent
+references and acyclicity rather than silently truncating an invalid hierarchy.
+Rows are still laid out individually; this is not full hierarchy virtualization or
+a claim about populated-game rendering performance.
+
 
 ## Reusable scene content
 

@@ -67,6 +67,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
 import Dot.Editor.Document;
+import Dot.Editor.HierarchyTree;
 import Dot.Editor.Camera;
 import Dot.Editor.TransformTool;
 import Dot.Project;
@@ -559,6 +560,8 @@ namespace Dot::Editor {
     std::optional<Json> m_dockRequest;
     std::string m_layoutError;
     std::string m_hierarchyFilter;
+    HierarchyTree m_hierarchy;
+    std::vector<bool> m_hierarchyMatches;
     std::string m_assetFilter;
     std::string m_skeletonFilter;
     SkeletonView m_skeleton;
@@ -1533,6 +1536,27 @@ namespace Dot::Editor {
       }
 
       auto next = Codec::parseJson(*text);
+      std::vector<HierarchyItem> items;
+      items.reserve(next["scene"]["entities"].size());
+
+      for (const auto& entity : next["scene"]["entities"]) {
+        items.push_back(
+            {Codec::id(entity["id"]),
+             entity["parent"].is_null() ? std::nullopt : std::optional{Codec::id(entity["parent"])},
+             entity["name"].get<std::string>()});
+      }
+
+      auto hierarchy = HierarchyTree::create(std::move(items));
+
+      if (!hierarchy) {
+        return std::unexpected(hierarchy.error());
+      }
+
+      auto matches = hierarchy->filter(m_hierarchyFilter);
+
+      if (!matches) {
+        return std::unexpected(matches.error());
+      }
 
       if (m_snapshot.is_object() && m_snapshot.contains("scenePath")
           && m_snapshot["scenePath"] != next["scenePath"] && m_snapshot["scope"] != next["scope"]) {
@@ -1548,6 +1572,8 @@ namespace Dot::Editor {
       auto& expansion = m_hierarchyExpansion.get_ref<Json::object_t&>();
       std::erase_if(expansion, [&](const auto& entry) { return !live.contains(entry.first); });
       m_snapshot = std::move(next);
+      m_hierarchy = std::move(*hierarchy);
+      m_hierarchyMatches = std::move(*matches);
       syncInspector();
       return {};
     }
@@ -4656,6 +4682,16 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid panel search");
         }
 
+        if (panel == "hierarchy") {
+          auto matches = m_hierarchy.filter(query);
+
+          if (!matches) {
+            return std::unexpected(matches.error());
+          }
+
+          m_hierarchyMatches = std::move(*matches);
+        }
+
         (panel == "hierarchy"  ? m_hierarchyFilter
          : panel == "skeleton" ? m_skeletonFilter
                                : m_assetFilter) = query;
@@ -6002,7 +6038,7 @@ namespace Dot::Editor {
     }
 
     /** ASCII case-insensitive search; UTF-8 names retain exact byte matching.
-     * ASCII 忽略大小写，UTF-8 名称保持精确匹配；保留匹配子节点的祖先。 */
+     * ASCII 忽略大小写，UTF-8 名称保持精确匹配。 */
     static auto matchesFilter(std::string_view text, std::string_view query) -> bool {
       const auto folded = [](char value) {
         return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value;
@@ -6013,23 +6049,9 @@ namespace Dot::Editor {
              == query.size();
     }
 
-    auto matchesHierarchy(const Json& entities, const Json& entity, int depth) const -> bool {
-      if (matchesFilter(entity["name"].get_ref<const std::string&>(), m_hierarchyFilter)) {
-        return true;
-      }
-
-      if (depth >= 256) {
-        return false;
-      }
-
-      return std::ranges::any_of(entities, [&](const auto& child) {
-        return child["parent"] == entity["id"] && matchesHierarchy(entities, child, depth + 1);
-      });
-    }
-
-    /** Defer hierarchy actions until traversal releases all snapshot references.
-     * 遍历释放全部快照引用后再执行层级操作，避免刷新快照使递归引用失效。 */
-    auto hierarchyDrop(const Json& parent, std::optional<Json>& action) -> void {
+    /** Defer actions until traversal releases snapshot/index references.
+     * 遍历释放快照/索引引用后再执行操作，避免刷新使递归引用失效。 */
+    auto hierarchyDrop(std::optional<std::uint64_t> parent, std::optional<Json>& action) -> void {
       if (!ImGui::BeginDragDropTarget()) {
         return;
       }
@@ -6054,11 +6076,13 @@ namespace Dot::Editor {
               entities.push_back(std::to_string(values[index]));
             }
 
-            action = Json{{"command", "edit"},
-                          {"operations", Json::array({{{"op", "reparent"},
-                                                       {"entities", std::move(entities)},
-                                                       {"parent", parent},
-                                                       {"space", "world"}}})}};
+            action = Json{
+                {"command", "edit"},
+                {"operations",
+                 Json::array({{{"op", "reparent"},
+                               {"entities", std::move(entities)},
+                               {"parent", parent ? Json(std::to_string(*parent)) : Json(nullptr)},
+                               {"space", "world"}}})}};
           }
         }
       }
@@ -6066,32 +6090,25 @@ namespace Dot::Editor {
       ImGui::EndDragDropTarget();
     }
 
-    auto tree(const Json& entities, const Json& parent, std::optional<Json>& selection,
-              int depth = 0) -> void {
-      if (depth > 256) {
-        return;
-      }
+    auto tree(std::span<const std::size_t> children, std::optional<Json>& selection) -> void {
+      const auto nodes = m_hierarchy.nodes();
 
-      for (const auto& entity : entities) {
-        if (entity["parent"] != parent) {
+      for (const auto index : children) {
+        if (!m_hierarchyMatches[index]) {
           continue;
         }
 
-        if (!matchesHierarchy(entities, entity, depth)) {
-          continue;
-        }
-
-        const auto id = entity["id"].get<std::string>();
-        const auto name = entity["name"].get<std::string>();
+        const auto& node = nodes[index];
+        const auto& id = node.key;
+        const auto& name = node.item.name;
         const bool selected = m_selectionIds.contains(id);
-        const bool children = std::ranges::any_of(
-            entities, [&](const auto& child) { return child["parent"] == entity["id"]; });
+        const bool hasChildren = !node.children.empty();
         auto flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
         flags |= selected ? ImGuiTreeNodeFlags_Selected : 0;
-        flags |= children ? 0 : ImGuiTreeNodeFlags_Leaf;
+        flags |= hasChildren ? 0 : ImGuiTreeNodeFlags_Leaf;
         m_visibleHierarchy.push_back(id);
 
-        if (!m_hierarchyFilter.empty() && children) {
+        if (!m_hierarchyFilter.empty() && hasChildren) {
           ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         } else if (m_hierarchyExpansion.contains(id)) {
           ImGui::SetNextItemOpen(m_hierarchyExpansion[id].get<bool>(), ImGuiCond_Always);
@@ -6145,7 +6162,7 @@ namespace Dot::Editor {
               payload.push_back(member.value);
             }
           } else {
-            payload.push_back(Codec::id(entity["id"]));
+            payload.push_back(node.item.id);
           }
 
           ImGui::SetDragDropPayload("DOT_SCENE_ENTITIES", payload.data(),
@@ -6154,10 +6171,10 @@ namespace Dot::Editor {
           ImGui::EndDragDropSource();
         }
 
-        hierarchyDrop(entity["id"], selection);
+        hierarchyDrop(node.item.id, selection);
 
         if (open) {
-          tree(entities, entity["id"], selection, depth + 1);
+          tree(node.children, selection);
           ImGui::TreePop();
         }
 
@@ -10118,8 +10135,8 @@ namespace Dot::Editor {
           selection = Json{{"command", "select-many"}, {"entities", Json::array()}};
         }
 
-        hierarchyDrop(nullptr, selection);
-        tree(m_snapshot["scene"]["entities"], nullptr, selection);
+        hierarchyDrop(std::nullopt, selection);
+        tree(m_hierarchy.roots(), selection);
         ImGui::EndDisabled();
 
         if (selection) {

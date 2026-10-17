@@ -9619,3 +9619,98 @@ paired original-build diagnosis remains in build/preparation-diagnosis. Authorin
 restoration and retained native history are verified before removing owned native/
 editor copies, including the diagnostic copy. No distribution archive or formal
 example change is produced.
+
+## 2026-10-17 — indexed authoring hierarchy and search
+
+Actual editor samples from the preceding workflow repeatedly enter tree traversal,
+which rescans the full JSON entity list for child detection, recursion and descendant
+search. A real project is created through project-action from the Prism template,
+then 1000 plain root entities are authored through normal edit batches and saved.
+The first 1000-operation request rejects at the real 256-operation limit without
+mutation; four 250-operation batches succeed. This produces 1342 entities / 1147
+expanded logical rows. On the unchanged c96aac4 Release build, six seconds of idle
+application sampling has median total/render steps 102.083688/101.616479ms; stacks
+place the repeated scans under tree/any_of. History also retains a 189.064459ms
+supplied interval with 50.000001ms dropped fixed time; that record includes the
+surrounding control workflow, not a claim about every idle step. The project adds
+hierarchy metadata, not 1000 renderable meshes or populated-game evidence. Pixels
+retain baseline SHA-256 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+HierarchyTree now derives an immutable ordered forest from the authoritative
+snapshot. It owns bounded ID/name/parent metadata, canonical decimal keys and child
+indices; root/sibling order follows the snapshot, including forward parent links.
+Missing/duplicate/zero IDs, malformed text, cycles, more than 10000 nodes or 256
+levels fail before publication. Copies share immutable storage; moved/default
+models are empty and concurrent read-only filtering is supported. Reverse preorder
+propagates each matching node to its ancestors once per query/snapshot change;
+ASCII case and exact other UTF-8 matching preserve existing search semantics. A
+matching parent does not automatically match unrelated children.
+
+Workspace refresh publishes the snapshot, index and match flags together. Rendering
+visits child lists and cached flags rather than searching JSON for every row/leaf.
+Rows, range selection and agent geometry consume the actual same traversal. Drag
+payload scope/revision and selection/edit operations remain shared with the product;
+parent JSON is constructed only for an accepted drop. Deferred actions retain no
+snapshot/index references across refresh. Requested expansion and forced search
+expansion remain independent of the derived data. This is not a second authoring
+scene, full row virtualization, or a change to the renderer/game clock.
+
+Three durable pure-CPU cases verify stable forward-link/sibling/root order, exact
+ancestor filtering, case/UTF-8 and text bounds, shared/owned/moved/thread lifetimes,
+malformed graphs, 256-level and 10000-node boundaries and full-width IDs. The first
+build corrects the UTF-8 helper import from Paths to Text. Focused Debug passes
+17/17 (1.02s), including existing grouping/reparenting/atomic document regressions.
+Full Debug passes 1333/1333 (212.25s), sequentially with builds. These unit checks
+initialize no windows, devices, filesystems or compilers.
+
+Release/NDEBUG passes 1333/1333 (30.00s), sequentially with builds/tests. Counts:
+415 unit / 918 integration; overlapping 162 offscreen, 198 compiler, 33 platform,
+32 audio-native and 20 process labels. Four changed C++ files pass clang-format;
+whitespace checks pass. Review covers graph bounds/cycles, immutable ownership,
+input-order preservation, reverse-order match propagation, snapshot/filter cache
+invalidation, selection/expansion separation and deferred drag/revision checks.
+Compiler/linker settings, pins, target/sanitizer scope and timing guards are unchanged.
+Only macOS arm64 is executed.
+
+The same saved project reopens in the new Release editor with identical serialized
+scene, all 1147 displayed IDs in the same order, every row's geometry/open/selection/
+active state exactly equal, and byte-identical viewport PNG. Same six-second/1ms
+external sampling observes median total/render steps 2.560417/2.288875ms. The old
+history retains 60 of 60 sampled steps; the new history retains 120 of 1399, so the
+rolling wall-time windows differ. Comparing the last 32 steps in each gives median
+total/render 101.929250/101.426188ms before, 2.506062/2.234792ms after. These are
+specific editor CPU-envelope observations, not game FPS or a general performance
+bound. The new retained slowest is 39.568625ms, longest supplied interval 72.115333ms,
+with no recorded dropped fixed time. Backend/readback, serialization, row layout
+and populated-game costs remain open; the index does not virtualize rows.
+
+Another real editor independently checks filtered IDs against the authored JSON
+parent/name relationships: exact ASCII/ancestor search, collapse rejection during
+search, three-row range selection, toggle removal, and forward-ID parenting of two
+old roots beneath a later root. Search then returns parent/child rows [661,659];
+Undo removes the derived ancestry. Rename and deletion also invalidate matches;
+their Undo restores exact original scene data without dirtying. Explicit expansion
+and collapse succeed. Source review preserves the same drag edit operation and
+scope/revision validation; fresh native pointer/keyboard acceptance remains
+unverified since the locked-Mac report.
+
+Actual W/Space Play moves to [-3,1.5479008,1.2734714], with no Play errors/diagnostics;
+Stop restores exact clean authoring. Two saves preserve source file bytes and
+restored/stopped captures keep the baseline PNG hash. Normal export succeeds. The
+physically relocated export runs with authoring hidden and matches 115 content files
+/ 66,837,021 bytes; the extra metadata is saved in its actual scene. It exits zero
+after 360 game steps (746 sampled: 386 initial preparation + 360 game). All 120
+retained samples are unpaused/error-free with no dropped fixed time or dropped-time
+warning. Retained slowest is first game step 386: 43.214292ms total, 34.322166ms
+preparation, 7.693250ms render; longest interval 48.378750ms and retained median
+11.975438ms. This is export/game correctness for a hierarchy-heavy authoring fixture,
+not 1342 renderable actors or a gameplay speed improvement from the editor index.
+The larger engine/editor/game and final-art objectives remain unfinished.
+
+Raw creation/edit/filter/selection/expansion/Play/export requests/responses, four
+PNGs, before/after row snapshots and comparison, profiles/process samples, content
+hashes and package/binary metadata remain under build/hierarchy-review. All owned
+editors exit zero with empty stderr and retired controls, including the rejected
+initial large-batch attempt. Source restoration and native history are verified
+before owned app/native copies are removed. The editable temporary project remains
+in ignored build storage. No distribution archive or formal example change is made.
