@@ -502,11 +502,26 @@ compileSnapshot rechecks source count/bytes and emits those exact captured bytes
 without rereading authoring. equals uses exact path/content comparison, avoiding
 hash collisions and timestamp-only recompilation. Moved-from snapshots are invalid;
 no open authoring files are retained. Captures use the same source filtering and
-configuration isolation as normal TypeScript compilation.
+configuration isolation as normal TypeScript compilation. CompiledProgram.source()
+retains that exact owned provenance for source-compiled generations. JS-only imports
+from loadPublished reject the query; publishing still omits all TypeScript.
+
+`Dot.Script.Compilation` provides CompilationJob for a single owned background
+compileSnapshot call. ready/source/take require its creating thread; ready and take
+never wait for compiler completion. take consumes one result. Stop is a quiescent
+cancellation request; destruction joins and reaps the worker/process. The worker
+has no active scene/VM/services. Hot reload and initial editor Play share this
+implementation rather than creating separate background compilers.
 
 `Dot.Script.LiveScripts` wraps a project/compiler and SceneScripts for automatic
 content polling. Default directory is scripts and interval is 100 ms, configurable
-to 0..60000 ms. Initial capture/compilation and runtime preparation remain synchronous.
+to 0..60000 ms. The create convenience factory compiles synchronously; createPrepared
+accepts an owned source-compiled generation only after exact current-source validation,
+with runtime construction on the owner and no compiler invocation. Its initial
+compileAttempts is zero; create includes its own initial attempt. Editor Play uses
+the prepared factory after its separately counted startup job. Source-watching
+scene transitions use current source rather than retaining the initial fixed-program
+cache. Runtime preparation remains synchronous.
 During update/fixedUpdate, the owner captures bounded source bytes and launches at
 most one owned background compilation. The worker uses only that immutable snapshot
 and a compiler descriptor, including an independent validation VM; it cannot access

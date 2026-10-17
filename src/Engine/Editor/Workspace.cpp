@@ -1438,6 +1438,8 @@ namespace Dot::Editor {
           {"state", "idle"},
           {"started", false},
           {"preparation", nullptr},
+          {"preparationCompileAttempts", "0"},
+          {"discardedScriptCompilations", "0"},
           {"session", m_playSession == 0 ? Json(nullptr) : Json(std::to_string(m_playSession))},
           {"inputSource", m_inputSource},
           {"agentInput",
@@ -1464,11 +1466,13 @@ namespace Dot::Editor {
         status["started"] = stats.started;
 
         if (stats.preparation) {
-          constexpr std::array stages{"audio", "scene", "activation", "teardown"};
+          constexpr std::array stages{"audio", "scene", "activation", "teardown", "scripts"};
           status["preparation"] = stages.at(static_cast<std::size_t>(*stats.preparation));
         }
 
         status["fixedHz"] = stats.fixedHz;
+        status["preparationCompileAttempts"] = std::to_string(stats.preparationCompileAttempts);
+        status["discardedScriptCompilations"] = std::to_string(stats.discardedScriptCompilations);
         status["frames"] = std::to_string(stats.frames);
         status["fixedSteps"] = std::to_string(stats.fixedSteps);
         status["droppedNanoseconds"] = std::to_string(stats.dropped.count());
@@ -8413,7 +8417,9 @@ namespace Dot::Editor {
 
         if (stats.state == PlayState::Preparing || stats.state == PlayState::Cancelling) {
           ImGui::TextWrapped(stats.state == PlayState::Preparing
-                                 ? "Preparing Play; Stop cancels preparation."
+                                 ? (stats.preparation == PlayPreparation::Scripts
+                                        ? "Preparing scripts; Stop cancels preparation."
+                                        : "Preparing Play; Stop cancels preparation.")
                                  : "Cancelling Play; waiting for native services to close.");
         }
 

@@ -15,6 +15,7 @@
 #include "ScriptCompilation.hpp"
 
 import Dot.Core.Files;
+import Dot.Core.Process;
 import Dot.Core.Result;
 import Dot.Editor.Play;
 import Dot.Editor.PlayInput;
@@ -60,6 +61,20 @@ namespace {
       REQUIRE(project.files()->writeTextAtomic("scripts/mover.ts", source));
     }
   };
+
+  auto awaitPreparation(PlaySession& play, PlayState target) -> Dot::Core::Result<PlayState> {
+    const auto deadline = std::chrono::steady_clock::now() + 15s;
+    auto result = play.pollPreparation();
+
+    while (result && *result != target) {
+      REQUIRE((*result == PlayState::Preparing || *result == PlayState::Cancelling));
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(1ms);
+      result = play.pollPreparation();
+    }
+
+    return result;
+  }
 
   auto held() -> Dot::Platform::InputState {
     Dot::Platform::InputState input;
@@ -437,9 +452,9 @@ TEST_CASE("play.preparation_freezes_authoring_and_publishes_only_after_activatio
   REQUIRE(authoring.renameEntity(actor, "later authoring"));
   CHECK(play.pollPreparation().value() == PlayState::Preparing);
   CHECK_FALSE(play.scene());
-  CHECK(play.stats()->preparation == PlayPreparation::Activation);
+  CHECK(play.stats()->preparation == PlayPreparation::Scripts);
   CHECK(play.stats()->frames == 0);
-  CHECK(play.pollPreparation().value() == PlayState::Running);
+  REQUIRE(awaitPreparation(play, PlayState::Running));
   CHECK(play.stats()->started);
   CHECK_FALSE(play.stats()->preparation);
   CHECK(play.scene().value()->entities()->at(1).name == "frozen");
@@ -480,7 +495,7 @@ TEST_CASE("play.preparation_failure_is_retained_until_stop_and_allows_fresh_retr
   auto authoring = fixture.project.loadStartup().value();
   auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
                   .value();
-  CHECK_FALSE(play.pollPreparation());
+  CHECK_FALSE(awaitPreparation(play, PlayState::Running));
   CHECK(play.stats()->preparationError.has_value());
   CHECK(play.stats()->state == PlayState::Cancelling);
   CHECK(play.pollPreparation().value() == PlayState::Faulted);
@@ -491,6 +506,58 @@ TEST_CASE("play.preparation_failure_is_retained_until_stop_and_allows_fresh_retr
   auto retry = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
                    .value();
   REQUIRE(retry.pollPreparation());
-  CHECK(retry.pollPreparation().value() == PlayState::Running);
+  REQUIRE(awaitPreparation(retry, PlayState::Running));
   REQUIRE(retry.stop());
+}
+
+TEST_CASE("play.pending_compile_discards_obsolete_source_and_uses_latest_start_once") {
+  Fixture fixture;
+  fixture.controller(2);
+  auto authoring = fixture.project.loadStartup().value();
+  REQUIRE(authoring.setRigidBody(authoring.entities()->at(1).id, Dot::World::RigidBody{}));
+  const auto baseline = Dot::World::encodeScene(authoring).value();
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  REQUIRE(play.pollPreparation());
+  CHECK(play.stats()->preparationCompileAttempts == 1);
+  fixture.controller(7);
+  REQUIRE(awaitPreparation(play, PlayState::Running));
+  CHECK(play.stats()->preparationCompileAttempts == 2);
+  CHECK(play.stats()->discardedScriptCompilations == 1);
+  CHECK(play.stats()->frames == 0);
+  REQUIRE(play.advance(held(), 17ms));
+  CHECK(play.scene().value()->entities()->at(1).transform.position.x == doctest::Approx(7.0 / 60));
+  CHECK(Dot::World::encodeScene(authoring).value() == baseline);
+  fixture.controller(4);
+  const auto ready = Dot::Tests::awaitCompilation([&] { return play.pollScripts(true); });
+  REQUIRE(ready);
+  CHECK(play.stats()->source->reloads == 1);
+  REQUIRE(play.stop());
+}
+
+TEST_CASE("play.cancel_pending_compiler_reaps_process_without_game_hooks") {
+  Fixture fixture;
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/main.ts", "sleep"));
+  auto authoring = fixture.project.loadStartup().value();
+  const auto generations = Dot::Script::compilerGenerations();
+  const auto resources = Dot::Core::processResources();
+  auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_COMPILER_FIXTURE).value();
+  auto play = PlaySession::begin(fixture.project, compiler, authoring, fixture.config()).value();
+  REQUIRE(play.pollPreparation());
+  const auto deadline = std::chrono::steady_clock::now() + 15s;
+
+  while (Dot::Core::processResources().children == resources.children) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    REQUIRE(play.pollPreparation());
+    std::this_thread::sleep_for(1ms);
+  }
+
+  REQUIRE(play.stop());
+  CHECK(play.stats()->state == PlayState::Cancelling);
+  REQUIRE(awaitPreparation(play, PlayState::Stopped));
+  CHECK_FALSE(play.stats()->started);
+  CHECK(play.lastFrame()->reports.empty());
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  CHECK(Dot::Core::processResources().children == resources.children);
+  CHECK(Dot::Core::processResources().handles == resources.handles);
 }

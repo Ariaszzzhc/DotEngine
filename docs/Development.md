@@ -10086,3 +10086,136 @@ window closure is pending. The repeated final Release editor close-during-prepar
 check exits zero with empty stderr and retired control on its healthy path; native
 teardown failure was not injected in this product run. Current format dry-run,
 whitespace checks and ownership/error/platform/test review pass before commit.
+
+## 2026-10-17 — background initial Play compilation
+
+Continue from f04c993 with main/origin/main identical and no pending product changes.
+The preceding audio startup stage is progress, not overall readiness. A fresh real
+PrismMaintenance editor sample still places initial compileSnapshot/process waiting
+on the main thread: greatest step 79.804625ms, including 78.681000ms prepare. Keep
+working through real authoring/Play/export and the existing development/validation
+skills. Formal example assets/scripts, pinned dependencies, C++26 static modules
+and the caller's compiler/linker environment remain unchanged.
+
+Extract the existing LiveScripts snapshot worker into Dot.Script.Compilation.
+CompilationJob owns one immutable snapshot and compiler descriptor, never the
+active scene, runtime or services. ready/take use try-lock completion checks and
+require the creating thread; take consumes once and rejects pending/already taken
+results. Moves preserve owner identity and release the previous task. Quiescent
+requestStop/destruction can run elsewhere; destruction cancels/joins/reaps rather
+than detaching. Both hot reload and initial Play use this same implementation and
+Core process cancellation. Process/VM budgets are unchanged. OS/filesystem cleanup
+and thread retirement are not hard real-time guarantees.
+
+CompiledProgram retains the shared bounded source provenance produced by
+compileSnapshot. It adds no serialized source to export; loadPublished has no
+provenance and rejects source(). LiveScripts::createPrepared and source-project
+GameSession creation validate exact current paths/bytes before adopting an already
+compiled generation, without invoking another compiler. Snapshot data is shared,
+not copied per owner. JS-only packages still use the explicit compiled factory.
+The source controller starts compileAttempts at zero when seeded, whereas the
+synchronous factory includes its own initial attempt. Startup job attempts/discards
+are separately reported by Play rather than inventing a compiler invocation.
+
+Play polls bounded source capture on its owner, launches one initial CompilationJob
+in parallel with real endpoint opening, retires obsolete work and uses the latest
+valid capture. It keeps the original editor scene visible and unpublished controls
+unavailable. Scene/physics/audio/animation/script construction and Start remain on
+the owner; no thread ownership transfer or duplicate active VM is introduced.
+Preparing reports scripts and the initial compile/discard counters through existing
+strict inspect/Play/Stop operations; the shared UI shows Preparing scripts. Stop/
+close cancel the compiler and keep ownership until compilation and audio teardown
+finish, then remove disposable saves without unpublished Stop hooks. Invalid or
+changed source at adoption fails explicitly; captures still require serialized
+filesystem input and are not hostile-race isolation. Changes after the startup
+boundary follow normal configured hot reload.
+
+Review reproduces an integration error before commit: seeding a live session also
+populates the fixed-program scene-transition cache. After source reload, switching
+scene then rejects the obsolete initial program. The new focused regression fails
+with "Prepared scripts no longer match project source" and unchanged scope before
+the fix. Keep fixed programs only for non-watching sessions; live generations belong
+to the watcher and source transitions compile current files. The same test passes
+with the rest of the final suite. This preserves actual scene making/iteration,
+rather than accepting initial compilation alone.
+
+Eight enduring additions in existing test targets cover exact-source background
+compilation; owner/move/take-once boundaries; real TS2322 failure, active process
+cancellation, foreign quiescent destruction and replacement of a pending task with
+resource/generation recovery; published JS provenance rejection; prepared creation
+with the owned compiler executable removed (proving no extra launch); stale/null
+inputs; seeded source sessions with/without hot reload; obsolete initial source,
+continued reload after startup, compiler cancellation without game hooks; and
+scene replacement after reload. Existing preparation checks now observe real
+asynchronous completion, without extra gameplay dispatch or changed VM/process
+limits. Fixtures remain in their existing compiler targets; no stage-specific
+acceptance executable or desktop-window test is added.
+
+Final focused Debug: 78/78 in 5.62s. Full Debug: 1,362/1,362 in 213.10s. Full
+Release/NDEBUG: 1,362/1,362 in 31.07s. Counts: 419 unit, 943 integration; overlapping
+labels include 217 compiler, 162 offscreen, 36 audio-native, 33 platform and 21
+process. Only arm64 macOS is executed. Current CUA inventory still reports the Mac
+locked, so there is no new native pointer/keyboard acceptance or Windows/Linux claim.
+
+Repeat the actual Release editor on the same project/viewport with 6-second
+external sampling at a requested 1ms interval. Before/after greatest steps are
+79.804625/47.359625ms, including 78.681000/45.333209ms prepare. Greatest supplied
+intervals are 81.064917/48.625084ms; neither observation drops fixed time. Command
+acknowledgement including mailbox/client polling is 69.602/73.119ms, so do not claim
+an acknowledgement or total-startup improvement. Initial compileSnapshot appears
+on the CompilationJob worker (11 samples, including nine process-wait samples),
+instead of the main thread (14 compile samples before). Both samples retain four
+main-thread compiler-version-probe samples. Source capture, version probing, scene
+cloning, animation/assets, owner VM construction and some cleanup remain synchronous.
+No clock reset, artificial paused frame, enlarged catch-up budget or suppressed drop
+warning is used. OS/resource caches are not controlled; this is local evidence for
+removing a specific owner wait, not a universal loading/FPS claim. Before/after
+ready/stopped PNGs are byte-identical, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+
+Create PrismInitial through the actual PrismRelay template operation. Change the
+player's walkSpeed from 3.2 to 3.6 through the native component transaction and Save;
+the document remains clean at revision 3. An initial TS2322 edit faults asynchronous
+startup with the real cause, no published game, and authoring unchanged. Stop and
+correct. Use ordinary authored onStart names to identify compiled contents, then
+save the external source atomically 20 times during preparation: inspect observes
+scripts and activation phases; nine initial jobs are attempted, eight obsolete
+results discarded, and only "Startup revision 19" is observed running. The seeded
+watcher correctly reports zero of its own compile attempts. Product W+Space input
+for 30 frames moves Z 2.0 to 1.4356825352 and reaches Y 1.4277507067 from zero;
+viewport PNG shows the airborne animated character.
+
+While running, TS2322 retains the old running generation/name. Correcting and
+forcing source reload clears the current source error and commits a reload. A
+subsequent product request-play-scene for scenes/main.dotscene succeeds, changes
+scope 164 to 191 and executes the new source's Start name "After reload". This is
+actual source-changing scene-transition evidence for the cache fix. Stop restores
+the unchanged clean authoring scene and exact original viewport PNG. Historic type
+diagnostics remain meaningful history; they are not erased as if the failed edit
+never happened. A fresh editor reopens the saved walkSpeed 3.6 and closes during
+unpublished preparation; close acknowledges running while teardown is pending,
+then exits zero and retires control.
+
+Native workspace export matches all 115 content files / 66,210,729 bytes against
+saved authoring. The final edited player source hash is
+3ba42c4250e4381dfb1b2aca0df9a9d0da5b5494924a6674a5c724198978209e; published player.js
+contains speed * 0.9 / magnitude and After reload. No .ts/.mts/.map is published.
+Physically relocate the export and hide authoring: DotGame exits zero after 360
+game frames, 779 application steps (419 preparation + 360 game). Its 120 retained
+samples are unpaused/error-free with zero dropped fixed time. Global slowest is
+step 419, 46.295834ms; retained median 11.574896ms. Stderr contains only normal
+preparation progress. This checks source-free native execution through the unchanged
+synchronous player startup path, not a standalone startup/performance improvement.
+Authoring is restored. Native linkage inspection shows system frameworks/libraries
+and executable-relative bundled C++/unwind libraries.
+
+Raw product requests/receipts/responses, source-write history, error/transition
+results, profiles/process samples, PNGs, content/source hashes and binary/linkage
+metadata remain in ignored build/initial-scripts-review. Four owned editors exit
+zero with empty stderr and retired controls; native exit is zero. Owned
+app/native copies and obsolete implementation-edit helpers are removed after
+restoration and metadata checks; replay helpers and editable project evidence remain. No
+distribution archive is created. Version probing and remaining startup/resource
+I/O, broader authoring/animation workflows, game-specific progression, final art/game
+experience and overall production readiness remain unfinished. Final formatting,
+whitespace and ownership/error/platform/test reviews pass before commit.

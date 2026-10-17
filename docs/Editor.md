@@ -296,9 +296,13 @@ These requests require the current authoring revision and return updated inspect
 responses. Repeated play while active fails; stopping is idempotent. F5 toggles the
 same operation. A successful Play request acknowledges `preparing`; poll inspect
 until `running` before sending game input. The editor keeps displaying authoring
-while the real audio worker opens and activates the endpoint. Initial scene/script
-preparation still runs on the owner thread, so this is not fully asynchronous scene
-loading. `preparation` reports audio/scene/activation/teardown while pending.
+while real audio initialization and initial source compilation run in owned workers.
+Only exact current source can seed the initial runtime; obsolete compilation is
+cancelled and replaced with the latest capture. Source capture, scene service setup
+and script construction still run on the owner, so this is not fully asynchronous
+scene loading. `preparation` reports scripts/audio/scene/activation/teardown while pending.
+`preparationCompileAttempts` and `discardedScriptCompilations` count initial source
+jobs and obsolete results; running hot-reload attempts remain in `source`.
 `started` becomes true only after actual activation. Preparing locks
 editing and unpublished game controls/inspection reject. Stop requests `cancelling`,
 retains ownership until native teardown completes, then reports `stopped` (or

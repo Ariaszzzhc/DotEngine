@@ -10,6 +10,7 @@ module;
 #include <format>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <random>
 #include <stop_token>
 #include <string>
@@ -380,6 +381,7 @@ namespace Dot::Script {
     std::vector<std::string> modules;
     std::string diagnostics;
     CompiledStats stats;
+    std::optional<SourceSnapshot> source{};
   };
 
   CompiledProgram::CompiledProgram(std::shared_ptr<const Impl> impl) noexcept
@@ -426,6 +428,14 @@ namespace Dot::Script {
     }
 
     return m_impl->stats;
+  }
+
+  auto CompiledProgram::source() const -> Core::Result<SourceSnapshot> {
+    if (!m_impl || !m_impl->source) {
+      return Core::fail(ErrorCode::InvalidState, "Compiled program has no authoring provenance");
+    }
+
+    return *m_impl->source;
   }
 
   auto CompiledProgram::publish(const Core::FileSystem& parent, const Fs::path& folder) const
@@ -1019,7 +1029,7 @@ namespace Dot::Script {
       std::ranges::sort(modules);
       return CompiledProgram(std::make_shared<CompiledProgram::Impl>(
           std::move(*generation), std::move(*output), std::move(modules), std::move(diagnostics),
-          stats));
+          stats, snapshot));
     } catch (const std::exception& exception) {
       return Core::fail(ErrorCode::External,
                         "TypeScript compile: " + std::string(exception.what()));

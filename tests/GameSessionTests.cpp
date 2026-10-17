@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <expected>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -776,4 +777,61 @@ TEST_CASE("game_session_source_poll_retry_retains_gameplay_and_rejects_inactive_
     good(session.close());
     CHECK_FALSE(session.pollScripts(true));
   }
+}
+
+TEST_CASE("game_session_prepared_source_is_verified_and_never_recompiled_on_construction") {
+  const auto generations = Dot::Script::compilerGenerations();
+
+  for (const bool reload : {false, true}) {
+    Fixture fixture(reload);
+    fixture.controller();
+    auto authoring = fixture.project.loadStartup().value();
+    auto program = fixture.compiler().compileProject(fixture.project.files().value()).value();
+    const auto toolPath
+        = fixture.directory.files().root() / std::filesystem::path(DOT_COMPILER_FIXTURE).filename();
+    REQUIRE(std::filesystem::copy_file(DOT_COMPILER_FIXTURE, toolPath));
+    auto tool = Dot::Script::TypeScriptCompiler::create(toolPath).value();
+    REQUIRE(std::filesystem::remove(toolPath));
+    auto session = GameSession::createFromScene(fixture.project, tool, authoring, {}, std::nullopt,
+                                                nullptr, &program);
+    REQUIRE_MESSAGE(session, (session ? "" : session.error().message));
+    good(session->start());
+    good(session->update(0));
+    CHECK(session->stats()->hotReload == reload);
+    fixture.writeController(5);
+    auto stale = GameSession::createFromScene(fixture.project, tool, authoring, {}, std::nullopt,
+                                              nullptr, &program);
+    REQUIRE_FALSE(stale);
+    CHECK(stale.error().code == Dot::Core::ErrorCode::Unavailable);
+    auto published = program.publish(fixture.project.files().value(), "published").value();
+    auto imported = Dot::Script::CompiledProgram::loadPublished(published).value();
+    CHECK_FALSE(GameSession::createFromScene(fixture.project, tool, authoring, {}, std::nullopt,
+                                             nullptr, &imported));
+    good(session->close());
+  }
+
+  CHECK(Dot::Script::compilerGenerations() == generations);
+}
+
+TEST_CASE("game_session_prepared_live_generation_does_not_pin_old_scene_transition_source") {
+  Fixture fixture;
+  fixture.controller(2);
+  auto authoring = fixture.project.loadStartup().value();
+  auto compiler = fixture.compiler();
+  auto program = compiler.compileProject(fixture.project.files().value()).value();
+  auto session = GameSession::createFromScene(fixture.project, compiler, authoring, {},
+                                              std::nullopt, nullptr, &program)
+                     .value();
+  good(session.start());
+  fixture.writeController(5);
+  auto reload = Dot::Tests::awaitCompilation([&] { return session.pollScripts(true); });
+  REQUIRE(reload->committed);
+  const auto oldScope = session.scene().value()->id();
+  auto request = session.requestScene("scenes/main.dotscene").value();
+  good(session.update(0));
+  auto result = session.sceneRequest(request).value();
+  CHECK_MESSAGE(result.state == Dot::Script::SceneRequestState::Succeeded,
+                (result.error ? result.error->message : "Scene replacement did not complete"));
+  CHECK(session.scene().value()->id() != oldScope);
+  good(session.close());
 }

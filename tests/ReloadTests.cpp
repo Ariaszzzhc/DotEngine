@@ -663,3 +663,31 @@ TEST_CASE("reload_forced_retry_of_active_source_survives_an_obsolete_job") {
   good(live.update(0));
   CHECK(native->entities()->front().transform.position.x == 2);
 }
+
+TEST_CASE("reload_prepared_source_requires_current_provenance_without_compiler_launch") {
+  Project project;
+  project.write(actor());
+  auto program = project.compile();
+  const auto toolPath = project.root / std::filesystem::path(DOT_COMPILER_FIXTURE).filename();
+  REQUIRE(std::filesystem::copy_file(DOT_COMPILER_FIXTURE, toolPath));
+  auto tool = TypeScriptCompiler::create(toolPath).value();
+  REQUIRE(std::filesystem::remove(toolPath));
+  auto native = scene();
+  const auto generations = compilerGenerations();
+  auto live = LiveScripts::createPrepared(native, project.files(), tool, program);
+  REQUIRE_MESSAGE(live, (live ? "" : live.error().message));
+  good(live->start());
+  good(live->update(0));
+  CHECK(native->entities()->front().transform.position.x == 1);
+  CHECK(live->stats()->compileAttempts == 0);
+  CHECK(compilerGenerations() == generations);
+  project.write(actor(2));
+  auto rejected = LiveScripts::createPrepared(scene(), project.files(), tool, program);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Dot::Core::ErrorCode::Unavailable);
+  auto published = program.publish(project.files(), "published").value();
+  auto imported = CompiledProgram::loadPublished(published).value();
+  CHECK_FALSE(LiveScripts::createPrepared(scene(), project.files(), tool, imported));
+  CHECK_FALSE(LiveScripts::createPrepared(nullptr, project.files(), tool, program));
+  REQUIRE(live->stop());
+}

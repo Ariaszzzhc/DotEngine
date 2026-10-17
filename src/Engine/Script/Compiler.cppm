@@ -75,6 +75,10 @@ export namespace Dot::Script {
     [[nodiscard]] auto modules() const -> Core::Result<std::vector<std::string>>;
     [[nodiscard]] auto diagnostics() const -> Core::Result<std::string>;
     [[nodiscard]] auto stats() const -> Core::Result<CompiledStats>;
+    /** Exact source provenance retained by compileSnapshot. Published JS imports
+     * have no authoring capture and reject this query.
+     * compileSnapshot 保留精确源码来源；导入的已发布 JS 没有编辑源码快照，拒绝此查询。 */
+    [[nodiscard]] auto source() const -> Core::Result<SourceSnapshot>;
 
     /** Atomically publish portable JS/MJS modules plus a strict version-1
      * manifest into a new directory within default load limits. Source maps and

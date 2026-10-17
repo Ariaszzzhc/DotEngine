@@ -171,6 +171,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Audio/SceneAudio.cpp
     src/Engine/Script/Runtime.cpp
     src/Engine/Script/Compiler.cpp
+    src/Engine/Script/Compilation.cpp
     src/Engine/Script/Modules.cpp
     src/Engine/Graphics/Environment.cpp
     src/Engine/Graphics/Shadows.cpp
@@ -311,6 +312,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Script/SceneScripts.cppm
         src/Engine/Script/LiveScripts.cppm
         src/Engine/Script/Compiler.cppm
+        src/Engine/Script/Compilation.cppm
         src/Engine/Script/Modules.cppm
         src/Engine/Graphics/Environment.cppm
         src/Engine/Graphics/Shadows.cppm

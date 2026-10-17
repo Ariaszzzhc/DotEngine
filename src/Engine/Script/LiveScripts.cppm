@@ -37,6 +37,8 @@ export namespace Dot::Script {
   };
 
   struct LiveScriptsStats {
+    /** Attempts launched by this controller; prepared construction starts at zero.
+     * 此控制器启动的尝试；使用已准备程序构造时从零开始。 */
     std::uint64_t compileAttempts;
     std::uint64_t reloads;
     std::optional<Core::Error> error;
@@ -63,6 +65,17 @@ export namespace Dot::Script {
                                      const Core::FileSystem& project,
                                      const TypeScriptCompiler& compiler,
                                      const LiveScriptsConfig& config = {})
+        -> Core::Result<LiveScripts>;
+    /** Prepare an already compiled source generation without running a compiler.
+     * Its owned source provenance must exactly match the current project capture;
+     * published JS-only programs cannot seed a source-watching session.
+     * 使用已编译源码代准备，不调用编译器；拥有的源码来源须与当前项目捕获精确一致，
+     * 仅含已发布 JS 的程序不可初始化源码监听会话。 */
+    [[nodiscard]] static auto createPrepared(std::shared_ptr<World::Scene> scene,
+                                             const Core::FileSystem& project,
+                                             const TypeScriptCompiler& compiler,
+                                             const CompiledProgram& program,
+                                             const LiveScriptsConfig& config = {})
         -> Core::Result<LiveScripts>;
     LiveScripts(const LiveScripts&) = delete;
     auto operator=(const LiveScripts&) -> LiveScripts& = delete;
@@ -98,6 +111,12 @@ export namespace Dot::Script {
     [[nodiscard]] auto stats() const -> Core::Result<LiveScriptsStats>;
 
   private:
+    [[nodiscard]] static auto prepare(std::shared_ptr<World::Scene> scene,
+                                      const Core::FileSystem& project,
+                                      const TypeScriptCompiler& compiler, SourceSnapshot source,
+                                      const CompiledProgram& program,
+                                      const LiveScriptsConfig& config,
+                                      std::uint64_t compileAttempts) -> Core::Result<LiveScripts>;
     struct Impl;
     explicit LiveScripts(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

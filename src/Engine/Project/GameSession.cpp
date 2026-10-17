@@ -521,7 +521,8 @@ namespace Dot::Project {
                                     const Script::TypeScriptCompiler& compiler,
                                     const World::Scene& scene, const GameSessionConfig& config,
                                     std::optional<std::string> scenePath,
-                                    Audio::Playback* preparedPlayback)
+                                    Audio::Playback* preparedPlayback,
+                                    const Script::CompiledProgram* preparedProgram)
       -> Core::Result<GameSession> {
     auto valid = validate(config);
 
@@ -542,7 +543,7 @@ namespace Dot::Project {
 
     auto cloned = World::decodeScene(*encoded);
     return cloned ? prepare(project, compiler, std::move(*cloned), config, std::move(scenePath),
-                            std::move(*encoded), preparedPlayback)
+                            std::move(*encoded), preparedPlayback, preparedProgram)
                   : std::unexpected(cloned.error());
   }
 
@@ -550,7 +551,9 @@ namespace Dot::Project {
                             World::Scene scene, const GameSessionConfig& config,
                             std::optional<std::string> scenePath,
                             std::optional<std::string> originBytes,
-                            Audio::Playback* preparedPlayback) -> Core::Result<GameSession> {
+                            Audio::Playback* preparedPlayback,
+                            const Script::CompiledProgram* preparedProgram)
+      -> Core::Result<GameSession> {
     try {
       auto description = project.description();
       auto files = project.files();
@@ -563,6 +566,20 @@ namespace Dot::Project {
         return std::unexpected(files.error());
       }
 
+      if (preparedProgram) {
+        auto source = preparedProgram->source();
+        auto current = compiler.captureProject(*files, description->scriptsDirectory);
+
+        if (!source || !current) {
+          return std::unexpected(!source ? source.error() : current.error());
+        }
+
+        if (!source->equals(*current)) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Prepared scripts no longer match project source");
+        }
+      }
+
       std::shared_ptr<const Origin> origin;
 
       if (scenePath && originBytes) {
@@ -570,8 +587,8 @@ namespace Dot::Project {
       }
 
       return prepareSession(*files, std::move(*description), std::move(scene), config, &compiler,
-                            nullptr, std::move(scenePath), nullptr, std::move(origin), nullptr,
-                            preparedPlayback);
+                            preparedProgram, std::move(scenePath), nullptr, std::move(origin),
+                            nullptr, preparedPlayback);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare project session: " + std::string(error.what()));
@@ -646,7 +663,10 @@ namespace Dot::Project {
         impl->m_compiler = *compiler;
       }
 
-      if (precompiled) {
+      /** Live generations belong to the watcher, not the fixed-program cache
+       * used across compiled scene transitions; source transitions compile current files.
+       * 活动源码代归监听器所有，不放入跨预编译场景使用的固定程序缓存；源码场景切换编译当前文件。 */
+      if (precompiled && !impl->m_description.hotReload) {
         impl->m_program = *precompiled;
       }
 
@@ -724,7 +744,10 @@ namespace Dot::Project {
       if (impl->m_description.hotReload) {
         Script::LiveScriptsConfig liveConfig{
             std::move(scriptsConfig), impl->m_description.scriptsDirectory, config.pollInterval};
-        auto scripts = Script::LiveScripts::create(impl->m_scene, assets, *compiler, liveConfig);
+        auto scripts = precompiled ? Script::LiveScripts::createPrepared(
+                                         impl->m_scene, assets, *compiler, *precompiled, liveConfig)
+                                   : Script::LiveScripts::create(impl->m_scene, assets, *compiler,
+                                                                 liveConfig);
 
         if (!scripts) {
           return std::unexpected(scripts.error());

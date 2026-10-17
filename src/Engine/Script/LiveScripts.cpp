@@ -6,9 +6,7 @@ module;
 #include <exception>
 #include <expected>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -19,6 +17,7 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.World.Scene;
 import Dot.Script.Compiler;
+import Dot.Script.Compilation;
 import Dot.Script.SceneScripts;
 
 namespace Dot::Script {
@@ -34,52 +33,41 @@ namespace Dot::Script {
         active = false;
       }
     };
+
+    auto validate(const std::shared_ptr<World::Scene>& scene, const LiveScriptsConfig& config)
+        -> Core::Result<void> {
+      if (!scene || scene->id() == 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Live scripts require a live owned scene");
+      }
+
+      auto owner = scene->name();
+
+      if (!owner) {
+        return std::unexpected(owner.error());
+      }
+
+      if (config.pollInterval.count() < 0 || config.pollInterval > std::chrono::minutes{1}) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid live-script poll interval");
+      }
+
+      return {};
+    }
   }  // namespace
 
   struct LiveScripts::Impl {
-    struct Completion {
-      std::mutex m_mutex;
-      std::optional<Core::Result<CompiledProgram>> m_result;
-    };
-
-    /** The worker owns an immutable capture/compiler, never scene or active VM state.
-     * 后台仅拥有不可变源码捕获和编译器描述，不接触场景或活动脚本虚拟机。 */
     struct Compilation {
       SourceSnapshot m_source;
-      std::shared_ptr<Completion> m_completion = std::make_shared<Completion>();
+      CompilationJob m_job;
       bool m_obsolete{};
-      std::jthread m_worker;
 
-      Compilation(SourceSnapshot snapshot, TypeScriptCompiler compiler)
-          : m_source(std::move(snapshot)),
-            m_worker([state = m_completion, snapshot = m_source,
-                      compiler = std::move(compiler)](std::stop_token stop) {
-              auto result = [&]() -> Core::Result<CompiledProgram> {
-                try {
-                  return compiler.compileSnapshot(snapshot, stop);
-                } catch (const std::exception& error) {
-                  return Core::fail(Core::ErrorCode::External,
-                                    "Background TypeScript compile: " + std::string(error.what()));
-                }
-              }();
-              std::lock_guard lock(state->m_mutex);
-              state->m_result.emplace(std::move(result));
-            }) {
-      }
-
-      auto ready() -> bool {
-        std::unique_lock lock(m_completion->m_mutex, std::try_to_lock);
-        return lock.owns_lock() && m_completion->m_result.has_value();
-      }
-
-      auto take() -> Core::Result<CompiledProgram> {
-        std::lock_guard lock(m_completion->m_mutex);
-        return std::move(*m_completion->m_result);
+      Compilation(SourceSnapshot source, CompilationJob job)
+          : m_source(std::move(source)), m_job(std::move(job)) {
       }
 
       auto discard() -> void {
         m_obsolete = true;
-        m_worker.request_stop();
+        m_job.requestStop();
       }
     };
 
@@ -92,7 +80,7 @@ namespace Dot::Script {
     SceneScripts m_scripts;
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_sceneId;
-    std::uint64_t m_compileAttempts{1};
+    std::uint64_t m_compileAttempts;
     std::uint64_t m_reloads{};
     std::optional<Core::Error> m_compileError;
     std::optional<Core::Error> m_captureError;
@@ -104,7 +92,8 @@ namespace Dot::Script {
     bool m_forcePending{};
 
     Impl(std::shared_ptr<World::Scene> scene, Core::FileSystem project, TypeScriptCompiler compiler,
-         LiveScriptsConfig config, SourceSnapshot attempt, SceneScripts scripts)
+         LiveScriptsConfig config, SourceSnapshot attempt, SceneScripts scripts,
+         std::uint64_t compileAttempts)
         : m_scene(std::move(scene)),
           m_project(std::move(project)),
           m_compiler(std::move(compiler)),
@@ -112,6 +101,7 @@ namespace Dot::Script {
           m_attempt(std::move(attempt)),
           m_scripts(std::move(scripts)),
           m_sceneId(m_scene->id()),
+          m_compileAttempts(compileAttempts),
           m_next(Clock::now() + m_config.pollInterval) {
     }
 
@@ -137,7 +127,13 @@ namespace Dot::Script {
         status.error = error();
         return status;
       };
-      const bool completed = m_compilation && m_compilation->ready();
+      auto readiness = m_compilation ? m_compilation->m_job.ready() : Core::Result<bool>{false};
+
+      if (!readiness) {
+        return std::unexpected(readiness.error());
+      }
+
+      const bool completed = *readiness;
 
       if (!force && !completed && Clock::now() < m_next) {
         return finish();
@@ -178,7 +174,7 @@ namespace Dot::Script {
 
       if (completed) {
         const bool obsolete = m_compilation->m_obsolete;
-        auto program = m_compilation->take();
+        auto program = m_compilation->m_job.take();
 
         if (!obsolete) {
           m_attempt = m_compilation->m_source;
@@ -212,7 +208,14 @@ namespace Dot::Script {
         ++m_compileAttempts;
 
         try {
-          m_compilation = std::make_unique<Compilation>(*captured, m_compiler);
+          auto job = CompilationJob::begin(m_compiler, *captured);
+
+          if (job) {
+            m_compilation = std::make_unique<Compilation>(*captured, std::move(*job));
+          } else {
+            m_attempt = *captured;
+            m_compileError = job.error();
+          }
         } catch (const std::exception& exception) {
           m_attempt = *captured;
           m_compileError
@@ -254,19 +257,10 @@ namespace Dot::Script {
   auto LiveScripts::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& project,
                            const TypeScriptCompiler& compiler, const LiveScriptsConfig& config)
       -> Core::Result<LiveScripts> {
-    if (!scene || scene->id() == 0) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Live scripts require a live owned scene");
-    }
+    auto checked = validate(scene, config);
 
-    auto owner = scene->name();
-
-    if (!owner) {
-      return std::unexpected(owner.error());
-    }
-
-    if (config.pollInterval.count() < 0 || config.pollInterval > std::chrono::minutes{1}) {
-      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid live-script poll interval");
+    if (!checked) {
+      return std::unexpected(checked.error());
     }
 
     auto snapshot = compiler.captureProject(project, config.directory);
@@ -281,7 +275,40 @@ namespace Dot::Script {
       return std::unexpected(program.error());
     }
 
-    auto scripts = SceneScripts::create(scene, *program, config.scripts);
+    return prepare(std::move(scene), project, compiler, std::move(*snapshot), *program, config, 1);
+  }
+
+  auto LiveScripts::createPrepared(std::shared_ptr<World::Scene> scene,
+                                   const Core::FileSystem& project,
+                                   const TypeScriptCompiler& compiler,
+                                   const CompiledProgram& program, const LiveScriptsConfig& config)
+      -> Core::Result<LiveScripts> {
+    auto checked = validate(scene, config);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto source = program.source();
+    auto current = compiler.captureProject(project, config.directory);
+
+    if (!source || !current) {
+      return std::unexpected(!source ? source.error() : current.error());
+    }
+
+    if (!source->equals(*current)) {
+      return Core::fail(Core::ErrorCode::Unavailable,
+                        "Prepared scripts no longer match project source");
+    }
+
+    return prepare(std::move(scene), project, compiler, std::move(*source), program, config, 0);
+  }
+
+  auto LiveScripts::prepare(std::shared_ptr<World::Scene> scene, const Core::FileSystem& project,
+                            const TypeScriptCompiler& compiler, SourceSnapshot source,
+                            const CompiledProgram& program, const LiveScriptsConfig& config,
+                            std::uint64_t compileAttempts) -> Core::Result<LiveScripts> {
+    auto scripts = SceneScripts::create(scene, program, config.scripts);
 
     if (!scripts) {
       return std::unexpected(scripts.error());
@@ -297,9 +324,14 @@ namespace Dot::Script {
       return std::unexpected(prepared->failures.front().error);
     }
 
+    if (prepared->realmFaulted) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepare live script realm faulted");
+    }
+
     try {
       return LiveScripts(std::make_unique<Impl>(std::move(scene), project, compiler, config,
-                                                std::move(*snapshot), std::move(*scripts)));
+                                                std::move(source), std::move(*scripts),
+                                                compileAttempts));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Create live scripts: " + std::string(error.what()));

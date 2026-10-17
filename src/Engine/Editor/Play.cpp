@@ -20,6 +20,7 @@ import Dot.Core.StagedDirectory;
 import Dot.Core.Files;
 import Dot.Project.GameSession;
 import Dot.Script.SceneScripts;
+import Dot.Script.Compilation;
 import Dot.World.SceneFiles;
 
 namespace Dot::Editor {
@@ -61,6 +62,9 @@ namespace Dot::Editor {
       PlayConfig config;
       std::optional<std::string> scenePath;
       std::optional<Audio::Playback> playback;
+      std::optional<Script::CompilationJob> compilation{};
+      std::optional<Script::CompiledProgram> program{};
+      bool obsolete{};
     };
 
     std::unique_ptr<Preparation> m_preparation;
@@ -294,6 +298,11 @@ namespace Dot::Editor {
 
       state = PlayState::Cancelling;
       m_impl->m_stats.preparation = PlayPreparation::Teardown;
+
+      if (pending.compilation) {
+        pending.compilation->requestStop();
+      }
+
       auto closing = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
                      : pending.playback ? pending.playback->requestClose()
                                         : Core::Result<void>{};
@@ -307,6 +316,21 @@ namespace Dot::Editor {
 
     try {
       if (state == PlayState::Cancelling) {
+        if (pending.compilation) {
+          auto ready = pending.compilation->ready();
+
+          if (!ready) {
+            return fail(ready.error());
+          }
+
+          if (!*ready) {
+            return state;
+          }
+
+          pending.compilation.reset();
+        }
+
+        pending.program.reset();
         auto closed = m_impl->m_session  ? m_impl->m_session->pollPreparationClosed()
                       : pending.playback ? pending.playback->pollClosed()
                                          : Core::Result<bool>{true};
@@ -351,6 +375,76 @@ namespace Dot::Editor {
       }
 
       if (!m_impl->m_session) {
+        auto description = pending.project.description();
+        auto files = pending.project.files();
+
+        if (!description || !files) {
+          return fail(!description ? description.error() : files.error());
+        }
+
+        auto captured = pending.compiler.captureProject(*files, description->scriptsDirectory);
+
+        if (!captured) {
+          return fail(captured.error());
+        }
+
+        if (pending.compilation) {
+          auto source = pending.compilation->source();
+          auto ready = pending.compilation->ready();
+
+          if (!source || !ready) {
+            return fail(!source ? source.error() : ready.error());
+          }
+
+          if (!source->equals(*captured)) {
+            pending.obsolete = true;
+            pending.compilation->requestStop();
+          }
+
+          if (*ready) {
+            auto program = pending.compilation->take();
+            pending.compilation.reset();
+
+            if (pending.obsolete) {
+              ++m_impl->m_stats.discardedScriptCompilations;
+            } else if (!program) {
+              return fail(program.error());
+            } else {
+              pending.program.emplace(std::move(*program));
+            }
+          }
+        }
+
+        if (pending.program) {
+          auto source = pending.program->source();
+
+          if (!source) {
+            return fail(source.error());
+          }
+
+          if (!source->equals(*captured)) {
+            pending.program.reset();
+            ++m_impl->m_stats.discardedScriptCompilations;
+          }
+        }
+
+        if (!pending.compilation && !pending.program) {
+          auto job = Script::CompilationJob::begin(pending.compiler, *captured);
+
+          if (!job) {
+            return fail(job.error());
+          }
+
+          pending.obsolete = false;
+          pending.compilation.emplace(std::move(*job));
+          ++m_impl->m_stats.preparationCompileAttempts;
+        }
+
+        if (!pending.program) {
+          m_impl->m_stats.preparation = PlayPreparation::Scripts;
+          return state;
+        }
+
         if (pending.playback) {
           auto ready = pending.playback->pollReady();
 
@@ -359,6 +453,7 @@ namespace Dot::Editor {
           }
 
           if (!*ready) {
+            m_impl->m_stats.preparation = PlayPreparation::Audio;
             return state;
           }
         }
@@ -366,8 +461,9 @@ namespace Dot::Editor {
         m_impl->m_stats.preparation = PlayPreparation::Scene;
         auto session = Project::GameSession::createFromScene(
             pending.project, pending.compiler, pending.scene, pending.config.session,
-            pending.scenePath, pending.playback ? &*pending.playback : nullptr);
+            pending.scenePath, pending.playback ? &*pending.playback : nullptr, &*pending.program);
         pending.playback.reset();
+        pending.program.reset();
 
         if (!session) {
           return fail(session.error());
@@ -489,6 +585,11 @@ namespace Dot::Editor {
       }
 
       auto& pending = *m_impl->m_preparation;
+
+      if (pending.compilation) {
+        pending.compilation->requestStop();
+      }
+
       auto requested = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
                        : pending.playback ? pending.playback->requestClose()
                                           : Core::Result<void>{};

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <expected>
 #include <filesystem>
+#include <future>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <random>
@@ -15,8 +16,10 @@
 #include <vector>
 
 import Dot.Script.Compiler;
+import Dot.Script.Compilation;
 import Dot.Script.Runtime;
 import Dot.Core.Files;
+import Dot.Core.Result;
 import Dot.Core.Process;
 
 namespace {
@@ -74,6 +77,22 @@ namespace {
     auto result = tool.compileProject(project.files(), directory);
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     return std::move(*result);
+  }
+
+  auto awaitJob(CompilationJob& job) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+
+    while (true) {
+      auto ready = job.ready();
+      REQUIRE(ready);
+
+      if (*ready) {
+        return;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
   }
 
   auto run(const CompiledProgram& program, std::string_view entry = "main.js") -> std::string {
@@ -474,4 +493,119 @@ TEST_CASE("compiler_extensionless_mts_default_types_and_ambiguous_sources_are_ch
   CHECK(run(program) == "42");
   project.write("scripts/value.ts", "export default function value():number{return 99;}");
   CHECK_FALSE(tool.compileProject(project.files()));
+}
+
+TEST_CASE("compiler.background_job_owns_exact_source_and_requires_owner_take_once") {
+  Project project;
+  project.write("scripts/main.ts", "export function run(){return 42;}");
+  const auto generations = compilerGenerations();
+  const auto resources = Dot::Core::processResources();
+
+  {
+    auto tool = compiler();
+    auto snapshot = tool.captureProject(project.files()).value();
+    auto job = CompilationJob::begin(tool, snapshot).value();
+    project.write("scripts/main.ts", "export function run(){return 99;}");
+    auto rejected = std::async(std::launch::async,
+                               [&] { return !job.ready() && !job.source() && !job.take(); });
+    CHECK(rejected.get());
+    CHECK(job.source()->equals(snapshot));
+    auto moved = std::move(job);
+    CHECK_FALSE(job.ready());
+    CHECK_FALSE(job.source());
+    CHECK_FALSE(job.take());
+    job.requestStop();
+    awaitJob(moved);
+    auto result = moved.take();
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    CHECK(run(*result) == "42");
+    CHECK(result->source()->equals(snapshot));
+    CHECK_FALSE(result->source()->equals(tool.captureProject(project.files()).value()));
+    CHECK(moved.ready().value());
+    CHECK_FALSE(moved.take());
+    auto owned = std::move(snapshot);
+    CHECK_FALSE(CompilationJob::begin(tool, snapshot));
+    CHECK(owned.equals(result->source().value()));
+  }
+
+  CHECK(compilerGenerations() == generations);
+  CHECK(Dot::Core::processResources().children == resources.children);
+  CHECK(Dot::Core::processResources().handles == resources.handles);
+}
+
+TEST_CASE("compiler.background_failure_and_cancel_reap_process_and_release_generation") {
+  Project project;
+  const auto generations = compilerGenerations();
+  const auto resources = Dot::Core::processResources();
+  project.write("scripts/main.ts", "export const broken:number='bad';");
+
+  {
+    auto tool = compiler();
+    auto job = CompilationJob::begin(tool, tool.captureProject(project.files()).value()).value();
+    awaitJob(job);
+    auto failed = job.take();
+    REQUIRE_FALSE(failed);
+    CHECK(failed.error().message.find("TS2322") != std::string::npos);
+  }
+
+  project.write("scripts/main.ts", "sleep");
+  auto tool = compiler({}, DOT_COMPILER_FIXTURE);
+
+  for (int iteration = 0; iteration < 3; ++iteration) {
+    auto job = CompilationJob::begin(tool, tool.captureProject(project.files()).value()).value();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+
+    while (Dot::Core::processResources().children == resources.children) {
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      REQUIRE_FALSE(job.ready().value());
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    auto pending = job.take();
+    REQUIRE_FALSE(pending);
+    CHECK(pending.error().code == Dot::Core::ErrorCode::Unavailable);
+
+    if (iteration == 0) {
+      job.requestStop();
+      awaitJob(job);
+      auto cancelled = job.take();
+      REQUIRE_FALSE(cancelled);
+      CHECK(cancelled.error().code == Dot::Core::ErrorCode::Unavailable);
+    } else if (iteration == 1) {
+      auto destroyed
+          = std::async(std::launch::async, [owned = std::move(job)] { return !owned.ready(); });
+      CHECK(destroyed.get());
+    } else {
+      project.write("scripts/main.ts", "export function run(){return 42;}");
+      auto replacementTool = compiler();
+      auto replacement
+          = CompilationJob::begin(replacementTool,
+                                  replacementTool.captureProject(project.files()).value())
+                .value();
+      job = std::move(replacement);
+      CHECK_FALSE(replacement.ready());
+      awaitJob(job);
+      auto result = job.take();
+      REQUIRE(result);
+      CHECK(run(*result) == "42");
+    }
+
+    CHECK(compilerGenerations() == generations);
+    CHECK(Dot::Core::processResources().children == resources.children);
+    CHECK(Dot::Core::processResources().handles == resources.handles);
+  }
+}
+
+TEST_CASE("compiler.published_import_does_not_claim_source_provenance") {
+  Project project;
+  project.write("scripts/main.ts", "export function run(){return 42;}");
+  auto program = compile(compiler(), project);
+  REQUIRE(program.source());
+  auto published = program.publish(project.files(), "published").value();
+  auto imported = CompiledProgram::loadPublished(published).value();
+  CHECK_FALSE(imported.source());
+  CHECK(run(imported) == "42");
+  auto moved = std::move(program);
+  CHECK_FALSE(program.source());
+  CHECK(moved.source().has_value());
 }
