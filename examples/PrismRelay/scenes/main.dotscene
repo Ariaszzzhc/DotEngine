@@ -414,6 +414,7 @@
         "enabled": true,
         "properties": {
           "runSpeed": 6,
+          "uiFontSize": 20,
           "walkSpeed": 3.2
         },
         "source": "player.ts"

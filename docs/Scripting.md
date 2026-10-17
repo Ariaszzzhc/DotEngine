@@ -1069,3 +1069,12 @@ These three operations mutate native state and are unavailable during read-only
 constructor/reload preparation. Surviving handles keep their scope; removed IDs
 stay stale. See [native contracts](Scenes.md#native-hierarchy-editing) for limits
 and shared-parent behavior. Grouping does not provide linked instances or prefabs.
+
+
+## Native game text
+
+`dot:engine` supplies the scene-local `hud` service: `label`, `snapshot`, `set`,
+`remove` and `clear`. Labels use normalized viewport rectangles and native text
+rasterization/composition in both Play and exported games. Constructors/migration
+may inspect but cannot mutate them. Scene replacement starts a fresh HUD; game-wide
+save data is independent. See [text, fonts, limits and product controls](GameUi.md).

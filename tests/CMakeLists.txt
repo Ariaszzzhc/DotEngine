@@ -54,6 +54,7 @@ add_executable(DotUnitTests
     SceneFlowTests.cpp
     GameStateTests.cpp
     GameDataTests.cpp
+    HudTests.cpp
     SceneAnimatorTests.cpp
     AnimationTransitionTests.cpp
     SkinTests.cpp
@@ -102,6 +103,7 @@ add_executable(DotTests
     MaterialDocumentTests.cpp
     PreviewWorkerTests.cpp
     InputHostTests.cpp
+    TextRasterTests.cpp
     PhysicsHostTests.cpp
     AudioHostTests.cpp
     AssetTests.cpp
@@ -138,6 +140,7 @@ add_executable(DotTests
     ScriptSourceTests.cpp
     SceneHostTests.cpp
 )
+target_compile_definitions(DotTests PRIVATE DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
 target_compile_definitions(DotTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
@@ -172,7 +175,7 @@ add_test(NAME editor.invalid_argument COMMAND DotEditor --invalid)
 set_tests_properties(runtime.invalid_argument editor.invalid_argument PROPERTIES
     WILL_FAIL TRUE TIMEOUT 15 LABELS "integration")
 
-add_executable(DotGraphicsTests main.cpp FrameProfilingGpuTests.cpp SceneSkinGpuTests.cpp SkinGpuTests.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
+add_executable(DotGraphicsTests main.cpp TextGpuTests.cpp FrameProfilingGpuTests.cpp SceneSkinGpuTests.cpp SkinGpuTests.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
 target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
@@ -204,6 +207,7 @@ dotDiscoverTests(DotExportTests LABELS "integration;process;compiler" PROPERTIES
 add_executable(DotExampleTests main.cpp ExampleTests.cpp ShoulderCameraTests.cpp)
 target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotExampleTests PRIVATE
+    DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
     DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
     DOT_EXAMPLE_SOURCE="${CMAKE_SOURCE_DIR}/examples/PrismRelay"
     DOT_LAB_SOURCE="${CMAKE_SOURCE_DIR}/examples/FeatureLab"

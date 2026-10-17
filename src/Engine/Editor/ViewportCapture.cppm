@@ -21,6 +21,7 @@ export namespace Dot::Editor {
     ViewportMode mode{ViewportMode::Editor};
     bool transform{};
     bool animation{};
+    std::uint64_t hudRevision{};
     auto operator==(const CaptureContext&) const -> bool = default;
   };
 

@@ -24,6 +24,7 @@ import Dot.Assets.Material;
 import Dot.Assets.Mesh;
 import Dot.Graphics.Geometry;
 import Dot.Graphics.Image;
+import Dot.Graphics.Text;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -186,6 +187,97 @@ export class Observer extends ScriptComponent {
     REQUIRE(fixture.project.saveStartup(scene));
   }
 }  // namespace
+
+TEST_CASE("prism.hud_feedback_is_native_scoped_and_preparation_cannot_publish_labels") {
+  Fixture f;
+  REQUIRE(f.project.files()->writeTextAtomic("scripts/ui-guard.ts", R"ts(
+import {hud, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
+function preparing(): void {
+  hud.snapshot();
+  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear()]) {
+    let denied = false;
+    try { attempt(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
+    if (!denied) { throw Error('HUD write escaped preparation guard'); }
+  }
+}
+export class UiGuard extends ScriptComponent {
+  constructor(context: ScriptContext) { super(context); preparing(); }
+  onStart(): void {
+    const label = hud.label({text: 'Owned'});
+    const next = hud.label();
+    label.position.x = .3;
+    if (next.position.x !== .02) { throw Error('HUD label defaults alias'); }
+    hud.set('temporary', label);
+    hud.remove('temporary');
+  }
+}
+)ts"));
+  auto authoring = f.project.loadStartup().value();
+  const auto guard = authoring.createEntity("UI guard").value();
+  REQUIRE(authoring.setScript(guard, World::ScriptComponent{"ui-guard.ts", "UiGuard"}));
+  REQUIRE(f.project.saveStartup(authoring));
+  auto session = f.session();
+  report(session.start());
+  auto old = session.hud().value();
+  const auto initial = old.snapshot().value();
+  REQUIRE(initial.labels.size() == 2);
+  CHECK(initial.labels.front().key == "checkpoint");
+  CHECK(initial.labels.back().key == "controls");
+  const std::filesystem::path fontPath{DOT_EDITOR_FONT};
+  auto fontFiles = Core::FileSystem::open(fontPath.parent_path()).value();
+  auto fontBytes = fontFiles.readBytes(fontPath.filename(), 32 * 1024 * 1024).value();
+  auto font = Graphics::TextFont::create(fontBytes).value();
+
+  for (const auto [width, height] :
+       std::array<std::pair<unsigned, unsigned>, 3>{{{800, 480}, {1280, 800}, {2560, 1600}}}) {
+    for (const auto size : {20.F, 22.F}) {
+      for (const auto& layer : initial.labels) {
+        CAPTURE(width);
+        CAPTURE(height);
+        CAPTURE(size);
+        CAPTURE(layer.key);
+        auto label = layer.value;
+        label.fontSize = size;
+        auto raster = font.rasterize(
+            label, static_cast<unsigned>(label.size.x * static_cast<float>(width)),
+            static_cast<unsigned>(label.size.y * static_cast<float>(height)), height);
+        REQUIRE_MESSAGE(raster, (raster ? "" : raster.error().message));
+        CHECK_FALSE(raster->overflow);
+      }
+    }
+  }
+
+  Driver driver(session);
+  driver.publish({Platform::Key::F7});
+  report(session.update(.001));
+  CHECK(old.snapshot()->labels.front().value.text.starts_with("Checkpoint unavailable."));
+  auto request = session.requestScene("scenes/main.dotscene").value();
+  report(session.update(0));
+  report(Tests::awaitScene(session, request));
+  REQUIRE(session.sceneRequest(request)->committed);
+  CHECK(session.hud()->snapshot()->scope != initial.scope);
+  CHECK_FALSE(old.perform(R"({"command":"clear"})"));
+  CHECK(old.snapshot()->labels.front().value.text.starts_with("Checkpoint unavailable."));
+  auto current = session.hud().value();
+  REQUIRE(current.snapshot()->labels.size() == 2);
+  CHECK(current.snapshot()->labels.front().value.text.starts_with("F6 saves"));
+  auto player = Project::PlayerControl::create(session).value();
+  CHECK_FALSE(player.perform(Json{
+      {"command", "hud"},
+      {"scope", std::to_string(initial.scope)},
+      {"value",
+       {{"command", "clear"}}}}.dump()));
+  auto result = player.perform(Json{
+      {"command", "hud"},
+      {"scope", std::to_string(current.snapshot()->scope)},
+      {"value",
+       {{"command", "snapshot"}}}}.dump());
+  REQUIRE(result);
+  CHECK(Json::parse(*result)["result"]["labels"].size() == 2);
+  report(session.close());
+  CHECK_FALSE(current.perform(R"({"command":"clear"})"));
+  CHECK(current.snapshot()->labels.size() == 2);
+}
 
 TEST_CASE("prism.character_moves_relative_to_acknowledged_camera_and_blocks_at_walls") {
   Fixture fixture;

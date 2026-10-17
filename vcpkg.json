@@ -12,6 +12,7 @@
     "entt",
     "miniaudio",
     "dot-editor-font",
+    "freetype",
     {
       "name": "imgui",
       "default-features": false,

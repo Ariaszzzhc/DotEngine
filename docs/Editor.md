@@ -1190,13 +1190,14 @@ visibility and recovery of the original pixels after the Docking layout settles.
 
 File → Save viewport PNG captures the actual completed scene render target, including
 its current game/editor camera and material preview, without rerendering another view.
-The PNG contains scene pixels only, excluding editor panels and transform handles.
+The PNG contains scene pixels and running native HUD labels, excluding editor
+panels and transform handles.
 Pixels are frozen before SDL opens the native save dialog, so Play may continue while
 choosing a destination. Save captured PNG retries a retained image; Discard viewport
 capture releases it. Native cancellation also releases the image.
 
 File → Save viewport PNG 捕获实际完成的场景渲染目标，保留当前游戏/编辑相机与材质预览，
-不另行渲染其他视角。PNG 仅含场景像素，不含编辑器面板和变换手柄。打开 SDL 系统保存
+不另行渲染其他视角。PNG 包含场景像素与运行中的原生 HUD 文字，不含编辑器面板和变换手柄。打开 SDL 系统保存
 对话框前固定像素，因此选择目标期间 Play 可以继续。Save captured PNG 可重试保留的图像；
 Discard viewport capture 和系统取消均释放图像。
 
@@ -1215,12 +1216,14 @@ fields fail. Capture requires the current authoring revision and queues a new fr
 `workspace.capture.state` before saving: `queued` acknowledges the request only;
 `ready` means owned pixels exist. The next native render iteration resolves the request;
 a hidden/deferred/failed viewport or changed scene/revision/view mode/Play session
-fails rather than exporting an older frame. At most one queued/ready/saving image is retained.
+or changed HUD revision fails rather than exporting an older frame. At most one
+queued/ready/saving image is retained.
 Finish or discard it before requesting another. IDs are canonical decimal strings,
 monotonically increasing for this workspace; stale IDs cannot save/discard newer images.
 
 `workspace.capture.frame` records the actual frame serial, authoring revision, scene
-scope, Play or animation-preview session (zero otherwise), Play frame (zero outside Play),
+scope, Play or animation-preview session (zero otherwise), Play frame and scene-local
+hudRevision (zero outside Play),
 mode/source, pixel dimensions, column-major
 view-projection matrix and material-preview flag. These describe a completed capture
 only in `ready`/`saving`/`saved`; queued metadata describes the requested context and prior serial.
@@ -1927,6 +1930,15 @@ The live `game-data` operation and GUI share the strict product implementation.
 See [protocol, lifecycle and examples](GameState.md#product-protocol-and-editor).
 Opening/focusing this docked panel uses `{"command":"show-pane","pane":"game-data"}`.
 State survives in-game scene replacement while authoring data remains independent.
+
+Scene-local game text is controlled by the same native service as scripts:
+`{"command":"hud","session":"1","scope":"83","value":{"command":"snapshot"}}`.
+Use current session/scope IDs from inspect-play. The inner set/remove/clear operations
+change live UI without document history or dirty changes. Strict label fields,
+retirement and read-only phases are described in [native game text](GameUi.md).
+`workspace.view.hudText` reports textureBytes, rasterizations and overflow keys;
+capture frame hudRevision proves which completed UI model supplied the frozen pixels.
+Stopped authoring and animation preview contain no running HUD.
 
 Terminal close retires the private control directory, so a supervising agent must
 verify the owned editor process exits rather than waiting indefinitely for a response

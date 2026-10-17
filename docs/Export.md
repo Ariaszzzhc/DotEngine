@@ -103,7 +103,9 @@ copying. Operating-system libraries and graphics/audio drivers remain system
 requirements. Packaging targets the build's native platform, with no cross-build
 or cross-platform execution claim.
 
-`Dot.Project.GameExport` provides RuntimeKit::open/publish and exportGame. Runtime
+`Dot.Project.GameExport` provides RuntimeKit::open/publish and exportGame. The kit
+requires EngineSans.ttf alongside its executable and carries its OFL notice;
+native text never falls back to system fonts. Runtime
 metadata validates version, native platform and executable name, portable sorted
 unique records and directory aliases, exact tree membership/size and executable
 permissions. Defaults bound a kit to 512 files, 512 MiB each, 1 GiB total, 1024
@@ -216,6 +218,7 @@ Commands use strict complete objects with no unknown fields:
 | input | scope, value | Bounded frames through the shared `Dot.Platform.AgentInput` implementation |
 | cancel-input | scope | Schedule one release frame for an active input request |
 | game-data | value | Existing strict GameData protocol, shared with scripts/editor |
+| hud | scope, value | Scene-local strict text operations, shared with scripts/editor |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
 | scene-status | request | Retained actual replacement result |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |
@@ -263,4 +266,11 @@ work. Scene rehydration, script/VM/native service setup, activation and non-audi
 retirement still run on the owner and may delay rendering/replies. Native profiles
 retain actual fixed-time drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
 validation, ownership and cancellation; this does not complete background streaming
-or game-specific checkpoint restoration/feedback.
+or broader game-specific restoration. Prism Relay supplies explicit checkpoints
+and native text feedback through [the shared HUD layer](GameUi.md).
+
+Native inspection also exposes `hudText.textureBytes`, `rasterizations`, `overflow`,
+`presentedScope` and `presentedRevision`. The latter two advance only after actual
+surface presentation; a successful HUD mutation response alone proves no pixels.
+Scope changes retire the previous text service. Native text uses the same post-tone-
+mapping path as editor capture and offscreen rendering, independently of scene exposure.

@@ -31,6 +31,11 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid viewport capture context");
     }
 
+    if ((context.hudRevision && context.mode != ViewportMode::Play)
+        || context.hudRevision == std::numeric_limits<std::uint64_t>::max()) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid capture HUD revision");
+    }
+
     m_stats = {m_stats.id + 1, CaptureState::Queued, {context, after}, {}};
     return m_stats.id;
   }

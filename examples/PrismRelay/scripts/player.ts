@@ -1,4 +1,4 @@
-import {audio, Entity, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, hud, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
 import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from './progress';
@@ -6,6 +6,7 @@ import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from '.
 interface Settings {
   walkSpeed: number;
   runSpeed: number;
+  uiFontSize: number;
 }
 
 interface RuntimeState {
@@ -46,8 +47,11 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         || model.parent?.id.value !== this.self.id.value || !this.self.character
         || !Number.isFinite(this.properties.walkSpeed) || this.properties.walkSpeed <= 0
         || !Number.isFinite(this.properties.runSpeed) || this.properties.runSpeed > 12
-        || this.properties.runSpeed < this.properties.walkSpeed) {
-      throw Error('Prism Relay requires its authored character, camera, model and bounded speeds');
+        || this.properties.runSpeed < this.properties.walkSpeed
+        || !Number.isFinite(this.properties.uiFontSize) || this.properties.uiFontSize < 8
+        || this.properties.uiFontSize > 64) {
+      throw Error(
+          'Prism Relay requires its authored character, camera, model and valid movement/UI settings');
     }
 
     this.#camera = new ShoulderCamera(camera, this.self.id);
@@ -62,7 +66,13 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#model.playAnimation(0, true);
     this.#camera.update(this.self.characterState.position, 0);
     this.listen();
-    progressStatus('F6 saves a grounded checkpoint; F7 restores it');
+    hud.set('controls', hud.label({
+      text:
+          'PRISM RELAY | WASD move | Shift sprint | Space jump | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint',
+      size: {x: .96, y: .14},
+      fontSize: this.properties.uiFontSize
+    }));
+    progressStatus('F6 saves a grounded checkpoint; F7 restores it', this.properties.uiFontSize);
   }
 
   private edges(frame: InputFrame): void {
@@ -175,7 +185,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
           progressMessage = 'Checkpoint saved';
         }
       } catch (error) {
-        progressFailure(error);
+        progressFailure(error, this.properties.uiFontSize);
       }
     }
 
@@ -189,7 +199,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.animate();
 
     if (progressMessage !== null) {
-      progressStatus(progressMessage);
+      progressStatus(progressMessage, this.properties.uiFontSize);
     }
   }
 

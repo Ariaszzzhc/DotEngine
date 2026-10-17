@@ -118,7 +118,8 @@ namespace Dot::Project {
         auto name = record["path"].get<std::string>();
 
         if (!Core::isPortableRelativePath(name) || name == "runtime.json"
-            || !(name == executable || name.starts_with("lib/") || name.starts_with("licenses/")
+            || !(name == executable || name == "EngineSans.ttf" || name.starts_with("lib/")
+                 || name.starts_with("licenses/")
 #if defined(_WIN32)
                  || (path(name).filename() == path(name) && fold(name).ends_with(".dll"))
 #endif
@@ -147,8 +148,9 @@ namespace Dot::Project {
         }
       }
 
-      if (!required.contains(std::string(executable))) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Runtime executable is missing");
+      if (!required.contains(std::string(executable)) || !required.contains("EngineSans.ttf")) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Runtime executable or UI font is missing");
       }
 
       std::unordered_set<std::string> aliases;

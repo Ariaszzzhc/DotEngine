@@ -1714,7 +1714,8 @@ namespace Dot::Graphics {
   }
 
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
-                             Math::Vec4 clear, SceneView camera) -> Core::Result<Image> {
+                             Math::Vec4 clear, SceneView camera, std::span<const ScreenDraw> screen)
+      -> Core::Result<Image> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -1743,11 +1744,12 @@ namespace Dot::Graphics {
       return std::unexpected(frame.error());
     }
 
-    return m_impl->renderer->renderMeshes(frame->draws, frame->camera, width, height, clear);
+    return m_impl->renderer->renderMeshes(frame->draws, frame->camera, width, height, clear,
+                                          screen);
   }
 
-  auto SceneRenderer::present(const World::Scene& scene, Math::Vec4 clear, SceneView camera)
-      -> Core::Result<PresentResult> {
+  auto SceneRenderer::present(const World::Scene& scene, Math::Vec4 clear, SceneView camera,
+                              std::span<const ScreenDraw> screen) -> Core::Result<PresentResult> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -1781,11 +1783,12 @@ namespace Dot::Graphics {
       return std::unexpected(frame.error());
     }
 
-    return m_impl->renderer->presentMeshes(frame->draws, frame->camera, clear);
+    return m_impl->renderer->presentMeshes(frame->draws, frame->camera, clear, screen);
   }
 
   auto SceneRenderer::renderInto(const World::Scene& scene, RenderTarget& target, Math::Vec4 clear,
-                                 SceneView camera) -> Core::Result<void> {
+                                 SceneView camera, std::span<const ScreenDraw> screen)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
     }
@@ -1815,7 +1818,7 @@ namespace Dot::Graphics {
       return std::unexpected(frame.error());
     }
 
-    return m_impl->renderer->renderMeshesInto(target, frame->draws, frame->camera, clear);
+    return m_impl->renderer->renderMeshesInto(target, frame->draws, frame->camera, clear, screen);
   }
 
   auto SceneRenderer::pick(const World::Scene& scene, std::uint32_t width, std::uint32_t height,

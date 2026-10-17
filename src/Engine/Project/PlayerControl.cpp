@@ -182,6 +182,27 @@ namespace Dot::Project {
                        : std::unexpected(encoded.error());
       }
 
+      if (command == "hud") {
+        Codec::requireFields(value, {"command", "scope", "value"});
+        const auto inner = value["value"].at("command").get<std::string>();
+
+        if (Codec::id(value["scope"]) != m_impl->m_scope
+            || ((m_impl->m_closing || stats->state != SessionState::Running)
+                && inner != "snapshot")) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "HUD requires its current running scope");
+        }
+
+        auto hud = m_impl->m_session->hud();
+        effects = inner != "snapshot";
+        auto result = hud ? hud->perform(value["value"].dump())
+                          : Core::Result<std::string>{std::unexpected(hud.error())};
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
+      }
+
       if (command == "game-data") {
         Codec::requireFields(value, {"command", "value"});
         const auto inner = value["value"].at("command").get<std::string>();

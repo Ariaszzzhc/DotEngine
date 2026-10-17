@@ -22,6 +22,7 @@ export import Dot.Script.SceneScripts;
 export import Dot.Script.InputSource;
 export import Dot.Script.SceneFlow;
 export import Dot.Script.GameData;
+export import Dot.Script.Hud;
 export import Dot.Script.PhysicsSource;
 export import Dot.Audio.SceneAudio;
 
@@ -126,6 +127,9 @@ export namespace Dot::Project {
     /** Owned game-wide control handle; close/fault/destruction retires writes.
      * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
+    /** Current scene-local UI; reacquire after replacement. Retained handles
+     * become read-only after retirement. 当前场景 UI，替换后须重新获取；退役句柄仅可读。 */
+    [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
     /** Queue replacement at the next variable boundary with no retired audio. Acceptance is
      * not completion; query the retained request result. Prepare failures keep the
      * old scene running. A committed stop/start failure faults the new session.

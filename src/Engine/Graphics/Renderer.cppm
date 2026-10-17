@@ -359,6 +359,19 @@ export namespace Dot::Graphics {
 
   class EnvironmentBake;
 
+  /** Display-RGB/straight-alpha texture in a normalized top-left rectangle.
+   * Draw after tone mapping, independent of scene exposure/depth. At most 32
+   * ordered layers; textures must belong to this renderer and use Linear storage
+   * (their bytes already encode display RGB). Owned handles live through submission.
+   * 显示 RGB/直通 alpha 贴图的左上归一化矩形；色调映射后绘制，不受场景曝光/深度影响。
+   * 最多 32 个有序层，贴图须属于本渲染器并使用 Linear 存储（字节已编码显示 RGB）。
+   * 拥有的句柄存活至提交完成。 */
+  struct ScreenDraw {
+    Texture texture;
+    Math::Vec2 position;
+    Math::Vec2 size;
+  };
+
   /** Immutable GPU radiance/diffuse/specular cube maps and correlated-Smith GGX
    * split-sum BRDF LUT. Diffuse stores irradiance/pi; specular levels map linear
    * perceptual roughness 0..1. Shared copies count once; queries require the owner
@@ -726,7 +739,9 @@ export namespace Dot::Graphics {
      * 绘制提交后 GPU 失败使目标故障，须新建目标。 */
     [[nodiscard]] auto renderMeshesInto(RenderTarget& target, std::span<const MeshDraw> draws,
                                         const Math::Mat4& viewProjection,
-                                        Math::Vec4 clear = {0, 0, 0, 1}) -> Core::Result<void>;
+                                        Math::Vec4 clear = {0, 0, 0, 1},
+                                        std::span<const ScreenDraw> screen = {})
+        -> Core::Result<void>;
     /** Diagnostic/export readback only; copy/map failures return errors without
      * changing the rendered content.
      * Targets from another renderer and uninitialized/faulted frames are rejected.
@@ -816,8 +831,8 @@ export namespace Dot::Graphics {
      */
     [[nodiscard]] auto renderMeshes(std::span<const MeshDraw> draws,
                                     const Math::Mat4& viewProjection, std::uint32_t width,
-                                    std::uint32_t height, Math::Vec4 clear = {0, 0, 0, 1})
-        -> Core::Result<Image>;
+                                    std::uint32_t height, Math::Vec4 clear = {0, 0, 0, 1},
+                                    std::span<const ScreenDraw> screen = {}) -> Core::Result<Image>;
     /** Nearest covered draw at top-left UV [0,1), with the same depth/backface policy.
      * A cropped 1x1 integer pass/readback leaves HDR/targets/AO images unchanged.
      * No hit is an empty optional, not an error; indices refer to the input span.
@@ -833,7 +848,8 @@ export namespace Dot::Graphics {
      * 1 微秒界面时差；读回缩放须有限 [0.25,8]，呈现独立采用原生 DPI。 */
     [[nodiscard]] auto presentMeshes(std::span<const MeshDraw> draws,
                                      const Math::Mat4& viewProjection,
-                                     Math::Vec4 clear = {0, 0, 0, 1})
+                                     Math::Vec4 clear = {0, 0, 0, 1},
+                                     std::span<const ScreenDraw> screen = {})
         -> Core::Result<PresentResult>;
 
   private:

@@ -843,6 +843,8 @@ namespace Dot::Graphics {
     std::optional<EnvironmentLighting> environment;
     wgpu::RenderPipeline postPipeline;
     wgpu::RenderPipeline surfacePostPipeline;
+    wgpu::RenderPipeline screenPipeline;
+    wgpu::RenderPipeline surfaceScreenPipeline;
     wgpu::Texture frameHdr;
     wgpu::Texture frameDepth;
     std::uint32_t frameWidth{};
@@ -1244,6 +1246,112 @@ namespace Dot::Graphics {
       descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
       descriptor.fragment = &fragment;
       return device.CreateRenderPipeline(&descriptor);
+    }
+
+    auto validateScreen(std::span<const ScreenDraw> layers) const -> Core::Result<void> {
+      if (layers.size() > 32) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Screen layers exceed 32");
+      }
+
+      for (const auto& layer : layers) {
+        const auto p = layer.position;
+        const auto s = layer.size;
+
+        if (!layer.texture.m_impl || layer.texture.m_impl->owner != diagnostics
+            || layer.texture.m_impl->info.options.colorSpace != ColorSpace::Linear
+            || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(s.x)
+            || !std::isfinite(s.y) || p.x < 0 || p.y < 0 || s.x <= 0 || s.y <= 0 || p.x + s.x > 1
+            || p.y + s.y > 1) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid screen layer texture/rectangle");
+        }
+      }
+
+      return {};
+    }
+
+    auto encodeScreen(const wgpu::CommandEncoder& encoder, const wgpu::Texture& output,
+                      std::span<const ScreenDraw> layers) -> void {
+      if (layers.empty()) {
+        return;
+      }
+
+      const auto format = output.GetFormat();
+      auto& selected
+          = format == wgpu::TextureFormat::RGBA8Unorm ? screenPipeline : surfaceScreenPipeline;
+
+      if (!selected) {
+        wgpu::ShaderSourceWGSL source;
+        source.code = Detail::screenShader;
+        wgpu::ShaderModuleDescriptor shaderDescriptor;
+        shaderDescriptor.nextInChain = &source;
+        auto shader = device.CreateShaderModule(&shaderDescriptor);
+        wgpu::BlendState blend;
+        blend.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
+        blend.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+        blend.alpha.srcFactor = wgpu::BlendFactor::One;
+        blend.alpha.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
+        wgpu::ColorTargetState target;
+        target.format = format;
+        target.blend = &blend;
+        wgpu::FragmentState fragment;
+        fragment.module = shader;
+        fragment.entryPoint = "fragmentMain";
+        fragment.targetCount = 1;
+        fragment.targets = &target;
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = shader;
+        descriptor.vertex.entryPoint = "vertexMain";
+        descriptor.fragment = &fragment;
+        descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+        selected = device.CreateRenderPipeline(&descriptor);
+      }
+
+      wgpu::RenderPassColorAttachment color;
+      color.view = output.CreateView();
+      color.loadOp = wgpu::LoadOp::Load;
+      color.storeOp = wgpu::StoreOp::Store;
+      wgpu::RenderPassDescriptor descriptor;
+      descriptor.colorAttachmentCount = 1;
+      descriptor.colorAttachments = &color;
+      auto pass = encoder.BeginRenderPass(&descriptor);
+      pass.SetPipeline(selected);
+
+      for (const auto& layer : layers) {
+        struct Settings {
+          Math::Vec4 rect;
+          std::uint32_t srgb;
+          std::uint32_t padding[3]{};
+        };
+
+        const Settings settings{{layer.position.x, layer.position.y, layer.size.x, layer.size.y},
+                                (format == wgpu::TextureFormat::RGBA8UnormSrgb
+                                 || format == wgpu::TextureFormat::BGRA8UnormSrgb)
+                                    ? 1U
+                                    : 0U};
+        wgpu::BufferDescriptor bufferDescriptor;
+        bufferDescriptor.size = sizeof(settings);
+        bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+        auto buffer = device.CreateBuffer(&bufferDescriptor);
+        queue.WriteBuffer(buffer, 0, &settings, sizeof(settings));
+        std::array<wgpu::BindGroupEntry, 3> entries{};
+        entries[0].binding = 0;
+        entries[0].textureView = layer.texture.m_impl->view;
+        entries[1].binding = 1;
+        entries[1].sampler = layer.texture.m_impl->sampler;
+        entries[2].binding = 2;
+        entries[2].buffer = buffer;
+        entries[2].size = sizeof(settings);
+        wgpu::BindGroupDescriptor groupDescriptor;
+        groupDescriptor.layout = selected.GetBindGroupLayout(0);
+        groupDescriptor.entryCount = entries.size();
+        groupDescriptor.entries = entries.data();
+        auto group = device.CreateBindGroup(&groupDescriptor);
+        pass.SetBindGroup(0, group);
+        pass.Draw(6);
+      }
+
+      pass.End();
     }
 
     auto shadowPlan(const Lighting& lighting) const -> Core::Result<ShadowAtlas> {
@@ -3334,7 +3442,8 @@ namespace Dot::Graphics {
 
     auto encodeMeshes(const wgpu::Texture& target, std::span<const PreparedDraw> draws,
                       const Math::Mat4& viewProjection, std::uint32_t width, std::uint32_t height,
-                      Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {})
+                      Math::Vec4 clear, wgpu::Texture hdr = {}, wgpu::TextureView depthView = {},
+                      std::span<const ScreenDraw> screen = {})
         -> Core::Result<wgpu::CommandEncoder> {
       if (m_profiler) {
         m_profiler->encoding(width, height);
@@ -3584,6 +3693,7 @@ namespace Dot::Graphics {
           depthView, shadowEncoder, surfaceTime.querySet ? &surfaceTime : nullptr);
       auto postTime = profileWrites(Detail::ProfilePass::Post);
       encodePost(encoder, hdr, target, postTime.querySet ? &postTime : nullptr);
+      encodeScreen(encoder, target, screen);
 
       if (m_profiler) {
         m_profiler->resolve(encoder);
@@ -5610,8 +5720,8 @@ namespace Dot::Graphics {
   }
 
   auto Renderer::renderMeshesInto(RenderTarget& target, std::span<const MeshDraw> draws,
-                                  const Math::Mat4& viewProjection, Math::Vec4 clear)
-      -> Core::Result<void> {
+                                  const Math::Mat4& viewProjection, Math::Vec4 clear,
+                                  std::span<const ScreenDraw> screen) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
@@ -5637,6 +5747,12 @@ namespace Dot::Graphics {
       return Core::fail(Core::ErrorCode::Unavailable, "Render target frame index exhausted");
     }
 
+    checked = m_impl->validateScreen(screen);
+
+    if (!checked) {
+      return checked;
+    }
+
     Impl::ProfileScope profile{*m_impl};
     auto prepared = m_impl->prepare(draws, viewProjection, clear);
 
@@ -5647,9 +5763,9 @@ namespace Dot::Graphics {
     profile.prepared();
 
     ErrorScope scope(m_impl->instance, m_impl->device);
-    auto encoder
-        = m_impl->encodeMeshes(target.m_impl->color, *prepared, viewProjection, info->width,
-                               info->height, clear, target.m_impl->hdr, target.m_impl->depthView);
+    auto encoder = m_impl->encodeMeshes(target.m_impl->color, *prepared, viewProjection,
+                                        info->width, info->height, clear, target.m_impl->hdr,
+                                        target.m_impl->depthView, screen);
 
     if (!encoder) {
       return std::unexpected(encoder.error());
@@ -6160,13 +6276,19 @@ namespace Dot::Graphics {
   }
 
   auto Renderer::renderMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
-                              std::uint32_t width, std::uint32_t height, Math::Vec4 clear)
-      -> Core::Result<Image> {
+                              std::uint32_t width, std::uint32_t height, Math::Vec4 clear,
+                              std::span<const ScreenDraw> screen) -> Core::Result<Image> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
 
     auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = m_impl->validateScreen(screen);
 
     if (!checked) {
       return std::unexpected(checked.error());
@@ -6185,7 +6307,7 @@ namespace Dot::Graphics {
         width, height,
         [&](const wgpu::Texture& texture, auto targetWidth, auto targetHeight) {
           return m_impl->encodeMeshes(texture, *prepared, viewProjection, targetWidth, targetHeight,
-                                      clear);
+                                      clear, {}, {}, screen);
         },
         {}, wgpu::TextureFormat::RGBA8Unorm, 0, 0, true);
 
@@ -6304,12 +6426,19 @@ namespace Dot::Graphics {
   }
 
   auto Renderer::presentMeshes(std::span<const MeshDraw> draws, const Math::Mat4& viewProjection,
-                               Math::Vec4 clear) -> Core::Result<PresentResult> {
+                               Math::Vec4 clear, std::span<const ScreenDraw> screen)
+      -> Core::Result<PresentResult> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
 
     auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = m_impl->validateScreen(screen);
 
     if (!checked) {
       return std::unexpected(checked.error());
@@ -6326,7 +6455,8 @@ namespace Dot::Graphics {
 
     auto presented = m_impl->presentFrame(
         [&](const wgpu::Texture& texture, auto width, auto height) {
-          return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear);
+          return m_impl->encodeMeshes(texture, *prepared, viewProjection, width, height, clear, {},
+                                      {}, screen);
         },
         true);
 

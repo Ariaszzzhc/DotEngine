@@ -131,7 +131,7 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   const std::regex member(R"(^  (?:(get|set) )?([A-Za-z][A-Za-z0-9_]*)\()", std::regex::multiline);
 
   for (const auto* name : {"input", "components", "physics", "audio", "animation", "scene",
-                           "scenes", "gameState", "saves", "Entity", "ScriptComponent"}) {
+                           "scenes", "gameState", "saves", "hud", "Entity", "ScriptComponent"}) {
     const bool isClass
         = std::string_view(name) == "Entity" || std::string_view(name) == "ScriptComponent";
     const auto prefix = std::string(isClass ? "export class " : "export const ") + name;
@@ -168,7 +168,7 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
 
   const std::regex constant(R"(^export const ([A-Za-z][A-Za-z0-9_]*))", std::regex::multiline);
   const std::set<std::string> namespaces{"input", "components", "physics",   "audio", "animation",
-                                         "scene", "scenes",     "gameState", "saves"};
+                                         "scene", "scenes",     "gameState", "saves", "hud"};
 
   for (auto match = std::sregex_iterator(sdk.begin(), sdk.end(), constant);
        match != std::sregex_iterator{}; ++match) {

@@ -26,6 +26,7 @@ add_custom_command(
         "${dot_shader_source}/AmbientOcclusion.wgsl"
         "${dot_shader_source}/AmbientUnoccluded.wgsl"
         "${dot_shader_source}/Picking.wgsl"
+        "${dot_shader_source}/Screen.wgsl"
         "${PROJECT_SOURCE_DIR}/cmake/EmbedShaders.cmake"
     VERBATIM)
 add_custom_target(DotShaders DEPENDS "${dot_shader_generated}/BuiltinShaders.hpp")

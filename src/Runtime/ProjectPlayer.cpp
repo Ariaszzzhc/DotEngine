@@ -1,3 +1,5 @@
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -23,6 +25,9 @@ import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
+import Dot.Graphics.TextRenderer;
+import Dot.Graphics.Text;
+import Dot.Script.Hud;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
 import Dot.Platform.UserData;
@@ -173,6 +178,22 @@ namespace Dot::Runtime {
         return std::unexpected(sceneRenderer.error());
       }
 
+      const auto* base = SDL_GetBasePath();
+
+      if (!base) {
+        return Core::fail(Core::ErrorCode::Io,
+                          "Resolve player font directory: " + std::string(SDL_GetError()));
+      }
+
+      const auto fontRoot
+          = std::filesystem::path{std::u8string(base, base + std::char_traits<char>::length(base))};
+      auto textRenderer = Graphics::TextRenderer::create(
+          *renderer, fontRoot / (game ? "EngineSans.ttf" : "resources/EngineSans.ttf"));
+
+      if (!textRenderer) {
+        return std::unexpected(textRenderer.error());
+      }
+
       Project::GameSessionConfig sessionConfig;
       sessionConfig.progress.saves = std::move(*saves);
       sessionConfig.audioMode = Project::SessionAudio::Playback;
@@ -217,6 +238,8 @@ namespace Dot::Runtime {
 
       std::optional<std::string> lastReloadError;
       std::uint64_t lastSceneRequest{};
+      std::uint64_t presentedHudScope{};
+      std::uint64_t presentedHudRevision{};
       auto lastTitle = description->name;
       bool delayed = false;
       bool started = false;
@@ -281,6 +304,19 @@ namespace Dot::Runtime {
                     }
 
                     response["native"] = {{"focused", *focused}, {"pointerCaptured", *captured}};
+                    auto text = textRenderer->stats();
+
+                    if (!text) {
+                      return Core::fail(text.error().code,
+                                        "Inspect native text: " + text.error().message);
+                    }
+
+                    response["hudText"]
+                        = {{"textureBytes", std::to_string(text->textureBytes)},
+                           {"rasterizations", std::to_string(text->rasterizations)},
+                           {"overflow", text->overflow},
+                           {"presentedScope", std::to_string(presentedHudScope)},
+                           {"presentedRevision", std::to_string(presentedHudRevision)}};
                     return response.dump();
                   }
                 }
@@ -465,7 +501,39 @@ namespace Dot::Runtime {
           lastTitle = std::move(*name);
         }
 
-        auto shown = sceneRenderer->present(**scene).transform([](auto) {});
+        auto hud = session->hud();
+        auto state = hud ? hud->snapshot()
+                         : Core::Result<Script::HudSnapshot>{std::unexpected(hud.error())};
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        auto size = renderer->surfaceSize();
+
+        if (!size) {
+          return std::unexpected(size.error());
+        }
+
+        if (size->width <= 0 || size->height <= 0) {
+          return {};
+        }
+
+        auto screen = textRenderer->prepare(state->labels, static_cast<std::uint32_t>(size->width),
+                                            static_cast<std::uint32_t>(size->height));
+
+        if (!screen) {
+          return std::unexpected(screen.error());
+        }
+
+        auto presented = sceneRenderer->present(**scene, {0, 0, 0, 1}, {}, *screen);
+
+        if (presented && *presented == Graphics::PresentResult::Presented) {
+          presentedHudScope = state->scope;
+          presentedHudRevision = state->revision;
+        }
+
+        auto shown = presented.transform([](auto) {});
 
         if (shown && options.frames && ++gameFrames == options.frames) {
           application->stop();

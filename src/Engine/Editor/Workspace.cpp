@@ -76,6 +76,9 @@ import Dot.Project.GamePackage;
 import Dot.Project.GameExport;
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
+import Dot.Graphics.TextRenderer;
+import Dot.Graphics.Text;
+import Dot.Script.Hud;
 import Dot.Platform.Events;
 import Dot.Platform.System;
 import Dot.World.Scene;
@@ -637,6 +640,7 @@ namespace Dot::Editor {
     std::optional<Platform::Event> m_lastPointerMotion;
     std::optional<Graphics::Renderer> m_renderer;
     std::optional<Graphics::SceneRenderer> m_drawing;
+    std::optional<Graphics::TextRenderer> m_textDrawing;
     std::optional<Graphics::RenderTarget> m_target;
     std::optional<Core::Control> m_control;
     Json m_snapshot;
@@ -1810,6 +1814,20 @@ namespace Dot::Editor {
         return std::unexpected(scene.error());
       }
 
+      std::uint64_t hudRevision{};
+
+      if (publishedPlay()) {
+        auto hud = m_play->hud();
+        auto state = hud ? hud->snapshot()
+                         : Core::Result<Script::HudSnapshot>{std::unexpected(hud.error())};
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        hudRevision = state->revision;
+      }
+
       return CaptureContext{
           m_document->stats()->revision,
           (*scene)->id(),
@@ -1818,7 +1836,8 @@ namespace Dot::Editor {
           : m_editorView  ? ViewportMode::Editor
                           : ViewportMode::Game,
           m_transform.has_value(),
-          m_animationPreview.has_value()};
+          m_animationPreview.has_value(),
+          hudRevision};
     }
 
     auto captureStatus() const -> Json {
@@ -1842,6 +1861,7 @@ namespace Dot::Editor {
                 {"scene", std::to_string(frame.context.scene)},
                 {"session", std::to_string(frame.context.session)},
                 {"playFrame", std::to_string(frame.playFrame)},
+                {"hudRevision", std::to_string(frame.context.hudRevision)},
                 {"mode", modes.at(static_cast<std::size_t>(frame.context.mode))},
                 {"source", frame.context.animation                    ? "animation"
                            : frame.context.transform                  ? "transform"
@@ -4689,6 +4709,37 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "hud") {
+        Codec::requireFields(parsed, {"command", "session", "scope", "value"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "HUD requires current Play session");
+        }
+
+        auto service = m_play->hud();
+        auto state = service ? service->snapshot()
+                             : Core::Result<Script::HudSnapshot>{std::unexpected(service.error())};
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        const auto operation = parsed["value"].at("command").get<std::string>();
+
+        if (Codec::id(parsed["scope"]) != state->scope
+            || ((m_pendingClose || m_play->stats()->state != PlayState::Running)
+                && operation != "snapshot")) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "HUD requires its current running scope");
+        }
+
+        auto result = service->perform(parsed["value"].dump());
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
+      }
+
       if (command == "game-data") {
         Codec::requireFields(parsed, {"command", "session", "value"});
 
@@ -5906,6 +5957,7 @@ namespace Dot::Editor {
       const bool ready = viewportCurrent();
       auto scene = displayedScene();
       auto stats = m_renderer->visibilityStats();
+      auto text = m_textDrawing->stats();
       Json draws = nullptr;
 
       if (!stats) {
@@ -5934,6 +5986,10 @@ namespace Dot::Editor {
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
+          {"hudText", text ? Json{{"textureBytes", std::to_string(text->textureBytes)},
+                                  {"rasterizations", std::to_string(text->rasterizations)},
+                                  {"overflow", text->overflow}}
+                           : errorJson(text.error())},
           {"profiling", profileStatus()},
           {"textInput", m_renderer->guiStats().value().text},
           {"source", m_animationPreview ? "animation"
@@ -6213,7 +6269,30 @@ namespace Dot::Editor {
                                      state->player.playback.time, state->bindPose};
       }
 
-      auto drawn = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view);
+      std::vector<Graphics::TextLayer> labels;
+
+      if (publishedPlay()) {
+        auto hud = m_play->hud();
+        auto state = hud ? hud->snapshot()
+                         : Core::Result<Script::HudSnapshot>{std::unexpected(hud.error())};
+
+        if (!state) {
+          return std::unexpected(state.error());
+        }
+
+        labels = std::move(state->labels);
+      }
+
+      auto screen = m_textDrawing->prepare(labels, width, height);
+
+      if (!screen) {
+        m_previewReady = false;
+        m_previewError = screen.error().message;
+        return {};
+      }
+
+      auto drawn
+          = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view, *screen);
 
       if (drawn) {
         m_renderedView = *view;
@@ -11114,6 +11193,13 @@ namespace Dot::Editor {
       }
 
       impl->m_drawing.emplace(std::move(*drawing));
+      auto textDrawing = Graphics::TextRenderer::create(*impl->m_renderer, gui.font);
+
+      if (!textDrawing) {
+        return std::unexpected(textDrawing.error());
+      }
+
+      impl->m_textDrawing.emplace(std::move(*textDrawing));
       auto defaults = presets();
 
       if (!defaults) {

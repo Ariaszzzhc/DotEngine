@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -121,15 +122,16 @@ export namespace Dot::Graphics {
      * 可见对象共享缓存网格；加载新网格前释放当前可见场景不再引用的资源。
      */
     [[nodiscard]] auto render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
-                              Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {})
-        -> Core::Result<Image>;
+                              Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {},
+                              std::span<const ScreenDraw> screen = {}) -> Core::Result<Image>;
     [[nodiscard]] auto present(const World::Scene& scene, Math::Vec4 clear = {0, 0, 0, 1},
-                               SceneView view = {}) -> Core::Result<PresentResult>;
+                               SceneView view = {}, std::span<const ScreenDraw> screen = {})
+        -> Core::Result<PresentResult>;
     /** Render directly into a persistent GPU target without CPU readback.
      * 直接绘制到持久 GPU 目标，不进行 CPU 读回。 */
     [[nodiscard]] auto renderInto(const World::Scene& scene, RenderTarget& target,
-                                  Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {})
-        -> Core::Result<void>;
+                                  Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {},
+                                  std::span<const ScreenDraw> screen = {}) -> Core::Result<void>;
     /** GPU-visible opaque entity; selection identity never passes through floats.
      * GPU 可见不透明实体；选择身份不经过浮点数，未命中返回空 optional。 */
     [[nodiscard]] auto pick(const World::Scene& scene, std::uint32_t width, std::uint32_t height,

@@ -191,3 +191,10 @@ name/location. Loading is a deliberate game action; engine storage does not itse
 move cameras or switch scenes. The SDK auditor exercises state and filesystem APIs,
 restores its initial state and deletes its own `feature-lab-audit` demonstration slot.
 The demo's stored identity is `dotengine-feature-lab`; template instances receive new IDs.
+
+
+## Native text
+
+The ordinary SDK audit exercises `hud.label/snapshot/set/remove/clear` and leaves a
+bilingual native label in Play and exported games. It shares the game text path
+with Prism Relay; this is not an editor-only overlay or a visual layout designer.

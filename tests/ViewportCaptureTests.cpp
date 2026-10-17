@@ -131,6 +131,27 @@ TEST_CASE("viewport_capture.validates_metadata_and_recovers_after_explicit_failu
   REQUIRE(capture.complete(id, frame(), pixels()));
 }
 
+TEST_CASE("viewport_capture.hud_revision_must_match_the_completed_pixels") {
+  using namespace Dot::Editor;
+  ViewportCapture capture;
+  auto play = context;
+  play.mode = ViewportMode::Play;
+  play.session = 2;
+  play.hudRevision = 4;
+  const auto id = capture.request(play, 10).value();
+  auto value = frame();
+  value.context = play;
+  value.context.hudRevision = 3;
+  CHECK_FALSE(capture.complete(id, value, pixels()));
+  value.context.hudRevision = 4;
+  REQUIRE(capture.complete(id, value, pixels()));
+  CHECK(capture.stats().frame.context.hudRevision == 4);
+  REQUIRE(capture.discard(id));
+  play.mode = ViewportMode::Game;
+  play.session = 0;
+  CHECK_FALSE(capture.request(play, 11));
+}
+
 TEST_CASE("viewport_capture.freezes_animation_provenance_and_validates_its_context") {
   using namespace Dot::Editor;
   ViewportCapture capture;

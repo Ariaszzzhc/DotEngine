@@ -55,12 +55,14 @@ namespace {
     REQUIRE(files.writeTextAtomic(executable, "test"));
     Fs::permissions(files.root() / executable, Fs::perms::owner_all);
     REQUIRE(files.writeTextAtomic("licenses/notice.txt", "notice"));
+    REQUIRE(files.writeTextAtomic("EngineSans.ttf", "font"));
     REQUIRE(files.writeTextAtomic(
         "runtime.json",
         Json{{"version", 1},
              {"platform", platform},
              {"executable", executable},
              {"files", Json::array({{{"path", executable}, {"bytes", 4}},
+                                    {{"path", "EngineSans.ttf"}, {"bytes", 4}},
                                     {{"path", "licenses/notice.txt"}, {"bytes", 6}}})}}
             .dump()));
     return files;
@@ -81,6 +83,15 @@ TEST_CASE("runtime_kit.strict_manifest_tree_limits_and_permissions") {
   Fs::remove(files.root() / ".DS_Store");
 #endif
   auto manifest = Json::parse(original);
+  auto missingFont = manifest;
+  missingFont["files"].erase(missingFont["files"].begin() + 1);
+  REQUIRE(files.writeTextAtomic("runtime.json", missingFont.dump()));
+  Fs::remove(files.root() / "EngineSans.ttf");
+  auto absent = RuntimeKit::open(files);
+  REQUIRE_FALSE(absent);
+  CHECK(absent.error().message.find("font") != std::string::npos);
+  REQUIRE(files.writeTextAtomic("EngineSans.ttf", "font"));
+  REQUIRE(files.writeTextAtomic("runtime.json", original));
 
   std::vector<Json> invalid;
   auto changed = manifest;

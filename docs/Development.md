@@ -10900,3 +10900,120 @@ ownership/error/platform/coverage reviews pass before commit. Computer use repor
 the Mac locked; human pointer and final wrapped-panel sight acceptance remain
 outstanding. In-game feedback/menu authoring, remaining service/startup performance,
 larger production workflows, final art and the overall engine goal remain unfinished.
+
+## 2026-10-18 — Native game text and checkpoint feedback
+
+Prism Relay's real save/restore workflow now displays its controls and checkpoint
+results inside the game. Previously those results required the editor Game state
+panel or product inspection. Add a native scene-local Hud service, CPU text layout
+and renderer composition rather than implementing rendering in game scripts.
+Both examples remain ordinary editable projects; Feature Lab audits all five HUD
+SDK operations and leaves a bilingual label. Prism's authored uiFontSize defaults
+to 20 and controls both labels; the final product workflow edits it to 22.
+
+Dot.Graphics.Text owns immutable scalable Unicode font bytes and creates independent
+FreeType faces/libraries for CPU rasterization. Validate UTF-8, explicit supported
+scalar ranges, normalized rectangles, finite styles, 4096 bytes/1024 scalars per
+label and bounded glyph metrics before allocation. Word/character wrapping, LF,
+kerning, padding, straight alpha and clipping have explicit contracts. Missing
+fonts/glyphs fail; there is no system-font or question-mark substitution. This is
+horizontal text, not full shaping/bidi. Font reading/rasterization/upload remain
+synchronous. Use the existing pinned Sarasa UI SC font and OFL notice; declare the
+already-installed FreeType dependency explicitly in the pinned manifest/build.
+No new font binary or downloaded asset is committed.
+
+TextRenderer borrows the stable renderer, lazily owns at most 32 MiB font bytes and
+reuses descriptions/dimensions. Its 16 MiB logical texture limit includes old/new
+replacement peak; external retained ScreenDraw copies may retain shared textures
+separately. Failed candidates preserve the accepted cache and release unpublished
+textures. Completed CPU rasters still count when a later candidate fails. Hidden/
+removed labels prune textures; subpixel rectangles cull/report overflow without
+allocating. Fully clipped glyphs skip bitmap work, with visible loops clipped
+before blending, while every glyph is still validated.
+
+Hud retains at most 32 labels/32768 text bytes in deterministic key order, with
+owned snapshots and decimal uint64 scope/revision strings. Same-value changes are
+no-ops. Scripts and strict editor/native operations share Hud::perform; preparation
+only reads. Realm reload retains scene UI; replacement starts a fresh scope. Fault,
+Stop and close retire writes while retained handles remain readable. Game-wide
+save data remains independent. Player-control requests require the current scope;
+editor requests also require the current Play session and do not dirty authoring.
+
+Renderer ScreenDraw layers use a separate alpha pass after tone mapping, independent
+of scene depth/exposure. Offscreen readback, persistent editor targets and native
+surface presentation share it. Editor capture records hudRevision and rejects
+mismatched pixels; authoring/animation preview contain no running HUD. Native
+hudText inspection records presentedScope/presentedRevision only after actual
+presentation succeeds. A model acknowledgement alone is not rendering evidence.
+Mesh GPU timestamps exclude this pass; mesh CPU encode includes it, frontend text
+preparation lies outside that interval, and the application Render phase includes
+frontend work. These different measurements do not establish game FPS.
+
+An initial native workflow correctly reports controls overflow at the actual
+16:10 window and edited font size. Widen the template bar and provide room for two
+lines. The resulting minimum-window regression also exposes a foundation defect:
+at a small hinted size, the vertical bar extends two pixels above the nominal face
+ascender and is clipped against padding. Derive baseline and line height from
+validated actual glyph ink as well as nominal font metrics, preserving padding
+and preventing line overlap. Keep the failed evidence/diagnostic log, remove the
+temporary source logging, and verify actual template labels at 800x480, 1280x800
+and 2560x1600, using both default and edited font sizes. The earlier editor replay
+also rejects its stale selection revision; correct the replay to consume the
+product's new revision, without changing the document protocol.
+
+Seven enduring cases in existing targets cover owned/retired/moved/thread-bound
+HUD state, strict malformed input/no-ops/count/text limits, real font ownership,
+CJK/wrapping/clipping/missing glyphs, cross-thread raster copies, hinted punctuation,
+post-exposure pixels/order/invalid target preservation, texture reuse and failed
+candidate cleanup, scene-scoped SDK/player controls, and capture revision matching.
+Extend the existing runtime-kit case to remove both font entry and file and check
+an explicit missing-font error. Kit/export now require EngineSans.ttf; the built kit also carries its
+OFL notice. Structural kit fixtures use placeholder executable/font bytes;
+they are not claimed runnable. No new executable or desktop-window automatic test.
+
+Final full Debug passes 1406/1406 in 224.04s; full Release/NDEBUG passes 1406/1406 in
+32.75s. Counts are 429 unit and 977 integration; overlapping labels include 228
+compiler, 164 offscreen, 37 audio-native, 34 platform and 21 process. After explicit
+FreeType dependency declaration and whitespace review, focused Debug passes 29/29
+in 11.49s. Add final replacement-peak/oversized-box assertions that preserve cached
+resources/counters, then rerun the two existing offscreen cases in Debug/Release:
+2/2 in 1.50s and 2/2 in 0.10s. Builds/checks/products run sequentially with the
+caller's compiler/linker environment. Only arm64 macOS is executed.
+
+The final actual Release editor creates a new PrismHud project, stages the complete
+Inspector script-properties draft, applies uiFontSize 20 to 22, undoes/redoes,
+saves, closes and reopens. Live Play displays two native labels, retains exactly
+two initial rasters across 60 idle frames, reports missing-save/airborne failures,
+saves/restores a grounded checkpoint and preserves unrelated live data. Strict
+bilingual label set/remove and malformed/stale-scope rejection use product APIs.
+Frozen PNGs are inspected and match their HUD revisions with no overflow. Stop
+restores exact clean authoring; saved/stopped PNGs retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+A second Play has a fresh scope/store and no saved slot.
+
+Export from that workspace, relocate and physically hide its authoring project.
+All 115 content files / 66,212,842 bytes match the saved project; no TypeScript/map
+sources ship. The 24,049,996-byte font matches the pinned editor font, SHA-256
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7;
+its OFL notice is present. Two actual native processes prove F6 persistence/F7
+restoration across restart, airborne refusal, damaged-file pose preservation,
+exact file restoration/retry and a real scene replacement publishing a new scope.
+Every recorded HUD state catches up to actual presented scope/revision, including
+bilingual native text, with no overflow or script failures. Base labels retain
+3,266,432 logical texture bytes; removing the additional label restores that value
+without a new raster. Idle input frames reuse existing text textures.
+
+The final two editor and two native processes exit zero and retire controls.
+Authoring is physically restored, and both previous persistent checkpoint hashes
+remain unchanged. Actual binary hashes, arm64 architecture, dependency/load-command
+inspection, source hashes, raw product replies, profiles and PNGs are retained under
+ignored build/hud-review; attempt directories identify failures. Owned validation
+App/native copies and compiled helper cache are removed after inspection; editable
+projects, saves, evidence and build caches remain. No distribution archive is made.
+Formatting/whitespace and ownership/error/platform/coverage review pass before commit.
+
+Computer use still reports the Mac locked. Actual target PNG inspection and native
+presentation tokens do not establish human pointer or final wrapped-panel sight
+acceptance. Buttons/menu/layout authoring, full international text shaping, remaining
+startup/service work, larger production workflows, final art and overall engine
+readiness remain unfinished.

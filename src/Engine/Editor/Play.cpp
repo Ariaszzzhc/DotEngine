@@ -105,6 +105,12 @@ namespace Dot::Editor {
       if (data) {
         data->retire();
       }
+
+      auto hud = m_session->hud();
+
+      if (hud) {
+        hud->retire();
+      }
     }
 
     auto record(Core::Result<Script::LiveScriptReport> result) -> Core::Result<void> {
@@ -655,6 +661,17 @@ namespace Dot::Editor {
     auto checked = m_impl->check();
     return checked ? m_impl->m_session->gameData()
                    : Core::Result<Script::GameData>{std::unexpected(checked.error())};
+  }
+
+  auto PlaySession::hud() const -> Core::Result<Script::Hud> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked && m_impl->m_session ? m_impl->m_session->hud()
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Play HUD is not prepared")
+                     : std::unexpected(checked.error());
   }
 
   auto PlaySession::requestScene(std::string_view path) -> Core::Result<std::uint64_t> {

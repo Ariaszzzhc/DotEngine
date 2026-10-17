@@ -1,6 +1,7 @@
 # Build a native redistributable kit without altering caller toolchain settings.
 # 构建原生可分发运行时目录，不改变调用者的工具链设置。
 install(TARGETS DotGame RUNTIME DESTINATION . COMPONENT RuntimeKit)
+install(FILES "${DOT_EDITOR_FONT}" DESTINATION . RENAME EngineSans.ttf COMPONENT RuntimeKit)
 if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
     include(InstallRequiredSystemLibraries)

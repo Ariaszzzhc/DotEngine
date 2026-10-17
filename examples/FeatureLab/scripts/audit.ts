@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, gameState, type HostError, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameState, type HostError, hud, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -515,6 +515,19 @@ export class Audit extends ScriptComponent<{contract: string}> {
 
   onUpdate(seconds: number): void {
     ++this.#updates;
+
+    if (!this.#checked.has('hud.clear')) {
+      const label = hud.label({text: 'FEATURE LAB | native text | 原生文字'});
+      this.check('hud.label', label.position.x === .02);
+      const revision = hud.set('audit', label);
+      this.check('hud.set', revision === hud.snapshot().revision);
+      this.check('hud.snapshot', hud.snapshot().labels[0]?.value.text === label.text);
+      hud.remove('audit');
+      this.check('hud.remove', hud.snapshot().labels.length === 0);
+      hud.clear();
+      this.check('hud.clear', hud.snapshot().labels.length === 0);
+      hud.set('controls', label);
+    }
     this.check('ScriptComponent.onUpdate', super.onUpdate(seconds) === undefined);
 
     if (!this.#checked.has('animation.failedControl')) {

@@ -87,6 +87,7 @@ namespace Dot::Project {
     std::optional<Script::CompiledProgram> m_program;
     std::optional<Script::SceneFlow> m_flow;
     std::optional<Script::GameData> m_progress;
+    std::optional<Script::Hud> m_hud;
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
@@ -118,6 +119,10 @@ namespace Dot::Project {
 
       if (m_progress) {
         m_progress->retire();
+      }
+
+      if (m_hud) {
+        m_hud->retire();
       }
     }
 
@@ -174,6 +179,10 @@ namespace Dot::Project {
       m_live.reset();
       m_scripts.reset();
       m_animations.reset();
+
+      if (m_hud) {
+        m_hud->retire();
+      }
 
       if (m_audio) {
         auto closed = retirement && m_audioMode == SessionAudio::Playback
@@ -485,6 +494,13 @@ namespace Dot::Project {
       }
 
       impl->m_flow.emplace(std::move(*flow));
+      auto hud = Script::Hud::create(impl->m_identity);
+
+      if (!hud) {
+        return std::unexpected(hud.error());
+      }
+
+      impl->m_hud.emplace(std::move(*hud));
       auto input = Script::InputSource::create(config.input);
 
       if (!input) {
@@ -537,7 +553,7 @@ namespace Dot::Project {
 
       for (auto bindings :
            {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_audio->bindings(),
-            impl->m_animations->bindings(), impl->m_progress->bindings(),
+            impl->m_animations->bindings(), impl->m_progress->bindings(), impl->m_hud->bindings(),
             impl->m_flow->bindings(impl->m_identity, scenePath)}) {
         if (!bindings) {
           return std::unexpected(bindings.error());
@@ -711,6 +727,17 @@ namespace Dot::Project {
     auto checked = m_impl->check(true);
     return checked ? Core::Result<Script::GameData>{*m_impl->m_progress}
                    : Core::Result<Script::GameData>{std::unexpected(checked.error())};
+  }
+
+  auto GameSession::hud() const -> Core::Result<Script::Hud> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check(true);
+    return checked && m_impl->m_hud ? Core::Result<Script::Hud>{*m_impl->m_hud}
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "HUD is not prepared")
+                     : std::unexpected(checked.error());
   }
 
   auto GameSession::requestScene(std::string_view path) -> Core::Result<std::uint64_t> {

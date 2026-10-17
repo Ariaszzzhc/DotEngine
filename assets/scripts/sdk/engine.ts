@@ -175,6 +175,67 @@ export interface Vec4 extends Vec3 {
   w: number;
 }
 
+export interface HudLabel {
+  text: string;
+  position: Vec2;
+  size: Vec2;
+  fontSize: number;
+  padding: number;
+  color: Vec4;
+  background: Vec4;
+  visible: boolean;
+}
+
+export interface HudSnapshot {
+  scope: string;
+  revision: string;
+  labels: {key: string; value: HudLabel}[];
+}
+
+/**
+ * Native, scene-local display text. Rectangles are normalized top-left UVs;
+ * font/padding scale from reference height 720. UI does not intercept input.
+ * 原生场景文字层，矩形采用视口左上归一化 UV，字体/留白按 720 参考高度缩放；不截获输入。
+ */
+export const hud = Object.freeze({
+  label(overrides: Partial<HudLabel> = {}): HudLabel {
+    const value = {
+      text: '',
+      position: {x: .02, y: .02},
+      size: {x: .6, y: .12},
+      fontSize: 20,
+      padding: 8,
+      color: {x: .9, y: .96, z: 1, w: 1},
+      background: {x: .035, y: .045, z: .065, w: .9},
+      visible: true,
+      ...overrides,
+    };
+    return {
+      ...value,
+      position: {...value.position},
+      size: {...value.size},
+      color: {...value.color},
+      background: {...value.background}
+    };
+  },
+
+  snapshot(): HudSnapshot {
+    return invoke('hud.snapshot', []) as HudSnapshot;
+  },
+
+  set(key: string, label: HudLabel): string {
+    return (invoke('hud.set', [key, label]) as {revision: string}).revision;
+  },
+
+  remove(key: string): string {
+    return (invoke('hud.remove', [key]) as {revision: string}).revision;
+  },
+
+  clear(): string {
+    return (invoke('hud.clear', []) as {revision: string}).revision;
+  },
+});
+
 export interface Quat extends Vec4 {}
 
 /**

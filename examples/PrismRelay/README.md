@@ -61,9 +61,11 @@ without a rollback guarantee. Saving is synchronous and may stall a frame.
 Editor Play saves are temporary and removed on Stop; they never overwrite standalone
 progress. Exported games use their application ID's user directory, or an explicit
 caller-owned `--data-directory`. Startup remains fresh until F7 is pressed. The
-Game state panel and product inspection expose `relayProgressStatus` with actual
-save/load success or failure. In-game text feedback and a checkpoint menu remain
-unfinished, so the current template requires these documented keys.
+game displays controls and checkpoint success/failure through the native
+[text layer](../../docs/GameUi.md). The authored `uiFontSize` script property controls
+its text size relative to viewport height. Full diagnostics remain available as
+`relayProgressStatus` in Game state/product inspection. A checkpoint menu and
+visual UI layout authoring remain unfinished.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

@@ -27,6 +27,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Dawn CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(Freetype REQUIRED)
 find_file(DOT_EDITOR_FONT NAMES EditorSans.ttf
     PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
     NO_DEFAULT_PATH REQUIRED)
@@ -77,6 +78,9 @@ add_library(DotEngine STATIC)
 target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
+    src/Engine/Graphics/Text.cpp
+    src/Engine/Graphics/TextRenderer.cpp
+    src/Engine/Script/Hud.cpp
     src/Engine/Animation/Skin.cpp
     src/Engine/Animation/SkinFiles.cpp
     src/Engine/Animation/SceneSkin.cpp
@@ -201,7 +205,7 @@ target_sources(DotEngine PRIVATE
 )
 target_link_libraries(DotEngine PUBLIC DotBuildOptions Threads::Threads)
 target_link_libraries(DotEngine PRIVATE SDL3::SDL3 glm::glm dawn::webgpu_dawn)
-target_link_libraries(DotEngine PRIVATE imgui::imgui)
+target_link_libraries(DotEngine PRIVATE imgui::imgui Freetype::Freetype)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
@@ -215,6 +219,9 @@ target_compile_options(DotEngine PUBLIC "$<TARGET_PROPERTY:Jolt::Jolt,INTERFACE_
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Core/Types.cppm
+        src/Engine/Graphics/Text.cppm
+        src/Engine/Graphics/TextRenderer.cppm
+        src/Engine/Script/Hud.cppm
         src/Engine/Core/Text.cppm
         src/Engine/Core/Result.cppm
         src/Engine/Core/Logging.cppm
@@ -349,6 +356,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(DotGame PRIVATE "LINKER:--disable-new-dtags")
 endif()
 include(cmake/RuntimeKit.cmake)
+add_custom_target(DotRuntimeFonts ALL
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotRuntime>/resources"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT}" "$<TARGET_FILE_DIR:DotRuntime>/resources/EngineSans.ttf"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DOT_EDITOR_FONT_LICENSE}" "$<TARGET_FILE_DIR:DotRuntime>/resources/EngineSans-LICENSE.txt"
+    VERBATIM)
+add_dependencies(DotRuntime DotRuntimeFonts)
 include(cmake/Examples.cmake)
 
 add_executable(DotEditor src/Editor/main.cpp)
