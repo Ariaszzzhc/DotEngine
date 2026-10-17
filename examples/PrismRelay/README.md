@@ -23,7 +23,7 @@ reports an error instead of silently publishing an intersecting camera pose.
 A listener follows the avatar head with camera orientation, so orbiting does not
 create artificial listener speed or Doppler.
 The four authored steps exercise traversal; the final taller rise requires jumping.
-Power cells and maintenance grilles are environmental props, without pickups,
+Industrial utility cabinets and maintenance grilles are environmental props, without pickups,
 health, rounds, timers or shooting logic.
 
 Open this folder with DotEditor. Its ordinary scripts import the engine-owned
@@ -39,7 +39,10 @@ editor workflow. Hot reload retains movement intent, pending jump and orbit stat
 without restarting the native character, skeleton or animation clocks.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
-directional cascades and three local point-light shadow sources, SSAO and HDR tone
+textured utility cabinets and modular wall ventilation with fitted static colliders.
+Mechanical services are grouped in the hierarchy; the imported duct kit and reusable
+straight/support scene assets remain editable in the project.
+Lighting uses directional cascades and three local point-light shadow sources, SSAO and HDR tone
 mapping. Local maps use 512px faces within the shared depth-atlas budget. The adapted Quaternius
 CC0 mannequin includes idle, walk, jog, sprint, jump start, airborne and landing
 clips without root motion. The editable source GLB, native resources and license

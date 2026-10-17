@@ -1,0 +1,91 @@
+{
+  "entities": [
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "1",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "utility_box_02",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "2",
+      "light": null,
+      "material": {
+        "asset": "assets/utility-box/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/utility-box/meshes/0.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 0",
+      "parent": "1",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "environment": null,
+  "name": "Imported model",
+  "nextEntity": "3",
+  "occlusion": null,
+  "version": 1
+}

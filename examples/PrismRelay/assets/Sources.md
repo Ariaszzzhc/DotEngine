@@ -2,7 +2,7 @@
 
 Original geometry in meshes/ is authored for DotEngine.
 It is stored as ordinary native mesh resources; Python is not needed to open or run the game.
-The original crystal OBJ remains a repository-authored environment asset.
+The former crystal OBJ and material are removed with the collection-prototype props.
 The former drone and round-feedback PCM are removed.
 
 Downloaded texture files are unmodified 1K JPEGs from Poly Haven (CC0):
@@ -47,3 +47,23 @@ dark joint PBR factors. Native resources in surveyor/ are imported through the
 editor's normal model operation. The scene parents the entire model/joint hierarchy
 to the character; physics owns root motion. No procedural skeleton/animation stand-in
 or runtime asset-generation script is required.
+
+## Industrial equipment and ventilation
+
+Utility Box 02 and Modular Airduct Rectangular 01 are Poly Haven CC0 assets:
+
+- https://polyhaven.com/a/utility_box_02
+- https://polyhaven.com/a/modular_airduct_rectangular_01
+- https://polyhaven.com/license
+
+Original 1K glTF/bin/JPEG inputs remain in models/, alongside PolyHaven-LICENSE.txt.
+PolyHavenSources.json records all thirteen download URLs, byte sizes and SHA-256
+hashes. Downloads were checked against the publisher's byte sizes and MD5 values.
+The editor's ordinary model importer produced utility-box/ and airducts/; source
+pixels, including signed normal RGB, are preserved in lossless native PNG images.
+The imported materials are authored to use the ARM image's red channel as baked
+occlusion; the upstream glTF binds its green/blue channels but omits that AO slot.
+Straight/support scene assets were extracted and edited through product operations,
+then instantiated/grouped in the main scene. Cabinets use fitted box colliders;
+duct runs use simple box proxies. No mesh-generation helper or external authoring script is
+required to open, edit or export the project.

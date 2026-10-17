@@ -448,16 +448,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 1",
+      "name": "Power distribution 1",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -465,7 +465,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -477,14 +477,14 @@
       "transform": {
         "position": [
           -3.0,
-          0.5,
+          0.687760055065155,
           5.5
         ],
         "rotation": [
           0.0,
+          0.9689931869506836,
           0.0,
-          0.0,
-          1.0
+          0.24708746373653412
         ],
         "scale": [
           1.2000000476837158,
@@ -502,22 +502,22 @@
       "id": "10",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 1",
+      "name": "Utility cabinet 1",
       "parent": "9",
       "rigidBody": null,
       "script": null,
@@ -525,8 +525,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -535,9 +535,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -551,16 +551,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 2",
+      "name": "Power distribution 2",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -568,7 +568,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -580,14 +580,14 @@
       "transform": {
         "position": [
           3.0,
-          0.5,
+          0.687760055065155,
           5.5
         ],
         "rotation": [
           0.0,
+          -0.9689931869506836,
           0.0,
-          0.0,
-          1.0
+          0.24708746373653412
         ],
         "scale": [
           1.2000000476837158,
@@ -605,22 +605,22 @@
       "id": "13",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 2",
+      "name": "Utility cabinet 2",
       "parent": "12",
       "rigidBody": null,
       "script": null,
@@ -628,8 +628,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -638,9 +638,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -654,16 +654,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 3",
+      "name": "Power distribution 3",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -671,7 +671,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -683,14 +683,14 @@
       "transform": {
         "position": [
           5.5,
-          0.5,
+          0.687760055065155,
           3.0
         ],
         "rotation": [
           0.0,
+          -0.8598988652229309,
           0.0,
-          0.0,
-          1.0
+          0.5104644298553467
         ],
         "scale": [
           1.2000000476837158,
@@ -708,22 +708,22 @@
       "id": "16",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 3",
+      "name": "Utility cabinet 3",
       "parent": "15",
       "rigidBody": null,
       "script": null,
@@ -731,8 +731,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -741,9 +741,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -757,16 +757,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 4",
+      "name": "Power distribution 4",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -774,7 +774,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -786,14 +786,14 @@
       "transform": {
         "position": [
           5.5,
-          0.5,
+          0.687760055065155,
           -3.0
         ],
         "rotation": [
           0.0,
+          -0.5104644298553467,
           0.0,
-          0.0,
-          1.0
+          0.8598988652229309
         ],
         "scale": [
           1.2000000476837158,
@@ -811,22 +811,22 @@
       "id": "19",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 4",
+      "name": "Utility cabinet 4",
       "parent": "18",
       "rigidBody": null,
       "script": null,
@@ -834,8 +834,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -844,9 +844,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -860,16 +860,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 5",
+      "name": "Power distribution 5",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -877,7 +877,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -889,14 +889,14 @@
       "transform": {
         "position": [
           3.0,
-          0.5,
+          0.687760055065155,
           -5.5
         ],
         "rotation": [
           0.0,
+          -0.24708746373653412,
           0.0,
-          0.0,
-          1.0
+          0.9689931869506836
         ],
         "scale": [
           1.2000000476837158,
@@ -914,22 +914,22 @@
       "id": "22",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 5",
+      "name": "Utility cabinet 5",
       "parent": "21",
       "rigidBody": null,
       "script": null,
@@ -937,8 +937,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -947,9 +947,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -963,16 +963,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 6",
+      "name": "Power distribution 6",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -980,7 +980,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -992,14 +992,14 @@
       "transform": {
         "position": [
           -3.0,
-          0.5,
+          0.687760055065155,
           -5.5
         ],
         "rotation": [
           0.0,
+          0.24708746373653412,
           0.0,
-          0.0,
-          1.0
+          0.9689931869506836
         ],
         "scale": [
           1.2000000476837158,
@@ -1017,22 +1017,22 @@
       "id": "25",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 6",
+      "name": "Utility cabinet 6",
       "parent": "24",
       "rigidBody": null,
       "script": null,
@@ -1040,8 +1040,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -1050,9 +1050,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -1066,16 +1066,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 7",
+      "name": "Power distribution 7",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -1083,7 +1083,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -1095,14 +1095,14 @@
       "transform": {
         "position": [
           -5.5,
-          0.5,
+          0.687760055065155,
           -3.0
         ],
         "rotation": [
           0.0,
+          0.5104644298553467,
           0.0,
-          0.0,
-          1.0
+          0.8598988652229309
         ],
         "scale": [
           1.2000000476837158,
@@ -1120,22 +1120,22 @@
       "id": "28",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 7",
+      "name": "Utility cabinet 7",
       "parent": "27",
       "rigidBody": null,
       "script": null,
@@ -1143,8 +1143,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -1153,9 +1153,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -1169,16 +1169,16 @@
       "light": null,
       "material": null,
       "mesh": null,
-      "name": "Power cell 8",
+      "name": "Power distribution 8",
       "parent": null,
       "rigidBody": {
         "collisionDetection": "discrete",
         "friction": 0.800000011920929,
         "gravityFactor": 0.0,
         "halfExtents": [
-          0.5,
-          0.5,
-          0.5
+          0.36800000071525574,
+          0.4481333792209625,
+          0.1728000044822693
         ],
         "halfHeight": 0.20000000298023224,
         "mass": 1.0,
@@ -1186,7 +1186,7 @@
         "radius": 0.20000000298023224,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "capsule",
+        "shape": "box",
         "velocity": [
           0.0,
           0.0,
@@ -1198,14 +1198,14 @@
       "transform": {
         "position": [
           -5.5,
-          0.5,
+          0.687760055065155,
           3.0
         ],
         "rotation": [
           0.0,
+          0.8598988652229309,
           0.0,
-          0.0,
-          1.0
+          0.5104644298553467
         ],
         "scale": [
           1.2000000476837158,
@@ -1223,22 +1223,22 @@
       "id": "31",
       "light": null,
       "material": {
-        "asset": "assets/materials/crystal.dotmaterial"
+        "asset": "assets/utility-box/materials/0.dotmaterial"
       },
       "mesh": {
-        "asset": "assets/crystal.obj",
+        "asset": "assets/utility-box/meshes/0.dotmesh",
         "castsShadow": true,
         "kind": "asset",
         "receivesShadow": true,
         "tint": [
-          0.8500000238418579,
-          0.5,
+          1.0,
+          1.0,
           1.0,
           1.0
         ],
         "visible": true
       },
-      "name": "Energy core 8",
+      "name": "Utility cabinet 8",
       "parent": "30",
       "rigidBody": null,
       "script": null,
@@ -1246,8 +1246,8 @@
       "transform": {
         "position": [
           0.0,
-          0.0,
-          0.0
+          -0.4481333792209625,
+          -0.004800000227987766
         ],
         "rotation": [
           0.0,
@@ -1256,9 +1256,9 @@
           1.0
         ],
         "scale": [
-          0.44999998807907104,
           0.800000011920929,
-          0.44999998807907104
+          0.800000011920929,
+          0.800000011920929
         ]
       }
     },
@@ -10521,6 +10521,4768 @@
           1.0
         ]
       }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "355",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -9.899999618530273
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "356",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "355",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "357",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "356",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "358",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "357",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "359",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "357",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "360",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -8.100000381469727
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "361",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "360",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "362",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "361",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "363",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "362",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "364",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "362",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "365",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -6.300000190734863
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "366",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "365",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "367",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "366",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "368",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "367",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "369",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "367",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "370",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -4.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "371",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "370",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "372",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "371",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "373",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "372",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "374",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "372",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "375",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -2.700000047683716
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "376",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "375",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "377",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "376",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "378",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "377",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "379",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "377",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "380",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.22500014305114746,
+          -0.9000000953674316
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "381",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "380",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "382",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "381",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "383",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "382",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "384",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "382",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "385",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -10.800000190734863
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "386",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "385",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "387",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "386",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "388",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "387",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "389",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -9.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "390",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "389",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "391",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "390",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "392",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "391",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "393",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -7.199999809265137
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "394",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "393",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "395",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "394",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "396",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "395",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "397",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -5.400000095367432
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "398",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "397",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "399",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "398",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "400",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "399",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "401",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -3.6000001430511475
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "402",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "401",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "403",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "402",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "404",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "403",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "405",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          -1.8000001907348633
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "406",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "405",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "407",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "406",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "408",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "407",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "409",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          -12.699999809265137,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "410",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "409",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "411",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "410",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "412",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "411",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "413",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -9.899999618530273
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "414",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "413",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "415",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "414",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "416",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "415",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "417",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "415",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "418",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -8.100000381469727
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "419",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "418",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "420",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "419",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "421",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "420",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "422",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "420",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "423",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -6.300000190734863
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "424",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "423",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "425",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "424",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "426",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "425",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "427",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "425",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "428",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -4.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "429",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "428",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "430",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "429",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "431",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "430",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "432",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "430",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "433",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -2.700000047683716
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "434",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "433",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "435",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "434",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "436",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "435",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "437",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "435",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "438",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.22500014305114746,
+          -0.9000000953674316
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "439",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation trunk",
+      "parent": "438",
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.800000011920929,
+        "gravityFactor": 0.0,
+        "halfExtents": [
+          0.30000001192092896,
+          0.22499999403953552,
+          0.8999999761581421
+        ],
+        "halfHeight": 0.20000000298023224,
+        "mass": 1.0,
+        "motion": "static",
+        "radius": 0.20000000298023224,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "box",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "440",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_tripple_01",
+      "parent": "439",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -0.8999999761581421
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "441",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/0.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/4.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 4",
+      "parent": "440",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "442",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/5.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 5",
+      "parent": "440",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "443",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -10.800000190734863
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "444",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "443",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "445",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "444",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "446",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "445",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "447",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -9.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "448",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "447",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "449",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "448",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "450",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "449",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "451",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -7.199999809265137
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "452",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "451",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "453",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "452",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "454",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "453",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "455",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -5.400000095367432
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "456",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "455",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "457",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "456",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "458",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "457",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "459",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -3.6000001430511475
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "460",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "459",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "461",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "460",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "462",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "461",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "463",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          -1.8000001907348633
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "464",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "463",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "465",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "464",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "466",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "465",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "467",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "471",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "468",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Ventilation support",
+      "parent": "467",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "469",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "modular_airduct_rectangular_01_brace_01",
+      "parent": "468",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "470",
+      "light": null,
+      "material": {
+        "asset": "assets/airducts/materials/1.dotmaterial"
+      },
+      "mesh": {
+        "asset": "assets/airducts/meshes/22.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Primitive 22",
+      "parent": "469",
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "471",
+      "light": null,
+      "material": null,
+      "mesh": null,
+      "name": "Mechanical services",
+      "parent": null,
+      "rigidBody": null,
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          6.349999904632568,
+          2.4749999046325684,
+          5.400000095367432
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
     }
   ],
   "environment": {
@@ -10535,7 +15297,7 @@
     "specularSize": 128
   },
   "name": "Prism Relay | WASD move | Space jump | Shift sprint | Mouse look",
-  "nextEntity": "355",
+  "nextEntity": "472",
   "occlusion": {
     "bias": 0.02500000037252903,
     "directions": 8,

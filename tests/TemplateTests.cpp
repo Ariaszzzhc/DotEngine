@@ -80,7 +80,7 @@ TEST_CASE("templates.invalid_sources_paths_and_compile_failures_leave_no_output"
   CHECK_FALSE(fixture.create(source));
   CHECK_FALSE(std::filesystem::exists(fixture.files().root() / "project"));
   REQUIRE(source.writeTextAtomic("scripts/player.ts", player));
-  std::filesystem::create_symlink("crystal.obj", source.root() / "assets/link.obj");
+  std::filesystem::create_symlink("models/surveyor.glb", source.root() / "assets/link.obj");
   CHECK_FALSE(fixture.create(source));
   std::filesystem::remove(source.root() / "assets/link.obj");
   REQUIRE(source.createDirectories(".dot-stage-private"));

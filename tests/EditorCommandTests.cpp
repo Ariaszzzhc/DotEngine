@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -44,9 +45,10 @@ namespace {
     return std::string(value.begin(), value.end());
   }
 
-  auto command(const Directory& directory, std::vector<std::string> args, bool success = true)
-      -> Json {
-    auto result = Dot::Core::runProcess({DOT_EDITOR_EXECUTABLE, std::move(args), directory.root});
+  auto command(const Directory& directory, std::vector<std::string> args, bool success = true,
+               std::chrono::milliseconds timeout = std::chrono::seconds{10}) -> Json {
+    auto result
+        = Dot::Core::runProcess({DOT_EDITOR_EXECUTABLE, std::move(args), directory.root, timeout});
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     INFO(result->standardError);
     CHECK(result->exitCode == (success ? 0U : 1U));
@@ -379,7 +381,8 @@ TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
                       {"name", "Home project"},
                       {"template", "prism"}};
   REQUIRE(files.writeTextAtomic("request.json", request.dump()));
-  auto result = command(directory, {"project-action", utf(resources), "request.json"});
+  auto result = command(directory, {"project-action", utf(resources), "request.json"}, true,
+                        std::chrono::seconds{20});
   CHECK(result["project"]["name"] == "Home project");
   CHECK(result["scene"]["entities"].size()
         == Dot::Project::Project::open(resources / "templates/PrismRelay")

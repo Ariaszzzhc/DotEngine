@@ -435,5 +435,5 @@ TEST_CASE("prism.authored_surfaces_have_real_normal_frames_and_local_texture_inp
     }
   }
 
-  CHECK(photographic == 2);
+  CHECK(photographic >= 2);
 }

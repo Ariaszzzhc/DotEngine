@@ -8145,3 +8145,69 @@ sampling, geometric frame validation, pixel preservation, texture-cache ownershi
 partial-load resource release and consistent import/preview/Play/export behavior.
 All twelve changed C++ files pass clang-format; WGSL control-flow spacing and staged
 whitespace checks pass. No caller compiler/linker configuration or dependencies changed.
+
+## Prism Relay industrial environment authoring
+
+Reviewed the actual game viewport before further authoring. The old purple crystal
+props conflicted with the requested realistic industrial direction; the character
+remains a functional mannequin, without a finished sci-fi suit. Acquired Poly Haven
+CC0 Utility Box 02 and Modular Airduct Rectangular 01 through the published asset
+API/downloads. Thirteen original 1K glTF/bin/JPEG files were checked against upstream
+sizes/MD5 and recorded with URLs/SHA-256 in PolyHavenSources.json. Original inputs,
+licenses and full editable native model bundles remain with the example. Native
+import retains one utility mesh and a 25-mesh/18-node duct kit; source pixels are
+preserved in PNGs. Native materials explicitly bind ARM R-channel AO, which the
+upstream glTF omitted, while retaining its G/B roughness/metallic inputs.
+
+The actual editor imports both models, extracts reusable straight/support scenes,
+authors their native components, replaces eight crystal visuals with textured
+cabinets and fitted box colliders, and inserts twelve duct runs with simple box
+proxies plus fourteen supports. One ordinary 82-operation transaction creates the
+116 new instance entities. Hierarchy grouping adds the Mechanical services root.
+Final saved main contains 341 entities, with only sixteen intended existing prop/
+root entities changed; every original gameplay/rig/camera/global record compares
+equal to the previous scene. Removed the now-unused crystal OBJ/material. The
+template symlink regression now points at a retained real source asset. The example
+surface audit checks every used textured material and permits additional material
+sets instead of requiring exactly two.
+
+The final game view is captured from the saved, reopened Release editor with no
+render error and a clean document. A submitted frame reports 180 mesh instances,
+34 color draws and 246 shadow draws; these counts are not a frame-rate benchmark.
+Actual Play accepts a twenty-frame W/Space request and captures the native rig in
+mid-jump at approximately [-3,.7019,1.8351], with no Play diagnostics or dropped fixed
+time. Stop preserves authoring. Data export succeeds through the product CLI; all
+108 content files (64972876 bytes) were compared byte-for-byte against every current
+source file in the final export. Internal export directories were removed after verification. No native
+distribution archive was produced or delivered.
+
+Four owned editor processes exit 0: baseline review, an extra prior-binary launch
+after a test compilation failure, updated authoring/Play, and final saved reopen.
+The extra prior-binary process was closed and supplied no validation evidence.
+Final stderr is empty and the private control directory is retired. Temporary
+helpers were corrected for the import response's scene-path string and terminal
+close retiring its response directory; a close request with an unsupported revision
+field was correctly rejected before a valid close. Queued acknowledgements were
+not used as applied-success evidence. Removed 53 owned helper/request/metadata files
+and two internal exports; retained native responses, result/log and four real viewport
+PNGs in ignored build storage. The normal-import issue and helper mistakes are
+distinct from renderer/Play failures.
+
+The focused scene/template/normal checks pass 15/15 (19.63s). Larger template creation
+needs 12.41s in its isolated Debug CLI regression, exceeding that helper's former
+10s wait; only this case now requests 20s, within its existing 30s CTest limit.
+Default production waits and script execution limits stay unchanged. Combined final
+Debug/Release suites pass 1268/1268 (193.39s/21.09s), with 385 unit and 883 integration
+cases. Automated suites open no desktop windows; native windows above belong to
+actual product review. Validation is macOS arm64 only, without Windows/Linux execution.
+
+Final review covers source licenses/hashes, relative resource references, imported
+pixel preservation, collider placement, original character/scene invariants, product
+authoring/save/reopen/Play/export evidence and template lifetime/budgets. All three
+example-related C++ changes pass clang-format and whitespace checks pass. Build caches,
+existing archives and user references are preserved; reference files remain untracked.
+Finished realistic character art, cohesive environment direction, populated-scene
+performance and the broader engine/editor/game objective remain incomplete.
+
+Final Debug/Release resource rebuilds also succeed. Both generated example copies
+match the current provenance document and exclude the deleted crystal OBJ/material.
