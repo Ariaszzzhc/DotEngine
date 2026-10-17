@@ -9352,3 +9352,96 @@ content hashes, runtime/game manifests and executable hash remain under
 build/material-preparation-review. Verified temporary native output and the latest
 owned editor copy are removed after source restoration. Formal example files and
 user-owned reference/output material remain unchanged and untracked where requested.
+
+## 2026-10-17 — owned HDR preparation and GPU completion
+
+The preceding Prism workflow sample still placed HDR decode/mips and environment
+completion in synchronous preparation. SceneRenderer now prepares actual HDR input
+on the same bounded CPU-worker lane as material images: file/decode/validation and
+the unchanged latitude solid-angle mip filter produce an immutable owned
+EnvironmentSource. Input is moved rather than copied in this path; shared copies
+are immutable. At most one HDR/LDR pyramid is active (HDR base at most 16,777,216
+pixels, pyramid below 342 MiB, excluding encoded/codec storage). Cancellation checks
+entry/mip boundaries, discards late results, and does not join a codec in a frame;
+service destruction joins its owned worker.
+
+Renderer beginEnvironmentBake uploads those levels and submits the existing GPU
+algorithm; pollEnvironmentBake uses WaitAny with zero timeout and the unchanged
+ten-second completion deadline. The explicit synchronous API reuses this path and
+copies its borrowed source for owned CPU preparation. Pending input/output bytes
+and job count are separate from ready maps and share maxTextureBytes and the
+32-environment limit, including texture uploads. Dropping a pending job cancels
+publication but retains its reservation/resources until a later owner mutation
+observes GPU completion without waiting, or renderer teardown. Pure readiness and
+resource-stat queries never collect. GPU failure retains context and faults the
+device rather than allowing further allocations against abandoned work.
+
+Only completed maps enter the scene cache. Preparation retains the old binding and
+pixels until an actual draw; bound-map ownership is tracked separately so clear or
+service destruction also detaches the old generation if the prepared cache has
+already changed. Another service's binding remains protected. Current requirements
+include HDR even after shadow pipelines are ready. Editor/native startup exposes
+an environment-map/HDR environment phase and gates Play/current captures through
+the same shared implementation. Small material metadata, uploads, meshes/skins,
+other pipelines and dynamic game-session work remain synchronous; this is not
+complete streaming or a first-frame solution. Clock limits/warnings are unchanged.
+
+Five new durable cases cover independent weighted-mip expectations, immutable
+sharing/moves/worker reads, invalid pixels/config/cancellation, GPU energy and
+pending-budget accounting, thread/device/GUI rejection, abandoned completion and
+post-renderer job lifetime, actual environment replacement, clear before drawing,
+retained pixels/bindings and missing-file recovery. Existing readiness cases now
+require real HDR preparation rather than assuming shaders imply scene readiness.
+Initial focused Debug passes 19/19 (15.31s); subsequent review corrects canceled
+GPU residency, readiness ordering and cache-versus-binding ownership. An in-progress
+full Debug run is stopped to integrate that ownership correction, not reported as
+a completed pass. Final Debug passes 1323/1323 (207.28s); final Release/NDEBUG passes
+1323/1323 (28.15s), sequentially with builds. Counts: 412 unit / 911 integration;
+overlapping labels include 159 offscreen, 198 compiler, 33 platform, 32 audio-native
+and 20 process. Twelve changed C++ files pass clang-format; whitespace checks pass.
+Reviewed stop/result races, renderer/job/source lifetimes, staging/publication,
+peak byte/count bounds, error context, GUI/thread/device guards and unchanged
+numerical filtering/dispatch. Only macOS arm64 is executed; caller environment,
+platform targets and sanitizer settings are unchanged.
+
+Actual Release editor observes environment-map (one inspect request, 51.626ms client
+wall including CLI/poll overhead; not a responsiveness bound). Play rejects during
+resource preparation; queued capture finishes failed, save rejects and writes no
+file. Real W/Space input moves Player to [-3,1.2830756,1.5228012], with no Play
+error/diagnostics. Stop restores clean exact authoring; Save/export succeed. A fresh
+editor reopens and saves twice with identical scene/disk bytes. Ready/stopped/
+reopened captures retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Application history retains a 99.299584ms step, including 98.972500ms rendering;
+this remains a hitch, not evidence of solved first-frame costs.
+
+A real environment processing-sample edit changes pixels to
+6540443dea591f5658fbf1f2dbdb5d3c584d95c6b48b69c51d385519c631327f.
+Undo restores baseline pixels and clean unchanged authoring. A nonexistent HDR path
+reports its actual contextual NotFound error, rejects Play and screenshot saving,
+and produces no file; Undo recovers the exact baseline. These warm edits are already
+ready on the first inspect, so no pending interval is claimed. A separate real
+material draft still changes pixels to
+623663c4610bd62f4c218afd91a370eab3db4b14d683f5cd55130fea3da65c6a;
+Reset/close restores baseline with unchanged material/scene bytes. All four owned
+editors exit zero with empty stderr and retired control directories. Fresh native
+mouse/keyboard acceptance remains unverified since the locked-Mac report.
+
+The physically relocated native export, with authoring hidden, matches all 116
+content files / 66,649,969 bytes, logs the actual five preparation phases and exits
+zero after 360 game steps (769 sampled steps: 409 preparation + 360 game). Its 120
+retained samples are unpaused/error-free with no dropped fixed time; stderr has no
+dropped-time warning. The retained global slowest is step 0: 54.307875ms, including
+48.569625ms events. Longest supplied interval is 55.570209ms; retained median is
+12.544125ms. The first game step is evicted and is not separately measured here.
+Cache/context conditions are not matched to earlier runs; these are not speedup or
+FPS claims. Process sampling places actual HDR decode on startHdr's worker and LDR
+mips on workers; main-thread mappedSkinWords/WaitAny remains. The broader engine,
+editor and finished Prism Relay goals remain open.
+
+Raw product requests/responses, eight PNGs, application/native profiles, process
+sample, content hashes and package/executable metadata remain in
+build/hdr-preparation-review. Source restoration and clean retained samples are
+verified before removing owned native/editor copies. No distribution archive is
+created. Formal examples and user-owned untracked reference/output material remain
+unchanged.

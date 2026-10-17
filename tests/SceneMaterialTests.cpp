@@ -237,6 +237,100 @@ TEST_CASE("scene_material.async_cancel_and_draft_replace_discard_late_codec_resu
   CHECK(device.resourceStats()->textures == 0);
 }
 
+TEST_CASE("scene_material.async_hdr_replacement_preserves_binding_until_draw_and_recovers") {
+  Fixture fixture;
+  REQUIRE(DotTest::Environment::write(fixture.files, "assets/a.hdr"));
+  REQUIRE(DotTest::Environment::write(fixture.files, "assets/b.hdr", 131));
+  auto device = renderer();
+  auto drawing = Dot::Graphics::SceneRenderer::create(device, fixture.files).value();
+  Dot::World::Environment value{"assets/a.hdr"};
+  value.processing = {16, 4, 16, 16, 32};
+  REQUIRE(fixture.scene.setEnvironment(value));
+  const auto prepare = [&]() {
+    auto state = drawing.prepare(fixture.scene);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      state = drawing.prepare(fixture.scene);
+    }
+
+    return state;
+  };
+  auto ready = prepare();
+  REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
+  REQUIRE(*ready == Dot::Graphics::ScenePreparationStage::Ready);
+  CHECK_FALSE(device.environment().value());
+  CHECK(drawing.stats()->environments == 1);
+  auto target = device.createTarget(3, 3).value();
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  auto old = device.environment()->value().map;
+  const auto first = device.readHdrTarget(target)->pixels;
+  const auto frames = target.info()->frames;
+  value.asset = "assets/b.hdr";
+  REQUIRE(fixture.scene.setEnvironment(value));
+  auto state = drawing.prepare(fixture.scene);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < deadline) {
+    CHECK(device.environment()->value().map == old);
+    CHECK(target.info()->frames == frames);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = drawing.prepare(fixture.scene);
+  }
+
+  REQUIRE(state);
+  REQUIRE(*state == Dot::Graphics::ScenePreparationStage::Ready);
+  CHECK(device.environment()->value().map == old);
+  REQUIRE(drawing.clearCache());
+  CHECK_FALSE(device.environment().value());
+  CHECK(drawing.stats()->environments == 0);
+  CHECK(target.info()->frames == frames);
+  ready = prepare();
+  REQUIRE(ready);
+  REQUIRE(*ready == Dot::Graphics::ScenePreparationStage::Ready);
+  CHECK_FALSE(device.environment().value());
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  auto current = device.environment()->value().map;
+  CHECK_FALSE(current == old);
+  CHECK(device.readHdrTarget(target)->pixels != first);
+  auto shadows = device.prepareShadowPipelines();
+  const auto shadowDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (shadows && !*shadows && std::chrono::steady_clock::now() < shadowDeadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    shadows = device.prepareShadowPipelines();
+  }
+
+  REQUIRE(shadows);
+  REQUIRE(*shadows);
+  value.rotationDegrees = 90;
+  REQUIRE(fixture.scene.setEnvironment(value));
+  CHECK(drawing.readiness(fixture.scene).value() == Dot::Graphics::ScenePreparationStage::Ready);
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(device.environment()->value().map == current);
+  CHECK(device.environment()->value().rotationDegrees == 90);
+  value.asset = "assets/missing.hdr";
+  REQUIRE(fixture.scene.setEnvironment(value));
+  CHECK(drawing.readiness(fixture.scene).value()
+        == Dot::Graphics::ScenePreparationStage::EnvironmentMap);
+  state = prepare();
+  REQUIRE_FALSE(state);
+  CHECK_FALSE(drawing.readiness(fixture.scene));
+  CHECK(device.environment()->value().map == current);
+  CHECK(device.resourceStats()->environmentJobs == 0);
+  value.asset = "assets/b.hdr";
+  REQUIRE(fixture.scene.setEnvironment(value));
+  REQUIRE(drawing.prepare(fixture.scene).value() == Dot::Graphics::ScenePreparationStage::Ready);
+  REQUIRE(drawing.clearCache());
+  REQUIRE(drawing.prepare(fixture.scene));
+  REQUIRE(fixture.scene.setEnvironment(std::nullopt));
+  REQUIRE(drawing.prepare(fixture.scene));
+  CHECK(device.resourceStats()->environmentJobs == 0);
+}
+
 TEST_CASE("scene_material.saved_physical_factors_and_hierarchical_light_pose_drive_gpu_pixels") {
   Fixture fixture;
   auto device = renderer();

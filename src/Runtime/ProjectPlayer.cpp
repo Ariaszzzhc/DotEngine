@@ -223,6 +223,8 @@ namespace Dot::Runtime {
                                      ? "shadow shaders"
                                  : *prepared == Graphics::ScenePreparationStage::Occlusion
                                      ? "ambient occlusion shaders"
+                                 : *prepared == Graphics::ScenePreparationStage::EnvironmentMap
+                                     ? "HDR environment"
                                      : "material textures";
               std::println(stderr, "Preparing {}", phase);
               auto changed

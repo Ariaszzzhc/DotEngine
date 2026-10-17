@@ -163,6 +163,7 @@ TEST_CASE("shadows.gpu_scene_readiness_observes_current_requirements_and_gui_rea
   REQUIRE(scene.setLight(lamp, light));
   REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
   CHECK(drawing.readiness(scene).value() == ScenePreparationStage::Environment);
+  REQUIRE(scene.setEnvironment(std::nullopt));
   auto stage = drawing.prepare(scene);
   REQUIRE(stage);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
@@ -177,7 +178,7 @@ TEST_CASE("shadows.gpu_scene_readiness_observes_current_requirements_and_gui_rea
 
   REQUIRE(*stage == ScenePreparationStage::Ready);
   CHECK(gpu.shadowPipelinesReady().value());
-  CHECK(gpu.environmentPipelinesReady().value());
+
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(gpu.environment().value());
   auto moved = std::move(scene);

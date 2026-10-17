@@ -5592,6 +5592,8 @@ namespace Dot::Editor {
                           ? Json("shadow-pipelines")
                       : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
                           ? Json("occlusion-pipelines")
+                      : m_preparationStage == Graphics::ScenePreparationStage::EnvironmentMap
+                          ? Json("environment-map")
                       : m_preparationStage == Graphics::ScenePreparationStage::Materials
                           ? Json("material-textures")
                           : Json(nullptr)},
@@ -10042,6 +10044,9 @@ namespace Dot::Editor {
                                      ? "Preparing shadow shaders..."
                                  : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
                                      ? "Preparing ambient occlusion shaders..."
+                                 : m_preparationStage
+                                         == Graphics::ScenePreparationStage::EnvironmentMap
+                                     ? "Preparing HDR environment..."
                                      : "Preparing material textures...");
         }
 

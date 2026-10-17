@@ -126,6 +126,23 @@ namespace Dot::Graphics {
       bool canceled{};
     };
 
+    struct HdrResult {
+      std::mutex mutex;
+      std::optional<Core::Result<EnvironmentSource>> value;
+    };
+
+    struct HdrJob {
+      std::shared_ptr<HdrResult> result;
+      std::jthread thread;
+      bool canceled{};
+    };
+
+    struct PendingEnvironment {
+      World::Environment source;
+      std::optional<EnvironmentBake> bake;
+      std::optional<Core::Error> error;
+    };
+
     struct PendingMaterial {
       std::string path;
       Assets::MaterialDescription description;
@@ -165,6 +182,8 @@ namespace Dot::Graphics {
     std::optional<MaterialPreview> preview;
     std::optional<PendingMaterial> pendingMaterial;
     std::unique_ptr<ImageJob> imageJob;
+    std::unique_ptr<HdrJob> hdrJob;
+    std::optional<PendingEnvironment> pendingEnvironment;
 
     struct EnvironmentEntry {
       std::string asset;
@@ -174,12 +193,15 @@ namespace Dot::Graphics {
     };
 
     std::optional<EnvironmentEntry> environment;
+    /** Preparation can replace the cache before drawing replaces the binding.
+     * 准备可在绘制替换绑定前替换缓存，因此独立保留本服务实际绑定的资源。 */
+    std::optional<EnvironmentMap> boundEnvironment;
     std::optional<std::uint64_t> occlusionRevision;
 
     /** Detach only our binding; another scene renderer may now own the active map.
      * 仅解绑本服务的资源；另一个场景渲染器可能已接管当前环境。 */
     auto detachEnvironment() -> Core::Result<void> {
-      if (!environment) {
+      if (!boundEnvironment) {
         return {};
       }
 
@@ -189,10 +211,15 @@ namespace Dot::Graphics {
         return std::unexpected(current.error());
       }
 
-      if (*current && (**current).map == environment->map) {
-        return renderer->setEnvironment(std::nullopt);
+      if (*current && (**current).map == *boundEnvironment) {
+        auto detached = renderer->setEnvironment(std::nullopt);
+
+        if (!detached) {
+          return detached;
+        }
       }
 
+      boundEnvironment.reset();
       return {};
     }
 
@@ -226,8 +253,10 @@ namespace Dot::Graphics {
        * retained binding. Destruction itself must not throw.
        * 设备故障可能阻止解绑；渲染器销毁会释放其绑定，析构本身不得抛异常。 */
       try {
-        cancelPreparation();
+        cancelMaterialPreparation();
+        cancelEnvironmentPreparation();
         imageJob.reset();
+        hdrJob.reset();
         static_cast<void>(detachEnvironment());
         static_cast<void>(detachOcclusion());
       } catch (...) {
@@ -253,6 +282,7 @@ namespace Dot::Graphics {
           environment.reset();
         }
 
+        boundEnvironment.reset();
         return {};
       }
 
@@ -304,6 +334,8 @@ namespace Dot::Graphics {
       if (!bound) {
         return bound;
       }
+
+      boundEnvironment = map;
 
       if (pending) {
         if (environment) {
@@ -693,7 +725,7 @@ namespace Dot::Graphics {
     /** Cancellation never joins a running codec on a frame; canceled output is
      * discarded when polled. Destruction joins before borrowed renderer teardown.
      * 帧内取消不等待活动编解码，轮询时丢弃迟到结果；销毁在借用渲染器退出前等待线程。 */
-    auto cancelPreparation() -> void {
+    auto cancelMaterialPreparation() -> void {
       pendingMaterial.reset();
 
       if (imageJob) {
@@ -777,6 +809,204 @@ namespace Dot::Graphics {
       imageJob = std::move(job);
     }
 
+    auto cancelEnvironmentPreparation() -> void {
+      pendingEnvironment.reset();
+
+      if (hdrJob) {
+        hdrJob->canceled = true;
+        hdrJob->thread.request_stop();
+      }
+    }
+
+    auto takeHdr() -> std::optional<Core::Result<EnvironmentSource>> {
+      if (!hdrJob) {
+        return std::nullopt;
+      }
+
+      std::optional<Core::Result<EnvironmentSource>> result;
+
+      {
+        std::lock_guard lock(hdrJob->result->mutex);
+        result = std::move(hdrJob->result->value);
+      }
+
+      if (result) {
+        hdrJob.reset();
+      }
+
+      return result;
+    }
+
+    auto startHdr(std::string path) -> void {
+      auto job = std::make_unique<HdrJob>();
+      job->result = std::make_shared<HdrResult>();
+      job->thread = std::jthread([state = job->result, files = *assets,
+                                  path = std::move(path)](std::stop_token stop) {
+        Core::Result<EnvironmentSource> result
+            = Core::fail(Core::ErrorCode::External, "HDR preparation did not run");
+
+        try {
+          if (stop.stop_requested()) {
+            result = Core::fail(Core::ErrorCode::Unavailable, "HDR preparation canceled");
+          } else {
+            auto image = Assets::loadHdrImage(files, assetPath(path));
+            result = image ? EnvironmentSource::prepare(std::move(*image), stop)
+                           : Core::Result<EnvironmentSource>{std::unexpected(image.error())};
+          }
+        } catch (const std::exception& error) {
+          result
+              = Core::fail(Core::ErrorCode::External, "Prepare HDR: " + std::string(error.what()));
+        } catch (...) {
+          result = Core::fail(Core::ErrorCode::External, "Unknown HDR preparation failure");
+        }
+
+        std::lock_guard lock(state->mutex);
+        state->value.emplace(std::move(result));
+      });
+      hdrJob = std::move(job);
+    }
+
+    auto prepareEnvironment(const World::Scene& scene) -> Core::Result<bool> {
+      try {
+        auto source = scene.environment();
+
+        if (!source) {
+          return std::unexpected(source.error());
+        }
+
+        if (!*source) {
+          cancelEnvironmentPreparation();
+          static_cast<void>(takeHdr());
+          return true;
+        }
+
+        const auto& value = **source;
+        const auto matches = [&](const auto& entry) {
+          return entry.asset == value.asset && entry.processing == value.processing;
+        };
+
+        if (environment && matches(*environment)) {
+          cancelEnvironmentPreparation();
+          static_cast<void>(takeHdr());
+          return true;
+        }
+
+        if (pendingEnvironment && !matches(pendingEnvironment->source)) {
+          cancelEnvironmentPreparation();
+        }
+
+        if (hdrJob && hdrJob->canceled) {
+          static_cast<void>(takeHdr());
+
+          if (hdrJob) {
+            return false;
+          }
+        }
+
+        if (!pendingEnvironment) {
+          cancelMaterialPreparation();
+          pendingEnvironment.emplace();
+          pendingEnvironment->source = value;
+        }
+
+        auto& pending = *pendingEnvironment;
+        const auto fail = [&](Core::Error error) -> Core::Result<bool> {
+          error.message = "Prepare scene environment '" + value.asset + "': " + error.message;
+          pending.error = std::move(error);
+          pending.bake.reset();
+          return std::unexpected(*pending.error);
+        };
+
+        if (pending.error) {
+          return std::unexpected(*pending.error);
+        }
+
+        if (pending.bake) {
+          auto ready = renderer->pollEnvironmentBake(*pending.bake);
+
+          if (!ready) {
+            return fail(ready.error());
+          }
+
+          if (!*ready) {
+            return false;
+          }
+
+          const auto size = (**ready).info()->bytes;
+          EnvironmentEntry next{value.asset, value.processing, std::move(**ready), size};
+
+          if (environment) {
+            bytes -= environment->bytes;
+          }
+
+          bytes += size;
+          environment = std::move(next);
+          pendingEnvironment.reset();
+          return true;
+        }
+
+        if (imageJob) {
+          static_cast<void>(takeImage());
+
+          if (imageJob) {
+            return false;
+          }
+        }
+
+        if (!assets) {
+          return fail(
+              Core::fail(Core::ErrorCode::NotFound, "Scene environment requires an asset root")
+                  .error());
+        }
+
+        if (!hdrJob) {
+          startHdr(value.asset);
+          return false;
+        }
+
+        auto prepared = takeHdr();
+
+        if (!prepared) {
+          return false;
+        }
+
+        if (!*prepared) {
+          return fail(prepared->error());
+        }
+
+        auto info = prepared->value().description(value.processing);
+
+        if (!info) {
+          return fail(info.error());
+        }
+
+        if (info->bytes > budget - bytes) {
+          return fail(
+              Core::fail(Core::ErrorCode::Unavailable, "Scene environment cache budget exceeded")
+                  .error());
+        }
+
+        auto task = renderer->beginEnvironmentBake(prepared->value(), value.processing);
+
+        if (!task) {
+          return fail(task.error());
+        }
+
+        pending.bake.emplace(std::move(*task));
+        return false;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare scene environment: " + std::string(error.what()));
+
+        if (pendingEnvironment) {
+          pendingEnvironment->error = failure.error();
+          pendingEnvironment->bake.reset();
+        }
+
+        return failure;
+      }
+    }
+
     struct Requirements {
       std::size_t draws;
       std::vector<std::string> materials;
@@ -813,7 +1043,7 @@ namespace Dot::Graphics {
       if (pendingMaterial
           && (!neededMaterials.contains(pendingMaterial->path)
               || materials.contains(pendingMaterial->path))) {
-        cancelPreparation();
+        cancelMaterialPreparation();
       }
 
       pruneSkins(scene, entities, true);
@@ -899,7 +1129,7 @@ namespace Dot::Graphics {
           return true;
         }
 
-        if (imageJob && imageJob->canceled) {
+        if ((imageJob && imageJob->canceled) || hdrJob) {
           return false;
         }
 
@@ -1321,6 +1551,19 @@ namespace Dot::Graphics {
       }
     }
 
+    if (*environment
+        && (!m_impl->environment || m_impl->environment->asset != (**environment).asset
+            || m_impl->environment->processing != (**environment).processing)) {
+      if (m_impl->pendingEnvironment
+          && m_impl->pendingEnvironment->source.asset == (**environment).asset
+          && m_impl->pendingEnvironment->source.processing == (**environment).processing
+          && m_impl->pendingEnvironment->error) {
+        return std::unexpected(*m_impl->pendingEnvironment->error);
+      }
+
+      return ScenePreparationStage::EnvironmentMap;
+    }
+
     auto entities = scene.entities();
 
     if (!entities) {
@@ -1417,8 +1660,19 @@ namespace Dot::Graphics {
       }
     }
 
-    if (*stage == ScenePreparationStage::Ready && !m_impl->pendingMaterial && !m_impl->imageJob) {
+    if (*stage == ScenePreparationStage::Ready && !m_impl->pendingMaterial && !m_impl->imageJob
+        && !m_impl->pendingEnvironment && !m_impl->hdrJob) {
       return ScenePreparationStage::Ready;
+    }
+
+    auto environment = m_impl->prepareEnvironment(scene);
+
+    if (!environment) {
+      return std::unexpected(environment.error());
+    }
+
+    if (!*environment) {
+      return ScenePreparationStage::EnvironmentMap;
     }
 
     auto materials = m_impl->prepareMaterials(scene);
@@ -1760,7 +2014,7 @@ namespace Dot::Graphics {
       }
     }
 
-    m_impl->cancelPreparation();
+    m_impl->cancelMaterialPreparation();
 
     if (m_impl->preview) {
       m_impl->materials.erase(m_impl->preview->path);
@@ -1785,7 +2039,8 @@ namespace Dot::Graphics {
       return checked;
     }
 
-    m_impl->cancelPreparation();
+    m_impl->cancelMaterialPreparation();
+    m_impl->cancelEnvironmentPreparation();
     checked = m_impl->detachEnvironment();
 
     if (!checked) {

@@ -23,7 +23,14 @@ export namespace Dot::Graphics {
    * 游戏主相机、指定场景相机或独立编辑/工具视图。 */
   using SceneView = std::variant<std::monostate, World::EntityId, View>;
 
-  enum class ScenePreparationStage { Ready, Environment, Shadows, Occlusion, Materials };
+  enum class ScenePreparationStage {
+    Ready,
+    Environment,
+    Shadows,
+    Occlusion,
+    EnvironmentMap,
+    Materials
+  };
 
   struct SceneRenderStats {
     std::size_t meshes;
@@ -81,16 +88,19 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
-    /** Prepare required pipelines and visible materials incrementally. CPU image
-     * reads/decode/mips use one owned worker, at most one bounded image pyramid;
+    /** Prepare pipelines, the HDR environment and visible materials incrementally.
+     * HDR/LDR reads/decode/mips use one owned worker, at most one bounded pyramid;
      * each poll uploads at most one texture on the owner. Publish complete materials
-     * only. Small material JSON reads, GPU uploads/bakes and other assets remain
-     * synchronous. No pixels are produced. Explicit rendering remains synchronous.
+     * and GPU-completed environment maps only; retain the old binding until drawn.
+     * GPU bake completion uses zero-wait polling. Small material JSON reads, GPU
+     * uploads and other assets remain synchronous. No pixels are produced.
+     * Explicit rendering remains synchronous.
      * Clear/draft/scene cancellation discards late work without joining a codec;
      * destruction requests stop and joins active work before renderer teardown.
-     * 渐进准备所需管线和可见材质；单个拥有的工作线程读取/解码/生成至多一张有界
+     * 渐进准备管线、HDR 环境及可见材质；单个拥有的工作线程读取/解码/生成至多一张有界
      * mip 金字塔，每次轮询在所属线程至多上传一张纹理，仅完整材质发布到缓存。
-     * 小型材质 JSON、GPU 上传/烘焙及其他资产仍同步，不生成像素；显式绘制仍同步。
+     * 环境仅在 GPU 完成后发布缓存，绘制前保留旧绑定；零等待轮询烘焙完成。
+     * 小型材质 JSON、GPU 上传及其他资产仍同步，不生成像素；显式绘制仍同步。
      * 清缓存/草稿/场景取消丢弃迟到结果，不在帧内等待编解码；销毁请求停止并等待工作结束。 */
     [[nodiscard]] auto prepare(const World::Scene& scene) -> Core::Result<ScenePreparationStage>;
     /** Pure current-scene readiness, including inside GUI layout. No I/O, polling,

@@ -24,6 +24,7 @@ module;
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 module Dot.Graphics.Renderer;
 
@@ -197,6 +198,8 @@ namespace Dot::Graphics {
       std::atomic<std::uint64_t> textureBytes{};
       std::atomic<std::uint64_t> environments{};
       std::atomic<std::uint64_t> environmentBytes{};
+      std::atomic<std::uint64_t> environmentJobs{};
+      std::atomic<std::uint64_t> environmentJobBytes{};
       std::atomic<std::uint64_t> m_skins{};
       std::atomic<std::uint64_t> m_skinBytes{};
       std::atomic<bool> failed{};
@@ -592,6 +595,45 @@ namespace Dot::Graphics {
     }
   };
 
+  struct EnvironmentBake::Impl {
+    std::shared_ptr<Diagnostics> owner;
+    std::shared_ptr<EnvironmentMap::Impl> map;
+    wgpu::Instance instance;
+    wgpu::Texture input;
+    std::shared_ptr<Pending<bool>> pending;
+    wgpu::Future future{};
+    std::chrono::steady_clock::time_point started;
+    std::optional<Core::Error> error;
+    std::uint64_t reservedBytes{};
+    bool reserved{};
+    bool complete{};
+
+    auto releaseReservation() noexcept -> void {
+      if (reserved) {
+        owner->environmentJobs.fetch_sub(1);
+        owner->environmentJobBytes.fetch_sub(reservedBytes);
+        reserved = false;
+      }
+
+      input = {};
+    }
+
+    ~Impl() {
+      releaseReservation();
+    }
+  };
+
+  EnvironmentBake::EnvironmentBake() noexcept = default;
+
+  EnvironmentBake::EnvironmentBake(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  EnvironmentBake::EnvironmentBake(EnvironmentBake&&) noexcept = default;
+
+  auto EnvironmentBake::operator=(EnvironmentBake&&) noexcept -> EnvironmentBake& = default;
+
+  EnvironmentBake::~EnvironmentBake() = default;
+
   EnvironmentMap::EnvironmentMap() noexcept = default;
 
   EnvironmentMap::EnvironmentMap(std::shared_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
@@ -709,6 +751,7 @@ namespace Dot::Graphics {
     std::optional<EnvironmentSurfacePreparation> m_environmentSurfacePreparation;
     std::optional<ShadowPreparation> m_shadowPreparation;
     std::optional<OcclusionPreparation> m_occlusionPreparation;
+    mutable std::vector<std::shared_ptr<EnvironmentBake::Impl>> m_environmentBakes;
     wgpu::BindGroupLayout m_skinLayout;
     wgpu::ComputePipeline m_skinVertices;
     wgpu::ComputePipeline m_skinFaces;
@@ -960,16 +1003,64 @@ namespace Dot::Graphics {
                           "Renderer operations require its creating thread");
       }
 
-      std::scoped_lock lock(diagnostics->mutex);
-
       if (!allowGui && gui && gui->building()) {
         return Core::fail(Core::ErrorCode::InvalidState, "Renderer cannot reenter a GUI callback");
       }
 
       if (diagnostics->failed.load()) {
+        std::scoped_lock lock(diagnostics->mutex);
         return Core::fail(Core::ErrorCode::Unavailable, diagnostics->failure.empty()
                                                             ? "GPU device failed"
                                                             : diagnostics->failure);
+      }
+
+      if (!allowGui) {
+        return collectEnvironmentBakes();
+      }
+
+      return {};
+    }
+
+    /** Retain abandoned submissions within the same residency limit until the
+     * GPU completes; never turn cancellation into unbudgeted in-flight resources.
+     * 在同一驻留限制内保留放弃的提交直到 GPU 完成，取消不能绕过进行中资源预算。 */
+    auto collectEnvironmentBakes() const -> Core::Result<void> {
+      auto iterator = m_environmentBakes.begin();
+
+      while (iterator != m_environmentBakes.end()) {
+        auto& task = **iterator;
+
+        if (!task.reserved) {
+          iterator = m_environmentBakes.erase(iterator);
+          continue;
+        }
+
+        if (iterator->use_count() != 1) {
+          ++iterator;
+          continue;
+        }
+
+        const auto status = task.instance.WaitAny(task.future, 0);
+
+        if (status == wgpu::WaitStatus::TimedOut
+            && std::chrono::steady_clock::now() - task.started < std::chrono::seconds(10)) {
+          ++iterator;
+          continue;
+        }
+
+        if (status != wgpu::WaitStatus::Success || !task.pending->value) {
+          const auto message = status == wgpu::WaitStatus::Success ? task.pending->error
+                               : status == wgpu::WaitStatus::TimedOut
+                                   ? "Abandoned environment GPU work timed out after ten seconds"
+                                   : "Abandoned environment GPU completion poll failed";
+          diagnostics->record("Abandoned environment bake", static_cast<unsigned>(status),
+                              {message.data(), message.size()});
+          return Core::fail(Core::ErrorCode::Unavailable, message);
+        }
+
+        task.input.Destroy();
+        task.releaseReservation();
+        iterator = m_environmentBakes.erase(iterator);
       }
 
       return {};
@@ -4480,7 +4571,7 @@ namespace Dot::Graphics {
 
     if (m_impl->diagnostics->textures.load() >= m_impl->config.maxTextures
         || m_impl->diagnostics->textureBytes.load() + m_impl->diagnostics->environmentBytes.load()
-                   + bytes
+                   + m_impl->diagnostics->environmentJobBytes.load() + bytes
                > m_impl->config.maxTextureBytes) {
       return Core::fail(Core::ErrorCode::Unavailable,
                         "Renderer texture count/byte budget exhausted");
@@ -4681,7 +4772,9 @@ namespace Dot::Graphics {
                          m_impl->shadowBytes,
                          m_impl->occlusionStorageBytes,
                          stats.m_skins.load(),
-                         stats.m_skinBytes.load()};
+                         stats.m_skinBytes.load(),
+                         stats.environmentJobs.load(),
+                         stats.environmentJobBytes.load()};
   }
 
   auto Renderer::shadowPipelinesReady() const -> Core::Result<bool> {
@@ -4793,8 +4886,9 @@ namespace Dot::Graphics {
     return *bake && *surface;
   }
 
-  auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
-      -> Core::Result<EnvironmentMap> {
+  auto Renderer::beginEnvironmentBake(const EnvironmentSource& source,
+                                      const EnvironmentConfig& config)
+      -> Core::Result<EnvironmentBake> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
@@ -4805,114 +4899,76 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    auto description = validateEnvironment(panorama, config);
+    auto description = source.description(config);
+    auto images = source.levels();
 
-    if (!description) {
-      return std::unexpected(description.error());
+    if (!description || !images) {
+      return std::unexpected(description ? images.error() : description.error());
     }
+
+    const auto& panorama = images->front();
 
     if (panorama.width > m_impl->info.maxTextureDimension) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "HDR panorama exceeds GPU dimensions");
     }
 
+    auto& gpu = *m_impl;
+
+    if (!gpu.m_environmentPreparation || !gpu.m_environmentPreparation->job.pipeline) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Environment bake pipeline is not ready");
+    }
+
     std::uint64_t sourceBytes{};
-    auto width = panorama.width;
-    auto height = panorama.height;
-    std::uint32_t sourceLevels{};
 
-    do {
-      sourceBytes += static_cast<std::uint64_t>(width) * height * 16;
-      ++sourceLevels;
-      width /= 2;
-      height = std::max(1U, height / 2);
-    } while (width);
+    for (const auto& image : *images) {
+      sourceBytes += image.pixels.size() * sizeof(float);
+    }
 
-    const auto& counters = *m_impl->diagnostics;
+    const auto& counters = *gpu.diagnostics;
 
-    if (counters.environments.load() >= 32
-        || counters.environmentBytes.load() + counters.textureBytes.load() + sourceBytes
-                   + description->bytes
-               > m_impl->config.maxTextureBytes) {
+    if (counters.environments.load() + counters.environmentJobs.load() >= 32
+        || counters.environmentBytes.load() + counters.textureBytes.load()
+                   + counters.environmentJobBytes.load() + sourceBytes + description->bytes
+               > gpu.config.maxTextureBytes) {
       return Core::fail(Core::ErrorCode::Unavailable,
                         "Environment processing/residency budget exceeded");
     }
 
     try {
-      auto& gpu = *m_impl;
-      checked = gpu.ensureEnvironmentBake();
-
-      if (!checked) {
-        return std::unexpected(checked.error());
-      }
-
+      gpu.m_environmentBakes.reserve(32);
+      auto task = std::make_shared<EnvironmentBake::Impl>();
+      auto pending = std::make_shared<Pending<bool>>();
+      pending->keepAlive = gpu.diagnostics;
+      pending->error = "Environment GPU completion failed";
+      task->owner = gpu.diagnostics;
+      task->instance = gpu.instance;
+      task->reservedBytes = sourceBytes + description->bytes;
       ErrorScope scope(gpu.instance, gpu.device);
       auto map = std::make_shared<EnvironmentMap::Impl>();
       map->owner = gpu.diagnostics;
       map->description = *description;
+      task->map = map;
       wgpu::TextureDescriptor inputDescriptor;
       inputDescriptor.size = {panorama.width, panorama.height, 1};
+      const auto sourceLevels = static_cast<std::uint32_t>(images->size());
       inputDescriptor.mipLevelCount = sourceLevels;
       inputDescriptor.format = wgpu::TextureFormat::RGBA32Float;
       inputDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
       auto input = gpu.device.CreateTexture(&inputDescriptor);
+      task->input = input;
       auto inputView = input.CreateView();
-      const HdrImage* image = &panorama;
-      std::optional<HdrImage> owned;
 
       for (std::uint32_t level = 0; level < sourceLevels; ++level) {
+        const auto& image = (*images)[level];
         wgpu::TexelCopyTextureInfo destination;
         destination.texture = input;
         destination.mipLevel = level;
-        wgpu::TexelCopyBufferLayout layout;
-        layout.bytesPerRow = image->width * 16;
-        layout.rowsPerImage = image->height;
-        const wgpu::Extent3D extent{image->width, image->height, 1};
-        gpu.queue.WriteTexture(&destination, image->pixels.data(),
-                               image->pixels.size() * sizeof(float), &layout, &extent);
-
-        if (level + 1 == sourceLevels) {
-          break;
-        }
-
-        HdrImage next{std::max(1U, image->width / 2), std::max(1U, image->height / 2), {}};
-        next.pixels.resize(static_cast<std::size_t>(next.width) * next.height * 4);
-
-        for (std::uint32_t y = 0; y < next.height; ++y) {
-          for (std::uint32_t x = 0; x < next.width; ++x) {
-            const auto beginX = x * image->width / next.width;
-            const auto endX = (x + 1) * image->width / next.width;
-            const auto beginY = y * image->height / next.height;
-            const auto endY = (y + 1) * image->height / next.height;
-            std::array<double, 3> sum{};
-            double weight{};
-
-            for (auto sy = beginY; sy < endY; ++sy) {
-              const auto solidAngle
-                  = std::sin((static_cast<double>(sy) + 0.5) * 3.141592653589793 / image->height);
-
-              for (auto sx = beginX; sx < endX; ++sx) {
-                const auto offset = (static_cast<std::size_t>(sy) * image->width + sx) * 4;
-
-                for (std::size_t channel = 0; channel < 3; ++channel) {
-                  sum[channel] += image->pixels[offset + channel] * solidAngle;
-                }
-
-                weight += solidAngle;
-              }
-            }
-
-            const auto offset = (static_cast<std::size_t>(y) * next.width + x) * 4;
-
-            for (std::size_t channel = 0; channel < 3; ++channel) {
-              next.pixels[offset + channel] = static_cast<float>(sum[channel] / weight);
-            }
-
-            next.pixels[offset + 3] = 1;
-          }
-        }
-
-        owned = std::move(next);
-        image = &*owned;
+        wgpu::TexelCopyBufferLayout row;
+        row.bytesPerRow = image.width * 16;
+        row.rowsPerImage = image.height;
+        const wgpu::Extent3D extent{image.width, image.height, 1};
+        gpu.queue.WriteTexture(&destination, image.pixels.data(),
+                               image.pixels.size() * sizeof(float), &row, &extent);
       }
 
       const auto& layout = gpu.m_environmentPreparation->layout;
@@ -4992,10 +5048,7 @@ namespace Dot::Graphics {
         return std::unexpected(checked.error());
       }
 
-      auto pending = std::make_shared<Pending<bool>>();
-      pending->keepAlive = gpu.diagnostics;
-      pending->error = "Environment GPU completion failed";
-      auto future = gpu.queue.OnSubmittedWorkDone(
+      task->future = gpu.queue.OnSubmittedWorkDone(
           wgpu::CallbackMode::WaitAnyOnly,
           [pending](wgpu::QueueWorkDoneStatus status, wgpu::StringView message) noexcept {
             pending->value = status == wgpu::QueueWorkDoneStatus::Success;
@@ -5005,19 +5058,129 @@ namespace Dot::Graphics {
                               static_cast<unsigned>(status), message);
             }
           });
-      checked = wait(gpu.instance, future, "Environment preprocessing");
 
-      if (!checked || !pending->value) {
-        gpu.diagnostics->failed.store(true);
-        return checked ? Core::fail(Core::ErrorCode::Unavailable, pending->error)
-                       : std::unexpected(checked.error());
+      task->pending = std::move(pending);
+      task->started = std::chrono::steady_clock::now();
+      task->owner->environmentJobs.fetch_add(1);
+      task->owner->environmentJobBytes.fetch_add(task->reservedBytes);
+      task->reserved = true;
+      gpu.m_environmentBakes.push_back(task);
+      return EnvironmentBake(std::move(task));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Begin HDR bake: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::pollEnvironmentBake(EnvironmentBake& job)
+      -> Core::Result<std::optional<EnvironmentMap>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!job.m_impl || job.m_impl->owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid/foreign environment bake");
+    }
+
+    auto& task = *job.m_impl;
+
+    if (task.error) {
+      return std::unexpected(*task.error);
+    }
+
+    if (task.complete) {
+      return std::optional{EnvironmentMap(task.map)};
+    }
+
+    const auto status = task.instance.WaitAny(task.future, 0);
+
+    if (status == wgpu::WaitStatus::TimedOut
+        && std::chrono::steady_clock::now() - task.started < std::chrono::seconds(10)) {
+      return std::nullopt;
+    }
+
+    if (status != wgpu::WaitStatus::Success || !task.pending->value) {
+      task.error = Core::fail(Core::ErrorCode::Unavailable,
+                              status == wgpu::WaitStatus::Success ? task.pending->error
+                              : status == wgpu::WaitStatus::TimedOut
+                                  ? "Environment GPU completion timed out after ten seconds"
+                                  : "Environment GPU completion poll failed")
+                       .error();
+      task.owner->record("Environment bake", static_cast<unsigned>(status),
+                         {task.error->message.data(), task.error->message.size()});
+      task.releaseReservation();
+      task.map.reset();
+      return std::unexpected(*task.error);
+    }
+
+    task.input.Destroy();
+    task.releaseReservation();
+    task.map->tracked = true;
+    task.owner->environments.fetch_add(1);
+    task.owner->environmentBytes.fetch_add(task.map->description.bytes);
+    task.complete = true;
+    std::erase(m_impl->m_environmentBakes, job.m_impl);
+    return std::optional{EnvironmentMap(task.map)};
+  }
+
+  auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
+      -> Core::Result<EnvironmentMap> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto valid = validateEnvironment(panorama, config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    checked = m_impl->ensureEnvironmentBake();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      auto source = EnvironmentSource::prepare(panorama);
+
+      if (!source) {
+        return std::unexpected(source.error());
       }
 
-      input.Destroy();
-      map->tracked = true;
-      map->owner->environments.fetch_add(1);
-      map->owner->environmentBytes.fetch_add(description->bytes);
-      return EnvironmentMap(std::move(map));
+      auto task = beginEnvironmentBake(*source, config);
+
+      if (!task) {
+        return std::unexpected(task.error());
+      }
+
+      checked = wait(m_impl->instance, task->m_impl->future, "Environment preprocessing");
+
+      if (!checked) {
+        m_impl->diagnostics->failed.store(true);
+        return std::unexpected(checked.error());
+      }
+
+      auto result = pollEnvironmentBake(*task);
+
+      if (!result || !*result) {
+        return result ? Core::fail(Core::ErrorCode::Unavailable,
+                                   "Environment preprocessing did not complete")
+                      : Core::Result<EnvironmentMap>{std::unexpected(result.error())};
+      }
+
+      return std::move(**result);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Bake HDR environment: " + std::string(error.what()));

@@ -140,36 +140,151 @@ TEST_CASE("environment.gpu_async_preparation_move_thread_and_abandoned_job_are_s
   CHECK(renderer.bakeEnvironment(constantPanorama(), small));
 }
 
-TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings_and_cache") {
+TEST_CASE("environment.gpu_scene_readiness_is_pure_and_missing_hdr_preparation_fails") {
   auto renderer = Renderer::create().value();
   auto drawing = SceneRenderer::create(renderer).value();
   auto scene = Dot::World::Scene::create().value();
   CHECK(drawing.prepare(scene).value() == ScenePreparationStage::Ready);
   REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
-  auto ready = drawing.prepare(scene);
-  REQUIRE(ready);
+  auto ready = renderer.prepareEnvironmentPipelines();
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
-  while (*ready != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
+  while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ready = drawing.prepare(scene);
-    REQUIRE(ready);
+    ready = renderer.prepareEnvironmentPipelines();
   }
 
-  REQUIRE(*ready == ScenePreparationStage::Ready);
+  REQUIRE(ready);
+  REQUIRE(*ready);
+  CHECK(drawing.readiness(scene).value() == ScenePreparationStage::EnvironmentMap);
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(renderer.environment().value());
-  auto target = renderer.createTarget(4, 4).value();
-  CHECK_FALSE(drawing.renderInto(scene, target, {}, View{}));
+  CHECK_FALSE(drawing.prepare(scene));
+  CHECK_FALSE(drawing.readiness(scene));
   CHECK(drawing.stats()->bytes == 0);
   CHECK(renderer.resourceStats()->environments == 0);
   auto moved = std::move(drawing);
   CHECK_FALSE(drawing.prepare(scene));
-  CHECK(moved.prepare(scene).value() == ScenePreparationStage::Ready);
+  CHECK_FALSE(moved.prepare(scene));
   auto invalid = std::move(scene);
   CHECK_FALSE(moved.prepare(scene));
   REQUIRE(invalid.setEnvironment(std::nullopt));
   CHECK(moved.prepare(invalid).value() == ScenePreparationStage::Ready);
+}
+
+TEST_CASE("environment.gpu_async_bake_reserves_budget_without_publishing_and_preserves_energy") {
+  auto renderer = Renderer::create(nullptr, {.maxTextureBytes = 70000}).value();
+  auto ready = renderer.prepareEnvironmentPipelines();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.prepareEnvironmentPipelines();
+  }
+
+  REQUIRE(ready);
+  REQUIRE(*ready);
+  auto source = EnvironmentSource::prepare(constantPanorama()).value();
+  auto task = renderer.beginEnvironmentBake(source, small).value();
+  CHECK(renderer.resourceStats()->environmentJobs == 1);
+  CHECK(renderer.resourceStats()->environments == 0);
+  CHECK(renderer.resourceStats()->environmentJobBytes > 35552);
+  CHECK_FALSE(renderer.beginEnvironmentBake(source, small));
+  auto foreign = Renderer::create().value();
+  CHECK_FALSE(foreign.pollEnvironmentBake(task));
+  bool rejected{};
+  std::thread worker([&] { rejected = !renderer.pollEnvironmentBake(task); });
+  worker.join();
+  CHECK(rejected);
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        CHECK_FALSE(renderer.pollEnvironmentBake(task));
+        return {};
+      },
+      8, 8));
+  REQUIRE(renderer.closeGui());
+  auto moved = std::move(task);
+  CHECK_FALSE(renderer.pollEnvironmentBake(task));
+  auto result = renderer.pollEnvironmentBake(moved);
+  const auto finish = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (result && !*result && std::chrono::steady_clock::now() < finish) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    result = renderer.pollEnvironmentBake(moved);
+  }
+
+  REQUIRE(result);
+  REQUIRE(*result);
+  CHECK(renderer.pollEnvironmentBake(moved)->value() == **result);
+  CHECK(renderer.resourceStats()->environmentJobs == 0);
+  CHECK(renderer.resourceStats()->environmentJobBytes == 0);
+  CHECK(renderer.resourceStats()->environments == 1);
+  CHECK(renderer.readEnvironment(**result, EnvironmentSurface::Diffuse)->pixels[0]
+        == doctest::Approx(2).epsilon(.003));
+  result->reset();
+  CHECK(renderer.resourceStats()->environments == 1);
+  moved = {};
+  CHECK(renderer.resourceStats()->environments == 0);
+}
+
+TEST_CASE("environment.gpu_abandoned_bake_releases_reservations_and_blocks_overbudget_texture") {
+  auto renderer = Renderer::create(nullptr, {.maxTextureBytes = 40000}).value();
+  auto ready = renderer.prepareEnvironmentPipelines();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.prepareEnvironmentPipelines();
+  }
+
+  REQUIRE(ready);
+  REQUIRE(*ready);
+  auto source = EnvironmentSource::prepare(constantPanorama()).value();
+  Image image{32, 32, std::vector<std::uint8_t>(4096, 255)};
+
+  {
+    auto task = renderer.beginEnvironmentBake(source, small).value();
+    CHECK_FALSE(renderer.uploadTexture(image, {.mipmaps = false}));
+    CHECK(renderer.resourceStats()->textures == 0);
+    CHECK(renderer.resourceStats()->environmentJobs == 1);
+  }
+
+  CHECK(renderer.resourceStats()->environmentJobs == 1);
+  CHECK(renderer.resourceStats()->environmentJobBytes > 0);
+  REQUIRE(renderer.environmentPipelinesReady());
+  CHECK(renderer.resourceStats()->environmentJobs == 1);
+  const auto collected = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (renderer.resourceStats()->environmentJobs != 0
+         && std::chrono::steady_clock::now() < collected) {
+    REQUIRE(renderer.prepareEnvironmentPipelines());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  CHECK(renderer.resourceStats()->environmentJobs == 0);
+  CHECK(renderer.resourceStats()->environmentJobBytes == 0);
+  CHECK(renderer.resourceStats()->environments == 0);
+  CHECK(renderer.uploadTexture(image, {.mipmaps = false}));
+  EnvironmentBake orphan;
+
+  {
+    auto temporary = Renderer::create().value();
+    auto prepared = temporary.prepareEnvironmentPipelines();
+    const auto finish = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    while (prepared && !*prepared && std::chrono::steady_clock::now() < finish) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      prepared = temporary.prepareEnvironmentPipelines();
+    }
+
+    REQUIRE(prepared);
+    REQUIRE(*prepared);
+    orphan = temporary.beginEnvironmentBake(source, small).value();
+  }
+
+  CHECK_FALSE(renderer.pollEnvironmentBake(orphan));
+  orphan = {};
 }
 
 TEST_CASE("environment.gpu_constant_energy_hdr_diffuse_specular_mips_and_brdf_are_real") {

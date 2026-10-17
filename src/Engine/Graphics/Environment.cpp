@@ -1,13 +1,45 @@
 module;
 
+#include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <expected>
+#include <memory>
+#include <span>
+#include <stop_token>
+#include <string>
+#include <utility>
+#include <vector>
 
 module Dot.Graphics.Environment;
 
 namespace Dot::Graphics {
+  namespace {
+    auto describe(const EnvironmentConfig& config) -> EnvironmentInfo {
+      const auto cubeBytes = [](std::uint32_t side) {
+        std::uint64_t bytes{};
+
+        while (side) {
+          bytes += static_cast<std::uint64_t>(side) * side * 6 * 8;
+          side /= 2;
+        }
+
+        return bytes;
+      };
+
+      const auto bytes
+          = cubeBytes(config.radianceSize) + cubeBytes(config.specularSize)
+            + static_cast<std::uint64_t>(config.diffuseSize) * config.diffuseSize * 6 * 8
+            + static_cast<std::uint64_t>(config.brdfSize) * config.brdfSize * 8;
+      return EnvironmentInfo{
+          config, static_cast<std::uint32_t>(std::bit_width(config.radianceSize)),
+          static_cast<std::uint32_t>(std::bit_width(config.specularSize)), bytes};
+    }
+  }  // namespace
+
   auto validateEnvironmentConfig(const EnvironmentConfig& config) -> Core::Result<void> {
     const auto size = [](std::uint32_t value, std::uint32_t minimum, std::uint32_t maximum) {
       return value >= minimum && value <= maximum && std::has_single_bit(value);
@@ -48,21 +80,116 @@ namespace Dot::Graphics {
       }
     }
 
-    const auto cubeBytes = [](std::uint32_t side) {
-      std::uint64_t bytes{};
+    return describe(config);
+  }
 
-      while (side) {
-        bytes += static_cast<std::uint64_t>(side) * side * 6 * 8;
-        side /= 2;
+  struct EnvironmentSource::Impl {
+    std::vector<HdrImage> levels;
+  };
+
+  EnvironmentSource::EnvironmentSource(std::shared_ptr<const Impl> impl) noexcept
+      : m_impl(std::move(impl)) {
+  }
+
+  EnvironmentSource::EnvironmentSource(const EnvironmentSource&) noexcept = default;
+
+  auto EnvironmentSource::operator=(const EnvironmentSource&) noexcept
+      -> EnvironmentSource& = default;
+
+  EnvironmentSource::EnvironmentSource(EnvironmentSource&&) noexcept = default;
+
+  auto EnvironmentSource::operator=(EnvironmentSource&&) noexcept -> EnvironmentSource& = default;
+
+  EnvironmentSource::~EnvironmentSource() = default;
+
+  auto EnvironmentSource::prepare(HdrImage panorama, std::stop_token stop)
+      -> Core::Result<EnvironmentSource> {
+    try {
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Environment source preparation canceled");
       }
 
-      return bytes;
-    };
-    const auto bytes = cubeBytes(config.radianceSize) + cubeBytes(config.specularSize)
-                       + static_cast<std::uint64_t>(config.diffuseSize) * config.diffuseSize * 6 * 8
-                       + static_cast<std::uint64_t>(config.brdfSize) * config.brdfSize * 8;
-    return EnvironmentInfo{config, static_cast<std::uint32_t>(std::bit_width(config.radianceSize)),
-                           static_cast<std::uint32_t>(std::bit_width(config.specularSize)), bytes};
+      auto valid = validateEnvironment(panorama);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      auto impl = std::make_shared<Impl>();
+      impl->levels.reserve(14);
+      impl->levels.push_back(std::move(panorama));
+
+      while (impl->levels.back().width > 1) {
+        if (stop.stop_requested()) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Environment source preparation canceled");
+        }
+
+        const auto& image = impl->levels.back();
+        HdrImage next{std::max(1U, image.width / 2), std::max(1U, image.height / 2), {}};
+        next.pixels.resize(static_cast<std::size_t>(next.width) * next.height * 4);
+
+        for (std::uint32_t y = 0; y < next.height; ++y) {
+          for (std::uint32_t x = 0; x < next.width; ++x) {
+            const auto beginX = x * image.width / next.width;
+            const auto endX = (x + 1) * image.width / next.width;
+            const auto beginY = y * image.height / next.height;
+            const auto endY = (y + 1) * image.height / next.height;
+            std::array<double, 3> sum{};
+            double weight{};
+
+            for (auto sy = beginY; sy < endY; ++sy) {
+              const auto solidAngle
+                  = std::sin((static_cast<double>(sy) + 0.5) * 3.141592653589793 / image.height);
+
+              for (auto sx = beginX; sx < endX; ++sx) {
+                const auto offset = (static_cast<std::size_t>(sy) * image.width + sx) * 4;
+
+                for (std::size_t channel = 0; channel < 3; ++channel) {
+                  sum[channel] += image.pixels[offset + channel] * solidAngle;
+                }
+
+                weight += solidAngle;
+              }
+            }
+
+            const auto offset = (static_cast<std::size_t>(y) * next.width + x) * 4;
+
+            for (std::size_t channel = 0; channel < 3; ++channel) {
+              next.pixels[offset + channel] = static_cast<float>(sum[channel] / weight);
+            }
+
+            next.pixels[offset + 3] = 1;
+          }
+        }
+
+        impl->levels.push_back(std::move(next));
+      }
+
+      return EnvironmentSource(std::move(impl));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare environment source: " + std::string(error.what()));
+    }
+  }
+
+  auto EnvironmentSource::levels() const -> Core::Result<std::span<const HdrImage>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Environment source was moved from");
+    }
+
+    return std::span<const HdrImage>(m_impl->levels);
+  }
+
+  auto EnvironmentSource::description(const EnvironmentConfig& config) const
+      -> Core::Result<EnvironmentInfo> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Environment source was moved from");
+    }
+
+    auto checked = validateEnvironmentConfig(config);
+    return checked ? Core::Result<EnvironmentInfo>{describe(config)}
+                   : std::unexpected(checked.error());
   }
 
   auto environmentDirection(std::uint32_t face, Math::Vec2 uv) -> Core::Result<Math::Vec3> {

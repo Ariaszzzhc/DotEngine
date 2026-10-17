@@ -64,6 +64,10 @@ export namespace Dot::Graphics {
     std::uint64_t occlusionBytes{};
     std::uint64_t skins{};
     std::uint64_t skinBytes{};
+    /** Pending output plus RGBA32F source reservations, separate from ready maps.
+     * 未完成输出及 RGBA32F 输入的预留，与已就绪环境分开计数。 */
+    std::uint64_t environmentJobs{};
+    std::uint64_t environmentJobBytes{};
   };
 
   /** CPU visibility work for the completed pass. Input validation and bounds
@@ -353,6 +357,8 @@ export namespace Dot::Graphics {
     std::shared_ptr<Impl> m_impl;
   };
 
+  class EnvironmentBake;
+
   /** Immutable GPU radiance/diffuse/specular cube maps and correlated-Smith GGX
    * split-sum BRDF LUT. Diffuse stores irradiance/pi; specular levels map linear
    * perceptual roughness 0..1. Shared copies count once; queries require the owner
@@ -375,8 +381,31 @@ export namespace Dot::Graphics {
 
   private:
     friend class Renderer;
+    friend class EnvironmentBake;
     struct Impl;
     explicit EnvironmentMap(std::shared_ptr<Impl> impl) noexcept;
+    std::shared_ptr<Impl> m_impl;
+  };
+
+  /** Owned in-flight GPU bake. Move-only; destruction cancels publication and
+   * leaves reservations owned by the renderer until zero-wait collection observes
+   * completion. Driver teardown may finish pending work. A completed job retains
+   * its map; readiness/stat queries never collect abandoned jobs.
+   * 拥有进行中的 GPU 烘焙，仅可移动；销毁取消发布，渲染器保留预留直到零等待回收观察到
+   * 完成。驱动退出仍可能完成未结束工作；完成任务持有其贴图，就绪/统计查询不执行回收。 */
+  class EnvironmentBake {
+  public:
+    EnvironmentBake() noexcept;
+    EnvironmentBake(const EnvironmentBake&) = delete;
+    auto operator=(const EnvironmentBake&) -> EnvironmentBake& = delete;
+    EnvironmentBake(EnvironmentBake&&) noexcept;
+    auto operator=(EnvironmentBake&&) noexcept -> EnvironmentBake&;
+    ~EnvironmentBake();
+
+  private:
+    friend class Renderer;
+    struct Impl;
+    explicit EnvironmentBake(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;
   };
 
@@ -596,13 +625,32 @@ export namespace Dot::Graphics {
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
      * with ordinary textures. Failure publishes no partial resource. Explicitly
-     * synchronous: waits for the shared pipeline if not prepared, and GPU completion.
+     * synchronous: copies the source for CPU preparation and waits for the shared
+     * pipeline if not prepared, and GPU completion. Interactive clients prepare an
+     * owned EnvironmentSource on a worker, then begin/poll the same GPU bake.
      * 在 GPU 预处理真实 HDR 全景，最多 32 个环境；输出与临时 RGBA32F 源/mip 及普通
      * 纹理共用 maxTextureBytes 预算，失败不发布部分资源。此显式同步调用等待尚未准备好的
-     * 共享管线及 GPU 完成；交互客户应先轮询准备状态。 */
+     * 共享管线及 GPU 完成，复制源进行 CPU 准备；交互客户在工作线程准备拥有的
+     * EnvironmentSource，再提交/轮询同一 GPU 烘焙。 */
     [[nodiscard]] auto bakeEnvironment(const HdrImage& panorama,
                                        const EnvironmentConfig& config = {})
         -> Core::Result<EnvironmentMap>;
+    /** Submit prepared HDR levels after the bake pipeline is ready. No CPU mip
+     * generation or GPU-completion wait. Source data is copied before return.
+     * Pending outputs/sources share the texture budget and 32-environment limit.
+     * 烘焙管线就绪后提交预处理 HDR 层，不生成 CPU mip 或等待 GPU 完成；返回前复制
+     * 输入，未完成输出/输入共用纹理预算和 32 个环境限制。 */
+    [[nodiscard]] auto beginEnvironmentBake(const EnvironmentSource& source,
+                                            const EnvironmentConfig& config = {})
+        -> Core::Result<EnvironmentBake>;
+    /** Zero-wait owner-thread polling; empty means pending. Same completed map on
+     * repeated polls. Retain contextual failure; still-pending GPU work times out
+     * after ten seconds. Reject foreign/moved jobs, GUI reentry and device failure.
+     * 所属线程零等待轮询，空值表示处理中；重复轮询返回同一已完成贴图。保留错误，
+     * 未完成 GPU 任务十秒后超时；拒绝跨设备、移动后任务、GUI 重入及设备故障。 */
+    [[nodiscard]] auto pollEnvironmentBake(EnvironmentBake& job)
+        -> Core::Result<std::optional<EnvironmentMap>>;
+
     /** Diagnostic float readback of one face/mip; BRDF requires face/mip zero.
      * Missing/foreign/expired maps fail; no implicit GPU generation during reads.
      * 诊断性浮点读回一个面/mip；BRDF 仅允许面/mip 零；缺失、跨设备或过期地图失败，
