@@ -1968,3 +1968,111 @@ TEST_CASE(
                             revision(bounded)));
   CHECK(state(bounded) == compact);
 }
+
+TEST_CASE("document.apply_scene_field_writes_source_rebases_and_preserves_file_across_undo") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(),
+                              linkOperation(),
+                              {{"op", "name"}, {"entity", "4"}, {"name", "A local"}},
+                              {{"op", "name"}, {"entity", "7"}, {"name", "B local"}}}));
+  auto mesh = state(document)["scene"]["entities"][3]["mesh"];
+  mesh["visible"] = false;
+  edit(document,
+       Json::array(
+           {{{"op", "component"}, {"entity", "4"}, {"component", "mesh"}, {"value", mesh}}}));
+  const auto before = state(document);
+  auto result = request(
+      document,
+      {{"command", "apply-scene-field"}, {"root", "3"}, {"entity", "4"}, {"field", "mesh"}});
+  CHECK(result["sourceApplied"]
+        == Json{{"path", "assets/panels.dotscene"}, {"written", true}, {"sceneChanged", true}});
+  auto files = fixture.project().files().value();
+  const auto written = files.readText("assets/panels.dotscene").value();
+  auto saved = Dot::World::loadScene(files, "assets/panels.dotscene").value();
+  CHECK_FALSE(saved.entity({saved.id(), 1})->mesh->visible);
+  CHECK(saved.entity({saved.id(), 1})->name == "Source panel");
+  CHECK(request(document, overrideQuery("4"))["sceneOverrides"]["fields"] == Json{{"name", 1}});
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(files.readText("assets/panels.dotscene").value() == written);
+  REQUIRE(document.redo(revision(document)));
+  edit(document, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "6"}}}));
+  CHECK_FALSE(document.scene().value()->entity({document.scene().value()->id(), 7})->mesh->visible);
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 7})->name == "B local");
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK_FALSE(reopened.stats()->dirty);
+  CHECK(request(reopened, overrideQuery("4"))["sceneOverrides"]["fields"] == Json{{"name", 1}});
+}
+
+TEST_CASE("document.apply_source_conflict_noop_and_strict_requests_preserve_state") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document,
+       Json::array({linkOperation(), {{"op", "name"}, {"entity", "4"}, {"name", "Local"}}}));
+  auto files = fixture.project().files().value();
+  REQUIRE(source.renameEntity({source.id(), 1}, "External"));
+  REQUIRE(Dot::World::saveScene(files, "assets/panels.dotscene", source));
+  const auto disk = files.readText("assets/panels.dotscene").value();
+  const auto before = state(document);
+  Json command{{"command", "apply-scene-field"},
+               {"revision", before["revision"]},
+               {"root", "3"},
+               {"entity", "4"},
+               {"field", "name"}};
+  CHECK_FALSE(document.dispatch(command.dump()));
+  CHECK(state(document) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == disk);
+
+  for (auto field : {"id", "", "unknown", "/mesh"}) {
+    auto invalid = command;
+    invalid["field"] = field;
+    CHECK_FALSE(document.dispatch(invalid.dump()));
+    CHECK(state(document) == before);
+  }
+
+  auto extra = command;
+  extra["unknown"] = true;
+  CHECK_FALSE(document.dispatch(extra.dump()));
+  auto stale = command;
+  stale["revision"] = "1";
+  CHECK_FALSE(document.dispatch(stale.dump()));
+  command["field"] = "mesh";
+  auto noop = document.dispatch(command.dump());
+  REQUIRE(noop);
+  CHECK(Json::parse(*noop)["sourceApplied"]["written"] == false);
+  CHECK(state(document) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == disk);
+  REQUIRE(files.writeTextAtomic("assets/panels.dotscene", "{}"));
+  CHECK_FALSE(document.dispatch(command.dump()));
+  CHECK(state(document) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == "{}");
+  REQUIRE(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  CHECK_FALSE(document.dispatch(command.dump()));
+  CHECK(state(document) == before);
+  CHECK_FALSE(std::filesystem::exists(fixture.root / "game/assets/panels.dotscene"));
+}
+
+TEST_CASE("document.source_apply_prepares_history_before_external_publication") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(),
+                              {{"op", "name"}, {"entity", "4"}, {"name", std::string(100, 'x')}}}));
+  REQUIRE(document.save(revision(document)));
+  auto normal = fixture.document();
+  const auto budget = normal.stats()->historyBytes;
+  auto bounded = fixture.document({.historyBytes = budget});
+  const auto before = state(bounded);
+  auto files = fixture.project().files().value();
+  const auto disk = files.readText("assets/panels.dotscene").value();
+  auto result
+      = bounded.applySceneField({bounded.scene().value()->id(), 3},
+                                {bounded.scene().value()->id(), 4}, "name", revision(bounded));
+  REQUIRE_FALSE(result);
+  CHECK(state(bounded) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == disk);
+}

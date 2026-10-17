@@ -42,6 +42,12 @@ export namespace Dot::Editor {
     std::vector<std::uint64_t> created;
   };
 
+  struct SceneFieldApplyReport {
+    EditReport document;
+    std::string sourcePath;
+    bool sourceWritten{};
+  };
+
   /** Owns an authoring scene and bounded undo history, without runtime backends.
    * Operations require the creating thread. Moves preserve the stable scene
    * address; edits/undo/redo replace its scope and invalidate prior EntityIds.
@@ -115,6 +121,15 @@ export namespace Dot::Editor {
      * 额外保留一个至多 64 MiB 快照。 */
     [[nodiscard]] auto apply(std::string_view operations, std::uint64_t revision)
         -> Core::Result<EditReport>;
+    /** Write one inherited field to its saved immediate source and rebase this
+     * instance. Prepare scene/history before publication; conflicts/failures keep
+     * the document. Scene undo does not undo the external file. Callers serialize
+     * source files; publication guards are not an OS-wide compare-and-swap.
+     * 将继承字段写入已保存的直接来源并重建本实例基线；先准备场景/历史再发布，冲突/
+     * 失败保留文档。场景撤销不撤销外部文件；调用者串行源文件操作，检查不是 OS 比较交换。 */
+    [[nodiscard]] auto applySceneField(World::EntityId root, World::EntityId entity,
+                                       std::string_view field, std::uint64_t revision)
+        -> Core::Result<SceneFieldApplyReport>;
     /** Typed atomic transform batch, at most 10000 current-scene handles.
      * Uses the same prepared scene/history commit as edit, without JSON operation
      * count/transport limits. Empty/no-op batches preserve revision and history.
@@ -153,6 +168,8 @@ export namespace Dot::Editor {
      * save-selection-scene, undo, redo, save. Scene-content save publishes a new
      * assets file without changing document state. instantiate-scene edits select
      * a new placement root and remap native references through a prepared candidate.
+     * apply-scene-field writes a complete inherited field to its current saved source
+     * and rebases the instance; source-file writes are outside scene undo.
      * link-scene retains source provenance; refresh-scene-instance merges saved
      * source changes with local overrides. revert-scene-instance restores source-owned
      * nodes; unlink-scene-instance retains the materialized authored entities.
@@ -167,6 +184,7 @@ export namespace Dot::Editor {
      * listener flags, and select mapped input IDs. Script properties stay opaque;
      * arbitrary numbers/strings are not interpreted as entity references.
      * 内容保存仅发布新资产文件，不改变文档；场景插入选择新的放置根并在候选中重映射原生引用。
+     * apply-scene-field 将完整继承字段写回当前已保存来源并重建实例基线；源文件写入不属场景撤销。
      * link-scene 保留来源；refresh-scene-instance 合并已保存源变化并保留本地覆盖；
      * revert-scene-instance 恢复源拥有节点，unlink-scene-instance 保留展开的编辑实体。
      * inspect-scene-overrides 无需版本或读源文件，分页查看已应用修改；revert-scene-overrides

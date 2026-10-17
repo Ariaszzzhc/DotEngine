@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <limits>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
@@ -12,6 +14,8 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.World.SceneContent;
 import Dot.World.SceneLinks;
+import Dot.World.SceneSources;
+import Dot.World.SceneResolver;
 
 namespace {
   using namespace Dot::World;
@@ -264,4 +268,201 @@ TEST_CASE("scene_links.strict_metadata_owner_and_failed_replacement_preserve_sta
   invalid["links"][0]["unexpected"] = true;
   CHECK_FALSE(decodeScene(invalid.dump()));
   CHECK_FALSE(prepareSceneLinkUpdate(moved, f.source, {f.source.id(), 2}, 5));
+}
+
+TEST_CASE("scene_links.apply_field_prepares_source_and_rebases_only_selected_override") {
+  Fixture f;
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Shared panel"));
+  REQUIRE(f.target.setTransform({f.target.id(), 3}, {{7, 0, 0}}));
+  const auto before = text(f.target);
+  const auto sourceBefore = text(f.source);
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto applied = prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                        "name", 5);
+  REQUIRE_MESSAGE(applied, (applied ? "" : applied.error().message));
+  CHECK(applied->sourceChanged);
+  CHECK(applied->source.entity({applied->source.id(), 1})->name == "Shared panel");
+  const auto& result = applied->instance.scene;
+  CHECK(result.entity({result.id(), 3})->transform.position.x == 7);
+  auto changes = inspectSceneOverrides(result, {result.id(), 2}).value();
+  CHECK(changes.total == 1);
+  CHECK(changes.fields == std::map<std::string, std::size_t>{{"transform", 1}});
+  CHECK(text(f.target) == before);
+  CHECK(text(f.source) == sourceBefore);
+  auto next = captureSceneSource(applied->source, "assets/panels.dotscene").value();
+  auto repeat = prepareSceneFieldApply(result, next, {result.id(), 2}, {result.id(), 3}, "name", 5);
+  REQUIRE(repeat);
+  CHECK_FALSE(repeat->sourceChanged);
+  CHECK(text(repeat->instance.scene) == text(result));
+  auto reserved
+      = prepareSceneFieldApply(result, next, {result.id(), 2}, {result.id(), 3}, "name", 99)
+            .value();
+  CHECK(reserved.instance.scene.nextEntityValue()->value() == 99);
+}
+
+TEST_CASE("scene_links.apply_field_conflicts_and_native_reference_boundaries_are_atomic") {
+  Fixture f;
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Local"));
+  REQUIRE(f.source.renameEntity({f.source.id(), 1}, "External"));
+  const auto before = text(f.target);
+  const auto sourceBefore = text(f.source);
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                     "name", 5));
+  CHECK_FALSE(
+      prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3}, "id", 5));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 2},
+                                     "name", 5));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                     "name", 4));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.source.id(), 1},
+                                     "name", 5));
+  CHECK(text(f.target) == before);
+  CHECK(text(f.source) == sourceBefore);
+  REQUIRE(f.target.setParent({f.target.id(), 4}, std::nullopt));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 4},
+                                     "parent", 5));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, 1}};
+  REQUIRE(f.target.setAnimationPlayer({f.target.id(), 3}, animation));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                     "animation", 5));
+}
+
+TEST_CASE("scene_links.apply_native_references_and_opaque_script_values_in_source_space") {
+  Fixture f;
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, 4}};
+  REQUIRE(f.target.setAnimationPlayer({f.target.id(), 3}, animation));
+  auto applied = prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                        "animation", 5)
+                     .value();
+  CHECK(applied.source.entity({applied.source.id(), 1})->animation->targets.front().entity == 2);
+  CHECK(inspectSceneOverrides(applied.instance.scene, applied.instance.root)->total == 0);
+  auto& target = applied.instance.scene;
+  REQUIRE(
+      target.setScript({target.id(), 3}, ScriptComponent{"actor.ts", "Actor", R"({"value":4})"}));
+  auto current = captureSceneSource(applied.source, "assets/panels.dotscene").value();
+  auto script
+      = prepareSceneFieldApply(target, current, {target.id(), 2}, {target.id(), 3}, "script", 5)
+            .value();
+  CHECK(script.source.entity({script.source.id(), 1})->script->properties == R"({"value":4})");
+  CHECK(inspectSceneOverrides(script.instance.scene, script.instance.root)->total == 0);
+}
+
+TEST_CASE("scene_links.apply_camera_preserves_source_primary_and_rejects_local_primary") {
+  Fixture f;
+  REQUIRE(f.source.setCamera({f.source.id(), 1}, Camera{.primary = true}));
+  f.target = std::move(f.update().scene);
+  auto camera = f.target.entity({f.target.id(), 3})->camera.value();
+  camera.verticalFovDegrees = 45;
+  REQUIRE(f.target.setCamera({f.target.id(), 3}, camera));
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto applied = prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                        "camera", 5)
+                     .value();
+  CHECK(applied.source.entity({applied.source.id(), 1})->camera->primary);
+  CHECK_FALSE(applied.instance.scene.entity({applied.instance.scene.id(), 3})->camera->primary);
+  CHECK(inspectSceneOverrides(applied.instance.scene, applied.instance.root)->total == 0);
+  camera.primary = true;
+  REQUIRE(f.target.setCamera({f.target.id(), 3}, camera));
+  CHECK_FALSE(prepareSceneFieldApply(f.target, snapshot, {f.target.id(), 2}, {f.target.id(), 3},
+                                     "camera", 5));
+}
+
+TEST_CASE("scene_links.apply_nested_field_keeps_link_identity_and_later_source_updates") {
+  Fixture f;
+  auto assembly = Scene::create("Assembly").value();
+  assembly = std::move(prepareLinkedScene(assembly, f.source, "assets/leaf.dotscene", 1)->scene);
+  std::map<std::string, std::string> saved{{"assets/leaf.dotscene", text(f.source)},
+                                           {"assets/assembly.dotscene", text(assembly)}};
+  const auto resolve = [&] {
+    return resolveSceneSource("assets/assembly.dotscene",
+                              [&](std::string_view asset, std::size_t) {
+                                return Dot::Core::Result<std::string>{saved.at(std::string(asset))};
+                              })
+        .value();
+  };
+  auto current = resolve();
+  auto level = Scene::create("Level").value();
+  auto linked = prepareLinkedScene(level, current.source, 1).value();
+  auto& target = linked.scene;
+  const auto links = target.sceneLinks().value();
+  const auto mapped
+      = std::ranges::find(links[0].mapping, SceneSourceKey{1, 1}, &SceneLinkMapping::key);
+  REQUIRE(mapped != links[0].mapping.end());
+  const auto value = mapped->target;
+  REQUIRE(target.renameEntity({target.id(), value}, "Assembly-local panel"));
+  auto applied = prepareSceneFieldApply(target, current.source, linked.root, {target.id(), value},
+                                        "name", target.nextEntityValue()->value())
+                     .value();
+  CHECK(applied.source.sceneLinks()->size() == 1);
+  CHECK(f.source.entity({f.source.id(), 1})->name == "Panel");
+  saved["assets/assembly.dotscene"] = text(applied.source);
+  REQUIRE(f.source.renameEntity({f.source.id(), 2}, "Leaf child updated"));
+  saved["assets/leaf.dotscene"] = text(f.source);
+  current = resolve();
+  auto updated
+      = prepareSceneLinkUpdate(applied.instance.scene, current.source, applied.instance.root,
+                               applied.instance.scene.nextEntityValue()->value())
+            .value();
+  CHECK(updated.scene.entity({updated.scene.id(), value})->name == "Assembly-local panel");
+  CHECK(inspectSceneOverrides(updated.scene, updated.root)->total == 0);
+  CHECK(updated.scene.sceneLinks()->front().mapping[1].key == SceneSourceKey{1, 1});
+}
+
+TEST_CASE("scene_links.apply_equal_nested_source_does_not_persist_temporary_namespace_ids") {
+  Fixture f;
+  auto assembly = Scene::create("Assembly").value();
+  assembly = std::move(prepareLinkedScene(assembly, f.source, "assets/leaf.dotscene", 1)->scene);
+  std::map<std::string, std::string> saved{{"assets/leaf.dotscene", text(f.source)},
+                                           {"assets/assembly.dotscene", text(assembly)}};
+  const auto resolve = [&] {
+    return resolveSceneSource("assets/assembly.dotscene",
+                              [&](std::string_view asset, std::size_t) {
+                                return Dot::Core::Result<std::string>{saved.at(std::string(asset))};
+                              })
+        .value();
+  };
+  auto original = resolve();
+  auto scene = Scene::create("Level").value();
+  auto linked = prepareLinkedScene(scene, original.source, 1).value();
+  const auto mapping = linked.scene.sceneLinks()->front().mapping;
+  const auto leaf
+      = std::ranges::find(mapping, SceneSourceKey{1, 1}, &SceneLinkMapping::key)->target;
+  REQUIRE(linked.scene.renameEntity({linked.scene.id(), leaf}, "Same edit"));
+  REQUIRE(assembly.renameEntity({assembly.id(), 2}, "Same edit"));
+  saved["assets/assembly.dotscene"] = text(assembly);
+  REQUIRE(f.source.createEntity("New inherited node"));
+  saved["assets/leaf.dotscene"] = text(f.source);
+  auto current = resolve();
+  auto applied = prepareSceneFieldApply(linked.scene, current.source, linked.root,
+                                        {linked.scene.id(), leaf}, "name", 5)
+                     .value();
+  CHECK_FALSE(applied.sourceChanged);
+  CHECK(inspectSceneOverrides(applied.instance.scene, applied.instance.root)->total == 0);
+  auto again = resolve();
+  auto refreshed
+      = prepareSceneLinkUpdate(applied.instance.scene, again.source, applied.instance.root,
+                               applied.instance.scene.nextEntityValue()->value());
+  REQUIRE_MESSAGE(refreshed, (refreshed ? "" : refreshed.error().message));
+  CHECK(text(refreshed->scene) == text(applied.instance.scene));
+}
+
+TEST_CASE("scene_links.apply_rejects_invalid_combined_source_hierarchy") {
+  auto source = Scene::create("Source").value();
+  REQUIRE(source.createEntity("A"));
+  REQUIRE(source.createEntity("B"));
+  auto target = Scene::create("Target").value();
+  auto linked = prepareLinkedScene(target, source, "assets/source.dotscene", 1).value();
+  REQUIRE(linked.scene.setParent({linked.scene.id(), 2}, EntityId{linked.scene.id(), 3}));
+  REQUIRE(source.setParent({source.id(), 2}, EntityId{source.id(), 1}));
+  auto snapshot = captureSceneSource(source, "assets/source.dotscene").value();
+  const auto before = text(linked.scene);
+  CHECK_FALSE(prepareSceneFieldApply(linked.scene, snapshot, linked.root, {linked.scene.id(), 2},
+                                     "parent", 4));
+  CHECK(text(linked.scene) == before);
 }

@@ -139,9 +139,9 @@ creates independent content, preserving the original link only on its original r
 
 Runtime/Play/export use materialized entities without reading link source files.
 Editor insertion/refresh resolves saved linked sources recursively before flattening
-the resulting materialization. Variants, applying overrides back to source,
-source-path retargeting remain unfinished. `Dot.World.SceneLinks`
-provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
+the resulting materialization. Whole-field application is described below; variants,
+whole-instance/topology application and source-path retargeting remain unfinished.
+`Dot.World.SceneLinks` provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
 owns validated link metadata. Existing target handles remain untouched until callers
 publish the complete candidate.
 
@@ -321,3 +321,55 @@ callers may lower these limits; higher/zero limits reject before reading. The lo
 receives the remaining input quota and returned text is checked before decoding.
 Resolution is synchronous; background authoring I/O and incremental dependency
 tracking remain future work.
+
+## Applying a complete field to its source
+
+An overridden live inherited node now has **Apply field to source** beside **Restore
+field**. It writes that complete native field to the saved immediate source and
+rebases this instance, retaining placement and other local overrides. Other instances
+refresh explicitly. This edits a shared asset: scene Undo restores the document's
+previous baseline/local edits, but does not undo the source file. Save the active
+scene explicitly after reviewing the result.
+
+```json
+{"command":"apply-scene-field","revision":"18","root":"20","entity":"22","field":"material"}
+```
+
+This is a separate document/workspace command, not an `edit` batch operation. All
+fields are required, extras reject, and the current revision is mandatory. The
+response adds `sourceApplied` with `path`, `written` and `sceneChanged`. A no-op
+preserves document revision/scope/history/allocation and does not write the file.
+If someone already saved exactly the local value, the source need not be rewritten;
+the instance still adopts its current baseline. Applying an unchanged local field
+is a no-op rather than an unrelated source refresh.
+
+The native `prepareSceneFieldApply` is CPU-only and returns a prepared source scene
+and instance update. Comparisons/remapping use persistent logical source keys,
+including nested inherited nodes, rather than target or temporary materialization
+IDs. Native parent/skin/animation references must belong to that source; arbitrary
+script JSON remains literal. A detached parent outside the placement cannot be
+applied. Placement-local primary camera/listener flags must be edited directly in
+the source; ordinary field changes preserve the source's primary setting while
+inherited target flags remain demoted. Additions/deletions/placement roots and `id`
+are not field operations. Applying whole topology or arbitrary override pages is
+still unfinished.
+
+If the selected source field changed since the instance baseline to a different
+value, Apply fails as a conflict. Refresh first, inspect the new baseline/local
+values, then deliberately apply the desired field. Final source and target component,
+hierarchy and reference validation must succeed. Unrelated source fields are retained;
+other local overrides follow ordinary three-way refresh rules.
+
+The operation resolves current saved dependencies before preparation. A changed
+source is saved as that refreshed immediate materialization, including its nested
+link metadata/updates; nested source files are not written. No-write rebases keep
+the original source namespace observations and do not promote temporary IDs to
+saved reservations. File text/project metadata/dependency bytes are checked again
+before publication. Caller serialization is still required; this is not a filesystem
+transaction against hostile races.
+
+The document prepares bounded history and allocation before saving. A source-write
+failure retains the document and explicitly reports that the file may have committed;
+a response/catalog failure after publication likewise reports possible/actual effects.
+Pending drafts, Play, animation audition, transform gestures and conflicting dialogs
+reject workspace application. GUI and agent commands share the same operation.

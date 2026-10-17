@@ -1998,3 +1998,13 @@ content, not allocator metadata. Rejected edits and complete no-op batches publi
 neither new values nor floor changes. Root scene JSON includes the current metadata,
 so content-only undo comparisons should exclude `nextEntity` and check its
 monotonicity separately. This does not add a user command that can rewind IDs.
+
+### Applying a linked field
+
+The overridden field's Apply field to source button uses the strict
+`apply-scene-field` command, shared with headless documents and the live mailbox.
+It writes the complete field to the immediate saved source and rebases only this
+instance; other placements refresh explicitly. Scene Undo does not undo the external
+file. Inspect `sourceApplied.path`, `written` and `sceneChanged` in the applied response.
+See [source application contracts](SceneContent.md#applying-a-complete-field-to-its-source)
+for conflicts, nested identities, native-reference boundaries and publication behavior.

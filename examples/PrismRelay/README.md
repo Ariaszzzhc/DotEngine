@@ -51,6 +51,9 @@ The twelve straight ducts and fourteen supports are linked instances. Open and s
 their source scenes, then Refresh source on the desired placement roots to propagate
 changes. Inspector field markers identify applied local overrides; Restore field
 returns a whole component to the last refreshed baseline without changing siblings.
+Apply field to source writes one overridden field to its saved source after conflict
+checks, then rebases that instance. Other placements refresh explicitly; scene Undo
+does not undo the shared source file.
 Play and exported games consume the saved instances without source-file refresh.
 Lighting uses directional cascades and three local point-light shadow sources, SSAO and HDR tone
 mapping. Local maps use 512px faces within the shared depth-atlas budget.

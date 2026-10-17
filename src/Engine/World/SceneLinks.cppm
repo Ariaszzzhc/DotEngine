@@ -23,6 +23,12 @@ export namespace Dot::World {
     std::vector<std::uint64_t> created;
   };
 
+  struct SceneFieldApply {
+    Scene source;
+    SceneLinkUpdate instance;
+    bool sourceChanged{};
+  };
+
   enum class SceneOverrideKind { Property, DeletedNode, AddedNode };
 
   struct SceneOverrideKey {
@@ -102,6 +108,21 @@ export namespace Dot::World {
   [[nodiscard]] auto prepareSceneFieldRevert(const Scene& target, EntityId root, EntityId entity,
                                              std::string_view field)
       -> Core::Result<SceneLinkUpdate>;
+
+  /** Apply a live inherited node's complete field to its current immediate source,
+   * then rebase this instance, retaining other overrides/placement. Conflicting
+   * source edits reject. References use persistent logical keys, never target IDs;
+   * external references and placement-local primary flags cannot be applied.
+   * Changed sources are prepared as saved materializations, including resolved
+   * nested updates. No I/O; caller publishes source before the prepared instance.
+   * 将存活继承节点的完整字段应用到当前直接来源，再重建实例基线，保留其他覆盖和放置。
+   * 源字段冲突时拒绝；原生引用按持久逻辑键重映射，不写入目标 ID；拒绝外部引用和本地
+   * 主标记。改变的源按已保存展开内容准备，包含已解析的嵌套更新；不读写文件，调用者须
+   * 先发布源文件再发布预备实例。 */
+  [[nodiscard]] auto prepareSceneFieldApply(const Scene& target, const SceneSourceSnapshot& source,
+                                            EntityId root, EntityId entity, std::string_view field,
+                                            std::uint64_t firstValue)
+      -> Core::Result<SceneFieldApply>;
 
   /** Link a materialized copy to a project source, with an owned baseline and
    * stable node mapping. Source links are flattened into their saved entities;

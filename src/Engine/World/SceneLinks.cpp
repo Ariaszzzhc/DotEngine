@@ -595,6 +595,250 @@ namespace Dot::World {
     }
   }
 
+  auto prepareSceneFieldApply(const Scene& target, const SceneSourceSnapshot& source, EntityId root,
+                              EntityId entity, std::string_view field, std::uint64_t firstValue)
+      -> Core::Result<SceneFieldApply> {
+    try {
+      auto valid = validateSceneSourceSnapshot(source);
+      auto live = target.entity(entity);
+      auto data = overrideData(target, root);
+      auto canonical = canonicalSource(source);
+      auto floor = target.nextEntityValue();
+      auto sourceText = encodeScene(source.scene);
+
+      if (!valid || !live || !data || !canonical || !floor || !sourceText) {
+        return std::unexpected(!valid       ? valid.error()
+                               : !live      ? live.error()
+                               : !data      ? data.error()
+                               : !canonical ? canonical.error()
+                               : !floor     ? floor.error()
+                                            : sourceText.error());
+      }
+
+      if (data->link.asset != source.asset || firstValue == 0
+          || firstValue < floor->value_or(std::numeric_limits<std::uint64_t>::max())) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Field apply requires the matching source and reserved allocation floor");
+      }
+
+      const auto owned = data->sources.find(entity.value);
+
+      if (owned == data->sources.end()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Field apply requires a live inherited node of this instance");
+      }
+
+      const auto& expected = data->expected.at(owned->second);
+
+      if (field == "id" || !expected.contains(field)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown or immutable scene field");
+      }
+
+      std::map<std::uint64_t, SceneSourceKey> targetKeys, sourceKeys;
+      std::map<SceneSourceKey, std::uint64_t> sourceValues;
+      std::vector<SceneSourceOrigin> previous;
+
+      for (const auto& pair : data->link.mapping) {
+        targetKeys.emplace(pair.target, pair.key);
+        previous.push_back({pair.source, pair.key});
+      }
+
+      for (const auto& origin : source.origins) {
+        sourceKeys.emplace(origin.entity, origin.key);
+        sourceValues.emplace(origin.key, origin.entity);
+      }
+
+      valid = validateSceneSourceUpdate(source.asset, previous, data->link.namespaces,
+                                        canonical->origins, source.namespaces);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      const auto& key = targetKeys.at(entity.value);
+      const auto incomingValue = sourceValues.find(key);
+
+      if (incomingValue == sourceValues.end()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Source removed the applied node");
+      }
+
+      auto sourceDocument = Codec::parseJson(*sourceText);
+      auto incoming = std::ranges::find_if(sourceDocument["entities"], [&](const auto& value) {
+        return Codec::id(value["id"]) == incomingValue->second;
+      });
+      auto local = std::ranges::find_if(data->document["entities"], [&](const auto& value) {
+        return Codec::id(value["id"]) == entity.value;
+      });
+      const auto originalField = (*incoming)[field];
+      const auto localField = (*local)[field];
+      const bool primary = field == "camera" || field == "audioListener";
+
+      if (primary && !localField.is_null() && localField["primary"].get<bool>()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Primary flags are placement-local; edit the source scene directly");
+      }
+
+      if (field == "parent" && localField.is_null()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "A parent outside the placement cannot be applied to its source");
+      }
+
+      using Reference = std::function<Core::Result<Json>(std::uint64_t)>;
+      const auto remap = [&](Json value, const Reference& reference) -> Core::Result<Json> {
+        const auto replace = [&](Json& id) -> Core::Result<void> {
+          auto mapped = reference(Codec::id(id));
+
+          if (!mapped) {
+            return std::unexpected(mapped.error());
+          }
+
+          id = std::move(*mapped);
+          return {};
+        };
+
+        if (field == "parent" && !value.is_null()) {
+          auto changed = replace(value);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        } else if (field == "skin" && !value.is_null()) {
+          for (auto& joint : value["joints"]) {
+            auto changed = replace(joint);
+
+            if (!changed) {
+              return std::unexpected(changed.error());
+            }
+          }
+        } else if (field == "animation" && !value.is_null()) {
+          for (auto& binding : value["targets"]) {
+            auto changed = replace(binding["entity"]);
+
+            if (!changed) {
+              return std::unexpected(changed.error());
+            }
+          }
+        }
+
+        return value;
+      };
+      const auto logical = [&](const auto& keys, bool targetSpace) -> Reference {
+        return [&, targetSpace, keys = &keys](std::uint64_t id) -> Core::Result<Json> {
+          if (targetSpace && field == "parent" && id == root.value) {
+            return Json(nullptr);
+          }
+
+          const auto found = keys->find(id);
+
+          if (found == keys->end()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Applied native reference is outside this source instance");
+          }
+
+          return Json(found->second);
+        };
+      };
+      auto baselineField = remap(expected[field], logical(targetKeys, true));
+      auto normalizedLocal = remap(localField, logical(targetKeys, true));
+      auto normalizedSource = remap(originalField, logical(sourceKeys, false));
+
+      if (!baselineField || !normalizedLocal || !normalizedSource) {
+        return std::unexpected(!baselineField     ? baselineField.error()
+                               : !normalizedLocal ? normalizedLocal.error()
+                                                  : normalizedSource.error());
+      }
+
+      if (primary && !normalizedSource->is_null()) {
+        (*normalizedSource)["primary"] = false;
+      }
+
+      if (*normalizedLocal == *baselineField) {
+        auto unchanged = decodeScene(data->document.dump());
+        auto sourceCopy = decodeScene(*sourceText);
+
+        if (!unchanged || !sourceCopy) {
+          return std::unexpected(!unchanged ? unchanged.error() : sourceCopy.error());
+        }
+
+        auto reserved = unchanged->reserveEntityValuesBefore(
+            firstValue == std::numeric_limits<std::uint64_t>::max() ? std::optional<std::uint64_t>{}
+                                                                    : std::optional{firstValue});
+
+        if (!reserved) {
+          return std::unexpected(reserved.error());
+        }
+
+        const EntityId copiedRoot{unchanged->id(), root.value};
+        return SceneFieldApply{
+            std::move(*sourceCopy), {std::move(*unchanged), copiedRoot, {}}, false};
+      }
+
+      if (*normalizedSource != *baselineField && *normalizedSource != *normalizedLocal) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Source field changed since baseline; refresh before applying");
+      }
+
+      auto appliedField = remap(localField, [&](std::uint64_t id) -> Core::Result<Json> {
+        if (field == "parent" && id == root.value) {
+          return Json(nullptr);
+        }
+
+        const auto origin = targetKeys.find(id);
+        const auto value
+            = origin == targetKeys.end() ? sourceValues.end() : sourceValues.find(origin->second);
+
+        if (value == sourceValues.end()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Applied native reference has no current source node");
+        }
+
+        return Json(std::to_string(value->second));
+      });
+
+      if (!appliedField) {
+        return std::unexpected(appliedField.error());
+      }
+
+      if (primary && !appliedField->is_null() && !originalField.is_null()) {
+        (*appliedField)["primary"] = originalField["primary"];
+      }
+
+      const bool sourceChanged = *appliedField != originalField;
+      (*incoming)[field] = std::move(*appliedField);
+      auto preparedSource = decodeScene(sourceDocument.dump());
+
+      if (!preparedSource) {
+        return Core::fail(preparedSource.error().code,
+                          "Applied source field: " + preparedSource.error().message);
+      }
+
+      auto bounded = encodeScene(*preparedSource);
+
+      if (!bounded) {
+        return std::unexpected(bounded.error());
+      }
+
+      auto updated = [&]() -> Core::Result<SceneLinkUpdate> {
+        if (!sourceChanged) {
+          return prepareSceneLinkUpdate(target, source, root, firstValue);
+        }
+
+        auto persisted = captureSceneSource(*preparedSource, source.asset);
+        return persisted ? prepareSceneLinkUpdate(target, *persisted, root, firstValue)
+                         : Core::Result<SceneLinkUpdate>{std::unexpected(persisted.error())};
+      }();
+
+      if (!updated) {
+        return std::unexpected(updated.error());
+      }
+
+      return SceneFieldApply{std::move(*preparedSource), std::move(*updated), sourceChanged};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Apply scene field to source: " + std::string(error.what()));
+    }
+  }
+
   auto prepareSceneOverrideRevert(const Scene& target, EntityId root,
                                   std::span<const SceneOverrideKey> keys)
       -> Core::Result<SceneLinkUpdate> {

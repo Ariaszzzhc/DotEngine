@@ -10219,3 +10219,114 @@ distribution archive is created. Version probing and remaining startup/resource
 I/O, broader authoring/animation workflows, game-specific progression, final art/game
 experience and overall production readiness remain unfinished. Final formatting,
 whitespace and ownership/error/platform/test reviews pass before commit.
+
+## 2026-10-17 — Apply an inherited field to its source
+
+Continue Prism Relay's modular production workflow: twelve straight ducts and
+fourteen supports already share saved scene sources, but iterating one placed
+material still required navigating into the source scene and reproducing the edit.
+Add Apply field to source beside Restore field in the entity Inspector, through
+strict document/live `apply-scene-field` and the same native operation. Apply one
+complete inherited field, then rebase only that placement. Other placements refresh
+explicitly. The source file is an external shared edit: scene Undo restores the old
+active document, not the source file. Additions/deletions, whole-instance/topology
+application, variants and retargeting remain unfinished.
+
+Prepare the current saved dependency graph before comparing the selected field.
+Reject a different concurrent source-field change until the author refreshes and
+reviews the local override against the new baseline. Compare/remap native parent,
+skin and animation references through persistent logical source keys; arbitrary
+script properties remain literal. Reject placement-local primary flags, detached
+parents, external native references, roots/local additions and invalid final graphs.
+Preserve source primary settings while inherited flags stay demoted. An unchanged
+local field is a no-op, without refreshing unrelated source fields or writing disk.
+
+A changed immediate source is saved as its resolved materialization, retaining its
+nested links/updates without writing nested files. Capture actual saved physical
+reservations before rebasing. If another author already saved exactly the local
+field, retain the original resolved snapshot instead: promoting temporary working
+allocations in this no-write case would corrupt future layered-identity validation.
+A durable nested regression exercises newly inherited source nodes and a later
+refresh through that boundary. Preserve caller allocation floors even in pure
+preparation no-ops; document no-ops retain revision, scope and history.
+
+Validate source and target candidates, and allocate/validate bounded scene history,
+before the resource write. Recheck project metadata, immediate source baseline and
+all observed dependency bytes before publication. The existing atomic text save
+prepares its new baseline before writing. After successful publication, document
+ownership/history replacement does not allocate. Publication/response/catalog
+failures explicitly retain possible/actual external effects; there is no fictitious
+rollback. Caller-serialized filesystem access remains required, rather than an
+OS-wide transaction against hostile races. Workspace drafts, Play, animation
+preview, transform gestures and conflicting dialogs reject the operation.
+
+Seven new CPU-only scene-link tests cover immutable preparation, repeated no-op
+and allocation floors, source conflicts/input/scope/reference boundaries, native
+reference remapping versus opaque script JSON, primary flags, nested application,
+no-write namespace identity and invalid combined topology. Three document tests
+cover source publication, preserved other overrides/instances, Undo/Redo without
+source rollback, refresh/save/reopen, strict/stale/no-op requests, missing/malformed
+sources and history-budget rejection before disk publication. No new executable,
+windowed automatic test or temporary visual probe is added.
+
+Full Debug passes 1,372/1,372 in 214.21s. Final focused Debug, including the added
+missing/malformed-file checks, passes 76/76 in 4.46s. Counts: 426 unit and 946
+integration; overlapping labels include 217 compiler, 162 offscreen, 36 audio-native,
+33 platform and 21 process. Native CUA still reports the Mac locked, so this stage
+has no new human pointer/keyboard acceptance. Only arm64 macOS is executed.
+
+Full Release/NDEBUG also passes 1,372/1,372 in 31.05s. Create a fresh PrismSources
+project through the actual PrismRelay template action. Make and save two PBR
+materials through product material operations. Assign the blue material to one
+inherited duct surface and give two placements distinct local names. Apply the
+material field: the immediate source is written, the chosen override disappears,
+the local name remains, and the sibling is unchanged until explicit refresh.
+Undo restores the document byte-for-byte while source bytes remain written; Redo
+and sibling refresh preserve the second placement's name. The first application
+preserves source allocation floor 588.
+
+Use a second actual headless document process to open that source, edit the same
+material field and Save. The older live instance's Apply rejects with “Source field
+changed since baseline; refresh before applying”, retaining exact document revision/
+scene and disk bytes. Refresh, inspect the retained local dark material, deliberately
+Apply, then refresh all twelve ducts. Every mapped surface adopts the dark material,
+all persistent target mappings and both local names remain intact. A repeated Apply
+reports written=false/sceneChanged=false without changing revision. The second
+source author carries the project's monotone allocation floor 659 into the source;
+the subsequent application and fresh reopen preserve that reservation.
+
+Save and reopen the active main scene through the product. Play rejects source
+application; bounded W+Space for 30 frames moves player Z from 2.0 to 1.3769659996
+and reaches Y 1.4705257416. Stop restores the exact clean authoring scene and its
+viewport PNG. Scene opening intentionally selects the editor view, so those
+reopened/stopped images use the same editor camera. A separate editor process
+reopens all twelve saved material assignments and both names, sets game view, and
+produces the byte-identical propagated game-camera PNG, SHA-256
+2227b383b738a1c23279c1f9ab5cac825125a6c8bd73558d85ba5cf23f66e2a1.
+
+Actual workspace export matches all 117 manifest content files / 66,211,702 bytes
+against saved authoring, with no .ts/.mts/.map publication. Physically relocate it
+and hide the editable project: native DotGame runs 360 game frames, exits zero,
+and records 455 application steps (95 preparation + 360 game). Its 120 retained
+samples have no errors, pauses or dropped fixed time; retained median is 11.474042ms
+and global greatest step is 41.723875ms. These are this run's local observations,
+not a controlled performance comparison or a finished-game claim. Authoring is
+restored. Native linkage uses system frameworks and executable-relative bundled
+C++/unwind libraries.
+
+An initial helper attempt requested capture while the newly assigned material was
+still loading; the product correctly reported no current completed frame. Retain
+that failed attempt as evidence, then wait for actual viewport readiness and repeat
+the full flow on a fresh owned project. No product change or fabricated completion
+is used to bypass loading. All three owned editors exit zero, have empty stderr and
+retired controls; the native log contains ordinary preparation progress only.
+Raw requests/receipts/responses, source/manifest hashes, PNGs, profiles and process
+metadata remain in ignored build/source-apply-review. Remove owned app/native
+copies and obsolete implementation helpers after verification; preserve editable
+project/evidence and existing build caches. No distribution archive is created.
+
+Formatting, whitespace and final ownership/error/platform/test reviews pass.
+Background source graph I/O, whole-instance/topology application, variants,
+retargeting, broader animation/gameplay production, final art and production
+readiness remain unfinished. This stage establishes one modular content-iteration
+loop through actual products; it does not complete the overall engine goal.

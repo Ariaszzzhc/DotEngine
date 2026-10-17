@@ -5290,6 +5290,15 @@ namespace Dot::Editor {
             "Apply or reset pending inspector/environment/AO changes before another operation");
       }
 
+      if (command == "apply-scene-field"
+          && (playing() || m_animationPreview || m_transform || pendingInspector()
+              || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+              || m_captureDialog || m_sceneDialog)) {
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Finish authoring drafts, previews and dialogs before applying to source");
+      }
+
       if (command == "save-selection-scene"
           && (m_animationPreview || m_transform || m_pendingClose || pendingText()
               || m_captureDialog)) {
@@ -5406,6 +5415,24 @@ namespace Dot::Editor {
           return Core::fail(
               listed.error().code,
               "Scene operation committed; catalog refresh failed: " + listed.error().message);
+        }
+      }
+
+      if (result && command == "apply-scene-field") {
+        auto applied = Codec::parseJson(*result)["sourceApplied"];
+
+        if (applied["written"].get<bool>()) {
+          if (m_text && m_text->snapshot()->path == applied["path"].get<std::string>()) {
+            m_text.reset();
+          }
+
+          auto listed = catalog();
+          m_assetRefresh = true;
+
+          if (!listed) {
+            return Core::fail(listed.error().code,
+                              "Source applied; resource refresh failed: " + listed.error().message);
+          }
         }
       }
 
@@ -5595,7 +5622,8 @@ namespace Dot::Editor {
       return found == fields.end() ? 0 : found->get<std::size_t>();
     }
 
-    auto fieldOverrideControl(const char* field, std::optional<std::string>& restore) -> void {
+    auto fieldOverrideControl(const char* field, std::optional<std::string>& restore,
+                              std::optional<std::string>& apply) -> void {
       const auto count = fieldOverrideCount(field);
 
       if (count == 0) {
@@ -5621,6 +5649,18 @@ namespace Dot::Editor {
         ImGui::SetTooltip(
             "Restore this complete field from the last refreshed baseline.\n"
             "Apply or reset pending drafts first. Undo restores the local edits.");
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::SmallButton("Apply field to source")) {
+        apply = field;
+      }
+
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(
+            "Write this complete field to the saved source and rebase this instance.\n"
+            "Other instances refresh explicitly. Scene Undo does not undo the source file.");
       }
 
       ImGui::EndDisabled();
@@ -6429,8 +6469,8 @@ namespace Dot::Editor {
         ImGui::TextWrapped("Field override inspection: %s", m_fieldError.c_str());
       }
 
-      std::optional<std::string> restore;
-      fieldOverrideControl("name", restore);
+      std::optional<std::string> restore, apply;
+      fieldOverrideControl("name", restore, apply);
 
       std::string name = m_edit["name"].get<std::string>();
 
@@ -6444,7 +6484,7 @@ namespace Dot::Editor {
 
       std::string parent
           = m_edit["parent"].is_null() ? "None" : m_edit["parent"].get<std::string>();
-      fieldOverrideControl("parent", restore);
+      fieldOverrideControl("parent", restore, apply);
 
       {
         PropertyRow row{"Parent (local pose)"};
@@ -6474,7 +6514,7 @@ namespace Dot::Editor {
           = fieldOverrideCount("transform") ? "Transform *###transform" : "Transform###transform";
 
       if (ImGui::CollapsingHeader(transformTitle, ImGuiTreeNodeFlags_DefaultOpen)) {
-        fieldOverrideControl("transform", restore);
+        fieldOverrideControl("transform", restore, apply);
         fields(m_edit["transform"]);
       }
 
@@ -6486,7 +6526,7 @@ namespace Dot::Editor {
         const auto header = title + "###component";
 
         if (m_edit[component].is_null()) {
-          fieldOverrideControl(component, restore);
+          fieldOverrideControl(component, restore, apply);
 
           if (std::string_view(component) == "skin" && m_edit["mesh"].is_null()) {
             ImGui::TextDisabled("Add a mesh before a skin binding");
@@ -6518,7 +6558,7 @@ namespace Dot::Editor {
             }
           }
         } else if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-          fieldOverrideControl(component, restore);
+          fieldOverrideControl(component, restore, apply);
 
           if (std::string_view(component) == "script") {
             auto description = m_edit[component];
@@ -6760,6 +6800,11 @@ namespace Dot::Editor {
                            {"root", m_fieldOverrides["root"]},
                            {"entity", m_edit["id"]},
                            {"field", *restore}}}));
+      } else if (apply) {
+        action({{"command", "apply-scene-field"},
+                {"root", m_fieldOverrides["root"]},
+                {"entity", m_edit["id"]},
+                {"field", *apply}});
       }
     }
 

@@ -5,6 +5,7 @@ module;
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -929,7 +930,9 @@ namespace Dot::Editor {
     /** Prepare every allocating history change before replacing the stable scene.
      * 替换稳定场景前准备所有需要分配的历史变更。 */
     auto commit(World::Scene prepared, std::uint64_t next, std::vector<std::uint64_t> created,
-                std::vector<std::uint64_t> selection) -> Core::Result<EditReport> {
+                std::vector<std::uint64_t> selection,
+                const std::function<Core::Result<void>()>& publish = {})
+        -> Core::Result<EditReport> {
       auto reserved = prepared.reserveEntityValuesBefore(counterState(next));
 
       if (!reserved) {
@@ -943,6 +946,14 @@ namespace Dot::Editor {
       }
 
       if (*encoded == *m_history[m_cursor].text) {
+        if (publish) {
+          auto published = publish();
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+        }
+
         return EditReport{m_revision, m_scene.id(), false, {}};
       }
 
@@ -973,8 +984,17 @@ namespace Dot::Editor {
         history.erase(history.begin());
       }
 
-      /** All allocating preparation precedes this nonthrowing commit.
-       * 全部分配准备在此无异常提交之前完成。 */
+      /** Publish external resources only after allocating scene/history state;
+       * successful publication is followed by ownership replacement without allocation.
+       * 场景/历史分配完成后才发布外部资源，成功后无分配地替换所有权。 */
+      if (publish) {
+        auto published = publish();
+
+        if (!published) {
+          return std::unexpected(published.error());
+        }
+      }
+
       m_scene = std::move(prepared);
       m_history = std::move(history);
       m_cursor = m_history.size() - 1;
@@ -1298,6 +1318,149 @@ namespace Dot::Editor {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare editor edit: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::applySceneField(World::EntityId root, World::EntityId entity,
+                                 std::string_view field, std::uint64_t revision)
+      -> Core::Result<SceneFieldApplyReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      auto live = m_impl->m_scene.entity(root);
+      auto links = m_impl->m_scene.sceneLinks();
+      auto files = m_impl->projectFiles();
+
+      if (!live || !links || !files) {
+        return std::unexpected(!live ? live.error() : !links ? links.error() : files.error());
+      }
+
+      const auto link = std::ranges::find(*links, root.value, &World::SceneLink::root);
+
+      if (link == links->end() || !sceneAssetPath(link->asset) || link->asset == m_impl->m_path) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Apply requires a distinct linked scene source");
+      }
+
+      std::string asset = link->asset;
+      auto store = ResourceStore::open(m_impl->m_project, {.textBytes = 64 * 1024 * 1024});
+
+      if (!store) {
+        return std::unexpected(store.error());
+      }
+
+      auto text = store->openText(asset);
+      auto baseline
+          = text ? text->snapshot() : Core::Result<TextSnapshot>{std::unexpected(text.error())};
+
+      if (!baseline) {
+        return std::unexpected(baseline.error());
+      }
+
+      std::map<std::string, std::string> observed;
+      auto resolved = World::resolveSceneSource(
+          asset,
+          [&](std::string_view path, std::size_t maximum) -> Core::Result<std::string> {
+            auto readable = store->externalTextPath(path);
+
+            if (!readable) {
+              return std::unexpected(readable.error());
+            }
+
+            auto value = path == asset ? Core::Result<std::string>{baseline->text}
+                                       : files->readText(sceneFile(path), maximum);
+
+            if (value) {
+              observed.emplace(path, *value);
+            }
+
+            return value;
+          },
+          {}, m_impl->m_path);
+
+      if (!resolved) {
+        return std::unexpected(resolved.error());
+      }
+
+      auto prepared = World::prepareSceneFieldApply(m_impl->m_scene, resolved->source, root, entity,
+                                                    field, m_impl->m_next);
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      auto next = allocationFloor(prepared->instance.scene);
+
+      if (!next) {
+        return std::unexpected(next.error());
+      }
+
+      if (prepared->sourceChanged) {
+        auto encoded = World::encodeScene(prepared->source);
+        auto replaced = encoded ? text->replace(*encoded, baseline->revision)
+                                : Core::Result<void>{std::unexpected(encoded.error())};
+
+        if (!replaced) {
+          return std::unexpected(replaced.error());
+        }
+      }
+
+      bool written = false;
+      auto committed = m_impl->commit(
+          std::move(prepared->instance.scene), *next, std::move(prepared->instance.created),
+          m_impl->m_history[m_impl->m_cursor].selection, [&]() -> Core::Result<void> {
+            for (const auto& [path, previous] : observed) {
+              auto readable = store->externalTextPath(path);
+              auto current = readable
+                                 ? files->readText(sceneFile(path), 64 * 1024 * 1024)
+                                 : Core::Result<std::string>{std::unexpected(readable.error())};
+
+              if (!current) {
+                return std::unexpected(current.error());
+              }
+
+              if (*current != previous) {
+                return Core::fail(Core::ErrorCode::InvalidState,
+                                  "Scene source changed during apply: " + path);
+              }
+            }
+
+            if (!prepared->sourceChanged) {
+              return {};
+            }
+
+            auto snapshot = text->snapshot();
+
+            if (!snapshot) {
+              return std::unexpected(snapshot.error());
+            }
+
+            auto saved = text->save(snapshot->revision);
+
+            if (!saved) {
+              return Core::fail(saved.error().code,
+                                "Source write failed and may have committed; document retained: "
+                                    + saved.error().message);
+            }
+
+            written = true;
+            return {};
+          });
+
+      return committed ? Core::Result<SceneFieldApplyReport>{SceneFieldApplyReport{
+                             std::move(*committed), std::move(asset), written}}
+                       : std::unexpected(committed.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Apply scene field: " + std::string(error.what()));
     }
   }
 
@@ -1697,6 +1860,7 @@ namespace Dot::Editor {
       const auto command = parsed.at("command").get<std::string>();
       std::vector<std::uint64_t> created;
       Json overrides;
+      Json appliedSource;
       Core::Result<void> result;
 
       if (command == "inspect") {
@@ -1780,6 +1944,8 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "path"});
         } else if (command == "save-selection-scene") {
           Codec::requireFields(parsed, {"command", "revision", "path", "name"});
+        } else if (command == "apply-scene-field") {
+          Codec::requireFields(parsed, {"command", "revision", "root", "entity", "field"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -1821,6 +1987,20 @@ namespace Dot::Editor {
 
           committed = applied->changed;
           created = std::move(applied->created);
+        } else if (command == "apply-scene-field") {
+          auto applied = applySceneField({(*current)->id(), Codec::id(parsed["root"])},
+                                         {(*current)->id(), Codec::id(parsed["entity"])},
+                                         parsed["field"].get<std::string>(), revision);
+
+          if (!applied) {
+            return std::unexpected(applied.error());
+          }
+
+          committed = applied->document.changed || applied->sourceWritten;
+          created = std::move(applied->document.created);
+          appliedSource = {{"path", std::move(applied->sourcePath)},
+                           {"written", applied->sourceWritten},
+                           {"sceneChanged", applied->document.changed}};
         } else if (command == "select-many") {
           if (!parsed["entities"].is_array() || parsed["entities"].size() > 10000) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -1881,6 +2061,10 @@ namespace Dot::Editor {
 
       if (command == "save-selection-scene") {
         response["contentPath"] = parsed["path"];
+      }
+
+      if (!appliedSource.is_null()) {
+        response["sourceApplied"] = std::move(appliedSource);
       }
 
       for (auto id : created) {
