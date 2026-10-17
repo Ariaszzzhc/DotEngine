@@ -11,6 +11,7 @@ module;
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <random>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -831,10 +832,15 @@ namespace Dot::Script {
     return compileSnapshot(*snapshot);
   }
 
-  auto TypeScriptCompiler::compileSnapshot(const SourceSnapshot& snapshot) const
+  auto TypeScriptCompiler::compileSnapshot(const SourceSnapshot& snapshot,
+                                           std::stop_token stop) const
       -> Core::Result<CompiledProgram> {
     if (!snapshot.m_impl) {
       return Core::fail(ErrorCode::InvalidState, "Source snapshot was moved from");
+    }
+
+    if (stop.stop_requested()) {
+      return Core::fail(ErrorCode::Unavailable, "TypeScript compilation cancelled");
     }
 
     const auto* sources = &snapshot.m_impl->sources;
@@ -878,10 +884,15 @@ namespace Dot::Script {
                                        {"--project", "tsconfig.json", "--pretty", "false"},
                                        access->root(),
                                        m_limits.timeout,
-                                       m_limits.diagnosticBytes});
+                                       m_limits.diagnosticBytes,
+                                       stop});
 
       if (!process) {
         return Core::fail(process.error().code, "TypeScript compile: " + process.error().message);
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(ErrorCode::Unavailable, "TypeScript compilation cancelled");
       }
 
       auto diagnostics = process->standardOutput + process->standardError;
@@ -937,6 +948,10 @@ namespace Dot::Script {
       std::uint32_t entries = 0;
 
       while (iterator != end) {
+        if (stop.stop_requested()) {
+          return Core::fail(ErrorCode::Unavailable, "TypeScript compilation cancelled");
+        }
+
         if (++entries > m_limits.directoryEntries + m_limits.sourceFiles * 2
             || iterator.depth() > 32) {
           return Core::fail(ErrorCode::External, "TypeScript output entry/depth limit exceeded");
@@ -987,10 +1002,18 @@ namespace Dot::Script {
         return Core::fail(ErrorCode::External, "TypeScript output is missing modules/source maps");
       }
 
+      if (stop.stop_requested()) {
+        return Core::fail(ErrorCode::Unavailable, "TypeScript compilation cancelled");
+      }
+
       auto graph = Runtime::validateProgram(*output, modules);
 
       if (!graph) {
         return Core::fail(graph.error().code, "TypeScript module graph: " + graph.error().message);
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(ErrorCode::Unavailable, "TypeScript compilation cancelled");
       }
 
       std::ranges::sort(modules);

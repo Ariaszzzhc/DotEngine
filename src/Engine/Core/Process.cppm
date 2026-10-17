@@ -3,6 +3,7 @@ module;
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@ export namespace Dot::Core {
     std::filesystem::path directory;
     std::chrono::milliseconds timeout{10000};
     std::uint64_t outputBytes{1024 * 1024};
+    std::stop_token stop{};
   };
 
   struct ProcessResult {
@@ -36,6 +38,9 @@ export namespace Dot::Core {
    * At most 4096 arguments/1 MiB argument bytes and 1 ms..10 min timeout. Nonzero
    * normal exits retain their real status/output; launch/I/O/signal/timeout/limit
    * failures return contextual errors. No partial output is returned on failure.
+   * A requested stop prevents launch or cancels an active group/job with an
+   * Unavailable result; cancellation still reaps owned processes before return.
+   * 停止请求阻止启动或取消活动组/作业，返回 Unavailable，仍须完成拥有进程的回收。
    * Group/job descendants are terminated and the direct child is reaped before
    * returning; POSIX orphaned grandchildren are reaped by the operating system. POSIX descendants
    * must not detach; callers must not reap this function's children or ignore SIGCHLD. Kernel

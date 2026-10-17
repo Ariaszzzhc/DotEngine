@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -140,9 +141,12 @@ export namespace Dot::Script {
                                       std::string_view directory = "scripts") const
         -> Core::Result<SourceSnapshot>;
     /** Revalidate source count/bytes, then emit without reading current authoring
-     * files; enumeration/depth limits apply at capture time. 重新校验源码数量/字节，
-     * 不读当前编辑文件；枚举/深度限制在捕获时应用。 */
-    [[nodiscard]] auto compileSnapshot(const SourceSnapshot& snapshot) const
+     * files; enumeration/depth limits apply at capture time. Stop cancels the owned
+     * compiler process and discards its private generation, never partial output.
+     * 重新校验源码数量/字节，不读当前编辑文件；枚举/深度限制在捕获时应用。
+     * 停止请求取消拥有的编译进程并丢弃私有代，不发布部分输出。 */
+    [[nodiscard]] auto compileSnapshot(const SourceSnapshot& snapshot,
+                                       std::stop_token stop = {}) const
         -> Core::Result<CompiledProgram>;
 
   private:

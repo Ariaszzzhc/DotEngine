@@ -6,10 +6,13 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+
+#include "ScriptCompilation.hpp"
 
 import Dot.Core.Files;
 import Dot.Core.Result;
@@ -140,6 +143,7 @@ TEST_CASE("reload_live_explicit_start_uses_prepared_generation_without_polling")
   CHECK(scripts->stats()->compileAttempts == 1);
   good(scripts->start());
   CHECK(native->entities()->front().name == "started");
+  Dot::Tests::awaitCompilation([&] { return scripts->poll(); });
   auto frame = good(scripts->update(0));
   CHECK(frame.source.error.has_value());
   CHECK(native->entities()->front().name == "tick1");
@@ -290,6 +294,7 @@ TEST_CASE(
   REQUIRE(live);
   good(live->update(0));
   project.write("export const wrong:number='type failure';");
+  Dot::Tests::awaitCompilation([&] { return live->poll(); });
   auto failed = good(live->update(0));
   REQUIRE(failed.source.error);
   CHECK(failed.source.error->message.find("TS2322") != std::string::npos);
@@ -300,8 +305,9 @@ TEST_CASE(
   CHECK(live->stats()->compileAttempts == attempts);
   CHECK(native->entities()->front().name == "tick3");
   project.write(actor(3));
+  auto completed = Dot::Tests::awaitCompilation([&] { return live->poll(); });
   auto replaced = good(live->update(0));
-  CHECK(replaced.source.committed);
+  CHECK(completed->committed);
   CHECK_FALSE(replaced.source.error);
   CHECK(native->entities()->front().name == "tick4");
   CHECK(native->entities()->front().transform.position.x == 6);
@@ -323,7 +329,10 @@ TEST_CASE("reload_poll_interval_force_retry_and_invalid_delta_have_explicit_boun
   REQUIRE(forced);
   CHECK(forced->checked);
   CHECK_FALSE(forced->changed);
-  CHECK(forced->committed);
+  CHECK(forced->compiling);
+  CHECK_FALSE(forced->committed);
+  auto completed = Dot::Tests::awaitCompilation([&] { return live->poll(); });
+  CHECK(completed->committed);
   CHECK(live->stats()->compileAttempts == 2);
   config.pollInterval = std::chrono::milliseconds{-1};
   CHECK_FALSE(LiveScripts::create(native, project.files(), project.compiler(), config));
@@ -349,8 +358,9 @@ TEST_CASE("reload_capture_failure_removal_and_added_imports_report_without_fakin
 
   project.write(original + "\nimport './extra';\n");
   REQUIRE(project.files().writeTextAtomic("scripts/extra.ts", "export const value=42;"));
+  auto completed = Dot::Tests::awaitCompilation([&] { return live->poll(); });
   auto repaired = good(live->update(0));
-  CHECK(repaired.source.committed);
+  CHECK(completed->committed);
   CHECK_FALSE(repaired.source.error);
 }
 
@@ -369,6 +379,7 @@ TEST_CASE("reload_moves_thread_scope_and_failed_candidates_release_generations_a
     good(live->update(0));
     const auto retained = compilerGenerations();
     project.write(actor(2, "throw Error('candidate failure');"));
+    Dot::Tests::awaitCompilation([&] { return live->poll(); });
     auto rejected = good(live->update(0));
     REQUIRE(rejected.source.error);
     CHECK(compilerGenerations() == retained);
@@ -381,7 +392,8 @@ TEST_CASE("reload_moves_thread_scope_and_failed_candidates_release_generations_a
     worker.join();
     CHECK(wrongThread);
     project.write(actor(3));
-    CHECK(good(moved.update(0)).source.committed);
+    CHECK(Dot::Tests::awaitCompilation([&] { return moved.poll(); })->committed);
+    good(moved.update(0));
     std::thread destroyer([owned = std::move(moved)] {});
     destroyer.join();
   }
@@ -459,4 +471,195 @@ TEST_CASE("reload_cleanup_failure_reports_committed_generation_and_lost_candidat
   CHECK(committed->components == 0);
   CHECK(scripts->stats()->runtime.instances == 0);
   CHECK(native->entityCount().value() == 0);
+}
+
+TEST_CASE("reload_background_latest_capture_wins_before_any_candidate_publication") {
+  Project project;
+  project.write(actor());
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{0};
+  auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+  good(live.update(0));
+  project.write(actor(2));
+  auto scheduled = live.poll().value();
+  CHECK(scheduled.compiling);
+  CHECK_FALSE(scheduled.committed);
+  CHECK(native->entities()->front().name == "tick1");
+  CHECK(live.stats()->reloads == 0);
+  project.write(actor(4));
+  auto completed = Dot::Tests::awaitCompilation([&] { return live.poll(); });
+  CHECK(completed->committed);
+  CHECK(live.stats()->reloads == 1);
+  CHECK(live.stats()->compileAttempts == 3);
+  CHECK(live.stats()->discardedCompilations == 1);
+  CHECK(native->entities()->front().name == "tick1");
+  good(live.update(0));
+  CHECK(native->entities()->front().name == "tick2");
+  CHECK(native->entities()->front().transform.position.x == 5);
+  good(live.stop());
+}
+
+TEST_CASE("reload_background_missing_capture_retires_job_and_recovers_without_stale_commit") {
+  Project project;
+  project.write(actor());
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{0};
+  auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+  good(live.update(0));
+  project.write(actor(2));
+  REQUIRE(live.poll()->compiling);
+  std::filesystem::rename(project.root / "scripts", project.root / "hidden");
+  auto rejected = Dot::Tests::awaitCompilation([&] { return live.poll(); });
+  REQUIRE(rejected->error);
+  CHECK_FALSE(rejected->committed);
+  CHECK(live.stats()->reloads == 0);
+  CHECK(live.stats()->discardedCompilations == 1);
+  good(live.update(0));
+  CHECK(native->entities()->front().transform.position.x == 2);
+  std::filesystem::rename(project.root / "hidden", project.root / "scripts");
+  auto restored = Dot::Tests::awaitCompilation([&] { return live.poll(); });
+  CHECK(restored->committed);
+  CHECK_FALSE(restored->error);
+  good(live.update(0));
+  CHECK(native->entities()->front().transform.position.x == 4);
+  project.write("export const invalid: number = 'bad';");
+  REQUIRE(Dot::Tests::awaitCompilation([&] { return live.poll(); })->error);
+  const auto attempts = live.stats()->compileAttempts;
+  std::filesystem::rename(project.root / "scripts", project.root / "hidden");
+  REQUIRE(live.poll()->error);
+  std::filesystem::rename(project.root / "hidden", project.root / "scripts");
+  auto sameFailure = live.poll().value();
+  REQUIRE(sameFailure.error);
+  CHECK(sameFailure.error->message.find("TS2322") != std::string::npos);
+  CHECK(live.stats()->compileAttempts == attempts);
+}
+
+TEST_CASE("reload_background_stop_and_moved_destruction_reap_owned_work") {
+  Project project;
+  project.write(actor());
+  const auto generations = compilerGenerations();
+  const auto memory = Runtime::backendMemory();
+
+  for (const bool stop : {false, true}) {
+    auto native = scene();
+    LiveScriptsConfig config;
+    config.pollInterval = std::chrono::milliseconds{0};
+    auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+    good(live.update(0));
+    const auto retained = compilerGenerations();
+    REQUIRE(live.poll(true)->compiling);
+    auto moved = std::move(live);
+    CHECK_FALSE(live.poll());
+
+    if (stop) {
+      good(moved.stop());
+      CHECK_FALSE(moved.stats()->compiling);
+      CHECK(compilerGenerations() == retained);
+      CHECK(native->entities()->front().name == "stopped");
+      CHECK_FALSE(moved.poll(true));
+    } else {
+      std::thread destroyer([owned = std::move(moved)] {});
+      destroyer.join();
+      CHECK(native->entities()->front().name == "tick1");
+    }
+  }
+
+  CHECK(compilerGenerations() == generations);
+  CHECK(Runtime::backendMemory().bytes == memory.bytes);
+  CHECK(Runtime::backendMemory().allocations == memory.allocations);
+}
+
+TEST_CASE("reload_background_forced_pending_retry_coalesces_and_queries_do_not_commit") {
+  Project project;
+  project.write(actor());
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{60000};
+  auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+  REQUIRE(live.poll(true)->compiling);
+  CHECK(live.stats()->compiling);
+  CHECK(live.stats()->compileAttempts == 2);
+  CHECK(live.stats()->reloads == 0);
+  auto again = live.poll(true).value();
+  CHECK(live.stats()->compileAttempts == 2);
+  auto completed = Dot::Tests::awaitCompilation([&] { return live.poll(); });
+  CHECK((again.committed || completed->committed));
+  CHECK(live.stats()->compileAttempts == 2);
+  CHECK(live.stats()->reloads == 1);
+  CHECK_FALSE(live.stats()->compiling);
+}
+
+TEST_CASE("reload_cancelled_snapshot_compile_keeps_generations_and_source_intact") {
+  Project project;
+  project.write(actor());
+  auto compiler = project.compiler();
+  auto snapshot = compiler.captureProject(project.files()).value();
+  const auto before = compilerGenerations();
+  std::stop_source stop;
+  stop.request_stop();
+  auto cancelled = compiler.compileSnapshot(snapshot, stop.get_token());
+  REQUIRE_FALSE(cancelled);
+  CHECK(cancelled.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(compilerGenerations() == before);
+  CHECK(snapshot.equals(compiler.captureProject(project.files()).value()));
+}
+
+TEST_CASE("reload_background_frames_dispatch_current_code_until_owner_commit") {
+  Project project;
+  project.write(actor());
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{0};
+  auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+  good(live.update(0));
+  project.write(actor(4));
+  REQUIRE(live.poll()->compiling);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  bool committed{};
+  std::uint32_t ticks{1};
+
+  while (!committed) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    const auto before = native->entities()->front().transform.position.x;
+    auto frame = good(live.update(0));
+    REQUIRE_FALSE(frame.source.error);
+    committed = frame.source.committed;
+    CHECK(native->entities()->front().transform.position.x == before + (committed ? 4 : 1));
+    CHECK(native->entities()->front().name == "tick" + std::to_string(++ticks));
+    CHECK(live.stats()->scripts.running == 1);
+
+    if (!committed) {
+      CHECK(frame.source.compiling);
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+  }
+
+  CHECK(live.stats()->reloads == 1);
+  CHECK(live.stats()->compileAttempts == 2);
+  good(live.stop());
+}
+
+TEST_CASE("reload_forced_retry_of_active_source_survives_an_obsolete_job") {
+  Project project;
+  const auto original = actor();
+  project.write(original);
+  auto native = scene();
+  LiveScriptsConfig config;
+  config.pollInterval = std::chrono::milliseconds{0};
+  auto live = LiveScripts::create(native, project.files(), project.compiler(), config).value();
+  good(live.update(0));
+  project.write(actor(4));
+  REQUIRE(live.poll()->compiling);
+  project.write(original);
+  auto requested = live.poll(true).value();
+  auto completed = Dot::Tests::awaitCompilation([&] { return live.poll(); });
+  CHECK((requested.committed || completed->committed));
+  CHECK(live.stats()->compileAttempts == 3);
+  CHECK(live.stats()->discardedCompilations == 1);
+  CHECK(live.stats()->reloads == 1);
+  CHECK(native->entities()->front().name == "tick1");
+  good(live.update(0));
+  CHECK(native->entities()->front().transform.position.x == 2);
 }

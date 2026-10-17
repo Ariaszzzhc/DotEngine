@@ -1765,6 +1765,41 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 多键相对 TRS 调整已实现，完整 dope sheet、图形切线手柄、绑定和状态图等生产制作能力仍待完成。
 
 
+## Live script compilation
+
+Play polls source contents and compiles changed snapshots in a single owned background
+task while the current generation continues running. The viewport reports compiling
+and offers Retry scripts for an unchanged rejected source. The button and strict
+operation use the same native source polling/retry, without advancing Play timing or
+input. Scheduling is not a successful reload; inspect its eventual state/errors.
+
+```json
+{"command":"reload-play-scripts","session":"1","force":true}
+{"command":"inspect-play"}
+```
+
+reload-play-scripts requires exactly command, the current running Play session and a
+boolean force; pending close, stopped/faulted sessions or disabled hot reload reject
+it. force:false polls normally, force:true schedules a retry and coalesces into an
+already current compilation. A retry waits through retirement of an obsolete job
+without being lost when source returns to active bytes. The reply contains source checked/changed/compiling/
+discarded/committed/error and current play status. Reload cleanup failures also enter
+the ordinary Console diagnostics. Inspect is read-only; it never collects a result.
+
+play.source (also workspace.play.source) is null without an active source controller;
+otherwise it reports compiling, compileAttempts, reloads, discarded and the current
+error. Counters are decimal strings; compiling is boolean. Errors from rejected source
+remain visible while a correction compiles and clear after a successful replacement.
+A compilation failure keeps the old generation running. Before migration, completion
+must match a fresh exact source capture; stale results are discarded. Stop, game faults and scene
+replacement cancel and reap owned compilation work. Initial Play preparation,
+source capture and owner-thread runtime/state migration still have synchronous costs.
+See [scripting contracts](Scripting.md#source-hot-reload).
+
+Play 的后台编译状态与重试按钮共用严格接口；排队不等于重载成功，需查看最终状态及错误。
+查询不推进游戏或提交结果。旧代在编译期间继续运行，提交前重新核对当前源码，失败或过期
+结果不覆盖活动执行；停止/场景替换回收拥有的任务。初次准备、源码捕获和状态迁移仍同步。
+
 ## Runtime scene changes
 
 While Play is running, the viewport's Change game scene menu queues a project scene

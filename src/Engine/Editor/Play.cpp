@@ -352,6 +352,32 @@ namespace Dot::Editor {
     auto result = m_impl->m_stats;
     result.location = std::move(game->location);
     result.transition = std::move(game->transition);
+    result.source = std::move(game->source);
+    return result;
+  }
+
+  auto PlaySession::pollScripts(bool force) -> Core::Result<Script::ReloadStatus> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto result = m_impl->m_session.pollScripts(force);
+    auto state = m_impl->m_session.stats();
+
+    if (!state) {
+      return std::unexpected(state.error());
+    }
+
+    if (state->state == Project::SessionState::Faulted) {
+      m_impl->m_stats.state = PlayState::Faulted;
+    }
+
     return result;
   }
 

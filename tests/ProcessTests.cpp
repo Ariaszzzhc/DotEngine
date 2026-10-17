@@ -8,6 +8,7 @@
 #include <optional>
 #include <random>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -313,3 +314,41 @@ TEST_CASE("process_inherits_environment_without_modifying_parent_values") {
   CHECK(std::string(std::getenv("DOT_PROCESS_FIXTURE_VALUE")) == "literal inherited value");
 }
 #endif
+
+TEST_CASE("process_stop_prevents_launch_and_cancels_owned_descendants") {
+  Directory directory;
+  const auto before = processResources();
+  std::stop_source stop;
+  auto value = config(directory.root, {"sleep"});
+  value.stop = stop.get_token();
+  stop.request_stop();
+  auto prevented = runProcess(value);
+  REQUIRE_FALSE(prevented);
+  CHECK(prevented.error().code == ErrorCode::Unavailable);
+  CHECK(prevented.error().message.find("cancelled before launch") != std::string::npos);
+  CHECK(processResources().children == before.children);
+  CHECK(processResources().handles == before.handles);
+  stop = std::stop_source{};
+  const auto marker = directory.root / "heartbeat";
+  const auto spelling = marker.generic_u8string();
+  value.arguments = {"descendant", std::string(spelling.begin(), spelling.end())};
+  value.stop = stop.get_token();
+  auto running = std::async(std::launch::async, [&] { return runProcess(value); });
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+
+  while (!std::filesystem::exists(marker)) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(1ms);
+  }
+
+  stop.request_stop();
+  auto cancelled = running.get();
+  REQUIRE_FALSE(cancelled);
+  CHECK(cancelled.error().code == ErrorCode::Unavailable);
+  CHECK(cancelled.error().message.find("cancelled") != std::string::npos);
+  const auto bytes = std::filesystem::file_size(marker);
+  std::this_thread::sleep_for(50ms);
+  CHECK(std::filesystem::file_size(marker) == bytes);
+  CHECK(processResources().children == before.children);
+  CHECK(processResources().handles == before.handles);
+}

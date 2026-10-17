@@ -12,10 +12,12 @@
 #include <vector>
 
 #include "SceneAudioFixture.hpp"
+#include "ScriptCompilation.hpp"
 
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Core.Result;
+import Dot.Core.Process;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Platform.Input;
@@ -247,13 +249,15 @@ TEST_CASE("game_session_hot_reload_migrates_scripts_and_retains_native_motion_au
   REQUIRE(session.publish(held()));
   good(session.fixedUpdate());
   fixture.writeController(4);
-  auto reloaded = good(session.fixedUpdate());
-  CHECK(reloaded.source.committed);
-  CHECK(reloaded.source.reload->migrated == 1);
+  auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
+  good(session.fixedUpdate());
+  CHECK(completed->committed);
+  CHECK(completed->reload->migrated == 1);
   CHECK(actor(session).name == "fixed2");
   CHECK(actor(session).transform.position.x == doctest::Approx(6.0 / 60));
   REQUIRE(
       fixture.project.files()->writeTextAtomic("scripts/mover.ts", "export const bad:number='x';"));
+  Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
   auto failed = good(session.fixedUpdate());
   CHECK(failed.source.error.has_value());
   CHECK(actor(session).name == "fixed3");
@@ -400,24 +404,39 @@ TEST_CASE("game_session_ordinary_script_failure_is_reported_and_isolated") {
 }
 
 TEST_CASE("game_session_realm_timeout_faults_dispatch_but_close_releases_resources") {
-  Fixture fixture(false);
-  REQUIRE(fixture.project.files()->writeTextAtomic(
-      "scripts/mover.ts",
-      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
-      "onUpdate(){while(true){}}}"));
-  GameSessionConfig config;
-  config.scripts.runtime.milliseconds = 10;
-  auto session = fixture.session(config);
-  good(session.start());
-  auto report = session.update(0);
-  REQUIRE(report);
-  CHECK(report->frame.realmFaulted);
-  CHECK(session.stats()->state == SessionState::Faulted);
-  CHECK_FALSE(session.fixedUpdate());
-  auto closed = session.close();
-  REQUIRE(closed);
-  CHECK(closed->realmFaulted);
-  CHECK(session.stats()->state == SessionState::Closed);
+  for (const bool enabled : {false, true}) {
+    Fixture fixture(enabled);
+    REQUIRE(fixture.project.files()->writeTextAtomic(
+        "scripts/mover.ts",
+        "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent{"
+        "onUpdate(){while(true){}}}"));
+    GameSessionConfig config;
+    config.scripts.runtime.milliseconds = 10;
+    auto session = fixture.session(config);
+    good(session.start());
+    const auto resources = Dot::Core::processResources();
+    const auto generations = Dot::Script::compilerGenerations();
+
+    if (enabled) {
+      CHECK(session.pollScripts(true)->compiling);
+    }
+
+    auto report = session.update(0);
+    REQUIRE(report);
+    CHECK(report->frame.realmFaulted);
+    CHECK(session.stats()->state == SessionState::Faulted);
+    CHECK_FALSE(session.pollScripts());
+    const auto source = session.stats()->source;
+    CHECK_FALSE((source && source->compiling));
+    CHECK(Dot::Core::processResources().children == resources.children);
+    CHECK(Dot::Core::processResources().handles == resources.handles);
+    CHECK(Dot::Script::compilerGenerations() == generations);
+    CHECK_FALSE(session.fixedUpdate());
+    auto closed = session.close();
+    REQUIRE(closed);
+    CHECK(closed->realmFaulted);
+    CHECK(session.stats()->state == SessionState::Closed);
+  }
 }
 
 TEST_CASE("game_session_audio_velocity_uses_all_fixed_steps_once_per_frame") {
@@ -721,5 +740,40 @@ TEST_CASE("game_data.builtin_sdk_rejects_preparation_io_and_writes_without_damag
     CHECK(handle.perform(R"({"command":"snapshot"})").value() == before);
     good(session.update(0));
     good(session.close());
+  }
+}
+
+TEST_CASE("game_session_source_poll_retry_retains_gameplay_and_rejects_inactive_modes") {
+  for (const bool enabled : {false, true}) {
+    Fixture fixture(enabled);
+    fixture.controller();
+    auto session = fixture.session();
+    CHECK_FALSE(session.pollScripts(true));
+    good(session.start());
+    const auto before = actor(session);
+    CHECK(session.stats()->source.has_value() == enabled);
+
+    if (enabled) {
+      auto scheduled = session.pollScripts(true).value();
+      CHECK(scheduled.compiling);
+      CHECK_FALSE(scheduled.committed);
+      auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
+      CHECK(completed->committed);
+      CHECK(completed->reload->migrated == 1);
+      CHECK(session.stats()->source->compileAttempts == 2);
+      CHECK(session.stats()->source->reloads == 1);
+      CHECK_FALSE(session.stats()->source->compiling);
+    } else {
+      CHECK_FALSE(session.pollScripts(true));
+    }
+
+    CHECK(actor(session).id == before.id);
+    CHECK(actor(session).name == before.name);
+    CHECK(actor(session).transform.position == before.transform.position);
+    CHECK(actor(session).transform.rotation == before.transform.rotation);
+    CHECK(actor(session).transform.scale == before.transform.scale);
+    CHECK(session.stats()->state == SessionState::Running);
+    good(session.close());
+    CHECK_FALSE(session.pollScripts(true));
   }
 }

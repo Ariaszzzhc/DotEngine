@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "SceneAudioFixture.hpp"
+#include "ScriptCompilation.hpp"
 
 import Dot.Core.Result;
 import Dot.Project;
@@ -361,7 +362,7 @@ TEST_CASE("scene_transition.hot_reload_compile_failure_is_recoverable_without_re
   auto rejected = session.requestScene("scenes/next.dotscene").value();
   auto frame = session.update(0);
   REQUIRE(frame);
-  CHECK(frame->source.error.has_value());
+  CHECK(Dot::Tests::awaitCompilation([&] { return session.pollScripts(); })->error.has_value());
   CHECK(session.sceneRequest(rejected)->state == Script::SceneRequestState::Failed);
   CHECK_FALSE(session.sceneRequest(rejected)->committed);
   CHECK(session.scene().value().get() == original.get());

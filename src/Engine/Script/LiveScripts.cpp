@@ -6,7 +6,9 @@ module;
 #include <exception>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -35,6 +37,52 @@ namespace Dot::Script {
   }  // namespace
 
   struct LiveScripts::Impl {
+    struct Completion {
+      std::mutex m_mutex;
+      std::optional<Core::Result<CompiledProgram>> m_result;
+    };
+
+    /** The worker owns an immutable capture/compiler, never scene or active VM state.
+     * 后台仅拥有不可变源码捕获和编译器描述，不接触场景或活动脚本虚拟机。 */
+    struct Compilation {
+      SourceSnapshot m_source;
+      std::shared_ptr<Completion> m_completion = std::make_shared<Completion>();
+      bool m_obsolete{};
+      std::jthread m_worker;
+
+      Compilation(SourceSnapshot snapshot, TypeScriptCompiler compiler)
+          : m_source(std::move(snapshot)),
+            m_worker([state = m_completion, snapshot = m_source,
+                      compiler = std::move(compiler)](std::stop_token stop) {
+              auto result = [&]() -> Core::Result<CompiledProgram> {
+                try {
+                  return compiler.compileSnapshot(snapshot, stop);
+                } catch (const std::exception& error) {
+                  return Core::fail(Core::ErrorCode::External,
+                                    "Background TypeScript compile: " + std::string(error.what()));
+                }
+              }();
+              std::lock_guard lock(state->m_mutex);
+              state->m_result.emplace(std::move(result));
+            }) {
+      }
+
+      auto ready() -> bool {
+        std::unique_lock lock(m_completion->m_mutex, std::try_to_lock);
+        return lock.owns_lock() && m_completion->m_result.has_value();
+      }
+
+      auto take() -> Core::Result<CompiledProgram> {
+        std::lock_guard lock(m_completion->m_mutex);
+        return std::move(*m_completion->m_result);
+      }
+
+      auto discard() -> void {
+        m_obsolete = true;
+        m_worker.request_stop();
+      }
+    };
+
     using Clock = std::chrono::steady_clock;
     std::shared_ptr<World::Scene> m_scene;
     Core::FileSystem m_project;
@@ -46,11 +94,14 @@ namespace Dot::Script {
     std::uint64_t m_sceneId;
     std::uint64_t m_compileAttempts{1};
     std::uint64_t m_reloads{};
-    std::optional<Core::Error> m_error;
+    std::optional<Core::Error> m_compileError;
+    std::optional<Core::Error> m_captureError;
+    std::uint64_t m_discarded{};
+    std::unique_ptr<Compilation> m_compilation;
     Clock::time_point m_next;
     bool m_active{};
     bool m_stopped{};
-    bool m_captureError{};
+    bool m_forcePending{};
 
     Impl(std::shared_ptr<World::Scene> scene, Core::FileSystem project, TypeScriptCompiler compiler,
          LiveScriptsConfig config, SourceSnapshot attempt, SceneScripts scripts)
@@ -75,12 +126,21 @@ namespace Dot::Script {
       return m_scene->name().transform([](const auto&) {});
     }
 
+    auto error() const -> std::optional<Core::Error> {
+      return m_captureError ? m_captureError : m_compileError;
+    }
+
     auto poll(bool force) -> Core::Result<ReloadStatus> {
       ReloadStatus status;
-      status.error = m_error;
-
-      if (!force && Clock::now() < m_next) {
+      const auto finish = [&] {
+        status.compiling = m_compilation != nullptr;
+        status.error = error();
         return status;
+      };
+      const bool completed = m_compilation && m_compilation->ready();
+
+      if (!force && !completed && Clock::now() < m_next) {
+        return finish();
       }
 
       m_next = Clock::now() + m_config.pollInterval;
@@ -88,49 +148,81 @@ namespace Dot::Script {
       auto captured = m_compiler.captureProject(m_project, m_config.directory);
 
       if (!captured) {
-        m_captureError = true;
-        m_error = captured.error();
-        status.error = m_error;
-        return status;
-      }
+        m_captureError = captured.error();
+        m_forcePending = false;
 
-      if (!force && captured->equals(m_attempt)) {
-        if (m_captureError) {
-          m_error.reset();
-          status.error.reset();
-          m_captureError = false;
+        if (m_compilation) {
+          m_compilation->discard();
+
+          if (completed) {
+            m_compilation.reset();
+            ++m_discarded;
+            status.discarded = true;
+          }
         }
 
-        return status;
+        return finish();
       }
 
-      m_captureError = false;
-
+      m_captureError.reset();
+      m_forcePending = m_forcePending || force;
       status.changed = !captured->equals(m_attempt);
-      m_attempt = std::move(*captured);
-      ++m_compileAttempts;
-      auto program = m_compiler.compileSnapshot(m_attempt);
 
-      if (!program) {
-        m_error = program.error();
-        status.error = m_error;
-        return status;
+      if (m_compilation && !captured->equals(m_compilation->m_source)) {
+        m_compilation->discard();
+      } else if (m_compilation && !m_compilation->m_obsolete) {
+        /** A current job satisfies force; an obsolete one must retain the retry.
+         * 当前任务满足强制请求，旧任务取消期间则保留重试意图。 */
+        m_forcePending = false;
       }
 
-      auto reloaded = m_scripts.reload(*program);
+      if (completed) {
+        const bool obsolete = m_compilation->m_obsolete;
+        auto program = m_compilation->take();
 
-      if (!reloaded) {
-        m_error = reloaded.error();
-        status.error = m_error;
-        return status;
+        if (!obsolete) {
+          m_attempt = m_compilation->m_source;
+        }
+
+        m_compilation.reset();
+
+        if (obsolete) {
+          ++m_discarded;
+          status.discarded = true;
+        } else {
+          if (!program) {
+            m_compileError = program.error();
+          } else {
+            auto reloaded = m_scripts.reload(*program);
+
+            if (!reloaded) {
+              m_compileError = reloaded.error();
+            } else {
+              ++m_reloads;
+              m_compileError.reset();
+              status.committed = true;
+              status.reload = std::move(*reloaded);
+            }
+          }
+        }
       }
 
-      ++m_reloads;
-      m_error.reset();
-      status.error.reset();
-      status.committed = true;
-      status.reload = *reloaded;
-      return status;
+      if (!m_compilation && (m_forcePending || !captured->equals(m_attempt))) {
+        m_forcePending = false;
+        ++m_compileAttempts;
+
+        try {
+          m_compilation = std::make_unique<Compilation>(*captured, m_compiler);
+        } catch (const std::exception& exception) {
+          m_attempt = *captured;
+          m_compileError
+              = Core::fail(Core::ErrorCode::External,
+                           "Start background compilation: " + std::string(exception.what()))
+                    .error();
+        }
+      }
+
+      return finish();
     }
 
     auto frame(double seconds, bool fixed) -> Core::Result<LiveScriptReport> {
@@ -315,7 +407,15 @@ namespace Dot::Script {
 
     ActiveScope active{m_impl->m_active};
     m_impl->m_stopped = true;
+    cancelCompilation();
     return m_impl->m_scripts.stop();
+  }
+
+  auto LiveScripts::cancelCompilation() noexcept -> void {
+    if (m_impl) {
+      m_impl->m_forcePending = false;
+      m_impl->m_compilation.reset();
+    }
   }
 
   auto LiveScripts::stats() const -> Core::Result<LiveScriptsStats> {
@@ -335,7 +435,8 @@ namespace Dot::Script {
       return std::unexpected(scripts.error());
     }
 
-    return LiveScriptsStats{m_impl->m_compileAttempts, m_impl->m_reloads, m_impl->m_error,
-                            *scripts};
+    return LiveScriptsStats{
+        m_impl->m_compileAttempts,        m_impl->m_reloads,  m_impl->error(), *scripts,
+        m_impl->m_compilation != nullptr, m_impl->m_discarded};
   }
 }  // namespace Dot::Script

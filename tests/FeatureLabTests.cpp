@@ -12,6 +12,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "ScriptCompilation.hpp"
+
 import Dot.Core.Files;
 import Dot.Editor.Document;
 import Dot.Assets.Material;
@@ -340,9 +342,10 @@ TEST_CASE("feature_lab.character_input_jump_and_hot_reload_keep_native_simulatio
   source.replace(speed, 10, "4 / length");
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/character.ts", source));
   const auto before = native->transform(actor).value();
+  auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
   auto reloaded = session.update(0);
   report(reloaded);
-  CHECK(reloaded->source.committed);
+  CHECK(completed->committed);
   CHECK(native->transform(actor)->position == before.position);
   report(session.fixedUpdate());
   report(session.update(1.0 / 60));
@@ -372,11 +375,12 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   auto source = fixture.project.files()->readText("scripts/audit.ts").value();
   source += "\nexport const revision = 2;\n";
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/audit.ts", source));
+  auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
   auto reloaded = session.update(0);
   report(reloaded);
-  CHECK(reloaded->source.committed);
-  REQUIRE(reloaded->source.reload.has_value());
-  CHECK(reloaded->source.reload->migrated == 2);
+  CHECK(completed->committed);
+  REQUIRE(completed->reload.has_value());
+  CHECK(completed->reload->migrated == 2);
   auto after = data(*session.scene().value());
   CHECK(after["starts"] == before["starts"]);
   CHECK(after["fixed"] == before["fixed"]);
@@ -458,9 +462,10 @@ TEST_CASE("feature_lab.continuous_slider_reset_and_discrete_comparison_use_nativ
 
     auto source = fixture.project.files()->readText("scripts/collision.ts").value();
     REQUIRE(fixture.project.files()->writeTextAtomic("scripts/collision.ts", source + "\n"));
+    auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
     auto reloaded = session.update(0);
     report(reloaded);
-    REQUIRE(reloaded->source.committed);
+    REQUIRE(completed->committed);
     CHECK(native->transform(slider->id)->position == resetContact);
     report(session.close());
   }

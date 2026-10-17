@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "ScriptCompilation.hpp"
+
 import Dot.Animation.Files;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
@@ -310,11 +312,11 @@ TEST_CASE("prism.hot_reload_keeps_native_rig_character_motion_and_orbit") {
   auto files = fixture.project.files().value();
   auto source = files.readText("scripts/camera.ts").value();
   REQUIRE(files.writeTextAtomic("scripts/camera.ts", source + "\n"));
-  auto reload = session.update(0);
-  report(reload);
-  REQUIRE(reload->source.committed);
-  REQUIRE(reload->source.reload);
-  CHECK(reload->source.reload->migrated == 1);
+  auto completed = Dot::Tests::awaitCompilation([&] { return session.pollScripts(); });
+  report(session.update(0));
+  REQUIRE(completed->committed);
+  REQUIRE(completed->reload);
+  CHECK(completed->reload->migrated == 1);
   CHECK(session.scene().value()->id() == scope);
   CHECK(entity(session, "Player").transform.position == before);
   CHECK(entity(session, "Camera").transform.rotation == rotation);

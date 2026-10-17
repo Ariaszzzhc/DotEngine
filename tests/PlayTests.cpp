@@ -12,6 +12,7 @@
 
 #include "EnvironmentFixture.hpp"
 #include "SceneAudioFixture.hpp"
+#include "ScriptCompilation.hpp"
 
 import Dot.Core.Files;
 import Dot.Core.Result;
@@ -167,6 +168,8 @@ TEST_CASE("play.hot_reload_failure_keeps_running_and_new_source_recovers") {
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts",
                                                    "export const x: number = 'bad';"));
   REQUIRE(play.advance(held(), 100ms));
+  Dot::Tests::awaitCompilation([&] { return play.pollScripts(); });
+  REQUIRE(play.advance(held(), 0ns));
   bool reloadFailed = false;
 
   for (const auto& report : play.lastFrame()->reports) {
@@ -180,8 +183,9 @@ TEST_CASE("play.hot_reload_failure_keeps_running_and_new_source_recovers") {
       "scripts/mover.ts",
       "import {ScriptComponent} from 'dot:engine'; export class Mover extends ScriptComponent "
       "{onUpdate(){const t=this.self.transform;t.position.x+=2;this.self.transform=t;}}"));
+  auto completed = Dot::Tests::awaitCompilation([&] { return play.pollScripts(); });
   REQUIRE(play.advance(Dot::Platform::InputState{}, 0ns));
-  CHECK(play.lastFrame()->reports.back().source.committed);
+  CHECK(completed->committed);
   CHECK(play.scene().value()->entities()->at(1).transform.position.x
         == doctest::Approx(before + 2));
   REQUIRE(play.stop());

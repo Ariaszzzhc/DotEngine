@@ -48,6 +48,7 @@ export namespace Dot::Project {
     std::optional<Script::SceneScriptsStats> scripts;
     Script::SceneLocation location{};
     std::optional<Script::SceneRequest> transition;
+    std::optional<Script::LiveScriptsStats> source{};
   };
 
   /** Owns the active project scene and its input, scripts, real physics,
@@ -101,6 +102,12 @@ export namespace Dot::Project {
      * update 后须重新获取；提交替换发布新范围，保留的共享旧场景仍存活但不再参与模拟。 */
     [[nodiscard]] auto scene() const -> Core::Result<std::shared_ptr<World::Scene>>;
     [[nodiscard]] auto stats() const -> Core::Result<GameSessionStats>;
+    /** Poll background source work without advancing gameplay. Force schedules an
+     * unchanged retry; completion still validates current source and migrates on
+     * this owner. Running source sessions only, never compiled exports.
+     * 不推进游戏地轮询后台源码任务；强制请求可重试未变源码，完成后仍核对当前源码并在
+     * 所有者线程迁移。仅限运行中的源码会话，不适用于已编译导出。 */
+    [[nodiscard]] auto pollScripts(bool force = false) -> Core::Result<Script::ReloadStatus>;
     /** Owned game-wide control handle; close/fault/destruction retires writes.
      * 拥有的游戏级控制句柄；关闭、故障或销毁后禁止写入。 */
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;

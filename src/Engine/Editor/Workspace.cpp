@@ -1391,6 +1391,7 @@ namespace Dot::Editor {
           {"captureInput", m_captureInput},
           {"pointerCaptured", m_pointerCaptured},
           {"pointerCaptureRequested", nullptr},
+          {"source", nullptr},
           {"diagnostics", m_playDiagnostics},
           {"error", m_playError ? errorJson(*m_playError)["error"] : Json(nullptr)}};
       auto text = m_application->window().textInputActive();
@@ -1413,6 +1414,16 @@ namespace Dot::Editor {
                {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)}};
         status["transition"]
             = stats.transition ? sceneRequestJson(*stats.transition) : Json(nullptr);
+
+        if (stats.source) {
+          status["source"]
+              = {{"compiling", stats.source->compiling},
+                 {"compileAttempts", std::to_string(stats.source->compileAttempts)},
+                 {"reloads", std::to_string(stats.source->reloads)},
+                 {"discarded", std::to_string(stats.source->discardedCompilations)},
+                 {"error",
+                  stats.source->error ? errorJson(*stats.source->error)["error"] : Json(nullptr)}};
+        }
 
         if (stats.state == PlayState::Running) {
           auto requested = m_play->pointerCaptureRequested();
@@ -4725,6 +4736,44 @@ namespace Dot::Editor {
         }
 
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "reload-play-scripts") {
+        Codec::requireFields(parsed, {"command", "session", "force"});
+
+        if (!m_play || m_pendingClose || Codec::id(parsed["session"]) != m_playSession
+            || m_play->stats()->state != PlayState::Running) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Script reload requires the current running Play session");
+        }
+
+        auto source = m_play->pollScripts(parsed["force"].get<bool>());
+
+        if (!source) {
+          return std::unexpected(source.error());
+        }
+
+        if (source->error) {
+          auto value = errorJson(*source->error);
+          value["phase"] = "reload";
+          diagnostic(std::move(value));
+        }
+
+        if (source->reload) {
+          report(source->reload->retired);
+        }
+
+        return Json{
+            {"ok", true},
+            {"source",
+             {{"checked", source->checked},
+              {"changed", source->changed},
+              {"committed", source->committed},
+              {"compiling", source->compiling},
+              {"discarded", source->discarded},
+              {"error", source->error ? errorJson(*source->error)["error"] : Json(nullptr)}}},
+            {"play", playStatus()}}
+            .dump();
       }
 
       if (command == "inspect-play") {
@@ -8287,6 +8336,23 @@ namespace Dot::Editor {
 
       if (playing()) {
         const auto stats = m_play->stats().value();
+
+        if (stats.source && stats.source->compiling) {
+          ImGui::TextWrapped("Compiling scripts; Play continues with the current code.");
+        }
+
+        if (stats.source) {
+          ImGui::BeginDisabled(stats.state != PlayState::Running || m_pendingClose);
+
+          if (ImGui::Button("Retry scripts")) {
+            sessionAction({{"command", "reload-play-scripts"},
+                           {"session", std::to_string(m_playSession)},
+                           {"force", true}});
+          }
+
+          ImGui::EndDisabled();
+        }
+
         const auto label = stats.location.path ? stats.location.path->c_str() : "Unsaved scene";
         const bool busy = stats.transition
                           && (stats.transition->state == Script::SceneRequestState::Pending

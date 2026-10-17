@@ -357,6 +357,10 @@ namespace Dot::Core {
       };
 
       while (true) {
+        if (config.stop.stop_requested()) {
+          return fail(ErrorCode::Unavailable, "Process cancelled");
+        }
+
         auto out = read(outRead, false);
         auto err = read(errRead, true);
 
@@ -714,6 +718,10 @@ namespace Dot::Core {
       };
 
       while (true) {
+        if (config.stop.stop_requested()) {
+          return fail(ErrorCode::Unavailable, "Process cancelled");
+        }
+
         auto out = read(outRead, false);
         auto err = read(errRead, true);
 
@@ -767,6 +775,10 @@ namespace Dot::Core {
 
       if (!checked) {
         return std::unexpected(checked.error());
+      }
+
+      if (config.stop.stop_requested()) {
+        return fail(ErrorCode::Unavailable, "Process cancelled before launch");
       }
 
       auto result = execute(config);

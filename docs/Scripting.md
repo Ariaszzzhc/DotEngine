@@ -506,20 +506,61 @@ configuration isolation as normal TypeScript compilation.
 
 `Dot.Script.LiveScripts` wraps a project/compiler and SceneScripts for automatic
 content polling. Default directory is scripts and interval is 100 ms, configurable
-to 0..60000 ms. update/fixedUpdate poll before normal lifecycle dispatch, retaining
-old code when capture/compilation/candidate preparation fails. Invalid deltas fail
-before polling. Failed source contents are remembered, so unchanged failures are
-not repeatedly compiled. poll(true) bypasses time/content checks and retries;
-source changes naturally retry. Capture failure diagnostics clear when identical
-valid sources are restored, without recompiling unchanged code. Status explicitly
-reports checks/changes/commit/error/reload cleanup; stats count actual compiler
-attempts and committed swaps. Operations require the original owner thread/scene,
-without reentry. stop is terminal; destruction releases storage without script.
+to 0..60000 ms. Initial capture/compilation and runtime preparation remain synchronous.
+During update/fixedUpdate, the owner captures bounded source bytes and launches at
+most one owned background compilation. The worker uses only that immutable snapshot
+and a compiler descriptor, including an independent validation VM; it cannot access
+the active scene, script VM or services. The current generation keeps dispatching
+while compilation runs. Completion is checked without waiting for the compiler.
 
-Polling/capture/compilation are synchronous and not a hard frame-time guarantee;
-compiler invocations retain Process time/output bounds. Captured text and native
-transport containers are outside the VM allocator quota. This version uses
-portable content capture rather than platform notification APIs.
+Before publishing a completed result, the owner captures current source again and
+compares exact path/content bytes. Changed or unavailable source cancels and retires
+the obsolete job; its result cannot migrate. The next job uses the latest valid
+capture, rather than queuing every intermediate edit. Candidate runtime preparation,
+state export/import, cleanup and publication still execute on the owner through the
+ordinary transactional reload. Compilation/candidate errors retain old execution.
+Capture errors take precedence while source is unavailable; restoring it clears the
+capture error but retains any last compilation error until successful replacement.
+
+Identical rejected source is remembered and is not automatically retried. poll(true)
+bypasses time/content checks to schedule an unchanged retry; it returns compiling,
+not synchronous completion. Repeated force during a current job coalesces into that
+job. A force received while an obsolete job retires retains one retry for current
+source, including a return to already active bytes; capture failure or explicit
+cancellation clears that deferred request. ReloadStatus reports
+checked/changed/compiling/discarded/committed, errors and
+reload cleanup. LiveScriptsStats reports compilation attempts (including launch
+failure), committed reloads, pending compilation and obsolete jobs retired while
+running. Queries never collect/commit results. Completion is observed even before
+the next ordinary source interval. Invalid frame deltas fail before polling/effects.
+
+GameSession::pollScripts and Editor::PlaySession::pollScripts expose the same owner
+operation without advancing gameplay timing/input or dispatching frame hooks. They
+require a running source session with hot reload enabled. Compiled exports, unstarted,
+closed, moved or wrong-thread sessions reject it. See the editor's shared
+[retry/status operations](Editor.md#live-script-compilation).
+
+Stop/destruction and game-session faults cancel outstanding work, join the owned
+worker and reap the compiler's
+process group/job. Core::ProcessConfig.stop prevents launch or returns an Unavailable
+cancellation error while terminating/reaping owned processes, including descendants
+retaining output pipes. TypeScriptCompiler::compileSnapshot accepts the same stop
+token and discards private generation data; partial compiler output is never published.
+The process timeout/output limits remain in force. Cancellation, filesystem cleanup
+and OS teardown are not hard real-time guarantees. No worker is detached and no task
+retains the scene after the controller retires.
+
+源码捕获仍在所有者线程；运行中单个后台任务编译不可变快照，旧代继续运行。提交前重新捕获
+核对字节，改变/失效的源码取消旧任务，不发布过期结果；只编译最新有效捕获，不排队每次
+编辑。候选虚拟机准备、状态迁移及提交仍在所有者线程，失败保留旧执行。强制重试为异步，
+当前同源任务合并请求；查询不收集/提交结果。停止/销毁取消、回收线程与编译进程及其后代，
+不保留活动场景引用、不发布部分输出，不保证操作系统回收的硬实时延迟。
+
+Source capture, initial preparation, migration and retired-generation filesystem
+cleanup remain synchronous; this is not a hard frame-time guarantee or general
+background filesystem service. Source edits must still be serialized against each
+bounded capture. Captured text and native transport containers are outside the VM
+allocator quota. Content capture remains portable, without platform watcher APIs.
 
 # Input frames and native services
 

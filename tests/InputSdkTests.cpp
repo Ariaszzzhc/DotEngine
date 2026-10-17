@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "ScriptCompilation.hpp"
+
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Platform.Events;
@@ -359,6 +361,7 @@ TEST_CASE("input_sdk_failed_compile_and_reloaded_realms_keep_the_original_live_p
   project.write("export const bad: number = 'type error';");
   state.beginFrame();
   REQUIRE(publisher.publish(state));
+  Dot::Tests::awaitCompilation([&] { return scripts->poll(); });
   auto failed = scripts->update(0.1);
   REQUIRE(failed);
   CHECK(failed->source.error.has_value());
@@ -369,11 +372,12 @@ TEST_CASE("input_sdk_failed_compile_and_reloaded_realms_keep_the_original_live_p
   state.beginFrame();
   REQUIRE(state.consume({0, 0, KeyChanged{Key::A, false, false}}));
   REQUIRE(moved.publish(state));
+  auto completed = Dot::Tests::awaitCompilation([&] { return scripts->poll(); });
   auto reloaded = scripts->update(0.1);
   REQUIRE_MESSAGE(reloaded, (reloaded ? "" : reloaded.error().message));
-  REQUIRE(reloaded->source.committed);
-  REQUIRE(reloaded->source.reload);
-  CHECK(reloaded->source.reload->migrated == 1);
+  REQUIRE(completed->committed);
+  REQUIRE(completed->reload);
+  CHECK(completed->reload->migrated == 1);
   CHECK(reloaded->frame.failures.empty());
   CHECK(native->entity(id)->transform.position.x == 2);
   CHECK(native->entity(id)->name == "3:3:");

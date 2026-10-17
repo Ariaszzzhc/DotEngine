@@ -2,7 +2,8 @@
 
 A non-shooting over-the-shoulder character template in an industrial science-fiction
 bay. The native Jolt capsule handles movement, gravity, support, stairs and jumping;
-a real 65-joint skinned mannequin uses the engine's animation player and cross-fades.
+a textured maintenance character with 63 skinned joints uses the engine's animation
+player and cross-fades.
 This replaces the earlier collection/timer prototype.
 
 - WASD or arrows: camera-relative movement, with normalized diagonals and acceleration.
@@ -36,7 +37,11 @@ are replaced on every build, including deleted source files. Copy to a separate
 folder before persistent editing, or create a writable project from the project
 home. Use Play, edit scripts externally and export a native game through the normal
 editor workflow. Hot reload retains movement intent, pending jump and orbit state
-without restarting the native character, skeleton or animation clocks.
+without restarting the native character, skeleton or animation clocks. During Play,
+changed source snapshots compile in one background task while current code keeps
+running. Invalid source keeps the prior generation active; Console reports the
+error and Retry scripts can retry unchanged bytes. Current source is rechecked before
+migration. This migration state does not persist player progress across game sessions.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

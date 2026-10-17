@@ -25,6 +25,8 @@ export namespace Dot::Script {
     bool checked{};
     bool changed{};
     bool committed{};
+    bool compiling{};
+    bool discarded{};
     std::optional<Core::Error> error;
     std::optional<ReloadReport> reload;
   };
@@ -39,6 +41,8 @@ export namespace Dot::Script {
     std::uint64_t reloads;
     std::optional<Core::Error> error;
     SceneScriptsStats scripts;
+    bool compiling{};
+    std::uint64_t discardedCompilations{};
   };
 
   /** Source-content polling around the compiler/lifecycle service. Captures
@@ -66,6 +70,14 @@ export namespace Dot::Script {
     auto operator=(LiveScripts&&) noexcept -> LiveScripts&;
     ~LiveScripts();
 
+    /** Capture on the owner, compile one owned snapshot in the background, then
+     * recapture before owner-thread migration. Changed/invalid sources cancel and
+     * discard obsolete jobs; only the latest capture may commit. Force schedules
+     * an unchanged retry, never waits; repeated force coalesces into an active job.
+     * Stop/destruction cancel and join the worker and reap its compiler process.
+     * 源码在所有者线程捕获，单个后台任务编译拥有的快照，迁移前重新捕获核对；源码改变/
+     * 无效时取消并丢弃旧任务，仅当前源码可提交。强制请求异步重试，同一活动任务合并请求。
+     * 停止/销毁取消并回收工作线程及编译进程。 */
     [[nodiscard]] auto poll(bool force = false) -> Core::Result<ReloadStatus>;
     /** Start the prepared generation without polling. Calls are idempotent;
      * lifecycle failures are reported by the underlying scene service.
@@ -78,6 +90,11 @@ export namespace Dot::Script {
     [[nodiscard]] auto update(double seconds) -> Core::Result<LiveScriptReport>;
     [[nodiscard]] auto fixedUpdate(double seconds) -> Core::Result<LiveScriptReport>;
     [[nodiscard]] auto stop() -> Core::Result<ScriptReport>;
+    /** Quiescent cancellation, including another destruction thread. Release
+     * outstanding compilation without invoking hooks or stopping the generation;
+     * later owner polls can retry. 静止时取消，可用于异线程销毁；释放未完成编译，
+     * 不调用钩子或停止脚本代；之后所有者可再次轮询重试。 */
+    auto cancelCompilation() noexcept -> void;
     [[nodiscard]] auto stats() const -> Core::Result<LiveScriptsStats>;
 
   private:

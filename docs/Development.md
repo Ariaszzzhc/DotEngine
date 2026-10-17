@@ -9836,3 +9836,134 @@ in ignored build storage. No formal example asset is changed and no distribution
 archive is produced. Full dope-sheet/tangent/binding/state-machine tools, broader
 native gesture acceptance, final realistic art/game experience and overall production
 readiness remain unfinished.
+
+## 2026-10-17 — background live script compilation
+
+Continue Prism Relay's real source-edit/Play workflow. Its Checkpoint interface is
+hot-reload migration state, not persisted player progress. Before adding gameplay
+state, inspect the actual editing interruption: LiveScripts captures and compiles
+source synchronously inside frame polling. A warmed Release editor on the ordinary
+PrismReload project records a 42.829625ms slowest application step, including
+26.925334ms update. External 6-second/1ms sampling places compileSnapshot/runProcess/
+poll beneath LiveScripts on com.apple.main-thread. The first unwarmed attempt instead
+records a 54.683959ms step with 50.139959ms preparation and misses compiler sampling;
+retain it as investigation, not compiler-delay evidence.
+
+LiveScripts now captures bounded source on its owner and compiles one immutable
+snapshot on an owned jthread. The worker owns only snapshot/compiler descriptors
+and independent validation storage, never the active scene, runtime or services.
+Old execution continues. Completion readiness uses a try-lock; it does not wait for
+the compiler. Before migration, the owner captures current source again and compares
+exact paths/bytes. Changed or unavailable source cancels/retires the obsolete job;
+only the latest valid contents can publish. Intermediate edits are not queued.
+Candidate runtime preparation, state export/import, cleanup and publication use the
+existing owner-thread transactional SceneScripts reload. Failed candidates retain
+old execution; identical rejected source is cached rather than repeatedly compiled.
+Separate capture/compile errors preserve the rejected-code diagnostic after an
+unrelated directory failure recovers, rather than falsely reporting clean code.
+
+Core::ProcessConfig.stop prevents launch or cancels an active owned group/job while
+still terminating descendants and reaping the direct child. compileSnapshot passes
+its stop token through the real process and checks it across output validation;
+partial output/private generations are discarded. Stop/destruction and game faults
+cancel/join outstanding work. Quiescent cancelCompilation invokes no script hooks.
+No thread is detached and no background task retains a scene. Existing process
+bounds and VM timing guards remain unchanged; filesystem/OS teardown is not a hard
+real-time guarantee. Capture, initial compilation, runtime migration and retired-file
+cleanup still have synchronous costs; this is not general asynchronous filesystem I/O.
+
+GameSession/PlaySession expose pollScripts without advancing gameplay frames, input
+or timers. A current running hot-reload session is required. force schedules an
+unchanged retry and coalesces into a current job. Review catches the return-to-active-
+source edge: a force received while an obsolete job retires must survive until that
+job is collected. Retain one bounded deferred retry; source-capture failure or
+explicit cancellation clears it. New regression checks that original active bytes
+still receive the requested retry. No synchronous fallback or format alias is added.
+
+The viewport shows compiling and Retry scripts through the same strict
+reload-play-scripts operation. Inspect exposes pending state, attempts/reloads/
+obsolete-result counts and error without collecting results. Stale sessions, wrong
+field types and unknown fields reject before effects. Manual source results and
+retired cleanup failures enter ordinary diagnostics. Native faults cancel source
+work as well as retiring scene/game-data services, so a faulted game does not retain
+an unused compiler job. Prism README corrects the old 65-joint mannequin description
+to the current 63-joint maintenance character, and explicitly separates migration
+state from persistent saves. Formal example script/art assets remain unchanged.
+
+Nine enduring additions cover real process cancellation before launch and after a
+pipe-owning descendant starts; canceled immutable compilation; latest-only source
+publication; missing-directory cancellation/recovery and retained type diagnostics;
+stop/move/off-thread quiescent destruction with exact generation/VM ownership counts;
+force coalescing and pure queries; continued old-code frame dispatch until commit;
+session retry without gameplay advancement/inactive-mode rejection; and forced
+retry through obsolete retirement. Existing VM-timeout regression now also faults
+a source session with compilation outstanding and verifies process/generation
+reclamation. Existing source/Prism/FeatureLab/input/Play tests await the real polling
+API rather than assuming synchronous compilation or dispatching extra game ticks.
+The shared test observation deadline does not change VM/process budgets.
+
+Strict builds correct a missing aggregate default for stop_token, an explicit
+Core.Process test import and a test comparison against Transform's individual
+components. No warning/timing rule is weakened. Final focused Debug passes 41/41
+(13.75s). Full Debug passes 1347/1347 (210.53s); Release/NDEBUG configures/builds and
+passes 1347/1347 (30.09s), sequentially with all builds/tests. Counts: 419 unit / 928
+integration; overlapping 162 offscreen, 206 compiler, 33 platform, 32 audio-native
+and 21 process labels. Unit tests open no windows/devices; automatic integration
+opens no desktop windows. Review covers worker/immutable-generation ownership,
+completion synchronization, exact freshness/cancellation, retry/error state,
+post-commit failure reporting, session retirement, strict fields, module direction,
+formatting and unchanged compiler/linker/pin/platform/sanitizer scope. Only macOS
+arm64 is executed. Final formatting uses trailing return types in the test helper;
+its rebuilt focused checks are recorded separately.
+
+The same saved PrismReload project and 740x287 logical viewport repeat the warmed
+6-second/1ms sampling after the change. Compiler wait/private snapshot fsync now
+appears under Compilation's worker thread, absent from the main-thread compiler
+path. Exactly one changed source commits: attempts 2 / reloads 1 / no error. Global
+slowest step is 19.605416ms (13.726125ms prepare, 0.999417ms update); retained median
+7.247688ms versus 7.214771ms before. Histories retain 120 of 668/671 sampled steps,
+so their rolling time windows differ. Worst observed control round trips are
+54.024/52.489ms after/before, not an input-latency improvement claim. These are
+specific application envelopes and stack evidence, not game FPS or proof that all
+frame stalls are resolved. Background worker CPU is outside application-step timing.
+
+A fresh current Release project-action creates ordinary editable PrismSource. In
+its real native editor, malformed/stale retry requests leave source state intact.
+An unchanged explicit retry succeeds without scene replacement. Hold real W input,
+save a TS2322 source error externally and observe old code still move Player Z from
+1.7741969 to 0.6810842. The same rejected bytes remain at one attempt until explicit
+Retry; correction commits normally. Forty atomic valid source saves then produce
+10 retired obsolete results with no intermediate commit. The original scene scope
+56 remains throughout: before final Stop request, attempts 15 / successful reloads
+2 / discarded 10 / no pending job or error. Another accepted force reports attempt
+16 compiling, then normal Stop retires source work and restores exact clean
+original authoring. Before/stopped viewport PNGs retain baseline SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695. This is real editor
+input/resource execution, not a test hook or private-state substitution. Fresh native
+pointer/keyboard acceptance is not extended by these product-agent operations.
+
+Save/export publishes the actual edited player source: SHA-256
+128945ce99b1a9d3bffd32bb01a057e75ec62fb63fe2b49d0ec12d01e35d3d38. All 115 exported
+content files / 66,210,729 bytes match authoring; published player.js contains the
+saved speed * 0.85 / magnitude expression. The export has no TypeScript/source maps.
+Physically relocate the native folder and hide authoring: the compiled game exits
+zero after 360 game steps (470 application steps: 110 preparation + 360 game).
+All 120 retained samples are unpaused/error-free with zero dropped fixed time;
+stderr contains only normal preparation progress. Retained global slowest is step
+0, 49.560083ms, including 45.297250ms event handling; retained median 11.946396ms.
+This is portable source-free execution evidence, not a native-game speedup claim.
+Authoring is restored after execution.
+
+Raw creation/source/retry/error/input/export requests and applied responses,
+profiles/process samples, source histories, original/final scene snapshots, three
+PNGs, content hashes and binary metadata remain under build/script-reload-review.
+Four owned editors exit zero with empty stderr and retired controls; native exit is
+zero. Owned app/native copies and temporary helpers are removed after evidence and
+restoration checks; editable projects remain in ignored build storage. No distribution
+archive is made. Initial preparation, broader resource/background I/O, migration
+costs, full animation tooling, persistent game-specific checkpoints, final art/game
+experience and overall production maturity remain unfinished.
+
+Final helper-format rebuilds pass the same 41 focused cases: Debug 13.87s,
+Release/NDEBUG 3.58s. Final clang-format dry-run and staged whitespace checks pass.
+All product code and runtime evidence above retain the reviewed final behavior.

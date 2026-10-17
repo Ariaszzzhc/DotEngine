@@ -355,6 +355,10 @@ namespace Dot::Project {
     std::optional<Script::LiveScripts> m_live;
 
     auto retireServices() noexcept -> void {
+      if (m_live) {
+        m_live->cancelCompilation();
+      }
+
       if (m_flow) {
         m_flow->retire();
       }
@@ -796,13 +800,56 @@ namespace Dot::Project {
     result.transition = std::move(*latest);
 
     if (m_impl->m_state != SessionState::Closed) {
-      auto scripts = m_impl->scriptStats();
+      if (m_impl->m_live) {
+        auto source = m_impl->m_live->stats();
 
-      if (!scripts) {
-        return std::unexpected(scripts.error());
+        if (!source) {
+          return std::unexpected(source.error());
+        }
+
+        result.scripts = source->scripts;
+        result.source = std::move(*source);
+      } else {
+        auto scripts = m_impl->scriptStats();
+
+        if (!scripts) {
+          return std::unexpected(scripts.error());
+        }
+
+        result.scripts = *scripts;
       }
+    }
 
-      result.scripts = *scripts;
+    return result;
+  }
+
+  auto GameSession::pollScripts(bool force) -> Core::Result<Script::ReloadStatus> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_live) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Source polling requires a running hot-reload session");
+    }
+
+    ActiveScope active{m_impl->m_active};
+    auto result = m_impl->m_live->poll(force);
+    auto state = m_impl->m_live->stats();
+
+    if (!result || !state || state->scripts.faulted) {
+      m_impl->m_state = SessionState::Faulted;
+      m_impl->retireServices();
+    }
+
+    if (!state) {
+      return std::unexpected(state.error());
     }
 
     return result;

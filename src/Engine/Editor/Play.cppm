@@ -41,6 +41,7 @@ export namespace Dot::Editor {
     std::chrono::nanoseconds dropped;
     Script::SceneLocation location{};
     std::optional<Script::SceneRequest> transition;
+    std::optional<Script::LiveScriptsStats> source{};
   };
 
   struct PlayFrame {
@@ -88,6 +89,9 @@ export namespace Dot::Editor {
      * 后续 advance 替换场景会使借用失效，每帧须重新获取。 */
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
     [[nodiscard]] auto stats() const -> Core::Result<PlayStats>;
+    /** Poll/retry source work without advancing Play timing or input.
+     * 不推进 Play 计时或输入地轮询/重试源码任务。 */
+    [[nodiscard]] auto pollScripts(bool force = false) -> Core::Result<Script::ReloadStatus>;
     [[nodiscard]] auto lastFrame() const -> Core::Result<PlayFrame>;
 
   private:
