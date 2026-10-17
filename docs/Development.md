@@ -8878,3 +8878,88 @@ and export independence. No renderer/runtime budgets, dependencies, clock limits
 compatibility paths or distribution archives change. Final realistic art direction,
 cohesive environment, background loading/compilation, large-game evidence and the
 overall engine/editor/game objective remain unfinished.
+
+## Asynchronous environment shader preparation
+
+The sampled relocated-player stall motivates explicit preparation before gameplay.
+Renderer::prepareEnvironmentPipeline starts one actual Dawn asynchronous compute
+pipeline and polls its future with zero wait. Pending is false, reusable is true;
+callback/timeout failures retain context rather than publishing a map. The pending
+poll has a ten-second bound. Callback state owns its lifetime independently; device
+teardown may finish outstanding driver work. The same pipeline is reused by explicit
+synchronous bakeEnvironment, retaining its HDR/image/budget validation, GPU completion
+and transactional map publication. Pipeline storage is internal renderer state, not
+fabricated environment residency. HDR decoding, source mip/upload work, GPU bake
+completion and all other pipeline groups remain synchronous.
+
+SceneRenderer::prepareEnvironment only prepares when the scene needs an environment;
+it changes no files, images, maps, lighting bindings or resource-cache entries.
+Workspace polls between mailbox/event handling and drawing. Its Scene message and
+strict workspace.view.loading = "environment-pipeline" distinguish pending from
+error and completed pixels. Capture/pick cannot use a pending view. Play checks the
+current document's environment and a pure renderer readiness query, including during
+GUI layout, rather than a stale previous-frame loading flag. This closes the reviewed
+same-frame add-environment/Play boundary. Mailbox close precedes new preparation work.
+
+The native player keeps event/clear-surface presentation active while compiling,
+names the preparation phase in its title/stderr, and invokes script Start/game
+updates only after this pipeline is ready. Loading application steps remain profiled
+but do not consume a finite game render-step budget. Application fixed-callback counts
+are not represented as gameplay work before startup. Clock catch-up limits, delta
+caps and warnings are unchanged. Removed the obsolete private acceptance-loop driver
+and its imports; no current caller uses it and no new probe executable replaces it.
+
+Three durable offscreen regressions cover preparation/reuse with real HDR output,
+zero premature map/binding publication, wrong threads/moves, abandoned jobs and
+scene preparation without image I/O/cache mutation. Existing GUI coverage checks
+that the pure readiness query works during layout while starting/polling work is
+rejected as reentry. Initial focused Debug passes 14/14 (11.63s); review-added query/
+GUI checks pass 15/15 (12.19s). Initial complete Debug passes 1304/1304 (200.21s) and
+Release/NDEBUG 1304/1304 (23.66s). Final full results after the readiness/mailbox-order
+review are recorded below. Tests create no desktop windows; no sanitizer, dependency,
+compiler/linker environment, content format or distribution archive changes.
+
+Actual Release editor opens the adopted Prism template, reaches the same completed
+PNG as the character-stage baseline (SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695), runs W/Space and
+observes Player [-3,1.4705257,1.3672982] after 31 fixed steps/39 rendered frames.
+No Play diagnostics/error/dropped time; Stop restores the exact clean scene. A fresh
+owned app-path run of the reviewed binary also reaches identical pixels, starts and
+stops Play cleanly, exports through the live editor and exits zero with empty stderr
+and retired controls. It does not capture the short environment-pending UI interval:
+its first inspected view is already ready, and that request waits 4.7144145s behind
+later synchronous work. Application diagnostics retain a 4678.859375ms render step.
+Thus this evidence does not establish complete editor startup responsiveness or a
+fresh native human mouse/keyboard run; the desktop remains locked to computer use.
+
+The final 115-file native content export totals 66,210,361 bytes. All source files
+match bytes except one normalized main-scene quaternion component (3.7252903e-9);
+structure, other values and linked records agree. DotGame runs from a relocated path
+with its owned authoring project renamed away, exits zero, and samples 229 application
+steps: 49 loading steps plus the requested 180 game render steps. All 120 retained
+samples are unpaused/error-free. First game rendering still takes 4743.441875ms,
+whole step 4778.406584ms, followed by 4633.333148ms dropped fixed time and the explicit
+warnings. Later retained median step is 11.5874375ms, not an optimization/FPS claim.
+A preceding renamed run renders its slowest game frame in 696.001375ms; directory
+relocation does not guarantee the same driver-cache context or a matched comparison.
+
+A three-second sample of the final slow run now catches main-thread
+ensureShadowPipelines -> Dawn APICreateRenderPipeline -> Metal newLibraryWithSource
+for the group's three pipeline creations, after environment-compute preparation.
+These are call-stack observations, not timing percentages or proof that all remaining
+cost belongs to shadows. The next measured target is asynchronous shadow-pipeline
+preparation, followed by renewed measurement of other synchronous stages. Cold startup,
+general background loading/compilation, populated-game readiness and the overall
+engine/editor/game goal remain unfinished. Raw responses, PNGs, profiles, manifests,
+call stacks and diagnosis stay under build/environment-loading-review; temporary
+native packages are removed after preserving evidence. Thirteen completed asset
+investigation helpers are retired while useful authoring inputs/results remain.
+
+Final reviewed builds succeed. Complete Debug passes 1304/1304 (199.03s);
+Release/NDEBUG passes 1304/1304 (23.64s): 409 unit, 895 integration with overlapping
+198 compiler, 145 offscreen, 33 platform, 32 audio-native and 20 process cases.
+Nine changed C++ files pass clang-format; whitespace checks pass. Reviewed future/
+callback ownership, retained errors, device/thread/move boundaries, no partial map
+publication, existing bake budgets/output, strict pending-state/capture/Play handling,
+mailbox-first close, session cleanup and frame-budget/profile meaning. Only macOS
+arm64 is executed. Full passing suites do not resolve the recorded cold waits.

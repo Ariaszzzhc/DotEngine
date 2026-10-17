@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <limits>
@@ -9,6 +10,8 @@
 #include <thread>
 
 import Dot.Graphics.Renderer;
+import Dot.Graphics.SceneRenderer;
+import Dot.World.Scene;
 import Dot.Math;
 import Dot.Core.Result;
 import Dot.Core.Files;
@@ -31,6 +34,91 @@ namespace {
     return image;
   }
 }  // namespace
+
+TEST_CASE("environment.gpu_async_preparation_reuses_pipeline_without_publishing_maps") {
+  auto renderer = Renderer::create().value();
+  CHECK_FALSE(renderer.environmentPipelineReady().value());
+  auto ready = renderer.prepareEnvironmentPipeline();
+  REQUIRE(ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+    CHECK(renderer.resourceStats()->environments == 0);
+    CHECK(renderer.resourceStats()->environmentBytes == 0);
+    CHECK_FALSE(renderer.environment().value());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.prepareEnvironmentPipeline();
+    REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
+  }
+
+  REQUIRE(*ready);
+  CHECK(renderer.environmentPipelineReady().value());
+  CHECK(renderer.prepareEnvironmentPipeline().value());
+  CHECK(renderer.resourceStats()->environments == 0);
+  const auto map = renderer.bakeEnvironment(constantPanorama(), small).value();
+  auto pixels = renderer.readEnvironment(map, EnvironmentSurface::Diffuse).value();
+  CHECK(pixels.pixels[0] == doctest::Approx(2).epsilon(.003));
+  CHECK(renderer.prepareEnvironmentPipeline().value());
+  CHECK(renderer.resourceStats()->environments == 1);
+  CHECK_FALSE(renderer.environment().value());
+}
+
+TEST_CASE("environment.gpu_async_preparation_move_thread_and_abandoned_job_are_safe") {
+  for (int index = 0; index < 3; ++index) {
+    auto renderer = Renderer::create().value();
+    REQUIRE(renderer.prepareEnvironmentPipeline());
+    bool rejected{};
+    std::thread thread([&] {
+      rejected = !renderer.prepareEnvironmentPipeline() && !renderer.environmentPipelineReady();
+    });
+    thread.join();
+    CHECK(rejected);
+    auto moved = std::move(renderer);
+    CHECK_FALSE(renderer.prepareEnvironmentPipeline());
+    CHECK_FALSE(renderer.environmentPipelineReady());
+
+    if (index == 1) {
+      const auto baked = moved.bakeEnvironment(constantPanorama(), small).value();
+      CHECK(moved.readEnvironment(baked, EnvironmentSurface::Radiance)->pixels[0]
+            == doctest::Approx(2).epsilon(.003));
+    }
+  }
+
+  auto renderer = Renderer::create().value();
+  CHECK(renderer.bakeEnvironment(constantPanorama(), small));
+}
+
+TEST_CASE("environment.gpu_scene_preparation_without_image_io_preserves_bindings_and_cache") {
+  auto renderer = Renderer::create().value();
+  auto drawing = SceneRenderer::create(renderer).value();
+  auto scene = Dot::World::Scene::create().value();
+  CHECK(drawing.prepareEnvironment(scene).value());
+  REQUIRE(scene.setEnvironment(Dot::World::Environment{"assets/missing.hdr"}));
+  auto ready = drawing.prepareEnvironment(scene);
+  REQUIRE(ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = drawing.prepareEnvironment(scene);
+    REQUIRE(ready);
+  }
+
+  REQUIRE(*ready);
+  CHECK(drawing.stats()->bytes == 0);
+  CHECK_FALSE(renderer.environment().value());
+  auto target = renderer.createTarget(4, 4).value();
+  CHECK_FALSE(drawing.renderInto(scene, target, {}, View{}));
+  CHECK(drawing.stats()->bytes == 0);
+  CHECK(renderer.resourceStats()->environments == 0);
+  auto moved = std::move(drawing);
+  CHECK_FALSE(drawing.prepareEnvironment(scene));
+  CHECK(moved.prepareEnvironment(scene).value());
+  auto invalid = std::move(scene);
+  CHECK_FALSE(moved.prepareEnvironment(scene));
+  REQUIRE(invalid.setEnvironment(std::nullopt));
+  CHECK(moved.prepareEnvironment(invalid).value());
+}
 
 TEST_CASE("environment.gpu_constant_energy_hdr_diffuse_specular_mips_and_brdf_are_real") {
   auto renderer = Renderer::create().value();

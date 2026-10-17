@@ -658,6 +658,7 @@ namespace Dot::Editor {
     std::string m_scenePath{"scenes/new.dotscene"};
     std::string m_sceneName{"New Scene"};
     bool m_previewReady{};
+    bool m_environmentPreparing{};
     bool m_active{};
     bool m_applying{};
     std::optional<Core::Error> m_mailboxFault;
@@ -1236,6 +1237,28 @@ namespace Dot::Editor {
     }
 
     auto startPlay() -> Core::Result<void> {
+      auto scene = m_document->scene();
+      auto environment
+          = scene ? (*scene)->environment()
+                  : Core::Result<std::optional<World::Environment>>{std::unexpected(scene.error())};
+
+      if (!environment) {
+        return std::unexpected(environment.error());
+      }
+
+      if (*environment) {
+        auto ready = m_renderer->environmentPipelineReady();
+
+        if (!ready) {
+          return std::unexpected(ready.error());
+        }
+
+        if (!*ready) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Environment lighting is still preparing");
+        }
+      }
+
       if (playing() || pendingInspector() || pendingEnvironment() || pendingOcclusion()
           || pendingText() || !m_application->running()) {
         return Core::fail(Core::ErrorCode::InvalidState,
@@ -5536,6 +5559,7 @@ namespace Dot::Editor {
       return {
           {"mode", playing() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
+          {"loading", m_environmentPreparing ? Json("environment-pipeline") : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
@@ -5759,6 +5783,15 @@ namespace Dot::Editor {
 
       if (!scene) {
         return std::unexpected(scene.error());
+      }
+
+      auto prepared = m_drawing->prepareEnvironment(**scene);
+      m_environmentPreparing = prepared && !*prepared;
+
+      if (!prepared || m_environmentPreparing) {
+        m_previewReady = false;
+        m_previewError = prepared ? "" : prepared.error().message;
+        return prepared ? Core::Result<void>{} : std::unexpected(prepared.error());
       }
 
       auto view = currentView();
@@ -9989,6 +10022,10 @@ namespace Dot::Editor {
       m_viewVisible = beginPanel("Scene", "viewport", "viewport");
 
       if (m_viewVisible) {
+        if (m_environmentPreparing) {
+          ImGui::TextUnformatted("Preparing environment lighting...");
+        }
+
         if (m_animationPreview) {
           const auto maxHeight = std::max(ImGui::GetFrameHeightWithSpacing() * 2,
                                           ImGui::GetContentRegionAvail().y * .6F);
@@ -10351,6 +10388,25 @@ namespace Dot::Editor {
 
         if (!processed) {
           return processed;
+        }
+
+        if (!m_application->running()) {
+          return {};
+        }
+
+        auto scene = displayedScene();
+        auto prepared = scene ? m_drawing->prepareEnvironment(**scene)
+                              : Core::Result<bool>{std::unexpected(scene.error())};
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        m_environmentPreparing = !*prepared;
+
+        if (m_environmentPreparing) {
+          m_previewReady = false;
+          m_previewError.clear();
         }
 
         if (input.key(Platform::Key::Escape).pressed || m_pendingClose) {

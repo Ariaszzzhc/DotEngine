@@ -90,6 +90,15 @@ or pipeline. Compare actual identical work and image output after optimizations.
 Automatic CLI regressions validate rejected options/output paths without windows;
 actual native playback is a separate deliberate product check.
 
+Native playback prepares an environment compute pipeline before invoking script Start
+callbacks or game updates. During asynchronous compilation it continues events and
+presents a clear surface with a loading title. These loading application steps are
+profiled but do not consume the requested game-frame budget. Thus `sampled` may be
+larger than the budget; the profile's fixed callback counts are application clock
+steps, not proof of gameplay updates before startup. The phase transitions are
+reported on stderr. Zero frames still means run until closed. Subsequent synchronous
+resource work remains included and catch-up/drop warnings are unchanged.
+
 ## Renderer sampling
 
 **Profile mesh rendering**, `set-profiling` and `inspect-profile.profile` retain

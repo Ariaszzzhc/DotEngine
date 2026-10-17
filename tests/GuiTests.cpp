@@ -513,7 +513,15 @@ TEST_CASE("graphics.gui_validation_budget_thread_moves_and_disabled_context") {
   CHECK_FALSE(moved.renderGui(rect, 0, 96));
   CHECK_FALSE(moved.renderGui(rect, 96, 96, -1));
   CHECK_FALSE(moved.renderGui(rect, 96, 96, 0, 0));
-  REQUIRE(moved.renderGui(rect, 96, 96));
+  REQUIRE(moved.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        auto ready = moved.environmentPipelineReady();
+        REQUIRE(ready);
+        CHECK_FALSE(*ready);
+        CHECK_FALSE(moved.prepareEnvironmentPipeline());
+        return rect();
+      },
+      96, 96));
 }
 
 TEST_CASE("graphics.gui_text_input_preserves_utf8_and_rejects_worker_context_creation") {

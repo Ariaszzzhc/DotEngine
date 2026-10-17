@@ -79,6 +79,13 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
+    /** Start/poll environment pipeline compilation only when this scene needs it.
+     * No files, maps, bindings or cache entries change; false means pending, not
+     * a rendered frame. Actual render still validates/loads/bakes scene resources.
+     * 仅在场景需要时启动/轮询环境管线编译；不改文件、地图、绑定或缓存项；false 表示
+     * 准备中，并非渲染成功。实际绘制仍负责校验/加载/预处理场景资源。 */
+    [[nodiscard]] auto prepareEnvironment(const World::Scene& scene) -> Core::Result<bool>;
+
     /** Entity view must belong to the scene; monostate selects its primary camera.
      * Independent views require no scene camera and never mutate its entities.
      * Missing camera/assets and budget failures return errors without substitutes.

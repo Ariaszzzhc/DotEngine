@@ -167,9 +167,11 @@ namespace Dot::Runtime {
 
       std::optional<std::string> lastReloadError;
       std::uint64_t lastSceneRequest{};
-      std::size_t presentations = 0;
       auto lastTitle = description->name;
       bool delayed = false;
+      bool started = false;
+      bool loadingAnnounced = false;
+      std::size_t gameFrames{};
       const auto dispatch
           = [&](Core::Result<Script::LiveScriptReport> report) -> Core::Result<void> {
         if (!report) {
@@ -203,6 +205,50 @@ namespace Dot::Runtime {
 
         if (quitting) {
           application->stop();
+          return {};
+        }
+
+        if (!started) {
+          auto prepared = sceneRenderer->prepareEnvironment(**scene);
+
+          if (!prepared) {
+            return std::unexpected(prepared.error());
+          }
+
+          if (!*prepared) {
+            if (!loadingAnnounced) {
+              std::println(stderr, "Preparing environment lighting");
+              auto changed = application->window().setTitle(description->name
+                                                            + " - Preparing environment lighting");
+
+              if (!changed) {
+                return changed;
+              }
+
+              loadingAnnounced = true;
+            }
+
+            return {};
+          }
+
+          auto report = session->start();
+
+          if (!report) {
+            return std::unexpected(report.error());
+          }
+
+          auto checked = lifecycle(*report);
+
+          if (!checked) {
+            return checked;
+          }
+
+          started = true;
+
+          if (loadingAnnounced) {
+            std::println(stderr, "Environment lighting pipeline ready; starting game");
+            lastTitle.clear();
+          }
         }
 
         auto requested = session->pointerCaptureRequested();
@@ -237,9 +283,15 @@ namespace Dot::Runtime {
         return session->publish(input, capture).transform([](auto) {});
       };
 
-      callbacks.fixedUpdate = [&](double) { return dispatch(session->fixedUpdate()); };
+      callbacks.fixedUpdate = [&](double) {
+        return started ? dispatch(session->fixedUpdate()) : Core::Result<void>{};
+      };
 
-      callbacks.update = [&](double seconds) {
+      callbacks.update = [&](double seconds) -> Core::Result<void> {
+        if (!started) {
+          return {};
+        }
+
         if (seconds > 1) {
           if (!delayed) {
             std::println(stderr, "Project frame exceeded one second; variable delta capped at 1");
@@ -277,6 +329,10 @@ namespace Dot::Runtime {
           std::println(stderr, "Project fixed updates dropped {} ns", frame.dropped.count());
         }
 
+        if (!started) {
+          return renderer->present({}, {}, {0.055F, 0.06F, 0.075F, 1}).transform([](auto) {});
+        }
+
         scene = session->scene();
 
         if (!scene) {
@@ -299,32 +355,20 @@ namespace Dot::Runtime {
           lastTitle = std::move(*name);
         }
 
-        return sceneRenderer->present(**scene).transform([&](auto result) {
-          if (result == Graphics::PresentResult::Presented) {
-            ++presentations;
-          }
-        });
+        auto shown = sceneRenderer->present(**scene).transform([](auto) {});
+
+        if (shown && options.frames && ++gameFrames == options.frames) {
+          application->stop();
+        }
+
+        return shown;
       };
 
       /** Close on every dispatch/render failure; destructor never substitutes hooks.
        * 分发/渲染失败也显式关闭，销毁函数不替代停止钩子。 */
       auto run = [&]() -> Core::Result<void> {
-        auto started = session->start();
-
-        if (!started) {
-          return std::unexpected(started.error());
-        }
-
-        auto checked = lifecycle(*started);
-
-        if (!checked) {
-          return checked;
-        }
-
         try {
-          return options.driver ? options.driver(*application, *session, *sceneRenderer, callbacks,
-                                                 presentations)
-                                : application->run(callbacks, options.frames);
+          return application->run(callbacks);
         } catch (const std::exception& error) {
           return Core::fail(Core::ErrorCode::External, "Player loop: " + std::string(error.what()));
         }

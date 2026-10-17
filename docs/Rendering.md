@@ -266,6 +266,27 @@ handling defines an otherwise undefined longitude and avoids atan2(0,0).
 The physical integration follows the [Filament IBL derivation](https://google.github.io/filament/Filament.html),
 with independently implemented shader code and analytic energy/moment tests.
 
+`Renderer::prepareEnvironmentPipeline` starts one shared asynchronous compute
+pipeline compilation and polls its actual future with zero wait. False means
+pending; true means reusable; callback/timeout errors remain errors. Polling a
+pending job has a ten-second bound. It creates no environment map or lighting
+binding. `environmentPipelineReady` reads the current result without starting or
+polling work, including during GUI layout; Play uses it to reject a newly added
+environment before the next preparation tick. Owner-thread/move/device checks
+apply. Callback state is owned independently; device destruction may finish
+outstanding driver work. `bakeEnvironment` is explicitly synchronous and waits for this same pipeline
+when necessary. Repeated bakes reuse it; HDR decoding, source mips/uploads, GPU
+dispatch/completion and other pipelines remain synchronous.
+
+`SceneRenderer::prepareEnvironment(scene)` performs this compilation only when the
+scene contains environment lighting, without reading images or populating caches.
+The editor polls it while continuing event/agent/GUI work; Scene shows a preparation
+message, `workspace.view.loading` is `"environment-pipeline"`, `ready` is false and
+capture/Play cannot claim a completed scene. Once ready, ordinary rendering validates
+and loads the real content. The native player presents a clear loading surface and
+names the phase in its window title before starting gameplay. These are preparation
+states, not substitute scene pixels or a general background resource loader.
+
 Defaults are radiance 256, diffuse 32, specular 128, BRDF 128, 256 samples. Radiance/
 specular allow 16..512; diffuse 4..128; BRDF 16..256; dimensions are powers of two,
 samples 32..1024. At most 32 live environment maps are permitted. Output residency

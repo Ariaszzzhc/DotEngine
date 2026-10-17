@@ -545,11 +545,27 @@ export namespace Dot::Graphics {
      * 关联实际样本；拒绝跨线程/移动后/设备失败，关闭即释放查询存储。 */
     [[nodiscard]] auto setProfiling(bool enabled) -> Core::Result<void>;
     [[nodiscard]] auto profiling() const -> Core::Result<MeshProfiling>;
+    /** Start/poll the shared environment compute pipeline without waiting for
+     * compilation. False means pending, true means reusable; failures are sticky
+     * for this renderer. Owner-thread polling has a ten-second deadline. No image,
+     * environment map or lighting binding is created. Destruction cancels ownership
+     * safely; the driver may finish outstanding work during device teardown.
+     * 启动/轮询共享环境计算管线，不等待编译；false 表示处理中，true 表示可复用；
+     * 故障在本渲染器内保留，所属线程轮询有十秒期限。不创建图像、环境贴图或光照绑定；
+     * 销毁安全释放任务所有权，驱动仍可能在设备退出期间完成未结束工作。 */
+    [[nodiscard]] auto prepareEnvironmentPipeline() -> Core::Result<bool>;
+    /** Read current readiness without starting/polling work; permitted during GUI
+     * layout. Unprepared/pending is false, a retained failure is an error.
+     * 只读当前就绪状态，不启动/轮询工作，允许 GUI 布局期间调用；未准备/处理中为 false，
+     * 已保留故障返回错误。 */
+    [[nodiscard]] auto environmentPipelineReady() const -> Core::Result<bool>;
     /** Preprocess an actual HDR panorama on GPU. At most 32 owned environments;
      * output residency and temporary RGBA32F source/mips share maxTextureBytes
-     * with ordinary textures. Failure publishes no partial resource.
+     * with ordinary textures. Failure publishes no partial resource. Explicitly
+     * synchronous: waits for the shared pipeline if not prepared, and GPU completion.
      * 在 GPU 预处理真实 HDR 全景，最多 32 个环境；输出与临时 RGBA32F 源/mip 及普通
-     * 纹理共用 maxTextureBytes 预算，失败不发布部分资源。 */
+     * 纹理共用 maxTextureBytes 预算，失败不发布部分资源。此显式同步调用等待尚未准备好的
+     * 共享管线及 GPU 完成；交互客户应先轮询准备状态。 */
     [[nodiscard]] auto bakeEnvironment(const HdrImage& panorama,
                                        const EnvironmentConfig& config = {})
         -> Core::Result<EnvironmentMap>;
@@ -635,7 +651,7 @@ export namespace Dot::Graphics {
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
      * the callback may append GUI images/viewports, toggle profiling and read
-     * guiStats/visibilityStats/profiling,
+     * guiStats/visibilityStats/profiling/environmentPipelineReady,
      * but must not replace/change ImGui context or reenter other renderer operations.
      * Input events are explicitly forwarded.
      * Empty font uses the built-in font; an explicit font must load successfully.

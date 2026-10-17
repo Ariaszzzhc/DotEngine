@@ -9,6 +9,7 @@ module;
 #include <array>
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <expected>
@@ -566,6 +567,17 @@ namespace Dot::Graphics {
     wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
+
+    struct EnvironmentPreparation {
+      wgpu::BindGroupLayout layout;
+      wgpu::ComputePipeline pipeline;
+      std::shared_ptr<Pending<wgpu::ComputePipeline>> pending;
+      wgpu::Future future{};
+      std::chrono::steady_clock::time_point started;
+      std::optional<Core::Error> error;
+    };
+
+    std::optional<EnvironmentPreparation> m_environmentPreparation;
     wgpu::BindGroupLayout m_skinLayout;
     wgpu::ComputePipeline m_skinVertices;
     wgpu::ComputePipeline m_skinFaces;
@@ -4047,6 +4059,135 @@ namespace Dot::Graphics {
                          stats.m_skinBytes.load()};
   }
 
+  auto Renderer::environmentPipelineReady() const -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    const auto& preparation = m_impl->m_environmentPreparation;
+
+    if (preparation && preparation->error) {
+      return std::unexpected(*preparation->error);
+    }
+
+    return preparation && preparation->pipeline;
+  }
+
+  auto Renderer::prepareEnvironmentPipeline() -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      auto& gpu = *m_impl;
+
+      if (!gpu.m_environmentPreparation) {
+        Impl::EnvironmentPreparation preparation;
+        ErrorScope scope(gpu.instance, gpu.device);
+        std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
+        entries[0].binding = 0;
+        entries[0].visibility = wgpu::ShaderStage::Compute;
+        entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+        entries[0].buffer.minBindingSize = 32;
+        entries[1].binding = 1;
+        entries[1].visibility = wgpu::ShaderStage::Compute;
+        entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+        entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+        entries[2].binding = 2;
+        entries[2].visibility = wgpu::ShaderStage::Compute;
+        entries[2].storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+        entries[2].storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+        entries[2].storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
+        wgpu::BindGroupLayoutDescriptor layoutDescriptor;
+        layoutDescriptor.entryCount = entries.size();
+        layoutDescriptor.entries = entries.data();
+        preparation.layout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
+        wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor;
+        pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+        pipelineLayoutDescriptor.bindGroupLayouts = &preparation.layout;
+        auto layout = gpu.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
+        wgpu::ShaderSourceWGSL shaderSource;
+        shaderSource.code = Detail::environmentShader;
+        wgpu::ShaderModuleDescriptor shaderDescriptor;
+        shaderDescriptor.nextInChain = &shaderSource;
+        auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
+        checked = scope.finish();
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        preparation.pending = std::make_shared<Pending<wgpu::ComputePipeline>>();
+        preparation.pending->error = "Environment pipeline compilation failed";
+        preparation.started = std::chrono::steady_clock::now();
+        wgpu::ComputePipelineDescriptor descriptor;
+        descriptor.layout = layout;
+        descriptor.compute.module = shader;
+        descriptor.compute.entryPoint = "bake";
+        preparation.future = gpu.device.CreateComputePipelineAsync(
+            &descriptor, wgpu::CallbackMode::WaitAnyOnly,
+            [pending = preparation.pending](wgpu::CreatePipelineAsyncStatus status,
+                                            wgpu::ComputePipeline pipeline,
+                                            wgpu::StringView message) noexcept {
+              if (status == wgpu::CreatePipelineAsyncStatus::Success && pipeline) {
+                pending->value = std::move(pipeline);
+              } else {
+                describeFailure(pending->error, "Environment pipeline compilation",
+                                static_cast<unsigned>(status), message);
+              }
+            });
+        gpu.m_environmentPreparation = std::move(preparation);
+      }
+
+      auto& preparation = *gpu.m_environmentPreparation;
+
+      if (preparation.error) {
+        return std::unexpected(*preparation.error);
+      }
+
+      if (preparation.pipeline) {
+        return true;
+      }
+
+      const auto status = gpu.instance.WaitAny(preparation.future, 0);
+
+      if (status == wgpu::WaitStatus::TimedOut
+          && std::chrono::steady_clock::now() - preparation.started < std::chrono::seconds(10)) {
+        return false;
+      }
+
+      if (status != wgpu::WaitStatus::Success || !preparation.pending->value) {
+        preparation.error
+            = Core::fail(Core::ErrorCode::Unavailable,
+                         status == wgpu::WaitStatus::Success
+                             ? preparation.pending->error
+                             : std::format("Environment pipeline preparation: GPU poll failed ({})",
+                                           static_cast<unsigned>(status)))
+                  .error();
+        return std::unexpected(*preparation.error);
+      }
+
+      preparation.pipeline = std::move(preparation.pending->value);
+      preparation.pending.reset();
+      return true;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare environment pipeline: " + std::string(error.what()));
+    }
+  }
+
   auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
       -> Core::Result<EnvironmentMap> {
     if (!m_impl) {
@@ -4093,6 +4234,26 @@ namespace Dot::Graphics {
 
     try {
       auto& gpu = *m_impl;
+      auto ready = prepareEnvironmentPipeline();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        checked = wait(gpu.instance, gpu.m_environmentPreparation->future, "Environment pipeline");
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        ready = prepareEnvironmentPipeline();
+
+        if (!ready) {
+          return std::unexpected(ready.error());
+        }
+      }
+
       ErrorScope scope(gpu.instance, gpu.device);
       auto map = std::make_shared<EnvironmentMap::Impl>();
       map->owner = gpu.diagnostics;
@@ -4163,38 +4324,8 @@ namespace Dot::Graphics {
         image = &*owned;
       }
 
-      std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
-      entries[0].binding = 0;
-      entries[0].visibility = wgpu::ShaderStage::Compute;
-      entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
-      entries[0].buffer.minBindingSize = 32;
-      entries[1].binding = 1;
-      entries[1].visibility = wgpu::ShaderStage::Compute;
-      entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
-      entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
-      entries[2].binding = 2;
-      entries[2].visibility = wgpu::ShaderStage::Compute;
-      entries[2].storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
-      entries[2].storageTexture.format = wgpu::TextureFormat::RGBA16Float;
-      entries[2].storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
-      wgpu::BindGroupLayoutDescriptor layoutDescriptor;
-      layoutDescriptor.entryCount = entries.size();
-      layoutDescriptor.entries = entries.data();
-      auto layout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
-      wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor;
-      pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
-      pipelineLayoutDescriptor.bindGroupLayouts = &layout;
-      auto pipelineLayout = gpu.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
-      wgpu::ShaderSourceWGSL shaderSource;
-      shaderSource.code = Detail::environmentShader;
-      wgpu::ShaderModuleDescriptor shaderDescriptor;
-      shaderDescriptor.nextInChain = &shaderSource;
-      auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
-      wgpu::ComputePipelineDescriptor pipelineDescriptor;
-      pipelineDescriptor.layout = pipelineLayout;
-      pipelineDescriptor.compute.module = shader;
-      pipelineDescriptor.compute.entryPoint = "bake";
-      auto pipeline = gpu.device.CreateComputePipeline(&pipelineDescriptor);
+      const auto& layout = gpu.m_environmentPreparation->layout;
+      const auto& pipeline = gpu.m_environmentPreparation->pipeline;
       const std::array sizes{config.radianceSize, config.diffuseSize, config.specularSize,
                              config.brdfSize};
       const std::array levels{description->radianceLevels, 1U, description->specularLevels, 1U};

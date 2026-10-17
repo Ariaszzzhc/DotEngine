@@ -929,6 +929,26 @@ namespace Dot::Graphics {
     return SceneRenderer(std::move(impl));
   }
 
+  auto SceneRenderer::prepareEnvironment(const World::Scene& scene) -> Core::Result<bool> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto environment = scene.environment();
+
+    if (!environment) {
+      return std::unexpected(environment.error());
+    }
+
+    return *environment ? m_impl->renderer->prepareEnvironmentPipeline() : Core::Result<bool>{true};
+  }
+
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
                              Math::Vec4 clear, SceneView camera) -> Core::Result<Image> {
     if (!m_impl) {
