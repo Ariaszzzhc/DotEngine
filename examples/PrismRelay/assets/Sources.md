@@ -109,10 +109,18 @@ of the authoring pose. The editable `scenes/character-action.dotscene` selects t
 auto-playing action with the locomotion script removed; main remains the movement/
 jump/checkpoint template. This is a timing/authoring example, not final cinematic art.
 
-- `actions/inspection.dotanimation`: `6689bf19834626066af0f9292b101126e3a28473501a8c7103e265a19b8c2434`
+- `actions/inspection.dotanimation`: `97046f1fdf5492d1ca2e80bc7982d3ccdca4c8400935424fefa98295b9a82411`
 
 The inspection peak was subsequently aligned through DotEditor's shared rational frame
 grid and native group retime to frame 24 at 30fps (nominal 0.8 seconds; native float
-0.800000011920929). Only the three head/upper-arm key times changed; values, tangents,
+0.800000011920929). In that alignment only the three head/upper-arm key times changed; values, tangents,
 channels, bindings and the scene remain unchanged. Frame rate is an editor view
 preference; the asset retains seconds and does not alter runtime simulation timing.
+
+The next authoring pass explicitly converted only node eight's head rotation to
+cubic and set its first key's outgoing raw quaternion Y derivative to native 0.15
+per second through the editor's owned tangent transaction. Other head derivatives
+are zero; its key times/poses and all other tracks remain unchanged. Candidate
+curves, failed zero-scale publication/recovery, Undo/Redo, save/reopen, Play and a
+relocated standalone export were exercised with the actual products. The mode and
+derivative change is explicit, not an import/resample or external motion donor.

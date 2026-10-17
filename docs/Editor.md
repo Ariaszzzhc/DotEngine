@@ -1843,6 +1843,59 @@ JSON 接口，查询有界分页，旧资源/预览标识不能影响新会话�
 多键相对 TRS 调整已实现，图形切线手柄、骨骼制作/重定向和状态图等生产制作能力仍待完成。
 
 
+### Cubic tangent handles / 三次切线手柄
+
+In Curves, select one existing cubic key, pause audition and choose X/Y/Z/W under
+Tangent component. Square handles use one third of the neighboring segment; first
+incoming and last outgoing derivatives have no used segment and no handle. W is
+only meaningful for rotation. Drag a square vertically to change that side and
+component's native derivative per second. Incoming/outgoing sides are independent;
+there is no implicit mirroring, smoothing, time snapping or interpolation conversion.
+Rotation handles edit raw XYZW derivatives before native quaternion normalization,
+not Euler angles. The colored thick candidate curve still uses the native normalized
+sampler; its handles are control derivatives, not a promise of its projected slope.
+
+A tangent transaction owns the source key and immutable clip. Updates only change a
+ghost; the resource revision, history, posed preview, source scene and disk are
+unchanged. The curve range freezes during a pointer drag. Release includes final
+pointer displacement and preflights the candidate with the ordinary native
+pose/skin pipeline before one history publication. A no-op retains revision, redo
+and preview identity. Failed update/sample/commit retains the preceding scalar or
+candidate as applicable, with an explicit error; Apply tangent/Derivative per s
+allows correction and Cancel tangent discards it. Original and candidate curves
+are shown together; a sample error does not hide the source keys/handles. Bounded
+curve samples do not prove every intermediate pose is valid. Escape, focus loss,
+hidden Animation pane or changed graph geometry cancels physical gestures. Agent
+transactions remain available without OS focus. Physical tangent dragging/narrow
+layout/IME acceptance is still unverified on this Mac.
+
+The following strict commands share that implementation. Begin requires exactly
+one selected current cubic key, clean form, paused preview and no move/dialog.
+Component is an integer 0..3 and must exist on the channel; side is in/out. Sessions
+are decimal strings from the response and are scoped to buffer/revision. Missing,
+retired or stale sessions fail. While active, selection/history/save/ranges, frame
+settings, key moves and preview control are blocked; reads and explicit cancel or
+close-with-discard remain available. A failed commit keeps the session for repair.
+
+```json
+{"command":"set-animation-curve-component","buffer":"2","revision":"4","component":1}
+{"command":"begin-animation-tangent","buffer":"2","revision":"4","component":1,"side":"out"}
+{"command":"update-animation-tangent","session":"5","slope":-0.08}
+{"command":"read-animation-tangent-curve","session":"5","from":0,"to":2,"samples":129}
+{"command":"finish-animation-tangent","session":"5","commit":true}
+```
+
+Use commit:false to cancel. Candidate reads return the same native bounded curve
+shape as read-animation-curve; that existing command continues to read the published
+resource. animationClip.tangent reports the owned key, side/component, original and
+current slope, nominal control point and changed state; null means no transaction.
+curveComponent is a workspace view preference and does not dirty assets.
+
+三次键暂停后可逐分量拖动单侧切线；手柄取相邻间隔三分之一，未使用端点侧不提供操作。
+导数以秒为单位，旋转编辑归一化前 XYZW。拖动只生成候选曲线；释放通过原生姿态/蒙皮
+预检后提交一步历史。无变化保留版本/重做/预览，失败保留候选以供修正；取消不写资源。
+GUI/JSON 共用事务与采样，实际鼠标、窄布局和输入法验收仍待完成。
+
 ## Multitrack dope sheet / 多轨时间表
 
 The animation editor defaults to **Dope sheet**. Switch to **Curves** for native value

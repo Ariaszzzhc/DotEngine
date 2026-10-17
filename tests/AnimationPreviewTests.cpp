@@ -16,6 +16,7 @@ import Dot.Math;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AnimationPreview;
+import Dot.Editor.AnimationTangent;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -434,4 +435,40 @@ TEST_CASE("animation_preview.seek_pause_is_atomic_with_native_pose_and_clock") {
   CHECK(failure.stats()->player.playback.playing);
   CHECK(failure.stats()->player.playback.time == 0);
   CHECK(failure.stats()->generation == generation);
+}
+
+TEST_CASE("animation_preview.tangent_candidate_failure_retains_source_and_allows_correction") {
+  Fixture fixture;
+  auto clip = Animation::Clip::create({"Scale tangent",
+                                       {{0,
+                                         Animation::Path::Scale,
+                                         Animation::Interpolation::CubicSpline,
+                                         {{0, {1, 1, 1, 0}}, {1, {1, 1, 1, 0}}}}}})
+                  .value();
+  REQUIRE(Animation::saveClip(fixture.files, fixture.properties.clips[0], clip));
+  auto original = fixture.create();
+  REQUIRE(original.seek(.5));
+  const auto before = World::encodeScene(*original.scene().value()).value();
+  auto tool
+      = Editor::AnimationTangent::begin(clip, {0, Animation::Path::Scale, 0}, 0, false).value();
+  REQUIRE(tool.update(-8));
+  auto invalid = tool.value().value();
+  CHECK_FALSE(invalid.sample(.5));
+  auto candidate
+      = Editor::AnimationPreview::create(fixture.source, fixture.files, fixture.owner.value,
+                                         Animation::ClipAsset{fixture.properties.clips[0], invalid})
+            .value();
+  CHECK_FALSE(candidate.seek(.5));
+  CHECK(World::encodeScene(*original.scene().value()).value() == before);
+  CHECK(original.stats()->player.playback.time == .5);
+  CHECK(tool.snapshot()->slope == -8);
+  REQUIRE(tool.update(-4));
+  auto repaired = Editor::AnimationPreview::create(
+                      fixture.source, fixture.files, fixture.owner.value,
+                      Animation::ClipAsset{fixture.properties.clips[0], tool.value().value()})
+                      .value();
+  REQUIRE(repaired.seek(.5));
+  const auto target = repaired.scene().value()->findEntity(fixture.target.value).value();
+  CHECK(repaired.scene().value()->transform(target)->scale.x == doctest::Approx(.5));
+  CHECK(clip.description().value()->tracks[0].keys[0].outTangent.x == 0);
 }

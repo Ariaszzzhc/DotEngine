@@ -1267,6 +1267,16 @@ TEST_CASE("prism.authored_action_scene_keeps_gameplay_separate_and_animates_real
     REQUIRE(track != description->tracks.end());
     REQUIRE(track->keys.size() == 3);
     CHECK(track->keys[1].time == .8F);
+
+    if (std::string_view(name) == "head") {
+      CHECK(track->interpolation == Dot::Animation::Interpolation::CubicSpline);
+      CHECK(track->keys.front().outTangent.y == .15F);
+      CHECK(track->keys[1].inTangent.y == 0);
+      CHECK(track->keys[1].outTangent.y == 0);
+    } else {
+      CHECK(track->interpolation == Dot::Animation::Interpolation::Linear);
+    }
+
     REQUIRE(preview.seek(.8F));
     posed = preview.scene().value();
     const auto peak = posed->transform(posed->findEntity(target->id.value).value()).value();

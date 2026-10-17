@@ -128,6 +128,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/AnimationKeyMove.cpp
     src/Engine/Editor/AnimationTimeline.cpp
     src/Engine/Editor/AnimationFrames.cpp
+    src/Engine/Editor/AnimationTangent.cpp
     src/Engine/Editor/SkeletonView.cpp
     src/Engine/Editor/Workspace.cpp
     src/Engine/Editor/Home.cpp
@@ -279,6 +280,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/AnimationKeyMove.cppm
         src/Engine/Editor/AnimationTimeline.cppm
         src/Engine/Editor/AnimationFrames.cppm
+        src/Engine/Editor/AnimationTangent.cppm
         src/Engine/Editor/SkeletonView.cppm
         src/Engine/Editor/Workspace.cppm
         src/Engine/Editor/Home.cppm

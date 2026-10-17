@@ -44,6 +44,7 @@ import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
 import Dot.Editor.AnimationFrames;
+import Dot.Editor.AnimationTangent;
 import Dot.Editor.AnimationClipboard;
 import Dot.Animation.Files;
 import Dot.Animation.Source;
@@ -626,6 +627,7 @@ namespace Dot::Editor {
     bool m_clipKeyScroll{};
     double m_curveFrom{};
     double m_curveTo{1};
+    int m_curveComponent{};
     Json m_curveCache = nullptr;
     std::string m_curveCacheKey;
 
@@ -647,6 +649,28 @@ namespace Dot::Editor {
     std::optional<ClipKeyMove> m_clipMove;
     std::uint64_t m_keyMoveSession{};
     std::optional<CurveKeyDrag> m_curveDrag;
+
+    struct ClipTangent {
+      AnimationTangent tool;
+      std::uint64_t buffer;
+      std::uint64_t revision;
+      std::uint64_t session;
+    };
+
+    struct TangentDrag {
+      std::uint64_t session;
+      float mouseY;
+      float slope;
+      ImVec2 minimum;
+      ImVec2 maximum;
+      double low;
+      double high;
+    };
+
+    std::optional<ClipTangent> m_clipTangent;
+    std::optional<TangentDrag> m_tangentDrag;
+    Json m_tangentCurve = nullptr;
+    std::string m_tangentCurveKey;
     std::map<std::uint32_t, std::pair<std::uint64_t, std::string>> m_clipBindings;
     std::uint64_t m_animationSession{};
     std::optional<PlaySession> m_play;
@@ -971,7 +995,7 @@ namespace Dot::Editor {
 
     auto pendingText() const -> bool {
       if (m_clipDocument) {
-        return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal || m_clipMove;
+        return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal || clipGesture();
       }
 
       if (m_material) {
@@ -2522,6 +2546,26 @@ namespace Dot::Editor {
               {"occupied", value->occupied}};
     }
 
+    auto tangentStatus() const -> Json {
+      if (!m_clipTangent) {
+        return nullptr;
+      }
+
+      const auto state = m_clipTangent->tool.snapshot().value();
+      return {{"session", std::to_string(m_clipTangent->session)},
+              {"buffer", std::to_string(m_clipTangent->buffer)},
+              {"revision", std::to_string(m_clipTangent->revision)},
+              {"component", state.component},
+              {"side", state.incoming ? "in" : "out"},
+              {"original", state.original},
+              {"slope", state.slope},
+              {"key", keyJson(state.key)},
+              {"offset", state.offset},
+              {"handleTime", state.handleTime},
+              {"handleValue", state.handleValue},
+              {"changed", state.changed}};
+    }
+
     auto frameStatus() const -> Json {
       const auto rate = m_frames.rate();
       Json result{{"numerator", rate.numerator},
@@ -2574,7 +2618,9 @@ namespace Dot::Editor {
               {"historyStates", state->historyStates},
               {"historyBytes", state->historyBytes},
               {"curve", {{"from", m_curveFrom}, {"to", m_curveTo}}},
+              {"curveComponent", m_curveComponent},
               {"move", keyMoveStatus()},
+              {"tangent", tangentStatus()},
               {"selection", referencesJson(m_clipSelection)},
               {"adjustment", m_clipAdjustment},
               {"form", m_clipForm},
@@ -2719,9 +2765,17 @@ namespace Dot::Editor {
       return label;
     }
 
+    auto clipGesture() const -> bool {
+      return m_clipMove.has_value() || m_clipTangent.has_value();
+    }
+
     auto cancelKeyMove() noexcept -> void {
       m_clipMove.reset();
       m_curveDrag.reset();
+      m_clipTangent.reset();
+      m_tangentDrag.reset();
+      m_tangentCurve = nullptr;
+      m_tangentCurveKey.clear();
     }
 
     enum class ClipPublication { Edit, Undo, Redo };
@@ -2768,9 +2822,9 @@ namespace Dot::Editor {
     }
 
     auto saveClip() -> Core::Result<void> {
-      if (m_clipMove) {
+      if (clipGesture()) {
         return Core::fail(Core::ErrorCode::InvalidState,
-                          "Finish or cancel the key move before saving");
+                          "Finish or cancel the animation gesture before saving");
       }
 
       if (m_clipForm != m_clipOriginal) {
@@ -3166,6 +3220,124 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "set-animation-curve-component") {
+        Codec::requireFields(parsed, {"command", "buffer", "revision", "component"});
+
+        if (!m_clipDocument || Codec::id(parsed["buffer"]) != m_buffer
+            || Codec::id(parsed["revision"]) != m_clipDocument->snapshot()->revision
+            || clipGesture() || m_clipForm != m_clipOriginal || m_pendingClose || m_captureDialog) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Curve component requires a current clip without a gesture/form/dialog");
+        }
+
+        m_curveComponent = static_cast<int>(clipIndex(parsed["component"], 3));
+        return Json{{"ok", true}, {"animationClip", clipStatus()}}.dump();
+      }
+
+      if (command == "begin-animation-tangent" || command == "update-animation-tangent"
+          || command == "finish-animation-tangent" || command == "read-animation-tangent-curve") {
+        const bool begin = command == "begin-animation-tangent";
+        const bool finish = command == "finish-animation-tangent";
+        const bool read = command == "read-animation-tangent-curve";
+
+        if (begin) {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "component", "side"});
+        } else if (read) {
+          Codec::requireFields(parsed, {"command", "session", "from", "to", "samples"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", finish ? "commit" : "slope"});
+        }
+
+        const bool cancel = finish && !parsed["commit"].get<bool>();
+
+        if (!m_clipDocument || !m_animationPreview
+            || ((m_pendingClose || m_captureDialog) && !cancel)) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Tangent requires a live animation document without a dialog");
+        }
+
+        const auto state = m_clipDocument->snapshot().value();
+
+        if (begin) {
+          if (clipGesture() || Codec::id(parsed["buffer"]) != m_buffer
+              || Codec::id(parsed["revision"]) != state.revision || m_clipSelection.size() != 1
+              || m_clipForm != m_clipOriginal
+              || m_animationPreview->stats()->player.playback.playing
+              || m_keyMoveSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Tangent requires one current key, clean form and paused preview");
+          }
+
+          const auto side = parsed["side"].get<std::string>();
+
+          if (side != "in" && side != "out") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Tangent side must be in or out");
+          }
+
+          auto tool = AnimationTangent::begin(state.value, m_clipSelection.front(),
+                                              clipIndex(parsed["component"], 3), side == "in");
+
+          if (!tool) {
+            return std::unexpected(tool.error());
+          }
+
+          m_timelineBox.reset();
+          m_curveComponent = static_cast<int>(tool->snapshot()->component);
+          m_clipTangent.emplace(std::move(*tool), m_buffer, state.revision, ++m_keyMoveSession);
+        } else {
+          if (!m_clipTangent || Codec::id(parsed["session"]) != m_clipTangent->session
+              || m_clipTangent->buffer != m_buffer || m_clipTangent->revision != state.revision) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Animation tangent session is stale");
+          }
+
+          if (cancel) {
+            cancelKeyMove();
+          } else if (!finish && !read) {
+            auto updated = m_clipTangent->tool.update(Codec::number(parsed["slope"]));
+
+            if (!updated) {
+              return std::unexpected(updated.error());
+            }
+          } else {
+            auto candidate = m_clipTangent->tool.value();
+
+            if (!candidate) {
+              return std::unexpected(candidate.error());
+            }
+
+            if (read) {
+              const auto key = m_clipTangent->tool.snapshot()->source;
+              auto curve = sampleCurve(*candidate, key.node, key.path, curveTime(parsed["from"]),
+                                       curveTime(parsed["to"]), clipIndex(parsed["samples"], 1024));
+              return curve ? Core::Result<std::string>{curve->dump()}
+                           : Core::Result<std::string>{std::unexpected(curve.error())};
+            }
+
+            auto selected = prepareClipSelection(*candidate, m_clipSelection);
+
+            if (!selected) {
+              return std::unexpected(selected.error());
+            }
+
+            auto published = publishClipValue(state, *candidate);
+
+            if (!published) {
+              return std::unexpected(published.error());
+            }
+
+            if (*published) {
+              publishClipSelection(std::move(*selected));
+            }
+
+            cancelKeyMove();
+          }
+        }
+
+        return Json{{"ok", true}, {"animationClip", clipStatus()}, {"preview", animationStatus()}}
+            .dump();
+      }
+
       if (command == "begin-animation-key-move" || command == "update-animation-key-move"
           || command == "update-animation-key-move-frame"
           || command == "finish-animation-key-move") {
@@ -3196,7 +3368,7 @@ namespace Dot::Editor {
         }
 
         if (begin) {
-          if (m_clipMove || Codec::id(parsed["buffer"]) != m_buffer
+          if (clipGesture() || Codec::id(parsed["buffer"]) != m_buffer
               || Codec::id(parsed["revision"]) != state->revision || m_clipForm != m_clipOriginal
               || m_keyMoveSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
             return Core::fail(
@@ -3303,8 +3475,8 @@ namespace Dot::Editor {
         }
 
         if (!m_clipDocument || !m_animationPreview || Codec::id(parsed["buffer"]) != m_buffer
-            || Codec::id(parsed["revision"]) != m_clipDocument->snapshot()->revision || m_clipMove
-            || m_clipForm != m_clipOriginal || m_pendingClose || m_captureDialog) {
+            || Codec::id(parsed["revision"]) != m_clipDocument->snapshot()->revision
+            || clipGesture() || m_clipForm != m_clipOriginal || m_pendingClose || m_captureDialog) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Frame editing requires current clip and no pending form/move/dialog");
         }
@@ -3452,7 +3624,7 @@ namespace Dot::Editor {
 
         if (Codec::id(parsed["revision"]) != state.revision
             || (!read
-                && (m_clipMove || m_clipForm != m_clipOriginal || m_pendingClose
+                && (clipGesture() || m_clipForm != m_clipOriginal || m_pendingClose
                     || m_captureDialog))) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Timeline requires current revision and no pending form/move/dialog");
@@ -3641,12 +3813,12 @@ namespace Dot::Editor {
         constexpr std::array paths{"translation", "rotation", "scale"};
         constexpr std::array modes{"step", "linear", "cubic"};
 
-        if (m_clipMove && command != "read-animation-curve" && command != "list-animation-tracks"
+        if (clipGesture() && command != "read-animation-curve" && command != "list-animation-tracks"
             && command != "read-animation-track"
             && !(command == "close-animation" && parsed["discard"].get<bool>())) {
-          return Core::fail(
-              Core::ErrorCode::InvalidState,
-              "Finish or cancel the key move before changing resource, form or time range");
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Finish or cancel the animation gesture before changing resource, form "
+                            "or time range");
         }
 
         if (command == "set-animation-key-adjustment"
@@ -4225,6 +4397,11 @@ namespace Dot::Editor {
                                                           {"scene", Codec::parseJson(*encoded)}}
                                                          .dump()}
                          : std::unexpected(encoded.error());
+        }
+
+        if (m_clipTangent) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Finish or cancel the tangent before controlling preview");
         }
 
         const auto action = parsed.at("action").get<std::string>();
@@ -9718,7 +9895,7 @@ namespace Dot::Editor {
     auto historyAvailable(bool redo) const -> bool {
       if (m_clipDocument) {
         auto state = m_clipDocument->snapshot();
-        return state && !m_clipMove && m_clipForm == m_clipOriginal
+        return state && !clipGesture() && m_clipForm == m_clipOriginal
                && (redo ? state->canRedo : state->canUndo);
       }
 
@@ -10141,7 +10318,7 @@ namespace Dot::Editor {
       ImGui::TextWrapped(
           "Offset translation, append local rotation and multiply scale. Cubic "
           "derivatives follow the same transform.");
-      ImGui::BeginDisabled(m_clipMove.has_value() || m_pendingClose || m_captureDialog
+      ImGui::BeginDisabled(clipGesture() || m_pendingClose || m_captureDialog
                            || m_clipForm != m_clipOriginal);
       auto form = m_clipAdjustment;
       bool changed{};
@@ -10476,6 +10653,63 @@ namespace Dot::Editor {
       }
     }
 
+    /** Freeze the displayed coordinate system for a vertical derivative gesture.
+     * Final release displacement is included; failed publication retains the
+     * candidate for explicit correction/cancel, never silently applying a fallback.
+     * 垂直导数手势冻结显示坐标，纳入最终释放位移；发布失败保留候选供修正/取消，不静默替代。 */
+    auto updateTangentPointer(ImVec2 minimum, ImVec2 maximum) -> void {
+      if (!m_tangentDrag) {
+        return;
+      }
+
+      const auto drag = *m_tangentDrag;
+      const auto focused = m_application->window().focused();
+
+      if (!m_clipTangent || m_clipTangent->session != drag.session) {
+        m_tangentDrag.reset();
+        return;
+      }
+
+      if (!focused || !*focused || minimum.x != drag.minimum.x || minimum.y != drag.minimum.y
+          || maximum.x != drag.maximum.x || maximum.y != drag.maximum.y
+          || (!ImGui::IsMouseDown(ImGuiMouseButton_Left)
+              && !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+          || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        sessionAction({{"command", "finish-animation-tangent"},
+                       {"session", std::to_string(drag.session)},
+                       {"commit", false}});
+        return;
+      }
+
+      const auto value = m_clipTangent->tool.snapshot().value();
+      const auto delta = double(ImGui::GetMousePos().y) - drag.mouseY;
+      bool valid = true;
+
+      if ((ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)
+           || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+          && (std::abs(delta) >= 3 || value.changed)) {
+        const auto slope
+            = double(drag.slope)
+              - delta * (drag.high - drag.low) / (drag.maximum.y - drag.minimum.y) / value.offset;
+        valid = sessionAction({{"command", "update-animation-tangent"},
+                               {"session", std::to_string(drag.session)},
+                               {"slope", slope}});
+      }
+
+      ImGui::SetTooltip("Candidate %s derivative %.9g / release to commit, Escape to cancel",
+                        value.incoming ? "in" : "out", double(value.slope));
+
+      if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        m_tangentDrag.reset();
+
+        if (valid) {
+          sessionAction({{"command", "finish-animation-tangent"},
+                         {"session", std::to_string(drag.session)},
+                         {"commit", true}});
+        }
+      }
+    }
+
     auto animationCurve(const AnimationSnapshot& state, const Animation::Track& track) -> void {
       std::vector<FrameTick> frameTicks;
 
@@ -10505,7 +10739,25 @@ namespace Dot::Editor {
 
       if (!m_curveCache.value("ok", false)) {
         ImGui::TextWrapped("Curve sampling failed: %s", m_curveCache.dump().c_str());
-        return;
+      }
+
+      if (m_clipTangent) {
+        const auto ghost = m_clipTangent->tool.snapshot().value();
+        const auto key
+            = Json::array({m_clipTangent->session, ghost.slope, m_curveFrom, m_curveTo}).dump();
+
+        if (key != m_tangentCurveKey) {
+          auto candidate = m_clipTangent->tool.value();
+          auto curve = candidate ? sampleCurve(*candidate, track.node, track.path, m_curveFrom,
+                                               m_curveTo, 256)
+                                 : Core::Result<Json>{std::unexpected(candidate.error())};
+          m_tangentCurve = curve ? std::move(*curve) : errorJson(curve.error());
+          m_tangentCurveKey = key;
+        }
+
+        if (!m_tangentDrag && !m_tangentCurve.value("ok", false)) {
+          ImGui::TextWrapped("Candidate sampling failed: %s", m_tangentCurve.dump().c_str());
+        }
       }
 
       const auto first
@@ -10517,7 +10769,11 @@ namespace Dot::Editor {
         return;
       }
 
-      const auto& points = m_curveCache["points"];
+      const auto emptyPoints = Json::array();
+      const auto& points = m_curveCache.value("ok", false) ? m_curveCache["points"] : emptyPoints;
+      const auto& ghostPoints = m_clipTangent && m_tangentCurve.value("ok", false)
+                                    ? m_tangentCurve["points"]
+                                    : emptyPoints;
       const auto count = track.path == Animation::Path::Rotation ? 4U : 3U;
       double low = std::numeric_limits<double>::max();
       double high = std::numeric_limits<double>::lowest();
@@ -10539,9 +10795,61 @@ namespace Dot::Editor {
         }
       }
 
+      std::vector<TangentSnapshot> handles;
+
+      if (track.interpolation == Animation::Interpolation::CubicSpline
+          && m_clipSelection.size() == 1 && m_clipSelection.front().node == track.node
+          && m_clipSelection.front().path == track.path) {
+        for (std::size_t component = 0; component < count; ++component) {
+          if (component != static_cast<std::size_t>(m_curveComponent)) {
+            continue;
+          }
+
+          for (bool incoming : {true, false}) {
+            auto tool = AnimationTangent::begin(state.value, m_clipSelection.front(), component,
+                                                incoming);
+
+            if (tool) {
+              auto handle = tool->snapshot().value();
+
+              if (m_clipTangent) {
+                const auto active = m_clipTangent->tool.snapshot().value();
+
+                if (active.component == component && active.incoming == incoming) {
+                  handle = active;
+                }
+              }
+
+              handles.push_back(handle);
+              low = std::min(low, handle.handleValue);
+              high = std::max(high, handle.handleValue);
+            }
+          }
+        }
+      }
+
+      for (const auto& point : ghostPoints) {
+        for (std::size_t component = 0; component < count; ++component) {
+          low = std::min(low, point["value"][component].get<double>());
+          high = std::max(high, point["value"][component].get<double>());
+        }
+      }
+
+      if (low > high) {
+        ImGui::TextWrapped(
+            "No valid curve samples or visible authored keys. Widen the time range "
+            "or use the key form to correct the channel.");
+        return;
+      }
+
       const auto padding = high > low ? (high - low) * .08 : std::max(1e-6, std::abs(high) * .05);
       low -= padding;
       high += padding;
+
+      if (m_tangentDrag) {
+        low = m_tangentDrag->low;
+        high = m_tangentDrag->high;
+      }
       const auto origin = ImGui::GetCursorScreenPos();
       const auto size = ImVec2(std::max(80.F, ImGui::GetContentRegionAvail().x),
                                std::max(60.F, ImGui::GetContentRegionAvail().y));
@@ -10613,7 +10921,7 @@ namespace Dot::Editor {
           }
         }
 
-        if (track.interpolation == Animation::Interpolation::Step) {
+        if (track.interpolation == Animation::Interpolation::Step && !points.empty()) {
           const auto value = [&](const Math::Vec4& v) -> float {
             return std::array{v.x, v.y, v.z, v.w}[component];
           };
@@ -10633,9 +10941,40 @@ namespace Dot::Editor {
         }
       }
 
+      for (std::size_t component = 0; component < count; ++component) {
+        for (std::size_t i = 1; i < ghostPoints.size(); ++i) {
+          const auto& a = ghostPoints[i - 1];
+          const auto& b = ghostPoints[i];
+          draw->AddLine({x(a["time"].get<double>()), y(a["value"][component].get<double>())},
+                        {x(b["time"].get<double>()), y(b["value"][component].get<double>())},
+                        colors[component], 3.F);
+        }
+      }
+
       const Animation::Key* hit{};
       float distance = 49;
       const auto mouse = ImGui::GetIO().MousePos;
+      std::optional<TangentSnapshot> tangentHit;
+      float tangentDistance = 49;
+      const bool pending = m_clipForm != m_clipOriginal;
+
+      for (const auto& handle : handles) {
+        const auto values = std::array{handle.key.value.x, handle.key.value.y, handle.key.value.z,
+                                       handle.key.value.w};
+        const ImVec2 anchor{x(handle.key.time), y(values[handle.component])};
+        const ImVec2 point{x(handle.handleTime), y(handle.handleValue)};
+        draw->AddLine(anchor, point, colors[handle.component]);
+        draw->AddRectFilled({point.x - 4, point.y - 4}, {point.x + 4, point.y + 4},
+                            colors[handle.component]);
+        const auto squared
+            = (mouse.x - point.x) * (mouse.x - point.x) + (mouse.y - point.y) * (mouse.y - point.y);
+
+        if (point.x >= minimum.x && point.x <= maximum.x && point.y >= minimum.y
+            && point.y <= maximum.y && squared < tangentDistance) {
+          tangentDistance = squared;
+          tangentHit = handle;
+        }
+      }
 
       for (auto key = first; key != last; ++key) {
         const auto values = std::array{key->value.x, key->value.y, key->value.z, key->value.w};
@@ -10661,9 +11000,14 @@ namespace Dot::Editor {
         draw->AddLine({at, minimum.y}, {at, maximum.y}, ImGui::GetColorU32(ImGuiCol_Text), 1);
       }
 
-      if (hovered && hit) {
+      if (hovered && tangentHit && !m_tangentDrag) {
+        ImGui::SetTooltip("%s %s / %.9g per second / drag vertically%s",
+                          labels[tangentHit->component], tangentHit->incoming ? "in" : "out",
+                          double(tangentHit->slope),
+                          track.path == Animation::Path::Rotation ? " / raw XYZW derivative" : "");
+      } else if (hovered && hit) {
         ImGui::SetTooltip("%s / drag horizontally to move key", clipTimeLabel(hit->time).c_str());
-      } else if (hovered && !m_clipMove) {
+      } else if (hovered && !clipGesture()) {
         const auto time = std::clamp(
             m_curveFrom
                 + (mouse.x - minimum.x) / (maximum.x - minimum.x) * (m_curveTo - m_curveFrom),
@@ -10681,8 +11025,15 @@ namespace Dot::Editor {
         }
       }
 
-      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !m_clipMove) {
-        if (hit) {
+      if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !clipGesture() && !pending) {
+        if (tangentHit) {
+          if (clipAction({{"command", "begin-animation-tangent"},
+                          {"component", tangentHit->component},
+                          {"side", tangentHit->incoming ? "in" : "out"}})) {
+            m_tangentDrag.emplace(m_clipTangent->session, mouse.y, tangentHit->slope, minimum,
+                                  maximum, low, high);
+          }
+        } else if (hit) {
           const auto& io = ImGui::GetIO();
 
           if (io.KeyCtrl || io.KeySuper || io.KeyShift) {
@@ -10712,6 +11063,7 @@ namespace Dot::Editor {
       }
 
       updateClipPointerMove(minimum.x, maximum.x);
+      updateTangentPointer(minimum, maximum);
 
       if (m_clipMove) {
         const auto value = m_clipMove->move.snapshot().value();
@@ -10830,7 +11182,7 @@ namespace Dot::Editor {
             ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
       }
 
-      if (ImGui::IsItemClicked() && !pending && !m_clipMove && !m_timelineBox) {
+      if (ImGui::IsItemClicked() && !pending && !clipGesture() && !m_timelineBox) {
         seekClipTime(at(mouse.x));
       }
 
@@ -10879,7 +11231,7 @@ namespace Dot::Editor {
             const bool selected = std::ranges::any_of(m_clipSelection, [&](const auto& key) {
               return key.node == row.node && key.path == row.path;
             });
-            ImGui::BeginDisabled(pending || m_clipMove.has_value());
+            ImGui::BeginDisabled(pending || clipGesture());
 
             if (ImGui::Selectable(label.c_str(), selected)) {
               chooseRange(m_curveFrom, m_curveTo, row.index, row.index,
@@ -10965,8 +11317,8 @@ namespace Dot::Editor {
                   denseHit->count, double(denseHit->first), double(denseHit->last));
             }
 
-            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !pending && !m_clipMove
-                && !m_timelineBox) {
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !pending
+                && !clipGesture() && !m_timelineBox) {
               if (hit) {
                 if (io.KeyShift && !m_clipSelection.empty()) {
                   const auto anchor = m_clipSelection.back();
@@ -11104,7 +11456,7 @@ namespace Dot::Editor {
 
         return ImGui::Button(label);
       };
-      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+      ImGui::BeginDisabled(pending || clipGesture());
 
       if (ImGui::Button("Save clip")) {
         clipAction({{"command", "save-animation-clip"}});
@@ -11153,7 +11505,7 @@ namespace Dot::Editor {
         }
       }
 
-      if (state->dirty || pending || m_clipMove) {
+      if (state->dirty || pending || clipGesture()) {
         if (nextButton("Discard and close")) {
           if (clipAction({{"command", "close-animation"}, {"discard", true}})) {
             return;
@@ -11161,7 +11513,7 @@ namespace Dot::Editor {
         }
       }
 
-      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+      ImGui::BeginDisabled(pending || clipGesture());
       ImGui::SetNextItemWidth(90);
 
       if (ImGui::InputScalar("Frame target", ImGuiDataType_U64, &m_frameInput, nullptr, nullptr,
@@ -11243,7 +11595,7 @@ namespace Dot::Editor {
 
       float time = static_cast<float>(preview->player.playback.time);
       const bool compact = ImGui::GetContentRegionAvail().x >= 600;
-      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+      ImGui::BeginDisabled(pending || clipGesture());
       ImGui::SetNextItemWidth(compact ? ImGui::GetContentRegionAvail().x - 320 : -1);
 
       if (ImGui::SliderFloat("##clip-time", &time, 0, static_cast<float>(preview->player.duration),
@@ -11260,7 +11612,7 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
-      ImGui::BeginDisabled(m_clipMove.has_value());
+      ImGui::BeginDisabled(clipGesture());
       ImGui::SetNextItemWidth(80);
       bool rangeChanged
           = ImGui::InputDouble(m_frameDisplay ? "From (f)##curve" : "From (s)##curve", &from, 0, 0,
@@ -11285,7 +11637,7 @@ namespace Dot::Editor {
 
       ImGui::EndDisabled();
 
-      if (!m_clipMove) {
+      if (!clipGesture()) {
         ImGui::BeginDisabled(pending || m_clipSelection.empty());
 
         if (ImGui::Button("Move selected keys")) {
@@ -11348,7 +11700,7 @@ namespace Dot::Editor {
                 "player.");
           }
 
-          ImGui::BeginDisabled(!compatible || m_clipMove.has_value());
+          ImGui::BeginDisabled(!compatible || clipGesture());
 
           if (ImGui::Button("Paste")) {
             if (clipAction({{"command", "paste-animation-keys"},
@@ -11408,7 +11760,30 @@ namespace Dot::Editor {
         }
       }
 
-      ImGui::BeginDisabled(pending || m_clipMove.has_value());
+      if (m_clipTangent && !m_tangentDrag) {
+        const auto tangent = m_clipTangent->tool.snapshot().value();
+        const auto session = std::to_string(m_clipTangent->session);
+        float slope = tangent.slope;
+        ImGui::SetNextItemWidth(110);
+
+        if (ImGui::InputFloat("Derivative / s", &slope, 0, 0, "%.9g",
+                              ImGuiInputTextFlags_EnterReturnsTrue)) {
+          sessionAction(
+              {{"command", "update-animation-tangent"}, {"session", session}, {"slope", slope}});
+        }
+
+        if (nextButton("Apply tangent")) {
+          sessionAction(
+              {{"command", "finish-animation-tangent"}, {"session", session}, {"commit", true}});
+        }
+
+        if (nextButton("Cancel tangent")) {
+          sessionAction(
+              {{"command", "finish-animation-tangent"}, {"session", session}, {"commit", false}});
+        }
+      }
+
+      ImGui::BeginDisabled(pending || clipGesture());
 
       if (ImGui::RadioButton("Dope sheet", m_dopeSheet)) {
         clipAction({{"command", "set-animation-editor-view"}, {"mode", "dope-sheet"}});
@@ -11421,6 +11796,25 @@ namespace Dot::Editor {
       }
 
       ImGui::EndDisabled();
+
+      if (!m_dopeSheet) {
+        ImGui::BeginDisabled(pending || clipGesture());
+        constexpr std::array components{"X", "Y", "Z", "W"};
+        ImGui::TextUnformatted("Tangent component");
+
+        for (std::size_t i = 0; i < components.size(); ++i) {
+          ImGui::SameLine();
+
+          if (ImGui::RadioButton(components[i], m_curveComponent == static_cast<int>(i))) {
+            clipAction({{"command", "set-animation-curve-component"}, {"component", i}});
+          }
+        }
+
+        ImGui::EndDisabled();
+        ImGui::TextWrapped(
+            "Select one cubic key and pause to drag a square handle vertically. "
+            "Slopes are per second; rotation handles edit raw XYZW before normalization.");
+      }
 
       if (m_dopeSheet) {
         ImGui::TextWrapped(
@@ -11473,7 +11867,7 @@ namespace Dot::Editor {
 
           ImGui::PushID(i);
 
-          ImGui::BeginDisabled(m_clipMove.has_value());
+          ImGui::BeginDisabled(clipGesture());
 
           if (ImGui::Selectable(label.c_str(), selected)) {
             chooseClipKey(track.node, track.path, track.keys.front().time);
@@ -11518,7 +11912,7 @@ namespace Dot::Editor {
             char label[64];
             std::snprintf(label, sizeof(label), "%.6g s##%d", static_cast<double>(key.time), i);
 
-            ImGui::BeginDisabled(m_clipMove.has_value());
+            ImGui::BeginDisabled(clipGesture());
 
             if (ImGui::Selectable(
                     label, m_clipSelected.contains({selected->node, selected->path, key.time}))) {
@@ -11913,7 +12307,7 @@ namespace Dot::Editor {
             animationKeyAdjustment();
           }
 
-          ImGui::BeginDisabled(m_clipMove.has_value() || m_clipSelection.size() > 1);
+          ImGui::BeginDisabled(clipGesture() || m_clipSelection.size() > 1);
           animationKeyProperties();
           ImGui::EndDisabled();
         } else {
@@ -11983,7 +12377,7 @@ namespace Dot::Editor {
       } else {
         m_timelineBox.reset();
 
-        if (m_curveDrag) {
+        if (m_curveDrag || m_tangentDrag) {
           cancelKeyMove();
         }
       }
@@ -12127,8 +12521,8 @@ namespace Dot::Editor {
         if (m_clipDocument) {
           ImGui::TextWrapped("Animation: %s", m_clipDocument->snapshot()->path.c_str());
 
-          if (m_clipMove) {
-            ImGui::TextWrapped("Cancel to finish or cancel the key move before saving.");
+          if (clipGesture()) {
+            ImGui::TextWrapped("Cancel to finish or cancel the animation gesture before saving.");
           } else if (m_clipForm != m_clipOriginal) {
             ImGui::TextWrapped("Cancel to apply or reset the key form before saving.");
           }
@@ -12142,7 +12536,7 @@ namespace Dot::Editor {
           ImGui::CloseCurrentPopup();
         }
 
-        ImGui::BeginDisabled(m_clipDocument && (m_clipForm != m_clipOriginal || m_clipMove));
+        ImGui::BeginDisabled(m_clipDocument && (m_clipForm != m_clipOriginal || clipGesture()));
 
         if (ImGui::Button("Save and close")) {
           action({{"command", "save-close"}});
@@ -12248,7 +12642,7 @@ namespace Dot::Editor {
           captureInput(false);
           m_agentInput.cancel();
 
-          if (m_curveDrag) {
+          if (m_curveDrag || m_tangentDrag) {
             cancelKeyMove();
           }
         }
@@ -12558,7 +12952,7 @@ namespace Dot::Editor {
                 state->captureInput(false);
                 state->m_timelineBox.reset();
 
-                if (state->m_curveDrag) {
+                if (state->m_curveDrag || state->m_tangentDrag) {
                   state->cancelKeyMove();
                 }
               }

@@ -51,6 +51,7 @@ add_executable(DotUnitTests
     AnimationKeyMoveTests.cpp
     AnimationTimelineTests.cpp
     AnimationFramesTests.cpp
+    AnimationTangentTests.cpp
     AnimationPlayerTests.cpp
     HomeDialogTests.cpp
     SceneFlowTests.cpp

@@ -370,8 +370,8 @@ agent operations; see [animation clip editing](Editor.md#animation-clip-editing)
 关键帧编辑按节点/路径/精确 float 时间执行有界原子批次，最终统一通过原生片段校验。
 动画资源草稿复用现有资源保存约束，支持精确字节撤销、版本检查、双重历史预算及磁盘冲突。
 预览通过原生播放器持有不可变解码草稿，不创建临时文件，也不改写编辑场景。编辑器已
-接入轨道/关键帧选择、值与切线草稿、候选姿态预检、保存/历史及同源智能体操作；图形切线/
-状态图、视觉绑定和生产规模验证仍待完成。
+接入轨道/关键帧选择、值与切线草稿、图形切线事务、候选姿态预检、保存/历史及同源智能体操作；
+实际鼠标验收、状态图、视觉绑定和生产规模验证仍待完成。
 
 `Dot.Editor.AnimationKeyMove` owns an immutable clip and 1..16384 unique selected
 source keys across channels. The last key anchors an absolute target time; updates add
@@ -397,7 +397,8 @@ discards the ghost. Independent tools share clips; synchronize mutable access. T
 editor scopes the selection/gesture to current document identity/revision and native
 preview preflight, and commits one history step. See [clip editing](Editor.md#animation-clip-editing)
 for shared GUI/agent selection, move and relative TRS value adjustment operations.
-Graphical tangent handles and state/layer authoring remain unfinished.
+Cubic derivative handles now share owned ghost transactions with agents; physical
+pointer acceptance and state/layer authoring remain unfinished.
 
 多键移键持有不可变片段，至多 16384 个跨通道唯一源键，末键锚定绝对时间；每个原键加
 同一 double 偏移后转 float，任一越界保留前一预览，舍入重叠及未选键占用可见且可恢复。
@@ -439,7 +440,7 @@ target references, without changing the clipboard or any resource/preview/histor
 The editor performs its actual native pose/skin preflight before one publication;
 source/destination resources remain distinct from the authoring scene. Every UI action
 has the same strict [editor operation](Editor.md#animation-clip-editing). Retargeting,
-graphical tangent handles and layered/state-machine tools remain open.
+physical tangent-pointer acceptance and layered/state-machine tools remain open.
 
 KeyGroup 拥有不可变、有序的所选记录及原模式/时间范围，可包含部分三次键；源片段销毁/
 修改不影响它，放置结果独立拥有，时间越界或 float 重叠时不改原组。PasteKeys 按时间归并，
@@ -476,3 +477,22 @@ SceneAnimator, ScenePlayers and AnimationPreview seek accept an optional pause f
 together with the new clock and transition cancellation. Invalid times/samples retain
 the prior pose, clock and playing state; controls still synchronize player descriptions
 according to the existing ScenePlayers contract. Existing runtime seek behavior is unchanged.
+
+
+`Dot.Editor.AnimationTangent` owns an existing cubic key's component and used side.
+The native float derivative is per second; quaternion derivatives remain raw XYZW.
+Control points use a signed third of the adjacent interval. Invalid keys, channels,
+components or unused endpoint sides fail. update changes only one scalar and rejects
+nonfinite values without discarding the previous ghost. Numeric return to origin
+restores original float bits. Snapshots own their key payload; value builds an
+ordinary native UpdateKey candidate, preserving key time/value, other derivatives,
+track mode and unrelated channels. A no-op shares the immutable original. There is
+no scene/file/device/history. Move retires the source and destruction discards the
+ghost; mutable access needs synchronization. The editor checks current resource
+identity/revision, samples native ghost curves, and preflights pose/skin before one
+history commit. A valid clip can still fail at an intermediate sample; failed commit
+retains the transaction for correction. See the editor's tangent handle contract.
+
+切线工具持有现有三次键的一个分量/有效侧，导数按秒，四元数保留原生 XYZW。快照拥有键值，
+更新只改一个有限标量，失败保留候选；回原值恢复位表示。原生 UpdateKey 候选保留其他数据，
+无变化共享原片段；不触及场景/文件/设备/历史，编辑器负责身份检查、姿态/蒙皮预检和一次发布。

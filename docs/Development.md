@@ -12170,3 +12170,162 @@ Whitespace/clang-format checks pass. Computer use still reports the Mac locked;
 physical frame controls, snapped pointer gestures, narrow-panel layout and IME
 acceptance are unverified. Graphical tangent handles, rig/retargeting/state/layer
 workflows, larger-game pacing/scale, final Prism art and overall maturity remain open.
+
+
+## 2026-10-18 — Cubic derivative handle transactions
+
+Continue from tracked-clean main 46a8a17, equal to origin/main. Preserve the local
+reference/output material, caches, prior saves, pinned dependencies and inherited
+compiler/linker environment. Follow development/validation skills, without subagents,
+other-project inspection, distribution archives or maturity claims based on counts.
+The rational-frame stage was progress; overall production engine/editor/game/art and
+scale requirements remain open.
+
+Add Dot.Editor.AnimationTangent as an owned CPU value tool. It binds one exact cubic
+key, one existing XYZ/XYZW component and a used incoming/outgoing side. A nominal
+control point lies a signed third of the neighboring interval away; unused endpoint
+sides fail. Slopes are native derivatives per second, with raw quaternion components
+before normalization, never Euler-angle derivatives. No implicit mirroring, smoothing,
+mode conversion, frame snapping or derivative rescaling. Updates only change one
+ghost scalar; invalid nonfinite values retain it, and a numeric return to origin
+preserves the original float bits. Owned snapshots outlive updates/tool moves;
+moving retires the source. A no-op shares the immutable original clip. value builds
+an ordinary UpdateKey candidate, preserving times, values, other derivatives/modes
+and unrelated tracks. No scene/file/device/clock/history or shared mutable cache.
+
+The editor's strict begin/update/read-candidate/finish tangent commands scope sessions
+to current buffer/revision, one selected key, a clean form, paused preview and no
+other gesture/dialog. Unknown fields/types/components/sides and retired sessions
+fail before mutation. Selection, history, save, frame settings/seek, key moves,
+component/range changes and preview control cannot mutate beneath the transaction.
+Read-only inspection and explicit cancel/discard remain available. Update/read only
+create ghost curves; the existing publishClipValue preflights actual native pose/
+skin before publishing one history state. Failed publication retains the candidate
+for correction; cancel/no-op preserves revision, redo and posed preview identity.
+Prepare the new selection before publication, so selection allocation cannot fail
+after committing the resource.
+
+Curves expose X/Y/Z/W component preference and square incoming/outgoing handles for
+one cubic key. Vertical pointer changes use the same strict commands. Freeze value
+range/geometry during a physical gesture and include final release displacement;
+Escape, lost focus, hidden Animation pane or changed graph geometry cancels. Failed
+release leaves explicit derivative/Apply/Cancel controls for correction. Independent
+colored native candidate curves overlay the published curves without posing the
+character during dragging. Raw quaternion control derivatives are labeled as such;
+the plotted ghost still uses the normalized native sampler. Bounded samples never
+prove every intermediate pose valid. Sampling failure retains keys/handles for repair.
+
+A final display review found the empty-range case: failed sampling, no visible keys
+and no selected handles left no finite axis domain. Report the failure and advise
+widening the range or correcting the key form instead of constructing coordinates
+from unset extrema. This changes no asset/native sampling contract. Update editor/
+animation/roadmap and example guidance; physical pointer acceptance remains open.
+
+Four new unit cases in existing DotUnitTests cover single derivative ownership,
+unchanged other sides/components/time/value, neighboring control geometry, invalid
+updates/inputs/channels/components/unused sides, signed-zero origin recovery,
+quaternion raw derivatives and moved-handle lifetime. One CPU-only AnimationPreview
+integration case creates a valid cubic scale candidate that fails at an intermediate
+zero-scale pose, proves the existing preview remains intact and corrects/retries it.
+No window/device or new stage acceptance executable is introduced. The existing
+Prism action regression additionally requires the actual head's cubic mode and
+first outgoing Y derivative; the arms remain linear and all three peaks stay .8F.
+
+Actual arm64 macOS checks with inherited presets/environment:
+
+- Initial focused four unit cases pass, 0.20 s; expanded five-case focus passes,
+  0.40 s. Full Debug 1473/1473, 245.63 s, and initial full Release/NDEBUG 1473/1473,
+  36.55 s. The first build rejected a shadowed local; fix it before these checks.
+- After the saved example update, focused Debug 6/6, 0.99 s, and full Release
+  1473/1473, 35.38 s. After the final empty-range display guard, rebuild both products,
+  focused Debug 6/6, 0.96 s, and final full Release 1473/1473, 35.62 s.
+  Full Debug was not repeated after that display guard; the final product workflow
+  specifically exercises it. No engine code changes after those final checks.
+- Labels: 456 unit, 1017 integration, including overlapping 185 offscreen GPU and
+  233 compiler cases. Windows/Linux execution remains unverified.
+
+Actual editor creates PrismTangents from the packaged template and opens the real
+character-action scene. Explicitly convert only the head rotation to cubic, select
+its first key/Y/outgoing side and sample the native curve. Twenty-seven real negative
+cases cover linear/unused sides, bad numeric/side types/bounds, empty selection,
+playing preview, stale sessions, unknown fields, invalid commit/slope and every
+conflicting edit family. Updates leave file bytes/resource/history/pose untouched;
+a changed ghost curve retains the exact before PNG. Cancel and return-to-origin
+preserve state. Commit changes the actual posed PNG and one history state; Undo and
+Redo reproduce the corresponding pixels exactly. A temporary real head-scale cubic
+candidate fails curve sampling and commit at the current zero-scale instant, keeps
+its session/pose/history, then accepts a corrected slope. Undo removes both temporary
+scale changes before saving the intended head rotation.
+
+The owned validation App initially put resources in the wrong bundle directory;
+correct the helper to use SDL's normal Contents/Resources layout. An initial PNG
+request preceded the new completed viewport frame; retain its explicit failure,
+stop only that owned helper, and correct capture waiting/retry rather than changing
+product behavior. Keep both attempted projects and evidence. The completed editor
+workflow saved/exported successfully; a final close acknowledgement retired before
+the helper read it. The child actually exited zero and its control directory retired.
+Retain the queued receipt/terminal evidence; later helpers verify terminal exit
+without fabricating a response. A native helper initially looked one directory too
+high for content; correct it to the real game/content before running native checks.
+These are helper corrections, not engine-success substitutions.
+
+Save/reopen the actual 201-channel/405-key motion. Its head rotation alone is cubic,
+with native outgoing Y derivative .15F at time zero and zero other derivatives.
+The three head poses/times and all other tracks remain unchanged; the .8F peak PNG
+is byte-identical to the previous linear study:
+b40706fccc32fd57db32f12ed94dd184dc0f6ba4bddb86876dfd68b7ea11944c.
+Actual editor Play varies head orientation (maximum sampled quaternion distance
+0.3032638); Stop restores authoring. Synchronize the actual saved bytes into the
+source example and provenance, not a generated replacement. The motion is 47767 bytes,
+SHA-256 97046f1fdf5492d1ca2e80bc7982d3ccdca4c8400935424fefa98295b9a82411.
+The main/action scenes, scripts, binding map and seven locomotion clips are unchanged.
+The study demonstrates easing authoring, not final cinematic animation/art.
+
+Native export has 117 identical content files/66704800 bytes. Relocate it and hide
+only its owned source project; actual head samples vary (distance 0.3017722), travel
+to main and dispatch W/Space through normal gameplay, land, open the checkpoint
+menu and save. Restart independently with fresh live state, travel to main and F7
+restores exactly [-3,-7.450579886381092e-08,1.595800518989563], different from fresh
+[-3,0,2]. The owned persistent slot hash is
+920422bd1203f70bf719b71bbcdc098d6b97f4edc12944d488addaf054df7b8b.
+Interactive/restart/one-presentation processes exit zero and retire controls;
+retained profile samples have no callback error. Samples include loading and are
+not FPS/performance claims.
+
+Create PrismTangentStudy from the rebuilt source template; motion, scene, provenance
+and README match source bytes. At 30fps frame 12 and 60fps frame 24, PNG bytes match
+without dirty/resampling; close retains authoring. Export its current action scene:
+117 content files/66706158 bytes, fixedHz still 60. Relocate/hide the source and
+--frames 1 completes one actual game presentation and exits zero; loading iterations
+are not that presentation. Preserve the exact manifest/profile evidence.
+
+Create PrismTangentRecovery with the final rebuilt editor. Change/read/commit/Undo
+one head derivative through the real transaction, then temporarily publish a real
+cubic head scale at its valid endpoint with an invalid zero-scale midpoint. Prepare
+the ordinary scale form without selected keys and set the view to [1,1.5], which
+contains no authored keys. Native curve read fails explicitly at the first sample;
+six actual frames keep the Animation pane visible and the workspace/view healthy.
+Undo both temporary scale changes, retaining exact saved asset bytes/clean state.
+Actual Play still varies the head, Stop restores authoring, and an exported current
+startup scene runs relocated with its source hidden for one real presentation.
+Exit zero; final editor/App hashes match, and all three native exports match the
+current runtime kit. Keep this final negative/positive product evidence separately
+from the earlier complete workflow.
+
+Record pre-review workflow binary hashes separately from final reviewed binaries.
+Only the final empty-range display guard changed editor behavior after the first
+complete workflow; final recovery validation uses the rebuilt current editor.
+Inspect arm64 Mach-O/dependencies/load commands; native LLVM libraries remain
+executable-relative and the font hash remains
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Verify fourteen prior save hashes and restored project paths. Keep editable projects,
+actual requests/results, PNGs, profiles, manifests and semantic motion review under
+ignored build/tangent-review. Remove only owned App/native copies/helpers/cache;
+retain build caches, prior saves, local reference/output material. No archive.
+
+Review correctness, ownership, scalar conversions, failure atomicity, default/native
+behavior, source bytes, UI/JSON guards, modules/platform assumptions and coverage.
+Formatting/diff checks pass before commit. Computer use reports the Mac locked and
+automatic unlock failed; do not change credentials/IME or claim physical dragging,
+narrow-layout or IME acceptance. Skeleton/retargeting/state/layer authoring, larger
+project pacing/scalability, final Prism art and overall requested maturity remain open.

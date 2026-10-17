@@ -141,6 +141,17 @@ to return to movement, jumping, camera and checkpoints. The main scene's seven
 locomotion slots are unchanged. The action is a small authoring example, not finished
 cinematic animation or final character art.
 
+The head rotation now uses native cubic easing, with an outgoing Y derivative of
+0.15 per second at time zero and zero derivatives at the peak/return. Its authored
+poses and times are unchanged; the arms remain linear. In Edit animation clip,
+choose Curves, select the head rotation's first key and choose tangent component Y.
+Pause and drag its outgoing square handle, or use the shared tangent transaction
+commands. The thick candidate curve changes before the posed character does;
+release/Apply tangent preflights and commits one undo step. Rotation handles edit
+raw XYZW derivatives before normalization. Save/reopen and Play use the saved native
+curve. Physical pointer acceptance remains unverified; this is an editable study,
+not a final animation-polish claim.
+
 For precise timing, open Frame options and choose 30/1, then enter frame 24 in
 Frame target. Previous/Next frame pause and sample the native pose atomically. Enable
 anchor snapping to move a group while preserving offsets, or Snap selected keys to
