@@ -2,6 +2,7 @@ module;
 
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -30,8 +31,9 @@ namespace Dot::Script {
     using Json = Codec::Json;
     using Reply = Core::Result<std::optional<std::string>>;
 
-    constexpr std::array methods{"audio.voice", "audio.stats", "audio.listener", "audio.play",
-                                 "audio.pause", "audio.stop",  "audio.seek",     "audio.setVolume"};
+    constexpr std::array methods{"audio.voice", "audio.stats",     "audio.listener",
+                                 "audio.play",  "audio.pause",     "audio.stop",
+                                 "audio.seek",  "audio.setVolume", "audio.resetMotion"};
 
     auto frame(const Json& value) -> std::uint64_t {
       if (!value.is_string()) {
@@ -145,6 +147,7 @@ namespace Dot::Script {
     std::uint64_t m_generation{1};
     float m_volume{1};
     bool m_playback;
+    bool m_resetMotion{};
 
     Impl(std::shared_ptr<World::Scene> scene, Audio::SceneAudio audio, bool playback)
         : m_scene(std::move(scene)),
@@ -163,12 +166,19 @@ namespace Dot::Script {
     }
 
     auto dispatch(std::string_view method, const Json& args) -> Reply {
-      const auto count = method == "audio.stats" || method == "audio.listener" ? 0U
-                         : method == "audio.seek"                              ? 2U
-                                                                               : 1U;
+      const auto count
+          = method == "audio.stats" || method == "audio.listener" || method == "audio.resetMotion"
+                ? 0U
+            : method == "audio.seek" ? 2U
+                                     : 1U;
 
       if (args.size() != count) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Incorrect audio argument count");
+      }
+
+      if (method == "audio.resetMotion") {
+        m_resetMotion = true;
+        return std::optional<std::string>{};
       }
 
       if (method == "audio.stats") {
@@ -182,6 +192,7 @@ namespace Dot::Script {
             {"mode", m_playback ? "playback" : "offline"},
             {"generation", std::to_string(m_generation)},
             {"volume", m_volume},
+            {"motionResetPending", m_resetMotion},
             {"assets", stats->assets},
             {"sampleBytes", std::to_string(stats->sampleBytes)},
             {"voices", stats->mixer.voices},
@@ -342,7 +353,23 @@ namespace Dot::Script {
     }
 
     auto checked = m_impl->check();
-    return checked ? m_impl->m_audio.synchronize(*m_impl->m_scene, seconds) : checked;
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 1) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Audio seconds must be finite in [0,1]");
+    }
+
+    auto result
+        = m_impl->m_audio.synchronize(*m_impl->m_scene, m_impl->m_resetMotion ? 0 : seconds);
+
+    if (result) {
+      m_impl->m_resetMotion = false;
+    }
+
+    return result;
   }
 
   auto AudioSession::reset() -> Core::Result<void> {
@@ -365,6 +392,7 @@ namespace Dot::Script {
     if (reset) {
       ++m_impl->m_generation;
       m_impl->m_volume = 1;
+      m_impl->m_resetMotion = false;
     }
 
     return reset;

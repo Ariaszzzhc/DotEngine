@@ -134,6 +134,11 @@ The opt-in standalone player exposes the same inner operations through
 `game-data(value)`; see [native product control](Export.md#opt-in-native-player-control).
 Its explicit app data directory persists across process restarts. Editor Play keeps
 its isolated temporary storage. Neither interface automatically restores a character.
+Prism Relay now supplies an explicit F6/F7 grounded resume-point schema and applies
+validated feet/facing/orbit with native character teleport. F7 does not replace
+unrelated current game-state keys or restore physics/animation clocks; startup is
+fresh until explicitly restored. Status is observable in `relayProgressStatus`.
+See the [template controls and limits](../examples/PrismRelay/README.md).
 
 Every outer request requires exactly command/session/value and a current Play
 session ID. Its response contains `ok` and the parsed `result`. Pending close and
@@ -167,6 +172,6 @@ FeatureLab audits the real SDK and supplies F6/F7 camera checkpoints across scen
 Tests do not open desktop windows; actual editor checks use its product agent API.
 
 Save I/O is synchronous and can stall a frame. Background scheduling, directory
-crash recovery, authentication/cloud sync, game-specific checkpoint schemas and
-finished gameplay remain separate work. These contracts do not establish overall
+crash recovery, authentication/cloud sync, broader game-specific schemas, in-game
+save feedback/menus and finished gameplay remain separate work. These contracts do not establish overall
 engine production readiness.

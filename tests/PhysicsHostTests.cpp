@@ -119,6 +119,46 @@ TEST_CASE("physics_host_character_controls_keep_snapshots_jump_intent_and_strict
   CHECK(read(services, "physics.stats")["characters"] == 0);
 }
 
+TEST_CASE("physics_host_teleport_publishes_contacts_and_rejects_malformed_or_stale_poses") {
+  auto native = scene();
+  add(native, Dot::Physics::Motion::Static, -.5F);
+  const auto actor = native->createEntity("Character").value();
+  REQUIRE(native->setCharacterController(actor, Dot::World::CharacterController{}));
+  auto physics = PhysicsSource::create(native).value();
+  const auto services = physics.bindings().value();
+  REQUIRE(physics.step(1.0 / 60));
+  const auto before = read(services, "physics.contacts");
+  const auto query = Json::array({id(actor)});
+  const auto original = read(services, "physics.character", query);
+  auto args = Json::array({id(actor), {{"position", xyz(3)}, {"yawDegrees", 90}}});
+
+  for (const auto& invalid :
+       {Json{{"position", xyz(3)}, {"yawDegrees", "90"}}, Json{{"position", xyz(3)}},
+        Json{{"position", xyz(3)}, {"yawDegrees", 0}, {"extra", true}},
+        Json{{"position", xyz(1000001)}, {"yawDegrees", 0}}}) {
+    CHECK_FALSE(invoke(services, "physics.teleportCharacter", Json::array({id(actor), invalid})));
+    CHECK(read(services, "physics.character", query) == original);
+    CHECK(read(services, "physics.contacts") == before);
+  }
+
+  REQUIRE(invoke(services, "physics.teleportCharacter", args));
+  CHECK(read(services, "physics.character", query)["position"] == xyz(3));
+  CHECK(native->transform(actor)->position.x == 3);
+  auto contacts = read(services, "physics.contacts");
+  CHECK(contacts["index"] != before["index"]);
+  CHECK(contacts["generation"] == before["generation"]);
+  CHECK(std::ranges::any_of(contacts["events"], [](const auto& event) {
+    return event["phase"] == "end" && event["endReason"] == "poseChanged";
+  }));
+  CHECK(std::ranges::find(services, "physics.teleportCharacter", &HostFunction::name)->access
+        == HostAccess::ReadWrite);
+  REQUIRE(native->setTransform(actor, {{4, 0, 0}}));
+  CHECK_FALSE(invoke(services, "physics.teleportCharacter", args));
+  CHECK(read(services, "physics.character", query)["position"] == xyz(3));
+  REQUIRE(physics.synchronize());
+  REQUIRE(invoke(services, "physics.teleportCharacter", args));
+}
+
 TEST_CASE("physics_host_sphere_sweep_returns_owned_volume_hits_and_strict_filters") {
   auto native = scene();
   const auto body = add(native, Dot::Physics::Motion::Static);
@@ -159,7 +199,7 @@ TEST_CASE("physics_host_real_velocity_impulse_angular_motion_and_owned_state_wri
   auto entity = add(native);
   auto physics = source(native);
   auto services = physics.bindings().value();
-  CHECK(services.size() == 12);
+  CHECK(services.size() == 13);
   auto old = read(services, "physics.body", Json::array({id(entity)}));
   CHECK(old["motion"] == "dynamic");
   REQUIRE(invoke(services, "physics.setVelocity", Json::array({id(entity), xyz(1)})));

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -63,7 +64,7 @@ TEST_CASE("audio_host_real_play_pause_seek_stop_volume_and_owned_voice_snapshots
   auto entity = add(native);
   auto audio = AudioSession::create(native, files).value();
   auto services = audio.bindings().value();
-  CHECK(services.size() == 8);
+  CHECK(services.size() == 9);
   auto initial = read(services, "audio.voice", Json::array({id(entity)}));
   CHECK(initial["sourceFrame"] == "0");
   CHECK(initial["clip"]["frames"] == "4096");
@@ -190,6 +191,59 @@ TEST_CASE("audio_host_spatial_source_listener_and_derived_velocity_use_native_wo
   auto pose = read(services, "audio.listener");
   CHECK(pose["position"]["y"] == 1);
   CHECK(pose["velocity"]["y"] == 2);
+}
+
+TEST_CASE("audio_host_motion_reset_survives_failures_and_moves_without_restarting_voices") {
+  DotTest::Audio::Directory directory;
+  auto files = directory.files();
+  DotTest::Audio::writeWave(files, "tone.wav", std::vector<float>(4096, .5F));
+  auto native = scene();
+  auto entity = add(native);
+  auto description = native->entity(entity)->audioSource.value();
+  description.spatial.enabled = true;
+  REQUIRE(native->setAudioSource(entity, description));
+  auto listener = native->createEntity("Listener").value();
+  REQUIRE(native->setAudioListener(listener, Dot::World::AudioListener{true}));
+  auto audio = AudioSession::create(native, files).value();
+  const auto services = audio.bindings().value();
+  const auto args = Json::array({id(entity)});
+  REQUIRE(invoke(services, "audio.play", args));
+  REQUIRE(invoke(services, "audio.seek", Json::array({id(entity), "100"})));
+  REQUIRE(invoke(services, "audio.setVolume", Json::array({.75})));
+  REQUIRE(native->setTransform(entity, {{10, 0, 0}}));
+  REQUIRE(native->setTransform(listener, {{20, 0, 0}}));
+  CHECK_FALSE(audio.synchronize(.000001));
+  CHECK_FALSE(invoke(services, "audio.resetMotion", Json::array({0})));
+  CHECK(read(services, "audio.stats")["motionResetPending"] == false);
+  REQUIRE(invoke(services, "audio.resetMotion"));
+  CHECK(read(services, "audio.stats")["motionResetPending"] == true);
+  CHECK_FALSE(audio.synchronize(std::numeric_limits<double>::quiet_NaN()));
+  CHECK_FALSE(audio.synchronize(-1));
+  REQUIRE(native->setTransform(listener, {{20, 0, 0}, {}, {-1, 1, 1}}));
+  CHECK_FALSE(audio.synchronize(.000001));
+  CHECK(read(services, "audio.stats")["motionResetPending"] == true);
+  REQUIRE(native->setTransform(listener, {{20, 0, 0}}));
+  auto moved = std::move(audio);
+  CHECK_FALSE(audio.synchronize(.000001));
+  REQUIRE(moved.synchronize(.000001));
+  const auto voice = read(services, "audio.voice", args);
+  CHECK(voice["sourceFrame"] == "100");
+  CHECK(voice["playing"] == true);
+  CHECK(voice["spatial"]["velocity"]["x"] == 0);
+  CHECK(read(services, "audio.listener")["velocity"]["x"] == 0);
+  CHECK(read(services, "audio.stats")["motionResetPending"] == false);
+  CHECK(read(services, "audio.stats")["generation"] == "1");
+  CHECK(read(services, "audio.stats")["volume"] == .75);
+  REQUIRE(native->setTransform(entity, {{11, 0, 0}}));
+  REQUIRE(native->setTransform(listener, {{21, 0, 0}}));
+  REQUIRE(moved.synchronize(.1));
+  CHECK(read(services, "audio.voice", args)["spatial"]["velocity"]["x"] == 10);
+  CHECK(read(services, "audio.listener")["velocity"]["x"] == 10);
+  CHECK(std::ranges::find(services, "audio.resetMotion", &HostFunction::name)->access
+        == HostAccess::ReadWrite);
+  REQUIRE(invoke(services, "audio.resetMotion"));
+  REQUIRE(moved.reset());
+  CHECK(read(services, "audio.stats")["motionResetPending"] == false);
 }
 
 TEST_CASE("audio_host_moves_threads_shared_lifetime_and_failed_initialization_release_backend") {

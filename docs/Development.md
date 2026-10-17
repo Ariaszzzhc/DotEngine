@@ -10815,3 +10815,88 @@ platform/coverage reviews pass before commit. Desktop lock prevents new human-st
 interaction; final wrapped-panel sight/pointer acceptance remains outstanding.
 Remaining service/startup preparation, Prism checkpoint restoration/feedback, larger
 production workflows, final art and the overall engine goal remain unfinished.
+
+## 2026-10-17 — Explicit Prism Relay resume points
+
+Continue the actual playable-project workflow beyond data-slot transport. Add
+SceneSimulation::teleportCharacter and strict physics/Entity SDK controls for
+world feet/yaw placement. Prepare parent-local writeback before native mutation,
+then clear velocity and queued input, update both poses and the cached source,
+and publish poseChanged contacts without stepping time. Same-pose placement still
+clears intent. Wrong owners/threads, malformed bounds and unsynchronized character/
+ancestor edits fail explicitly. Native/writeback/contact-publication failures after
+mutation can fault until reset; this is not an atomic rollback or overlap solver.
+
+Prism Relay F6 saves only while grounded; F7 explicitly restores its main-scene
+checkpoint, including in a fresh exported process. Store a strict owned
+prism-relay-checkpoint object with exact path, finite bounded feet/yaw and bounded
+orbit/boom. No scene-scoped IDs, physics velocity or animation clocks persist.
+Validate all fields before placement. Clear game acceleration/jump buffer, restart
+idle animation and restore the following camera/listener. Missing/damaged/mismatched
+data leaves the current pose intact. F7 reads owned disk data without replacing
+unrelated live state. Failed writes restore the previous checkpoint key or its
+absence; native slot atomicity retains its existing file contract. Startup remains
+fresh until F7. Hot-reload state is separate and retains the input-edge watermark.
+relayProgressStatus reports actual actions through Game state/product inspection;
+in-game text, menus and broader world/game restoration remain unfinished.
+
+An initial actual editor attempt reveals a missing cross-subsystem contract: F7
+teleports the separately following listener, and positive frame time derives an
+invalid >100m/s audio velocity, faulting Play. The earlier zero-delta headless load
+implicitly established an audio baseline and concealed this. Keep that failed
+run/project and add a tiny positive-delta Prism regression. Add audio.resetMotion:
+an explicit game-wide request for zero derived source/listener velocities at the
+next successful native synchronization. Failed/invalid synchronization retains
+motionResetPending; successful synchronization consumes it and normal Doppler
+resumes next time. Voices/cursors/gain/generation and queued PCM remain intact.
+Full native reset clears the request on success. Ordinary unmarked excessive
+velocities still fail; no clamping, heuristic fallback or device reset is added.
+Prism requests the baseline after native character placement.
+
+Five new enduring cases in existing targets cover parented/same-pose placement,
+pending-intent preservation on rejection, moves/thread/scene ownership, strict host
+objects and contact batches, validated checkpoint save/restart/load, corrupt schema/
+file and airborne/unavailable-save failures, and audio baseline failure/move/reset
+semantics without restarting voices. Existing SDK preparation tests deny both new
+controls; Feature Lab inventory/audit exercises their actual bindings. Player-control
+tests compare fresh post-Start data and retained pre-close data rather than assuming
+game scripts never publish startup status. No new test executable or desktop-window
+automatic case; unit tests still initialize no devices.
+
+Final focused Debug passes 63/63 in 14.90s. After the actual audio failure is fixed,
+full Debug passes 1399/1399 in 221.73s and Release/NDEBUG 1399/1399 in 32.47s. Counts:
+426 unit, 973 integration; overlapping labels include 227 compiler, 162 offscreen,
+37 audio-native, 34 platform and 21 process. Builds/checks/products run sequentially
+with the caller's compiler/linker environment. Only arm64 macOS is executed.
+
+The final real Release editor creates a fresh Prism project through the shared
+project-action template operation, with an independent application ID and unchanged
+template sources. It saves after moving, refuses an airborne overwrite, restores
+feet/facing/orbit while preserving an unrelated live key, and stays running without
+diagnostics. Stop restores exact clean authoring; a second Play has no saved slot
+and refuses F7. Saved/stopped viewport PNGs match SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The restored-pose viewport is also inspected; functional character/environment art
+is unchanged, without a final visual-quality claim.
+
+Export through that workspace, relocate the game and physically hide authoring.
+All 115 content files / 66,212,680 bytes match the newly created saved project; no
+TypeScript/map sources ship. Relative to the preceding control-project export,
+only the updated README and main scene differ: the current template keeps its
+authored walkSpeed 3.2, while the old edited control project retains 3.6. Assets match.
+Two native processes prove explicit F6 persistence/F7 restoration across restart,
+airborne refusal, damaged-file pose preservation, exact file restoration and retry,
+and restore after a real scene replacement publishes a fresh scope. The final
+editor and both native processes exit zero/retire controls; the earlier failed
+workflow also exits zero after explicit cleanup. Authoring is physically restored
+and the prior persistent checkpoint hash remains unchanged.
+
+Binary arm64/linkage/source hashes, saved state and raw product evidence are under
+ignored build/checkpoint-workflow-review, including the failed attempt. Remove owned
+editor/native validation copies and compiled helper cache after inspection; retain
+editable projects, user data, build caches, requests/responses, profiles, replay
+scripts and PNGs. No distribution archive is made. Formatting/whitespace and
+ownership/error/platform/coverage reviews pass before commit. Computer use reports
+the Mac locked; human pointer and final wrapped-panel sight acceptance remain
+outstanding. In-game feedback/menu authoring, remaining service/startup performance,
+larger production workflows, final art and the overall engine goal remain unfinished.

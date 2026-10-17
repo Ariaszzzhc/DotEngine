@@ -1,17 +1,19 @@
-import {Entity, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
+import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from './progress';
 
 interface Settings {
   walkSpeed: number;
   runSpeed: number;
 }
 
-interface Checkpoint {
+interface RuntimeState {
   camera: CameraState;
   velocity: Vec3;
   edgeFrame: string;
   lookFrame: string;
+  progressFrame: string;
   jumpBuffer: number;
   grounded: boolean;
   clip: number;
@@ -29,6 +31,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #velocity: Vec3 = {x: 0, y: 0, z: 0};
   #edgeFrame = '';
   #lookFrame = '';
+  #progressFrame = '';
   #jumpBuffer = 0;
   #grounded = true;
   #clip = 0;
@@ -59,6 +62,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#model.playAnimation(0, true);
     this.#camera.update(this.self.characterState.position, 0);
     this.listen();
+    progressStatus('F6 saves a grounded checkpoint; F7 restores it');
   }
 
   private edges(frame: InputFrame): void {
@@ -133,6 +137,47 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   onUpdate(seconds: number): void {
     const frame = input.snapshot();
     this.edges(frame);
+    let progressMessage: string|null = null;
+
+    if (frame.index !== this.#progressFrame) {
+      this.#progressFrame = frame.index;
+
+      try {
+        if (frame.keys.F7.pressed) {
+          const saved = readCheckpoint();
+          this.self.teleportCharacter(saved.feet, saved.yawDegrees);
+          audio.resetMotion();
+          this.#camera.restore(saved.camera);
+          this.#velocity = {x: 0, y: 0, z: 0};
+          this.#jumpBuffer = 0;
+          this.#grounded = this.self.characterState.ground === 'grounded';
+          this.#clip = 0;
+          this.#model.configureAnimation(1, true);
+          this.#model.playAnimation(0, true);
+          progressMessage = 'Checkpoint restored';
+        } else if (frame.keys.F6.pressed) {
+          const state = this.self.characterState;
+
+          if (state.ground !== 'grounded') {
+            throw Error('Land before saving a checkpoint');
+          }
+
+          saveCheckpoint({
+            format: 'prism-relay-checkpoint',
+            path: 'scenes/main.dotscene',
+            feet: {...state.position},
+            yawDegrees: Math.atan2(
+                            2 * state.rotation.w * state.rotation.y,
+                            1 - 2 * state.rotation.y * state.rotation.y)
+                * 180 / Math.PI,
+            camera: this.#camera.state,
+          });
+          progressMessage = 'Checkpoint saved';
+        }
+      } catch (error) {
+        progressFailure(error);
+      }
+    }
 
     if (frame.index !== this.#lookFrame) {
       this.#lookFrame = frame.index;
@@ -142,6 +187,10 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#camera.update(this.self.characterState.position, seconds);
     this.listen();
     this.animate();
+
+    if (progressMessage !== null) {
+      progressStatus(progressMessage);
+    }
   }
 
   /**
@@ -156,26 +205,28 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#listener.transform = pose;
   }
 
-  onSaveState(): Checkpoint {
+  onSaveState(): RuntimeState {
     return {
       camera: this.#camera.state,
       velocity: {...this.#velocity},
       edgeFrame: this.#edgeFrame,
       lookFrame: this.#lookFrame,
+      progressFrame: this.#progressFrame,
       jumpBuffer: this.#jumpBuffer,
       grounded: this.#grounded,
       clip: this.#clip,
     };
   }
 
-  onLoadState(state: Checkpoint): void {
+  onLoadState(state: RuntimeState): void {
     if (!state || !state.velocity || ![state.velocity.x, state.velocity.z].every(Number.isFinite)
         || state.velocity.y !== 0 || Math.hypot(state.velocity.x, state.velocity.z) > 12.01
         || !Number.isFinite(state.jumpBuffer) || state.jumpBuffer < 0 || state.jumpBuffer > 0.14
         || typeof state.grounded !== 'boolean' || !Number.isInteger(state.clip) || state.clip < 0
         || state.clip > 6 || typeof state.edgeFrame !== 'string'
         || !/^[0-9]*$/.test(state.edgeFrame) || typeof state.lookFrame !== 'string'
-        || !/^[0-9]*$/.test(state.lookFrame)) {
+        || !/^[0-9]*$/.test(state.lookFrame) || typeof state.progressFrame !== 'string'
+        || !/^[0-9]*$/.test(state.progressFrame)) {
       throw Error('Invalid Prism Relay character checkpoint');
     }
 
@@ -184,6 +235,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#velocity = {...state.velocity};
     this.#edgeFrame = state.edgeFrame;
     this.#lookFrame = state.lookFrame;
+    this.#progressFrame = state.progressFrame;
     this.#jumpBuffer = state.jumpBuffer;
     this.#grounded = state.grounded;
     this.#clip = state.clip;

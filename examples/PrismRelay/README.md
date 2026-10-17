@@ -10,6 +10,11 @@ This replaces the earlier collection/timer prototype.
 - Shift: sprint.
 - Space: jump; short input buffering retains presses between fixed steps.
 - Mouse: orbit the shoulder camera; wheel: adjust distance.
+- F6: save a grounded resume point. F7: explicitly restore that point, including
+  after restarting the exported game. Airborne saves are refused. Loading clears
+  velocity, queued jump and game acceleration, and restores feet, facing and orbit.
+  The game also requests a new native audio motion baseline for its following
+  listener, preventing teleport-induced Doppler without restarting voices.
 - In editor Play, enable Game input. Escape releases it; focus loss requires enabling
   it again. In a standalone game, Escape exits.
 
@@ -41,10 +46,24 @@ without restarting the native character, skeleton or animation clocks. During Pl
 changed source snapshots compile in one background task while current code keeps
 running. Invalid source keeps the prior generation active; Console reports the
 error and Retry scripts can retry unchanged bytes. Current source is rechecked before
-migration. This migration state does not persist player progress across game sessions.
+migration. This migration state is separate from the explicit persistent checkpoint.
 The exported game can be operated through the optional [native product mailbox](../../docs/Export.md#opt-in-native-player-control),
 including real movement/jump input and persistent game-data slots. A Prism-specific
-checkpoint schema, player restoration and in-game save feedback remain unfinished.
+checkpoint uses the `relay-checkpoint` slot and a strict `prism-relay-checkpoint`
+schema for the saved main scene. It validates every field before moving the player;
+missing, damaged or mismatched saves leave the current pose intact. F7 reads its
+checkpoint without replacing unrelated live game-state keys. It does not resume
+physics velocity, animation clocks, other actors or a previous running simulation.
+Changed level geometry can obstruct a formerly valid point; normal native physics
+resolves overlap on the next step. Native failures after pose mutation are reported,
+without a rollback guarantee. Saving is synchronous and may stall a frame.
+
+Editor Play saves are temporary and removed on Stop; they never overwrite standalone
+progress. Exported games use their application ID's user directory, or an explicit
+caller-owned `--data-directory`. Startup remains fresh until F7 is pressed. The
+Game state panel and product inspection expose `relayProgressStatus` with actual
+save/load success or failure. In-game text feedback and a checkpoint menu remain
+unfinished, so the current template requires these documented keys.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

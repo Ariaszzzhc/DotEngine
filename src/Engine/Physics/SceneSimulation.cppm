@@ -100,6 +100,14 @@ export namespace Dot::Physics {
         -> Core::Result<void>;
     [[nodiscard]] auto setCharacterYaw(Dot::World::EntityId entity, float yawDegrees)
         -> Core::Result<void>;
+    /** Immediately place synchronized native/scene poses, clear velocity/input and
+     * publish pose-change contacts without advancing time. Reject unsynchronized
+     * character/ancestor edits; failures after native mutation fault until reset.
+     * Overlap resolution still belongs to the next physics step.
+     * 立即同步原生/场景位姿并清空速度/输入，不推进时间；拒绝未同步的角色/祖先修改。
+     * 原生修改后的失败使仿真故障直至重置；重叠仍在下次物理步解析。 */
+    [[nodiscard]] auto teleportCharacter(Dot::World::Scene& scene, Dot::World::EntityId entity,
+                                         Math::Vec3 feet, float yawDegrees) -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<WorldStats>;
     /** Owned contact events preserve entity values even after component/entity
      * removal. Successful drain consumes them; faulted services reject delivery.

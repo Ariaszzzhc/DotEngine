@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <thread>
@@ -109,6 +110,54 @@ TEST_CASE("scene_character_real_landing_movement_jump_yaw_and_parent_writeback")
   CHECK(simulation.character(fixture.actor)->velocity == Math::Vec3{});
   fixture.step(simulation);
   CHECK(simulation.character(fixture.actor)->position.x == doctest::Approx(3));
+}
+
+TEST_CASE("scene_character_teleport_writes_parent_local_pose_and_clears_same_pose_intent") {
+  Fixture f;
+  REQUIRE(f.scene.setTransform(
+      f.root, {{3, 0, 0}, Math::rotationEulerDegrees({0, 90, 0}).value(), {2, 2, 2}}));
+  auto simulation = f.simulation();
+  f.step(simulation, 120);
+  REQUIRE(simulation.setCharacterInput(f.actor, {{2, 0, 0}, true}));
+  REQUIRE(simulation.teleportCharacter(f.scene, f.actor, {5, 0, 2}, 450));
+  auto state = simulation.character(f.actor).value();
+  CHECK(state.position == Math::Vec3{5, 0, 2});
+  CHECK(state.velocity == Math::Vec3{});
+  CHECK(state.rotation.y == doctest::Approx(.70710678));
+  auto world = f.scene.worldTransform(f.actor).value();
+  CHECK(world.data[12] == doctest::Approx(5));
+  CHECK(world.data[14] == doctest::Approx(2));
+  REQUIRE(simulation.synchronize(f.scene));
+  f.step(simulation);
+  CHECK(simulation.character(f.actor)->position == Math::Vec3{5, 0, 2});
+  REQUIRE(simulation.setCharacterInput(f.actor, {{3, 0, 0}, true}));
+  REQUIRE(simulation.teleportCharacter(f.scene, f.actor, {5, 0, 2}, 90));
+  f.step(simulation);
+  CHECK(simulation.character(f.actor)->velocity.y <= 0);
+  CHECK(simulation.character(f.actor)->position.x == doctest::Approx(5));
+  REQUIRE(simulation.setCharacterInput(f.actor, {{2, 0, 0}, true}));
+  CHECK_FALSE(simulation.teleportCharacter(f.scene, f.actor, {1000001, 0, 0}, 0));
+  CHECK_FALSE(
+      simulation.teleportCharacter(f.scene, f.actor, {}, std::numeric_limits<float>::quiet_NaN()));
+  CHECK(simulation.character(f.actor)->position == Math::Vec3{5, 0, 2});
+  f.step(simulation);
+  CHECK(simulation.character(f.actor)->velocity.y > 5);
+  CHECK(simulation.character(f.actor)->position.x > 5);
+  const auto before = simulation.character(f.actor)->position;
+  REQUIRE(f.scene.setTransform(f.root, {{7, 0, 0}}));
+  CHECK_FALSE(simulation.teleportCharacter(f.scene, f.actor, {}, 0));
+  CHECK(simulation.character(f.actor)->position == before);
+  CHECK_FALSE(simulation.teleportCharacter(f.scene, f.floor, {}, 0));
+  auto foreign = World::Scene::create().value();
+  CHECK_FALSE(simulation.teleportCharacter(foreign, f.actor, {}, 0));
+  bool denied{};
+  std::thread worker([&] { denied = !simulation.teleportCharacter(f.scene, f.actor, {}, 0); });
+  worker.join();
+  CHECK(denied);
+  auto moved = std::move(simulation);
+  CHECK_FALSE(simulation.teleportCharacter(f.scene, f.actor, {}, 0));
+  REQUIRE(moved.synchronize(f.scene));
+  REQUIRE(moved.teleportCharacter(f.scene, f.actor, {0, 2, 0}, 0));
 }
 
 TEST_CASE("scene_character_invalid_pose_and_capacity_retain_entire_simulation") {

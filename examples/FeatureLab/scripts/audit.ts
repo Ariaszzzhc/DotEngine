@@ -232,6 +232,10 @@ export class Audit extends ScriptComponent<{contract: string}> {
     actor.setCharacterYaw(0);
     this.check('Entity.setCharacterYaw', actor.characterState.rotation.w === 1);
     const feet = actor.characterState.position;
+    physics.teleportCharacter(actor.id, feet, 90);
+    this.check('physics.teleportCharacter', actor.characterState.rotation.y > 0.7);
+    actor.teleportCharacter(feet, 0);
+    this.check('Entity.teleportCharacter', actor.characterState.velocity.x === 0);
     const origin = {x: feet.x, y: feet.y + 1, z: feet.z + 3};
     const travel = {x: 0, y: 0, z: -6};
     this.check(
@@ -335,6 +339,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('Entity.stopAudio', !audio.voice(voice.id).playing);
     audio.setVolume(0.25);
     this.check('audio.setVolume', audio.stats().volume === 0.25);
+    audio.resetMotion();
+    this.check('audio.resetMotion', audio.stats().motionResetPending);
     this.expectedError(() => {
       audio.setVolume(-1);
     }, 'InvalidArgument');

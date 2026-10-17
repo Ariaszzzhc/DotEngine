@@ -11,6 +11,20 @@ const radius = 0.22;
 const clearance = 0.035;
 
 /**
+ * Validate before a checkpoint can change either camera or character.
+ * 检查点修改镜头或角色前校验镜头数据。
+ */
+export function validateCameraState(state: CameraState): void {
+  if (!state
+      || ![state.yaw, state.pitch, state.distance, state.boom].every(
+          value => typeof value === 'number' && Number.isFinite(value))
+      || Math.abs(state.yaw) > Math.PI || state.pitch < -1.1 || state.pitch > 0.75
+      || state.distance < 1.5 || state.distance > 5 || state.boom < 0 || state.boom > 5.1) {
+    throw Error('Invalid shoulder camera checkpoint');
+  }
+}
+
+/**
  * The game owns orbit/follow policy; native Jolt sphere sweeps own obstruction.
  * Tightening is immediate, recovery is damped along the newly swept clear path.
  * 游戏定义环绕/跟随策略，原生 Jolt 球体扫描负责遮挡；收缩立即生效，沿当前安全路径平滑恢复。
@@ -38,12 +52,7 @@ export class ShoulderCamera {
   }
 
   restore(state: CameraState): void {
-    if (!state || ![state.yaw, state.pitch, state.distance, state.boom].every(Number.isFinite)
-        || Math.abs(state.yaw) > Math.PI || state.pitch < -1.1 || state.pitch > 0.75
-        || state.distance < 1.5 || state.distance > 5 || state.boom < 0 || state.boom > 5.1) {
-      throw Error('Invalid shoulder camera checkpoint');
-    }
-
+    validateCameraState(state);
     this.#state = {...state};
   }
 

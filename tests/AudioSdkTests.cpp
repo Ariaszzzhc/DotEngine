@@ -139,7 +139,7 @@ function inspect(self: Entity): void {
   audio.stats();
   audio.listener();
   const attempts = [() => self.playAudio(), () => self.pauseAudio(), () => self.stopAudio(),
-    () => self.seekAudio('0'), () => audio.setVolume(0)];
+    () => self.seekAudio('0'), () => audio.setVolume(0), () => audio.resetMotion()];
 
   for (const attempt of attempts) {
     let denied = false;

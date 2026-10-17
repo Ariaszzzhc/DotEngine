@@ -338,8 +338,16 @@ and character poses write back together in hierarchy order through one scene
 transform transaction. A changed authored pose clears velocity and queued input;
 property-only replacement retains native motion, pending jump and explicitly set yaw.
 
-The native scene service exposes `character`, `setCharacterInput` and
-`setCharacterYaw`. State includes world feet/rotation/velocity, ground state/normal/
+The native scene service exposes `character`, `setCharacterInput`,
+`setCharacterYaw` and `teleportCharacter(scene, entity, feet, yawDegrees)`. Teleport
+prepares parent-local writeback before native mutation, clears motion/input even
+at the same pose, writes the native and scene values immediately and updates the
+cached authored source. It requires unchanged synchronized character/ancestor
+descriptions/poses. Bad arguments/foreign owners leave native intent and pose intact;
+post-mutation native/writeback failures fault until reset. Native contact end events
+retain poseChanged provenance; the script source publishes them as a new owned
+batch. Overlap is resolved during the next step, not by this placement call.
+State includes world feet/rotation/velocity, ground state/normal/
 velocity and optional scene-scoped `groundEntity`. Queries describe the latest
 synchronization; removed/foreign/moved handles and wrong-thread calls fail explicitly.
 Support/query lookup currently scans synchronized collider bindings. It is not a

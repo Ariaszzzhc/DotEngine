@@ -506,6 +506,15 @@ export const physics = Object.freeze({
     invoke('physics.setCharacterYaw', [entity, degrees]);
   },
 
+  /**
+   * Place world-space feet/yaw immediately, clearing motion and queued jump.
+   * Requires synchronized character/ancestor authoring; overlap resolves next step.
+   * 立即放置世界脚底/朝向，清空运动和排队跳跃；角色/祖先编辑须已同步，重叠下步解析。
+   */
+  teleportCharacter(entity: EntityId, position: Vec3, yawDegrees: number): void {
+    invoke('physics.teleportCharacter', [entity, {position, yawDegrees}]);
+  },
+
   stats(): PhysicsStats {
     return invoke('physics.stats', []) as PhysicsStats;
   },
@@ -594,6 +603,7 @@ export interface AudioStats {
   mode: 'offline'|'playback';
   generation: string;
   volume: number;
+  motionResetPending: boolean;
   assets: number;
   sampleBytes: string;
   voices: number;
@@ -641,6 +651,17 @@ export const audio = Object.freeze({
 
   setVolume(volume: number): void {
     invoke('audio.setVolume', [volume]);
+  },
+
+  /**
+   * Mark a game-wide pose discontinuity. The next successful native sync derives
+   * zero source/listener velocity; failures retain this request. Voices/cursors
+   * are preserved. Normal Doppler resumes on the following sync.
+   * 标记游戏位姿跳变；下次成功原生同步清零声源/听者推导速度，失败保留请求，
+   * 保留声部/游标，再次同步恢复正常多普勒。
+   */
+  resetMotion(): void {
+    invoke('audio.resetMotion', []);
   },
 });
 
@@ -893,6 +914,10 @@ export class Entity {
 
   setCharacterYaw(degrees: number): void {
     physics.setCharacterYaw(this.id, degrees);
+  }
+
+  teleportCharacter(position: Vec3, yawDegrees: number): void {
+    physics.teleportCharacter(this.id, position, yawDegrees);
   }
 
   setVelocity(value: Vec3): void {

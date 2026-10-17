@@ -44,6 +44,7 @@ namespace Dot::Script {
                                  "physics.character",
                                  "physics.setCharacterInput",
                                  "physics.setCharacterYaw",
+                                 "physics.teleportCharacter",
                                  "physics.sphereCast"};
 
     auto entity(const Json& value) -> EntityId {
@@ -391,6 +392,20 @@ namespace Dot::Script {
 
       if (method == "physics.setCharacterYaw") {
         return written(m_simulation.setCharacterYaw(id, Codec::number(args[1])));
+      }
+
+      if (method == "physics.teleportCharacter") {
+        Codec::requireFields(args[1], {"position", "yawDegrees"});
+        const auto feet = Detail::vector<Math::Vec3>(args[1]["position"]);
+        const auto yaw = Codec::number(args[1]["yawDegrees"]);
+        auto available = capacity();
+
+        if (!available) {
+          return std::unexpected(available.error());
+        }
+
+        auto result = m_simulation.teleportCharacter(*m_scene, id, feet, yaw);
+        return written(result ? publish() : result);
       }
 
       const auto value = Detail::vector<Math::Vec3>(args[1]);

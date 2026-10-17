@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -77,11 +78,13 @@ namespace {
       return Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
     }
 
-    auto session(bool live = false) -> Project::GameSession {
+    auto session(bool live = false, std::optional<Core::FileSystem> saves = std::nullopt)
+        -> Project::GameSession {
       auto description = project.description().value();
       description.hotReload = live;
       REQUIRE(project.save(description));
       Project::GameSessionConfig config;
+      config.progress.saves = std::move(saves);
       config.pollInterval = std::chrono::milliseconds{0};
       auto result = Project::GameSession::create(project, compiler(), config);
       REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
@@ -127,8 +130,9 @@ namespace {
     auto publish(std::initializer_list<Platform::Key> down = {}, float dx = 0, float dy = 0,
                  bool captured = false) -> void {
       m_input.beginFrame();
-      constexpr std::array keys{Platform::Key::A, Platform::Key::D,     Platform::Key::W,
-                                Platform::Key::S, Platform::Key::Space, Platform::Key::LeftShift};
+      constexpr std::array keys{Platform::Key::A,  Platform::Key::D,     Platform::Key::W,
+                                Platform::Key::S,  Platform::Key::Space, Platform::Key::LeftShift,
+                                Platform::Key::F6, Platform::Key::F7};
 
       for (auto key : keys) {
         const bool desired = std::ranges::find(down, key) != down.end();
@@ -214,6 +218,155 @@ TEST_CASE("prism.character_moves_relative_to_acknowledged_camera_and_blocks_at_w
   CHECK(fixture.project.loadStartup()->entityCount().value()
         == session.scene().value()->entityCount().value());
   report(session.close());
+}
+
+TEST_CASE("prism.checkpoint_restores_native_player_camera_and_survives_a_fresh_game") {
+  Fixture f;
+  REQUIRE(f.storage.files()->createDirectories("saves"));
+  const auto saves = Core::FileSystem::open(f.storage.files()->root() / "saves").value();
+  const auto authoring = f.project.files()->readText("scenes/main.dotscene").value();
+  auto session = f.session(false, saves);
+  report(session.start());
+  Driver driver(session);
+
+  for (int frame = 0; frame < 25; ++frame) {
+    driver.frame({Platform::Key::W}, 2, -1, true);
+  }
+
+  driver.frame();
+  const auto feet = entity(session, "Player").transform.position;
+  const auto camera = entity(session, "Camera").transform;
+  driver.publish({Platform::Key::F6});
+  report(session.update(0));
+  auto data = session.gameData().value();
+  auto snapshot = Json::parse(data.perform(R"({"command":"snapshot"})").value());
+  CHECK(snapshot["data"]["relayProgressStatus"] == "Checkpoint saved");
+  const auto bytes = saves.readText("relay-checkpoint.dotsave").value();
+  const auto saved = snapshot["data"]["relayCheckpoint"];
+  CHECK(saved["feet"]["z"].get<float>() == feet.z);
+
+  for (int frame = 0; frame < 25; ++frame) {
+    driver.frame({Platform::Key::D, Platform::Key::Space}, -1, 1, true);
+  }
+
+  CHECK(entity(session, "Player").transform.position != feet);
+  driver.publish({Platform::Key::F7});
+  report(session.update(.000001));
+  CHECK(entity(session, "Player").transform.position == feet);
+  const auto restored = entity(session, "Camera").transform;
+  CHECK(restored.position.x == doctest::Approx(camera.position.x));
+  CHECK(restored.position.y == doctest::Approx(camera.position.y));
+  CHECK(restored.position.z == doctest::Approx(camera.position.z));
+  CHECK(restored.rotation == camera.rotation);
+  driver.frame();
+  CHECK(entity(session, "Player").transform.position.x == doctest::Approx(feet.x));
+  CHECK(entity(session, "Player").transform.position.y == doctest::Approx(feet.y).epsilon(.01));
+  CHECK(entity(session, "Player").transform.position.z == doctest::Approx(feet.z));
+  CHECK(
+      Json::parse(data.perform(R"({"command":"snapshot"})").value())["data"]["relayProgressStatus"]
+      == "Checkpoint restored");
+  report(session.close());
+  auto fresh = f.session(false, saves);
+  report(fresh.start());
+  CHECK(entity(fresh, "Player").transform.position != feet);
+  Driver resumed(fresh);
+  resumed.publish({Platform::Key::F7});
+  report(fresh.update(0));
+  CHECK(entity(fresh, "Player").transform.position == feet);
+  resumed.frame();
+  CHECK(entity(fresh, "Player").transform.position.z == doctest::Approx(feet.z));
+  CHECK(saves.readText("relay-checkpoint.dotsave").value() == bytes);
+  report(fresh.close());
+  CHECK(f.project.files()->readText("scenes/main.dotscene").value() == authoring);
+}
+
+TEST_CASE("prism.checkpoint_failures_keep_pose_slot_and_previous_checkpoint_data") {
+  Fixture f;
+  REQUIRE(f.storage.files()->createDirectories("saves"));
+  const auto saves = Core::FileSystem::open(f.storage.files()->root() / "saves").value();
+  auto session = f.session(false, saves);
+  report(session.start());
+  Driver driver(session);
+  auto data = session.gameData().value();
+  auto press = [&](Platform::Key key) {
+    driver.publish();
+    report(session.update(0));
+    driver.publish({key});
+    report(session.update(0));
+  };
+  auto status
+      = [&] { return Json::parse(data.perform(R"({"command":"snapshot"})").value())["data"]; };
+  press(Platform::Key::F7);
+  CHECK(status()["relayProgressStatus"].get<std::string>().starts_with("Checkpoint unavailable:"));
+  CHECK(session.stats()->state == Project::SessionState::Running);
+  press(Platform::Key::F6);
+  const auto original = saves.readText("relay-checkpoint.dotsave").value();
+  const auto valid = status()["relayCheckpoint"];
+  const auto pose = entity(session, "Player").transform;
+  const auto camera = entity(session, "Camera").transform;
+  auto samePose = [](const World::Transform& left, const World::Transform& right) {
+    return left.position == right.position && left.rotation == right.rotation
+           && left.scale == right.scale;
+  };
+  std::vector<Json> invalids{nullptr, "bad", Json::array()};
+
+  for (const auto& [key, value] : std::vector<std::pair<std::string, Json>>{
+           {"format", "other"},
+           {"path", "scenes/other.dotscene"},
+           {"yawDegrees", "0"},
+           {"yawDegrees", 181},
+           {"feet", {{"x", 0}, {"y", 0}, {"z", 1000001}}},
+           {"camera", {{"yaw", 0}, {"pitch", 2}, {"distance", 3}, {"boom", 3}}},
+           {"extra", true}}) {
+    auto invalid = valid;
+    invalid[key] = value;
+    invalids.push_back(std::move(invalid));
+  }
+
+  for (const auto& invalid : invalids) {
+    REQUIRE(data.perform(
+        Json{{"command", "set"}, {"key", "relayCheckpoint"}, {"value", invalid}}.dump()));
+    REQUIRE(data.perform(R"({"command":"save","slot":"relay-checkpoint","overwrite":true})"));
+    press(Platform::Key::F7);
+    CHECK(samePose(entity(session, "Player").transform, pose));
+    CHECK(samePose(entity(session, "Camera").transform, camera));
+    CHECK(status()["relayCheckpoint"] == invalid);
+    CHECK(
+        status()["relayProgressStatus"].get<std::string>().starts_with("Checkpoint unavailable:"));
+  }
+
+  REQUIRE(saves.writeTextAtomic("relay-checkpoint.dotsave", "damaged"));
+  press(Platform::Key::F7);
+  CHECK(samePose(entity(session, "Player").transform, pose));
+  CHECK(saves.readText("relay-checkpoint.dotsave").value() == "damaged");
+  REQUIRE(saves.writeTextAtomic("relay-checkpoint.dotsave", original));
+  REQUIRE(
+      data.perform(Json{{"command", "set"}, {"key", "relayCheckpoint"}, {"value", valid}}.dump()));
+  driver.frame({Platform::Key::Space});
+  press(Platform::Key::F6);
+  CHECK(saves.readText("relay-checkpoint.dotsave").value() == original);
+  CHECK(status()["relayProgressStatus"].get<std::string>().find("Land before saving")
+        != std::string::npos);
+  CHECK(status()["relayCheckpoint"] == valid);
+  report(session.close());
+  auto unavailable = f.session();
+  report(unavailable.start());
+  Driver noDisk(unavailable);
+  noDisk.publish({Platform::Key::F6});
+  report(unavailable.update(0));
+  auto absent = Json::parse(unavailable.gameData()->perform(R"({"command":"snapshot"})").value());
+  CHECK_FALSE(absent["data"].contains("relayCheckpoint"));
+  CHECK(absent["data"]["relayProgressStatus"].get<std::string>().starts_with(
+      "Checkpoint unavailable:"));
+  REQUIRE(unavailable.gameData()->perform(
+      Json{{"command", "set"}, {"key", "relayCheckpoint"}, {"value", valid}}.dump()));
+  noDisk.publish();
+  report(unavailable.update(0));
+  noDisk.publish({Platform::Key::F6});
+  report(unavailable.update(0));
+  absent = Json::parse(unavailable.gameData()->perform(R"({"command":"snapshot"})").value());
+  CHECK(absent["data"]["relayCheckpoint"] == valid);
+  report(unavailable.close());
 }
 
 TEST_CASE("prism.diagonal_intent_has_the_same_speed_and_native_sprint_is_faster") {
@@ -602,6 +755,8 @@ TEST_CASE(
   CHECK_FALSE(player.perform(
       Json{{"command", "input"}, {"scope", scope}, {"value", inputRequest(1)}}.dump()));
   CHECK_FALSE(player.perform(Json{{"command", "cancel-input"}, {"scope", scope}}.dump()));
+  const auto dataBeforeClose = control(
+      player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}})["result"]["data"];
   CHECK(control(player, {{"command", "close"}})["closing"] == true);
   CHECK(player.closing().value());
   CHECK(session.stats()->state == Project::SessionState::Running);
@@ -609,7 +764,7 @@ TEST_CASE(
   CHECK_FALSE(player.perform(R"({"command":"game-data","value":{"command":"list-saves"}})"));
   CHECK(control(player,
                 {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}})["result"]["data"]
-        == Json::object());
+        == dataBeforeClose);
   report(session.close());
   CHECK(control(player, {{"command", "inspect"}})["player"]["state"] == "closed");
 }
@@ -672,10 +827,13 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
     report(session->start());
     return std::move(*session);
   };
+  Json initialData;
 
   {
     auto session = create();
     auto player = Project::PlayerControl::create(session).value();
+    initialData = control(
+        player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}})["result"]["data"];
     control(player,
             {{"command", "game-data"},
              {"value",
@@ -695,7 +853,7 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
   auto player = Project::PlayerControl::create(restarted).value();
   const auto fresh
       = control(player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}});
-  CHECK(fresh["result"]["data"] == Json::object());
+  CHECK(fresh["result"]["data"] == initialData);
   const auto saved = control(
       player,
       {{"command", "game-data"}, {"value", {{"command", "read-save"}, {"slot", "checkpoint"}}}});

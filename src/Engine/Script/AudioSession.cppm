@@ -71,11 +71,16 @@ export namespace Dot::Script {
     /** Offline only; native mode rejects without touching the buffer.
      * 仅限离线模式，原生模式拒绝且不修改缓冲。 */
     [[nodiscard]] auto render(std::span<float> samples) -> Core::Result<void>;
-    /** Three observational reads and five controls. Reads report last synchronized
+    /** Three observational reads and six controls. resetMotion requests zero
+     * derived listener/source velocities on the next successful synchronize;
+     * failures retain the request. It does not reset voices/cursors or backend.
+     * Reads report last synchronized
      * voices/listener; missing/foreign owners fail immediately. Source frames are
      * canonical decimal uint64 strings, including zero. Source read cursor can
      * include prefetch and is not endpoint presentation time. Scripts cannot open,
-     * advance, reset or tear down the backend. 三个只读查询与五个控制；查询反映最近同步
+     * advance, reset or tear down the backend. 三个只读查询与六个控制；resetMotion 请求
+     * 下次成功同步时清零听者/声源的推导速度，失败保留请求，不重置声部/游标/后端。
+     * 查询反映最近同步
      * 声部/监听器，缺失/跨场景所有者立即失败。源帧为规范十进制 uint64 字符串（含零）；
      * 读取游标可含预取，不表示端点播放时间。脚本不能打开、推进、重置或销毁后端。 */
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;

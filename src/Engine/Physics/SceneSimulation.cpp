@@ -756,6 +756,107 @@ namespace Dot::Physics {
               : Core::Result<void>{std::unexpected(id.error())};
   }
 
+  auto SceneSimulation::teleportCharacter(Scene& scene, EntityId entity, Math::Vec3 feet,
+                                          float yawDegrees) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto id = m_impl->resolveCharacter(entity, true);
+
+    if (!id) {
+      return std::unexpected(id.error());
+    }
+
+    if (scene.id() != m_impl->m_scene) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Character teleport has a foreign scene");
+    }
+
+    bool mutating{};
+
+    try {
+      auto owner = scene.entity(entity);
+      auto source = scene.worldTransform(entity);
+
+      if (!owner || !source) {
+        return std::unexpected(!owner ? owner.error() : source.error());
+      }
+
+      auto& entry = m_impl->m_characters.at(entity.value);
+
+      if (owner->character != entry.description || *source != entry.source) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Synchronize character and ancestor edits before teleporting");
+      }
+
+      CharacterConfig request;
+      request.position = feet;
+      request.yawDegrees = yawDegrees;
+      auto valid = validatedCharacterConfig(request);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      auto rotation = Math::rotationEulerDegrees({0, valid->yawDegrees, 0});
+      auto parent = owner->parent ? scene.worldTransform(*owner->parent)
+                                  : Core::Result<Math::Mat4>{Math::Mat4{}};
+
+      if (!rotation || !parent) {
+        return std::unexpected(!rotation ? rotation.error() : parent.error());
+      }
+
+      auto world = Math::compose(feet, *rotation, entry.scale);
+      auto local = world ? localTransform(*world, *parent, owner->transform.scale)
+                         : Core::Result<Transform>{std::unexpected(world.error())};
+
+      if (!local) {
+        return std::unexpected(local.error());
+      }
+
+      auto normalized = Math::normalized(local->rotation);
+
+      if (!normalized) {
+        return std::unexpected(normalized.error());
+      }
+
+      local->rotation = *normalized;
+      auto localMatrix = Math::compose(local->position, local->rotation, local->scale);
+      auto published = localMatrix ? Math::multiply(*parent, *localMatrix)
+                                   : Core::Result<Math::Mat4>{std::unexpected(localMatrix.error())};
+
+      if (!published) {
+        return std::unexpected(published.error());
+      }
+
+      auto moved = m_impl->m_world.teleportCharacter(*id, feet, yawDegrees);
+
+      if (!moved) {
+        auto stats = m_impl->m_world.stats();
+        m_impl->m_faulted = !stats || stats->faulted;
+        return context(entity, moved.error());
+      }
+
+      mutating = true;
+      auto changed = scene.setTransform(entity, *local);
+
+      if (!changed) {
+        m_impl->m_faulted = true;
+        return context(entity, changed.error());
+      }
+
+      entry.source = *published;
+      return {};
+    } catch (const std::exception& error) {
+      m_impl->m_faulted = m_impl->m_faulted || mutating;
+      return Core::fail(
+          Core::ErrorCode::External,
+          std::format("Character teleport {}: {}",
+                      mutating ? "after native mutation; reset required" : "preparation",
+                      error.what()));
+    }
+  }
+
   auto SceneSimulation::stats() const -> Core::Result<WorldStats> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");

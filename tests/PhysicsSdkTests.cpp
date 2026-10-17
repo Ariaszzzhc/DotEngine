@@ -105,7 +105,8 @@ function preparing(self: Entity): void {
   }
 
   for (const attempt of [() => self.moveCharacter({x: 9, y: 0, z: 0}, true),
-    () => self.setCharacterYaw(180), () => { self.character = components.character(); }]) {
+    () => self.setCharacterYaw(180), () => self.teleportCharacter({x: 2, y: 0, z: 0}, 0),
+    () => { self.character = components.character(); }]) {
     let denied = false;
 
     try {

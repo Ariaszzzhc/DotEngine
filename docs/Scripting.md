@@ -733,6 +733,7 @@ native synchronization; runtime velocity is retained when initial velocity is un
 | `physics.moveKinematic` | `[entityId, position, quaternion, seconds]` | undefined |
 | `physics.setCharacterInput` | `[entityId, {velocity, jump}]` | undefined |
 | `physics.setCharacterYaw` | `[entityId, degrees]` | undefined |
+| `physics.teleportCharacter` | `[entityId, {position, yawDegrees}]` | undefined |
 
 RigidBody authoring includes `collisionDetection: 'discrete'|'continuous'`; the
 factory defaults to discrete. Continuous requires solid Dynamic motion. Native
@@ -843,8 +844,15 @@ ground state/normal/velocity and optional scene-scoped groundEntity. PhysicsStat
 counts characters independently from bodies. Entity.moveCharacter and
 physics.setCharacterInput supply persistent world horizontal velocity plus a jump
 edge consumed on the next substep, including in air. Entity.setCharacterYaw and
-physics.setCharacterYaw turn without clearing motion. Native failures throw
-HostError. Queries are ReadOnly during lifecycle preparation/migration; all controls
+physics.setCharacterYaw turn without clearing motion. Entity.teleportCharacter and
+physics.teleportCharacter(id, position, yawDegrees) immediately place both the
+native character and scene pose, clear velocity/pending input and publish a new
+contact batch without advancing time. Same-pose calls still clear motion. Character
+and ancestor authoring edits must first be synchronized by the native scheduler;
+unsynchronized edits fail without replacing them. Invalid inputs preserve pose and
+intent; native/writeback/contact-publication failures after mutation can fault the
+service, requiring native reset. Initial overlap resolves in the next step.
+Native failures throw HostError. Queries are ReadOnly during lifecycle preparation/migration; all controls
 and component assignments are ReadWrite and denied in those phases. Scripts cannot
 advance/reset the simulation. Capsule constraints and native collision limitations
 are documented in [physics](Physics.md).
@@ -885,6 +893,7 @@ operation. Scripts cannot open, advance, reset or destroy backends.
 | `audio.stop` | `[entityId]` | undefined |
 | `audio.seek` | `[entityId, sourceFrameString]` | undefined |
 | `audio.setVolume` | `[volume]` | undefined |
+| `audio.resetMotion` | `[]` | undefined; request the next pose baseline |
 
 Entity.audioVoice and playAudio/pauseAudio/stopAudio/seekAudio delegate to these
 same methods. Missing/foreign owners and unsynchronized voices fail explicitly.
@@ -922,7 +931,7 @@ settings use the existing authored audioSource description and native synchroniz
 audio.setVolume controls the owned mixer gain independently of endpoint gain.
 
 Voice/listener/stats reads are ReadOnly and may run during constructors and state
-migration. The five controls are ReadWrite and denied during preparation/export/
+migration. The six controls are ReadWrite and denied during preparation/export/
 import. Hot reload keeps the same native voices/backend; paused cursor and gain
 remain unchanged while script private state can migrate. In native mode, mixing
 continues during compilation/preparation, so snapshots can advance independently.
@@ -955,6 +964,15 @@ GameSession establishes a zero-duration audio pose baseline after the first Star
 callbacks and animation sampling. Initial spawn/listener placement is not inferred
 as high-speed motion. Repeating Start does not reset an established audio velocity
 sample. Subsequent variable updates use their actual elapsed duration.
+For intentional teleports/origin shifts, `audio.resetMotion()` requests a new pose
+baseline at the next successful native synchronization. All source/listener derived
+velocities are zero for that synchronization; subsequent samples use ordinary
+Doppler again. This explicit game-wide request preserves voices, cursors, gain and
+generation, and does not change queued PCM or reset/heal the backend. Stats report
+`motionResetPending` until successful synchronization; failed or invalid syncs retain
+the request, and a successful full native reset clears it. Ordinary unmarked
+out-of-range velocities remain errors. Prism Relay requests this after character
+placement so its separately following listener is not inferred as extreme motion.
 
 Native GameSession audio remains `prepared` during script construction and Start:
 autoplay/play controls establish voice state without advancing source frames or
