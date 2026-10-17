@@ -251,8 +251,10 @@ and diagnostic sequences are decimal strings. Messages over 8 KiB are explicitly
 marked `truncated` and retain valid UTF-8. Hot-reload errors remain visible under
 `player.source`; native stderr retains normal lifecycle/startup diagnostics.
 
-Mailbox polling shares the native owner loop. Current GameSession replacement still
-validates/prepares resources and retires old services synchronously; a loading
-request can therefore delay rendering and mailbox replies. Native transition
-profiles retain actual fixed-time drops. Background resource preparation/retirement
-and game-specific checkpoint restoration/feedback remain unfinished.
+Mailbox polling shares the native owner loop. GameSession now validates scene
+graphics/images/HDR/skins on an owned CPU worker while the old game keeps running.
+Scene rehydration, script/VM/native service setup and retirement still run on the
+owner and may delay rendering/replies. Native profiles retain actual fixed-time
+drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
+validation, ownership and cancellation; this does not complete background streaming
+or game-specific checkpoint restoration/feedback.

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "SceneAudioFixture.hpp"
+#include "ScenePreparation.hpp"
 #include "ScriptCompilation.hpp"
 
 import Dot.Project;
@@ -611,6 +612,7 @@ export class Mover extends ScriptComponent {
   auto first = session.scene().value();
   auto request = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, request));
   CHECK(session.sceneRequest(request)->committed);
   CHECK(session.scene().value()->id() != first->id());
   CHECK(actor(session).name == "visit-2");
@@ -693,6 +695,7 @@ export class Mover extends ScriptComponent {
   CHECK(actor(session).name == "visit-1");
   auto request = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, request));
   REQUIRE(session.sceneRequest(request)->committed);
   CHECK(actor(session).name == "visit-2");
   good(session.close());
@@ -735,6 +738,7 @@ TEST_CASE("game_data.builtin_sdk_rejects_preparation_io_and_writes_without_damag
     const auto before = handle.perform(R"({"command":"snapshot"})").value();
     auto request = session.requestScene("scenes/rejected.dotscene").value();
     good(session.update(0));
+    good(Dot::Tests::awaitScene(session, request));
     CHECK(session.sceneRequest(request)->state == Dot::Script::SceneRequestState::Failed);
     CHECK_FALSE(session.sceneRequest(request)->committed);
     CHECK(session.scene().value().get() == old.get());
@@ -829,6 +833,7 @@ TEST_CASE("game_session_prepared_live_generation_does_not_pin_old_scene_transiti
   const auto oldScope = session.scene().value()->id();
   auto request = session.requestScene("scenes/main.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, request));
   auto result = session.sceneRequest(request).value();
   CHECK_MESSAGE(result.state == Dot::Script::SceneRequestState::Succeeded,
                 (result.error ? result.error->message : "Scene replacement did not complete"));

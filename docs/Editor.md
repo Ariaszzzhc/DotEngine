@@ -1843,16 +1843,33 @@ request or null. Request states are pending/loading/succeeded/failed/cancelled;
 startup after irreversible replacement. The error owns a code/message. The last
 16 request results survive scene changes; new Play creates an independent sequence.
 
-Loading currently runs synchronously at the end of the variable update, after fixed
-steps and current animation/audio synchronization. Only one cut is processed per
-update; a target Start callback may queue the following cut. File spelling/type,
-scene data, referenced CPU graphics data and native/script service initialization
-are prepared before retiring the old game. Native target audio remains prepared
-until startup. Stop/Start callbacks are irreversible; a committed realm/native fault
-is reported and faults Play. Invalid target files, assets or script preparation keep
-the old game and report the failed request. Scene rendering/GPU allocation can still
-fail after commit; GPU staging, background streaming, additive scenes and persistent
-cross-scene gameplay state are not implemented by this operation.
+A queued load begins owned CPU resource preflight at the end of the variable update.
+Saved scene loading, graphics/image/HDR checks and initial skin validation run on a
+worker's independent scene; the old game continues input, scripts, physics,
+animation/audio and rendering while the request is Loading. The owner later
+rehydrates exactly the validated scene and prepares services before retiring the
+old game. Only one cut is processed per update; a target Start callback may queue
+the following cut for a later update. `GameSession::pollScene` can consume an
+already-started preflight without advancing Update/fixed time; it does not begin
+a pending cut or recursively load a Start request.
+
+File spelling/type, scene data and full CPU graphics/skin contracts remain checked;
+there is no failed-file fallback or GPU residency claim. `Dot.Project.ScenePreparation`
+owns the worker and `PreparedScene` matches exact canonical scene bytes and asset
+root before reuse. Rehydration creates new caller-thread World handles. The caller
+must retain the asset root and serialize external asset edits through publication;
+this is not a filesystem-wide snapshot against concurrent edits. Close/fault cancels
+uncommitted work and retires its flow record; destruction joins without detaching.
+Cancellation is cooperative: a decoder or bounded skin-validation pass can finish
+before the join completes.
+
+Scene rehydration, script compilation/VM/service setup, native audio activation and
+old-service retirement still run on the owner and can stall. Target audio remains
+silent until startup. Stop/Start callbacks are irreversible; a committed realm/native
+fault is reported and faults Play. Invalid target files/assets or script preparation
+keep the old game and report the failed request. GPU allocation can still fail after
+commit. Shared GameData survives changes, but automatic entity checkpoint restore,
+background GPU staging/streaming and additive runtime scenes remain unfinished.
 
 ## Play game state and saves
 

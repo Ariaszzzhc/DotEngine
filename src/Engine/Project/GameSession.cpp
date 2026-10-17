@@ -13,8 +13,6 @@ module;
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 module Dot.Project.GameSession;
@@ -28,13 +26,7 @@ import Dot.Platform.Input;
 import Dot.Script.AudioSession;
 import Dot.Script.AnimationSession;
 import Dot.Assets.SceneSkins;
-import Dot.Assets.Mesh;
-import Dot.Assets.Material;
-import Dot.Assets.Image;
-import Dot.Graphics.Geometry;
-import Dot.Graphics.Image;
-import Dot.Graphics.Environment;
-import Dot.Graphics.Renderer;
+import Dot.Project.ScenePreparation;
 import Dot.Script.SceneFlow;
 import Dot.Script.GameData;
 
@@ -48,255 +40,6 @@ namespace Dot::Project {
       if (config.pollInterval.count() < 0 || config.pollInterval.count() > 60000) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Game poll interval must be 0..60000 ms");
-      }
-
-      return {};
-    }
-
-    auto sceneFile(const Core::FileSystem& files, const std::string& name) -> Core::Result<void> {
-      namespace Fs = std::filesystem;
-      const Fs::path relative{std::u8string(name.begin(), name.end())};
-      auto current = files.root();
-      std::size_t depth{};
-      std::size_t entries{};
-
-      for (const auto& part : relative) {
-        if (++depth > 32) {
-          return Core::fail(Core::ErrorCode::Unavailable, "Scene path exceeds 32 components");
-        }
-
-        bool exact = false;
-        std::error_code error;
-        Fs::directory_iterator it(current, error);
-
-        if (error) {
-          return Core::fail(Core::ErrorCode::Io, "Read scene directory: " + error.message());
-        }
-
-        for (const auto& entry : it) {
-          if (++entries > 65536) {
-            return Core::fail(Core::ErrorCode::Unavailable,
-                              "Scene path enumeration exceeds 65536 entries");
-          }
-
-          if (entry.path().filename() == part) {
-            exact = true;
-            break;
-          }
-        }
-
-        if (!exact) {
-          return Core::fail(Core::ErrorCode::NotFound,
-                            "Scene path is missing or has different spelling: " + name);
-        }
-
-        current /= part;
-        const auto status = Fs::symlink_status(current, error);
-        const bool final = current == files.root() / relative;
-
-        if (error || Fs::is_symlink(status)
-            || (final ? !Fs::is_regular_file(status) : !Fs::is_directory(status))) {
-          return Core::fail(Core::ErrorCode::Io,
-                            "Scene path is inaccessible, a symlink or special file: " + name);
-        }
-      }
-
-      return {};
-    }
-
-    /** CPU-only asset preflight; GPU residency remains a later renderer operation.
-     * Retain material/surface facts, release decoded pixels/vertices between files.
-     * 仅 CPU 预检，GPU 驻留仍由后续渲染负责；保留材质/表面事实，逐文件释放解码数据。 */
-    auto sceneGraphics(const Core::FileSystem& files, const World::Scene& scene)
-        -> Core::Result<void> {
-      auto entities = scene.entities();
-      auto environment = scene.environment();
-
-      if (!entities || !environment) {
-        return std::unexpected(!entities ? entities.error() : environment.error());
-      }
-
-      std::unordered_set<std::string> seen;
-      std::unordered_map<std::string, Assets::MaterialDescription> materials;
-      std::unordered_map<std::string, Graphics::MeshSurface> surfaces;
-      std::uint64_t bytes{};
-      const auto account = [&](std::uint64_t size) -> Core::Result<void> {
-        if (size > 512ULL * 1024 * 1024 - bytes) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Scene graphics exceed 512 MiB decoded preflight budget");
-        }
-
-        bytes += size;
-        return {};
-      };
-      const auto unique
-          = [&](const std::string& kind, const std::string& asset) -> Core::Result<bool> {
-        if (seen.contains(kind + asset)) {
-          return false;
-        }
-
-        if (seen.size() >= 32768) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Scene graphics exceed 32768 unique preflight assets");
-        }
-
-        auto checked = sceneFile(files, asset);
-
-        if (!checked) {
-          return std::unexpected(checked.error());
-        }
-
-        seen.insert(kind + asset);
-        return true;
-      };
-      const auto path = [](const std::string& text) {
-        return std::filesystem::path{std::u8string(text.begin(), text.end())};
-      };
-
-      for (const auto& entity : *entities) {
-        if (entity.mesh && entity.mesh->kind == World::MeshKind::Asset) {
-          auto first = unique("mesh:", entity.mesh->asset);
-
-          if (!first) {
-            return std::unexpected(first.error());
-          }
-
-          if (*first) {
-            auto mesh = Assets::loadMesh(files, path(entity.mesh->asset));
-
-            if (!mesh) {
-              return std::unexpected(mesh.error());
-            }
-
-            auto surface = Graphics::meshSurface(mesh->data);
-
-            if (!surface) {
-              return std::unexpected(surface.error());
-            }
-
-            surfaces.emplace(entity.mesh->asset, *surface);
-            auto counted = account(mesh->data.vertices.size() * sizeof(Graphics::Vertex)
-                                   + mesh->data.indices.size() * sizeof(std::uint32_t));
-
-            if (!counted) {
-              return counted;
-            }
-          }
-        }
-
-        if (!entity.material) {
-          continue;
-        }
-
-        auto first = unique("material:", entity.material->asset);
-
-        if (!first) {
-          return std::unexpected(first.error());
-        }
-
-        auto cached = materials.find(entity.material->asset);
-
-        if (*first) {
-          auto loaded = Assets::loadMaterial(files, path(entity.material->asset));
-
-          if (!loaded) {
-            return std::unexpected(loaded.error());
-          }
-
-          cached = materials.emplace(entity.material->asset, std::move(*loaded)).first;
-        }
-
-        const auto* material = &cached->second;
-
-        if (entity.mesh && material->model == Graphics::SurfaceModel::MetallicRoughness) {
-          const auto key = entity.mesh->kind == World::MeshKind::Cube   ? "builtin:cube"
-                           : entity.mesh->kind == World::MeshKind::Quad ? "builtin:quad"
-                                                                        : entity.mesh->asset;
-          auto found = surfaces.find(key);
-
-          if (found == surfaces.end()) {
-            auto geometry
-                = entity.mesh->kind == World::MeshKind::Cube ? Graphics::cube() : Graphics::quad();
-
-            if (entity.mesh->kind == World::MeshKind::Asset) {
-              auto mesh = Assets::loadMesh(files, path(entity.mesh->asset));
-
-              if (!mesh) {
-                return std::unexpected(mesh.error());
-              }
-
-              geometry = std::move(mesh->data);
-            }
-
-            if (!geometry) {
-              return std::unexpected(geometry.error());
-            }
-
-            auto surface = Graphics::meshSurface(*geometry);
-
-            if (!surface) {
-              return std::unexpected(surface.error());
-            }
-
-            found = surfaces.emplace(key, *surface).first;
-          }
-
-          if (!found->second.hasNormals
-              || (material->normalTexture && !found->second.hasNormalMapFrame)) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Scene physical mesh lacks normals/normal-map frame: " + entity.name);
-          }
-        }
-
-        for (const auto* texture :
-             {&material->baseColorTexture, &material->metallicRoughnessTexture,
-              &material->normalTexture, &material->emissiveTexture, &material->occlusionTexture}) {
-          if (!*texture) {
-            continue;
-          }
-
-          auto newImage = unique("image:", (*texture)->path);
-
-          if (!newImage) {
-            return std::unexpected(newImage.error());
-          }
-
-          if (*newImage) {
-            auto image = Assets::loadImage(files, path((*texture)->path));
-
-            if (!image) {
-              return std::unexpected(image.error());
-            }
-
-            auto counted = account(image->pixels.size());
-
-            if (!counted) {
-              return counted;
-            }
-          }
-        }
-      }
-
-      if (*environment) {
-        auto first = unique("hdr:", (**environment).asset);
-
-        if (!first) {
-          return std::unexpected(first.error());
-        }
-
-        auto image = Assets::loadHdrImage(files, path((**environment).asset));
-
-        if (!image) {
-          return std::unexpected(image.error());
-        }
-
-        auto valid = Graphics::validateEnvironment(*image, (**environment).processing);
-
-        if (!valid) {
-          return std::unexpected(valid.error());
-        }
-
-        return account(image->pixels.size() * sizeof(float));
       }
 
       return {};
@@ -353,8 +96,14 @@ namespace Dot::Project {
      * 脚本回调持有服务，先销毁 realm 再销毁依赖。 */
     std::optional<Script::SceneScripts> m_scripts;
     std::optional<Script::LiveScripts> m_live;
+    std::optional<ScenePreparation> m_preparation;
+    std::optional<Script::SceneRequest> m_preparingRequest;
 
     auto retireServices() noexcept -> void {
+      if (m_preparation) {
+        m_preparation->requestStop();
+      }
+
       if (m_live) {
         m_live->cancelCompilation();
       }
@@ -401,6 +150,8 @@ namespace Dot::Project {
                         ? Core::Result<Script::ScriptReport>{Script::ScriptReport{}}
                     : m_live ? m_live->stop()
                              : m_scripts->stop();
+      m_preparation.reset();
+      m_preparingRequest.reset();
       m_live.reset();
       m_scripts.reset();
       m_animations.reset();
@@ -626,25 +377,30 @@ namespace Dot::Project {
                   : std::unexpected(cloned.error());
   }
 
-  auto GameSession::prepareSession(const Core::FileSystem& assets, Description description,
-                                   World::Scene scene, const GameSessionConfig& config,
-                                   const Script::TypeScriptCompiler* compiler,
-                                   const Script::CompiledProgram* precompiled,
-                                   std::optional<std::string> scenePath,
-                                   const Script::SceneFlow* sharedFlow,
-                                   std::shared_ptr<const Origin> origin,
-                                   const Script::GameData* sharedProgress,
-                                   Audio::Playback* preparedPlayback) -> Core::Result<GameSession> {
+  auto GameSession::prepareSession(
+      const Core::FileSystem& assets, Description description, World::Scene scene,
+      const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
+      const Script::CompiledProgram* precompiled, std::optional<std::string> scenePath,
+      const Script::SceneFlow* sharedFlow, std::shared_ptr<const Origin> origin,
+      const Script::GameData* sharedProgress, Audio::Playback* preparedPlayback,
+      const PreparedScene* preflight) -> Core::Result<GameSession> {
     try {
-      if (sharedFlow) {
-        auto graphics = sceneGraphics(assets, scene);
+      if (sharedFlow && !preflight) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Scene replacement requires completed preflight");
+      }
 
-        if (!graphics) {
-          return std::unexpected(graphics.error());
+      if (preflight) {
+        auto accepted = preflight->accepts(assets, scene);
+
+        if (!accepted || !*accepted) {
+          return accepted ? Core::fail(Core::ErrorCode::InvalidArgument,
+                                       "Scene preflight does not match candidate/root")
+                          : std::unexpected(accepted.error());
         }
       }
 
-      auto skins = Assets::validateSceneSkins(assets, scene);
+      auto skins = preflight ? Core::Result<void>{} : Assets::validateSceneSkins(assets, scene);
 
       if (!skins) {
         return std::unexpected(skins.error());
@@ -934,23 +690,57 @@ namespace Dot::Project {
   }
 
   auto GameSession::processSceneRequest(Script::ScriptReport& report) -> Core::Result<void> {
-    auto pending = m_impl->m_flow->pending();
+    if (!m_impl->m_preparation) {
+      auto pending = m_impl->m_flow->pending();
 
-    if (!pending) {
-      return std::unexpected(pending.error());
+      if (!pending) {
+        return std::unexpected(pending.error());
+      }
+
+      if (!*pending) {
+        return {};
+      }
+
+      auto request = std::move(**pending);
+      auto begun = m_impl->m_flow->begin(request.id);
+
+      if (!begun) {
+        return begun;
+      }
+
+      try {
+        auto initial = m_impl->m_origin && m_impl->m_origin->path == request.path
+                           ? std::optional<std::string>{m_impl->m_origin->bytes}
+                           : std::nullopt;
+        auto started = ScenePreparation::begin(*m_impl->m_files, request.path, std::move(initial));
+
+        if (!started) {
+          return m_impl->m_flow->fail(request.id, started.error());
+        }
+
+        m_impl->m_preparation.emplace(std::move(*started));
+        m_impl->m_preparingRequest.emplace(std::move(request));
+        return {};
+      } catch (const std::exception& error) {
+        m_impl->m_preparation.reset();
+        m_impl->m_preparingRequest.reset();
+        return m_impl->m_flow->fail(
+            request.id, {Core::ErrorCode::External,
+                         "Start scene preflight; old scene retained: " + std::string(error.what()),
+                         {}});
+      }
     }
 
-    if (!*pending) {
-      return {};
+    auto ready = m_impl->m_preparation->ready();
+
+    if (!ready || !*ready) {
+      return ready ? Core::Result<void>{} : std::unexpected(ready.error());
     }
 
-    auto request = std::move(**pending);
-    auto begun = m_impl->m_flow->begin(request.id);
-
-    if (!begun) {
-      return begun;
-    }
-
+    auto request = std::move(*m_impl->m_preparingRequest);
+    auto preflight = m_impl->m_preparation->take();
+    m_impl->m_preparation.reset();
+    m_impl->m_preparingRequest.reset();
     bool committed = false;
     bool published = false;
     std::unique_ptr<Impl> replacement;
@@ -987,31 +777,22 @@ namespace Dot::Project {
     try {
       {
         ActiveScope active{m_impl->m_active};
-        auto loaded = [&]() -> Core::Result<World::Scene> {
-          if (m_impl->m_origin && m_impl->m_origin->path == request.path) {
-            return World::decodeScene(m_impl->m_origin->bytes);
-          }
 
-          auto checked = sceneFile(*m_impl->m_files, request.path);
+        if (!preflight) {
+          return failed(preflight.error());
+        }
 
-          if (!checked) {
-            return std::unexpected(checked.error());
-          }
-
-          auto path
-              = std::filesystem::path{std::u8string(request.path.begin(), request.path.end())};
-          return World::loadScene(*m_impl->m_files, path);
-        }();
+        auto loaded = preflight->scene();
 
         if (!loaded) {
           return failed(loaded.error());
         }
 
-        auto prepared
-            = prepareSession(*m_impl->m_files, m_impl->m_description, std::move(*loaded),
-                             m_impl->m_config, m_impl->m_compiler ? &*m_impl->m_compiler : nullptr,
-                             m_impl->m_program ? &*m_impl->m_program : nullptr, request.path,
-                             &*m_impl->m_flow, m_impl->m_origin, &*m_impl->m_progress);
+        auto prepared = prepareSession(
+            *m_impl->m_files, m_impl->m_description, std::move(*loaded), m_impl->m_config,
+            m_impl->m_compiler ? &*m_impl->m_compiler : nullptr,
+            m_impl->m_program ? &*m_impl->m_program : nullptr, request.path, &*m_impl->m_flow,
+            m_impl->m_origin, &*m_impl->m_progress, nullptr, &*preflight);
 
         if (!prepared) {
           return failed(prepared.error());
@@ -1307,10 +1088,41 @@ namespace Dot::Project {
       return result;
     }
 
-    auto transitioned = processSceneRequest(result->frame);
-    return transitioned
-               ? std::move(result)
-               : Core::Result<Script::LiveScriptReport>{std::unexpected(transitioned.error())};
+    Script::ScriptReport transition;
+    auto transitioned = processSceneRequest(transition);
+
+    if (!transitioned) {
+      return std::unexpected(transitioned.error());
+    }
+
+    append(result->frame, std::move(transition));
+    return result;
+  }
+
+  auto GameSession::pollScene() -> Core::Result<Script::ScriptReport> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene polling requires running session");
+    }
+
+    Script::ScriptReport report;
+
+    if (!m_impl->m_preparation) {
+      return report;
+    }
+
+    auto processed = processSceneRequest(report);
+    return processed ? Core::Result<Script::ScriptReport>{std::move(report)}
+                     : std::unexpected(processed.error());
   }
 
   auto GameSession::renderAudio(std::span<float> samples) -> Core::Result<void> {

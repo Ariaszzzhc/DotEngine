@@ -10451,3 +10451,99 @@ caches. No distribution archive is created. Final formatting, whitespace and
 ownership/error/platform/test review precede commit. Prism-specific checkpoint
 restoration/feedback, synchronous transition resource work, broader production
 workflows, final art and the overall engine goal remain unfinished.
+
+## 2026-10-17 — Background scene graphics preflight
+
+Follow the actual standalone transition sample from the preceding stage: image
+validation consumed the main thread while the old game stopped responding. Move
+saved-scene read/decode, the existing complete CPU graphics/image/HDR preflight and
+initial skin validation into an owned Dot.Project.ScenePreparation worker. Preserve
+regular-file/exact-spelling checks, 32768 unique graphics assets, the 512-MiB decoded
+graphics quota, four-million influenced-skin-vertex limit and real decoder failures.
+No sample asset, fallback material or shortened validation replaces those checks.
+
+The worker receives an owned initial-scene string when returning to an unsaved Play
+origin, or reads the requested saved file. It constructs and destroys its own
+thread-bound World scene. PreparedScene retains immutable canonical scene bytes
+and root provenance; it creates new caller-thread handles on rehydration and matches
+exact bytes/root before the private session factory reuses the successful preflight.
+There is no public unvalidated skip flag or GPU residency claim. Assets remain
+caller-owned: retain the root and serialize file edits through publication. This is
+not a filesystem-wide snapshot against concurrent external edits.
+
+GameSession keeps one loading request/job and continues the old game's regular
+input, scripts, physics, animation, audio and rendering while validation runs.
+Only a later owner poll prepares services and performs irreversible Stop/Start.
+File/asset/constructor failure before commit retains the old game and records the
+real error. Close/fault retires uncommitted requests and cooperatively cancels the
+worker; RAII joins it, without detached work. A decoder or bounded skin-validation
+pass may finish before cancellation joins. Scene rehydration/encoding, script
+compilation/VM, physics/animation/audio setup, activation and retirement remain on
+the owner; this stage does not complete asynchronous scene loading or streaming.
+
+The typed pollScene operation consumes only an already-started preflight without
+replaying Update or fixed steps. Pending requests begin at the end of actual Update;
+new Start requests still wait for a later Update. Update and explicit polling share
+the same preparation/commit implementation. Existing strict editor/native request
+and status commands expose the genuine Loading interval without a transport change.
+
+Three device-free filesystem regressions in the existing test target cover owned
+proofs, caller-thread scene reconstruction including a foreign caller, exact scene/
+root mismatch, copy/move/take-once and creator-thread boundaries, malformed/missing/
+aliased sources, missing resources, preserved unsaved initial bytes, cancellation
+and quiescent foreign destruction. Another enduring transition regression verifies
+that pure polling does not begin a pending cut, old gameplay remains usable during
+Loading, a second request is rejected, and close cancels before target hooks. Adapt
+existing state, FeatureLab, Play, source-reload, native-audio and transition tests to
+observe actual asynchronous completion. Their deadlines/backend budgets are not
+enlarged and no new acceptance executable/windowed automatic test is introduced.
+
+Full Debug passes 1,387/1,387 in 218.31s. Final focused Debug after the poll-scheduling
+review passes 42/42 in 8.11s. Full Release/NDEBUG passes 1,387/1,387 in 31.55s. Counts:
+426 unit, 961 integration; overlapping labels include 224 compiler, 162 offscreen,
+36 audio-native, 33 platform and 21 process. Only arm64 macOS is executed. CUA still
+reports the Mac locked, so no new human pointer/keyboard or Windows/Linux execution
+is claimed.
+
+Open the same saved PrismControl project in the real Release editor. A same-scene
+Play request yields eight observed Loading results before Succeeded and changes
+scope. A missing-scene request fails without commit or scope change; subsequent
+W+Space moves Z to 1.3756583929 and reaches Y 1.3822506666. Stop preserves the exact
+clean authoring scene and byte-identical saved/stopped PNG, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695. Export through the
+workspace, compare all 115 manifest files / 66,211,235 bytes with saved authoring,
+relocate the native output and physically hide the source project.
+
+Repeat the same idle standalone transition under a six-second external sample at
+requested 1ms. Before (preceding stage) / after greatest application steps are
+479.757125/87.923417ms, with update 473.140083/81.983708ms. Greatest supplied intervals
+are 482.579167/90.266792ms; fixed time dropped changes from 349.999986ms to zero in
+these observed runs. The new retained median is 11.610417ms. OS/driver/resource
+caches and sampling overhead are not controlled; these are local observations of
+removing the measured owner work, not universal loading/FPS guarantees.
+
+The old main-thread image branch had 246 samples. The new sample has no image
+decode branch on main; loadImage appears under the ScenePreparation worker with
+263 samples. Old audio Playback destruction/join remains on main (26 samples).
+Do not reset timing, widen catch-up, suppress warnings or call the remaining
+82ms update stall resolved. Worker completion and source validation are actual,
+not a logical paused frame or an optimistic successful request acknowledgement.
+
+A second actual native run holds W during preparation. Eight inspected Loading
+frames show old player Z progressing from 1.928114 to 0.815906 before scope changes;
+old scoped input then rejects. This verifies continuing scripts/physics through
+actual product input, rather than merely observing a live process. Its greatest
+step is 89.627208ms (74.185000ms update), greatest interval 90.885750ms, with no
+fixed time dropped. Both native players exit zero, retire their control directories,
+and report no script failure/pause; stderr contains normal preparation progress.
+Authoring is restored. The owned editor exits zero with empty stderr.
+
+Raw requests/receipts/responses, progress histories, stack sample, profiles, content
+hashes and PNGs remain in ignored build/scene-preparation-review. Binary hashes,
+arm64 linkage and retired control paths are recorded in metadata.json. The owned
+editor/native copies and obsolete helper data are removed after inspection; authoring,
+caches, evidence and the preceding persistent slot (unchanged SHA-256) are retained.
+No distribution archive is created. Final formatting, whitespace and ownership/
+error/platform/test reviews pass before commit. Remaining owner service/retirement work,
+Prism checkpoint restoration/feedback, larger production workflows, final art and
+the overall engine goal remain unfinished.

@@ -94,6 +94,7 @@ add_executable(DotTests
     FileTests.cpp
     StagedDirectoryTests.cpp
     ControlTests.cpp
+    ScenePreparationTests.cpp
     ProjectTests.cpp
     DocumentTests.cpp
     TransformToolTests.cpp

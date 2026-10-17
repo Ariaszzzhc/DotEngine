@@ -13,6 +13,7 @@ export module Dot.Project.GameSession;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Project;
+import Dot.Project.ScenePreparation;
 import Dot.World.Scene;
 import Dot.Platform.Input;
 import Dot.Script.Compiler;
@@ -126,6 +127,10 @@ export namespace Dot::Project {
      * 提交后的停止/启动失败使新会话故障。 */
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
+    /** Poll resource preflight without advancing game Update/fixed time. A ready
+     * replacement may dispatch Stop/Start and rebuild owner-thread services.
+     * 不推进游戏 Update/固定时间地轮询资源预检；完成后可执行 Stop/Start 并重建主线程服务。 */
+    [[nodiscard]] auto pollScene() -> Core::Result<Script::ScriptReport>;
     [[nodiscard]] auto publish(const Platform::InputState& input, bool pointerCaptured = false)
         -> Core::Result<std::uint64_t>;
     /** Script request only; the native frontend owns focus/capture policy and
@@ -148,14 +153,14 @@ export namespace Dot::Project {
     /** Requires start. Fixed steps dispatch scripts using the preceding contact
      * batch then advance physics by 1/fixedHz. Update dispatches scripts then
      * advances animation then synchronizes audio once after all fixed steps, then
-     * processes at most one scene request synchronously. New Start requests wait
-     * until the following update. Delta is finite [0,1].
-     * Initial input is an empty published frame. Poll errors retain/report old scripts; individual
-     * script failures are isolated/reported, realm/native failures fault the session until close.
-     * Invalid deltas have no effects. There is no rollback of completed callbacks or native steps.
+     * polls at most one scene request, retaining old gameplay during CPU resource preflight. New
+     * Start requests wait until the following update. Delta is finite [0,1]. Initial input is an
+     * empty published frame. Poll errors retain/report old scripts; individual script failures are
+     * isolated/reported, realm/native failures fault the session until close. Invalid deltas have
+     * no effects. There is no rollback of completed callbacks or native steps.
      * 要求已启动；固定步使脚本读取上一接触批次，再推进物理 1/fixedHz；update 在全部
-     * 固定步之后分发脚本、推进原生动画、同步一次音频，再同步处理至多一个场景请求；
-     * 新 Start 请求留待下一 update，时长须有限
+     * 固定步之后分发脚本、推进原生动画、同步一次音频，再轮询至多一个场景请求，CPU
+     * 资源预检期间继续旧场景； 新 Start 请求留待下一 update，时长须有限
      * [0,1]；初始输入为已发布空帧。轮询错误保留并
      * 报告旧脚本，单脚本错误隔离并报告，realm/原生失败使会话故障直至关闭；无效时长无
      * 副作用，不回滚已完成回调或原生步。 */
@@ -179,8 +184,8 @@ export namespace Dot::Project {
         const GameSessionConfig& config, const Script::TypeScriptCompiler* compiler,
         const Script::CompiledProgram* program, std::optional<std::string> scenePath,
         const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {},
-        const Script::GameData* progress = nullptr, Audio::Playback* preparedPlayback = nullptr)
-        -> Core::Result<GameSession>;
+        const Script::GameData* progress = nullptr, Audio::Playback* preparedPlayback = nullptr,
+        const PreparedScene* preflight = nullptr) -> Core::Result<GameSession>;
     [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report) -> Core::Result<void>;
     struct Impl;
     explicit GameSession(std::unique_ptr<Impl> impl) noexcept;

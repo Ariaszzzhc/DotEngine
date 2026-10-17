@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "SceneAudioFixture.hpp"
+#include "ScenePreparation.hpp"
 #include "ScriptCompilation.hpp"
 
 import Dot.Core.Result;
@@ -176,6 +177,7 @@ TEST_CASE("scene_transition.prepares_before_stop_rebuilds_services_and_preserves
   CHECK_FALSE(session.update(-1));
   CHECK(session.sceneRequest(id)->state == Script::SceneRequestState::Pending);
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, id));
   CHECK(session.scene().value()->id() != old->id());
   CHECK(session.scene().value()->name().value() == "Next");
   CHECK_FALSE(session.scene().value()->entity(oldActor));
@@ -213,6 +215,7 @@ TEST_CASE("scene_transition.loading_failures_keep_old_realm_world_and_audio_runn
                            "scenes/rejected.dotscene", "scenes/NEXT.dotscene"}) {
     const auto id = session.requestScene(path).value();
     good(session.update(0));
+    good(Dot::Tests::awaitScene(session, id));
     auto status = session.sceneRequest(id).value();
     CHECK(status.state == Script::SceneRequestState::Failed);
     CHECK_FALSE(status.committed);
@@ -230,6 +233,7 @@ TEST_CASE("scene_transition.loading_failures_keep_old_realm_world_and_audio_runn
   if (!error) {
     auto link = session.requestScene("scenes/link.dotscene").value();
     good(session.update(0));
+    good(Dot::Tests::awaitScene(session, link));
     CHECK(session.sceneRequest(link)->state == Script::SceneRequestState::Failed);
     CHECK(session.scene().value().get() == old.get());
   } else {
@@ -256,9 +260,11 @@ TEST_CASE(
   CHECK(fixture.observations[0]["denied"] == "InvalidState");
   CHECK(session.scene().value()->name().value() == "Start");
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, 1));
   CHECK(session.scene().value()->name().value() == "Next");
   CHECK(session.stats()->transition->state == Script::SceneRequestState::Pending);
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, 2));
   CHECK(session.scene().value()->name().value() == "End");
   CHECK(session.sceneRequest(1)->committed);
   CHECK(session.sceneRequest(2)->committed);
@@ -279,7 +285,8 @@ TEST_CASE(
     good(session.start());
     auto old = session.scene().value();
     auto id = session.requestScene("scenes/next.dotscene").value();
-    CHECK_FALSE(session.update(0));
+    good(session.update(0));
+    CHECK_FALSE(Dot::Tests::awaitScene(session, id));
     CHECK(session.scene().value()->name().value() == "Target");
     CHECK(session.scene().value()->id() != old->id());
     auto result = session.sceneRequest(id).value();
@@ -316,6 +323,7 @@ TEST_CASE(
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/travel.ts", "not TypeScript"));
   auto id = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, id));
   CHECK(session.sceneRequest(id)->committed);
   CHECK(session.scene().value()->name().value() == "Next");
   auto foreign = std::async(std::launch::async, [&] {
@@ -343,6 +351,7 @@ TEST_CASE("scene_transition.editor_play_uses_active_file_and_never_mutates_autho
   CHECK(play.stats()->location.path == "scenes/editor.dotscene");
   auto id = play.requestScene("scenes/next.dotscene").value();
   REQUIRE(play.advance(Platform::InputState{}, std::chrono::milliseconds{20}));
+  Dot::Tests::awaitPlayScene(play, id);
   CHECK(play.sceneRequest(id)->committed);
   CHECK(play.scene().value()->name().value() == "Next");
   CHECK(play.stats()->location.path == "scenes/next.dotscene");
@@ -361,6 +370,7 @@ TEST_CASE("scene_transition.hot_reload_compile_failure_is_recoverable_without_re
   REQUIRE(files.writeTextAtomic("scripts/travel.ts", "const broken: number = 'bad';"));
   auto rejected = session.requestScene("scenes/next.dotscene").value();
   auto frame = session.update(0);
+  good(Dot::Tests::awaitScene(session, rejected));
   REQUIRE(frame);
   CHECK(Dot::Tests::awaitCompilation([&] { return session.pollScripts(); })->error.has_value());
   CHECK(session.sceneRequest(rejected)->state == Script::SceneRequestState::Failed);
@@ -369,6 +379,7 @@ TEST_CASE("scene_transition.hot_reload_compile_failure_is_recoverable_without_re
   REQUIRE(files.writeTextAtomic("scripts/travel.ts", source));
   auto accepted = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, accepted));
   CHECK(session.sceneRequest(accepted)->committed);
   CHECK(session.scene().value()->name().value() == "Next");
   good(session.close());
@@ -445,6 +456,7 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
     REQUIRE(World::saveScene(files, "scenes/invalid.dotscene", candidate));
     auto id = session.requestScene("scenes/invalid.dotscene").value();
     good(session.update(0));
+    good(Dot::Tests::awaitScene(session, id));
     auto result = session.sceneRequest(id).value();
     CHECK(result.state == Script::SceneRequestState::Failed);
     CHECK_FALSE(result.committed);
@@ -472,6 +484,7 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
   REQUIRE(World::saveScene(files, "scenes/signed-normal.dotscene", candidate));
   const auto accepted = session.requestScene("scenes/signed-normal.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, accepted));
   CHECK(session.sceneRequest(accepted)->committed);
   CHECK(session.scene().value()->name().value() == "Signed normal source");
   good(session.close());
@@ -484,6 +497,7 @@ TEST_CASE("scene_transition.disabled_hot_reload_keeps_the_owned_program_across_s
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/travel.ts", "not TypeScript"));
   auto id = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, id));
   CHECK(session.sceneRequest(id)->committed);
   CHECK(session.scene().value()->name().value() == "Next");
   good(session.close());
@@ -514,10 +528,12 @@ TEST_CASE("scene_transition.active_scene_export_preserves_original_startup_and_r
   good(session.start());
   auto mainRequest = session.requestScene("scenes/main.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, mainRequest));
   CHECK(session.sceneRequest(mainRequest)->committed);
   CHECK(session.scene().value()->name().value() == "Start");
   auto back = session.requestScene("scenes/next.dotscene").value();
   good(session.update(0));
+  good(Dot::Tests::awaitScene(session, back));
   CHECK(session.sceneRequest(back)->committed);
   CHECK(session.scene().value()->name().value() == "Unsaved next");
   good(session.close());
@@ -547,11 +563,13 @@ TEST_CASE("scene_transition.play_returns_owned_unsaved_origin_instead_of_later_d
                   .value();
   auto away = play.requestScene("scenes/next.dotscene").value();
   REQUIRE(play.advance(Platform::InputState{}, std::chrono::nanoseconds{0}));
+  Dot::Tests::awaitPlayScene(play, away);
   CHECK(play.sceneRequest(away)->committed);
   CHECK(play.scene().value()->name().value() == "Next");
   REQUIRE(fixture.project.files()->writeTextAtomic("scenes/main.dotscene", "corrupted after Play"));
   auto back = play.requestScene("scenes/main.dotscene").value();
   REQUIRE(play.advance(Platform::InputState{}, std::chrono::nanoseconds{0}));
+  Dot::Tests::awaitPlayScene(play, back);
   CHECK(play.sceneRequest(back)->committed);
   CHECK(play.scene().value()->name().value() == "Unsaved play origin");
   auto returned = play.scene().value()->entities()->front();
@@ -561,4 +579,27 @@ TEST_CASE("scene_transition.play_returns_owned_unsaved_origin_instead_of_later_d
   CHECK(World::encodeScene(authoring).value() == snapshot);
   CHECK(fixture.project.files()->readText("scenes/main.dotscene").value()
         == "corrupted after Play");
+}
+
+TEST_CASE("scene_transition.loading_keeps_old_gameplay_and_close_cancels_without_target_hooks") {
+  Fixture fixture;
+  auto session = fixture.session();
+  good(session.start());
+  const auto original = session.scene().value();
+  const auto request = session.requestScene("scenes/next.dotscene").value();
+  good(session.pollScene());
+  CHECK(session.sceneRequest(request)->state == Script::SceneRequestState::Pending);
+  good(session.update(0));
+  CHECK(session.sceneRequest(request)->state == Script::SceneRequestState::Loading);
+  CHECK(session.scene().value().get() == original.get());
+  CHECK(fixture.observations.size() == 1);
+  CHECK_FALSE(session.requestScene("scenes/main.dotscene"));
+  good(session.fixedUpdate());
+  CHECK(original->entities()->front().name == "updated");
+  good(session.close());
+  CHECK(session.sceneRequest(request)->state == Script::SceneRequestState::Cancelled);
+  CHECK_FALSE(session.sceneRequest(request)->committed);
+  REQUIRE(fixture.observations.size() == 2);
+  CHECK(fixture.observations.back()["phase"] == "stop");
+  CHECK_FALSE(session.pollScene());
 }

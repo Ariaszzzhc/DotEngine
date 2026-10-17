@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "SceneAudioFixture.hpp"
+#include "ScenePreparation.hpp"
 
 import Dot.Audio.SceneAudio;
 import Dot.Core.Result;
@@ -295,6 +296,9 @@ TEST_CASE("audio.scene_transition_prepares_new_endpoint_silently_and_releases_re
   auto switched = session.update(0);
   REQUIRE(switched);
   REQUIRE(switched->frame.failures.empty());
+  auto completed = Dot::Tests::awaitScene(session, id);
+  REQUIRE(completed);
+  REQUIRE(completed->failures.empty());
   CHECK(session.sceneRequest(id)->committed);
   CHECK(session.scene().value()->id() != old->id());
   REQUIRE(observations.size() == 3);

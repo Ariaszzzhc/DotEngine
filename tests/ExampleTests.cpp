@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include "ScenePreparation.hpp"
 #include "ScriptCompilation.hpp"
 
 import Dot.Animation.Files;
@@ -590,6 +591,7 @@ TEST_CASE(
   const auto requested = control(
       player, {{"command", "request-scene"}, {"scope", scope}, {"path", "scenes/main.dotscene"}});
   report(session.update(0));
+  report(Dot::Tests::awaitScene(session, std::stoull(requested["request"].get<std::string>())));
   const auto after = control(player, {{"command", "inspect"}});
   CHECK(after["player"]["scope"] != scope);
   CHECK(after["player"]["input"]["active"] == false);

@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "ScenePreparation.hpp"
 #include "ScriptCompilation.hpp"
 
 import Dot.Core.Files;
@@ -597,6 +598,7 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
   REQUIRE(session.publish(input));
   report(session.update(0));
+  report(Dot::Tests::awaitScene(session, session.stats()->transition->id));
   CHECK(session.stats()->location.path == "scenes/main.dotscene");
   auto main = session.scene().value();
   input.beginFrame();
@@ -630,11 +632,13 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   REQUIRE(input.consume({0, 0, Platform::KeyChanged{Platform::Key::L, true, false}}));
   REQUIRE(session.publish(input));
   report(session.update(0));
+  report(Dot::Tests::awaitScene(session, session.stats()->transition->id));
   CHECK(session.stats()->location.path == "scenes/LightingStudio.dotscene");
   CHECK(session.stats()->transition->committed);
   complete(fixture.project, *main);
   CHECK(data(*main)["stops"] == 1);
   press(Platform::Key::F7);
+  report(Dot::Tests::awaitScene(session, session.stats()->transition->id));
   CHECK(session.stats()->location.path == "scenes/main.dotscene");
   auto restored = session.scene().value();
   const auto pose = restored->transform(restored->primaryCamera().value()).value();
