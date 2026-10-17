@@ -53,7 +53,18 @@ namespace Dot::Core {
           {"latest", profile.frames.empty() ? Json(nullptr) : sample(profile.frames.back())},
           {"slowest", profile.slowest ? sample(*profile.slowest) : Json(nullptr)},
           {"longestInterval",
-           profile.longestInterval ? sample(*profile.longestInterval) : Json(nullptr)}};
+           profile.longestInterval ? sample(*profile.longestInterval) : Json(nullptr)},
+          {"phasePeaks", Json::object()}};
+      const std::array phaseMembers{std::pair{"events", &ApplicationPhasePeaks::events},
+                                    std::pair{"prepare", &ApplicationPhasePeaks::prepare},
+                                    std::pair{"fixed", &ApplicationPhasePeaks::fixed},
+                                    std::pair{"update", &ApplicationPhasePeaks::update},
+                                    std::pair{"render", &ApplicationPhasePeaks::render}};
+
+      for (const auto& [name, member] : phaseMembers) {
+        const auto& peak = profile.phasePeaks.*member;
+        result["phasePeaks"][name] = peak ? sample(*peak) : Json(nullptr);
+      }
 
       if (history) {
         result["frames"] = Json::array();

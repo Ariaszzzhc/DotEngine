@@ -53,10 +53,23 @@ simulation. Failed callbacks retain completed phases, the measured failing phase
 and their native error; later phases remain null. Invalid arguments and calls on
 already stopped owners do not manufacture a sampled step.
 
-The service retains the latest 120 steps, the greatest measured step (`slowest`)
-and the greatest supplied interval (`longestInterval`) since enablement. Separate
-summaries preserve startup/hitch evidence after ordinary history eviction. Equal
-maxima retain the earlier observation. Session/frame/sample/update identities and
+The service retains the latest 120 steps, the greatest measured step (`slowest`),
+the greatest supplied interval (`longestInterval`) and five independent
+`phasePeaks` since enablement. The phase object has `events`, `prepare`, `fixed`,
+`update` and `render` keys; each is null until that phase executes, then owns
+the complete frame with the greatest measured duration for that phase. Executed
+zero is a valid peak. Equal maxima retain the earlier observation. Separate
+phase records preserve an update hitch even when a different render-heavy step
+has the greatest total and both have left the ordinary history. Each owns frame
+index, all phase measurements, elapsed/dropped time, paused/running flags and any
+whole-step error; a retained error does not necessarily originate in the peak
+phase itself. The Rendering panel shows these same independent peaks and indices.
+
+The five peaks may belong to different frames: do not add them into a frame time
+or reinterpret the Update value on `slowest` as the maximum Update. There are at
+most seven additional complete records beyond the 120-entry history (total, input
+interval and five phases). Compact and history JSON both preserve all summaries.
+Session/frame/sample/update identities and
 nanoseconds use decimal strings; retained history count is at most 120. Snapshots
 own their records. Same-value toggles preserve history; disabling releases it and
 reenabling starts a fresh monotonic session. Callback toggles invalidate that

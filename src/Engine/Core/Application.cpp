@@ -1,5 +1,6 @@
 module;
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -26,6 +27,12 @@ import Dot.Platform.Window;
 namespace Dot::Core {
   namespace {
     using ProfileClock = std::chrono::steady_clock;
+    constexpr std::array phaseMembers{
+        std::pair{&ApplicationPhasePeaks::events, &ApplicationFrameTiming::eventsNanoseconds},
+        std::pair{&ApplicationPhasePeaks::prepare, &ApplicationFrameTiming::prepareNanoseconds},
+        std::pair{&ApplicationPhasePeaks::fixed, &ApplicationFrameTiming::fixedNanoseconds},
+        std::pair{&ApplicationPhasePeaks::update, &ApplicationFrameTiming::updateNanoseconds},
+        std::pair{&ApplicationPhasePeaks::render, &ApplicationFrameTiming::renderNanoseconds}};
 
     class StageTimer {
     public:
@@ -57,6 +64,7 @@ namespace Dot::Core {
       std::deque<ApplicationFrameTiming> frames;
       std::optional<ApplicationFrameTiming> slowest;
       std::optional<ApplicationFrameTiming> longestInterval;
+      ApplicationPhasePeaks phasePeaks;
     };
 
     Platform::Window window;
@@ -287,6 +295,7 @@ namespace Dot::Core {
 
         std::optional<ApplicationFrameTiming> slowest;
         std::optional<ApplicationFrameTiming> longestInterval;
+        ApplicationPhasePeaks peaks;
 
         if (!profile.slowest || sample->totalNanoseconds > profile.slowest->totalNanoseconds) {
           slowest = *sample;
@@ -295,6 +304,15 @@ namespace Dot::Core {
         if (!profile.longestInterval
             || sample->frame.elapsed > profile.longestInterval->frame.elapsed) {
           longestInterval = *sample;
+        }
+
+        for (const auto& [destination, source] : phaseMembers) {
+          const auto& duration = (*sample).*source;
+          const auto& maximum = profile.phasePeaks.*destination;
+
+          if (duration && (!maximum || *duration > *((*maximum).*source))) {
+            peaks.*destination = *sample;
+          }
         }
 
         profile.frames.push_back(std::move(*sample));
@@ -309,6 +327,14 @@ namespace Dot::Core {
 
         if (longestInterval) {
           profile.longestInterval = std::move(longestInterval);
+        }
+
+        for (const auto& [destination, source] : phaseMembers) {
+          auto& peak = peaks.*destination;
+
+          if (peak) {
+            profile.phasePeaks.*destination = std::move(peak);
+          }
         }
 
         ++profile.sampled;
@@ -393,7 +419,9 @@ namespace Dot::Core {
     }
 
     try {
-      ApplicationProfiling result{bool(m_impl->profile), m_impl->profileSession, 0, {}, {}, {}};
+      ApplicationProfiling result;
+      result.enabled = bool(m_impl->profile);
+      result.session = m_impl->profileSession;
 
       if (m_impl->profile) {
         const auto& profile = *m_impl->profile;
@@ -401,6 +429,7 @@ namespace Dot::Core {
         result.frames.assign(profile.frames.begin(), profile.frames.end());
         result.slowest = profile.slowest;
         result.longestInterval = profile.longestInterval;
+        result.phasePeaks = profile.phasePeaks;
       }
 
       return result;

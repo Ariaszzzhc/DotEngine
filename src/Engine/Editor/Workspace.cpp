@@ -7267,6 +7267,31 @@ namespace Dot::Editor {
                                static_cast<double>(interval.elapsed.count()) / 1e6,
                                interval.paused ? " (paused)" : "");
           }
+
+          ImGui::TextWrapped("Independent phase peaks (different steps)");
+          const auto& peaks = applicationProfile->phasePeaks;
+          const std::array peakFrames{&peaks.events, &peaks.prepare, &peaks.fixed, &peaks.update,
+                                      &peaks.render};
+          constexpr std::array durations{&Core::ApplicationFrameTiming::eventsNanoseconds,
+                                         &Core::ApplicationFrameTiming::prepareNanoseconds,
+                                         &Core::ApplicationFrameTiming::fixedNanoseconds,
+                                         &Core::ApplicationFrameTiming::updateNanoseconds,
+                                         &Core::ApplicationFrameTiming::renderNanoseconds};
+          constexpr std::array labels{"Events", "Input / commands", "Fixed simulation",
+                                      "Game / animation", "Rendering / GUI"};
+
+          for (std::size_t index = 0; index < peakFrames.size(); ++index) {
+            const auto& peak = *peakFrames[index];
+            const auto duration = peak ? (*peak).*durations[index] : std::nullopt;
+
+            if (duration) {
+              ImGui::TextWrapped("%s: %.3f ms (step %llu)", labels[index],
+                                 static_cast<double>(*duration) / 1e6,
+                                 static_cast<unsigned long long>(peak->frame.index));
+            } else {
+              ImGui::Text("%s: no callback", labels[index]);
+            }
+          }
         }
       }
 

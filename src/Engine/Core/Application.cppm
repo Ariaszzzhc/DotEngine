@@ -75,6 +75,19 @@ export namespace Dot::Core {
     std::optional<Error> error;
   };
 
+  /** Independent greatest executed phase samples since enablement. Each owns its
+   * complete frame/error context; absent callbacks remain null. Earlier ties win.
+   * Peaks can belong to different steps and must not be added into one frame cost.
+   * 启用后各已执行阶段的独立最大样本，拥有完整帧/错误上下文；未执行为空，相等保留较早帧。
+   * 峰值可来自不同 step，不可相加当作单帧开销。 */
+  struct ApplicationPhasePeaks {
+    std::optional<ApplicationFrameTiming> events;
+    std::optional<ApplicationFrameTiming> prepare;
+    std::optional<ApplicationFrameTiming> fixed;
+    std::optional<ApplicationFrameTiming> update;
+    std::optional<ApplicationFrameTiming> render;
+  };
+
   struct ApplicationProfiling {
     bool enabled{};
     std::uint64_t session{};
@@ -82,12 +95,13 @@ export namespace Dot::Core {
     std::vector<ApplicationFrameTiming> frames;
     std::optional<ApplicationFrameTiming> slowest;
     std::optional<ApplicationFrameTiming> longestInterval;
+    ApplicationPhasePeaks phasePeaks;
   };
 
   /** Owned JSON with decimal-string identities/nanoseconds and explicit null
-   * phases. Compact mode retains latest/slowest/longest-input-interval samples.
+   * phases. Compact mode retains latest/slowest/longest-input-interval/phase peaks.
    * 拥有独立 JSON，身份/纳秒采用十进制字符串，未执行阶段为
-   * null；精简模式保留最新、最慢及最长传入间隔帧。 */
+   * null；精简模式保留最新、最慢、最长传入间隔及各阶段峰值帧。 */
   [[nodiscard]] auto encodeApplicationProfiling(const ApplicationProfiling& profile,
                                                 bool history = true) -> Result<std::string>;
 
@@ -121,10 +135,12 @@ export namespace Dot::Core {
     [[nodiscard]] auto input() const -> const Platform::InputState&;
     [[nodiscard]] auto events() -> Signal<Platform::Event>&;
     /** Opt-in bounded diagnostics, on the owner thread. Keep the last 120 steps,
-     * slowest step and longest supplied interval, including callback failures. Repeating
+     * slowest step, longest supplied interval and five independent phase peaks,
+     * including callback failures. Repeating
      * the current value preserves history; disabling releases it. A toggle inside
      * a callback invalidates that in-progress sample without borrowing dead state.
-     * 所有者线程可选诊断，保留最近 120 次 step、最慢帧及最长传入间隔帧，含回调失败；同值
+     * 所有者线程可选诊断，保留最近 120 次
+     * step、最慢帧、最长间隔帧及五个独立阶段峰值，含回调失败；同值
      * 设置保留历史，关闭释放数据。回调内切换丢弃当前样本，不借用已释放状态。 */
     [[nodiscard]] auto setProfiling(bool enabled) -> Result<void>;
     [[nodiscard]] auto profiling() const -> Result<ApplicationProfiling>;

@@ -251,12 +251,97 @@ TEST_CASE("application.profiling_retains_failure_boundaries_and_owned_errors") {
     CHECK(frame.fixedNanoseconds.has_value() == (phase >= 1));
     CHECK(frame.updateNanoseconds.has_value() == (phase >= 2));
     CHECK(frame.renderNanoseconds.has_value() == (phase >= 3));
+    REQUIRE(profile.phasePeaks.events);
+    REQUIRE(profile.phasePeaks.prepare);
+    CHECK(profile.phasePeaks.fixed.has_value() == (phase >= 1));
+    CHECK(profile.phasePeaks.update.has_value() == (phase >= 2));
+    CHECK(profile.phasePeaks.render.has_value() == (phase >= 3));
+    REQUIRE(profile.phasePeaks.prepare->error);
+    CHECK(profile.phasePeaks.prepare->error->message == result.error().message);
     REQUIRE(application.step(1s));
     CHECK(application.profiling()->sampled == 1);
     REQUIRE(application.setProfiling(false));
     CHECK(application.profiling()->frames.empty());
+    CHECK_FALSE(application.profiling()->phasePeaks.events);
+    CHECK(profile.phasePeaks.prepare->error->message == result.error().message);
     CHECK(profile.frames[0].error->message == result.error().message);
   }
+}
+
+TEST_CASE("application.profiling_phase_peaks_keep_independent_frame_context_after_eviction") {
+  auto application = Application::create(testConfig()).value();
+  REQUIRE(application.setProfiling(true));
+  LoopCallbacks callbacks;
+  callbacks.update = [](double) -> Result<void> { return {}; };
+  REQUIRE(application.step(0ns, callbacks));
+  const auto update = application.profiling()->frames.back();
+  callbacks = {};
+  callbacks.fixedUpdate = [](double) -> Result<void> { return {}; };
+  REQUIRE(application.step(10ms, callbacks));
+  const auto fixed = application.profiling()->frames.back();
+  callbacks = {};
+  callbacks.prepareFrame = [](const auto&) -> Result<void> { return {}; };
+  REQUIRE(application.step(0ns, callbacks));
+  const auto prepare = application.profiling()->frames.back();
+  callbacks = {};
+  callbacks.render = [](const FrameState&) -> Result<void> { return {}; };
+  REQUIRE(application.step(0ns, callbacks));
+  const auto render = application.profiling()->frames.back();
+  auto greatestEvents = update;
+  REQUIRE(greatestEvents.eventsNanoseconds);
+
+  const auto initial = application.profiling().value();
+
+  for (const auto& sample : initial.frames) {
+    REQUIRE(sample.eventsNanoseconds);
+
+    if (*sample.eventsNanoseconds > *greatestEvents.eventsNanoseconds) {
+      greatestEvents = sample;
+    }
+  }
+
+  for (int index = 0; index < 140; ++index) {
+    REQUIRE(application.step(1ms));
+    const auto sample = application.profiling()->frames.back();
+    REQUIRE(sample.eventsNanoseconds);
+
+    if (*sample.eventsNanoseconds > *greatestEvents.eventsNanoseconds) {
+      greatestEvents = sample;
+    }
+  }
+
+  const auto profile = application.profiling().value();
+  CHECK(profile.sampled == 144);
+  REQUIRE(profile.frames.size() == 120);
+  CHECK(profile.frames.front().frame.index == 24);
+  REQUIRE(profile.phasePeaks.events);
+  REQUIRE(profile.phasePeaks.prepare);
+  REQUIRE(profile.phasePeaks.fixed);
+  REQUIRE(profile.phasePeaks.update);
+  REQUIRE(profile.phasePeaks.render);
+  CHECK(profile.phasePeaks.events->frame.index == greatestEvents.frame.index);
+  CHECK(profile.phasePeaks.events->eventsNanoseconds == greatestEvents.eventsNanoseconds);
+  CHECK(profile.phasePeaks.prepare->frame.index == prepare.frame.index);
+  CHECK(profile.phasePeaks.prepare->prepareNanoseconds == prepare.prepareNanoseconds);
+  CHECK(profile.phasePeaks.fixed->frame.index == fixed.frame.index);
+  CHECK(profile.phasePeaks.fixed->fixedNanoseconds == fixed.fixedNanoseconds);
+  CHECK(profile.phasePeaks.update->frame.index == update.frame.index);
+  CHECK(profile.phasePeaks.update->updateNanoseconds == update.updateNanoseconds);
+  CHECK(profile.phasePeaks.render->frame.index == render.frame.index);
+  CHECK(profile.phasePeaks.render->renderNanoseconds == render.renderNanoseconds);
+  CHECK(profile.phasePeaks.fixed->frame.updates == 1);
+  CHECK(profile.phasePeaks.update->frame.updates == 0);
+  CHECK_FALSE(profile.phasePeaks.fixed->updateNanoseconds);
+  CHECK_FALSE(profile.phasePeaks.render->fixedNanoseconds);
+  REQUIRE(application.setProfiling(false));
+  CHECK_FALSE(application.profiling()->phasePeaks.update);
+  REQUIRE(application.setProfiling(true));
+  CHECK(application.profiling()->session > profile.session);
+  CHECK_FALSE(application.profiling()->phasePeaks.render);
+  auto moved = std::move(application);
+  CHECK_FALSE(application.profiling());
+  CHECK_FALSE(moved.profiling()->phasePeaks.render);
+  CHECK(profile.phasePeaks.update->updateNanoseconds == update.updateNanoseconds);
 }
 
 TEST_CASE("application.profiling_history_keeps_the_slowest_step_after_eviction") {

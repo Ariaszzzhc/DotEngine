@@ -906,8 +906,11 @@ The corresponding strict mailbox operations are:
 Application CPU steps are sampled separately with `set-application-profiling`.
 The same `inspect-profile` response includes `application`, and ordinary inspection
 includes `workspace.applicationProfiling`. Window → Rendering provides Profile
-application frames through that same operation. See [native frame diagnostics](Profiling.md)
-for phase boundaries, bounded history/hitch summaries and standalone `--profile` output.
+application frames through that same operation. Its independent Events/Prepare/Fixed/
+Update/Render peak rows retain their own step indices after ordinary history eviction;
+`application.phasePeaks` exposes the complete corresponding frames in compact and
+history JSON. These peaks can come from different steps and are not additive. See
+[native frame diagnostics](Profiling.md) for boundaries and standalone `--profile` output.
 
 `enabled` must be boolean and unknown fields fail. Both operations remain available
 during transform/animation inspection. The standard `workspace.view.profiling`

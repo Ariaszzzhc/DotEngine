@@ -10637,3 +10637,100 @@ Formatting/whitespace and ownership/error/platform/test review pass before commi
 Per-phase peak retention, remaining animation/service preparation, Prism checkpoint
 restoration/feedback, larger production workflows, final art and the overall engine
 goal remain unfinished.
+
+## 2026-10-17 — Independent application phase peaks
+
+The preceding standalone sample's greatest step was render-heavy. Its small Update
+value was not the greatest Update, and the actual replacement had left the ordinary
+120-frame history. Retain independent greatest Events/Prepare/Fixed/Update/Render
+samples in Dot.Core.Application instead of inferring phase maxima from total time.
+ApplicationPhasePeaks owns five optional complete ApplicationFrameTiming values,
+including frame index, all phase measurements, elapsed/drop metadata, paused/running
+flags and whole-step error. Unexecuted phases remain null, executed zero is valid,
+and equal durations retain the earlier observation. These frames may differ and
+must not be added into a synthetic frame cost.
+
+Keep the existing total/interval extrema and 120-frame ring, plus at most five new
+records. Candidate copies precede publication, with contextual allocation errors;
+disabling releases all records, same-value toggles retain them, new enablement
+starts a fresh session, and callback toggles invalidate that in-progress sample.
+Owned snapshots survive owner changes without callbacks/window references. Sampling
+remains opt-in; its publication bookkeeping stays outside measured step work.
+Compact/full JSON both expose phasePeaks through the common native encoder used by
+editor inspection and standalone --profile. Rendering displays the same peak costs
+and their individual step indices. No timing reset, changed catch-up policy, GPU
+work attribution or new FPS/production-readiness claim.
+
+One new hidden-window platform regression executes four callbacks on distinct steps,
+evicts them from history, checks independent complete context and observed event
+maxima, and verifies disable/re-enable/moves. Existing failure tests now check owned
+peak errors and absent later phases; codec unit checks preserve uint64 strings,
+executed zero, null phases/errors, and compact/full summaries. These tests use the
+existing targets; no unit opens a device and no automatic case opens a desktop
+window. Final presence guards keep the regression itself safe with assertions off.
+
+Full Debug passes 1,389/1,389 in 220.98s. Focused Debug passes 22/22 in .20s. After
+visual line wrapping, final full Release/NDEBUG passes 1,389/1,389 in 31.59s. The final
+presence-guard case passes Debug/Release 1/1 in .03/.04s. Counts: 426 unit, 963
+integration; overlapping labels include 224 compiler, 162 offscreen, 37 audio-native,
+34 platform and 21 process. Builds/checks run sequentially, separately from native
+products. Only arm64 macOS is executed.
+
+The desktop briefly becomes accessible. In the real editor, two computer-use Window
+menu clicks still deliver stale SDL coordinates: image target (449,88), approximately
+client logical (224.5,12) after 2x/title mapping, versus native press/release
+(690.1953125,618.8515625) and an older last-motion timestamp. No vendor/global-poll
+bypass, synthetic GUI hook or system IME switch is added. A modifier-only Alt cannot
+be sent by this computer-use tool; that is not evidence that the editor rejects Alt.
+Use the real show-pane rendering operation, then native Tab/Space: the visible
+application checkbox enables, disables and re-enables sampling. JSON verifies the
+same state, a fresh session, cleared peaks when off and mesh profiling still off.
+Keyboard control succeeds; virtual pointer acceptance remains unconfirmed.
+
+The first real editor Play cut records Update 62.224083ms at step 36554. After at least 180
+additional sampled steps, retained history starts at 36628; both JSON and the visible
+panel still show that peak/step, while other phase peaks have their own indices.
+The visual inspection reveals clipped long peak rows, so change both the heading
+and rows to standard wrapped text. The Mac relocks before final sight inspection;
+final wrapping is built and product-executed, but final visual acceptance remains
+explicitly outstanding. The second, final-build editor uses product operations and
+records Update 92.679542ms at step 7620 after history starts at 7697. This spike is
+real; this stage diagnoses it rather than fixing loading. Both editor runs Stop to
+the exact clean authoring scene and byte-identical saved/stopped PNG, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The final workspace export matches all 115 content files / 66,211,235 bytes with
+saved authoring and the preceding export, without TypeScript/map files.
+
+Relocate the final game and physically hide authoring. A six-second external sample
+at requested 1ms ends with history 739..858 while preserving the following complete
+records; every peak is already outside that history:
+
+| Phase | Greatest observed duration | Step |
+| --- | --- | --- |
+| Events | 22.651792ms | 0 |
+| Prepare | 34.478084ms | 412 |
+| Fixed | 35.547167ms | 423 |
+| Update | 39.593792ms | 499 |
+| Render | 20.358417ms | 413 |
+
+That run's greatest total is 67.571125ms at step 499, supplied interval 70.500917ms.
+A separate native process performs six moving cuts and rejects a missing scene
+without commit. Its 195..314 history retains none of the phase maxima: Events step
+0, Prepare 102, Fixed 168, Update 167 and Render 170. Greatest Update is 70.086083ms,
+greatest total 86.440250ms and longest supplied interval 87.698084ms. All executed
+retained phase values are <= the corresponding retained maximum; any in-history
+peak must exactly match its full original record. Native whole-step errors/pauses
+and retained/extrema fixed-time drops remain absent in these observed runs. Startup,
+cache/OS state, moving versus idle work and sampling overhead differ; these are
+local observations, not controlled optimization/FPS comparisons.
+
+All four owned product processes exit zero and retire controls. Authoring is restored and
+the prior persistent slot hash is unchanged. Binary hashes, arm64 linkage,
+complete peak summaries and the final visual limitation are recorded in metadata.json.
+Both owned editor copies, the relocated native copy and compiled helper cache are
+removed after inspection. Project/data/caches and raw commands, receipts/responses,
+profiles, replay scripts, stack sample and PNGs remain in ignored build/phase-peaks-review.
+No distribution archive is produced. Formatting/whitespace and ownership/error/
+platform/coverage reviews pass before commit. Remaining resource/animation/service
+preparation, final wrapped-panel sight/pointer acceptance, Prism checkpoint workflow,
+final art, populated-game production evidence and the overall goal remain unfinished.

@@ -34,6 +34,12 @@ TEST_CASE("core.application_profile_json_preserves_exact_metadata_and_optional_p
   CHECK(empty["latest"].is_null());
   CHECK(empty["slowest"].is_null());
   CHECK(empty["frames"].empty());
+  CHECK(empty["phasePeaks"].size() == 5);
+
+  for (const auto& peak : empty["phasePeaks"]) {
+    CHECK(peak.is_null());
+  }
+
   profile.enabled = true;
   profile.session = std::numeric_limits<std::uint64_t>::max();
   profile.sampled = profile.session;
@@ -49,6 +55,10 @@ TEST_CASE("core.application_profile_json_preserves_exact_metadata_and_optional_p
   profile.frames = {frame};
   profile.slowest = frame;
   profile.longestInterval = frame;
+  profile.phasePeaks.events = frame;
+  auto fixed = frame;
+  fixed.fixedNanoseconds = 0;
+  profile.phasePeaks.fixed = fixed;
   const auto full = Json::parse(encodeApplicationProfiling(profile).value());
   CHECK(full["session"] == "18446744073709551615");
   CHECK(full["latest"]["frame"] == full["session"]);
@@ -61,9 +71,16 @@ TEST_CASE("core.application_profile_json_preserves_exact_metadata_and_optional_p
   CHECK(full["latest"]["error"]["message"] == frame.error->message);
   CHECK(full["latest"] == full["slowest"]);
   CHECK(full["latest"] == full["longestInterval"]);
+  CHECK(full["phasePeaks"]["events"] == full["latest"]);
+  CHECK(full["phasePeaks"]["fixed"]["fixedNanoseconds"] == "0");
+  CHECK(full["phasePeaks"]["fixed"]["error"]["message"] == frame.error->message);
+  CHECK(full["phasePeaks"]["prepare"].is_null());
+  CHECK(full["phasePeaks"]["update"].is_null());
+  CHECK(full["phasePeaks"]["render"].is_null());
   const auto compact = Json::parse(encodeApplicationProfiling(profile, false).value());
   CHECK_FALSE(compact.contains("frames"));
   CHECK(compact["latest"] == full["frames"][0]);
+  CHECK(compact["phasePeaks"] == full["phasePeaks"]);
 }
 
 TEST_CASE("core.result.failure_context") {

@@ -30,8 +30,8 @@ requirements remain:
 
 Native application CPU diagnostics now expose actual event/prepare/fixed/update/render
 step envelopes through the editor and player `--profile` output. Retained slowest
-steps and longest supplied intervals preserve startup/hitch evidence after history
-eviction. These measurements exclude process initialization/teardown and idle waits;
+steps, longest supplied intervals and independent phase peaks preserve startup/hitch
+evidence after history eviction without conflating costs from different frames. These measurements exclude process initialization/teardown and idle waits;
 they do not complete the remaining performance, streaming or background-work goals.
 See [profiling scope](Profiling.md).
 
