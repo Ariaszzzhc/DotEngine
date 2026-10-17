@@ -10,12 +10,11 @@
 #include <vector>
 
 import Dot.Core.Result;
-import Dot.Editor.PlayInput;
+import Dot.Platform.AgentInput;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
 
 namespace {
-  using namespace Dot::Editor;
   using namespace Dot::Platform;
   using Json = nlohmann::json;
 
@@ -25,7 +24,7 @@ namespace {
             {"text", "晶体 🌏"}};
   }
 
-  auto next(PlayInput& input) -> InputState {
+  auto next(AgentInput& input) -> InputState {
     auto result = input.next();
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
     REQUIRE(result->has_value());
@@ -34,7 +33,7 @@ namespace {
 }  // namespace
 
 TEST_CASE("play_input.press_hold_release_use_native_edges_and_owned_frames") {
-  PlayInput input;
+  AgentInput input;
   CHECK_FALSE(input.next().value());
   REQUIRE(input.submit(request().dump()));
   CHECK(input.stats().remaining == 2);
@@ -71,7 +70,7 @@ TEST_CASE("play_input.press_hold_release_use_native_edges_and_owned_frames") {
 }
 
 TEST_CASE("play_input.active_request_rejects_replacement_and_cancel_releases_once") {
-  PlayInput input;
+  AgentInput input;
   REQUIRE(input.submit(request(600).dump()));
   CHECK_FALSE(input.submit(request().dump()));
   CHECK(input.stats().remaining == 600);
@@ -156,7 +155,7 @@ TEST_CASE("play_input.strict_names_schema_and_bounds_reject_before_publication")
   bad["text"] = std::string(16 * 1024 + 1, 'a');
   invalid.push_back(bad);
 
-  PlayInput input;
+  AgentInput input;
 
   for (const auto& value : invalid) {
     INFO(value.dump());
@@ -184,7 +183,7 @@ TEST_CASE("play_input.maximum_request_has_exact_budget_and_neutral_release") {
   value["pointerDelta"] = {1e6, -1e6};
   value["wheel"] = {1000, -1000};
   value["text"] = std::string(16 * 1024, 'x');
-  PlayInput input;
+  AgentInput input;
   REQUIRE(input.submit(value.dump()));
 
   for (unsigned frame = 0; frame < 600; ++frame) {
@@ -233,7 +232,7 @@ TEST_CASE("play_input.source_handoff_uses_published_state_without_ghost_edges") 
   REQUIRE(native.consume({7, 0, KeyChanged{Key::W, true, false}}));
   REQUIRE(native.consume({7, 0, KeyChanged{Key::A, true, false}}));
   REQUIRE(native.consume({7, 0, ButtonChanged{MouseButton::Right, true}}));
-  PlayInput input;
+  AgentInput input;
   REQUIRE(input.submit(request().dump(), native));
   const auto first = next(input);
   CHECK(first.key(Key::W).down);

@@ -2,8 +2,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <expected>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <print>
 #include <string>
@@ -11,10 +13,12 @@
 #include <vector>
 
 import Dot.Core.Application;
+import Dot.Core.Control;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.PlayerControl;
 import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 import Dot.Graphics.Renderer;
@@ -87,10 +91,33 @@ namespace Dot::Runtime {
         return std::unexpected(files.error());
       }
 
-      auto userData = Platform::userDataDirectory(description->applicationId);
+      std::optional<Core::Control> control;
+
+      if (options.control) {
+        auto parent = Core::FileSystem::open(*options.control);
+        auto opened
+            = parent ? Core::Control::create(
+                           *parent, nlohmann::json{{"kind", "player"},
+                                                   {"applicationId", description->applicationId},
+                                                   {"continuesUnfocused", true}}
+                                        .dump())
+                     : Core::Result<Core::Control>{std::unexpected(parent.error())};
+
+        if (!opened) {
+          return Core::fail(opened.error().code,
+                            "Prepare player control: " + opened.error().message);
+        }
+
+        control.emplace(std::move(*opened));
+      }
+
+      auto userData = options.dataDirectory
+                          ? Core::FileSystem::open(*options.dataDirectory)
+                          : Platform::userDataDirectory(description->applicationId);
 
       if (!userData) {
-        return std::unexpected(userData.error());
+        return Core::fail(userData.error().code,
+                          "Prepare player data directory: " + userData.error().message);
       }
 
       auto directory = userData->createDirectories("saves");
@@ -111,7 +138,7 @@ namespace Dot::Runtime {
       applicationConfig.window.height = static_cast<int>(description->height);
       applicationConfig.window.gpuSurface = true;
       applicationConfig.fixedStep = std::chrono::nanoseconds{1'000'000'000 / description->fixedHz};
-      applicationConfig.pauseOnFocusLoss = options.pauseOnFocusLoss;
+      applicationConfig.pauseOnFocusLoss = options.pauseOnFocusLoss && !options.control;
       auto application = Core::Application::create(applicationConfig);
 
       if (!application) {
@@ -159,6 +186,29 @@ namespace Dot::Runtime {
         return std::unexpected(session.error());
       }
 
+      std::optional<Project::PlayerControl> agent;
+
+      if (control) {
+        auto created = Project::PlayerControl::create(*session);
+
+        if (!created) {
+          return std::unexpected(created.error());
+        }
+
+        agent.emplace(std::move(*created));
+        const auto utf = control->files()->root().generic_u8string();
+        std::println("{}", nlohmann::json{{"ok", true},
+                                          {"kind", "player"},
+                                          {"control", std::string(utf.begin(), utf.end())}}
+                               .dump());
+        std::fflush(stdout);
+      }
+
+      const auto observe = [&](const Script::ScriptReport& report) -> Core::Result<void> {
+        auto recorded = agent ? agent->record(report) : Core::Result<void>{};
+        return recorded ? lifecycle(report) : recorded;
+      };
+
       auto scene = session->scene();
 
       if (!scene) {
@@ -189,18 +239,65 @@ namespace Dot::Runtime {
         }
 
         if (report->source.reload) {
-          auto retired = lifecycle(report->source.reload->retired);
+          auto retired = observe(report->source.reload->retired);
 
           if (!retired) {
             return retired;
           }
         }
 
-        return lifecycle(report->frame);
+        return observe(report->frame);
       };
 
       Core::LoopCallbacks callbacks;
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
+        if (control) {
+          auto processed = control->process(
+              [&](std::string_view request) -> Core::Result<std::string> {
+                auto result = agent->perform(request);
+                auto closing = agent->closing();
+
+                if (!closing) {
+                  return std::unexpected(closing.error());
+                }
+
+                if (*closing) {
+                  application->stop();
+                }
+
+                if (result) {
+                  auto response = nlohmann::json::parse(*result);
+
+                  if (response.contains("player")) {
+                    auto focused = application->window().focused();
+                    auto captured = application->window().relativeMouse();
+
+                    if (!focused || !captured) {
+                      const auto& error = !focused ? focused.error() : captured.error();
+                      return Core::fail(
+                          error.code,
+                          "Player request may have committed; native input status failed: "
+                              + error.message);
+                    }
+
+                    response["native"] = {{"focused", *focused}, {"pointerCaptured", *captured}};
+                    return response.dump();
+                  }
+                }
+
+                return result;
+              },
+              [&] { return application->running(); });
+
+          if (!processed) {
+            return std::unexpected(processed.error());
+          }
+
+          if (!application->running()) {
+            return {};
+          }
+        }
+
         const bool quitting = input.key(Platform::Key::Escape).pressed;
 
         if (quitting) {
@@ -247,7 +344,7 @@ namespace Dot::Runtime {
             return std::unexpected(report.error());
           }
 
-          auto checked = lifecycle(*report);
+          auto checked = observe(*report);
 
           if (!checked) {
             return checked;
@@ -278,6 +375,8 @@ namespace Dot::Runtime {
           return text;
         }
 
+        auto published = input;
+
         if (capture != *relative) {
           auto changed = application->window().setRelativeMouse(capture);
 
@@ -285,12 +384,13 @@ namespace Dot::Runtime {
             return changed;
           }
 
-          auto clean = input;
-          clean.clearPointerDelta();
-          return session->publish(clean, capture).transform([](auto) {});
+          published.clearPointerDelta();
         }
 
-        return session->publish(input, capture).transform([](auto) {});
+        auto controlled = agent ? agent->next(published)
+                                : Core::Result<Platform::InputState>{std::move(published)};
+        return controlled ? session->publish(*controlled, capture).transform([](auto) {})
+                          : std::unexpected(controlled.error());
       };
 
       callbacks.fixedUpdate = [&](double) {
@@ -384,6 +484,11 @@ namespace Dot::Runtime {
         }
       }();
       auto closed = session->close();
+      auto retired = control ? control->close() : Core::Result<void>{};
+
+      if (!retired) {
+        std::println(stderr, "Retire player control: {}", retired.error().message);
+      }
 
       if (profileFiles) {
         auto profile = application->profiling();
@@ -415,7 +520,11 @@ namespace Dot::Runtime {
         return run;
       }
 
-      return closed ? Core::Result<void>{} : std::unexpected(closed.error());
+      if (!closed) {
+        return std::unexpected(closed.error());
+      }
+
+      return retired;
     }
   }  // namespace
 
@@ -430,7 +539,7 @@ namespace Dot::Runtime {
   }
 
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
-                   std::size_t frameBudget, std::optional<std::filesystem::path> profile) -> int {
+                   const PlayerOptions& options) -> int {
     auto project = Project::Project::open(root);
 
     if (!project) {
@@ -445,8 +554,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played
-        = runProject(*project, *compiler, {.frames = frameBudget, .profile = std::move(profile)});
+    auto played = runProject(*project, *compiler, options);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);
@@ -456,8 +564,7 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto playGame(const std::filesystem::path& root, std::size_t frames,
-                std::optional<std::filesystem::path> profile) -> int {
+  auto playGame(const std::filesystem::path& root, const PlayerOptions& options) -> int {
     auto files = Core::FileSystem::open(root);
     auto game = files ? Project::GamePackage::open(*files)
                       : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
@@ -467,7 +574,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = runGame(*game, {.frames = frames, .profile = std::move(profile)});
+    auto played = runGame(*game, options);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);

@@ -77,8 +77,11 @@ The native player resolves the user/app directory through
 [SDL_GetPrefPath](https://wiki.libsdl.org/SDL3/SDL_GetPrefPath), with organization
 `DotEngine` and the stable ID, and uses its `saves` child. Errors propagate; there is
 no project/install-directory fallback. This platform operation needs no video/audio
-initialization. GameSession itself only uses an explicitly supplied root and never
-creates user directories implicitly.
+initialization. An explicit native-player `--data-directory` uses an existing
+caller-owned app root and its `saves` child instead; missing explicit roots fail,
+without falling back. This is intended for controlled development/portable ownership,
+not a change to ordinary application-ID storage. GameSession itself only uses an
+explicitly supplied root and never creates user directories implicitly.
 
 Editor Play always owns a fresh temporary directory and fresh state. Stop explicitly
 removes owned files even when Stop hooks fail. Cleanup failures report the path and
@@ -126,6 +129,11 @@ implementation serves native GameData::perform and the live workspace:
 {"command":"game-data","session":"1","value":{"command":"save","slot":"checkpoint","overwrite":false}}
 {"command":"game-data","session":"1","value":{"command":"load","slot":"checkpoint","revision":"2"}}
 ```
+
+The opt-in standalone player exposes the same inner operations through
+`game-data(value)`; see [native product control](Export.md#opt-in-native-player-control).
+Its explicit app data directory persists across process restarts. Editor Play keeps
+its isolated temporary storage. Neither interface automatically restores a character.
 
 Every outer request requires exactly command/session/value and a current Play
 session ID. Its response contains `ok` and the parsed `result`. Pending close and

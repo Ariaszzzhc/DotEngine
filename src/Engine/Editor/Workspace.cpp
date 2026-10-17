@@ -36,7 +36,7 @@ import Dot.Core.Application;
 import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
-import Dot.Editor.PlayInput;
+import Dot.Platform.AgentInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
@@ -65,6 +65,7 @@ import Dot.Core.Files;
 import Dot.Core.Paths;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
+import Dot.Core.Control;
 import Dot.Core.Text;
 import Dot.Editor.Document;
 import Dot.Editor.HierarchyTree;
@@ -199,13 +200,6 @@ namespace Dot::Editor {
               {"state", states.at(static_cast<std::size_t>(value.state))},
               {"committed", value.committed},
               {"error", value.error ? errorJson(*value.error)["error"] : Json(nullptr)}};
-    }
-
-    auto validId(std::string_view id) -> bool {
-      return !id.empty() && id.size() <= 64 && std::ranges::all_of(id, [](char value) {
-        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z')
-               || (value >= '0' && value <= '9') || value == '_' || value == '-';
-      });
     }
 
     auto validRequest(std::string_view request) -> Core::Result<void> {
@@ -627,7 +621,7 @@ namespace Dot::Editor {
     bool m_saveOverwrite{};
     bool m_saveSlotsKnown{};
     Json m_saveSlots = Json::array();
-    PlayInput m_agentInput;
+    Platform::AgentInput m_agentInput;
     std::string m_inputSource{"none"};
     Platform::InputState m_gameInput;
     bool m_captureInput{};
@@ -644,7 +638,7 @@ namespace Dot::Editor {
     std::optional<Graphics::Renderer> m_renderer;
     std::optional<Graphics::SceneRenderer> m_drawing;
     std::optional<Graphics::RenderTarget> m_target;
-    std::optional<Core::StagedDirectory> m_control;
+    std::optional<Core::Control> m_control;
     Json m_snapshot;
     Json m_presets;
     Json m_edit;
@@ -5863,78 +5857,18 @@ namespace Dot::Editor {
     }
 
     auto processRequests() -> Core::Result<void> {
-      if (m_mailboxFault) {
-        return std::unexpected(*m_mailboxFault);
-      }
+      auto processed
+          = m_control->process([this](std::string_view request) { return safeExecute(request); },
+                               [this] { return m_application->running(); });
 
-      auto files = m_control->files();
+      if (!processed) {
+        auto failure = m_control->failure();
 
-      if (!files) {
-        return std::unexpected(files.error());
-      }
-
-      std::vector<std::filesystem::path> pending;
-      std::size_t entries = 0;
-
-      for (const auto& entry : std::filesystem::directory_iterator(files->root() / "requests")) {
-        if (++entries > 4096) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Workspace session request limit exceeded");
+        if (failure) {
+          m_mailboxFault = std::move(*failure);
         }
 
-        if (entry.path().extension() != ".json") {
-          continue;
-        }
-
-        const auto utf = entry.path().stem().u8string();
-        const std::string id(utf.begin(), utf.end());
-
-        if (!validId(id) || !std::filesystem::is_regular_file(entry.symlink_status())) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Invalid workspace request filename/type");
-        }
-
-        if (!std::filesystem::exists(files->root() / "responses" / entry.path().filename())) {
-          pending.push_back(entry.path().filename());
-        }
-
-        if (pending.size() > 256) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Workspace pending request capacity exceeded");
-        }
-      }
-
-      std::ranges::sort(pending);
-
-      for (std::size_t index = 0; index < std::min<std::size_t>(16, pending.size()); ++index) {
-        auto source
-            = files->readText(std::filesystem::path{"requests"} / pending[index], 1024 * 1024);
-        m_mailboxFault
-            = Core::Error{Core::ErrorCode::External,
-                          "Workspace request may have committed; response did not complete",
-                          {}};
-        auto response = source ? safeExecute(*source)
-                               : Core::Result<std::string>{std::unexpected(source.error())};
-        Json record{
-            {"source", source && Core::isValidUtf8(*source) ? Json(*source) : Json(nullptr)},
-            {"response", response ? Codec::parseJson(*response) : errorJson(response.error())}};
-        auto written = files->writeTextAtomic(std::filesystem::path{"responses"} / pending[index],
-                                              record.dump());
-
-        if (!written) {
-          m_mailboxFault = Core::Error{written.error().code,
-                                       "Workspace request may have committed; session is terminal "
-                                       "after response write failure: "
-                                           + written.error().message,
-                                       {}};
-          return std::unexpected(*m_mailboxFault);
-        }
-
-        m_mailboxFault.reset();
-
-        if (!m_application->running()) {
-          break;
-        }
+        return std::unexpected(processed.error());
       }
 
       return {};
@@ -11150,22 +11084,10 @@ namespace Dot::Editor {
       }
 
       impl->m_drawing.emplace(std::move(*drawing));
-      auto control = Core::StagedDirectory::create(project.files().value());
-
-      if (!control) {
-        return std::unexpected(control.error());
-      }
-
-      impl->m_control.emplace(std::move(*control));
-      auto files = impl->m_control->files().value();
-      auto requests = files.createDirectories("requests");
-      auto responses = files.createDirectories("responses");
       auto defaults = presets();
 
-      if (!requests || !responses || !defaults) {
-        return std::unexpected(!requests    ? requests.error()
-                               : !responses ? responses.error()
-                                            : defaults.error());
+      if (!defaults) {
+        return std::unexpected(defaults.error());
       }
 
       impl->m_presets = std::move(*defaults);
@@ -11175,13 +11097,14 @@ namespace Dot::Editor {
         return std::unexpected(snapshot.error());
       }
 
-      auto metadata = files.writeTextAtomic(
-          "session.json",
-          Json{{"protocol", 1}, {"state", "ready"}, {"document", impl->m_snapshot}}.dump());
+      auto control = Core::Control::create(project.files().value(),
+                                           Json{{"document", impl->m_snapshot}}.dump());
 
-      if (!metadata) {
-        return std::unexpected(metadata.error());
+      if (!control) {
+        return std::unexpected(control.error());
       }
+
+      impl->m_control.emplace(std::move(*control));
 
       impl->m_events
           = impl->m_application->events().subscribe([state = impl.get()](const auto& event) {
@@ -11384,74 +11307,7 @@ namespace Dot::Editor {
 
   auto submitWorkspaceRequest(const std::filesystem::path& control, std::string_view id,
                               std::string_view request) -> Core::Result<std::filesystem::path> {
-    if (!validId(id)) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Workspace request ID must be 1..64 ASCII letters/digits/_/-");
-    }
-
-    auto valid = validRequest(request);
-
-    if (!valid) {
-      return std::unexpected(valid.error());
-    }
-
-    auto files = Core::FileSystem::open(control);
-
-    if (!files) {
-      return std::unexpected(files.error());
-    }
-
-    auto session = files->readText("session.json", 64 * 1024 * 1024);
-
-    if (!session) {
-      return std::unexpected(session.error());
-    }
-
-    try {
-      const auto metadata = Codec::parseJson(*session);
-
-      if (metadata.at("protocol") != 1 || metadata.at("state") != "ready") {
-        return Core::fail(Core::ErrorCode::InvalidState, "Workspace control session is not ready");
-      }
-
-      const auto name = std::string(id) + ".json";
-      const auto destination = std::filesystem::path{"requests"} / name;
-      const auto response = std::filesystem::path{"responses"} / name;
-      auto resolved = files->resolve(destination);
-
-      if (!resolved) {
-        return std::unexpected(resolved.error());
-      }
-
-      if (std::filesystem::exists(*resolved)) {
-        auto old = files->readText(destination, 1024 * 1024);
-
-        if (!old || *old != request) {
-          return Core::fail(Core::ErrorCode::InvalidState,
-                            "Workspace request ID already has different content");
-        }
-      } else {
-        std::size_t entries = 0;
-
-        for ([[maybe_unused]] const auto& entry :
-             std::filesystem::directory_iterator(control / "requests")) {
-          if (++entries >= 4096) {
-            return Core::fail(Core::ErrorCode::Unavailable,
-                              "Workspace session request limit exceeded");
-          }
-        }
-
-        auto saved = files->writeTextAtomic(destination, request);
-
-        if (!saved) {
-          return std::unexpected(saved.error());
-        }
-      }
-
-      return files->resolve(response);
-    } catch (const std::exception& error) {
-      return Core::fail(Core::ErrorCode::External,
-                        "Submit workspace request: " + std::string(error.what()));
-    }
+    return Core::submitControlRequest(control, id, request);
   }
+
 }  // namespace Dot::Editor

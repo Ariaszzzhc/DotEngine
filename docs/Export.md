@@ -144,3 +144,115 @@ Native/data exports preserve the project's required `applicationId` independentl
 of display name, startup scene or output directory. The native player uses that ID
 with SDL's user-data directory and a `saves` child, never the package directory.
 New projects instantiated from templates receive new IDs. See [save contracts](GameState.md).
+
+## Opt-in native player control
+
+The actual standalone player and source/data player can expose a local product
+mailbox. No network service is opened. Parents must already exist; the player owns
+and retires only its private control child. An explicit data directory is separately
+owned by the caller and persists across process restarts:
+
+```text
+DotGame --control <existing-control-parent> --data-directory <existing-app-data-root>
+DotRuntime --game <package-root> --control <existing-control-parent> --data-directory <existing-app-data-root>
+DotRuntime --project <root> <compiler> --control <existing-control-parent> --data-directory <existing-app-data-root>
+```
+
+Both players also accept `--frames <count>` and `--profile <file>`; DotRuntime
+retains its optional first positional frame budget. Unknown, missing, duplicate or
+empty options reject. `--data-directory` uses that existing root's `saves` child,
+creating the child as needed; it does not append another application ID. Use a
+root owned by this game, outside content/install directories. An absent/invalid
+explicit root fails, with no user-directory fallback. Without this option, normal
+stable-application-ID user storage is unchanged.
+
+`--control` explicitly selects agent operation: the normal application loop keeps
+running while unfocused so bounded input frames have real gameplay dispatch. It
+still polls native events and never changes the system input method, forces focus,
+acknowledges nonexistent pointer capture or manually advances simulation. Pointer
+acknowledgement continues to follow actual window focus/relative mode. Native
+Escape/window close and the product close request use the same application stop
+and session shutdown. Without `--control`, normal focus-pausing behavior remains.
+
+After creating its real session, the process prints and flushes one JSON line with
+`ok`, `kind: "player"` and the canonical `control` path. Mailbox readiness is not
+game readiness: inspect `player.state` until `running`. Native compiler/VM/audio
+setup before this announcement is still synchronous. Initial renderer preparation
+continues in the regular loop and appears as `preparing`; this interface does not
+make all startup/loading asynchronous.
+
+Either binary can submit without opening a window or resolving game resources:
+
+```text
+DotGame send <returned-control> <unique-id> <request-file>
+DotRuntime send <returned-control> <unique-id> <request-file>
+```
+
+The receipt's `queued: true` and `response` path confirm submission only. Read the
+actual response file: `{source: "<original JSON>", response: {...}}`. IDs use 1..64
+portable ASCII letters/digits/underscore/hyphen; reserved device names and case
+aliases reject. Retrying identical ID/bytes returns the same receipt, without
+re-executing a completed request. Reusing an ID with different bytes fails. File
+access must be serialized by callers; this local channel is not an authenticated
+or hostile-race-isolated service.
+
+`Dot.Core.Control` shares this transport with the editor workspace, including its
+1-MiB object/depth-64 input boundary, at most sixteen sorted dispatches per native
+frame, 256 pending requests and 4096 retained request/response entries. Responses
+are bounded to 64 MiB. Submission rejects a new request when pending capacity is
+full, before publication; identical retries remain available. Source text is null
+for invalid UTF-8. A normal command
+failure is recorded as `ok:false` with contextual code/message and no automatic
+retry. A response failure after dispatch is terminal and explicitly reports that
+effects may have committed; neither the workspace nor player replays it. On exit,
+the control directory is retired. A close response can disappear during retirement;
+observe the owned process exit and control retirement to confirm shutdown.
+
+Commands use strict complete objects with no unknown fields:
+
+| Command | Additional fields | Actual operation |
+| --- | --- | --- |
+| inspect | none | Owned native scene and player state/input/source/transition/diagnostic snapshot |
+| input | scope, value | Bounded frames through the shared `Dot.Platform.AgentInput` implementation |
+| cancel-input | scope | Schedule one release frame for an active input request |
+| game-data | value | Existing strict GameData protocol, shared with scripts/editor |
+| request-scene | scope, path | Existing GameSession frame-boundary replacement request |
+| scene-status | request | Retained actual replacement result |
+| close | none | Request ordinary native shutdown; acknowledgement is not exit |
+
+Scene scopes and scene-request IDs are nonzero decimal strings. Input/scene requests require
+the current running scope, with no pending close. Scene replacement cancels old
+scoped input and stale scopes reject. Game data spans scopes; before Running or
+while closing, only in-memory snapshot/get are permitted. Loading save data does
+not implicitly restore scene entities. The game still owns its checkpoint schema
+and restoration policy.
+
+```json
+{"command":"inspect"}
+{"command":"input","scope":"4","value":{"frames":30,"keys":["W","Space"],"buttons":[],"pointer":[0,0],"pointerDelta":[0,0],"wheel":[0,0],"text":""}}
+{"command":"game-data","value":{"command":"snapshot"}}
+{"command":"request-scene","scope":"4","path":"scenes/main.dotscene"}
+{"command":"scene-status","request":"1"}
+{"command":"close"}
+```
+
+The complete seven-field input value uses the editor Play contract: 1..600 native
+frames, strict canonical key/button names, finite bounded coordinates/wheel/text,
+once-only press/text edges and a final release frame. Escape/F5 are reserved
+frontend controls. An active request must finish or release after cancellation
+before replacement. `player.input.active/remaining/published` distinguish acceptance
+from consumption. `native.focused/pointerCaptured` report actual OS observations
+separately; agent key input does not invent pointer acknowledgement.
+
+`Dot.Project.PlayerControl` provides these CPU-only operations over a borrowed
+stable GameSession, without windows/devices. The frontend owns scheduling and
+retirement. Observations retain at most 32 actual script failures; `failureCount`
+and diagnostic sequences are decimal strings. Messages over 8 KiB are explicitly
+marked `truncated` and retain valid UTF-8. Hot-reload errors remain visible under
+`player.source`; native stderr retains normal lifecycle/startup diagnostics.
+
+Mailbox polling shares the native owner loop. Current GameSession replacement still
+validates/prepares resources and retires old services synchronously; a loading
+request can therefore delay rendering and mailbox replies. Native transition
+profiles retain actual fixed-time drops. Background resource preparation/retirement
+and game-specific checkpoint restoration/feedback remain unfinished.

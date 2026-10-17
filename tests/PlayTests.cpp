@@ -18,7 +18,7 @@ import Dot.Core.Files;
 import Dot.Core.Process;
 import Dot.Core.Result;
 import Dot.Editor.Play;
-import Dot.Editor.PlayInput;
+import Dot.Platform.AgentInput;
 import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.World.Scene;
@@ -339,7 +339,7 @@ TEST_CASE("play.agent_input_drives_shared_scripts_physics_then_releases_without_
   const auto before = Dot::World::encodeScene(authoring).value();
   auto play = PlaySession::create(fixture.project, fixture.compiler(), authoring, fixture.config())
                   .value();
-  PlayInput input;
+  Dot::Platform::AgentInput input;
   const auto request = nlohmann::json{
       {"frames", 3},       {"keys", {"D"}},          {"buttons", nlohmann::json::array()},
       {"pointer", {0, 0}}, {"pointerDelta", {0, 0}}, {"wheel", {0, 0}},

@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <span>
+#include <string_view>
 
 import Dot.Core.Result;
 import Dot.Project;
@@ -17,6 +19,13 @@ namespace Dot::Runtime {
     bool pauseOnFocusLoss{true};
     float volume{1};
     std::optional<std::filesystem::path> profile;
+    /** Opt-in agent mode keeps the native loop active without focus; pointer
+     * capture still reflects the OS. Data directory must already exist and is
+     * explicit caller-owned storage, never an implicit fallback.
+     * 显式智能体模式在失焦时继续原生循环，鼠标捕获仍以 OS 为准；数据目录须已存在，
+     * 是调用者明确拥有的存储，不作隐式回退。 */
+    std::optional<std::filesystem::path> control;
+    std::optional<std::filesystem::path> dataDirectory;
   };
 
   auto runProject(const Project::Project& project, const Script::TypeScriptCompiler& compiler,
@@ -24,7 +33,10 @@ namespace Dot::Runtime {
   auto runGame(const Project::GamePackage& game, const PlayerOptions& options)
       -> Core::Result<void>;
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& compiler,
-                   std::size_t frames, std::optional<std::filesystem::path> profile = {}) -> int;
-  auto playGame(const std::filesystem::path& root, std::size_t frames,
-                std::optional<std::filesystem::path> profile = {}) -> int;
+                   const PlayerOptions& options) -> int;
+  auto playGame(const std::filesystem::path& root, const PlayerOptions& options) -> int;
+  auto parsePlayerOptions(std::span<const std::string_view> arguments, bool positionalBudget)
+      -> Core::Result<PlayerOptions>;
+  auto sendPlayerRequest(std::string_view control, std::string_view id, std::string_view request)
+      -> int;
 }  // namespace Dot::Runtime

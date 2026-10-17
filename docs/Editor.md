@@ -2008,3 +2008,10 @@ instance; other placements refresh explicitly. Scene Undo does not undo the exte
 file. Inspect `sourceApplied.path`, `written` and `sceneChanged` in the applied response.
 See [source application contracts](SceneContent.md#applying-a-complete-field-to-its-source)
 for conflicts, nested identities, native-reference boundaries and publication behavior.
+
+
+The workspace mailbox transport now uses `Dot.Core.Control`, and bounded Play input
+uses `Dot.Platform.AgentInput`, shared with the opt-in standalone player. Existing
+workspace commands and temporary Play-storage policy retain their meanings. See
+[native player control](Export.md#opt-in-native-player-control) for source-free
+inspection, gameplay input, scene requests and persistent game-data operations.

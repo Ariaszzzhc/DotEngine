@@ -15,14 +15,14 @@ module;
 
 #include "../Serialization/Json.hpp"
 
-module Dot.Editor.PlayInput;
+module Dot.Platform.AgentInput;
 
 import Dot.Core.Result;
 import Dot.Core.Text;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
 
-namespace Dot::Editor {
+namespace Dot::Platform {
   namespace {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
@@ -38,7 +38,7 @@ namespace Dot::Editor {
     }
   }  // namespace
 
-  auto PlayInput::submit(std::string_view value, const Platform::InputState& previous)
+  auto AgentInput::submit(std::string_view value, const Platform::InputState& previous)
       -> Core::Result<void> {
     if (m_stats.active) {
       return Core::fail(Core::ErrorCode::InvalidState, "Agent input is still active or releasing");
@@ -47,7 +47,7 @@ namespace Dot::Editor {
     if (value.empty() || value.size() > 64 * 1024 || value.find('\0') != std::string_view::npos
         || !Core::isValidUtf8(value)) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Play input requires UTF-8 JSON without NUL within 64 KiB");
+                        "Agent input requires UTF-8 JSON without NUL within 64 KiB");
     }
 
     try {
@@ -146,17 +146,17 @@ namespace Dot::Editor {
       return {};
     } catch (const Json::exception& error) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Play input JSON: " + std::string(error.what()));
+                        "Agent input JSON: " + std::string(error.what()));
     } catch (const std::invalid_argument& error) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Play input: " + std::string(error.what()));
+                        "Agent input: " + std::string(error.what()));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
-                        "Prepare play input: " + std::string(error.what()));
+                        "Prepare agent input: " + std::string(error.what()));
     }
   }
 
-  auto PlayInput::next() -> Core::Result<std::optional<Platform::InputState>> {
+  auto AgentInput::next() -> Core::Result<std::optional<Platform::InputState>> {
     if (!m_stats.active) {
       return std::optional<Platform::InputState>{};
     }
@@ -188,24 +188,24 @@ namespace Dot::Editor {
       return std::optional<Platform::InputState>{std::move(output)};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
-                        "Publish play input: " + std::string(error.what()));
+                        "Publish agent input: " + std::string(error.what()));
     }
   }
 
-  auto PlayInput::cancel() noexcept -> void {
+  auto AgentInput::cancel() noexcept -> void {
     if (m_stats.active) {
       m_stats.remaining = 0;
     }
   }
 
-  auto PlayInput::reset() noexcept -> void {
+  auto AgentInput::reset() noexcept -> void {
     m_state = Platform::InputState{};
     m_previous = Platform::InputState{};
     m_delta = m_wheel = {};
     m_stats = {};
   }
 
-  auto PlayInput::stats() const noexcept -> PlayInputStats {
+  auto AgentInput::stats() const noexcept -> AgentInputStats {
     return m_stats;
   }
-}  // namespace Dot::Editor
+}  // namespace Dot::Platform

@@ -42,6 +42,9 @@ changed source snapshots compile in one background task while current code keeps
 running. Invalid source keeps the prior generation active; Console reports the
 error and Retry scripts can retry unchanged bytes. Current source is rechecked before
 migration. This migration state does not persist player progress across game sessions.
+The exported game can be operated through the optional [native product mailbox](../../docs/Export.md#opt-in-native-player-control),
+including real movement/jump input and persistent game-data slots. A Prism-specific
+checkpoint schema, player restoration and in-game save feedback remain unfinished.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

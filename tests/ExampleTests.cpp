@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ScriptCompilation.hpp"
@@ -26,6 +27,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.PlayerControl;
 import Dot.Script.Compiler;
 import Dot.Script.Runtime;
 import Dot.Platform.Input;
@@ -514,4 +516,200 @@ TEST_CASE("prism.surveyor_retains_textured_armor_eight_slot_skinning_and_seven_r
     CHECK(image->width == 2048);
     CHECK(image->height == 2048);
   }
+}
+
+namespace {
+  auto control(Project::PlayerControl& player, Json request) -> Json {
+    auto result = player.perform(request.dump());
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    return Json::parse(*result);
+  }
+
+  auto inputRequest(std::uint32_t frames, Json keys = Json::array({"W"})) -> Json {
+    return {{"frames", frames},  {"keys", std::move(keys)}, {"buttons", Json::array()},
+            {"pointer", {0, 0}}, {"pointerDelta", {0, 0}},  {"wheel", {0, 0}},
+            {"text", ""}};
+  }
+}  // namespace
+
+TEST_CASE("player_control.actual_game_input_has_owned_native_frames_and_release_edges") {
+  Fixture fixture;
+  auto session = fixture.session();
+  auto player = Project::PlayerControl::create(session).value();
+  auto initial = control(player, {{"command", "inspect"}});
+  CHECK(initial["player"]["state"] == "preparing");
+  CHECK_FALSE(player.perform(
+      Json{{"command", "input"}, {"scope", initial["player"]["scope"]}, {"value", inputRequest(30)}}
+          .dump()));
+  CHECK_FALSE(
+      player.perform(R"({"command":"game-data","value":{"command":"set","key":"x","value":1}})"));
+  CHECK(control(player,
+                {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}})["result"]["data"]
+        == Json::object());
+  report(session.start());
+  const auto scope = control(player, {{"command", "inspect"}})["player"]["scope"];
+  control(player, {{"command", "input"}, {"scope", scope}, {"value", inputRequest(30)}});
+  const auto origin = entity(session, "Player").transform.position;
+  const auto camera = entity(session, "Camera").transform.rotation;
+
+  for (int frame = 0; frame < 30; ++frame) {
+    auto input = player.next(Platform::InputState{}).value();
+    CHECK(input.key(Platform::Key::W).pressed == (frame == 0));
+    good(session.publish(input, false));
+    report(session.fixedUpdate());
+    report(session.update(1.0 / 60));
+  }
+
+  CHECK(entity(session, "Player").transform.position.z < origin.z - 1);
+  CHECK(entity(session, "Camera").transform.rotation == camera);
+  auto status = control(player, {{"command", "inspect"}});
+  CHECK(status["player"]["input"]["active"] == true);
+  CHECK(status["player"]["input"]["remaining"] == 0);
+  CHECK_FALSE(player.perform(
+      Json{{"command", "input"}, {"scope", scope}, {"value", inputRequest(1)}}.dump()));
+  const auto released = player.next(Platform::InputState{}).value();
+  CHECK(released.key(Platform::Key::W).released);
+  CHECK_FALSE(released.key(Platform::Key::W).down);
+  CHECK(control(player, {{"command", "inspect"}})["player"]["input"]["active"] == false);
+  const auto native = player.next(released).value();
+  CHECK(native.key(Platform::Key::W).released);
+  report(session.close());
+}
+
+TEST_CASE(
+    "player_control.scene_replacement_invalidates_old_input_scope_and_close_only_requests_exit") {
+  Fixture fixture;
+  auto session = fixture.session();
+  report(session.start());
+  auto player = Project::PlayerControl::create(session).value();
+  const auto original = control(player, {{"command", "inspect"}});
+  const auto scope = original["player"]["scope"];
+  control(player, {{"command", "input"}, {"scope", scope}, {"value", inputRequest(600)}});
+  control(player, {{"command", "cancel-input"}, {"scope", scope}});
+  CHECK_FALSE(player.next(Platform::InputState{})->key(Platform::Key::W).pressed);
+  const auto requested = control(
+      player, {{"command", "request-scene"}, {"scope", scope}, {"path", "scenes/main.dotscene"}});
+  report(session.update(0));
+  const auto after = control(player, {{"command", "inspect"}});
+  CHECK(after["player"]["scope"] != scope);
+  CHECK(after["player"]["input"]["active"] == false);
+  CHECK(control(player, {{"command", "scene-status"},
+                         {"request", requested["request"]}})["transition"]["state"]
+        == "succeeded");
+  CHECK_FALSE(player.perform(
+      Json{{"command", "input"}, {"scope", scope}, {"value", inputRequest(1)}}.dump()));
+  CHECK_FALSE(player.perform(Json{{"command", "cancel-input"}, {"scope", scope}}.dump()));
+  CHECK(control(player, {{"command", "close"}})["closing"] == true);
+  CHECK(player.closing().value());
+  CHECK(session.stats()->state == Project::SessionState::Running);
+  CHECK_FALSE(player.next(Platform::InputState{}));
+  CHECK_FALSE(player.perform(R"({"command":"game-data","value":{"command":"list-saves"}})"));
+  CHECK(control(player,
+                {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}})["result"]["data"]
+        == Json::object());
+  report(session.close());
+  CHECK(control(player, {{"command", "inspect"}})["player"]["state"] == "closed");
+}
+
+TEST_CASE("player_control.strict_requests_owner_moves_and_bounded_failure_observations") {
+  Fixture fixture;
+  auto session = fixture.session();
+  report(session.start());
+  auto original = Project::PlayerControl::create(session).value();
+  auto player = std::move(original);
+  CHECK_FALSE(original.perform(R"({"command":"inspect"})"));
+  const auto before = control(player, {{"command", "inspect"}});
+
+  for (const auto* request :
+       {"[]", R"({"command":"inspect","extra":1})", R"({"command":"inspect","command":"close"})",
+        R"({"command":"unknown"})", R"({"command":"input","scope":"1"})"}) {
+    CHECK_FALSE(player.perform(request));
+    CHECK(control(player, {{"command", "inspect"}}) == before);
+  }
+
+  bool rejected{};
+  std::thread other([&] {
+    rejected = !player.perform(R"({"command":"inspect"})") && !player.next(Platform::InputState{})
+               && !player.closing();
+  });
+  other.join();
+  CHECK(rejected);
+  Script::ScriptReport failure;
+  const auto id = entity(session, "Player").id;
+  failure.failures.push_back({id,
+                              Script::ScriptPhase::Update,
+                              {Core::ErrorCode::Io, std::string(8191, 'x') + "消息", {}}});
+
+  for (int index = 0; index < 35; ++index) {
+    good(player.record(failure));
+  }
+
+  const auto observed = control(player, {{"command", "inspect"}});
+  CHECK(observed["player"]["failureCount"] == "35");
+  CHECK(observed["player"]["diagnostics"].size() == 32);
+  CHECK(observed["player"]["diagnostics"][0]["sequence"] == "4");
+  CHECK(observed["player"]["diagnostics"][0]["truncated"] == true);
+  CHECK(observed["player"]["diagnostics"][0]["error"]["message"].get<std::string>().size() == 8191);
+  CHECK(before["player"]["diagnostics"].empty());
+  report(session.close());
+}
+
+TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_storage") {
+  Fixture fixture;
+  good(fixture.storage.files()->createDirectories("user-data"));
+  const auto root = Core::FileSystem::open(fixture.storage.files()->root() / "user-data").value();
+  const auto create = [&] {
+    auto description = fixture.project.description().value();
+    description.hotReload = false;
+    good(fixture.project.save(description));
+    Project::GameSessionConfig config;
+    config.progress.saves = root;
+    auto session = Project::GameSession::create(fixture.project, fixture.compiler(), config);
+    good(session);
+    report(session->start());
+    return std::move(*session);
+  };
+
+  {
+    auto session = create();
+    auto player = Project::PlayerControl::create(session).value();
+    control(player,
+            {{"command", "game-data"},
+             {"value",
+              {{"command", "set"},
+               {"key", "checkpoint"},
+               {"value", {{"position", {-3, 0, -1}}, {"scene", "scenes/main.dotscene"}}}}}});
+    const auto saved = control(
+        player, {{"command", "game-data"},
+                 {"value", {{"command", "save"}, {"slot", "checkpoint"}, {"overwrite", false}}}});
+    CHECK(saved["result"]["name"] == "checkpoint");
+    CHECK_FALSE(player.perform(
+        R"({"command":"game-data","value":{"command":"save","slot":"checkpoint","overwrite":false}})"));
+    report(session.close());
+  }
+
+  auto restarted = create();
+  auto player = Project::PlayerControl::create(restarted).value();
+  const auto fresh
+      = control(player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}});
+  CHECK(fresh["result"]["data"] == Json::object());
+  const auto saved = control(
+      player,
+      {{"command", "game-data"}, {"value", {{"command", "read-save"}, {"slot", "checkpoint"}}}});
+  CHECK(saved["result"]["data"]["checkpoint"]["position"] == Json::array({-3, 0, -1}));
+  const auto changed
+      = control(player, {{"command", "game-data"},
+                         {"value", {{"command", "set"}, {"key", "scratch"}, {"value", 1}}}});
+  CHECK_FALSE(player.perform(
+      R"({"command":"game-data","value":{"command":"load","slot":"checkpoint","revision":"1"}})"));
+  control(player, {{"command", "game-data"},
+                   {"value",
+                    {{"command", "load"},
+                     {"slot", "checkpoint"},
+                     {"revision", changed["result"]["revision"]}}}});
+  const auto loaded
+      = control(player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}});
+  CHECK(loaded["result"]["data"] == saved["result"]["data"]);
+  CHECK(loaded["result"]["revision"] != saved["result"]["revision"]);
+  report(restarted.close());
 }

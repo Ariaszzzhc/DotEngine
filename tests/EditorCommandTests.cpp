@@ -11,6 +11,8 @@
 #include <vector>
 
 import Dot.Core.Files;
+import Dot.Core.Control;
+import Dot.Core.Result;
 import Dot.Core.Process;
 import Dot.Project;
 import Dot.Project.GamePackage;
@@ -494,4 +496,85 @@ TEST_CASE("editor_document_scene_files_use_one_cli_session_and_keep_startup_byte
   CHECK(Dot::World::loadScene(files, "scenes/level.dotscene")->entities()->empty());
   CHECK(Dot::Core::processResources().handles == 0);
   CHECK(Dot::Core::processResources().children == 0);
+}
+
+TEST_CASE("runtime_control_and_data_options_fail_before_opening_windows_or_creating_fallbacks") {
+  Directory directory;
+
+  for (const auto* executable : {DOT_RUNTIME_EXECUTABLE, DOT_GAME_EXECUTABLE}) {
+    for (const auto& tail : std::vector<std::vector<std::string>>{
+             {"--control"},
+             {"--control", ""},
+             {"--data-directory"},
+             {"--data-directory", ""},
+             {"--control", "a", "--control", "b"},
+             {"--data-directory", "a", "--data-directory", "b"}}) {
+      std::vector<std::string> args;
+
+      if (std::string_view(executable) == DOT_RUNTIME_EXECUTABLE) {
+        args = {"--project", "missing", "missing"};
+      }
+
+      args.insert(args.end(), tail.begin(), tail.end());
+      auto result = Dot::Core::runProcess({executable, args, directory.root});
+      REQUIRE(result);
+      CHECK(result->exitCode == 2);
+    }
+  }
+
+  create(directory);
+
+  for (const auto* option : {"--control", "--data-directory"}) {
+    const auto missing = directory.root / "absent";
+    auto result = Dot::Core::runProcess({DOT_RUNTIME_EXECUTABLE,
+                                         {"--project", utf(directory.root / "game folder"),
+                                          DOT_TYPESCRIPT_COMPILER, option, utf(missing)},
+                                         directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 1);
+    CHECK(result->standardError.find("Prepare player") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(missing));
+  }
+}
+
+TEST_CASE("runtime_and_standalone_send_queue_the_shared_owned_product_protocol_without_windows") {
+  Directory directory;
+  auto parent = Dot::Core::FileSystem::open(directory.root).value();
+  auto mailbox = Dot::Core::Control::create(parent).value();
+  const auto control = mailbox.files()->root();
+  REQUIRE(parent.writeTextAtomic("输入 request.json", R"({"command":"inspect"})"));
+  std::filesystem::path response;
+
+  for (const auto* executable : {DOT_RUNTIME_EXECUTABLE, DOT_GAME_EXECUTABLE}) {
+    auto result = Dot::Core::runProcess(
+        {executable,
+         {"send", utf(control), "same-id", utf(directory.root / "输入 request.json")},
+         directory.root});
+    REQUIRE(result);
+    REQUIRE(result->exitCode == 0);
+    const auto receipt = Json::parse(result->standardOutput);
+    CHECK(receipt["queued"] == true);
+    response = receipt["response"].get<std::string>();
+    CHECK_FALSE(std::filesystem::exists(response));
+  }
+
+  std::size_t calls{};
+  REQUIRE(mailbox.process([&](std::string_view) -> Dot::Core::Result<std::string> {
+    ++calls;
+    return R"({"ok":true,"value":"actual"})";
+  }));
+  CHECK(calls == 1);
+  CHECK(
+      Json::parse(mailbox.files()->readText("responses/same-id.json").value())["response"]["value"]
+      == "actual");
+  REQUIRE(parent.writeTextAtomic("输入 request.json", R"({"command":"close"})"));
+  auto conflict = Dot::Core::runProcess(
+      {DOT_GAME_EXECUTABLE,
+       {"send", utf(control), "same-id", utf(directory.root / "输入 request.json")},
+       directory.root});
+  REQUIRE(conflict);
+  CHECK(conflict->exitCode == 1);
+  CHECK(calls == 1);
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
 }

@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "Player.hpp"
 
@@ -20,35 +21,21 @@
  * 播放相邻游戏包，不依赖工作目录或编译器。 */
 auto main(int argc, char** argv) -> int {
   try {
-    std::size_t frames = 0;
-    bool budget = false;
-    std::optional<std::filesystem::path> profile;
+    if (argc == 5 && std::string_view(argv[1]) == "send") {
+      return Dot::Runtime::sendPlayerRequest(argv[2], argv[3], argv[4]);
+    }
 
-    for (int argument = 1; argument < argc; argument += 2) {
-      if (argument + 1 >= argc) {
-        std::println(stderr, "Usage: DotGame [--frames <count>] [--profile <file>]");
-        return 2;
-      }
+    std::vector<std::string_view> arguments;
 
-      const std::string_view option(argv[argument]);
-      const std::string_view value(argv[argument + 1]);
+    for (int argument = 1; argument < argc; ++argument) {
+      arguments.emplace_back(argv[argument]);
+    }
 
-      if (option == "--frames" && !budget) {
-        const auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
+    auto options = Dot::Runtime::parsePlayerOptions(arguments, false);
 
-        if (value.empty() || parsed.ec != std::errc{}
-            || parsed.ptr != value.data() + value.size()) {
-          std::println(stderr, "Game frame budget must be an unsigned integer");
-          return 2;
-        }
-
-        budget = true;
-      } else if (option == "--profile" && !profile && !value.empty()) {
-        profile = std::filesystem::path(std::u8string(value.begin(), value.end()));
-      } else {
-        std::println(stderr, "Invalid or duplicate player option");
-        return 2;
-      }
+    if (!options) {
+      std::println(stderr, "{}", options.error().message);
+      return 2;
     }
 
     const auto* base = SDL_GetBasePath();
@@ -60,7 +47,7 @@ auto main(int argc, char** argv) -> int {
 
     const std::string_view text(base);
     const auto root = std::filesystem::path(std::u8string(text.begin(), text.end()));
-    return Dot::Runtime::playGame(root / "game", frames, std::move(profile));
+    return Dot::Runtime::playGame(root / "game", *options);
   } catch (const std::exception& error) {
     std::println(stderr, "Standalone game: {}", error.what());
     return 1;

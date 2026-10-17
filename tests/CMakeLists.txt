@@ -26,7 +26,7 @@ add_executable(DotUnitTests
     ScriptDiagnosticTests.cpp
     EventTests.cpp
     InputTests.cpp
-    PlayInputTests.cpp
+    AgentInputTests.cpp
     ViewportCaptureTests.cpp
     MathTests.cpp
     GeometryTests.cpp
@@ -93,6 +93,7 @@ add_executable(DotTests
     main.cpp
     FileTests.cpp
     StagedDirectoryTests.cpp
+    ControlTests.cpp
     ProjectTests.cpp
     DocumentTests.cpp
     TransformToolTests.cpp

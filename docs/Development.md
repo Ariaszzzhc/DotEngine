@@ -10330,3 +10330,124 @@ Background source graph I/O, whole-instance/topology application, variants,
 retargeting, broader animation/gameplay production, final art and production
 readiness remain unfinished. This stage establishes one modular content-iteration
 loop through actual products; it does not complete the overall engine goal.
+
+## 2026-10-17 — Control actual standalone games
+
+Prism Relay still has only hot-reload migration state, without a durable player
+checkpoint/restore policy or in-game save feedback. The native persistence service
+already exists, but the exported product could not be operated/inspected through
+the same kind of machine interface as editor Play. Add that missing product path
+before building a game-specific restore policy. This stage does not declare the
+checkpoint or overall engine goal complete.
+
+Extract the workspace's owned local mailbox into Dot.Core.Control and move the
+CPU-only bounded Play input implementation to Dot.Platform.AgentInput. Remove the
+old editor module instead of retaining a second implementation/compatibility alias.
+Workspace commands keep their product behavior and use the shared transport.
+Requests execute at most once per ID; identical bytes can retry submission, while
+different contents, portable device names and case aliases reject. Bound input
+objects to 1 MiB/depth 64, responses to 64 MiB, one poll to sixteen sorted requests,
+pending work to 256 and retained request/response entries to 4096. Reject ordinary
+submission overflow before writing a new request; raw externally injected overflow
+also rejects before dispatch. Normal operation errors become owned responses.
+After callback effects, invalid/throwing/unwritable responses latch a terminal
+failure explicitly saying that effects may have committed. Never replay them.
+Creator/reentry/move/explicit-cleanup boundaries retain owned staging and errors.
+
+Dot.Project.PlayerControl borrows a stable GameSession, independently of windows
+or graphics. Strict inspect/input/cancel-input/game-data/request-scene/scene-status/
+close operations use existing product implementations. Input owns native frames,
+not manually advanced fixed steps; scene replacement cancels obsolete scoped input.
+Stale scopes and pre-start/closing mutations reject. Close asks the frontend to
+stop, without invoking hooks itself. Observe actual script/source failures, keeping
+32 owned diagnostics with explicit UTF-8-safe 8-KiB message truncation and monotone
+failure sequences. Input acceptance, consumption, scene completion and process
+exit remain separate observable facts.
+
+DotGame and DotRuntime accept --control with an existing parent and print the
+actual owned control path. Both can send a request without opening windows or
+loading a game. Native agent mode explicitly continues the regular loop unfocused;
+it does not force focus, synthesize OS input or fabricate relative pointer capture.
+The normal frontend still owns real capture acknowledgement and lifecycle hooks.
+An optional --data-directory chooses existing caller-owned app storage and its
+saves child; an invalid explicit root fails without falling back. The ordinary
+application-ID user directory remains the default. CLI paths use explicit UTF-8
+conversion, including Chinese request-file names. Frame/profile options remain
+shared and strictly validated before resource/window creation where applicable.
+
+Eleven enduring tests in existing targets cover filesystem mailbox ordering,
+ID retry/conflict/alias/device policies, invalid input and error replies, bounded
+batches/pending recovery, post-effect standard/nonstandard exceptions and response
+write failures, owner/reentry/move/close lifetime, actual Prism native input edges,
+scoped replacement/cancellation, borrowed-session shutdown, diagnostic ownership/
+limits and actual session restart over one explicit save root. CLI tests exercise
+both actual send executables with a Chinese filename and reject malformed/duplicate/
+missing options or invalid roots before native initialization. The existing six
+CPU-only input/name regressions and Play integration now use the shared module.
+No acceptance executable or windowed automated integration is added.
+
+Full Debug passes 1,383/1,383 in 217.10s; final focused Debug after the submission
+quota/UTF-8 review passes 18/18 in 5.98s. Full Release/NDEBUG passes 1,383/1,383 in
+31.72s. Counts: 426 unit, 957 integration; overlapping labels include 223 compiler,
+162 offscreen, 36 audio-native, 33 platform and 21 process. Only arm64 macOS is
+executed. CUA still reports the Mac locked; no new human pointer/keyboard acceptance
+or Windows/Linux execution is claimed.
+
+Use the actual Release editor to create PrismControl from the PrismRelay template,
+change walkSpeed to 3.6 through the component transaction and Save. Product W+Space
+moves Z from 2 to 1.3756583929 and reaches Y 1.3822506666. Save one temporary Play
+slot, Stop, then start another Play: state and slots are fresh. Stop restores the
+exact clean authoring scene and saved PNG, SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695. Actual workspace
+export matches 115 manifest content files / 66,211,235 bytes against saved authoring,
+with no .ts/.mts/.map publication.
+
+Relocate that export, hide authoring and run the actual standalone player twice,
+using explicit control/data parents under ignored build storage. Both native input
+requests consume thirty held frames plus one release, and identical retry does not
+restart them. First W+Space moves [-3,0,2] to approximately [-3,1.643526,1.038021];
+second D+Space moves to [-2.089341,1.614376,2]. Both report native focused=false and
+pointerCaptured=false: agent input works without pretending that the locked desktop
+acknowledged capture. Failure counts remain zero and no pause is hidden.
+
+Write owned finite checkpoint data with a Chinese label, retry the same save ID
+after an intervening state edit, and verify that saved bytes do not change. Stale
+state load rejects. The next process starts with fresh live state, reads the exact
+persisted slot and explicitly loads it. Saving/loading data leaves the character at
+its normal spawn; there is no implicit or fabricated player restoration. A deliberately
+damaged owned slot reports its real parse error, preserves live state, remains
+removable, and movement continues afterward. The persistent slot hash is
+fabf55cf8ebd99b8ef6245f15d7a083bebbc406ffcca6f01538a558bf18b0274.
+
+An actual compiled request-scene succeeds, changes scope, retains shared game data
+and rejects obsolete input. It also exposes a material remaining stall: first native
+replacement spends 405.469667ms in update / 408.369542ms in the application step;
+the next 409.628625ms interval drops 283.333322ms of fixed time. Preserve the warning
+and profile, rather than resetting a clock or relabeling the interval as healthy.
+The second run's greatest step is 39.259042ms without that replacement.
+
+Repeat one transition under a six-second external sample requested at 1ms. It
+succeeds but records 473.140083ms update / 479.757125ms step and the next interval
+drops 349.999986ms. The main-thread prepareSession -> Assets.loadImage/decodeImage
+branch contains 246 samples, largely PNG/JPEG decode; retiring old audio Playback
+through thread join contains 29. Current sceneGraphics validation still decodes
+images on the owner, and audio retirement also remains synchronous. These are local
+stack/phase observations, not a controlled performance comparison or game-FPS claim.
+Background validation/preparation and retirement are concrete next work, without
+skipping resource validation or hiding dropped time.
+
+The sampling helper's post-exit summary first hit a missing statistics import;
+repair the helper and recover the summary from its already-saved native profile,
+completed scene response, retired control and absent owned PID. Do not repeat the
+already-completed player run. All three native players and the editor exit zero;
+the editor has empty stderr, while native logs retain ordinary loading progress and
+the above real drop warnings. Authoring is restored and persisted bytes remain
+unchanged after sampling. Raw requests/receipts/responses, profiles, stack sample,
+manifest/save hashes and PNGs remain in ignored build/player-control-review.
+
+Inspect linkage and metadata, then remove owned app/native validation copies and
+obsolete implementation helpers, preserving saved project/data/evidence and build
+caches. No distribution archive is created. Final formatting, whitespace and
+ownership/error/platform/test review precede commit. Prism-specific checkpoint
+restoration/feedback, synchronous transition resource work, broader production
+workflows, final art and the overall engine goal remain unfinished.

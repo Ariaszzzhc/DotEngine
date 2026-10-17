@@ -95,8 +95,10 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Files.cpp
     src/Engine/Core/Paths.cpp
     src/Engine/Core/StagedDirectory.cpp
+    src/Engine/Core/Control.cpp
     src/Engine/Project/Project.cpp
     src/Engine/Project/GameSession.cpp
+    src/Engine/Project/PlayerControl.cpp
     src/Engine/Game/State.cpp
     src/Engine/Game/Saves.cpp
     src/Engine/Script/SceneFlow.cpp
@@ -111,7 +113,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/AssetPreview.cpp
     src/Engine/Editor/PreviewWorker.cpp
     src/Engine/Editor/Play.cpp
-    src/Engine/Editor/PlayInput.cpp
+    src/Engine/Platform/AgentInput.cpp
     src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/AnimationPreview.cpp
     src/Engine/Editor/AnimationDocument.cpp
@@ -236,8 +238,10 @@ target_sources(DotEngine PUBLIC
         src/Engine/Core/Files.cppm
         src/Engine/Core/Paths.cppm
         src/Engine/Core/StagedDirectory.cppm
+        src/Engine/Core/Control.cppm
         src/Engine/Project/Project.cppm
         src/Engine/Project/GameSession.cppm
+        src/Engine/Project/PlayerControl.cppm
         src/Engine/Game/State.cppm
         src/Engine/Game/Saves.cppm
         src/Engine/Script/SceneFlow.cppm
@@ -252,7 +256,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/AssetPreview.cppm
         src/Engine/Editor/PreviewWorker.cppm
         src/Engine/Editor/Play.cppm
-        src/Engine/Editor/PlayInput.cppm
+        src/Engine/Platform/AgentInput.cppm
         src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/AnimationPreview.cppm
         src/Engine/Editor/AnimationDocument.cppm
@@ -333,11 +337,11 @@ target_sources(DotEngine PUBLIC
 include(cmake/ScriptModules.cmake)
 include(cmake/Shaders.cmake)
 
-add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp)
+add_executable(DotRuntime src/Runtime/main.cpp src/Runtime/ProjectPlayer.cpp src/Runtime/Options.cpp)
 target_link_libraries(DotRuntime PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 
-add_executable(DotGame src/Runtime/GameMain.cpp src/Runtime/ProjectPlayer.cpp)
-target_link_libraries(DotGame PRIVATE DotEngine SDL3::SDL3)
+add_executable(DotGame src/Runtime/GameMain.cpp src/Runtime/ProjectPlayer.cpp src/Runtime/Options.cpp)
+target_link_libraries(DotGame PRIVATE DotEngine SDL3::SDL3 nlohmann_json::nlohmann_json)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(DotGame PROPERTIES INSTALL_RPATH "$ORIGIN/lib")
     target_link_options(DotGame PRIVATE "LINKER:--disable-new-dtags")
