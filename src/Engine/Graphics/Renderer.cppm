@@ -167,6 +167,9 @@ export namespace Dot::Graphics {
     std::uint32_t width;
     std::uint32_t height;
     std::uint64_t frames;
+    /** Nonzero renderer-local allocation identity, preserved by shared copies.
+     * 非零渲染器本地分配身份，共享副本保留此值。 */
+    std::uint64_t identity{};
   };
 
   struct GuiConfig {
@@ -593,6 +596,12 @@ export namespace Dot::Graphics {
      * 状态读取为同步操作，不宣称已验证大型游戏帧时。统一镜像修正全部光栅通道的正面，
      * 混合朝向须拆分 primitive，否则整批更新失败。 */
     [[nodiscard]] auto updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void>;
+    /** Freeze the current validated posed view. A shared lease pins its output
+     * buffer until the last copy dies; a later update cannot overwrite that spare.
+     * Repeated snapshots of an unchanged pose share identity/cache dependencies.
+     * 冻结当前已校验姿态；共享租约将输出缓冲固定至最后副本销毁，后续更新不能覆盖
+     * 被固定的备用缓冲；未变姿态的重复快照共用身份及缓存依赖。 */
+    [[nodiscard]] auto freezeSkin(const SkinnedMesh& skin) -> Core::Result<Mesh>;
     /** Explicit owned GPU vertex readback for diagnostics/reference comparison.
      * 诊断及参考对照用的显式 GPU 顶点读回，结果独立拥有。 */
     [[nodiscard]] auto readSkin(const SkinnedMesh& skin) -> Core::Result<std::vector<Vertex>>;
@@ -761,6 +770,12 @@ export namespace Dot::Graphics {
      * 事务式替换未来帧的曝光/映射/编码；已完成目标保留像素直到重绘，修改前校验。 */
     [[nodiscard]] auto setPostProcess(const PostProcessSettings& settings) -> Core::Result<void>;
     [[nodiscard]] auto postProcess() const -> Core::Result<PostProcessSettings>;
+
+    /** Read-only reference preflight, including in GUI layout; no rendering/polling.
+     * 只读引用预检，允许 GUI 布局，不绘制或轮询。 */
+    [[nodiscard]] auto validateTarget(const RenderTarget& target) const -> Core::Result<void>;
+    [[nodiscard]] auto validateScreen(std::span<const ScreenDraw> screen) const
+        -> Core::Result<void>;
 
     /** Persistent RGBA16F HDR + RGBA8 display + depth target, each dimension 1..4096 and within
      * device limits; at most 128 targets/256 MiB logical target bytes per renderer. Logical target

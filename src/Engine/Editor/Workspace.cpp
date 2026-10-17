@@ -47,6 +47,7 @@ import Dot.Animation.Source;
 import Dot.Animation.ScenePlayers;
 import Dot.Assets.SceneSkins;
 import Dot.Editor.SkeletonView;
+import Dot.Animation.Skeleton;
 import Dot.Assets.ImageExport;
 import Dot.Platform.Dialog;
 import Dot.Graphics.View;
@@ -678,6 +679,19 @@ namespace Dot::Editor {
     std::string m_renderedRevision;
     std::uint64_t m_viewFrame{};
     std::optional<CaptureFrame> m_renderedFrame;
+
+    struct PlayRender {
+      std::uint64_t tag;
+      CaptureFrame frame;
+      Graphics::SceneView view;
+      std::optional<Animation::SkeletonPose> skeleton;
+      std::uint64_t buttons;
+    };
+
+    std::uint64_t m_playRenderTag{};
+    std::uint64_t m_renderedButtons{};
+    std::optional<PlayRender> m_pendingPlayRender;
+    std::optional<Animation::SkeletonPose> m_renderedSkeleton;
     ViewportCapture m_capture;
 
     struct CaptureSave {
@@ -1906,7 +1920,7 @@ namespace Dot::Editor {
       if (!context || !view || !m_viewVisible || !m_previewReady || !m_target || !m_renderedFrame
           || !m_renderedView || *view != *m_renderedView || *context != m_renderedFrame->context
           || m_assetRefresh || previewKey != m_materialPreviewKey
-          || (playing() && m_play->stats()->frames != m_renderedFrame->playFrame)) {
+          || (playing() && m_play->stats()->frames < m_renderedFrame->playFrame)) {
         return false;
       }
 
@@ -6001,6 +6015,27 @@ namespace Dot::Editor {
       auto scene = displayedScene();
       auto stats = m_renderer->visibilityStats();
       auto text = m_textDrawing->stats();
+      auto rendering = m_drawing->asyncStats();
+      Json frameStatus = nullptr;
+
+      if (rendering && publishedPlay()) {
+        const auto& f = *rendering;
+        frameStatus
+            = {{"submitted", std::to_string(f.submitted)},
+               {"completed", std::to_string(f.completed)},
+               {"deferred", std::to_string(f.deferred)},
+               {"cancelled", std::to_string(f.cancelled)},
+               {"pending", f.pending ? Json(std::to_string(*f.pending)) : Json(nullptr)},
+               {"renderedPlayFrame",
+                m_renderedFrame ? Json(std::to_string(m_renderedFrame->playFrame)) : Json(nullptr)},
+               {"presentedButtonRevision", std::to_string(m_renderedButtons)},
+               {"latest", f.latest ? Json{{"serial", std::to_string(f.latest->serial)},
+                                          {"tag", std::to_string(f.latest->tag)},
+                                          {"scene", std::to_string(f.latest->scene)},
+                                          {"size", {f.latest->width, f.latest->height}}}
+                                   : Json(nullptr)}};
+      }
+
       Json draws = nullptr;
 
       if (!stats) {
@@ -6031,6 +6066,7 @@ namespace Dot::Editor {
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
+          {"rendering", std::move(frameStatus)},
           {"hudText", text ? Json{{"textureBytes", std::to_string(text->textureBytes)},
                                   {"rasterizations", std::to_string(text->rasterizations)},
                                   {"overflow", text->overflow}}
@@ -6193,8 +6229,9 @@ namespace Dot::Editor {
     /** A pick must refer to the displayed view/current document, not a stale image.
      * 选择必须对应已显示视图及当前文档，不能用过期图像悄悄选择新场景。 */
     auto pickView(Math::Vec2 uv) -> Core::Result<void> {
-      if (m_animationPreview) {
-        return Core::fail(Core::ErrorCode::InvalidState, "End animation preview before selecting");
+      if (playing() || m_animationPreview) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "End Play/animation preview before selecting");
       }
 
       if (pendingInspector() || pendingEnvironment() || pendingOcclusion()) {
@@ -6315,6 +6352,7 @@ namespace Dot::Editor {
       }
 
       std::vector<Graphics::TextLayer> labels;
+      std::uint64_t buttonRevision{};
 
       if (publishedPlay()) {
         auto hud = m_play->hud();
@@ -6325,6 +6363,7 @@ namespace Dot::Editor {
           return std::unexpected(state.error());
         }
 
+        buttonRevision = state->buttonRevision;
         auto draws = hud->draws();
 
         if (!draws) {
@@ -6342,23 +6381,83 @@ namespace Dot::Editor {
         return {};
       }
 
-      auto drawn
-          = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view, *screen);
+      Core::Result<void> drawn;
 
-      if (drawn) {
-        m_renderedView = *view;
-        m_renderedRevision = std::to_string(m_document->stats()->revision);
-        m_renderedFrame = CaptureFrame{captureContext().value(),
-                                       ++m_viewFrame,
-                                       playing() ? m_play->stats()->frames : 0,
-                                       width,
-                                       height,
-                                       *projection,
-                                       !m_materialPreviewKey.empty(),
-                                       animation};
+      if (publishedPlay()) {
+        if (m_playRenderTag == std::numeric_limits<std::uint64_t>::max() - 1) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Play render tag exhausted");
+        }
+
+        auto pose = m_skeleton.sample(**scene, m_project->files().value());
+        PlayRender current{++m_playRenderTag,
+                           {captureContext().value(), 0, m_play->stats()->frames, width, height,
+                            *projection, !m_materialPreviewKey.empty(), animation},
+                           *view,
+                           pose ? std::move(*pose) : std::nullopt,
+                           buttonRevision};
+        auto streamed = m_drawing->renderIntoAsync(**scene, *m_target, current.tag, m_playSession,
+                                                   {0.055F, 0.06F, 0.075F, 1}, *view, *screen);
+
+        if (!streamed) {
+          drawn = std::unexpected(streamed.error());
+        } else {
+          if (streamed->completed) {
+            auto* metadata
+                = streamed->completed->tag == current.tag ? &current
+                  : m_pendingPlayRender && m_pendingPlayRender->tag == streamed->completed->tag
+                      ? &*m_pendingPlayRender
+                      : nullptr;
+
+            if (!metadata) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Completed Play frame has no owned provenance");
+            }
+
+            metadata->frame.serial = ++m_viewFrame;
+            metadata->frame.viewProjection = streamed->completed->viewProjection;
+            m_renderedFrame = metadata->frame;
+            m_renderedView = metadata->view;
+            m_renderedRevision = std::to_string(metadata->frame.context.revision);
+            m_renderedSkeleton = std::move(metadata->skeleton);
+            m_renderedButtons = metadata->buttons;
+          }
+
+          if (streamed->accepted) {
+            m_pendingPlayRender = std::move(current);
+          }
+
+          auto state = m_drawing->asyncStats();
+
+          if (!state) {
+            return std::unexpected(state.error());
+          }
+
+          if (!state->pending) {
+            m_pendingPlayRender.reset();
+          }
+
+          if (streamed->error) {
+            drawn = std::unexpected(*streamed->error);
+          }
+        }
+      } else {
+        m_pendingPlayRender.reset();
+        m_renderedSkeleton.reset();
+        drawn
+            = m_drawing->renderInto(**scene, *m_target, {0.055F, 0.06F, 0.075F, 1}, *view, *screen);
+
+        if (drawn) {
+          m_renderedView = *view;
+          m_renderedRevision = std::to_string(m_document->stats()->revision);
+          m_renderedFrame = CaptureFrame{
+              captureContext().value(),      ++m_viewFrame, 0, width, height, *projection,
+              !m_materialPreviewKey.empty(), animation};
+        }
       }
 
-      m_previewReady = drawn.has_value();
+      m_previewReady = drawn.has_value() && m_renderedFrame
+                       && m_renderedFrame->context.scene == (*scene)->id()
+                       && m_renderedFrame->width == width && m_renderedFrame->height == height;
       m_previewError = drawn ? "" : drawn.error().message;
 
       if (!drawn
@@ -10670,8 +10769,12 @@ namespace Dot::Editor {
               }
 
               auto overlay
-                  = m_skeleton.render(**scene, m_project->files().value(),
-                                      m_renderedFrame->viewProjection, m_renderedFrame->serial);
+                  = publishedPlay()
+                        ? m_skeleton.renderPose(m_renderedSkeleton, m_renderedFrame->viewProjection,
+                                                m_renderedFrame->serial)
+                        : m_skeleton.render(**scene, m_project->files().value(),
+                                            m_renderedFrame->viewProjection,
+                                            m_renderedFrame->serial);
               return std::optional{Graphics::GuiViewportFrame{
                   *m_target, overlay ? std::move(*overlay) : Graphics::ViewportOverlay{}}};
             },
@@ -11090,9 +11193,26 @@ namespace Dot::Editor {
             return std::unexpected(text.error());
           }
 
-          const Project::GameInputArea area{
-              {m_viewWidth, m_viewHeight},
-              m_viewVisible && (m_captureInput || m_inputSource == "agent") && !m_pendingClose};
+          auto source = m_play->scene();
+
+          if (!source) {
+            return std::unexpected(source.error());
+          }
+
+          auto ui = m_play->hud();
+          auto buttons = ui ? ui->buttonRevision()
+                            : Core::Result<std::uint64_t>{std::unexpected(ui.error())};
+
+          if (!buttons) {
+            return std::unexpected(buttons.error());
+          }
+
+          const Project::GameInputArea area{{m_viewWidth, m_viewHeight},
+                                            m_viewVisible && m_previewReady
+                                                && (m_captureInput || m_inputSource == "agent")
+                                                && !m_pendingClose && m_renderedFrame
+                                                && m_renderedFrame->context.scene == (*source)->id()
+                                                && m_renderedButtons == *buttons};
           auto advanced
               = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured, area, *text);
           auto remembered = rememberPlayFrame();

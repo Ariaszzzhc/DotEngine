@@ -62,3 +62,12 @@ scripts through paused save/restore, queued product intent, text-mode arbitratio
 and resume input ownership. Real editor/exported-player pointer and keyboard
 workflows remain separate product validation; synthetic input success does not
 establish physical keyboard, IME or pointer acceptance.
+
+Dynamic-frame offscreen regressions compare captured camera/light/material/UI/skin
+pixels byte-for-byte with an independent CPU-deformed reference. They cover exact
+completed-frame picking, frozen output lifetime/backpressure, epoch/target/cache
+cancellation, malformed/foreign/GUI/thread rejection, partial completion followed
+by next-frame failure, failed GPU deformation/retry and unchanged shadow identity.
+Skeleton tests retain delayed pose/projection ownership. HUD unit tests distinguish
+button definition versions from cosmetic/input changes. Actual product workflows
+separately verify editor capture and native presentation provenance.

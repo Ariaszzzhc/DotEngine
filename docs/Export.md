@@ -72,10 +72,12 @@ DotEditor export <project-root> <existing-parent> <new-folder> <absolute-compile
 <export-root>/DotGame [--frames <count>]
 ```
 
-The finite budget counts game render steps after initial environment/shadow/SSAO
-pipeline and visible-material preparation. Loading keeps processing events and showing a clear surface/title;
-script Start callbacks run once the required groups are ready. It does not count loading as completed
-gameplay or make all asset loading asynchronous. A zero budget runs until closed.
+The finite budget counts successful game presentations after initial
+environment/shadow/SSAO pipeline and visible-material preparation. Loading keeps
+processing events and showing a clear surface/title; script Start callbacks run
+once the required groups are ready. It does not count loading as completed
+gameplay; deferred dynamic frames also do not consume the budget. This does not
+make all asset loading asynchronous. A zero budget runs until closed.
 
 Windows uses DotGame.exe. The workspace **Export game** modal defaults to native
 export; its **Data package only** checkbox retains the earlier data export. GUI
@@ -288,3 +290,11 @@ input; it is distinct from physical rendering resolution. Text/IME mode defaults
 off and follows the explicit script request unless relative capture is active.
 Activation acknowledgements queue intent; inspect gameplay/checkpoint results and
 presented HUD scope/revision after actual frames.
+
+Native dynamic frames use the same bounded SceneRenderer pipeline as editor Play.
+Inspection rendering reports submitted/completed/deferred/cancelled counts, pending
+tag and latest actual receipt with applicationFrame, scene, dimensions and matrix.
+hudText.presentedScope/presentedRevision/presentedButtonRevision belong to actual
+presentation, which can lag simulation. UI input requires matching button definitions,
+scene scope and current surface size. A scene cut or minimized/changed surface
+discards obsolete pending work; normal game simulation remains independent.

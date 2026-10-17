@@ -868,12 +868,16 @@ canceled, so shutdown may wait for their completion.
 immutable eight-slot influences. updateSkins publishes complete posed buffers and
 exact GPU bounds only after batch validation; ordinary mesh views feed existing
 physical color, shadow, SSAO and picking paths. readSkin is explicit owned diagnostic
-readback; regular updates map only compact bounds/status. The status wait is
-synchronous and has no populated-scene performance claim. Automatic imported-skin
-scene resources, editor binding and animation mixing remain unfinished.
+readback; regular updates map only compact bounds/status. Explicit updateSkins waits
+for status; dynamic Play/player frames use zero-wait completion polling. Saved
+imported-skin bindings and animation mixing feed the
+same posed resources; these contracts do not establish populated-scene throughput.
 
 Initial visible skin deformation joins incremental scene preparation through an
 owned atomic GPU transaction and zero-wait polling. See [skinning](Skinning.md) for
-cancellation, exclusive controller ownership and exact drawing contracts. Later
-animation poses, explicit readback and exact-frame rendering remain synchronous;
-this is not evidence of a fully asynchronous frame pipeline.
+cancellation, exclusive controller ownership and exact drawing contracts. Dynamic
+Play/player frames now own camera/material/light/UI/skin snapshots and retain the
+last completed pixels until the next validated frame can draw. Completed receipts
+and pickAsync identify that actual snapshot; target identity/size and source changes
+invalidate old work. Explicit readback and exact-frame rendering remain synchronous.
+See the bounded dynamic-frame section in Skinning for lifetime and backpressure.

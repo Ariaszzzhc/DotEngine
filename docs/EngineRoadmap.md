@@ -48,6 +48,8 @@ Implementation targets remain arm64 macOS and x86_64 Windows/Linux. Only macOS i
 locally validated; Windows/Linux execution is outside the requested local scope.
 
 Initial visible skin poses now join incremental loading with owned GPU transactions,
-zero-wait polling, cancellation and atomic validation/publication. Subsequent animated
-pose updates and explicit drawing remain synchronous; resource streaming and broader
-frame-latency work remain open. See [skinning contracts](Skinning.md).
+zero-wait polling, cancellation and atomic validation/publication. Dynamic editor
+Play/native frames now overlap skin completion with simulation using bounded owned
+snapshots and actual completed-frame provenance. Explicit drawing/readback, owner
+resource uploads and some driver operations remain synchronous; resource streaming
+and broader frame-latency work remain open. See [skinning contracts](Skinning.md).

@@ -102,6 +102,7 @@ namespace Dot::Script {
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_scope;
     std::uint64_t m_revision{1};
+    std::uint64_t m_buttonRevision{1};
     State m_state;
     HudInputResult m_input;
     bool m_retired{};
@@ -154,6 +155,32 @@ namespace Dot::Script {
       return {};
     }
 
+    static auto sameButtons(const State& first, const State& second) noexcept -> bool {
+      auto a = first.elements.begin();
+      auto b = second.elements.begin();
+
+      while (true) {
+        while (a != first.elements.end() && !a->second.button) {
+          ++a;
+        }
+
+        while (b != second.elements.end() && !b->second.button) {
+          ++b;
+        }
+
+        if (a == first.elements.end() || b == second.elements.end()) {
+          return a == first.elements.end() && b == second.elements.end();
+        }
+
+        if (*a != *b) {
+          return false;
+        }
+
+        ++a;
+        ++b;
+      }
+    }
+
     auto revision(const State& candidate) const -> Core::Result<std::uint64_t> {
       const auto changed = candidate != m_state;
 
@@ -161,11 +188,17 @@ namespace Dot::Script {
         return Core::fail(Core::ErrorCode::Unavailable, "HUD revision exhausted");
       }
 
+      if (!sameButtons(candidate, m_state)
+          && m_buttonRevision == std::numeric_limits<std::uint64_t>::max() - 1) {
+        return Core::fail(Core::ErrorCode::Unavailable, "HUD button revision exhausted");
+      }
+
       return m_revision + (changed ? 1U : 0U);
     }
 
     auto commit(State& candidate, std::uint64_t next) noexcept -> void {
       static_assert(std::is_nothrow_swappable_v<State>);
+      m_buttonRevision += sameButtons(candidate, m_state) ? 0U : 1U;
       std::swap(m_state, candidate);
       m_revision = next;
     }
@@ -199,8 +232,15 @@ namespace Dot::Script {
 
     try {
       const auto& state = m_impl->m_state;
-      HudSnapshot result{m_impl->m_scope, m_impl->m_revision, {}, {}, state.focused, state.hovered,
-                         state.pressed,   state.sequence};
+      HudSnapshot result{m_impl->m_scope,
+                         m_impl->m_revision,
+                         {},
+                         {},
+                         state.focused,
+                         state.hovered,
+                         state.pressed,
+                         state.sequence,
+                         m_impl->m_buttonRevision};
 
       for (const auto& [key, value] : state.elements) {
         if (value.button) {
@@ -214,6 +254,16 @@ namespace Dot::Script {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Snapshot HUD: " + std::string(error.what()));
     }
+  }
+
+  auto Hud::buttonRevision() const -> Core::Result<std::uint64_t> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "HUD was moved");
+    }
+
+    auto valid = m_impl->check();
+    return valid ? Core::Result<std::uint64_t>{m_impl->m_buttonRevision}
+                 : std::unexpected(valid.error());
   }
 
   auto Hud::draws() const -> Core::Result<std::vector<Graphics::TextLayer>> {
@@ -451,7 +501,8 @@ namespace Dot::Script {
                     {"focused", keyJson(state.focused)},
                     {"hovered", keyJson(state.hovered)},
                     {"pressed", keyJson(state.pressed)},
-                    {"sequence", std::to_string(state.sequence)}}
+                    {"sequence", std::to_string(state.sequence)},
+                    {"buttonRevision", std::to_string(m_impl->m_buttonRevision)}}
             .dump();
       }
 

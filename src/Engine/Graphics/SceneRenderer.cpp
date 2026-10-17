@@ -7,6 +7,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <stop_token>
@@ -164,8 +165,29 @@ namespace Dot::Graphics {
       std::optional<Core::Error> error;
     };
 
+    struct FrameSkin {
+      std::uint64_t owner;
+      std::size_t index;
+      SkinnedMesh controller;
+      std::vector<Math::Mat4> palette;
+      bool changed;
+    };
+
     struct Frame {
       Math::Mat4 camera;
+      Lighting lighting;
+      std::optional<EnvironmentLighting> environment;
+      std::optional<OcclusionSettings> occlusion;
+      PostProcessSettings post;
+      std::vector<ScreenDraw> screen;
+      std::vector<FrameSkin> skins;
+      std::optional<SkinBatch> batch;
+      bool frozen{};
+      std::uint64_t tag{};
+      std::uint64_t scene{};
+      std::uint32_t width{};
+      std::uint32_t height{};
+      Math::Vec4 clear;
       std::vector<Mesh> meshes;
       std::vector<MeshDraw> draws;
       std::vector<World::EntityId> entities;
@@ -180,6 +202,44 @@ namespace Dot::Graphics {
 
       auto operator=(Frame&&) noexcept -> Frame& = default;
     };
+
+    struct LayoutRow {
+      std::uint64_t owner;
+      std::string mesh;
+      std::string material;
+      std::optional<World::SkinBinding> skin;
+      auto operator==(const LayoutRow&) const -> bool = default;
+    };
+
+    struct AsyncKey {
+      std::uint64_t scene;
+      std::uint64_t epoch;
+      std::uint64_t target;
+      std::uint32_t width;
+      std::uint32_t height;
+      std::vector<LayoutRow> rows;
+      std::string environment;
+      std::optional<EnvironmentConfig> processing;
+      auto operator==(const AsyncKey&) const -> bool = default;
+    };
+
+    std::optional<AsyncKey> asyncKey;
+    std::unique_ptr<Frame> pendingFrame;
+    std::unique_ptr<Frame> completedFrame;
+    SceneAsyncStats frameStats;
+    std::uint64_t lastAccepted{};
+
+    auto discardFrames() noexcept -> void {
+      if (pendingFrame && frameStats.cancelled != std::numeric_limits<std::uint64_t>::max()) {
+        ++frameStats.cancelled;
+      }
+
+      pendingFrame.reset();
+      completedFrame.reset();
+      asyncKey.reset();
+      frameStats.pending.reset();
+      frameStats.picking = false;
+    }
 
     Renderer* renderer;
     std::optional<Core::FileSystem> assets;
@@ -266,6 +326,7 @@ namespace Dot::Graphics {
        * retained binding. Destruction itself must not throw.
        * 设备故障可能阻止解绑；渲染器销毁会释放其绑定，析构本身不得抛异常。 */
       try {
+        discardFrames();
         cancelMaterialPreparation();
         cancelEnvironmentPreparation();
         imageJob.reset();
@@ -372,6 +433,27 @@ namespace Dot::Graphics {
       return {};
     }
 
+    auto checkWriting(std::uint64_t tag = 1, std::uint64_t epoch = 1, bool fresh = false) const
+        -> Core::Result<void> {
+      auto gui = renderer->guiStats();
+
+      if (!gui) {
+        return std::unexpected(gui.error());
+      }
+
+      if (gui->building) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Async scene operation cannot reenter GUI layout");
+      }
+
+      if (!tag || tag == std::numeric_limits<std::uint64_t>::max() || !epoch
+          || epoch == std::numeric_limits<std::uint64_t>::max() || (fresh && tag <= lastAccepted)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Async frame requires fresh tag/epoch");
+      }
+
+      return {};
+    }
+
     auto load(const World::MeshRenderer& component) -> Core::Result<Entry> {
       MeshData data;
       std::string warning;
@@ -435,6 +517,10 @@ namespace Dot::Graphics {
     auto pruneSkins(const World::Scene& scene, const std::vector<World::EntityInfo>& entities,
                     bool visibleOnly) -> void {
       if (skinScene != scene.id()) {
+        if (pendingFrame || completedFrame) {
+          discardFrames();
+        }
+
         pendingSkin.reset();
 
         for (const auto& [id, entry] : skins) {
@@ -463,6 +549,12 @@ namespace Dot::Graphics {
                           && key(*entity->mesh).value() == iterator->second.mesh;
 
         if (!keep) {
+          if ((pendingFrame || completedFrame) && asyncKey
+              && std::ranges::any_of(
+                  asyncKey->rows, [&](const auto& row) { return row.owner == iterator->first; })) {
+            discardFrames();
+          }
+
           pendingSkin.reset();
           bytes -= iterator->second.bytes;
           iterator = skins.erase(iterator);
@@ -1066,6 +1158,12 @@ namespace Dot::Graphics {
 
       for (auto iterator = cache.begin(); iterator != cache.end();) {
         if (!needed.contains(iterator->first)) {
+          if ((pendingFrame || completedFrame) && asyncKey
+              && std::ranges::any_of(
+                  asyncKey->rows, [&](const auto& row) { return row.mesh == iterator->first; })) {
+            discardFrames();
+          }
+
           bytes -= iterator->second.bytes;
           iterator = cache.erase(iterator);
         } else {
@@ -1075,6 +1173,13 @@ namespace Dot::Graphics {
 
       for (auto iterator = materials.begin(); iterator != materials.end();) {
         if (!neededMaterials.contains(iterator->first)) {
+          if ((pendingFrame || completedFrame) && asyncKey
+              && std::ranges::any_of(asyncKey->rows, [&](const auto& row) {
+                   return row.material == iterator->first;
+                 })) {
+            discardFrames();
+          }
+
           iterator = materials.erase(iterator);
         } else {
           ++iterator;
@@ -1407,8 +1512,273 @@ namespace Dot::Graphics {
       }
     }
 
-    auto frame(const World::Scene& scene, float aspect, const SceneView& camera)
-        -> Core::Result<Frame> {
+    auto streamKey(const World::Scene& scene, std::uint64_t epoch, std::uint64_t target,
+                   std::uint32_t width, std::uint32_t height) -> Core::Result<AsyncKey> {
+      auto entities = scene.entities();
+      auto env = scene.environment();
+
+      if (!entities || !env) {
+        return std::unexpected(!entities ? entities.error() : env.error());
+      }
+
+      AsyncKey result{scene.id(), epoch, target, width, height, {}, {}, {}};
+
+      for (const auto& entity : *entities) {
+        if (entity.mesh && entity.mesh->visible) {
+          auto meshKey = key(*entity.mesh);
+
+          if (!meshKey) {
+            return std::unexpected(meshKey.error());
+          }
+
+          result.rows.push_back({entity.id.value, std::move(*meshKey),
+                                 entity.material ? entity.material->asset : std::string{},
+                                 entity.skin});
+        }
+      }
+
+      std::ranges::sort(result.rows, {}, &LayoutRow::owner);
+
+      if (*env) {
+        result.environment = (**env).asset;
+        result.processing = (**env).processing;
+      }
+
+      return result;
+    }
+
+    auto freezeFrame(Frame& value) -> Core::Result<bool> {
+      if (value.frozen) {
+        return true;
+      }
+
+      if (value.batch) {
+        auto ready = renderer->pollSkinUpdate(*value.batch);
+
+        if (!ready || !*ready) {
+          return ready ? Core::Result<bool>{false} : std::unexpected(ready.error());
+        }
+      }
+
+      for (auto& owner : value.skins) {
+        if (owner.changed) {
+          skins.at(owner.owner).palette = std::move(owner.palette);
+        }
+
+        auto frozen = renderer->freezeSkin(owner.controller);
+
+        if (!frozen) {
+          return std::unexpected(frozen.error());
+        }
+
+        value.meshes[owner.index] = std::move(*frozen);
+      }
+
+      value.batch.reset();
+      value.skins.clear();
+      value.frozen = true;
+      return true;
+    }
+
+    auto applyFrame(const Frame& value) -> Core::Result<void> {
+      auto set = renderer->setEnvironment(value.environment);
+
+      if (set) {
+        boundEnvironment = value.environment ? std::optional{value.environment->map} : std::nullopt;
+        set = renderer->setLighting(value.lighting);
+      }
+
+      if (set) {
+        set = renderer->setOcclusion(value.occlusion);
+      }
+
+      if (set) {
+        auto revision = renderer->occlusionRevision();
+
+        if (!revision) {
+          return std::unexpected(revision.error());
+        }
+
+        occlusionRevision = *revision;
+        set = renderer->setPostProcess(value.post);
+      }
+
+      return set;
+    }
+
+    template <typename Draw, typename Prepare>
+    auto pump(const World::Scene& scene, std::uint64_t tag, AsyncKey nextKey, Math::Vec4 clear,
+              const SceneView& camera, std::span<const ScreenDraw> screen, Draw&& draw,
+              Prepare&& prepare) -> Core::Result<SceneAsyncResult> {
+      if (!tag || tag == std::numeric_limits<std::uint64_t>::max() || !nextKey.epoch
+          || nextKey.epoch == std::numeric_limits<std::uint64_t>::max() || tag <= lastAccepted) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Async frame requires fresh tag/epoch");
+      }
+
+      if (frameStats.submitted >= std::numeric_limits<std::uint64_t>::max() - 1
+          || frameStats.completed >= std::numeric_limits<std::uint64_t>::max() - 1
+          || frameStats.deferred >= std::numeric_limits<std::uint64_t>::max() - 1) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Async scene frame counter exhausted");
+      }
+
+      SceneAsyncResult result;
+      auto inputPost = renderer->postProcess();
+
+      if (!inputPost) {
+        return std::unexpected(inputPost.error());
+      }
+
+      if (!asyncKey || *asyncKey != nextKey) {
+        discardFrames();
+        frameStats.latest.reset();
+        frameStats.error.reset();
+        asyncKey = std::move(nextKey);
+      }
+
+      const auto fail = [&](Core::Error error) -> Core::Result<SceneAsyncResult> {
+        pendingFrame.reset();
+        completedFrame.reset();
+        frameStats.pending.reset();
+        frameStats.picking = false;
+        frameStats.error = error;
+        auto restored = renderer->setPostProcess(*inputPost);
+
+        if (!restored) {
+          error.message += "; restore post process: " + restored.error().message;
+        }
+
+        if (result.completed) {
+          result.error = std::move(error);
+          return result;
+        }
+
+        return std::unexpected(std::move(error));
+      };
+
+      const auto finish = [&]() -> Core::Result<bool> {
+        auto ready = freezeFrame(*pendingFrame);
+
+        if (!ready || !*ready) {
+          return ready;
+        }
+
+        auto applied = applyFrame(*pendingFrame);
+
+        if (!applied) {
+          return std::unexpected(applied.error());
+        }
+
+        auto shown = draw(*pendingFrame);
+
+        if (!shown || !*shown) {
+          return shown;
+        }
+
+        const auto& f = *pendingFrame;
+        SceneFrameReceipt receipt{
+            frameStats.completed + 1, f.tag, f.scene, f.width, f.height, f.camera};
+        completedFrame = std::move(pendingFrame);
+        ++frameStats.completed;
+        frameStats.latest = receipt;
+        frameStats.pending.reset();
+        frameStats.picking = true;
+        frameStats.error.reset();
+        result.completed = receipt;
+        return true;
+      };
+
+      try {
+        if (pendingFrame) {
+          auto shown = finish();
+
+          if (!shown) {
+            return fail(shown.error());
+          }
+
+          auto restored = renderer->setPostProcess(*inputPost);
+
+          if (!restored) {
+            return fail(restored.error());
+          }
+
+          if (!*shown) {
+            ++frameStats.deferred;
+            return result;
+          }
+        }
+
+        auto preparation = prepare();
+
+        if (!preparation) {
+          return fail(preparation.error());
+        }
+
+        if (!*preparation) {
+          ++frameStats.deferred;
+          return result;
+        }
+
+        if (!asyncKey) {
+          return fail(Core::fail(Core::ErrorCode::InvalidState,
+                                 "Async frame source invalidated during preparation")
+                          .error());
+        }
+
+        const auto width = asyncKey->width;
+        const auto height = asyncKey->height;
+        auto captured
+            = frame(scene, static_cast<float>(width) / static_cast<float>(height), camera, true);
+
+        if (!captured) {
+          return fail(captured.error());
+        }
+
+        if (!asyncKey) {
+          return fail(Core::fail(Core::ErrorCode::InvalidState,
+                                 "Async frame source invalidated during capture")
+                          .error());
+        }
+
+        captured->tag = tag;
+        captured->scene = scene.id();
+        captured->width = width;
+        captured->height = height;
+        captured->clear = clear;
+        captured->screen.assign(screen.begin(), screen.end());
+        pendingFrame = std::make_unique<Frame>(std::move(*captured));
+        frameStats.pending = tag;
+        lastAccepted = tag;
+        ++frameStats.submitted;
+        result.accepted = true;
+
+        if (!result.completed && !pendingFrame->batch) {
+          auto shown = finish();
+
+          if (!shown) {
+            return fail(shown.error());
+          }
+
+          if (!*shown) {
+            ++frameStats.deferred;
+          }
+        }
+
+        if (!result.completed && pendingFrame && pendingFrame->batch) {
+          ++frameStats.deferred;
+        }
+
+        auto restored = renderer->setPostProcess(*inputPost);
+        return restored ? Core::Result<SceneAsyncResult>{std::move(result)}
+                        : fail(restored.error());
+      } catch (const std::exception& error) {
+        return fail(
+            Core::fail(Core::ErrorCode::External, "Async scene frame: " + std::string(error.what()))
+                .error());
+      }
+    }
+
+    auto frame(const World::Scene& scene, float aspect, const SceneView& camera,
+               bool asynchronous = false) -> Core::Result<Frame> {
       try {
         const auto* custom = std::get_if<View>(&camera);
         std::optional<World::EntityId> selected;
@@ -1453,6 +1823,11 @@ namespace Dot::Graphics {
         /** Explicit synchronous drawing supersedes unpublished preparation.
          * 显式同步绘制取代未发布的准备事务。 */
         pendingSkin.reset();
+
+        if (!asynchronous) {
+          discardFrames();
+        }
+
         Frame frame;
         frame.camera = *view;
         /** Draw pointers borrow these mesh handles; reserve once and keep the frame
@@ -1536,7 +1911,14 @@ namespace Dot::Graphics {
               return std::unexpected(palette.error());
             }
 
-            if (*palette != (*bound)->palette) {
+            const auto changed = *palette != (*bound)->palette;
+
+            if (asynchronous) {
+              frame.skins.push_back(
+                  {entity.id.value, frame.meshes.size(), (*bound)->controller, *palette, changed});
+            }
+
+            if (changed) {
               palettes.push_back(std::move(*palette));
               updates.push_back({&(*bound)->controller, palettes.back()});
               changedSkins.push_back(*bound);
@@ -1583,17 +1965,37 @@ namespace Dot::Graphics {
 
         occlusionRevision = *revision;
 
+        auto environmentValue = renderer->environment();
+        auto post = renderer->postProcess();
+
+        if (!environmentValue || !post) {
+          return std::unexpected(!environmentValue ? environmentValue.error() : post.error());
+        }
+
+        frame.lighting = std::move(*lights);
+        frame.environment = std::move(*environmentValue);
+        frame.occlusion = std::move(*occlusion);
+        frame.post = *post;
+
         if (!updates.empty()) {
-          auto updated = renderer->updateSkins(updates);
+          if (asynchronous) {
+            auto submitted = renderer->beginSkinUpdate(updates);
 
-          if (!updated) {
-            return std::unexpected(updated.error());
-          }
+            if (!submitted) {
+              return std::unexpected(submitted.error());
+            }
 
-          /** Commit pose dependencies only after the whole GPU batch validates.
-           * 仅整个 GPU 批次校验成功后发布姿态依赖。 */
-          for (std::size_t i = 0; i < changedSkins.size(); ++i) {
-            changedSkins[i]->palette = std::move(palettes[i]);
+            frame.batch.emplace(std::move(*submitted));
+          } else {
+            auto updated = renderer->updateSkins(updates);
+
+            if (!updated) {
+              return std::unexpected(updated.error());
+            }
+
+            for (std::size_t i = 0; i < changedSkins.size(); ++i) {
+              changedSkins[i]->palette = std::move(palettes[i]);
+            }
           }
         }
 
@@ -1983,6 +2385,171 @@ namespace Dot::Graphics {
     return m_impl->renderer->renderMeshesInto(target, frame->draws, frame->camera, clear, screen);
   }
 
+  auto SceneRenderer::renderIntoAsync(const World::Scene& scene, RenderTarget& target,
+                                      std::uint64_t tag, std::uint64_t epoch, Math::Vec4 clear,
+                                      SceneView view, std::span<const ScreenDraw> screen)
+      -> Core::Result<SceneAsyncResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer was moved");
+    }
+
+    auto writing = m_impl->checkWriting(tag, epoch, true);
+
+    if (!writing) {
+      return std::unexpected(writing.error());
+    }
+
+    auto valid = m_impl->renderer->validateTarget(target);
+
+    if (valid) {
+      valid = m_impl->renderer->validateScreen(screen);
+    }
+
+    if (valid) {
+      valid = validateClear(clear);
+    }
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto info = target.info();
+    auto key = info ? m_impl->streamKey(scene, epoch, info->identity, info->width, info->height)
+                    : Core::Result<Impl::AsyncKey>{std::unexpected(info.error())};
+
+    if (!key) {
+      return std::unexpected(key.error());
+    }
+
+    return m_impl->pump(
+        scene, tag, std::move(*key), clear, view, screen,
+        [&](const auto& frame) -> Core::Result<bool> {
+          auto drawn = m_impl->renderer->renderMeshesInto(target, frame.draws, frame.camera,
+                                                          frame.clear, frame.screen);
+          return drawn ? Core::Result<bool>{true} : std::unexpected(drawn.error());
+        },
+        [&]() -> Core::Result<bool> {
+          auto stage = prepare(scene);
+          return stage ? Core::Result<bool>{*stage == ScenePreparationStage::Ready}
+                       : std::unexpected(stage.error());
+        });
+  }
+
+  auto SceneRenderer::presentAsync(const World::Scene& scene, std::uint64_t tag,
+                                   std::uint64_t epoch, Math::Vec4 clear, SceneView view,
+                                   std::span<const ScreenDraw> screen)
+      -> Core::Result<SceneAsyncResult> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer was moved");
+    }
+
+    auto writing = m_impl->checkWriting(tag, epoch, true);
+
+    if (!writing) {
+      return std::unexpected(writing.error());
+    }
+
+    auto valid = m_impl->renderer->validateScreen(screen);
+
+    if (valid) {
+      valid = validateClear(clear);
+    }
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto size = m_impl->renderer->surfaceSize();
+
+    if (!size) {
+      return std::unexpected(size.error());
+    }
+
+    if (size->width <= 0 || size->height <= 0) {
+      m_impl->discardFrames();
+      return SceneAsyncResult{};
+    }
+
+    auto key = m_impl->streamKey(scene, epoch, 0, static_cast<std::uint32_t>(size->width),
+                                 static_cast<std::uint32_t>(size->height));
+
+    if (!key) {
+      return std::unexpected(key.error());
+    }
+
+    return m_impl->pump(
+        scene, tag, std::move(*key), clear, view, screen,
+        [&](const auto& frame) -> Core::Result<bool> {
+          auto shown = m_impl->renderer->presentMeshes(frame.draws, frame.camera, frame.clear,
+                                                       frame.screen);
+          return shown ? Core::Result<bool>{*shown == PresentResult::Presented}
+                       : std::unexpected(shown.error());
+        },
+        [&]() -> Core::Result<bool> {
+          auto stage = prepare(scene);
+          return stage ? Core::Result<bool>{*stage == ScenePreparationStage::Ready}
+                       : std::unexpected(stage.error());
+        });
+  }
+
+  auto SceneRenderer::asyncStats() const -> Core::Result<SceneAsyncStats> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer was moved");
+    }
+
+    auto valid = m_impl->renderer->guiStats();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    try {
+      return m_impl->frameStats;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Inspect async scene frames: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneRenderer::cancelAsync() -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer was moved");
+    }
+
+    auto valid = m_impl->checkWriting();
+
+    if (valid) {
+      m_impl->discardFrames();
+    }
+
+    return valid;
+  }
+
+  auto SceneRenderer::pickAsync(std::uint64_t serial, Math::Vec2 uv)
+      -> Core::Result<std::optional<World::EntityId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene renderer was moved");
+    }
+
+    auto valid = m_impl->checkWriting();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    if (!m_impl->completedFrame || !m_impl->frameStats.latest
+        || m_impl->frameStats.latest->serial != serial) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Pick requires the completed frame serial");
+    }
+
+    const auto& frame = *m_impl->completedFrame;
+    auto picked
+        = m_impl->renderer->pickMeshes(frame.draws, frame.camera, frame.width, frame.height, uv);
+    return !picked   ? Core::Result<std::optional<World::EntityId>>{std::unexpected(picked.error())}
+           : *picked ? std::optional{frame.entities.at(**picked)}
+                     : std::nullopt;
+  }
+
   auto SceneRenderer::pick(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
                            Math::Vec2 uv, SceneView view)
       -> Core::Result<std::optional<World::EntityId>> {
@@ -2052,6 +2619,7 @@ namespace Dot::Graphics {
         return std::unexpected(entities.error());
       }
 
+      m_impl->discardFrames();
       m_impl->pendingSkin.reset();
       m_impl->pruneSkins(scene, *entities, false);
       auto found = m_impl->cache.find(*resourceKey);
@@ -2209,6 +2777,7 @@ namespace Dot::Graphics {
       }
     }
 
+    m_impl->discardFrames();
     m_impl->cancelMaterialPreparation();
 
     if (m_impl->preview) {
@@ -2234,6 +2803,7 @@ namespace Dot::Graphics {
       return checked;
     }
 
+    m_impl->discardFrames();
     m_impl->cancelMaterialPreparation();
     m_impl->cancelEnvironmentPreparation();
     checked = m_impl->detachEnvironment();

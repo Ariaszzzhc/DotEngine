@@ -305,3 +305,42 @@ TEST_CASE("hud.keyboard_and_product_activation_share_a_bounded_observational_eve
   CHECK_FALSE(hud.perform(R"({"command":"activate","key":"a"})"));
   CHECK_FALSE(hud.perform(R"({"command":"focus","key":null})"));
 }
+
+TEST_CASE("hud.button_revision_tracks_definitions_without_breaking_held_input") {
+  using namespace Dot::Script;
+  auto hud = Hud::create(1).value();
+  CHECK(hud.buttonRevision().value() == 1);
+  REQUIRE(set(hud, "caption", label()));
+  CHECK(hud.buttonRevision().value() == 1);
+  REQUIRE(setButton(hud, "button"));
+  const auto revision = hud.buttonRevision().value();
+  CHECK(Json::parse(hud.perform(R"({"command":"snapshot"})").value())["buttonRevision"]
+        == std::to_string(revision));
+  REQUIRE(hud.perform(R"({"command":"focus","key":"button"})"));
+  REQUIRE(setButton(hud, "button"));
+  HudInput input;
+  input.pointer = Dot::Math::Vec2{.2F, .3F};
+  input.pressed = input.down = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.buttonRevision().value() == revision);
+  CHECK(hud.snapshot()->pressed == "button");
+  input.pressed = input.down = false;
+  input.released = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->sequence == 1);
+  CHECK(hud.buttonRevision().value() == revision);
+  REQUIRE(set(hud, "caption", label("Changed status")));
+  CHECK(hud.buttonRevision().value() == revision);
+  REQUIRE(setButton(hud, "button", false));
+  CHECK(hud.buttonRevision().value() == revision + 1);
+  REQUIRE(hud.perform(R"({"command":"remove","key":"button"})"));
+  CHECK(hud.buttonRevision().value() == revision + 2);
+  REQUIRE(hud.perform(R"({"command":"clear"})"));
+  CHECK(hud.buttonRevision().value() == revision + 2);
+  hud.retire();
+  CHECK(hud.buttonRevision().value() == revision + 2);
+  bool rejected{};
+  std::thread worker([&] { rejected = !hud.buttonRevision(); });
+  worker.join();
+  CHECK(rejected);
+}

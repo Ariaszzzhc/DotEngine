@@ -431,3 +431,294 @@ TEST_CASE("skin.scene_initial_preparation_finishes_while_joints_advance_and_draw
   CHECK(service.bounds(f.scene, f.owner)->minimum.x == doctest::Approx(position - .5F));
   CHECK(service.bounds(f.scene, f.owner)->maximum.x == doctest::Approx(position + .5F));
 }
+
+namespace {
+  auto untilFrame(SceneRenderer& service, const World::Scene& scene, RenderTarget& target,
+                  std::uint64_t& tag, std::uint64_t epoch = 1) -> SceneFrameReceipt {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    while (std::chrono::steady_clock::now() < deadline) {
+      auto result = service.renderIntoAsync(scene, target, ++tag, epoch);
+      REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+      REQUIRE_FALSE(result->error);
+
+      if (result->completed) {
+        return *result->completed;
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    FAIL("Async scene frame did not complete within the GPU deadline");
+    return {};
+  }
+}  // namespace
+
+TEST_CASE("skin.async_frames_keep_camera_light_material_hud_and_pose_from_one_submission") {
+  Fixture f;
+  Assets::MaterialDescription material;
+  material.baseColor = {.2F, .4F, .8F, 1};
+  REQUIRE(Assets::saveMaterial(f.files, "assets/physical.dotmaterial", material));
+  REQUIRE(f.scene.setMaterial(f.owner, World::MaterialBinding{"assets/physical.dotmaterial"}));
+  const auto light = f.scene.createEntity("Light").value();
+  REQUIRE(f.scene.setLight(light, World::Light{.intensity = 4}));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  REQUIRE(f.scene.setTransform(f.joint, {{.5F, 0, 0}}));
+  const auto binding = Animation::SceneSkin::bind(f.scene, f.owner, f.skin).value();
+  const auto reference = deformMesh(f.geometry, f.skin, binding.palette(f.scene).value()).value();
+  REQUIRE(Assets::saveMesh(f.files, "assets/reference.dotmesh", reference));
+  auto original = World::decodeScene(World::encodeScene(f.scene).value()).value();
+  const auto cloneOwner = original.findEntity(f.owner.value).value();
+  REQUIRE(original.setSkin(cloneOwner, std::nullopt));
+  REQUIRE(original.setMeshRenderer(
+      cloneOwner, World::MeshRenderer{World::MeshKind::Asset, "assets/reference.dotmesh"}));
+  auto independent = Renderer::create().value();
+  auto referenceService = SceneRenderer::create(independent, f.files).value();
+  TextureOptions options;
+  options.colorSpace = ColorSpace::Linear;
+  options.filter = TextureFilter::Nearest;
+  options.mipmaps = false;
+  auto red = renderer.uploadTexture({1, 1, {255, 0, 0, 128}}, options).value();
+  auto referenceRed = independent.uploadTexture({1, 1, {255, 0, 0, 128}}, options).value();
+  std::array screen{ScreenDraw{red, {0, 0}, {.2F, .2F}}};
+  const std::array referenceScreen{ScreenDraw{referenceRed, {0, 0}, {.2F, .2F}}};
+  const auto expected
+      = referenceService.render(original, 64, 64, {0, 0, 0, 1}, {}, referenceScreen).value();
+  auto target = renderer.createTarget(64, 64).value();
+  REQUIRE(renderer.renderMeshesInto(target, {}, {}, {0, 1, 0, 1}));
+  const auto before = renderer.readTarget(target).value();
+  auto submitted = service.renderIntoAsync(f.scene, target, 1, 1, {0, 0, 0, 1}, {}, screen);
+  REQUIRE(submitted);
+  CHECK(submitted->accepted);
+  CHECK_FALSE(submitted->completed);
+  CHECK(renderer.readTarget(target)->pixels == before.pixels);
+  REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
+  const auto camera = f.scene.primaryCamera().value();
+  REQUIRE(f.scene.setTransform(camera, {{-.5F, 0, 5}}));
+  REQUIRE(f.scene.setLight(light, World::Light{.color = {1, .1F, .1F}, .intensity = 1}));
+  auto blue = renderer.uploadTexture({1, 1, {0, 0, 255, 255}}, options).value();
+  screen[0].texture = blue;
+  auto post = renderer.postProcess().value();
+  post.exposureEv = 1;
+  REQUIRE(renderer.setPostProcess(post));
+  std::uint64_t tag = 1;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  std::optional<SceneFrameReceipt> completed;
+
+  while (!completed && std::chrono::steady_clock::now() < deadline) {
+    auto result = service.renderIntoAsync(f.scene, target, ++tag, 1, {0, 0, 0, 1}, {}, screen);
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    REQUIRE_FALSE(result->error);
+    completed = result->completed;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(completed);
+  CHECK(completed->tag == 1);
+  CHECK(completed->scene == f.scene.id());
+  CHECK(renderer.readTarget(target)->pixels == expected.pixels);
+  CHECK(renderer.postProcess()->exposureEv == 1);
+  CHECK(service.pickAsync(completed->serial, {.625F, .5F}).value() == f.owner);
+  CHECK_FALSE(service.pickAsync(completed->serial + 1, {.625F, .5F}));
+  CHECK_FALSE(service.pickAsync(completed->serial, {.875F, .5F}).value());
+  const auto advanced = untilFrame(service, f.scene, target, tag);
+  CHECK(advanced.tag > 1);
+  CHECK(renderer.readTarget(target)->pixels != expected.pixels);
+}
+
+TEST_CASE("skin.async_frames_cancel_epoch_target_and_cache_without_late_pixels") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto first = renderer.createTarget(32, 32).value();
+  auto second = renderer.createTarget(32, 32).value();
+  CHECK(first.info()->identity != second.info()->identity);
+  auto copied = first;
+  CHECK(copied.info()->identity == first.info()->identity);
+  REQUIRE(renderer.renderMeshesInto(first, {}, {}, {1, 0, 0, 1}));
+  REQUIRE(renderer.renderMeshesInto(second, {}, {}, {0, 1, 0, 1}));
+  REQUIRE(f.scene.setTransform(f.joint, {{.5F, 0, 0}}));
+  REQUIRE(service.renderIntoAsync(f.scene, first, 1, 1)->accepted);
+  const auto before = renderer.readTarget(first).value();
+  const auto secondBefore = renderer.readTarget(second).value();
+  auto epochOnly = service.renderIntoAsync(f.scene, first, 2, 2);
+  REQUIRE(epochOnly);
+  CHECK(epochOnly->accepted);
+  CHECK_FALSE(epochOnly->completed);
+  CHECK(service.asyncStats()->cancelled == 1);
+  auto replacement = service.renderIntoAsync(f.scene, second, 3, 2);
+  REQUIRE(replacement);
+  CHECK(replacement->accepted);
+  CHECK_FALSE(replacement->completed);
+  CHECK(renderer.readTarget(first)->pixels == before.pixels);
+  CHECK(renderer.readTarget(second)->pixels == secondBefore.pixels);
+  CHECK(service.asyncStats()->cancelled == 2);
+  REQUIRE(service.clearCache());
+  CHECK_FALSE(service.asyncStats()->pending);
+  CHECK_FALSE(service.asyncStats()->picking);
+  CHECK(renderer.resourceStats()->skins == 0);
+  CHECK(renderer.readTarget(second)->pixels == secondBefore.pixels);
+  std::uint64_t tag = 3;
+  auto receipt = untilFrame(service, f.scene, second, tag, 3);
+  CHECK(receipt.scene == f.scene.id());
+  CHECK(renderer.readTarget(second)->pixels != secondBefore.pixels);
+  REQUIRE(service.cancelAsync());
+  CHECK_FALSE(service.pickAsync(receipt.serial, {.5F, .5F}));
+  CHECK(renderer.readTarget(first)->pixels == before.pixels);
+}
+
+TEST_CASE("skin.async_invalid_input_does_not_consume_pending_frame_or_change_target") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto target = renderer.createTarget(32, 32).value();
+  REQUIRE(f.scene.setTransform(f.joint, {{.5F, 0, 0}}));
+  REQUIRE(service.renderIntoAsync(f.scene, target, 1, 1)->accepted);
+  const auto state = service.asyncStats().value();
+  const auto count = target.info()->frames;
+  CHECK_FALSE(service.renderIntoAsync(f.scene, target, 1, 1));
+  CHECK_FALSE(service.renderIntoAsync(f.scene, target, 2, 0));
+  CHECK_FALSE(service.renderIntoAsync(f.scene, target, 2, 1, {-1, 0, 0, 1}));
+  auto foreign = Renderer::create().value();
+  auto wrongTarget = foreign.createTarget(32, 32).value();
+  CHECK_FALSE(service.renderIntoAsync(f.scene, wrongTarget, 2, 1));
+  TextureOptions options;
+  options.colorSpace = ColorSpace::Linear;
+  auto wrong = foreign.uploadTexture({1, 1, {255, 0, 0, 255}}, options).value();
+  const std::array layers{ScreenDraw{wrong, {0, 0}, {1, 1}}};
+  CHECK_FALSE(service.renderIntoAsync(f.scene, target, 2, 1, {0, 0, 0, 1}, {}, layers));
+  CHECK(service.asyncStats()->pending == state.pending);
+  CHECK(target.info()->frames == count);
+  bool rejected{};
+  std::thread worker([&] {
+    rejected = !service.renderIntoAsync(f.scene, target, 2, 1) && !service.cancelAsync();
+  });
+  worker.join();
+  CHECK(rejected);
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Core::Result<void> {
+        REQUIRE(service.asyncStats());
+        CHECK_FALSE(service.renderIntoAsync(f.scene, target, 2, 1));
+        CHECK_FALSE(service.cancelAsync());
+        CHECK(service.asyncStats()->pending == state.pending);
+        return {};
+      },
+      8, 8));
+  REQUIRE(renderer.closeGui());
+  std::uint64_t tag = 1;
+  REQUIRE(untilFrame(service, f.scene, target, tag).tag == 1);
+}
+
+TEST_CASE("skin.async_completed_receipt_survives_failure_to_capture_the_next_frame") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto target = renderer.createTarget(32, 32).value();
+  REQUIRE(f.scene.setTransform(f.joint, {{.5F, 0, 0}}));
+  REQUIRE(service.renderIntoAsync(f.scene, target, 1, 1)->accepted);
+  const auto camera = f.scene.primaryCamera().value();
+  REQUIRE(f.scene.setCamera(camera, std::nullopt));
+  std::optional<SceneAsyncResult> committed;
+  std::uint64_t tag = 1;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!committed && std::chrono::steady_clock::now() < deadline) {
+    auto result = service.renderIntoAsync(f.scene, target, ++tag, 1);
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+
+    if (result->completed) {
+      committed = std::move(*result);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(committed);
+  CHECK(committed->completed->tag == 1);
+  REQUIRE(committed->error);
+  CHECK_FALSE(committed->accepted);
+  CHECK(target.info()->frames == 1);
+  CHECK(service.asyncStats()->latest->tag == 1);
+  CHECK_FALSE(service.asyncStats()->picking);
+  World::Camera properties;
+  properties.primary = true;
+  properties.projection = World::Projection::Orthographic;
+  properties.orthographicHeight = 4;
+  REQUIRE(f.scene.setCamera(camera, properties));
+  auto recovered = untilFrame(service, f.scene, target, tag);
+  CHECK(recovered.tag > 1);
+  CHECK_FALSE(service.asyncStats()->error);
+}
+
+TEST_CASE("skin.async_unchanged_pose_reuses_frozen_identity_for_shadow_pages") {
+  Fixture f;
+  const auto light = f.scene.createEntity("Shadow").value();
+  REQUIRE(f.scene.setLight(
+      light,
+      World::Light{.shadows = ShadowSettings{.resolution = 128, .cascades = 1, .distance = 12}}));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto target = renderer.createTarget(32, 32).value();
+  std::uint64_t tag{};
+  REQUIRE(untilFrame(service, f.scene, target, tag).serial == 1);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  REQUIRE(untilFrame(service, f.scene, target, tag).serial == 2);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  CHECK(renderer.visibilityStats()->mesh->shadowDraws == 0);
+}
+
+TEST_CASE("skin.async_invalid_deformation_preserves_pixels_and_recovers_without_old_frame_leases") {
+  Fixture f;
+  const auto tip = f.scene.createEntity("Tip").value();
+  auto description = *f.skin.description().value();
+  description.inverseBindMatrices.resize(2);
+
+  for (auto& influence : description.vertices) {
+    influence.joints[1] = 1;
+    influence.weights = {.5F, .5F};
+  }
+
+  REQUIRE(Animation::saveSkin(f.files, f.properties.asset,
+                              Animation::Skin::create(std::move(description)).value()));
+  f.properties.joints.push_back(tip.value);
+  REQUIRE(f.scene.setSkin(f.owner, f.properties));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto target = renderer.createTarget(32, 32).value();
+  std::uint64_t tag{};
+  REQUIRE(untilFrame(service, f.scene, target, tag).serial == 1);
+  const auto before = renderer.readTarget(target).value();
+  REQUIRE(f.scene.setTransform(tip, {{}, {}, {-1, 1, 1}}));
+  REQUIRE(service.renderIntoAsync(f.scene, target, ++tag, 1)->accepted);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  bool failed{};
+
+  while (!failed && std::chrono::steady_clock::now() < deadline) {
+    auto result = service.renderIntoAsync(f.scene, target, ++tag, 1);
+    failed = !result;
+
+    if (!result) {
+      CHECK(result.error().code == Core::ErrorCode::InvalidArgument);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(failed);
+  CHECK(renderer.readTarget(target)->pixels == before.pixels);
+  CHECK(target.info()->frames == 1);
+  CHECK_FALSE(service.asyncStats()->picking);
+  REQUIRE(f.scene.setTransform(tip, {{1, 0, 0}}));
+  REQUIRE(untilFrame(service, f.scene, target, tag).serial == 2);
+  CHECK(renderer.readTarget(target)->pixels != before.pixels);
+  REQUIRE(service.clearCache());
+  CHECK(renderer.resourceStats()->skins == 0);
+}

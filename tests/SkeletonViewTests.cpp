@@ -169,3 +169,31 @@ TEST_CASE("skeleton_view.rejects_foreign_threads_without_touching_owner_state") 
   CHECK(rejected);
   CHECK(viewer.stats()->frame->serial == 1);
 }
+
+TEST_CASE("skeleton_view.projects_owned_delayed_pose_and_rejects_malformed_snapshots") {
+  Fixture f;
+  Editor::SkeletonView viewer;
+  REQUIRE(viewer.set(f.scene, f.files, f.mesh.value));
+  auto pose = viewer.sample(f.scene, f.files).value();
+  REQUIRE(pose);
+  CHECK_FALSE(viewer.stats()->frame);
+  REQUIRE(f.scene.setTransform(f.tip, {{.6F, .2F, 0}}));
+  REQUIRE(viewer.renderPose(pose, {}, 10));
+  CHECK(viewer.stats()->frame->pose.joints[0].position.x == doctest::Approx(.3));
+  CHECK(viewer.stats()->frame->projected[0]->x == doctest::Approx(.65));
+  auto malformed = *pose;
+  malformed.joints[0].parent = 0;
+  CHECK_FALSE(viewer.renderPose(malformed, {}, 11));
+  CHECK_FALSE(viewer.stats()->frame);
+  malformed = *pose;
+  malformed.joints[0].entity = malformed.joints[1].entity;
+  CHECK_FALSE(viewer.renderPose(malformed, {}, 12));
+  REQUIRE(viewer.render(f.scene, f.files, {}, 13));
+  CHECK(viewer.stats()->frame->pose.joints[0].position.x == doctest::Approx(.7));
+  CHECK(viewer.stats()->frame->serial == 13);
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !viewer.sample(f.scene, f.files) && !viewer.renderPose(pose, {}, 14); });
+  worker.join();
+  CHECK(rejected);
+}

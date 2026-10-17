@@ -11384,3 +11384,131 @@ Computer use again reports the Mac locked. Physical keyboard/IME/pointer and wra
 panel acceptance remain unverified. First-pose preparation does not finish dynamic
 frame latency, resource streaming, finished Prism art, larger-game validation or the
 overall production engine/editor goal.
+
+## 2026-10-18 — Owned dynamic game frames
+
+Continue from the actual Prism Relay workflow and the previous native trace: ongoing
+animation still called updateSkins/finishSkinUpdate and waited for GPU status inside
+scene rendering. Implement bounded overlap in the existing renderer/service and
+real editor/player, without adding an acceptance executable or distribution archive.
+
+Renderer::freezeSkin owns an immutable validated posed Mesh view and shared output
+lease. It preserves exact bounds/orientation and stable identity for unchanged-pose
+shadow dependencies. A lease retains its controller, and the existing two output
+buffers remain bounded: updating a still-pinned spare fails explicitly until the
+last view releases it. Shared copies and quiescent off-thread release return logical
+resource counters to baseline. There is no per-frame GPU vertex copy/readback.
+Render targets gain renderer-local monotonic identities, distinguishing replacement
+targets even when their dimensions match.
+
+SceneRenderer owns at most one pending and one completed frame. Camera/transforms,
+materials, lights/environment, SSAO/post process, screen textures and skin palettes
+belong to that same submitted frame. New GPU jobs are first polled on a later host
+frame, with zero timeout. Simulation/input can continue while the old valid target
+remains visible. Receipts describe an actual successful draw/presentation, including
+tag/source/size/matrix; acceptance never claims new pixels. Completed-frame picking
+uses the retained exact geometry/camera. Epoch, source/layout, target/size, cache,
+material preview and explicit exact operations cancel obsolete work. Invalid GPU
+poses preserve old pixels and unlock retry. A completed draw followed by a failure
+to capture the next frame returns its real receipt alongside that later error.
+
+Editor Play consumes actual receipts for capture/UI provenance, permitting a
+rendered Play frame earlier than the current logical frame. Skeleton sampling owns
+the matching joint pose without replacing the completed overlay; projection uses
+that target's matrix/serial. Authoring/animation audition retain exact drawing.
+Play pick-view now rejects authoring selection, matching the graphical behavior.
+The native player's finite frame budget counts successful game presentations,
+including the first delayed skin frame, rather than loading/deferred attempts.
+Both products expose bounded frame counters and completed source metadata.
+
+HUD snapshots/SDK add buttonRevision for complete button definitions. Labels,
+focus/hover/press and action history do not advance it. Pointer/navigation input
+requires a matching displayed button version, current source and target dimensions;
+editor target recreation also requires an actual ready preview. Thus an old image
+cannot activate a newly positioned button, while ordinary held gestures survive
+cosmetic changes. Existing programmatic activation retains current-model eligibility.
+
+Add nine durable behavioral cases in existing targets: frozen output lifetime and
+backpressure; owned delayed skeleton projection/malformed snapshots; six dynamic
+frame cases for CPU-reference pixels/picking, independent epoch and same-size target
+cancellation/cache, invalid/foreign/thread/GUI requests, partial draw then error,
+unchanged shadow identity and failed deformation/recovery; plus HUD definition versus
+interaction versions. Unit cases initialize no devices/windows; GPU checks remain
+offscreen integration tests.
+
+Preserve caller LLVM/CPPFLAGS/LDFLAGS and pinned dependencies; no sanitizers. Configure
+and build Debug/Release sequentially on macOS arm64. Full Debug passes 1,432/1,432
+in 239.09 s and full Release passes 1,432/1,432 in 35.17 s: 436 unit / 996 integration,
+177 offscreen GPU and 232 compiler cases. Following final input guards and independent
+epoch review, focused Debug 14/14 in 5.89 s and Release 14/14 in 1.10 s pass. Release
+runs with assertions disabled. Windows/Linux were not run.
+
+Retain intermediate failures honestly: the first new pixel/reference case already
+matched pixels but used a triangle-edge pick UV; use an interior point and a distinct
+new camera to test old-frame picking. A later GUI regression exposed asyncStats
+incorrectly using a query forbidden during GUI layout; use the pure GUI-safe query
+and reject writes before mutation. The added native size guard initially missed its
+specific Window module import and explicit signed extent conversion; the compiler
+rejected it under warnings-as-errors, and the corrected builds pass.
+
+Actual Release editor operations create an editable Prism project, stage Inspector
+uiFontSize 20→22, apply/undo/redo/save, close and reopen. Play passes gameplay,
+airborne pause/save refusal, exact paused animation/target freeze, grounded save,
+paused restore with unrelated live data retained, malformed clock refusal, Space
+Return without jumping, and pointer press/hold/release with one action. Skeleton
+inspection reports the same rendered Play frame as the actual target; Play authoring
+pick rejects. Stop restores clean saved authoring, and fresh Play has a new scope
+and isolated empty save storage. Saved/stopped authoring PNGs retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Two paused PNGs are byte identical. Export uses that saved workspace through the
+real product route. Editor processes exit zero, retire controls and have empty stderr.
+
+Relocate the unpacked native game and physically hide only its owned source project,
+restoring it in cleanup. All 115 content files / 66,213,359 bytes match saved sources;
+no TypeScript/map files ship. Pinned font/notice remain present and font SHA-256 is
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Actual native processes pass airborne freeze/refusal, grounded paused save, fresh
+unpaused restart after paused exit, damaged owned slot refusal preserving pose/bytes,
+exact restoration/retry, paused restore, movement, scene replacement/stale scope
+rejection, Space Return and held pointer release once. Actual presented source,
+HUD revision and button definition version match inspected UI with no text overflow
+or script failures. Both processes exit zero and retire controls. Audio synchronization
+does not fault; no listening claim is made.
+
+The first native helper attempt assumed 90 logical input frames guaranteed landing;
+inspection showed the character still airborne and saving correctly refused. Preserve
+that attempt and change the helper to observe actual landing before requesting save.
+This is a timing assumption in validation, not evidence of a broken save or a speedup.
+A finite-player smoke initially refused an absent explicit data root; create the
+owned directory and retry successfully. --frames 1 exits zero only after its first
+actual game presentation, retaining its preparation/profile evidence.
+
+A matched native comparison uses unchanged saved Prism content (all 115 hashes),
+logical input area 1280x800, four W30/D30/Space1/empty45/M1/Tab1/M1/empty10 cycles,
+the same 50 ms inspection polling and a 12-second native sample. Baseline trace
+contains ongoing finishSkinUpdate/WaitAny; both current traces have pollSkinUpdate
+and no finishSkinUpdate. The final trace still includes surface drawable acquisition,
+ordinary driver/queue validation and substantial product-control request processing.
+Observed Render maxima are 20,482,250 ns for baseline, 10,971,333 ns for an earlier
+candidate and 37,908,166 ns for the final candidate. These single-process records
+vary with control polling, driver/cache and scheduling; logical input frame budgets
+also do not establish equal elapsed gameplay. Removing the explicit pose wait is
+verified; a fixed overall speedup, frame-time bound or smooth-game guarantee is not.
+
+After the final independent-epoch assertion/formatting review and rebuild, repeat
+the complete real editor/native workflow with the exact final Release binaries,
+plus the matched sampling and finite-frame smoke. All pass. Final editor/exported
+native/CLI-exported native hashes match their current Release counterparts; record
+Mach-O arm64 architecture, libraries and load commands before cleanup. Native LLVM
+runtime references remain executable-relative. Recheck the six earlier persistent
+save hashes and restore both owned authoring projects. Preserve projects, saves,
+requests/results, captures, manifests, profiles, stacks and binary/source evidence
+under ignored build/frame-pipeline-review; remove only owned unpacked native/App
+copies and transient helper/cache files. No distribution archive is created.
+
+Review correctness, atomic ownership/cancellation/failure paths, frame/input lifetime,
+platform assumptions, module boundaries, formatting and meaningful regression scope.
+Whitespace and clang-format checks pass. Computer use still reports the Mac locked;
+physical keyboard/IME/pointer and wrapped-panel acceptance remain unverified. This
+stage does not finish owner-thread asset/text uploads, resource streaming, broader
+frame pacing, final Prism art, large-game/long-run evidence or the overall engine goal.

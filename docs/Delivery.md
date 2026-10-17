@@ -10,7 +10,7 @@ open goals. Tests establish specific contracts, not a completion percentage.
 | PBR textures/materials, HDRI IBL, directional/point/spot soft shadows, retained unchanged shadow pages, SSAO and HDR/tone mapping | Temporal quality, submission reuse, resource streaming and populated-scene performance remain unfinished |
 | Opt-in renderer CPU/GPU intervals, bounded histories and explicit unsupported/drop/error states | Excludes scripts, physics, separate skin work, GUI and other application costs; not game FPS |
 | Independent native application-step CPU wall sampling in editor and player, bounded history, retained slowest/input-interval records and failed callback phases | Includes work inside step; excludes process initialization, teardown, idle delays and background worker CPU; populated-game costs remain to be established |
-| Asynchronous shared environment/shadow/SSAO/skin pipelines, bounded HDR/material image/mip preparation and zero-wait environment GPU completion with editor status and native startup gating | Material metadata, GPU uploads, other assets/pipelines and skin status synchronization remain synchronous; first-frame stalls are not resolved |
+| Asynchronous shared environment/shadow/SSAO/skin pipelines, bounded HDR/material image/mip preparation and zero-wait environment GPU completion with editor status and native startup gating | Material metadata, GPU uploads, other assets/pipelines and explicit skin status synchronization remain synchronous; first-frame stalls are not fully resolved |
 | OBJ/glTF/GLB import, binary native meshes, GPU skinning/cross-fades, isolated audition, skeleton inspection and existing-clip key editing/retiming/relative TRS adjustment/copy-paste | Full curve/binding/animation production tools and scale remain unfinished |
 | Jolt rigid bodies/linear CCD, character traversal, ray/sphere queries and virtual/proxy contacts, native audio | Populated-game character scalability and long-running behavior need broader evidence |
 | TypeScript/QuickJS-NG, hot reload, dot:engine/dot:host and extensionless project imports | Initial Play compilation and running source reload compile owned snapshots in the background; source capture, version probes, VM activation and state migration remain on the owner |
@@ -51,6 +51,8 @@ capability; ordinary stages do not produce new distribution archives. Release
 identity signing/notarization and installer publication remain unfinished.
 
 Initial visible skin poses now join incremental loading with owned GPU transactions,
-zero-wait polling, cancellation and atomic validation/publication. Subsequent animated
-pose updates and explicit drawing remain synchronous; resource streaming and broader
-frame-latency work remain open. See [skinning contracts](Skinning.md).
+zero-wait polling, cancellation and atomic validation/publication. Dynamic editor
+Play/native frames now overlap skin completion with simulation using bounded owned
+snapshots and actual completed-frame provenance. Explicit drawing/readback, owner
+resource uploads and some driver operations remain synchronous; resource streaming
+and broader frame-latency work remain open. See [skinning contracts](Skinning.md).

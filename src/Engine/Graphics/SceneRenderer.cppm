@@ -47,6 +47,37 @@ export namespace Dot::Graphics {
     std::uint64_t skinBytes{};
   };
 
+  struct SceneFrameReceipt {
+    std::uint64_t serial{};
+    std::uint64_t tag{};
+    std::uint64_t scene{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+    Math::Mat4 viewProjection{};
+  };
+
+  struct SceneAsyncStats {
+    std::uint64_t submitted{};
+    std::uint64_t completed{};
+    std::uint64_t deferred{};
+    std::uint64_t cancelled{};
+    std::optional<std::uint64_t> pending;
+    std::optional<SceneFrameReceipt> latest;
+    bool picking{};
+    std::optional<Core::Error> error;
+  };
+
+  /** accepted concerns this call's tag; completed may belong to an earlier tag.
+   * An error after a completed draw is returned alongside its actual receipt,
+   * never as a rollback or unconditional success.
+   * accepted 对应本次 tag，completed 可能属于较早 tag；绘制完成后的错误与真实回执
+   * 一起返回，不伪造回滚或无条件成功。 */
+  struct SceneAsyncResult {
+    bool accepted{};
+    std::optional<SceneFrameReceipt> completed;
+    std::optional<Core::Error> error;
+  };
+
   struct MaterialPreview {
     std::string path;
     Assets::MaterialDescription value;
@@ -140,6 +171,35 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto renderInto(const World::Scene& scene, RenderTarget& target,
                                   Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {},
                                   std::span<const ScreenDraw> screen = {}) -> Core::Result<void>;
+    /** Own at most one submitted and one completed frame. Snapshot transforms,
+     * camera, materials, lighting, post process and screen handles together; skin
+     * completion is polled without waiting. Simulation may continue independently.
+     * Tags are fresh nonzero uint64 values across this service's lifetime; only
+     * accepted tags advance that watermark. Epoch changes invalidate the source.
+     * Newly submitted skin jobs are first polled on a later call.
+     * Scene/layout/target/size changes and explicit sync operations cancel frames.
+     * Target pixels stay unchanged while pending. Inspect actual completed tags;
+     * accept/submit does not prove rendering. Caller screen copies retain textures.
+     * 每次至多拥有一个提交帧和一个完成帧，变换、相机、材质、光照、后处理及屏幕句柄
+     * 一起快照；零等待轮询蒙皮，模拟可独立继续。tag 为本服务寿命内递增的非零值，
+     * 仅接受的请求推进水位；epoch 变化使旧来源失效，新蒙皮任务从后续调用开始轮询。
+     * 场景/资源布局/目标/尺寸变化及显式同步操作取消帧；等待期间目标像素不变。
+     * 按真实完成 tag 检查结果，接受不代表绘制；屏幕句柄副本会保留贴图。 */
+    [[nodiscard]] auto renderIntoAsync(const World::Scene& scene, RenderTarget& target,
+                                       std::uint64_t tag, std::uint64_t epoch,
+                                       Math::Vec4 clear = {0, 0, 0, 1}, SceneView view = {},
+                                       std::span<const ScreenDraw> screen = {})
+        -> Core::Result<SceneAsyncResult>;
+    [[nodiscard]] auto presentAsync(const World::Scene& scene, std::uint64_t tag,
+                                    std::uint64_t epoch, Math::Vec4 clear = {0, 0, 0, 1},
+                                    SceneView view = {}, std::span<const ScreenDraw> screen = {})
+        -> Core::Result<SceneAsyncResult>;
+    [[nodiscard]] auto asyncStats() const -> Core::Result<SceneAsyncStats>;
+    [[nodiscard]] auto cancelAsync() -> Core::Result<void>;
+    /** Pick the actual completed snapshot; never rebuild from a newer live pose.
+     * 拾取真实完成的快照，不用较新的实时姿态重建。 */
+    [[nodiscard]] auto pickAsync(std::uint64_t serial, Math::Vec2 uv)
+        -> Core::Result<std::optional<World::EntityId>>;
     /** GPU-visible opaque entity; selection identity never passes through floats.
      * GPU 可见不透明实体；选择身份不经过浮点数，未命中返回空 optional。 */
     [[nodiscard]] auto pick(const World::Scene& scene, std::uint32_t width, std::uint32_t height,

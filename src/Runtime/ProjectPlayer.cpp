@@ -31,6 +31,7 @@ import Dot.Script.Hud;
 import Dot.Platform.Events;
 import Dot.Platform.Input;
 import Dot.Platform.UserData;
+import Dot.Platform.Window;
 import Dot.World.Scene;
 
 #include "Player.hpp"
@@ -240,6 +241,17 @@ namespace Dot::Runtime {
       std::uint64_t lastSceneRequest{};
       std::uint64_t presentedHudScope{};
       std::uint64_t presentedHudRevision{};
+      std::uint64_t presentedButtonRevision{};
+      Platform::Extent presentedSize{};
+
+      struct RenderMeta {
+        std::uint64_t tag;
+        std::uint64_t scope;
+        std::uint64_t hud;
+        std::uint64_t buttons;
+      };
+
+      std::optional<RenderMeta> pendingRender;
       auto lastTitle = description->name;
       bool delayed = false;
       bool started = false;
@@ -321,12 +333,37 @@ namespace Dot::Runtime {
                                         "Inspect native text: " + text.error().message);
                     }
 
+                    auto frames = sceneRenderer->asyncStats();
+
+                    if (!frames) {
+                      return std::unexpected(frames.error());
+                    }
+
+                    const auto& f = *frames;
+                    response["rendering"]
+                        = {{"submitted", std::to_string(f.submitted)},
+                           {"completed", std::to_string(f.completed)},
+                           {"deferred", std::to_string(f.deferred)},
+                           {"cancelled", std::to_string(f.cancelled)},
+                           {"pending", f.pending ? nlohmann::json(std::to_string(*f.pending))
+                                                 : nlohmann::json(nullptr)},
+                           {"latest",
+                            f.latest
+                                ? nlohmann::json{{"serial", std::to_string(f.latest->serial)},
+                                                 {"tag", std::to_string(f.latest->tag)},
+                                                 {"applicationFrame",
+                                                  std::to_string(f.latest->tag - 1)},
+                                                 {"scene", std::to_string(f.latest->scene)},
+                                                 {"size", {f.latest->width, f.latest->height}},
+                                                 {"viewProjection", f.latest->viewProjection.data}}
+                                : nlohmann::json(nullptr)}};
                     response["hudText"]
                         = {{"textureBytes", std::to_string(text->textureBytes)},
                            {"rasterizations", std::to_string(text->rasterizations)},
                            {"overflow", text->overflow},
                            {"presentedScope", std::to_string(presentedHudScope)},
-                           {"presentedRevision", std::to_string(presentedHudRevision)}};
+                           {"presentedRevision", std::to_string(presentedHudRevision)},
+                           {"presentedButtonRevision", std::to_string(presentedButtonRevision)}};
                     return response.dump();
                   }
                 }
@@ -456,9 +493,27 @@ namespace Dot::Runtime {
                                                : scripted.error());
         }
 
+        auto location = session->stats();
+        auto pixels = renderer->surfaceSize();
+
+        if (!location || !pixels) {
+          return std::unexpected(!location ? location.error() : pixels.error());
+        }
+
+        auto ui = session->hud();
+        auto buttons
+            = ui ? ui->buttonRevision() : Core::Result<std::uint64_t>{std::unexpected(ui.error())};
+
+        if (!buttons) {
+          return std::unexpected(buttons.error());
+        }
+
         const Project::GameInputArea area{
             {static_cast<float>(logical->width), static_cast<float>(logical->height)},
-            (*focused || *scripted) && !quitting && logical->width > 0 && logical->height > 0};
+            (*focused || *scripted) && !quitting && logical->width > 0 && logical->height > 0
+                && pixels->width == presentedSize.width && pixels->height == presentedSize.height
+                && presentedHudScope == location->location.scope
+                && presentedButtonRevision == *buttons};
         return session->publish(*controlled, capture, area, *textActive).transform([](auto) {});
       };
 
@@ -549,7 +604,8 @@ namespace Dot::Runtime {
         }
 
         if (size->width <= 0 || size->height <= 0) {
-          return {};
+          pendingRender.reset();
+          return sceneRenderer->cancelAsync();
         }
 
         auto layers = hud->draws();
@@ -565,20 +621,56 @@ namespace Dot::Runtime {
           return std::unexpected(screen.error());
         }
 
-        auto presented = sceneRenderer->present(**scene, {0, 0, 0, 1}, {}, *screen);
+        const RenderMeta current{frame.index + 1, state->scope, state->revision,
+                                 state->buttonRevision};
+        auto presented = sceneRenderer->presentAsync(**scene, current.tag, current.scope,
+                                                     {0, 0, 0, 1}, {}, *screen);
 
-        if (presented && *presented == Graphics::PresentResult::Presented) {
-          presentedHudScope = state->scope;
-          presentedHudRevision = state->revision;
+        if (!presented) {
+          return std::unexpected(presented.error());
         }
 
-        auto shown = presented.transform([](auto) {});
+        if (presented->completed) {
+          const auto tag = presented->completed->tag;
+          const auto* metadata = tag == current.tag                           ? &current
+                                 : pendingRender && pendingRender->tag == tag ? &*pendingRender
+                                                                              : nullptr;
 
-        if (shown && options.frames && ++gameFrames == options.frames) {
+          if (!metadata) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Presented frame has no owned HUD provenance");
+          }
+
+          presentedHudScope = metadata->scope;
+          presentedHudRevision = metadata->hud;
+          presentedButtonRevision = metadata->buttons;
+          presentedSize = {static_cast<int>(presented->completed->width),
+                           static_cast<int>(presented->completed->height)};
+        }
+
+        if (presented->accepted) {
+          pendingRender = current;
+        }
+
+        auto status = sceneRenderer->asyncStats();
+
+        if (!status) {
+          return std::unexpected(status.error());
+        }
+
+        if (!status->pending) {
+          pendingRender.reset();
+        }
+
+        if (presented->error) {
+          return std::unexpected(*presented->error);
+        }
+
+        if (presented->completed && options.frames && ++gameFrames == options.frames) {
           application->stop();
         }
 
-        return shown;
+        return {};
       };
 
       /** Close on every dispatch/render failure; destructor never substitutes hooks.

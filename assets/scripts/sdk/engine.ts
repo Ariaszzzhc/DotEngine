@@ -238,6 +238,7 @@ export interface HudSnapshot {
   hovered: string|null;
   pressed: string|null;
   sequence: string;
+  buttonRevision: string;
 }
 
 /**

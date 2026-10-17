@@ -680,3 +680,34 @@ TEST_CASE("skin.gpu_abandoned_batches_unlock_controllers_and_own_teardown") {
   controller = {};
   CHECK(renderer.resourceStats()->skins == 0);
 }
+
+TEST_CASE("skin.frozen_views_keep_exact_pose_and_release_spare_buffer_backpressure") {
+  auto renderer = Renderer::create().value();
+  auto geometry = quad().value();
+  auto source = renderer.upload(geometry).value();
+  auto controller = renderer.createSkin(source, skinFor(geometry)).value();
+  std::array<Math::Mat4, 2> palette;
+  changed(renderer, controller, palette);
+  auto old = renderer.freezeSkin(controller).value();
+  auto samePose = renderer.freezeSkin(controller).value();
+  std::array draws{MeshDraw{&old}};
+  const auto before = renderer.renderMeshes(draws, {}, 32, 32).value();
+  palette[0] = Math::compose({.5F, 0, 0}).value();
+  changed(renderer, controller, palette);
+  CHECK(renderer.renderMeshes(draws, {}, 32, 32)->pixels == before.pixels);
+  auto current = renderer.freezeSkin(controller).value();
+  const std::array updates{SkinUpdate{&controller, palette}};
+  CHECK_FALSE(renderer.beginSkinUpdate(updates));
+  CHECK_FALSE(renderer.updateSkins(updates));
+  old = {};
+  CHECK_FALSE(renderer.updateSkins(updates));
+  std::thread release([owned = std::move(samePose)]() mutable { owned = {}; });
+  release.join();
+  changed(renderer, controller, palette);
+  CHECK(controller.info()->updates == 3);
+  CHECK(current.info()->vertices == geometry.vertices.size());
+  current = {};
+  controller = {};
+  CHECK(renderer.resourceStats()->skins == 0);
+  CHECK_FALSE(renderer.freezeSkin(controller));
+}

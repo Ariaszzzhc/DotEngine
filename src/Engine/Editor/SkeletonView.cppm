@@ -56,6 +56,13 @@ export namespace Dot::Editor {
      * 空关节取景整个骨架，否则取关节/父骨段；小幅世界空间留边可取景重合点和末端关节。 */
     [[nodiscard]] auto bounds(const World::Scene& scene, const Core::FileSystem& assets,
                               std::optional<std::uint64_t> joint) -> Core::Result<Graphics::Bounds>;
+    /** Capture owned joints now and project that same pose after GPU completion.
+     * 捕获拥有的关节数据，GPU 完成后仍投影同一姿态。 */
+    [[nodiscard]] auto sample(const World::Scene& scene, const Core::FileSystem& assets)
+        -> Core::Result<std::optional<Animation::SkeletonPose>>;
+    [[nodiscard]] auto renderPose(std::optional<Animation::SkeletonPose> pose,
+                                  const Math::Mat4& viewProjection, std::uint64_t serial)
+        -> Core::Result<Graphics::ViewportOverlay>;
     [[nodiscard]] auto render(const World::Scene& scene, const Core::FileSystem& assets,
                               const Math::Mat4& viewProjection, std::uint64_t serial)
         -> Core::Result<Graphics::ViewportOverlay>;

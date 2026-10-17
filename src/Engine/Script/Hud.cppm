@@ -30,6 +30,7 @@ export namespace Dot::Script {
     std::optional<std::string> hovered;
     std::optional<std::string> pressed;
     std::uint64_t sequence{};
+    std::uint64_t buttonRevision{};
   };
 
   /** Normalized top-left pointer; null means outside/unavailable. Disabling input
@@ -65,6 +66,9 @@ export namespace Dot::Script {
   public:
     [[nodiscard]] static auto create(std::uint64_t scope) -> Core::Result<Hud>;
     [[nodiscard]] auto snapshot() const -> Core::Result<HudSnapshot>;
+    /** Button-description revision; labels and interaction styling do not advance it.
+     * 按钮定义修订，文字标签和交互样式变化不推进此值。 */
+    [[nodiscard]] auto buttonRevision() const -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto draws() const -> Core::Result<std::vector<Graphics::TextLayer>>;
     [[nodiscard]] auto publish(const HudInput& input) -> Core::Result<HudInputResult>;
     [[nodiscard]] auto perform(std::string_view request) -> Core::Result<std::string>;

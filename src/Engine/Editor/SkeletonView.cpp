@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <limits>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -14,6 +15,7 @@ module Dot.Editor.SkeletonView;
 
 import Dot.Animation.SkinFiles;
 import Dot.Core.Result;
+import Dot.Core.Text;
 import Dot.Graphics.Overlay;
 import Dot.Math;
 
@@ -181,9 +183,8 @@ namespace Dot::Editor {
     return result;
   }
 
-  auto SkeletonView::render(const World::Scene& scene, const Core::FileSystem& assets,
-                            const Math::Mat4& viewProjection, std::uint64_t serial)
-      -> Core::Result<Graphics::ViewportOverlay> {
+  auto SkeletonView::sample(const World::Scene& scene, const Core::FileSystem& assets)
+      -> Core::Result<std::optional<Animation::SkeletonPose>> {
     auto valid = check();
 
     if (!valid) {
@@ -191,6 +192,45 @@ namespace Dot::Editor {
     }
 
     if (!m_entity) {
+      return std::nullopt;
+    }
+
+    try {
+      auto prepared = prepare(scene, assets, *m_entity);
+
+      if (!prepared) {
+        m_frame.reset();
+        m_error = prepared.error();
+        return std::unexpected(prepared.error());
+      }
+
+      m_cache = std::move(prepared->first);
+      return std::optional{std::move(prepared->second)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Sample skeleton view: " + std::string(error.what()));
+    }
+  }
+
+  auto SkeletonView::render(const World::Scene& scene, const Core::FileSystem& assets,
+                            const Math::Mat4& viewProjection, std::uint64_t serial)
+      -> Core::Result<Graphics::ViewportOverlay> {
+    auto pose = sample(scene, assets);
+    return pose ? renderPose(std::move(*pose), viewProjection, serial)
+                : Core::Result<Graphics::ViewportOverlay>{std::unexpected(pose.error())};
+  }
+
+  auto SkeletonView::renderPose(std::optional<Animation::SkeletonPose> pose,
+                                const Math::Mat4& viewProjection, std::uint64_t serial)
+      -> Core::Result<Graphics::ViewportOverlay> {
+    auto valid = check();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    if (!m_entity || !pose) {
+      m_frame.reset();
       return Graphics::ViewportOverlay{};
     }
 
@@ -200,14 +240,47 @@ namespace Dot::Editor {
                           "Skeleton frame serial must be positive");
       }
 
-      auto prepared = prepare(scene, assets, *m_entity);
-      auto projector = Graphics::OverlayProjector::create(viewProjection);
-
-      if (!prepared || !projector) {
-        return std::unexpected(!prepared ? prepared.error() : projector.error());
+      if (pose->owner.value != *m_entity || !pose->owner.scene || pose->joints.empty()
+          || pose->joints.size() > 1024 || pose->asset.size() > 4096
+          || !Core::isValidUtf8(pose->asset)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid skeleton snapshot owner/count");
       }
 
-      SkeletonViewFrame frame{serial, std::move(prepared->second), {}, {}};
+      std::set<std::uint64_t> ids;
+
+      for (std::size_t i = 0; i < pose->joints.size(); ++i) {
+        const auto& joint = pose->joints[i];
+
+        if (!joint.entity.value || joint.entity.scene != pose->owner.scene
+            || !ids.insert(joint.entity.value).second || !Math::isFinite(joint.position)
+            || joint.name.size() > 4096 || !Core::isValidUtf8(joint.name)
+            || (joint.parent
+                && (*joint.parent >= pose->joints.size() || *joint.parent == i || !joint.parentLinks
+                    || joint.parentLinks > 256))
+            || (!joint.parent && joint.parentLinks)) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid skeleton snapshot joint");
+        }
+
+        auto ancestor = joint.parent;
+        std::size_t depth{};
+
+        while (ancestor) {
+          if (*ancestor >= pose->joints.size() || ++depth > 256) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Cyclic skeleton snapshot");
+          }
+
+          ancestor = pose->joints[*ancestor].parent;
+        }
+      }
+
+      auto projector = Graphics::OverlayProjector::create(viewProjection);
+
+      if (!projector) {
+        return std::unexpected(projector.error());
+      }
+
+      SkeletonViewFrame frame{serial, std::move(*pose), {}, {}};
       frame.projected.reserve(frame.pose.joints.size());
       const bool selectedAlive
           = !m_selected || std::ranges::any_of(frame.pose.joints, [&](const auto& joint) {
@@ -243,7 +316,6 @@ namespace Dot::Editor {
       }
 
       auto overlay = frame.overlay;
-      m_cache = std::move(prepared->first);
       m_frame = std::move(frame);
       m_error.reset();
 

@@ -422,6 +422,7 @@ namespace Dot::Graphics {
     std::uint64_t m_geometryRevision{};
     float m_poseOrientation{1};
     std::shared_ptr<Impl> m_source;
+    std::shared_ptr<void> m_pin;
     std::uint64_t vertexBytes{};
     std::uint64_t indexBytes{};
     bool tracked{};
@@ -475,6 +476,8 @@ namespace Dot::Graphics {
     wgpu::Buffer m_indices;
     SkinInfo m_info{};
     std::uint32_t m_next{1};
+    std::array<std::atomic<std::uint32_t>, 2> m_pins{};
+    std::array<std::weak_ptr<Mesh::Impl>, 2> m_snapshots;
     bool m_pending{};
     bool m_tracked{};
 
@@ -780,6 +783,7 @@ namespace Dot::Graphics {
   }
 
   struct Renderer::Impl {
+    std::uint64_t m_targetSequence{};
     std::thread::id thread{std::this_thread::get_id()};
     Platform::Window* window{};
     RendererConfig config;
@@ -4576,6 +4580,11 @@ namespace Dot::Graphics {
 
       const auto& state = *update.skin->m_impl;
 
+      if (state.m_pins[state.m_next].load() != 0) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Skin spare output is pinned by a frozen view");
+      }
+
       if (state.m_pending) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Skin controller already has a pending update");
@@ -4837,6 +4846,69 @@ namespace Dot::Graphics {
   auto Renderer::updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void> {
     auto job = beginSkinUpdateImpl(updates, true);
     return job ? finishSkinUpdate(*job) : Core::Result<void>{std::unexpected(job.error())};
+  }
+
+  auto Renderer::freezeSkin(const SkinnedMesh& skin) -> Core::Result<Mesh> {
+    if (!m_impl || !skin.m_impl || skin.m_impl->m_owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Frozen skin requires its live renderer");
+    }
+
+    auto valid = m_impl->check(true);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto& state = *skin.m_impl;
+    const auto slot = state.m_next ^ 1U;
+
+    if (auto existing = state.m_snapshots[slot].lock()) {
+      return Mesh(std::move(existing));
+    }
+
+    if (state.m_pins[slot].load() == std::numeric_limits<std::uint32_t>::max()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Skin snapshot lease counter exhausted");
+    }
+
+    try {
+      struct Pin {
+        std::shared_ptr<SkinnedMesh::Impl> state;
+        std::uint32_t slot;
+
+        Pin(std::shared_ptr<SkinnedMesh::Impl> value, std::uint32_t index)
+            : state(std::move(value)), slot(index) {
+          state->m_pins[slot].fetch_add(1);
+        }
+
+        ~Pin() {
+          state->m_pins[slot].fetch_sub(1);
+        }
+      };
+
+      const auto& current = *state.m_mesh.m_impl;
+      auto result = std::make_shared<Mesh::Impl>();
+      result->owner = current.owner;
+      result->vertices = current.vertices;
+      result->indices = current.indices;
+      result->info = current.info;
+      result->bounds = current.bounds;
+      result->hasNormals = current.hasNormals;
+      result->hasNormalMapFrame = current.hasNormalMapFrame;
+      result->hasTangents = current.hasTangents;
+      result->m_uvFrame = current.m_uvFrame;
+      result->m_skinned = true;
+      result->m_geometryRevision = current.m_geometryRevision;
+      result->m_poseOrientation = current.m_poseOrientation;
+      result->m_source = current.m_source;
+      result->vertexBytes = current.vertexBytes;
+      result->indexBytes = current.indexBytes;
+      result->m_pin = std::make_shared<Pin>(skin.m_impl, slot);
+      state.m_snapshots[slot] = result;
+      return Mesh(std::move(result));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Freeze skin pose: " + std::string(error.what()));
+    }
   }
 
   auto Renderer::readSkin(const SkinnedMesh& skin) -> Core::Result<std::vector<Vertex>> {
@@ -5852,6 +5924,34 @@ namespace Dot::Graphics {
     return m_impl->config.postProcess;
   }
 
+  auto Renderer::validateTarget(const RenderTarget& target) const -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
+    }
+
+    auto valid = m_impl->check(true);
+
+    if (!valid) {
+      return valid;
+    }
+
+    if (!target.m_impl || target.m_impl->owner != m_impl->diagnostics || target.m_impl->faulted) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Target requires its live owning renderer");
+    }
+
+    return {};
+  }
+
+  auto Renderer::validateScreen(std::span<const ScreenDraw> screen) const -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
+    }
+
+    auto valid = m_impl->check(true);
+    return valid ? m_impl->validateScreen(screen) : std::unexpected(valid.error());
+  }
+
   auto Renderer::createTarget(std::uint32_t width, std::uint32_t height)
       -> Core::Result<RenderTarget> {
     if (!m_impl) {
@@ -5882,7 +5982,12 @@ namespace Dot::Graphics {
 
       auto target = std::make_shared<RenderTarget::Impl>();
       target->owner = m_impl->diagnostics;
-      target->info = {width, height, 0};
+
+      if (m_impl->m_targetSequence == std::numeric_limits<std::uint64_t>::max() - 1) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Render target identity exhausted");
+      }
+
+      target->info = {width, height, 0, m_impl->m_targetSequence + 1};
       target->bytes = bytes;
       ErrorScope scope(m_impl->instance, m_impl->device);
       wgpu::TextureDescriptor descriptor;
@@ -5911,6 +6016,7 @@ namespace Dot::Graphics {
       target->owner->targets.fetch_add(1);
       target->owner->targetBytes.fetch_add(target->bytes);
       target->tracked = true;
+      ++m_impl->m_targetSequence;
       return RenderTarget(std::move(target));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

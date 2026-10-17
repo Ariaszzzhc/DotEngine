@@ -1927,8 +1927,9 @@ GPU work remains budgeted until completion or renderer teardown. This is not
 general runtime streaming; explicit synchronous rendering APIs remain available.
 Only visible, enabled saved skins require skin pipeline preparation; no mesh/skin
 files are loaded and no poses published by that pipeline stage. Direct skin updates
-finish the same two jobs if necessary. Actual GPU pose-status readback remains
-synchronous so invalid deformation cannot publish buffers, bounds or picking state.
+finish the same two jobs if necessary. Play uses zero-wait dynamic skin completion;
+invalid deformation cannot publish buffers, bounds or picking state. Authoring and
+animation audition retain exact synchronous drawing.
 
 Window → Game state provides owned state inspection and explicit save-slot controls.
 Play uses a fresh temporary store, deleted on Stop; it cannot access player saves.
@@ -2083,3 +2084,21 @@ uses `Dot.Platform.AgentInput`, shared with the opt-in standalone player. Existi
 workspace commands and temporary Play-storage policy retain their meanings. See
 [native player control](Export.md#opt-in-native-player-control) for source-free
 inspection, gameplay input, scene requests and persistent game-data operations.
+
+## Completed Play frame provenance
+
+Play renders bounded owned snapshots independently of continuing simulation.
+workspace.view.rendering exposes submitted/completed/deferred/cancelled counters,
+pending tag, latest receipt (serial/tag/scene/size), renderedPlayFrame and
+presentedButtonRevision. The rendered Play frame may precede the logical frame;
+capture metadata, HUD revision, camera and skeleton overlay describe the same
+completed target. Acceptance/pending status never claims new pixels. Authoring
+viewport picking is unavailable during Play, matching the graphical operation.
+
+Buttons receive pointer/navigation input only after their definition version has
+actually drawn in the current source and target dimensions. Cosmetic focus/hover/
+press changes do not change that version or cancel a held gesture. Recreating a
+blank target disables UI input until the first matching frame completes.
+Scene/layout/epoch/target changes retire old frames; Stop restores authoring through
+the existing exact path. This overlap does not make font rasterization, resource
+loading or every driver call asynchronous.

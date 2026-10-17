@@ -114,9 +114,10 @@ unobserved completion records until instance teardown.
 Caller-retained completed job objects own their small completion/error records.
 
 readSkin remains explicit synchronous owned GPU vertex readback for diagnostics.
-Ongoing scene animation and exact explicit drawing still use synchronous updateSkins;
-this change does not establish a fully asynchronous frame pipeline or populated-game
-frame-time guarantee.
+Explicit exact-frame drawing uses updateSkins; editor Play and the native player
+use the bounded frame pipeline described below. No populated-game frame-time
+guarantee follows from a zero-wait completion poll.
+
 ## Scene, editor and export consumption
 
 SceneRenderer's incremental `prepare` now adds an `initial-skin-poses` stage after
@@ -131,18 +132,18 @@ synchronous resource operations.
 
 A submitted first pose is retained while joints keep advancing, avoiding perpetual
 cancel/resubmit starvation. The cache records the actual submitted palette; every
-subsequent draw compares the current palette and completes any necessary exact
-update before publishing pixels. Explicit drawing/bounds queries supersede owned
+subsequent frame compares its captured palette and validates any necessary update
+before publishing that frame. Explicit drawing/bounds queries supersede owned
 unpublished preparation and use their synchronous transaction. No stale cached pose
 is presented as current. Ready concerns prepared resources, not completed rendering.
 Identical failed initial requests retain their errors; a corrected palette permits
-a new transaction. Native later scene cuts/resource changes retain their existing synchronous rendering
-path; this is not streaming or an async animation-frame policy.
+a new transaction. Later native resource changes use the same incremental preparation,
+with ordinary geometry uploads and resource operations still on the owner thread.
 
 SceneRenderer loads enabled saved skin components automatically. Immutable file
 data and static source meshes are shared; each mesh owner retains one GPU skin
-controller between frames. A visible frame gathers current ordered joint palettes
-and updates them as one atomic batch before drawing. The same posed view supplies
+controller between frames. A visible frame gathers ordered joint palettes
+and validates them as one atomic batch before drawing. The same posed view supplies
 color, physical materials, shadows, SSAO and picking. bounds() evaluates a current
 pose even before the first frame. Both posed buffers, influences, palettes and
 control bytes count toward the scene cache budget; static inputs/indices count once.
@@ -191,6 +192,33 @@ Publication remains exclusive. Reload verifies bundle-local referenced assets an
 initial deformation without a GPU. Resource reports include `skins` and `skinnedMeshes`.
 
 Diagnostic ribbon images do not establish realistic character production or
-populated-game throughput. GPU status waits remain synchronous. Validate integrated
-import/edit/Play/export through the real editor's agent interface and ordinary
+populated-game throughput. Explicit GPU status/readback waits remain synchronous.
+Validate integrated import/edit/Play/export through the real editor's agent interface and ordinary
 example projects; use computer use for human-style interaction when needed.
+
+## Bounded dynamic frames
+
+SceneRenderer::renderIntoAsync/presentAsync own one pending and one completed frame.
+A frame captures transforms, camera, physical material handles, lighting, environment,
+SSAO, post process and screen textures together with its skin palette. New skin jobs
+are first polled on a later host frame with zero timeout; simulation/input continues
+while the last valid target remains visible. A successful submission is not a draw.
+Receipts identify the actual completed tag, scene, size and view-projection matrix.
+
+Renderer::freezeSkin returns an immutable view of a validated output, including
+exact bounds and pose orientation. A shared lease pins that controller output;
+repeated freezes of the same pose retain mesh identity for shadow dependencies.
+The existing two output buffers remain bounded: an update whose spare output is
+still leased fails with Unavailable. Releasing the last view unlocks reuse; it also
+retains its controller/resources until that release. No per-frame GPU vertex copy
+or blocking vertex readback is added. pickAsync requires the completed receipt
+serial and uses that frame's meshes/camera, never a newer live pose.
+
+Changing scene/resource layout, caller epoch, render target identity or dimensions
+cancels obsolete work. Cache clearing, material preview and explicit synchronous
+drawing/bounds queries also release the pipeline. Failed deformation preserves prior
+target pixels and publishes no invalid pose; correcting the input permits retry.
+If a prior frame really draws before capture of the next fails, its receipt and
+the later error are returned together. This is bounded overlap, with possible
+visual latency, not resource streaming or a guarantee that all driver calls,
+allocation, uploads, text preparation or surface acquisition are nonblocking.

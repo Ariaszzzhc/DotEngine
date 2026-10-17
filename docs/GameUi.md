@@ -157,7 +157,7 @@ The SDK and product protocols share native Hud::perform. Inner operations are ex
 
 | Operation | Required fields besides command | Result |
 | --- | --- | --- |
-| snapshot | none | scope/revision/labels/buttons/focused/hovered/pressed/sequence |
+| snapshot | none | scope/revision/buttonRevision/labels/buttons/focused/hovered/pressed/sequence |
 | set | key/value (complete label) | revision |
 | remove | key | revision |
 | clear | none | revision/sequence |
@@ -191,3 +191,10 @@ Its uiFontSize script property controls labels and buttons. Full checkpoint diag
 remain in relayProgressStatus; the in-game failure line gives a bounded user-facing
 message. Feature Lab exercises the real API, displays an ordinary bilingual label and button,
 and records actual demo activations in hudButtonCount.
+
+Snapshots also expose buttonRevision, a decimal version of complete button
+definitions. Only changing the button set or a button definition advances it;
+labels, focus/hover/press and action history do not. Editor Play and native surface
+input require the displayed version in the current source/size, preventing an old
+image from activating a newly positioned button while preserving held gestures.
+Programmatic activate retains the existing current-model eligibility contract.
