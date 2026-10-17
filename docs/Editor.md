@@ -894,8 +894,11 @@ Isolated editor audition is available below; keyframe authoring remains unfinish
 Import publishes reusable resources without dirtying the scene; instantiation needs the
 current authoring revision. A failed catalog refresh after publication explicitly
 reports that the bundle was committed. Existing destinations are never overwritten.
-Native `.gltf`, `.dotmesh`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources
+Native `.gltf`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources
 can open in the external editor; internal text transport remains only an automation buffer.
+Native `.dotmesh` assets use bounded binary geometry and remain available for mesh
+preview and scene use. Their OBJ/glTF sources remain editable; native mesh bytes
+are excluded from text buffers and external text-editor actions.
 
 Material coverage is persisted in `.dotmaterial` alphaMode (`opaque`, `mask`, `blend`)
 and alphaCutoff fields. Imports retain glTF alpha semantics; referenced files open in

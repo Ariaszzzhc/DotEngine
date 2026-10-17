@@ -5,30 +5,33 @@ shared GPU mesh resources. `loadMesh` reads relative to a `FileSystem` project
 root, and `saveMesh` atomically replaces a `.dotmesh` file in an existing parent.
 File extensions are case-insensitive. Source/output size is limited to 64 MiB.
 
-DotMesh requires exactly `vertices` and `indices`. Every vertex requires
-`position` (three finite float-range numbers), `color` (four linear numbers in
-[0,1]), `normal` (a unit three-vector or zero to explicitly denote absence),
-`texCoord` (two finite floats, including negative/outside-unit coordinates for
-tiling), and `tangent` (an orthogonal unit XYZ and handedness W=+1/-1, or
-all zero for absence). Tangents must be complete or absent for the whole mesh;
-triangle corners must share handedness, with seams split into separate vertices.
-There is one current structure, with no old-format loader or version
-dispatch. Indices are unsigned 32-bit integers referring to vertices. An empty
-index list selects non-indexed triangle geometry. Mesh validation limits counts
-to one million vertices and three million indices.
-Duplicate fields, unknown fields, and nesting deeper than
-64 are errors.
+DotMesh is a bounded, fixed little-endian binary layout:
 
-```json
-{
-  "vertices": [
-    {"position": [0, 0, 0], "color": [1, 0, 0, 1], "normal": [0, 0, 1], "texCoord": [0, 0], "tangent": [1, 0, 0, 1]},
-    {"position": [1, 0, 0], "color": [0, 1, 0, 1], "normal": [0, 0, 1], "texCoord": [1, 0], "tangent": [1, 0, 0, 1]},
-    {"position": [0, 1, 0], "color": [0, 0, 1, 1], "normal": [0, 0, 1], "texCoord": [0, 1], "tangent": [1, 0, 0, 1]}
-  ],
-  "indices": [0, 1, 2]
-}
-```
+| Byte range | Content |
+| --- | --- |
+| 0..7 | Eight magic bytes `DOTMESH\0` |
+| 8..11 | uint32 vertex count |
+| 12..15 | uint32 index count |
+| From 16 | Sixteen IEEE float32 values per vertex: position XYZ, linear color RGBA, normal XYZ, UV, tangent XYZW |
+| After vertices | uint32 triangle indices |
+
+The exact byte length is `16 + 64 * vertexCount + 4 * indexCount`, at most 64 MiB.
+There is no padding, native structure dump, optional attribute block or layout
+selection. Attribute and index order are retained exactly, with finite float bits
+(including signed zero/subnormals) preserved. Normal zero denotes absence;
+otherwise it must be unit length. Colors remain in [0,1], UVs may tile outside [0,1].
+Tangents are orthogonal unit XYZ and W=+1/-1, or all zero for absence; they must be
+complete or absent, and triangle corners share handedness. Counts are bounded by
+one million vertices and three million indices, subject to the byte limit. Empty
+indices select non-indexed triangle geometry. Wrong headers/counts, truncation,
+trailing bytes, invalid values/indices/topology reject before publication. Counts
+and exact length are checked before allocating decoded geometry.
+
+`decodeMesh` consumes a byte span and returns independently owned geometry;
+`encodeMesh` returns owned bytes. File loading/saving uses binary/atomic file access.
+Native meshes are previewable binary resources; edit their OBJ/glTF source or
+reimport models rather than opening native bytes as text. Every repository native
+mesh uses this layout.
 
 OBJ import accepts finite positions, RGB vertex colors, triangles/polygons of
 3..64 vertices, positive/negative attribute references, and object/group/smoothing

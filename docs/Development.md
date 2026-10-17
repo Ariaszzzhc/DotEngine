@@ -8211,3 +8211,79 @@ performance and the broader engine/editor/game objective remain incomplete.
 
 Final Debug/Release resource rebuilds also succeed. Both generated example copies
 match the current provenance document and exclude the deleted crystal OBJ/material.
+
+## Binary native mesh storage
+
+The larger imported industrial meshes made native JSON parsing a visible project
+creation cost. Replaced DotMesh with one fixed little-endian binary layout:
+DOTMESH plus a NUL byte, uint32 vertex/index counts, sixteen IEEE float32 words
+per vertex, then uint32 indices. Exact source length and bounded counts are checked
+before allocating decoded geometry; existing finite/color/frame/topology validation
+still applies. The byte-span codec returns owned geometry and contextual file-load
+errors. Atomic binary saves preserve the prior file on validation failure. OBJ
+remains a supported text source through the byte API. There is no JSON fallback,
+layout version selection, native struct dump or extra dependency. Explicit standard
+headers replace the removed JSON header's formerly transitive includes; an initial
+missing filesystem include was corrected before the successful builds.
+
+Replaced all forty tracked native meshes in FeatureLab and PrismRelay. Independently
+packed vertex/index payload SHA-256 checks match the original data for every file,
+including all normal/UV/tangent/handedness values and vertex/index order. Total size
+changes from 31,193,910 to 5,116,736 bytes (83.6% smaller). Source glTF/OBJ, materials,
+skins, animations, textures, scene entities and source-license manifests are unchanged.
+Native meshes remain previewable and usable in scenes, but are excluded from text
+buffers and external text-editor actions; edit/reimport their source model instead.
+
+Moved thirteen pure OBJ/native codec cases from file integration into the existing
+unit target, replacing the JSON-specific assertions with binary contracts. Coverage
+includes independent little-endian golden bytes, every truncated prefix, surplus
+bytes, bad header/counts, nonfinite values in every component, color/frame/index/
+topology errors, unaligned input, independent result ownership, nonindexed triangles
+and exact finite/subnormal/signed-zero values. File integration retains Unicode/
+case-insensitive paths, traversal/extension rejection, atomic failed-save preservation
+and corrupt-file context. One resource integration case verifies native meshes
+cannot use text editing routes. No new test executable or native window test added.
+
+Measured the actual headless editor project-action create command for the Prism
+template three times per configuration before and after the change, without other
+builds/suites running. Debug before: 10.8916/10.4030/10.4716s; after:
+3.4378/3.4423/3.4530s, medians 10.4716/3.4423s. Release before:
+1.3969/.8501/.8445s; after: 1.2876/.4209/.4190s, medians .8501/.4209s.
+These are successive local runs including script compilation and file publication,
+not a cold-cache disk benchmark or frame-rate claim. Production/test deadlines stay
+unchanged. The focused fifteen codec/file/resource checks pass (0.76s), followed
+by sixty-two coupled model/skin/template/example/CLI checks (16.43s).
+
+The user clarified that a previously ambiguous physical W key operation activated
+the Chinese input method. That observation is not evidence of a movement defect;
+agent-delivered Play input and human/system input-method behavior are distinct.
+
+Actual Release editor opens the saved PrismRelay example and switches to Game view
+through ordinary mailbox operations. Its completed 1480x574 viewport PNG is byte-
+identical to the prior JSON-mesh result (SHA-256 c345f04406d3defdfa323c9e357adfcbc
+7ef85a74b2c81879f4a458f6ae23fbe), with the same 180 mesh instances, 34 color draws
+and 246 shadow draws. The document stays clean, render error stays empty, the owned
+editor exits 0, stderr is empty and its private control directory is retired.
+Product CLI data export succeeds; all 108 content files (38,896,802 bytes), including
+39 native meshes, compare byte-for-byte with current project sources and manifest
+sizes. The internal data export is removed after verification; no distribution
+archive is produced or delivered. Both built-in template copies match all forty
+current native mesh sources.
+
+Final Debug/Release builds and full CTest suites pass: 1269/1269 in Debug (181.16s)
+and Release (19.70s, assertions disabled). There are 398 unit and 871 integration
+cases; integration includes 194 compiler, 133 durable offscreen, 32 native-audio,
+28 platform and 20 process cases. Automated suites open no desktop windows; the
+one native editor session above is actual product validation. Validation covers
+macOS arm64 only; Windows/Linux targets were not executed.
+
+Final review covers explicit byte order, bounded allocation, exact length, finite
+attributes, geometry ownership, failure propagation, atomic file preservation,
+text-route exclusion, binary export and original scalar/index payload equivalence.
+All six changed C++ files pass clang-format and whitespace checks pass. No compiler/
+linker environment, dependency, scene/gameplay behavior or production deadline
+changes. Removed owned benchmark project copies and temporary workflow helpers/
+requests; retained useful JSON/log/PNG evidence in ignored build storage. Existing
+build caches, archives and untracked user references are preserved. Finished
+realistic character art, cohesive environment direction, populated-scene performance
+and the overall engine/editor/game objective remain incomplete.

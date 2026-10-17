@@ -12,6 +12,8 @@
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Result;
+import Dot.Assets.Mesh;
+import Dot.Graphics.Geometry;
 import Dot.Editor.Resources;
 import Dot.Project;
 
@@ -60,6 +62,20 @@ TEST_CASE("resources.list_create_unicode_and_readonly_sdk_are_actual_files") {
   CHECK_FALSE(resources.createText("scripts/行为/player.ts", "overwrite"));
   CHECK_FALSE(resources.createText("scripts/行为/PLAYER.ts", "alias"));
   CHECK(fixture.files().readText("scripts/行为/player.ts").value() == "export const 游戏 = 1;");
+}
+
+TEST_CASE("resources.native_meshes_are_binary_assets_without_text_editing_routes") {
+  Fixture fixture;
+  REQUIRE(
+      Dot::Assets::saveMesh(fixture.files(), "assets/cube.dotmesh", Dot::Graphics::cube().value()));
+  auto store = ResourceStore::open(fixture.project).value();
+  auto entries = store.list().value();
+  const auto mesh = std::ranges::find(entries, "assets/cube.dotmesh", &ResourceEntry::path);
+  REQUIRE(mesh != entries.end());
+  CHECK_FALSE(mesh->text);
+  CHECK(mesh->bytes > 0);
+  CHECK_FALSE(store.openText("assets/cube.dotmesh"));
+  CHECK_FALSE(store.externalTextPath("assets/cube.dotmesh"));
 }
 
 TEST_CASE("resources.text_revisions_noops_save_and_external_conflict_preserve_draft") {

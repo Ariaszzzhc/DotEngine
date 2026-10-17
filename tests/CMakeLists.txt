@@ -29,6 +29,7 @@ add_executable(DotUnitTests
     ViewportCaptureTests.cpp
     MathTests.cpp
     GeometryTests.cpp
+    MeshCodecTests.cpp
     PostProcessTests.cpp
     LightingTests.cpp
     ShadowTests.cpp

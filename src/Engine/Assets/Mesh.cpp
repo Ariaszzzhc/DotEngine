@@ -2,18 +2,26 @@ module;
 
 #include <tiny_obj_loader.h>
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <charconv>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <expected>
+#include <filesystem>
 #include <format>
 #include <limits>
 #include <map>
+#include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <tuple>
+#include <utility>
 #include <vector>
-
-#include "../Serialization/Json.hpp"
 
 module Dot.Assets.Mesh;
 
@@ -24,113 +32,62 @@ import Dot.Math;
 
 namespace Dot::Assets {
   namespace {
-    using Json = nlohmann::json;
     constexpr std::size_t maxFileBytes = 64 * 1024 * 1024;
 
-    template <std::size_t N>
-    auto components(const Json& array) -> Core::Result<std::array<float, N>> {
-      if (!array.is_array() || array.size() != N) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid mesh vector dimensions");
+    constexpr std::array<std::byte, 8> magic{std::byte{'D'}, std::byte{'O'}, std::byte{'T'},
+                                             std::byte{'M'}, std::byte{'E'}, std::byte{'S'},
+                                             std::byte{'H'}, std::byte{0}};
+    static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+
+    auto decodeBinary(std::span<const std::byte> source) -> Core::Result<MeshAsset> {
+      if (source.size() < 16 || !std::equal(magic.begin(), magic.end(), source.begin())) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh header");
       }
 
-      std::array<float, N> values{};
+      std::size_t offset = 8;
+      const auto word = [&]() {
+        std::uint32_t value{};
 
-      for (std::size_t index = 0; index < N; ++index) {
-        if (!array[index].is_number()) {
-          return Core::fail(Core::ErrorCode::InvalidArgument, "Mesh vector requires numbers");
+        for (unsigned shift = 0; shift < 32; shift += 8) {
+          value |= std::to_integer<std::uint32_t>(source[offset++]) << shift;
         }
 
-        const auto value = array[index].get<double>();
+        return value;
+      };
+      const auto vertices = word();
+      const auto indices = word();
+      const auto expected = 16ULL + 64ULL * vertices + 4ULL * indices;
 
-        if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max()) {
-          return Core::fail(Core::ErrorCode::InvalidArgument, "Mesh vector exceeds float range");
-        }
-
-        values[index] = static_cast<float>(value);
-      }
-
-      return values;
-    }
-
-    auto decodeJson(std::string_view source) -> Core::Result<MeshAsset> {
-      auto root = Serialization::Detail::parseJson(source);
-
-      if (!root.is_object() || root.size() != 2 || !root.contains("vertices")
-          || !root.contains("indices")) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh fields");
-      }
-
-      const auto& vertices = root["vertices"];
-      const auto& indices = root["indices"];
-
-      if (!vertices.is_array() || vertices.empty() || vertices.size() > 1'000'000
-          || !indices.is_array() || indices.size() > 3'000'000) {
-        return Core::fail(Core::ErrorCode::InvalidArgument, "DotMesh arrays exceed mesh limits");
+      if (vertices == 0 || vertices > 1'000'000 || indices > 3'000'000
+          || expected != source.size()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "DotMesh counts/length do not match");
       }
 
       MeshAsset asset;
-      asset.data.vertices.reserve(vertices.size());
-      asset.data.indices.reserve(indices.size());
+      asset.data.vertices.resize(vertices);
+      asset.data.indices.resize(indices);
 
-      for (const auto& vertex : vertices) {
-        if (!vertex.is_object() || vertex.size() != 5 || !vertex.contains("position")
-            || !vertex.contains("color") || !vertex.contains("normal")
-            || !vertex.contains("texCoord") || !vertex.contains("tangent")) {
-          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid DotMesh vertex fields");
+      for (auto& vertex : asset.data.vertices) {
+        std::array<float, 16> values;
+
+        for (auto& value : values) {
+          value = std::bit_cast<float>(word());
         }
 
-        auto position = components<3>(vertex["position"]);
-        auto color = components<4>(vertex["color"]);
-
-        if (!position) {
-          return std::unexpected(position.error());
-        }
-
-        if (!color) {
-          return std::unexpected(color.error());
-        }
-
-        Graphics::Vertex decoded{{(*position)[0], (*position)[1], (*position)[2]},
-                                 {(*color)[0], (*color)[1], (*color)[2], (*color)[3]}};
-
-        auto normal = components<3>(vertex["normal"]);
-        auto uv = components<2>(vertex["texCoord"]);
-        auto tangent = components<4>(vertex["tangent"]);
-
-        if (!normal || !uv || !tangent) {
-          return std::unexpected(!normal ? normal.error() : !uv ? uv.error() : tangent.error());
-        }
-
-        decoded.normal = {(*normal)[0], (*normal)[1], (*normal)[2]};
-        decoded.texCoord = {(*uv)[0], (*uv)[1]};
-        decoded.tangent = {(*tangent)[0], (*tangent)[1], (*tangent)[2], (*tangent)[3]};
-
-        asset.data.vertices.push_back(decoded);
+        vertex.position = {values[0], values[1], values[2]};
+        vertex.color = {values[3], values[4], values[5], values[6]};
+        vertex.normal = {values[7], values[8], values[9]};
+        vertex.texCoord = {values[10], values[11]};
+        vertex.tangent = {values[12], values[13], values[14], values[15]};
       }
 
-      for (const auto& index : indices) {
-        if (!index.is_number_integer()
-            || (!index.is_number_unsigned() && index.get<std::int64_t>() < 0)) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "DotMesh indices require unsigned integers");
-        }
-
-        const auto value = index.get<std::uint64_t>();
-
-        if (value > std::numeric_limits<std::uint32_t>::max()) {
-          return Core::fail(Core::ErrorCode::InvalidArgument, "DotMesh index exceeds uint32 range");
-        }
-
-        asset.data.indices.push_back(static_cast<std::uint32_t>(value));
+      for (auto& index : asset.data.indices) {
+        index = word();
       }
 
       auto valid = Graphics::validateMesh(asset.data);
-
-      if (!valid) {
-        return std::unexpected(valid.error());
-      }
-
-      return asset;
+      return valid ? Core::Result<MeshAsset>{std::move(asset)}
+                   : Core::Result<MeshAsset>{std::unexpected(valid.error())};
     }
 
     auto tokens(std::string_view line) -> std::vector<std::string_view> {
@@ -465,56 +422,79 @@ namespace Dot::Assets {
     }
   }  // namespace
 
-  auto decodeMesh(std::string_view source, MeshFormat format) -> Core::Result<MeshAsset> {
-    if (source.empty() || source.size() > maxFileBytes
-        || source.find('\0') != std::string_view::npos) {
+  auto decodeMesh(std::span<const std::byte> source, MeshFormat format) -> Core::Result<MeshAsset> {
+    if (source.empty() || source.size() > maxFileBytes) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Mesh source must be nonempty, at most 64 MiB, and contain no NUL bytes");
+                        "Mesh source must be nonempty and at most 64 MiB");
     }
 
     try {
       switch (format) {
         case MeshFormat::DotMesh:
-          return decodeJson(source);
-        case MeshFormat::Obj:
-          return decodeObj(source);
+          return decodeBinary(source);
+        case MeshFormat::Obj: {
+          const std::string_view text(reinterpret_cast<const char*>(source.data()), source.size());
+
+          if (text.find('\0') != std::string_view::npos) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "OBJ source contains NUL bytes");
+          }
+
+          return decodeObj(text);
+        }
         default:
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown mesh format");
       }
-    } catch (const Json::exception& error) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        std::format("Parse DotMesh: {}", error.what()));
     } catch (const std::invalid_argument& error) {
       return Core::fail(Core::ErrorCode::InvalidArgument, error.what());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Decode mesh: " + std::string(error.what()));
     }
   }
 
-  auto encodeMesh(const Graphics::MeshData& mesh) -> Core::Result<std::string> {
+  auto encodeMesh(const Graphics::MeshData& mesh) -> Core::Result<std::vector<std::byte>> {
     auto checked = Graphics::validateMesh(mesh);
 
     if (!checked) {
       return std::unexpected(checked.error());
     }
 
-    Json vertices = Json::array();
+    const auto size = 16ULL + 64ULL * mesh.vertices.size() + 4ULL * mesh.indices.size();
 
-    for (const auto& vertex : mesh.vertices) {
-      vertices.push_back(
-          {{"position", {vertex.position.x, vertex.position.y, vertex.position.z}},
-           {"color", {vertex.color.x, vertex.color.y, vertex.color.z, vertex.color.w}},
-           {"normal", {vertex.normal.x, vertex.normal.y, vertex.normal.z}},
-           {"texCoord", {vertex.texCoord.x, vertex.texCoord.y}},
-           {"tangent", {vertex.tangent.x, vertex.tangent.y, vertex.tangent.z, vertex.tangent.w}}});
-    }
-
-    Json root{{"vertices", std::move(vertices)}, {"indices", mesh.indices}};
-    auto encoded = root.dump(2) + '\n';
-
-    if (encoded.size() > maxFileBytes) {
+    if (size > maxFileBytes) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Encoded DotMesh exceeds 64 MiB");
     }
 
-    return encoded;
+    try {
+      std::vector<std::byte> bytes(magic.begin(), magic.end());
+      bytes.reserve(static_cast<std::size_t>(size));
+      const auto word = [&](std::uint32_t value) {
+        for (unsigned shift = 0; shift < 32; shift += 8) {
+          bytes.push_back(static_cast<std::byte>((value >> shift) & 255U));
+        }
+      };
+      word(static_cast<std::uint32_t>(mesh.vertices.size()));
+      word(static_cast<std::uint32_t>(mesh.indices.size()));
+
+      for (const auto& vertex : mesh.vertices) {
+        const std::array values{
+            vertex.position.x, vertex.position.y, vertex.position.z, vertex.color.x,
+            vertex.color.y,    vertex.color.z,    vertex.color.w,    vertex.normal.x,
+            vertex.normal.y,   vertex.normal.z,   vertex.texCoord.x, vertex.texCoord.y,
+            vertex.tangent.x,  vertex.tangent.y,  vertex.tangent.z,  vertex.tangent.w};
+
+        for (auto value : values) {
+          word(std::bit_cast<std::uint32_t>(value));
+        }
+      }
+
+      for (auto index : mesh.indices) {
+        word(index);
+      }
+
+      return bytes;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Encode mesh: " + std::string(error.what()));
+    }
   }
 
   auto loadMesh(const Core::FileSystem& files, const std::filesystem::path& relative)
@@ -525,13 +505,21 @@ namespace Dot::Assets {
       return std::unexpected(format.error());
     }
 
-    auto source = files.readText(relative, maxFileBytes);
+    auto source = files.readBytes(relative, maxFileBytes);
 
     if (!source) {
       return std::unexpected(source.error());
     }
 
-    return decodeMesh(*source, *format);
+    auto result = decodeMesh(*source, *format);
+
+    if (!result) {
+      const auto utf = relative.generic_u8string();
+      return Core::fail(result.error().code, "Mesh '" + std::string(utf.begin(), utf.end())
+                                                 + "': " + result.error().message);
+    }
+
+    return result;
   }
 
   auto saveMesh(const Core::FileSystem& files, const std::filesystem::path& relative,
@@ -553,6 +541,6 @@ namespace Dot::Assets {
       return std::unexpected(source.error());
     }
 
-    return files.writeTextAtomic(relative, *source);
+    return files.writeAtomic(relative, *source);
   }
 }  // namespace Dot::Assets
