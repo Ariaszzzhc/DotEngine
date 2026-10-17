@@ -545,20 +545,23 @@ export namespace Dot::Graphics {
      * 关联实际样本；拒绝跨线程/移动后/设备失败，关闭即释放查询存储。 */
     [[nodiscard]] auto setProfiling(bool enabled) -> Core::Result<void>;
     [[nodiscard]] auto profiling() const -> Core::Result<MeshProfiling>;
-    /** Start/poll the shared environment compute pipeline without waiting for
-     * compilation. False means pending, true means reusable; failures are sticky
-     * for this renderer. Owner-thread polling has a ten-second deadline. No image,
-     * environment map or lighting binding is created. Destruction cancels ownership
-     * safely; the driver may finish outstanding work during device teardown.
-     * 启动/轮询共享环境计算管线，不等待编译；false 表示处理中，true 表示可复用；
-     * 故障在本渲染器内保留，所属线程轮询有十秒期限。不创建图像、环境贴图或光照绑定；
-     * 销毁安全释放任务所有权，驱动仍可能在设备退出期间完成未结束工作。 */
-    [[nodiscard]] auto prepareEnvironmentPipeline() -> Core::Result<bool>;
+    /** Start/poll shared bake, environment surface and sky pipelines without
+     * waiting for compilation. False means pending; true requires all three.
+     * Surface/sky publish together. Owner-thread pending jobs have ten-second
+     * deadlines and retained errors. No image, map or binding is created.
+     * Explicit bake/bind operations wait only for their required shared jobs.
+     * Teardown releases ownership safely; driver work may finish during destruction.
+     * 启动/轮询共享烘焙、环境表面和天空管线，不等待编译；三者就绪才返回 true，
+     * 表面和天空同时发布。所属线程未完成任务有十秒期限，错误保留；不创建图像、贴图
+     * 或绑定。显式烘焙/绑定仅等待其所需共享任务；销毁安全释放所有权，驱动仍可能在
+     * 设备退出期间完成未结束工作。 */
+    [[nodiscard]] auto prepareEnvironmentPipelines() -> Core::Result<bool>;
     /** Read current readiness without starting/polling work; permitted during GUI
-     * layout. Unprepared/pending is false, a retained failure is an error.
-     * 只读当前就绪状态，不启动/轮询工作，允许 GUI 布局期间调用；未准备/处理中为 false，
-     * 已保留故障返回错误。 */
-    [[nodiscard]] auto environmentPipelineReady() const -> Core::Result<bool>;
+     * layout. Bake alone need not prepare surface/sky, so it is not full readiness.
+     * Unprepared/pending is false, a retained failure is an error.
+     * 只读当前就绪状态，不启动/轮询工作，允许 GUI 布局期间调用；仅烘焙不代表表面/天空已就绪。
+     * 未准备/处理中为 false，已保留故障返回错误。 */
+    [[nodiscard]] auto environmentPipelinesReady() const -> Core::Result<bool>;
     /** Start/poll the direct, environment-lit and depth shadow pipelines as one
      * atomic group. Pending publishes none; no shadow maps or bindings are made.
      * Still-pending jobs time out after ten seconds. Explicit rendering waits on
@@ -673,7 +676,7 @@ export namespace Dot::Graphics {
      * backends. GUI ownership requires the process main thread. Widgets execute
      * only inside the draw callback on this thread;
      * the callback may append GUI images/viewports, toggle profiling and read
-     * guiStats/visibilityStats/profiling/environmentPipelineReady/shadowPipelinesReady/
+     * guiStats/visibilityStats/profiling/environmentPipelinesReady/shadowPipelinesReady/
      * occlusionPipelinesReady,
      * but must not replace/change ImGui context or reenter other renderer operations.
      * Input events are explicitly forwarded.

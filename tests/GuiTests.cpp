@@ -515,10 +515,10 @@ TEST_CASE("graphics.gui_validation_budget_thread_moves_and_disabled_context") {
   CHECK_FALSE(moved.renderGui(rect, 96, 96, 0, 0));
   REQUIRE(moved.renderGui(
       [&]() -> Dot::Core::Result<void> {
-        auto ready = moved.environmentPipelineReady();
+        auto ready = moved.environmentPipelinesReady();
         REQUIRE(ready);
         CHECK_FALSE(*ready);
-        CHECK_FALSE(moved.prepareEnvironmentPipeline());
+        CHECK_FALSE(moved.prepareEnvironmentPipelines());
         CHECK_FALSE(moved.shadowPipelinesReady().value());
         CHECK_FALSE(moved.prepareShadowPipelines());
         return rect();

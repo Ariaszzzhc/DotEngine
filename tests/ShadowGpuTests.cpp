@@ -177,7 +177,7 @@ TEST_CASE("shadows.gpu_scene_readiness_observes_current_requirements_and_gui_rea
 
   REQUIRE(*stage == ScenePipelineStage::Ready);
   CHECK(gpu.shadowPipelinesReady().value());
-  CHECK(gpu.environmentPipelineReady().value());
+  CHECK(gpu.environmentPipelinesReady().value());
   CHECK(drawing.stats()->bytes == 0);
   CHECK_FALSE(gpu.environment().value());
   auto moved = std::move(scene);

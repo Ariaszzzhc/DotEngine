@@ -9186,3 +9186,78 @@ profiles, samples, content hashes, runtime/game manifests and executable hashes 
 retained under build/occlusion-loading-review. Verified before/after native packages
 and the latest owned editor copy are removed. Formal example assets remain unchanged;
 overall engine/editor/game goals remain unfinished.
+
+## Asynchronous environment surface and sky
+
+The earlier cold native sample identifies setEnvironment's synchronous environment
+surface and sky creations in addition to the already addressed SSAO group. Scene
+preparation now starts/polls bake compute plus both render jobs. The public APIs are
+prepareEnvironmentPipelines/environmentPipelinesReady, replacing the compute-only
+singular names without aliases. Full readiness requires all three; surface and sky
+handles publish together. The existing environment-pipeline product phase now covers
+that full requirement, so native Start and editor Play cannot bypass pending render
+jobs. No new progress percentage, compatibility path or probe executable is added.
+
+Private compute preparation is shared with explicit baking. Bake alone starts/waits
+only for compute, so it does not unnecessarily compile surface/sky or imply full
+readiness. setEnvironment validates the existing owned map and parameters before
+starting/waiting for its shared surface group. Pending jobs retain callback-owned
+results/context and use their remaining ten-second budgets; failure retains context
+and never replaces lighting bindings with partial success. Descriptor construction
+reuses the original surface builder and now also shares sky construction. Shader
+text, formats, vertex/depth/blend state, bake output and residency limits are unchanged.
+Compute descriptor-validation failures are retained alongside callback/wait failures.
+
+A new durable offscreen case verifies invalid HDR recovery, bake-only partial
+readiness, full async preparation with unchanged owned maps/bindings/target frames,
+analytic constant-HDR sky pixels and reuse. The existing independent analytic PBR
+energy case now explicitly prepares asynchronously; the ordinary binding case still
+verifies direct synchronous waiting and cached reuse. Existing moves/threads/abandoned
+jobs, GUI-safe reads, current-scene requirements and shadow readiness use the full
+API. Initial Debug builds catch a local name shadowing the surface member, then a
+missing direct vector header in the new test; both are corrected without weakening
+warnings or altering the caller's toolchain. Focused Debug passes 19/19 (20.21s),
+plus the actual GUI validation/lifetime case 1/1 (0.49s). Complete Debug passes
+1314/1314 (199.57s); Release/NDEBUG passes 1314/1314 (27.57s), with builds/tests
+kept sequential. Counts: 410 unit, 904 integration; overlapping 198 compiler,
+152 offscreen, 33 platform, 32 audio-native and 20 process cases. Six changed C++
+files pass clang-format and whitespace checks pass. Reviewed descriptor/callback
+ownership, partial compute readiness, atomic render publication, retained failures,
+foreign/moved/thread/GUI checks, binding transactionality and remaining budgets.
+Only macOS arm64 is executed; dependency/linker/compiler/sanitizer settings are unchanged.
+
+Actual Release editor's first observed view is already ready: this warm run does
+not observe a pending environment/shadow/SSAO interval, so it does not establish new
+native pending-capture behavior. The existing pending-state offscreen contracts and
+previous real SSAO pending evidence remain distinct. This run still records a
+586.026500ms render / 587.370083ms application step, and the next observed inspect
+request completes in 49.283ms. No general startup-responsiveness claim follows.
+Ready/stopped/reopened PNGs retain SHA-256
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Real W/Space Play observes [-3,1.2830756,1.5228012], no Play error/diagnostics and
+clean exact authoring restoration on Stop. Save/export succeeds. A fresh editor
+reopens the exact scene, saves unchanged twice with identical disk bytes, captures
+the same pixels and exits zero. Both editors have empty stderr and retired control
+directories. Native human interaction remains unverified since the locked-Mac
+report; no new computer-use acceptance is claimed.
+
+The native package is physically renamed/moved before launch, then the owned authoring
+root is hidden. All 116 content files / 66,649,969 bytes match exactly. The player
+logs environment, shadow and SSAO preparation, exits zero after 360 game steps and
+records 365 steps (five preparation plus 360 game); all 120 retained samples are
+unpaused/error-free. First-game render is 558.310000ms, whole step 592.073000ms;
+the following interval explicitly drops 466.666648ms fixed time. Retained median step
+is 11.887709ms. Cache conditions differ from earlier cold samples; these are
+observations, not a matched speedup or FPS claim. The six-second main-thread sample
+contains material image decoding/mip work and updateSkins -> mappedSkinWords ->
+WaitAny, plus a smaller environment GPU completion wait. These are aggregate stacks
+across the sample, not exact first-frame attribution. The sample does not reproduce
+the old synchronous environment surface/sky creations. CPU image work, GPU bake
+completion, skin synchronization/creation, transparent variants and other startup
+work remain to be measured/prepared; clocks, budgets and warnings are unchanged.
+
+Evidence stays under build/environment-surfaces-review: requests/responses, three
+PNGs, application/native profiles, process sample, content hashes, runtime/game
+manifests and executable hash. Verified temporary native output and the latest owned
+editor copy are removed after source restoration. Formal example files are unchanged.
+The overall engine/editor/game goal remains unfinished.

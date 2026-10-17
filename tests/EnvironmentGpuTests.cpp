@@ -8,6 +8,7 @@
 #include <limits>
 #include <optional>
 #include <thread>
+#include <vector>
 
 import Dot.Graphics.Renderer;
 import Dot.Graphics.SceneRenderer;
@@ -37,8 +38,8 @@ namespace {
 
 TEST_CASE("environment.gpu_async_preparation_reuses_pipeline_without_publishing_maps") {
   auto renderer = Renderer::create().value();
-  CHECK_FALSE(renderer.environmentPipelineReady().value());
-  auto ready = renderer.prepareEnvironmentPipeline();
+  CHECK_FALSE(renderer.environmentPipelinesReady().value());
+  auto ready = renderer.prepareEnvironmentPipelines();
   REQUIRE(ready);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
@@ -47,35 +48,86 @@ TEST_CASE("environment.gpu_async_preparation_reuses_pipeline_without_publishing_
     CHECK(renderer.resourceStats()->environmentBytes == 0);
     CHECK_FALSE(renderer.environment().value());
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ready = renderer.prepareEnvironmentPipeline();
+    ready = renderer.prepareEnvironmentPipelines();
     REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
   }
 
   REQUIRE(*ready);
-  CHECK(renderer.environmentPipelineReady().value());
-  CHECK(renderer.prepareEnvironmentPipeline().value());
+  CHECK(renderer.environmentPipelinesReady().value());
+  CHECK(renderer.prepareEnvironmentPipelines().value());
   CHECK(renderer.resourceStats()->environments == 0);
   const auto map = renderer.bakeEnvironment(constantPanorama(), small).value();
   auto pixels = renderer.readEnvironment(map, EnvironmentSurface::Diffuse).value();
   CHECK(pixels.pixels[0] == doctest::Approx(2).epsilon(.003));
-  CHECK(renderer.prepareEnvironmentPipeline().value());
+  CHECK(renderer.prepareEnvironmentPipelines().value());
   CHECK(renderer.resourceStats()->environments == 1);
   CHECK_FALSE(renderer.environment().value());
+}
+
+TEST_CASE("environment.gpu_bake_only_then_async_surfaces_preserve_map_and_render_real_sky") {
+  auto renderer = Renderer::create().value();
+  auto invalid = constantPanorama();
+  invalid.pixels[0] = -1;
+  CHECK_FALSE(renderer.bakeEnvironment(invalid, small));
+  CHECK_FALSE(renderer.environmentPipelinesReady().value());
+  CHECK(renderer.resourceStats()->environments == 0);
+  const auto map = renderer.bakeEnvironment(constantPanorama(), small).value();
+  const auto baked = renderer.readEnvironment(map, EnvironmentSurface::Diffuse).value();
+  CHECK_FALSE(renderer.environmentPipelinesReady().value());
+  auto target = renderer.createTarget(3, 3).value();
+  auto ready = renderer.prepareEnvironmentPipelines();
+  REQUIRE(ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+    CHECK_FALSE(renderer.environmentPipelinesReady().value());
+    CHECK(renderer.resourceStats()->environments == 1);
+    CHECK(renderer.resourceStats()->environmentBytes == map.info()->bytes);
+    CHECK_FALSE(renderer.environment().value());
+    CHECK(target.info()->frames == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.prepareEnvironmentPipelines();
+    REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
+  }
+
+  REQUIRE(*ready);
+  CHECK(renderer.environmentPipelinesReady().value());
+  CHECK_FALSE(renderer.environment().value());
+  CHECK(target.info()->frames == 0);
+  CHECK(renderer.readEnvironment(map, EnvironmentSurface::Diffuse)->pixels == baked.pixels);
+  REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, .5F}));
+  const auto camera = Dot::Math::multiply(Dot::Math::perspective(60, 1, .1F, 100).value(),
+                                          Dot::Math::lookAt({0, 0, 1}, {}).value())
+                          .value();
+  REQUIRE(renderer.renderMeshesInto(target, {}, camera));
+  const auto pixels = renderer.readHdrTarget(target).value();
+
+  for (std::size_t index = 0; index < pixels.pixels.size(); index += 4) {
+    CHECK(pixels.pixels[index] == doctest::Approx(1).epsilon(.003));
+    CHECK(pixels.pixels[index + 1] == doctest::Approx(.5F).epsilon(.003));
+    CHECK(pixels.pixels[index + 2] == doctest::Approx(.25F).epsilon(.003));
+    CHECK(pixels.pixels[index + 3] == 1);
+  }
+
+  const auto binding = renderer.environment().value();
+  CHECK(renderer.prepareEnvironmentPipelines().value());
+  CHECK(renderer.environment()->value().intensity == binding->intensity);
+  CHECK(renderer.resourceStats()->environments == 1);
 }
 
 TEST_CASE("environment.gpu_async_preparation_move_thread_and_abandoned_job_are_safe") {
   for (int index = 0; index < 3; ++index) {
     auto renderer = Renderer::create().value();
-    REQUIRE(renderer.prepareEnvironmentPipeline());
+    REQUIRE(renderer.prepareEnvironmentPipelines());
     bool rejected{};
     std::thread thread([&] {
-      rejected = !renderer.prepareEnvironmentPipeline() && !renderer.environmentPipelineReady();
+      rejected = !renderer.prepareEnvironmentPipelines() && !renderer.environmentPipelinesReady();
     });
     thread.join();
     CHECK(rejected);
     auto moved = std::move(renderer);
-    CHECK_FALSE(renderer.prepareEnvironmentPipeline());
-    CHECK_FALSE(renderer.environmentPipelineReady());
+    CHECK_FALSE(renderer.prepareEnvironmentPipelines());
+    CHECK_FALSE(renderer.environmentPipelinesReady());
 
     if (index == 1) {
       const auto baked = moved.bakeEnvironment(constantPanorama(), small).value();
@@ -273,6 +325,17 @@ TEST_CASE("environment.gpu_real_polyhaven_hdr_preserves_radiance_and_integrated_
 TEST_CASE("environment.lighting_constant_hdr_matches_analytic_diffuse_and_rough_metal_energy") {
   auto renderer = Renderer::create().value();
   auto map = renderer.bakeEnvironment(constantPanorama(), {16, 4, 16, 128, 512}).value();
+  auto ready = renderer.prepareEnvironmentPipelines();
+  REQUIRE(ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (!*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.prepareEnvironmentPipelines();
+    REQUIRE(ready);
+  }
+
+  REQUIRE(*ready);
   REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 1, 0, false}));
   auto mesh = renderer.upload(quad({2, 2}).value()).value();
   auto target = renderer.createTarget(1, 1).value();
@@ -327,7 +390,10 @@ TEST_CASE("environment.lighting_binding_is_transactional_shared_thread_and_devic
   auto renderer = Renderer::create().value();
   CHECK_FALSE(renderer.environment().value());
   auto map = renderer.bakeEnvironment(constantPanorama(), small).value();
+  CHECK_FALSE(renderer.environmentPipelinesReady().value());
   REQUIRE(renderer.setEnvironment(EnvironmentLighting{map, 2, 45, false}));
+  CHECK(renderer.environmentPipelinesReady().value());
+  CHECK(renderer.prepareEnvironmentPipelines().value());
   CHECK_FALSE(renderer.setEnvironment(EnvironmentLighting{}));
   auto invalid = EnvironmentLighting{map, -1};
   CHECK_FALSE(renderer.setEnvironment(invalid));

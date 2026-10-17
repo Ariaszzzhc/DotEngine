@@ -686,6 +686,12 @@ namespace Dot::Graphics {
     struct EnvironmentPreparation {
       wgpu::BindGroupLayout layout;
       PipelineJob<wgpu::ComputePipeline> job;
+      std::optional<Core::Error> error;
+    };
+
+    struct EnvironmentSurfacePreparation {
+      std::array<PipelineJob<wgpu::RenderPipeline>, 2> jobs;
+      std::optional<Core::Error> error;
     };
 
     struct ShadowPreparation {
@@ -700,6 +706,7 @@ namespace Dot::Graphics {
     };
 
     std::optional<EnvironmentPreparation> m_environmentPreparation;
+    std::optional<EnvironmentSurfacePreparation> m_environmentSurfacePreparation;
     std::optional<ShadowPreparation> m_shadowPreparation;
     std::optional<OcclusionPreparation> m_occlusionPreparation;
     wgpu::BindGroupLayout m_skinLayout;
@@ -1696,7 +1703,9 @@ namespace Dot::Graphics {
       return {};
     }
 
-    auto skyPipelineFor() -> wgpu::RenderPipeline {
+    template <typename Create>
+    auto skyPipelineFor(Create create)
+        -> std::invoke_result_t<Create, const wgpu::RenderPipelineDescriptor*> {
       wgpu::ShaderSourceWGSL source;
       source.code = Detail::skyShader;
       wgpu::ShaderModuleDescriptor shaderDescriptor;
@@ -1718,7 +1727,195 @@ namespace Dot::Graphics {
       descriptor.vertex.entryPoint = "vertexMain";
       descriptor.fragment = &fragment;
       descriptor.depthStencil = &depth;
-      return device.CreateRenderPipeline(&descriptor);
+      return create(&descriptor);
+    }
+
+    auto prepareEnvironmentBake() -> Core::Result<bool> {
+      if (m_environmentPreparation && m_environmentPreparation->error) {
+        return std::unexpected(*m_environmentPreparation->error);
+      }
+
+      try {
+        auto& gpu = *this;
+
+        if (!gpu.m_environmentPreparation) {
+          gpu.m_environmentPreparation.emplace();
+          auto& preparation = *gpu.m_environmentPreparation;
+          ErrorScope scope(gpu.instance, gpu.device);
+          std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
+          entries[0].binding = 0;
+          entries[0].visibility = wgpu::ShaderStage::Compute;
+          entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+          entries[0].buffer.minBindingSize = 32;
+          entries[1].binding = 1;
+          entries[1].visibility = wgpu::ShaderStage::Compute;
+          entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+          entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+          entries[2].binding = 2;
+          entries[2].visibility = wgpu::ShaderStage::Compute;
+          entries[2].storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+          entries[2].storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+          entries[2].storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
+          wgpu::BindGroupLayoutDescriptor layoutDescriptor;
+          layoutDescriptor.entryCount = entries.size();
+          layoutDescriptor.entries = entries.data();
+          preparation.layout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
+          wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor;
+          pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+          pipelineLayoutDescriptor.bindGroupLayouts = &preparation.layout;
+          auto layout = gpu.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
+          wgpu::ShaderSourceWGSL shaderSource;
+          shaderSource.code = Detail::environmentShader;
+          wgpu::ShaderModuleDescriptor shaderDescriptor;
+          shaderDescriptor.nextInChain = &shaderSource;
+          auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
+          auto checked = scope.finish();
+
+          if (!checked) {
+            preparation.error = checked.error();
+            return std::unexpected(checked.error());
+          }
+
+          wgpu::ComputePipelineDescriptor descriptor;
+          descriptor.layout = layout;
+          descriptor.compute.module = shader;
+          descriptor.compute.entryPoint = "bake";
+          preparation.job = compilePipeline<wgpu::ComputePipeline>(
+              gpu.device, descriptor, "Environment pipeline compilation");
+        }
+
+        auto ready = gpu.m_environmentPreparation->job.poll(gpu.instance);
+
+        if (!ready) {
+          gpu.m_environmentPreparation->error = ready.error();
+        }
+
+        return ready;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External, "Prepare environment bake pipeline: "
+                                                                 + std::string(error.what()));
+
+        if (m_environmentPreparation) {
+          m_environmentPreparation->error = failure.error();
+        }
+
+        return failure;
+      }
+    }
+
+    auto ensureEnvironmentBake() -> Core::Result<void> {
+      auto ready = prepareEnvironmentBake();
+
+      if (!ready || *ready) {
+        return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+      }
+
+      auto checked = m_environmentPreparation->job.finish(instance);
+
+      if (!checked) {
+        m_environmentPreparation->error = checked.error();
+      }
+
+      return checked;
+    }
+
+    auto prepareEnvironmentSurfaces() -> Core::Result<bool> {
+      if (environmentPipeline && skyPipeline) {
+        return true;
+      }
+
+      if (m_environmentSurfacePreparation && m_environmentSurfacePreparation->error) {
+        return std::unexpected(*m_environmentSurfacePreparation->error);
+      }
+
+      try {
+        if (!m_environmentSurfacePreparation) {
+          m_environmentSurfacePreparation.emplace();
+          auto ambient = compileRenderPipeline(
+              [&](auto create) {
+                return surfacePipeline(wgpu::TextureFormat::RGBA16Float, true, false, false, false,
+                                       std::move(create));
+              },
+              "Environment surface pipeline");
+
+          if (!ambient) {
+            m_environmentSurfacePreparation->error = ambient.error();
+            return std::unexpected(ambient.error());
+          }
+
+          m_environmentSurfacePreparation->jobs[0] = std::move(*ambient);
+          auto sky = compileRenderPipeline(
+              [&](auto create) { return skyPipelineFor(std::move(create)); },
+              "Environment sky pipeline");
+
+          if (!sky) {
+            m_environmentSurfacePreparation->error = sky.error();
+            return std::unexpected(sky.error());
+          }
+
+          m_environmentSurfacePreparation->jobs[1] = std::move(*sky);
+        }
+
+        bool complete = true;
+
+        for (auto& job : m_environmentSurfacePreparation->jobs) {
+          auto ready = job.poll(instance);
+
+          if (!ready) {
+            m_environmentSurfacePreparation->error = ready.error();
+            return std::unexpected(ready.error());
+          }
+
+          complete = complete && *ready;
+        }
+
+        if (!complete) {
+          return false;
+        }
+
+        environmentPipeline = std::move(m_environmentSurfacePreparation->jobs[0].pipeline);
+        skyPipeline = std::move(m_environmentSurfacePreparation->jobs[1].pipeline);
+        return true;
+      } catch (const std::exception& error) {
+        auto failure = Core::fail(Core::ErrorCode::External,
+                                  "Prepare environment surfaces: " + std::string(error.what()));
+
+        if (m_environmentSurfacePreparation) {
+          m_environmentSurfacePreparation->error = failure.error();
+        }
+
+        return failure;
+      }
+    }
+
+    auto ensureEnvironmentSurfaces() -> Core::Result<void> {
+      auto ready = prepareEnvironmentSurfaces();
+
+      if (!ready || *ready) {
+        return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+      }
+
+      for (auto& job : m_environmentSurfacePreparation->jobs) {
+        auto checked = job.finish(instance);
+
+        if (!checked) {
+          m_environmentSurfacePreparation->error = checked.error();
+          return checked;
+        }
+      }
+
+      ready = prepareEnvironmentSurfaces();
+
+      if (!ready) {
+        return std::unexpected(ready.error());
+      }
+
+      if (!*ready) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Environment surface pipelines did not complete");
+      }
+
+      return {};
     }
 
     auto environmentValues() const -> Math::Vec4 {
@@ -4501,7 +4698,7 @@ namespace Dot::Graphics {
     return checked ? m_impl->prepareOcclusionPipelines() : std::unexpected(checked.error());
   }
 
-  auto Renderer::environmentPipelineReady() const -> Core::Result<bool> {
+  auto Renderer::environmentPipelinesReady() const -> Core::Result<bool> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
@@ -4514,14 +4711,21 @@ namespace Dot::Graphics {
 
     const auto& preparation = m_impl->m_environmentPreparation;
 
-    if (preparation && preparation->job.error) {
-      return std::unexpected(*preparation->job.error);
+    if (preparation && preparation->error) {
+      return std::unexpected(*preparation->error);
     }
 
-    return preparation && preparation->job.pipeline;
+    const auto& surfaces = m_impl->m_environmentSurfacePreparation;
+
+    if (surfaces && surfaces->error) {
+      return std::unexpected(*surfaces->error);
+    }
+
+    return preparation && preparation->job.pipeline && m_impl->environmentPipeline
+           && m_impl->skyPipeline;
   }
 
-  auto Renderer::prepareEnvironmentPipeline() -> Core::Result<bool> {
+  auto Renderer::prepareEnvironmentPipelines() -> Core::Result<bool> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
     }
@@ -4532,59 +4736,19 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    try {
-      auto& gpu = *m_impl;
+    auto bake = m_impl->prepareEnvironmentBake();
 
-      if (!gpu.m_environmentPreparation) {
-        Impl::EnvironmentPreparation preparation;
-        ErrorScope scope(gpu.instance, gpu.device);
-        std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
-        entries[0].binding = 0;
-        entries[0].visibility = wgpu::ShaderStage::Compute;
-        entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
-        entries[0].buffer.minBindingSize = 32;
-        entries[1].binding = 1;
-        entries[1].visibility = wgpu::ShaderStage::Compute;
-        entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
-        entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
-        entries[2].binding = 2;
-        entries[2].visibility = wgpu::ShaderStage::Compute;
-        entries[2].storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
-        entries[2].storageTexture.format = wgpu::TextureFormat::RGBA16Float;
-        entries[2].storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
-        wgpu::BindGroupLayoutDescriptor layoutDescriptor;
-        layoutDescriptor.entryCount = entries.size();
-        layoutDescriptor.entries = entries.data();
-        preparation.layout = gpu.device.CreateBindGroupLayout(&layoutDescriptor);
-        wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor;
-        pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
-        pipelineLayoutDescriptor.bindGroupLayouts = &preparation.layout;
-        auto layout = gpu.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
-        wgpu::ShaderSourceWGSL shaderSource;
-        shaderSource.code = Detail::environmentShader;
-        wgpu::ShaderModuleDescriptor shaderDescriptor;
-        shaderDescriptor.nextInChain = &shaderSource;
-        auto shader = gpu.device.CreateShaderModule(&shaderDescriptor);
-        checked = scope.finish();
-
-        if (!checked) {
-          return std::unexpected(checked.error());
-        }
-
-        wgpu::ComputePipelineDescriptor descriptor;
-        descriptor.layout = layout;
-        descriptor.compute.module = shader;
-        descriptor.compute.entryPoint = "bake";
-        preparation.job = compilePipeline<wgpu::ComputePipeline>(
-            gpu.device, descriptor, "Environment pipeline compilation");
-        gpu.m_environmentPreparation = std::move(preparation);
-      }
-
-      return gpu.m_environmentPreparation->job.poll(gpu.instance);
-    } catch (const std::exception& error) {
-      return Core::fail(Core::ErrorCode::External,
-                        "Prepare environment pipeline: " + std::string(error.what()));
+    if (!bake) {
+      return std::unexpected(bake.error());
     }
+
+    auto surface = m_impl->prepareEnvironmentSurfaces();
+
+    if (!surface) {
+      return std::unexpected(surface.error());
+    }
+
+    return *bake && *surface;
   }
 
   auto Renderer::bakeEnvironment(const HdrImage& panorama, const EnvironmentConfig& config)
@@ -4633,18 +4797,10 @@ namespace Dot::Graphics {
 
     try {
       auto& gpu = *m_impl;
-      auto ready = prepareEnvironmentPipeline();
+      checked = gpu.ensureEnvironmentBake();
 
-      if (!ready) {
-        return std::unexpected(ready.error());
-      }
-
-      if (!*ready) {
-        checked = gpu.m_environmentPreparation->job.finish(gpu.instance);
-
-        if (!checked) {
-          return std::unexpected(checked.error());
-        }
+      if (!checked) {
+        return std::unexpected(checked.error());
       }
 
       ErrorScope scope(gpu.instance, gpu.device);
@@ -4892,23 +5048,10 @@ namespace Dot::Graphics {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid/foreign environment lighting");
       }
 
-      if (!m_impl->environmentPipeline || !m_impl->skyPipeline) {
-        ErrorScope scope(m_impl->instance, m_impl->device);
-        auto surface = m_impl->pipeline(wgpu::TextureFormat::RGBA16Float, true);
-        auto sky = m_impl->skyPipelineFor();
-        checked = scope.finish();
+      checked = m_impl->ensureEnvironmentSurfaces();
 
-        if (!checked) {
-          return checked;
-        }
-
-        if (!surface || !sky) {
-          return Core::fail(Core::ErrorCode::External,
-                            "Create environment render pipelines failed");
-        }
-
-        m_impl->environmentPipeline = std::move(surface);
-        m_impl->skyPipeline = std::move(sky);
+      if (!checked) {
+        return checked;
       }
     }
 

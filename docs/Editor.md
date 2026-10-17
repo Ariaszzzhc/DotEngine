@@ -1740,7 +1740,7 @@ cross-scene gameplay state are not implemented by this operation.
 
 ## Play game state and saves
 
-Required environment compute, shadow and SSAO pipelines compile asynchronously
+Required environment bake/surface/sky, shadow and SSAO pipelines compile asynchronously
 while editor events, agent requests and GUI continue. `workspace.view.loading` is
 `"environment-pipeline"`, `"shadow-pipelines"` or `"occlusion-pipelines"` while pending,
 null otherwise, independently of `error`. A pending view has no completed pixels for picking or

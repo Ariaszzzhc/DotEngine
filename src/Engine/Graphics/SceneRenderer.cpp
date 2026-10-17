@@ -936,7 +936,7 @@ namespace Dot::Graphics {
     }
 
     auto environment = scene.environment();
-    auto environmentReady = m_impl->renderer->environmentPipelineReady();
+    auto environmentReady = m_impl->renderer->environmentPipelinesReady();
     auto shadowsReady = m_impl->renderer->shadowPipelinesReady();
     auto occlusionReady = m_impl->renderer->occlusionPipelinesReady();
 
@@ -1002,7 +1002,7 @@ namespace Dot::Graphics {
     }
 
     if (*stage == ScenePipelineStage::Environment) {
-      auto ready = m_impl->renderer->prepareEnvironmentPipeline();
+      auto ready = m_impl->renderer->prepareEnvironmentPipelines();
 
       if (!ready) {
         return std::unexpected(ready.error());

@@ -266,17 +266,21 @@ handling defines an otherwise undefined longitude and avoids atan2(0,0).
 The physical integration follows the [Filament IBL derivation](https://google.github.io/filament/Filament.html),
 with independently implemented shader code and analytic energy/moment tests.
 
-`Renderer::prepareEnvironmentPipeline` starts one shared asynchronous compute
-pipeline compilation and polls its actual future with zero wait. False means
-pending; true means reusable; callback/timeout errors remain errors. Polling a
-pending job has a ten-second bound. It creates no environment map or lighting
-binding. `environmentPipelineReady` reads the current result without starting or
-polling work, including during GUI layout; Play uses it to reject a newly added
-environment before the next preparation tick. Owner-thread/move/device checks
-apply. Callback state is owned independently; device destruction may finish
-outstanding driver work. `bakeEnvironment` is explicitly synchronous and waits for this same pipeline
-when necessary. Repeated bakes reuse it; HDR decoding, source mips/uploads, GPU
-dispatch/completion and other pipelines remain synchronous.
+`Renderer::prepareEnvironmentPipelines` starts/polls the shared bake compute,
+environment surface and sky jobs with zero wait. False means pending; true requires
+all three, with surface/sky handles published together. Pending jobs have ten-second
+deadlines and retained contextual failures. It creates no environment map, lighting
+binding or frame. `environmentPipelinesReady` is a pure GUI-safe read; baking alone
+need not prepare the render jobs and does not imply full readiness. Play checks
+current scene requirements even before the next preparation tick. Callback ownership
+survives pending work; teardown may finish outstanding driver work.
+
+Explicit `bakeEnvironment` waits only for the shared compute job; `setEnvironment`
+validates the owned map/parameters before waiting for the shared surface/sky jobs.
+Neither launches duplicate pipeline creation when a job is already pending or ready.
+The plural preparation/readiness APIs replace the earlier compute-only names.
+HDR decoding, source mips/uploads, GPU dispatch/completion and other pipeline
+families remain synchronous; preparation does not provide general resource streaming.
 
 `Renderer::prepareShadowPipelines` starts three asynchronous render pipelines for
 shadowed direct/environment lighting and depth coverage. Results publish together;
@@ -312,8 +316,8 @@ both environment composition variants atomically with the same bounded async job
 `occlusionPipelinesReady()` is a GUI-safe pure read. Preparation creates no working
 maps, changes no SSAO settings/bindings and renders no frame. Explicit rendering
 waits on the same jobs; failures remain observable and pending jobs have ten-second
-deadlines. Environment surface/sky, skin, picking and other pipeline families still
-have synchronous creation paths.
+deadlines. Skin, picking and transparent surface variants still have synchronous
+creation paths.
 
 Defaults are radiance 256, diffuse 32, specular 128, BRDF 128, 256 samples. Radiance/
 specular allow 16..512; diffuse 4..128; BRDF 16..256; dimensions are powers of two,
