@@ -525,3 +525,49 @@ TEST_CASE("scene.entity_allocator_reservations_are_monotonic_owned_and_can_be_se
   REQUIRE(moved.destroyEntity(reserved));
   CHECK_FALSE(moved.nextEntityValue().value());
 }
+
+TEST_CASE("scene.named_lookup_is_exact_owned_sorted_and_tracks_lifetime_changes") {
+  auto scene = Scene::create().value();
+  auto first = scene.createEntity("维护员🙂").value();
+  auto other = scene.createEntity("维护员").value();
+  auto second = scene.createEntity("维护员🙂").value();
+  REQUIRE(scene.setParent(second, other));
+  auto matches = scene.findEntities("维护员🙂");
+  REQUIRE(matches);
+  CHECK(*matches == std::vector<EntityId>{first, second});
+  CHECK(scene.findEntities("missing")->empty());
+  auto upper = scene.createEntity("Surveyor").value();
+  CHECK(scene.findEntities("surveyor")->empty());
+  CHECK(scene.findEntities("Surveyor").value() == std::vector<EntityId>{upper});
+  REQUIRE(scene.renameEntity(first, "Changed"));
+  CHECK(scene.findEntities("维护员🙂").value() == std::vector<EntityId>{second});
+  REQUIRE(scene.destroyEntity(second));
+  CHECK(scene.findEntities("维护员🙂")->empty());
+  CHECK(*matches == std::vector<EntityId>{first, second});
+  CHECK_FALSE(scene.entity((*matches)[1]));
+  const std::string boundary(256, 'a');
+  auto last = scene.createEntity(boundary).value();
+  CHECK(scene.findEntities(boundary).value() == std::vector<EntityId>{last});
+}
+
+TEST_CASE("scene.named_lookup_validates_names_owner_and_moved_lifetime") {
+  auto scene = Scene::create().value();
+
+  for (const auto& name :
+       {std::string{}, std::string(257, 'a'), std::string("A\0B", 3), std::string("\xff")}) {
+    auto result = scene.findEntities(name);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == Dot::Core::ErrorCode::InvalidArgument);
+  }
+
+  std::atomic<bool> rejected{};
+  std::jthread foreign([&] {
+    auto result = scene.findEntities("Entity");
+    rejected = !result && result.error().code == Dot::Core::ErrorCode::InvalidState;
+  });
+  foreign.join();
+  CHECK(rejected);
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.findEntities("Entity"));
+  CHECK(moved.findEntities("Entity")->empty());
+}

@@ -115,6 +115,7 @@
     "saves.write",
     "scene.create",
     "scene.entities",
+    "scene.findEntities",
     "scene.group",
     "scene.info",
     "scene.primaryCamera.get",

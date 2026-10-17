@@ -215,7 +215,7 @@ and returned byte bounds do not limit how much a callback itself allocates.
 
 # Core scene SDK
 
-`Dot.Script.SceneHost::sceneBindings(sharedScene)` produces sixteen methods and
+`Dot.Script.SceneHost::sceneBindings(sharedScene)` produces native scene methods and
 retains shared ownership of the original scene identity. Creation and calls require
 the native scene's creating thread. Moving/replacing that Scene invalidates all old
 bindings explicitly. Destroying native entities invalidates wrappers. Entity IDs
@@ -224,11 +224,20 @@ are `{scene: string, value: string}` canonical positive decimal uint64 strings
 range. Numeric IDs, leading zeros, signs, unknown fields and foreign/stale handles
 fail instead of aliasing another entity.
 
+`scene.findEntities(name)` performs an exact UTF-8 name scan in native storage and
+creates wrappers only for matches. It returns every duplicate in deterministic
+creation-ID order, so callers requiring a unique role must check the count. Missing
+names return an empty array; empty, NUL-containing, invalid UTF-8 or over-256-byte
+names fail. It is read-only, including during script preparation. This avoids
+spending one host call per unrelated entity on `.entities().find(e => e.name === name)`;
+the shared per-invocation host-call/time/memory limits are unchanged.
+
 | Native method | Arguments | Result |
 | --- | --- | --- |
 | `scene.info` | `[]` | `{id, name, entities}` |
 | `scene.rename` | `[name]` | undefined |
 | `entity.list` | `[]` | IDs in creation order |
+| `entity.findNamed` | `[name]` | all exact name matches in creation order; missing returns `[]` |
 | `entity.create` | `[name]` | ID |
 | `entity.get` | `[id]` | owned identity, name, parent, transform and six component snapshots |
 | `entity.destroy` | `[id]` | undefined; deletes the entire subtree |

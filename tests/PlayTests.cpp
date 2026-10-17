@@ -207,13 +207,54 @@ TEST_CASE("play.component_errors_are_visible_and_realm_fault_requires_stop") {
   auto faulted
       = PlaySession::create(fixture.project, fixture.compiler(), authoring, config).value();
   auto retainedData = faulted.gameData().value();
-  CHECK_FALSE(faulted.advance(Dot::Platform::InputState{}, 0ns));
+  auto failure = faulted.advance(Dot::Platform::InputState{}, 0ns);
+  REQUIRE_FALSE(failure);
+  CHECK(failure.error().message.find("entity " + std::to_string(actor.value)) != std::string::npos);
+  REQUIRE(faulted.lastFrame()->reports.back().frame.failures.size() == 1);
+  const auto& cause = faulted.lastFrame()->reports.back().frame.failures.front().error.message;
+  CHECK(failure.error().message.find(cause) != std::string::npos);
   CHECK(faulted.stats()->state == PlayState::Faulted);
   CHECK(faulted.lastFrame()->reports.back().frame.realmFaulted);
   CHECK_FALSE(retainedData.perform(R"({"command":"set","key":"score","value":0})"));
   CHECK_FALSE(faulted.advance(Dot::Platform::InputState{}, 1ns));
   REQUIRE(faulted.stop());
   CHECK(faulted.stats()->state == PlayState::Stopped);
+}
+
+TEST_CASE("play.start_realm_failure_retains_cause_and_releases_temporary_storage") {
+  Fixture fixture;
+  auto files = fixture.directory.files();
+  REQUIRE(files.createDirectories("startup-saves"));
+  auto storage = Dot::Core::FileSystem::open(files.root() / "startup-saves").value();
+  REQUIRE(fixture.project.files()->writeTextAtomic(
+      "scripts/mover.ts",
+      "import {ScriptComponent} from 'dot:engine';export class Mover extends ScriptComponent "
+      "{onStart(){while(true){}}}"));
+  auto authoring = fixture.project.loadStartup().value();
+  const auto actor = authoring.entities()->at(1).id;
+  REQUIRE(authoring.setRigidBody(actor, Dot::World::RigidBody{}));
+  const auto before = Dot::World::encodeScene(authoring).value();
+  const auto generations = Dot::Script::compilerGenerations();
+  auto config = fixture.config();
+  config.temporarySavesParent = storage;
+  config.session.scripts.runtime.milliseconds = 5;
+  auto rejected = PlaySession::create(fixture.project, fixture.compiler(), authoring, config);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Dot::Core::ErrorCode::InvalidState);
+  CHECK(rejected.error().message.find("Start play script realm faulted") != std::string::npos);
+  CHECK(rejected.error().message.find("entity " + std::to_string(actor.value))
+        != std::string::npos);
+  CHECK(rejected.error().message.find("Script execution time limit exceeded") != std::string::npos);
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  CHECK(std::filesystem::directory_iterator(storage.root())
+        == std::filesystem::directory_iterator{});
+  CHECK(Dot::World::encodeScene(authoring).value() == before);
+  fixture.controller();
+  auto recovered = PlaySession::create(fixture.project, fixture.compiler(), authoring, config);
+  REQUIRE(recovered);
+  REQUIRE(recovered->stop());
+  CHECK(std::filesystem::directory_iterator(storage.root())
+        == std::filesystem::directory_iterator{});
 }
 
 TEST_CASE("play.moves_source_lifetime_workers_and_failed_open_release_generations") {

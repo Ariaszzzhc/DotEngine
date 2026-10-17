@@ -41,6 +41,7 @@ namespace Dot::Script {
       Info,
       RenameScene,
       List,
+      FindNamed,
       Create,
       Get,
       Destroy,
@@ -62,6 +63,7 @@ namespace Dot::Script {
     constexpr std::array methods{std::pair{"scene.info", Operation::Info},
                                  std::pair{"scene.rename", Operation::RenameScene},
                                  std::pair{"entity.list", Operation::List},
+                                 std::pair{"entity.findNamed", Operation::FindNamed},
                                  std::pair{"entity.create", Operation::Create},
                                  std::pair{"entity.get", Operation::Get},
                                  std::pair{"entity.destroy", Operation::Destroy},
@@ -496,6 +498,26 @@ namespace Dot::Script {
     }
 
     auto dispatch(World::Scene& scene, Operation operation, const Json& args) -> Reply {
+      if (operation == Operation::FindNamed) {
+        if (args.size() != 1 || !args[0].is_string()) {
+          return Core::fail(ErrorCode::InvalidArgument, "Named entity lookup requires one name");
+        }
+
+        auto matches = scene.findEntities(args[0].get_ref<const std::string&>());
+
+        if (!matches) {
+          return std::unexpected(matches.error());
+        }
+
+        auto result = Json::array();
+
+        for (const auto entity : *matches) {
+          result.push_back(idJson(entity));
+        }
+
+        return std::optional{result.dump()};
+      }
+
       if (operation == Operation::PrimaryCamera || operation == Operation::PrimaryListener) {
         if (!args.empty()) {
           return Core::fail(ErrorCode::InvalidArgument,
@@ -797,9 +819,10 @@ namespace Dot::Script {
              }
            },
            operation == Operation::Info || operation == Operation::List
-                   || operation == Operation::Get || operation == Operation::GetTransform
-                   || operation == Operation::WorldTransform || operation == Operation::GetComponent
-                   || operation == Operation::Exists || operation == Operation::PrimaryCamera
+                   || operation == Operation::FindNamed || operation == Operation::Get
+                   || operation == Operation::GetTransform || operation == Operation::WorldTransform
+                   || operation == Operation::GetComponent || operation == Operation::Exists
+                   || operation == Operation::PrimaryCamera
                    || operation == Operation::PrimaryListener
                ? HostAccess::ReadOnly
                : HostAccess::ReadWrite});

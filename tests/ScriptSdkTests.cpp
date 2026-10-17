@@ -455,3 +455,34 @@ export function run(): number {
   project.write("import {scene} from 'dot:engine';scene.group([1]);");
   CHECK_FALSE(tool().compileProject(project.files()));
 }
+
+TEST_CASE("script_sdk.named_lookup_finds_late_duplicates_with_a_small_host_call_budget") {
+  Project project;
+  project.write(R"ts(
+import {scene} from 'dot:engine';
+export function run(): string[] {
+  const matches = scene.findEntities('目标🙂');
+  if (scene.findEntities('missing').length !== 0) throw Error('unexpected match');
+  return matches.map(entity => entity.id.value + ':' + entity.name);
+}
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+
+  for (int index = 0; index < 1000; ++index) {
+    REQUIRE(scene->createEntity("Unrelated"));
+  }
+
+  auto first = scene->createEntity("目标🙂").value();
+  auto second = scene->createEntity("目标🙂").value();
+  RuntimeConfig config;
+  config.maxHostCalls = 16;
+  auto services = sceneBindings(scene).value();
+  auto vm = Runtime::create(program.files().value(), config, services).value();
+  auto result = vm.call(module(vm), "run");
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(nlohmann::json::parse(result->value())
+        == nlohmann::json::array(
+            {std::to_string(first.value) + ":目标🙂", std::to_string(second.value) + ":目标🙂"}));
+  CHECK_FALSE(vm.stats()->faulted);
+}

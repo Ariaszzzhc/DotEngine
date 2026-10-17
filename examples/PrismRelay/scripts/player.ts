@@ -36,7 +36,8 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   private bind(): void {
     const camera = scene.primaryCamera;
     const listener = scene.primaryListener;
-    const model = scene.entities().find(entity => entity.name === 'Surveyor');
+    const models = scene.findEntities('Surveyor');
+    const model = models.length === 1 ? models[0] : undefined;
 
     if (!camera || !model || !listener || listener.parent !== null || !listener.audioListener
         || model.parent?.id.value !== this.self.id.value || !this.self.character

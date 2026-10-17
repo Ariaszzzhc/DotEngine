@@ -541,3 +541,27 @@ TEST_CASE("component_host_repeated_authoring_retains_scene_only_and_allocates_no
     CHECK(Dot::Audio::Output::backendMemory().allocations == output.allocations);
   }
 }
+
+TEST_CASE("scene_host.named_lookup_is_read_only_exact_and_strict") {
+  auto native = scene();
+  auto first = native->createEntity("目标").value();
+  REQUIRE(native->createEntity("Other"));
+  auto last = native->createEntity("目标").value();
+  auto services = bindings(native);
+  const auto found = std::ranges::find(services, "entity.findNamed", &HostFunction::name);
+  REQUIRE(found != services.end());
+  CHECK(found->access == HostAccess::ReadOnly);
+  auto result = invoke(services, "entity.findNamed", Json::array({"目标"}));
+  REQUIRE((result && *result));
+  CHECK(Json::parse(**result) == Json::array({id(first), id(last)}));
+  CHECK(Json::parse(**invoke(services, "entity.findNamed", Json::array({"missing"}))).empty());
+
+  for (const auto& args : {Json::array(), Json::array({"目标", 1}), Json::array({42}),
+                           Json::array({nullptr}), Json::array({""})}) {
+    CHECK_FALSE(invoke(services, "entity.findNamed", args));
+  }
+
+  REQUIRE(native->renameEntity(first, "Other"));
+  CHECK(Json::parse(**invoke(services, "entity.findNamed", Json::array({"目标"})))
+        == Json::array({id(last)}));
+}

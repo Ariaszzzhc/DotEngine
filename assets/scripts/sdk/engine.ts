@@ -987,6 +987,14 @@ export const scene = Object.freeze({
   entities(): Entity[] {
     return (invoke('entity.list', []) as EntityId[]).map(id => new Entity(id));
   },
+
+  /** Exact UTF-8 name lookup in native storage; only matches receive wrappers.
+   * Duplicates are all returned in creation-ID order; missing names return [].
+   * 在原生存储中精确查找 UTF-8 名称，仅为匹配项创建包装器；同名项按创建 ID 排序，
+   * 无匹配时返回空数组。 */
+  findEntities(name: string): Entity[] {
+    return (invoke('entity.findNamed', [name]) as EntityId[]).map(id => new Entity(id));
+  },
 });
 
 /**

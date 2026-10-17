@@ -7,6 +7,7 @@ module;
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <source_location>
 #include <string>
 #include <thread>
 #include <utility>
@@ -18,9 +19,22 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Files;
 import Dot.Project.GameSession;
+import Dot.Script.SceneScripts;
 
 namespace Dot::Editor {
   namespace {
+    /** Preserve the script cause before failed startup retires its reports.
+     * 在启动失败并清理报告前保留脚本原因，避免只返回笼统的脚本域错误。 */
+    auto realmFaultError(std::string context, const Script::ScriptReport& report) -> Core::Error {
+      if (!report.failures.empty()) {
+        const auto& failure = report.failures.front();
+        context
+            += "; entity " + std::to_string(failure.entity.value) + ": " + failure.error.message;
+      }
+
+      return {Core::ErrorCode::InvalidState, std::move(context), std::source_location::current()};
+    }
+
     struct ActiveScope {
       bool& active;
 
@@ -80,7 +94,8 @@ namespace Dot::Editor {
 
       if (faulted) {
         fault();
-        return Core::fail(Core::ErrorCode::InvalidState, "Play script realm faulted");
+        return std::unexpected(
+            realmFaultError("Play script realm faulted", m_frame.reports.back().frame));
       }
 
       return {};
@@ -150,9 +165,7 @@ namespace Dot::Editor {
       auto started = impl->m_session.start();
 
       if (!started || started->realmFaulted) {
-        auto error = started ? Core::Error{Core::ErrorCode::InvalidState,
-                                           "Start play script realm faulted",
-                                           {}}
+        auto error = started ? realmFaultError("Start play script realm faulted", *started)
                              : started.error();
         auto closed = impl->m_session.close();
 

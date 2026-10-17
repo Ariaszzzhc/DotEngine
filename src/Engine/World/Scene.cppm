@@ -251,6 +251,12 @@ export namespace Dot::World {
     /** Destroy the entity and its entire subtree. 删除实体及其整个子树。 */
     [[nodiscard]] auto destroyEntity(EntityId entity) -> Core::Result<void>;
     [[nodiscard]] auto findEntity(std::uint64_t value) const -> Core::Result<EntityId>;
+    /** Exact valid UTF-8 name lookup, sorted by creation ID. Return every duplicate
+     * and an empty owned list when absent, without copying unrelated components.
+     * 按有效 UTF-8 名称精确查找，按创建 ID 排序；保留全部同名实体，无匹配时返回独立空列表，
+     * 不复制无关组件。 */
+    [[nodiscard]] auto findEntities(std::string_view name) const
+        -> Core::Result<std::vector<EntityId>>;
     [[nodiscard]] auto entity(EntityId entity) const -> Core::Result<EntityInfo>;
     /** Owned, ID-sorted animation descriptions without unrelated component copies.
      * 按 ID 排序的动画描述副本，不复制无关组件。 */

@@ -145,6 +145,9 @@ export class Audit extends ScriptComponent<{contract: string}> {
     view.parent = null;
     this.check(
         'scene.entities', scene.entities().some(entity => entity.id.value === view.id.value));
+    this.check(
+        'scene.findEntities',
+        scene.findEntities(view.name).some(entity => entity.id.value === view.id.value));
 
     const camera = components.camera();
     this.check(

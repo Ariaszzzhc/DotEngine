@@ -356,6 +356,12 @@ stop/apply effects are not rolled back. Cancel clears the close confirmation.
 Discard uses the existing close request with discard=true. Close cleanup errors
 are returned by frame/run operations rather than substituted with successful exit.
 
+A failed Play start preserves the first script failure's entity and diagnostic in
+the returned error before cleaning up the rejected session. Realm faults during
+play retain the same cause alongside the structured frame reports. Failed startup
+releases its temporary save storage and leaves the authoring scene available for
+correction and retry.
+
 Headless tests cover scene cloning, timing/input bounds, hot reload, script errors
 and resource lifetime. Validate the actual workspace through its agent interface:
 inspect authoring, start Play, inspect game state, stop and confirm authoring

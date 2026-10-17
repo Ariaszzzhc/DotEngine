@@ -8729,3 +8729,76 @@ pass clang-format and whitespace checks pass. No dependencies, compiler/linker s
 serialized formats, example content, compatibility paths or new executables are added.
 Production-scale loading/compilation, editor tools, finished Prism art and the overall
 engine/editor/game goal remain unfinished.
+
+## Native named entity lookup and Play diagnostics
+
+Real editor import/animation review of a rigged maintenance-avatar candidate exposed
+an authoring-order-dependent startup failure. The original 341-entity Prism scene
+places Surveyor at sorted index 150; the isolated 342-entity candidate places it at
+index 272. RelayPlayer enumerated wrappers and read each name until it found the
+role, crossing the unchanged 256-host-call limit in the latter scene. The editor
+returned only a generic realm fault and discarded the failed startup's useful cause.
+
+Added Scene::findEntities and read-only entity.findNamed / scene.findEntities(name).
+They scan native Identity data without copying unrelated components, return every
+exact name match as owned creation-ID-sorted handles, and return [] when absent.
+Names use the existing 1..256-byte, valid UTF-8/no-NUL contract. Owner/move/liveness
+rules remain the scene's ordinary rules; rename and deletion are observed immediately.
+No index cache or persistent references are introduced. Prism requires exactly one
+Surveyor and resolves it through this operation. FeatureLab executes the same SDK
+method and declares it in its coverage inventory; the existing example lifecycle
+regression uses the new lookup for its named authored roles. Budgets are unchanged.
+
+Play startup now copies the first script failure's entity and diagnostic before
+closing/releasing a faulted candidate. Runtime realm errors include that same cause
+while retaining the structured frame reports. Ordinary component-failure semantics,
+cleanup and authoring isolation are unchanged. No new command or diagnostic fallback.
+Two CPU scene cases cover exact Unicode/case, duplicates/order, owned snapshots,
+rename/deletion, maximum/invalid names, foreign thread and moved lifetime. A strict
+read-only bridge case and actual TypeScript case find two late duplicates after 1000
+unrelated entities with a 16-host-call budget. A startup-fault case checks the actual
+execution-limit cause, temporary save cleanup, compiler generations and successful
+retry; the runtime-fault case also checks its original cause survives.
+
+Initial full Debug passes 1299/1300: the SDK inventory correctly detects that the new
+FeatureLab audit call was missing from coverage.json. Added the inventory entry,
+rebuilt the bundled templates and passed all nine FeatureLab cases, then reran the
+complete suites. Final Debug passes 1300/1300 (196.00s); Release/NDEBUG passes
+1300/1300 (21.28s): 409 unit, 891 integration, including 197 compiler, 142 offscreen,
+33 platform, 32 audio-native and 20 process cases (overlapping labels). Only macOS
+arm64 is executed. Nine changed C++ files pass clang-format and whitespace checks.
+Reviewed query allocation/error paths, exact name/ID bounds, read-only classification,
+report ownership before teardown, move/thread behavior, SDK/template synchronization
+and unchanged runtime budgets. No dependency/compiler/linker/format changes or new
+acceptance executable are introduced.
+
+Actual editor first reproduces the old lookup and returns: Start play script realm
+faulted; entity 7: Method player.js::RelayPlayer[1].onStart: Script host-call limit
+exceeded. Restoring the new lookup in that same project starts Play successfully.
+A Debug-only helper initially assumed 30 rendered input frames equalled 30 fixed
+updates; actual inspection records 264 fixed updates across 33 frames, so its late
+snapshot misses the already completed jump. This is a validation timing assumption,
+not evidence of an input failure. No clock or update bounds are changed. The owned
+Debug sample records 12 frames with median step/game+animation/render costs of
+163.403/85.134/75.561ms, including native work and waits, not just script execution.
+
+Release validation instead observes actual states after one W/Space input frame.
+Player rises from [-3,0,2], is captured airborne at [-3,0.8501253,1.9058127], reaches
+an observed 1.7807757m and lands near [-3,0,1.8079216]. No Play diagnostics/errors;
+Stop restores the clean saved authoring scene and byte-identical before/after PNGs.
+The separate 16-sample Release observation has median step/game+animation/render
+costs 7.176480/0.780542/6.094459ms. Different configurations/workloads are not an
+optimization comparison or a production FPS guarantee. Candidate art, seven native
+clip previews and DCC source remain ignored research, not shipped Prism content.
+
+Actual Release FeatureLab executes 134 checks including scene.findEntities and its
+game-data checks, with no Play diagnostics/error and a clean unchanged Stop. Owned
+editors exit zero with empty stderr and retired controls; terminal close is verified
+by process exit as documented. Original Prism exports with the new SDK and the
+relocated native player exits zero. First render still costs 4876.151875ms and drops
+4749.999810ms, with the explicit warnings: the separately sampled synchronous Metal
+environment-pipeline compilation remains unresolved. Temporary native export is
+removed after preserving manifests/results. Useful raw evidence stays in ignored
+build/character-research, build/named-query-feature-lab and build/named-query-* logs.
+The complete engine/editor/game goal, production loading/compilation and final Prism
+visual quality remain unfinished.

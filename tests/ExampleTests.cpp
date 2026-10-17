@@ -160,8 +160,8 @@ namespace {
     REQUIRE(fixture.project.files()->writeTextAtomic("scripts/observer.ts", R"ts(
 import {scene, ScriptComponent} from 'dot:engine';
 export class Observer extends ScriptComponent {
-  #model = scene.entities().find(entity => entity.name === 'Surveyor')!;
-  #player = scene.entities().find(entity => entity.name === 'Player')!;
+  #model = scene.findEntities('Surveyor')[0]!;
+  #player = scene.findEntities('Player')[0]!;
   onUpdate(): void {
     const character = this.#player.characterState;
     this.self.name = JSON.stringify({clip: this.#model.animationState.clip,

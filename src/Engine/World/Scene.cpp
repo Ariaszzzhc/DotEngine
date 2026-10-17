@@ -909,6 +909,42 @@ namespace Dot::World {
     return {};
   }
 
+  auto Scene::findEntities(std::string_view name) const -> Core::Result<std::vector<EntityId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    checked = validateName(name);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      std::vector<EntityId> matches;
+
+      for (const auto native : m_impl->registry.view<Identity>()) {
+        const auto& identity = m_impl->registry.get<Identity>(native);
+
+        if (identity.name == name) {
+          matches.push_back({m_impl->identity, identity.value});
+        }
+      }
+
+      std::ranges::sort(matches, {}, &EntityId::value);
+      return matches;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Find named scene entities: " + std::string(error.what()));
+    }
+  }
+
   auto Scene::entities() const -> Core::Result<std::vector<EntityInfo>> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
