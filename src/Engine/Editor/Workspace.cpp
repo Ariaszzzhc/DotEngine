@@ -685,6 +685,8 @@ namespace Dot::Editor {
     std::string m_inputSource{"none"};
     Platform::InputState m_gameInput;
     bool m_captureInput{};
+    bool m_gameUiVisible{true};
+    std::uint64_t m_gameUiRevision{};
     bool m_pointerCaptured{};
     bool m_resetGuiInput{};
     ImVec2 m_viewOrigin{};
@@ -1467,6 +1469,8 @@ namespace Dot::Editor {
 
       m_play.emplace(std::move(*created));
       ++m_playSession;
+      m_gameUiVisible = true;
+      m_gameUiRevision = 0;
       m_saveSlotsKnown = false;
       m_saveSlots = Json::array();
       m_agentInput.reset();
@@ -1942,7 +1946,7 @@ namespace Dot::Editor {
 
       std::uint64_t hudRevision{};
 
-      if (publishedPlay()) {
+      if (publishedPlay() && m_gameUiVisible) {
         auto hud = m_play->hud();
         auto state = hud ? hud->snapshot()
                          : Core::Result<Script::HudSnapshot>{std::unexpected(hud.error())};
@@ -1963,7 +1967,9 @@ namespace Dot::Editor {
                           : ViewportMode::Game,
           m_transform.has_value(),
           m_animationPreview.has_value(),
-          hudRevision};
+          hudRevision,
+          publishedPlay() ? m_gameUiVisible : true,
+          publishedPlay() ? m_gameUiRevision : 0};
     }
 
     auto captureStatus() const -> Json {
@@ -1988,6 +1994,8 @@ namespace Dot::Editor {
                 {"session", std::to_string(frame.context.session)},
                 {"playFrame", std::to_string(frame.playFrame)},
                 {"hudRevision", std::to_string(frame.context.hudRevision)},
+                {"gameUiVisible", frame.context.gameUiVisible},
+                {"gameUiRevision", std::to_string(frame.context.gameUiRevision)},
                 {"mode", modes.at(static_cast<std::size_t>(frame.context.mode))},
                 {"source", frame.context.animation                    ? "animation"
                            : frame.context.transform                  ? "transform"
@@ -5616,6 +5624,35 @@ namespace Dot::Editor {
                   : Core::Result<std::string>{std::unexpected(id.error())};
       }
 
+      if (command == "set-play-ui-visible") {
+        Codec::requireFields(parsed, {"command", "session", "scope", "visible"});
+        const auto session = Codec::id(parsed["session"]);
+        const auto scope = Codec::id(parsed["scope"]);
+        const auto visible = parsed["visible"].get<bool>();
+
+        if (!publishedPlay() || m_pendingClose || m_captureDialog || session != m_playSession
+            || (m_play->stats()->state != PlayState::Running
+                && m_play->stats()->state != PlayState::Faulted)
+            || scope != m_play->stats()->location.scope) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Game UI visibility requires the current published Play scope");
+        }
+
+        if (visible != m_gameUiVisible) {
+          if (m_gameUiRevision == std::numeric_limits<std::uint64_t>::max() - 1) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Game UI presentation revision exhausted");
+          }
+
+          m_gameUiVisible = visible;
+          ++m_gameUiRevision;
+          m_previewReady = false;
+          m_renderedButtons = 0;
+        }
+
+        return "{\"ok\":true}";
+      }
+
       if (command == "capture-input") {
         Codec::requireFields(parsed, {"command", "capture"});
         const bool capture = parsed["capture"].get<bool>();
@@ -6861,6 +6898,9 @@ namespace Dot::Editor {
                ? Json("material-textures")
                : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
+          {"gameUi",
+           {{"visible", publishedPlay() ? m_gameUiVisible : true},
+            {"revision", std::to_string(publishedPlay() ? m_gameUiRevision : 0)}}},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
           {"rendering", std::move(frameStatus)},
@@ -7151,7 +7191,7 @@ namespace Dot::Editor {
       std::vector<Graphics::TextLayer> labels;
       std::uint64_t buttonRevision{};
 
-      if (publishedPlay()) {
+      if (publishedPlay() && m_gameUiVisible) {
         auto hud = m_play->hud();
         auto state = hud ? hud->snapshot()
                          : Core::Result<Script::HudSnapshot>{std::unexpected(hud.error())};
@@ -7254,6 +7294,9 @@ namespace Dot::Editor {
 
       m_previewReady = drawn.has_value() && m_renderedFrame
                        && m_renderedFrame->context.scene == (*scene)->id()
+                       && (!publishedPlay()
+                           || (m_renderedFrame->context.gameUiVisible == m_gameUiVisible
+                               && m_renderedFrame->context.gameUiRevision == m_gameUiRevision))
                        && m_renderedFrame->width == width && m_renderedFrame->height == height;
       m_previewError = drawn ? "" : drawn.error().message;
 
@@ -10037,6 +10080,21 @@ namespace Dot::Editor {
         ImGui::EndDisabled();
 
         ImGui::BeginDisabled(
+            !stats.started
+            || (stats.state != PlayState::Running && stats.state != PlayState::Faulted)
+            || m_pendingClose || m_captureDialog);
+        auto showGameUi = m_gameUiVisible;
+
+        if (ImGui::Checkbox("Show game UI", &showGameUi)) {
+          sessionAction({{"command", "set-play-ui-visible"},
+                         {"session", std::to_string(m_playSession)},
+                         {"scope", std::to_string(stats.location.scope)},
+                         {"visible", showGameUi}});
+        }
+
+        ImGui::EndDisabled();
+
+        ImGui::BeginDisabled(
             stats.state != PlayState::Running || m_pendingClose || !stats.clock
             || !stats.clock->paused
             || (stats.clock->step
@@ -10052,9 +10110,14 @@ namespace Dot::Editor {
 
         ImGui::EndDisabled();
 
+        /** Reserve the row so the first step does not resize the posed viewport.
+         * 保留状态行，避免首次单步改变姿态视口尺寸。 */
         if (stats.clock && stats.clock->step) {
           ImGui::Text("Step %llu: %s", static_cast<unsigned long long>(stats.clock->step->id),
                       Script::gameStepStateName(stats.clock->step->state).data());
+        } else {
+          ImGui::TextDisabled("%s",
+                              stats.clock ? "No single step requested" : "Single step unavailable");
         }
 
         if (stats.source && stats.source->compiling) {
@@ -13295,7 +13358,7 @@ namespace Dot::Editor {
           }
 
           const Project::GameInputArea area{{m_viewWidth, m_viewHeight},
-                                            m_viewVisible && m_previewReady
+                                            m_viewVisible && m_previewReady && m_gameUiVisible
                                                 && (m_captureInput || m_inputSource == "agent")
                                                 && !m_pendingClose && m_renderedFrame
                                                 && m_renderedFrame->context.scene == (*source)->id()

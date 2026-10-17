@@ -178,3 +178,40 @@ TEST_CASE("viewport_capture.freezes_animation_provenance_and_validates_its_conte
   animated.transform = true;
   CHECK_FALSE(capture.request(animated, 11));
 }
+
+TEST_CASE("viewport_capture.presentation_identity_rejects_hidden_and_aba_frames") {
+  using namespace Dot::Editor;
+  ViewportCapture capture;
+  auto play = context;
+  play.mode = ViewportMode::Play;
+  play.session = 2;
+  play.hudRevision = 4;
+  play.gameUiRevision = 2;
+  const auto id = capture.request(play, 10).value();
+  auto value = frame();
+  value.context = play;
+  value.context.gameUiRevision = 0;
+  CHECK_FALSE(capture.complete(id, value, pixels()));
+  value.context = play;
+  value.context.gameUiVisible = false;
+  CHECK_FALSE(capture.complete(id, value, pixels()));
+  value.context = play;
+  REQUIRE(capture.complete(id, value, pixels()));
+  REQUIRE(capture.discard(id));
+  play.gameUiVisible = false;
+  CHECK_FALSE(capture.request(play, 11));
+  play.hudRevision = 0;
+  play.gameUiRevision = 3;
+  const auto hidden = capture.request(play, 11).value();
+  value.context = play;
+  value.serial = 12;
+  REQUIRE(capture.complete(hidden, value, pixels()));
+  CHECK_FALSE(capture.stats().frame.context.gameUiVisible);
+  CHECK(capture.stats().frame.context.hudRevision == 0);
+  REQUIRE(capture.discard(hidden));
+  play.mode = ViewportMode::Game;
+  play.session = 0;
+  CHECK_FALSE(capture.request(play, 12));
+  play.gameUiVisible = true;
+  CHECK_FALSE(capture.request(play, 12));
+}

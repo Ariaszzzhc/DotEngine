@@ -198,3 +198,10 @@ labels, focus/hover/press and action history do not. Editor Play and native surf
 input require the displayed version in the current source/size, preventing an old
 image from activating a newly positioned button while preserving held gestures.
 Programmatic activate retains the existing current-model eligibility contract.
+
+Editor Play offers a temporary Show game UI view control for unobstructed paused
+motion review. Hidden text/buttons stay in this service; native widget input is
+disabled until a current visible frame returns. Focus is retained and the next
+running input publication cancels armed gestures. Faulted models keep their ordinary
+read-only retirement contract. Explicit service inspection/actions remain available. Scene saves and
+native exports retain ordinary game UI. See [Play view control](Editor.md).

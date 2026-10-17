@@ -1221,7 +1221,7 @@ fields fail. Capture requires the current authoring revision and queues a new fr
 `workspace.capture.state` before saving: `queued` acknowledges the request only;
 `ready` means owned pixels exist. The next native render iteration resolves the request;
 a hidden/deferred/failed viewport or changed scene/revision/view mode/Play session
-or changed HUD revision fails rather than exporting an older frame. At most one
+or changed HUD/presentation revision fails rather than exporting an older frame. At most one
 queued/ready/saving image is retained.
 Finish or discard it before requesting another. IDs are canonical decimal strings,
 monotonically increasing for this workspace; stale IDs cannot save/discard newer images.
@@ -2200,6 +2200,33 @@ clock.revision, clock.step and simulatedUpdates; fixedSteps counts actual comple
 native fixed phases, including single steps, across scene replacement.
 The unscaled frame/UI hook and product controls continue during pause, and Stop
 retains its usual authoring restoration. See [pause scheduling](GameClock.md).
+
+**Show game UI** temporarily hides Play's text/buttons so a paused character and
+its animation remain visible. It uses the shared strict product operation:
+
+```json
+{"command":"set-play-ui-visible","session":"1","scope":"83","visible":false}
+```
+
+Use the current published Play session/scope; running and published faulted scenes
+permit this view change. Preparation, unpublished startup failures, stopped Play,
+stale identities, pending close and a native capture dialog reject it. `visible`
+must be boolean and extra fields fail. Same-value requests retain the presentation
+revision and frame; changes invalidate old rendered input/capture provenance.
+`workspace.view.gameUi` reports the requested visible/revision pair. Read view.ready
+and completed rendering metadata to observe actual presentation.
+
+Hiding suppresses native pointer/keyboard widget interaction. The next ordinary
+running input publication cancels an armed gesture while retaining focus,
+labels/buttons and game script state; faulted HUD models retain their read-only state. Gameplay input,
+unscaled callbacks, the simulation clock and explicit HUD service actions remain
+available. It does not clear or rewrite the native HUD. A new Play starts visible;
+scene cuts within that Play retain the view choice. Save/export never persist it.
+
+PNG capture records gameUiVisible/gameUiRevision. Hidden frames carry hudRevision
+zero because no HUD was drawn, so unseen HUD changes cannot prevent capture. A
+hide/show cycle advances its presentation revision even if the final visibility
+matches an older frame. Already frozen PNGs keep their original metadata/pixels.
 
 Terminal close retires the private control directory, so a supervising agent must
 verify the owned editor process exits rather than waiting indefinitely for a response

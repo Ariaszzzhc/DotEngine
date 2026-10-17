@@ -22,6 +22,11 @@ export namespace Dot::Editor {
     bool transform{};
     bool animation{};
     std::uint64_t hudRevision{};
+    /** Play-only presentation identity; hidden UI contributes no HUD revision.
+     * Epoch rejects an old visible frame after a hide/show cycle.
+     * Play 展示身份；隐藏 UI 不贡献 HUD 修订，递增修订拒绝隐藏/重显后的旧可见帧。 */
+    bool gameUiVisible{true};
+    std::uint64_t gameUiRevision{};
     auto operator==(const CaptureContext&) const -> bool = default;
   };
 

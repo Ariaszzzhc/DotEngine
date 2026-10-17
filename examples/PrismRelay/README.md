@@ -22,6 +22,12 @@ This replaces the earlier collection/timer prototype.
 - In editor Play, enable Game input. Escape releases it; focus loss requires enabling
   it again. In a standalone game, Escape exits.
 
+For animation inspection, pause and disable **Show game UI** in the editor viewport
+controls. This reveals the full character without changing the checkpoint menu or
+simulation. Step simulation/N still advances one native quantum. Re-enable the view
+to operate menu buttons; hidden buttons cannot consume native pointer/keyboard input.
+This temporary view choice is not saved or exported.
+
 Relative game control temporarily suspends SDL text input so Chinese input methods
 do not intercept movement/jump keys. Releasing control restores editor text entry
 without switching the system input method.

@@ -32,7 +32,11 @@ namespace Dot::Editor {
     }
 
     if ((context.hudRevision && context.mode != ViewportMode::Play)
-        || context.hudRevision == std::numeric_limits<std::uint64_t>::max()) {
+        || context.hudRevision == std::numeric_limits<std::uint64_t>::max()
+        || (context.mode != ViewportMode::Play
+            && (!context.gameUiVisible || context.gameUiRevision))
+        || (!context.gameUiVisible && context.hudRevision)
+        || context.gameUiRevision == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid capture HUD revision");
     }
 

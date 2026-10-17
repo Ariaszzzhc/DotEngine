@@ -12611,3 +12611,103 @@ ignored build/step-review. Reverify all seventeen earlier save hashes and both n
 slots. Remove only owned helper/cache/App/native copies after recording final proof;
 retain build caches, reference material and saved projects. No distribution archive.
 Large-game scalability, finished art and mature authoring remain open goals.
+
+## 2026-10-18 — Unobstructed paused motion review
+
+The actual single-step PNG showed the checkpoint menu covering the character's
+upper body. Add a temporary Play view control so this existing project can be
+inspected without clearing its native UI, modifying gameplay or editing the menu
+script. This is an editor presentation setting, not a UI layout-authoring system.
+
+Show game UI and the strict set-play-ui-visible(session,scope,visible) operation
+share the ordinary product implementation. Require a boolean, exact fields and the
+current published running/faulted Play scope. Reject stopped/preparing/unpublished
+failed startups, stale identities, pending close and native capture dialogs. Same-
+value changes are true no-ops. A new Play resets visible/revision zero; scene cuts
+inside a Play retain its view choice. Scene saves and native exports never encode it.
+
+Hidden views submit no native text/buttons and suppress native HUD pointer/keyboard
+handling. Ordinary running input publication cancels an armed gesture while preserving
+focus/definitions; already retired faulted models stay read-only.
+They do not clear the HUD, pause/resume simulation, cancel gameplay input or remove
+explicit HUD product/script actions. Old completed frames cannot re-enable input:
+invalidate readiness/button provenance on changes and require the completed frame's
+presentation identity before showing it again. Native actor/animation work continues
+through the existing renderer and single-step scheduler.
+
+CaptureContext now owns visibility plus a presentation revision. This rejects an
+old visible frame after a hide/show cycle even when HUD revision is unchanged.
+Hidden frames carry zero HUD revision because no UI was drawn; unseen model updates
+do not invalidate a hidden capture. Non-Play visibility overrides, hidden/nonzero-HUD
+combinations and exhausted presentation identities fail validation. Frozen PNGs retain
+their own original context/pixels. Add one durable pure-CPU case to the existing
+capture tests for visibility/revision mismatch, hide/show reuse rejection, correct
+hidden completion and invalid contexts. No stage executable or windowed test target.
+
+Review also tightens the published-scope guard: faulted state alone does not prove
+successful startup/publication. The checkbox shares that restriction. Reserve the
+single-step status row before the first request, preventing the viewport dimensions/
+projection from jumping when a step status first appears. These are view refinements;
+no simulation, rendering algorithm, saved scene or dependency changes.
+
+Actual arm64 macOS checks with inherited toolchain/presets and no sanitizers:
+
+- Capture focus 8/8, 0.40 s. Full Debug 1502/1502, 251.88 s, before the final
+  publication guard/status-row refinements. Rebuild the final Debug product and run
+  capture/paused-Play/Prism single-step focus 10/10, 1.28 s; full Debug is not repeated
+  after these frontend-only refinements.
+- Initial full Release 1502/1502, 36.45 s. After final status layout, rebuild and run
+  final full Release/NDEBUG 1502/1502, 36.55 s. Labels: 475 unit, 1027 integration,
+  including overlapping 185 offscreen GPU/242 compiler/37 native audio/34 platform/
+  21 process cases. Automatic tests open no desktop windows; units initialize no
+  devices. No Windows/Linux execution claim.
+
+Actual final Release editor creates PrismPoseReview, starts its saved main scene,
+and uses real E/Space/M input to pause the airborne character. Capture visible,
+hide, capture the unobstructed pose, show again and recapture. All three complete
+scenes and native clock/model snapshots remain unchanged. Visible/re-shown PNGs
+match byte-for-byte; the hidden PNG differs and declares no HUD revision. Invalid
+numeric/string/null/extra-field requests and stale session/scope identities leave
+the view unchanged; a repeated false request retains its presentation revision.
+Hidden Enter does not queue a menu action or resume. Re-showing and Enter activates
+the same retained menu focus and resumes normally.
+
+Hide again, request one actual native simulation step and wait for a completed
+rendered Play frame at/after that step. The player moves and the active layer advances
+exactly 1/60 second. The pose PNG changes while all four captures stay 1480x574,
+so the comparison is not a resize artifact. Actual frozen PNG SHA-256 values:
+
+- Visible/restored: 2d5d11a4aadadb51e401242514352e18a300bf97b39a95078607795c78740b9e.
+- Hidden pose: 998e883842d69a7b230b592c1c794c6a347a2f6fd5eb3e5d758e2236ece35001.
+- Stepped hidden pose: a0e0701ee8c235dcecff3fea2d5e57ecd546659dd739cb93bf10dc511a9a58e1.
+
+Use external source editing in the owned project to cause an intentional frame-
+realm budget fault. The published frozen world still permits hide/show and healthy
+viewport completion. Restore source, stop, then deliberately fail a new Start;
+its unpublished view command rejects. Restore source and restart successfully:
+visibility is true/revision zero. Hide, stop and Save: the saved scene bytes remain
+identical to the template. Export through the actual editor while this temporary
+choice is hidden in the previous Play. Both injected faults are expected negative
+product evidence; they are not reported as fault-free gameplay.
+
+Compare all 117 exported content files to the editable project, relocate the native
+game and hide only its owned source path. The native model still has three visible
+menu buttons and ordinary Enter resumes it; its renderer was not given an editor
+view preference. No native script failures. The actual native process exits zero
+and retires control; source is restored. Its retained profile has 120 error-free
+samples out of 241 sampled, including loading/eviction; no FPS/latency inference.
+The editor exit is also zero, with terminal/control retirement verified if the
+acknowledgement retires before reading. Current editor/App SHA-256 is
+46e45a34fb18ed4ae66bb6b3957f591734b33e48135d458043661436e66b29e3.
+The native export matches its unchanged runtime kit SHA-256
+67e9c2588c1dadc96cfe247fad9775e6e57c33c7cc63d521f437a4bc23d98f8a.
+
+Inspect the actual full-character PNG and arm64/dependency output. Computer use
+again reports locked Mac/automatic unlock failure, so physical checkbox clicks,
+narrow layouts and native IME behavior remain unverified. Review capture/input
+provenance, resource lifetime, guards, formatting and unchanged source/export scope.
+Keep requests/results, PNGs, profiles, manifests and the editable project in ignored
+build/play-ui-review; verify all nineteen prior save hashes unchanged. Remove only
+owned helpers/cache/App/native copies after recording proof. Preserve build caches,
+reference material and saved projects; no distribution archive. Full UI authoring,
+final art, animation state machines and production-scale evidence remain open work.
