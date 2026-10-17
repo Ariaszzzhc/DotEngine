@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <optional>
 
 import Dot.Core.Application;
 import Dot.Core.Result;
@@ -22,6 +23,7 @@ namespace Dot::Runtime {
     std::size_t frames{0};
     bool pauseOnFocusLoss{true};
     float volume{1};
+    std::optional<std::filesystem::path> profile;
     std::function<Core::Result<void>(Core::Application&, Project::GameSession&,
                                      Graphics::SceneRenderer&, Core::LoopCallbacks&,
                                      const std::size_t&)>
@@ -33,6 +35,7 @@ namespace Dot::Runtime {
   auto runGame(const Project::GamePackage& game, const PlayerOptions& options)
       -> Core::Result<void>;
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& compiler,
-                   std::size_t frames) -> int;
-  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int;
+                   std::size_t frames, std::optional<std::filesystem::path> profile = {}) -> int;
+  auto playGame(const std::filesystem::path& root, std::size_t frames,
+                std::optional<std::filesystem::path> profile = {}) -> int;
 }  // namespace Dot::Runtime

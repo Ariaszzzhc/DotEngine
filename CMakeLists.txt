@@ -125,6 +125,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Core/Result.cpp
     src/Engine/Core/Text.cpp
     src/Engine/Core/Application.cpp
+    src/Engine/Core/ApplicationProfile.cpp
     src/Engine/Platform/System.cpp
     src/Engine/Platform/UserData.cpp
     src/Engine/Platform/Window.cpp

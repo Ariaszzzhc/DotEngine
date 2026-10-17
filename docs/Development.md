@@ -8572,3 +8572,101 @@ are removed. Existing build caches, prior archives and untracked user references
 are preserved. Finished realistic sci-fi art, native pointer acceptance, measured
 startup/whole-application costs, background loading/compilation and overall engine/
 editor/game production goals remain unfinished.
+
+## Native application frame diagnosis
+
+Added independent opt-in Application CPU wall sampling to the native loop. It owns
+120 recent completed steps plus the greatest measured step and greatest supplied
+input interval, so a cold first draw and the following catch-up/drop observation
+survive history eviction. Events/close handlers, prepare/input, fixed callbacks,
+frame/variable updates and rendering are distinct nonoverlapping phases; absent
+callbacks remain null. Actual frame metadata and callback errors are retained.
+These intervals exclude process initialization, shutdown, idle delay and history
+publication, and include resource/GUI/driver waits inside callbacks. They are not
+GPU execution, process CPU utilization or FPS.
+
+Same-value switches preserve history, disable releases it and reenable starts a
+fresh monotonic session. A callback may toggle without leaving a borrowed profiler
+pointer: the interrupted sample is discarded. Invalid/moved/foreign-thread calls
+fail; successful snapshots own all records and errors. One shared native encoder
+preserves decimal-string identities/counts/nanoseconds, null phases and compact
+latest/summary output. Renderer CPU/GPU sampling remains independently controlled.
+
+Window/Rendering and strict set-application-profiling share Application's API.
+inspect-profile adds the full application history; ordinary workspace inspection
+adds its compact state. Real product validation exposed that the editor advanced
+Play inside its render callback, unlike the standalone player's separate callbacks.
+Added an exact FrameState update callback after fixed updates and before variable
+update/render, and moved editor Play/audition advancement there. It receives the
+same nanosecond duration and preserves advancement order without a double-seconds
+round trip. The UI groups game/animation CPU intervals and shows a full-width graph;
+Core fixed-clock metadata remains distinct from Play's independent fixed counters.
+
+DotRuntime and exported DotGame accept optional --profile files using the same
+encoder and atomic filesystem service. Argument/duplicate/value checks precede
+native window/device work. Missing parents/directories/special destinations reject;
+an existing regular diagnostic file is explicitly replaced. New option paths use
+UTF-8 filesystem construction. Saving diagnostics never changes a failed game into
+a successful one; a diagnostic write failure is reported. No catch-up cap/warning
+or simulation input was suppressed to make the measurements look better.
+
+Added one CPU-only exact-JSON case, five dummy-display application cases and one
+CLI rejection case in existing test targets. Coverage includes phase order and
+bounds, real catch-up metadata, absent/paused callbacks, failures/standard/unknown
+exceptions and close-handler failure, ownership/thread/move lifetime, repeated and
+in-callback toggles, bounded history and retained old maxima, exact nanosecond frame
+updates and stop/failure skipping, high 64-bit values, strict flags and unavailable
+outputs without opening desktop windows. One initial test forgot a retained 5ms
+fixed-clock remainder and expected 70ms dropped instead of the actual 80ms; the
+assertion was corrected while production timing stayed unchanged.
+
+Actual Release editor toggles application sampling, rejects three malformed requests,
+retains same-value sessions, runs W/Space Play input and independently toggles mesh
+sampling. Player moves from [-3,0,2] to [-3,1.4705257,1.3672982], without Play errors,
+diagnostics or dropped fixed time. Stop retains revision one and clean authoring.
+Before/profiled/stopped 1480x574 PNGs remain byte-identical to the established Prism
+reference (SHA-256 c345f04406d3defdfa323c9e357adfcbc7ef85a74b2c81879f4a458f6ae23fbe).
+Computer use inspects actual live phase values and the corrected full-width graph.
+An initial helper ran before readiness and made no request; it was corrected to
+observe the flushed control JSON. Its first Play gate incorrectly assumed a Core
+fixed callback in the workspace; that failure exposed the real integration boundary
+above. Final evidence uses the corrected exact-frame integration, not that attempt.
+All owned successful editor sessions exit zero with empty stderr and retired controls.
+
+Three serial Release project runs, each 180 actual frames without competing tests
+or builds, retain cold frame zero. Its rendering costs are 511.411375/489.767750/
+493.216083ms (median 493.216083); whole-step costs are 540.684750/516.165709/
+519.313250ms (median 519.313250). Following input intervals are 541.820875/
+517.303834/520.447250ms, with 399.999984/383.333318/383.333318ms dropped. These
+successive local runs include warmed filesystem/driver context, not cold-cache
+latency guarantees or game FPS. A delayed native system sample identifies PNG/JPEG
+decode, texture upload's repeated sRGB pow calls and skin GPU readback waits inside
+first rendering; it is call-stack evidence, not a sampled-duration benchmark. An
+earlier immediate sample mostly observes OS/window startup outside step.
+
+Temporary native export, relocated playback and a UTF-8 diagnostic filename succeed.
+The exported player runs 180 frames, exits zero and owns 120 recent records plus the
+old frame-zero/frame-one summaries. That first relocated-player observation records
+4995.572083ms rendering, 5014.797083ms step cost and the next 5015.936542ms interval
+with 4866.666472ms dropped. It is a distinct startup workload/cache context from the
+project runs, not an optimization comparison. The diagnostics make the previously
+unlocated render stall observable; background loading/pipeline work is still needed.
+Temporary native export is removed after preserving its manifests/results; no editor
+distribution archive is created. Independent character-source research remains in
+ignored build storage only; no unrigged candidate is substituted for the animated
+Prism character or claimed as finished realistic art.
+
+Debug/Release builds and full suites pass 1291/1291: Debug 197.01s, Release/NDEBUG
+21.34s. There are 403 unit and 888 integration cases, including 195 compiler, 142
+offscreen, 33 platform, 32 native-audio and 20 process cases (labels overlap).
+After the final graph/text-only adjustment, relevant application/GUI checks pass
+in both configurations and the actual native panel is inspected again. Automated
+checks open no desktop windows; product sessions above are deliberate checks.
+Only macOS arm64 is executed. No dependency, compiler/linker setting, installed
+header tree, scene format, example content or acceptance executable is introduced.
+Reviewed event/update ordering, exact clocks, bounded records, failure publication,
+thread/move lifetime, callback toggles, CLI I/O and common GUI/agent paths. Eleven
+changed C++ files pass clang-format; whitespace checks pass. Useful logs, profiles,
+raw responses and PNGs remain in build/startup-investigation. Full engine/editor/
+game goals remain open; the next measured work is texture preparation, followed by
+remaining loading/compilation, production tools and finished Prism content.

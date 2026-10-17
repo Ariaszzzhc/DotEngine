@@ -104,6 +104,52 @@ TEST_CASE("runtime_project_command_rejects_invalid_budgets_before_opening_resour
   CHECK(Dot::Core::processResources().handles == 0);
 }
 
+TEST_CASE("runtime_profile_options_reject_malformed_flags_and_bad_outputs_without_windows") {
+  Directory directory;
+  const std::vector<std::vector<std::string>> malformed{
+      {"--profile"},
+      {"--profile", ""},
+      {"2", "--profile"},
+      {"2", "--profile", "trace.json", "extra"},
+      {"2", "--unknown", "trace.json"},
+      {"2", "--profile", "one.json", "--profile", "two.json"}};
+
+  for (const auto& tail : malformed) {
+    std::vector<std::string> args{"--project", "missing", "missing"};
+    args.insert(args.end(), tail.begin(), tail.end());
+    auto result = Dot::Core::runProcess({DOT_RUNTIME_EXECUTABLE, args, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 2);
+  }
+
+  for (const auto& args :
+       std::vector<std::vector<std::string>>{{"--profile"},
+                                             {"--profile", ""},
+                                             {"--profile", "one", "--profile", "two"},
+                                             {"--frames", "1", "--frames", "2"},
+                                             {"--unknown", "trace.json"}}) {
+    auto result = Dot::Core::runProcess({DOT_GAME_EXECUTABLE, args, directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 2);
+  }
+
+  create(directory);
+
+  for (const auto& output : {directory.root / "absent/trace.json", directory.root}) {
+    auto result = Dot::Core::runProcess({DOT_RUNTIME_EXECUTABLE,
+                                         {"--project", utf(directory.root / "game folder"),
+                                          DOT_TYPESCRIPT_COMPILER, "2", "--profile", utf(output)},
+                                         directory.root});
+    REQUIRE(result);
+    CHECK(result->exitCode == 1);
+    CHECK(result->standardError.find("profile") != std::string::npos);
+  }
+
+  CHECK_FALSE(std::filesystem::exists(directory.root / "trace.json"));
+  CHECK(Dot::Core::processResources().children == 0);
+  CHECK(Dot::Core::processResources().handles == 0);
+}
+
 TEST_CASE("editor_workspace_commands_validate_before_opening_native_resources") {
   Directory directory;
 

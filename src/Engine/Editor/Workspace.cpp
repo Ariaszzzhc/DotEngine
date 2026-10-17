@@ -3569,10 +3569,27 @@ namespace Dot::Editor {
       if (command == "inspect-profile") {
         Codec::requireFields(parsed, {"command"});
         auto profile = m_renderer->profiling();
-        return profile ? Core::Result<std::string>{Json{{"ok", true},
-                                                        {"profile", profilingJson(*profile, true)}}
-                                                       .dump()}
-                       : std::unexpected(profile.error());
+        auto application = applicationProfileStatus(true);
+
+        if (!profile || !application) {
+          return std::unexpected(profile ? application.error() : profile.error());
+        }
+
+        return Json{{"ok", true},
+                    {"profile", profilingJson(*profile, true)},
+                    {"application", std::move(*application)}}
+            .dump();
+      }
+
+      if (command == "set-application-profiling") {
+        Codec::requireFields(parsed, {"command", "enabled"});
+
+        if (!parsed["enabled"].is_boolean()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Profiling enabled must be boolean");
+        }
+
+        auto changed = m_application->setProfiling(parsed["enabled"].get<bool>());
+        return changed ? execute("{\"command\":\"inspect\"}") : std::unexpected(changed.error());
       }
 
       if (m_animationPreview && command != "inspect" && command != "close" && command != "set-theme"
@@ -5047,14 +5064,16 @@ namespace Dot::Editor {
       }
 
       auto input = inputStatus();
+      auto applicationProfile = applicationProfileStatus(false);
 
-      if (!input) {
-        return std::unexpected(input.error());
+      if (!input || !applicationProfile) {
+        return std::unexpected(input ? applicationProfile.error() : input.error());
       }
 
       return Json{
           {"focused", *focused},
           {"input", std::move(*input)},
+          {"applicationProfiling", std::move(*applicationProfile)},
           {"pendingInspector", pendingInspector()},
           {"pendingEnvironment", pendingEnvironment()},
           {"environmentDraft", m_environmentDraft},
@@ -5486,6 +5505,18 @@ namespace Dot::Editor {
     auto profileStatus() const -> Json {
       auto profile = m_renderer->profiling();
       return profile ? profilingJson(*profile, false) : errorJson(profile.error());
+    }
+
+    auto applicationProfileStatus(bool history) const -> Core::Result<Json> {
+      auto profile = m_application->profiling();
+
+      if (!profile) {
+        return std::unexpected(profile.error());
+      }
+
+      auto encoded = Core::encodeApplicationProfiling(*profile, history);
+      return encoded ? Core::Result<Json>{Codec::parseJson(*encoded)}
+                     : std::unexpected(encoded.error());
     }
 
     auto viewStatus() const -> Json {
@@ -6799,6 +6830,79 @@ namespace Dot::Editor {
     /** Native controls and agent requests share the saved document transaction.
      * 原生控件与 agent 请求共用可保存的文档事务，未应用草稿不会悄悄丢失。 */
     auto renderingPanel() -> void {
+      auto applicationProfile = m_application->profiling();
+
+      if (!applicationProfile) {
+        ImGui::TextWrapped("Application profiling: %s", applicationProfile.error().message.c_str());
+      } else {
+        bool enabled = applicationProfile->enabled;
+
+        if (ImGui::Checkbox("Profile application frames", &enabled)) {
+          sessionAction({{"command", "set-application-profiling"}, {"enabled", enabled}});
+          applicationProfile = m_application->profiling();
+        }
+
+        if (applicationProfile && applicationProfile->enabled) {
+          ImGui::TextWrapped(
+              "Frame wall time includes loading, GUI and GPU waits; "
+              "excludes process setup and idle time.");
+
+          if (!applicationProfile->frames.empty()) {
+            const auto& frame = applicationProfile->frames.back();
+            ImGui::Text("Step %llu: %.3f ms", static_cast<unsigned long long>(frame.frame.index),
+                        static_cast<double>(frame.totalNanoseconds) / 1e6);
+            const auto simulation = frame.fixedNanoseconds || frame.updateNanoseconds
+                                        ? std::optional(frame.fixedNanoseconds.value_or(0)
+                                                        + frame.updateNanoseconds.value_or(0))
+                                        : std::nullopt;
+            const std::array phases{frame.eventsNanoseconds, frame.prepareNanoseconds, simulation,
+                                    frame.renderNanoseconds};
+            constexpr std::array labels{"Events", "Input / commands", "Game / animation",
+                                        "Rendering / GUI"};
+
+            for (std::size_t index = 0; index < phases.size(); ++index) {
+              if (phases[index]) {
+                ImGui::Text("%s: %.3f ms", labels[index],
+                            static_cast<double>(*phases[index]) / 1e6);
+              } else {
+                ImGui::Text("%s: no callback", labels[index]);
+              }
+            }
+
+            if (frame.error) {
+              ImGui::TextWrapped("Failed step: %s", frame.error->message.c_str());
+            }
+
+            std::vector<float> history;
+
+            for (const auto& value : applicationProfile->frames) {
+              history.push_back(static_cast<float>(value.totalNanoseconds) / 1e6F);
+            }
+
+            ImGui::TextUnformatted("Application frame (ms)");
+            ImGui::PlotLines("##application-profile", history.data(),
+                             static_cast<int>(history.size()), 0, nullptr, 0,
+                             std::numeric_limits<float>::max(),
+                             {-std::numeric_limits<float>::min(), 64});
+          }
+
+          if (applicationProfile->slowest) {
+            const auto& slowest = *applicationProfile->slowest;
+            ImGui::TextWrapped("Slowest since enable: step %llu, %.3f ms",
+                               static_cast<unsigned long long>(slowest.frame.index),
+                               static_cast<double>(slowest.totalNanoseconds) / 1e6);
+          }
+
+          if (applicationProfile->longestInterval) {
+            const auto& interval = applicationProfile->longestInterval->frame;
+            ImGui::TextWrapped("Longest frame interval %.3f ms%s",
+                               static_cast<double>(interval.elapsed.count()) / 1e6,
+                               interval.paused ? " (paused)" : "");
+          }
+        }
+      }
+
+      ImGui::Separator();
       auto profile = m_renderer->profiling();
 
       if (!profile) {
@@ -10314,7 +10418,7 @@ namespace Dot::Editor {
 
         return {};
       };
-      callbacks.render = [&](const auto& frame) -> Core::Result<void> {
+      callbacks.updateFrame = [&](const auto& frame) -> Core::Result<void> {
         if (playing() && m_play->stats()->state == PlayState::Running) {
           auto advanced = m_play->advance(m_gameInput, frame.elapsed, m_pointerCaptured);
           auto remembered = rememberPlayFrame();
@@ -10349,6 +10453,9 @@ namespace Dot::Editor {
           }
         }
 
+        return {};
+      };
+      callbacks.render = [&](const auto& frame) -> Core::Result<void> {
         if (m_assetRefresh) {
           auto cleared = m_drawing->clearCache();
           auto invalidated = m_skeleton.invalidateAssets();

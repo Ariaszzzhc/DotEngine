@@ -880,6 +880,12 @@ The corresponding strict mailbox operations are:
 {"command":"set-profiling","enabled":false}
 ```
 
+Application CPU steps are sampled separately with `set-application-profiling`.
+The same `inspect-profile` response includes `application`, and ordinary inspection
+includes `workspace.applicationProfiling`. Window → Rendering provides Profile
+application frames through that same operation. See [native frame diagnostics](Profiling.md)
+for phase boundaries, bounded history/hitch summaries and standalone `--profile` output.
+
 `enabled` must be boolean and unknown fields fail. Both operations remain available
 during transform/animation inspection. The standard `workspace.view.profiling`
 snapshot includes capability, adapter/backend, session, sample counts and latest

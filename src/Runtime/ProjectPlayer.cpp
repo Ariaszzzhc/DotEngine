@@ -44,6 +44,38 @@ namespace Dot::Runtime {
     auto execute(const Project::Project* project, const Script::TypeScriptCompiler* compiler,
                  const Project::GamePackage* game, const PlayerOptions& options)
         -> Core::Result<void> {
+      std::optional<Core::FileSystem> profileFiles;
+      std::filesystem::path profileName;
+
+      if (options.profile) {
+        std::error_code error;
+        const auto absolute = std::filesystem::absolute(*options.profile, error);
+
+        if (error || absolute.filename().empty()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid application profile path");
+        }
+
+        auto files = Core::FileSystem::open(absolute.parent_path());
+        auto resolved = files ? files->resolve(absolute.filename())
+                              : Core::Result<std::filesystem::path>{std::unexpected(files.error())};
+
+        if (!resolved) {
+          return Core::fail(resolved.error().code,
+                            "Prepare application profile: " + resolved.error().message);
+        }
+
+        const auto status = std::filesystem::symlink_status(*resolved, error);
+
+        if ((error && error != std::errc::no_such_file_or_directory)
+            || (std::filesystem::exists(status) && !std::filesystem::is_regular_file(status))) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Application profile output must be a regular file");
+        }
+
+        profileFiles = std::move(*files);
+        profileName = absolute.filename();
+      }
+
       auto description = game ? game->description() : project->description();
       auto files = game ? game->files() : project->files();
 
@@ -84,6 +116,14 @@ namespace Dot::Runtime {
 
       if (!application) {
         return std::unexpected(application.error());
+      }
+
+      if (profileFiles) {
+        auto enabled = application->setProfiling(true);
+
+        if (!enabled) {
+          return enabled;
+        }
       }
 
       auto text = application->window().setTextInput(true);
@@ -291,6 +331,22 @@ namespace Dot::Runtime {
       }();
       auto closed = session->close();
 
+      if (profileFiles) {
+        auto profile = application->profiling();
+        auto encoded = profile ? Core::encodeApplicationProfiling(*profile)
+                               : Core::Result<std::string>{std::unexpected(profile.error())};
+        auto saved = encoded ? profileFiles->writeTextAtomic(profileName, *encoded)
+                             : Core::Result<void>{std::unexpected(encoded.error())};
+
+        if (!saved) {
+          std::println(stderr, "Save application profile: {}", saved.error().message);
+
+          if (run && closed) {
+            return std::unexpected(saved.error());
+          }
+        }
+      }
+
       if (!closed) {
         std::println(stderr, "Project shutdown: {}", closed.error().message);
       } else {
@@ -320,7 +376,7 @@ namespace Dot::Runtime {
   }
 
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
-                   std::size_t frameBudget) -> int {
+                   std::size_t frameBudget, std::optional<std::filesystem::path> profile) -> int {
     auto project = Project::Project::open(root);
 
     if (!project) {
@@ -335,7 +391,8 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = runProject(*project, *compiler, {.frames = frameBudget});
+    auto played
+        = runProject(*project, *compiler, {.frames = frameBudget, .profile = std::move(profile)});
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);
@@ -345,7 +402,8 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto playGame(const std::filesystem::path& root, std::size_t frames) -> int {
+  auto playGame(const std::filesystem::path& root, std::size_t frames,
+                std::optional<std::filesystem::path> profile) -> int {
     auto files = Core::FileSystem::open(root);
     auto game = files ? Project::GamePackage::open(*files)
                       : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
@@ -355,7 +413,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = runGame(*game, {.frames = frames});
+    auto played = runGame(*game, {.frames = frames, .profile = std::move(profile)});
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);

@@ -2,8 +2,11 @@
 #include <cstddef>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <print>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #if defined(_WIN32)
 #  include <SDL3/SDL_main.h>
@@ -22,21 +25,22 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
 
-    const bool game = (argc == 3 || argc == 4) && std::string_view(argv[1]) == "--game";
-    const bool project = (argc == 4 || argc == 5) && std::string_view(argv[1]) == "--project";
+    const bool game = argc >= 3 && std::string_view(argv[1]) == "--game";
+    const bool project = argc >= 4 && std::string_view(argv[1]) == "--project";
 
     if (!game && !project) {
       std::println(stderr,
-                   "Usage: DotRuntime --version | --game <package> [frames] | "
-                   "--project <root> <compiler> [frames]");
+                   "Usage: DotRuntime --version | --game <package> [frames] [--profile <file>] | "
+                   "--project <root> <compiler> [frames] [--profile <file>]");
       return 2;
     }
 
-    const int budgetIndex = game ? 3 : 4;
+    int argument = game ? 3 : 4;
     std::size_t frames = 0;
+    std::optional<std::filesystem::path> profile;
 
-    if (argc > budgetIndex) {
-      const std::string_view value(argv[budgetIndex]);
+    if (argument < argc && std::string_view(argv[argument]) != "--profile") {
+      const std::string_view value(argv[argument++]);
       const auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
 
       if (value.empty() || parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size()) {
@@ -46,8 +50,19 @@ auto main(int argc, char** argv) -> int {
       }
     }
 
-    return game ? Dot::Runtime::playGame(argv[2], frames)
-                : Dot::Runtime::playProject(argv[2], argv[3], frames);
+    if (argument < argc) {
+      if (argc - argument != 2 || std::string_view(argv[argument]) != "--profile"
+          || std::string_view(argv[argument + 1]).empty()) {
+        std::println(stderr, "Expected --profile <file> after the frame budget");
+        return 2;
+      }
+
+      const std::string_view destination(argv[argument + 1]);
+      profile = std::filesystem::path(std::u8string(destination.begin(), destination.end()));
+    }
+
+    return game ? Dot::Runtime::playGame(argv[2], frames, std::move(profile))
+                : Dot::Runtime::playProject(argv[2], argv[3], frames, std::move(profile));
   } catch (const std::exception& error) {
     std::println(stderr, "DotEngine failed: {}", error.what());
     return 1;

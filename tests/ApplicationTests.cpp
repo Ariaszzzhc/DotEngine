@@ -26,6 +26,7 @@ TEST_CASE("application.close_request_can_be_deferred_and_errors_stop_dispatch") 
   ApplicationConfig config;
   config.window = {"Close test", 320, 240, true, true, false};
   auto application = Application::create(config).value();
+  REQUIRE(application.setProfiling(true));
   LoopCallbacks callbacks;
   unsigned closes = 0;
   unsigned renders = 0;
@@ -42,6 +43,7 @@ TEST_CASE("application.close_request_can_be_deferred_and_errors_stop_dispatch") 
   CHECK(application.running());
   CHECK(closes == 1);
   CHECK(renders == 1);
+  CHECK(application.profiling()->frames.back().renderNanoseconds.has_value());
   callbacks.acceptClose
       = []() -> Result<bool> { return fail(ErrorCode::External, "close handler failed"); };
   REQUIRE(Dot::Platform::requestQuit());
@@ -50,6 +52,13 @@ TEST_CASE("application.close_request_can_be_deferred_and_errors_stop_dispatch") 
   CHECK(failed.error().message == "close handler failed");
   CHECK_FALSE(application.running());
   CHECK(renders == 1);
+  const auto profile = application.profiling().value();
+  REQUIRE(profile.frames.size() == 2);
+  CHECK(profile.frames.back().eventsNanoseconds.has_value());
+  CHECK_FALSE(profile.frames.back().prepareNanoseconds);
+  CHECK_FALSE(profile.frames.back().renderNanoseconds);
+  REQUIRE(profile.frames.back().error);
+  CHECK(profile.frames.back().error->message == "close handler failed");
 }
 
 namespace {
@@ -86,6 +95,13 @@ TEST_CASE("application.fixed_and_frame_callback_order") {
     calls.emplace_back("update");
     return {};
   };
+  callbacks.updateFrame = [&](const FrameState& frame) -> Result<void> {
+    CHECK(frame.elapsed == 25ms);
+    CHECK(frame.updates == 2);
+    CHECK(frame.interpolation == 0.5);
+    calls.emplace_back("frame-update");
+    return {};
+  };
 
   callbacks.render = [&](const FrameState& frame) -> Result<void> {
     CHECK(frame.index == 0);
@@ -99,7 +115,42 @@ TEST_CASE("application.fixed_and_frame_callback_order") {
   const auto frame = application.step(25ms, callbacks);
   REQUIRE(frame.has_value());
   CHECK(frame->running);
-  CHECK(calls == std::vector<std::string>{"fixed", "fixed", "update", "render"});
+  CHECK(calls == std::vector<std::string>{"fixed", "fixed", "frame-update", "update", "render"});
+}
+
+TEST_CASE("application.exact_frame_updates_preserve_nanoseconds_and_stop_boundaries") {
+  for (const bool failure : {false, true}) {
+    auto application = Application::create(testConfig()).value();
+    REQUIRE(application.setProfiling(true));
+    const auto elapsed = 27ms + 3ns;
+    LoopCallbacks callbacks;
+    callbacks.updateFrame = [&](const FrameState& frame) -> Result<void> {
+      CHECK(frame.elapsed == elapsed);
+      CHECK(frame.updates == 2);
+
+      if (failure) {
+        return fail(ErrorCode::Io, "Frame simulation failed");
+      }
+
+      application.stop();
+      return {};
+    };
+    callbacks.update = [](double) -> Result<void> {
+      FAIL("Variable callback after exact frame stop/failure");
+      return {};
+    };
+    callbacks.render = [](const FrameState&) -> Result<void> {
+      FAIL("Render after exact frame stop/failure");
+      return {};
+    };
+    const auto result = application.step(elapsed, callbacks);
+    CHECK(result.has_value() == !failure);
+    const auto profile = application.profiling().value();
+    REQUIRE(profile.frames.size() == 1);
+    CHECK(profile.frames.back().updateNanoseconds.has_value());
+    CHECK_FALSE(profile.frames.back().renderNanoseconds);
+    CHECK(profile.frames.back().error.has_value() == failure);
+  }
 }
 
 TEST_CASE("application.bounded_catch_up") {
@@ -119,6 +170,173 @@ TEST_CASE("application.bounded_catch_up") {
   CHECK(frame->interpolation == 0.5);
 }
 
+TEST_CASE("application.profiling_measures_real_phases_and_preserves_simulation") {
+  auto application = Application::create(testConfig()).value();
+  CHECK_FALSE(application.profiling()->enabled);
+  REQUIRE(application.setProfiling(true));
+  LoopCallbacks callbacks;
+  callbacks.prepareFrame = [](const auto&) -> Result<void> { return {}; };
+  callbacks.fixedUpdate = [](double) -> Result<void> { return {}; };
+  callbacks.update = [](double) -> Result<void> { return {}; };
+  callbacks.render = [](const FrameState&) -> Result<void> { return {}; };
+  REQUIRE(application.step(25ms, callbacks));
+  const auto profile = application.profiling().value();
+  REQUIRE(profile.frames.size() == 1);
+  CHECK(profile.sampled == 1);
+  const auto& frame = profile.frames[0];
+  CHECK(frame.frame.index == 0);
+  CHECK(frame.frame.elapsed == 25ms);
+  CHECK(frame.frame.updates == 2);
+  CHECK(frame.frame.dropped == 0ns);
+  CHECK(frame.frame.running);
+  CHECK_FALSE(frame.frame.paused);
+  CHECK_FALSE(frame.error);
+  REQUIRE(frame.eventsNanoseconds);
+  REQUIRE(frame.prepareNanoseconds);
+  REQUIRE(frame.fixedNanoseconds);
+  REQUIRE(frame.updateNanoseconds);
+  REQUIRE(frame.renderNanoseconds);
+  CHECK(*frame.eventsNanoseconds + *frame.prepareNanoseconds + *frame.fixedNanoseconds
+            + *frame.updateNanoseconds + *frame.renderNanoseconds
+        <= frame.totalNanoseconds);
+  REQUIRE(application.setProfiling(true));
+  CHECK(application.profiling()->sampled == 1);
+  CHECK(application.profiling()->session == profile.session);
+  REQUIRE(application.step(105ms));
+  const auto latest = application.profiling()->frames.back();
+  CHECK(latest.frame.updates == 3);
+  CHECK(latest.frame.dropped == 80ms);
+  CHECK(latest.eventsNanoseconds.has_value());
+  CHECK_FALSE(latest.prepareNanoseconds);
+  CHECK_FALSE(latest.fixedNanoseconds);
+  CHECK_FALSE(latest.updateNanoseconds);
+  CHECK_FALSE(latest.renderNanoseconds);
+}
+
+TEST_CASE("application.profiling_retains_failure_boundaries_and_owned_errors") {
+  for (int phase = 0; phase < 5; ++phase) {
+    auto application = Application::create(testConfig()).value();
+    REQUIRE(application.setProfiling(true));
+    LoopCallbacks callbacks;
+    callbacks.prepareFrame = [=](const auto&) -> Result<void> {
+      return phase == 0 ? fail(ErrorCode::Io, "Input publication failed") : Result<void>{};
+    };
+    callbacks.fixedUpdate = [=](double) -> Result<void> {
+      return phase == 1 ? fail(ErrorCode::External, "Physics failed") : Result<void>{};
+    };
+    callbacks.update = [=](double) -> Result<void> {
+      if (phase == 2) {
+        throw std::runtime_error("Script callback threw");
+      }
+
+      return {};
+    };
+    callbacks.render = [=](const FrameState&) -> Result<void> {
+      if (phase == 4) {
+        throw 42;
+      }
+
+      return fail(ErrorCode::Unavailable, "Surface failed");
+    };
+    const auto result = application.step(10ms, callbacks);
+    REQUIRE_FALSE(result);
+    auto profile = application.profiling().value();
+    REQUIRE(profile.frames.size() == 1);
+    const auto& frame = profile.frames[0];
+    REQUIRE(frame.error);
+    CHECK(frame.error->code == result.error().code);
+    CHECK(frame.error->message == result.error().message);
+    CHECK_FALSE(frame.frame.running);
+    CHECK(frame.prepareNanoseconds.has_value());
+    CHECK(frame.fixedNanoseconds.has_value() == (phase >= 1));
+    CHECK(frame.updateNanoseconds.has_value() == (phase >= 2));
+    CHECK(frame.renderNanoseconds.has_value() == (phase >= 3));
+    REQUIRE(application.step(1s));
+    CHECK(application.profiling()->sampled == 1);
+    REQUIRE(application.setProfiling(false));
+    CHECK(application.profiling()->frames.empty());
+    CHECK(profile.frames[0].error->message == result.error().message);
+  }
+}
+
+TEST_CASE("application.profiling_history_keeps_the_slowest_step_after_eviction") {
+  auto application = Application::create(testConfig()).value();
+  REQUIRE(application.setProfiling(true));
+  LoopCallbacks callbacks;
+  callbacks.render = [](const FrameState&) -> Result<void> {
+    std::this_thread::sleep_for(5ms);
+    return {};
+  };
+  REQUIRE(application.step(105ms, callbacks));
+  auto maximum = application.profiling()->frames.back();
+
+  for (int frame = 1; frame < 140; ++frame) {
+    REQUIRE(application.step(1ms));
+    auto latest = application.profiling()->frames.back();
+
+    if (latest.totalNanoseconds > maximum.totalNanoseconds) {
+      maximum = latest;
+    }
+  }
+
+  auto profile = application.profiling().value();
+  CHECK(profile.sampled == 140);
+  REQUIRE(profile.frames.size() == 120);
+  CHECK(profile.frames.front().frame.index == 20);
+  CHECK(profile.frames.back().frame.index == 139);
+  REQUIRE(profile.slowest);
+  CHECK(profile.slowest->frame.index == maximum.frame.index);
+  CHECK(profile.slowest->totalNanoseconds == maximum.totalNanoseconds);
+  REQUIRE(profile.longestInterval);
+  CHECK(profile.longestInterval->frame.index == 0);
+  CHECK(profile.longestInterval->frame.elapsed == 105ms);
+  CHECK(profile.longestInterval->frame.dropped == 70ms);
+  REQUIRE(application.setProfiling(false));
+  CHECK(application.profiling()->sampled == 0);
+  CHECK_FALSE(application.profiling()->slowest);
+  REQUIRE(application.setProfiling(true));
+  CHECK(application.profiling()->session > profile.session);
+  CHECK(application.profiling()->frames.empty());
+  CHECK(profile.frames.size() == 120);
+}
+
+TEST_CASE("application.profiling_callback_toggles_pause_move_and_thread_guards") {
+  auto application = Application::create(testConfig(true)).value();
+  LoopCallbacks callbacks;
+  callbacks.prepareFrame = [&](const auto&) { return application.setProfiling(true); };
+  REQUIRE(application.step(10ms, callbacks));
+  CHECK(application.profiling()->sampled == 0);
+  REQUIRE(application.step(10ms, callbacks));
+  CHECK(application.profiling()->sampled == 1);
+  callbacks.render = [&](const auto&) -> Result<void> {
+    REQUIRE(application.setProfiling(false));
+    return application.setProfiling(true);
+  };
+  REQUIRE(application.step(10ms, callbacks));
+  CHECK(application.profiling()->sampled == 0);
+  callbacks.render = [](const auto&) -> Result<void> { return {}; };
+  windowEvent(application.window().id(), SDL_EVENT_WINDOW_FOCUS_LOST);
+  REQUIRE(application.step(50ms, callbacks));
+  const auto paused = application.profiling()->frames.back();
+  CHECK(paused.frame.paused);
+  CHECK_FALSE(paused.fixedNanoseconds);
+  CHECK_FALSE(paused.updateNanoseconds);
+  CHECK(paused.renderNanoseconds.has_value());
+  CHECK_FALSE(application.step(-1ns));
+  CHECK(application.profiling()->sampled == 1);
+  std::thread foreign([&] {
+    CHECK_FALSE(application.setProfiling(false));
+    CHECK_FALSE(application.profiling());
+  });
+  foreign.join();
+  auto moved = std::move(application);
+  CHECK_FALSE(application.profiling());
+  CHECK_FALSE(application.setProfiling(true));
+  CHECK(moved.profiling()->sampled == 1);
+  REQUIRE(moved.setProfiling(false));
+  REQUIRE(moved.setProfiling(false));
+}
+
 TEST_CASE("application.focus_pause_does_not_accumulate_time") {
   auto application = Application::create(testConfig(true)).value();
   REQUIRE(Dot::Platform::pollEvents().has_value());
@@ -127,6 +345,11 @@ TEST_CASE("application.focus_pause_does_not_accumulate_time") {
   LoopCallbacks callbacks;
   callbacks.fixedUpdate = [&](double) -> Result<void> {
     ++updates;
+    return {};
+  };
+
+  callbacks.updateFrame = [](const FrameState&) -> Result<void> {
+    FAIL("Exact frame update while paused");
     return {};
   };
 
@@ -142,6 +365,7 @@ TEST_CASE("application.focus_pause_does_not_accumulate_time") {
   CHECK(frame->updates == 0);
   CHECK(updates == 0);
   CHECK(renders == 1);
+  callbacks.updateFrame = {};
   windowEvent(application.window().id(), SDL_EVENT_WINDOW_FOCUS_GAINED);
   frame = application.step(10ms, callbacks);
   REQUIRE(frame.has_value());

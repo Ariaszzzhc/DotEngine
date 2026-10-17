@@ -5,6 +5,9 @@ module;
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 export module Dot.Core.Application;
 
@@ -47,7 +50,46 @@ export namespace Dot::Core {
      * 对原生退出/关闭请求返回 false 以延后，例如未保存文档对话框；失败停止循环，
      * 未提供处理器时接受关闭。 */
     std::function<Result<bool>()> acceptClose;
+    /** Once after fixed updates and before update/render, on unpaused frames.
+     * Provides the exact supplied duration and completed fixed-step metadata for
+     * clients with an independent simulation clock. Stop/failure skips later calls.
+     * 非暂停帧在固定更新后、逐帧更新/渲染前调用，提供精确传入时长和已完成固定步元数据，
+     * 供独立模拟时钟使用；停止/失败会跳过后续回调。 */
+    std::function<Result<void>(const FrameState&)> updateFrame;
   };
+
+  /** CPU wall intervals for one actual step; absent phases did not execute.
+   * Render includes resource preparation, GUI and any synchronous driver waits.
+   * Elapsed is supplied simulation time, not this step's measured cost. No GPU
+   * duration, process CPU utilization or initialization outside step is implied.
+   * 一次真实 step 的 CPU 墙钟区间，未执行阶段为空；渲染包含资源准备、GUI 和同步驱动
+   * 等待。elapsed 是传入的模拟时间，并非本次开销；不代表 GPU 时间、CPU 占用或 step 外初始化。 */
+  struct ApplicationFrameTiming {
+    FrameState frame{};
+    std::uint64_t totalNanoseconds{};
+    std::optional<std::uint64_t> eventsNanoseconds;
+    std::optional<std::uint64_t> prepareNanoseconds;
+    std::optional<std::uint64_t> fixedNanoseconds;
+    std::optional<std::uint64_t> updateNanoseconds;
+    std::optional<std::uint64_t> renderNanoseconds;
+    std::optional<Error> error;
+  };
+
+  struct ApplicationProfiling {
+    bool enabled{};
+    std::uint64_t session{};
+    std::uint64_t sampled{};
+    std::vector<ApplicationFrameTiming> frames;
+    std::optional<ApplicationFrameTiming> slowest;
+    std::optional<ApplicationFrameTiming> longestInterval;
+  };
+
+  /** Owned JSON with decimal-string identities/nanoseconds and explicit null
+   * phases. Compact mode retains latest/slowest/longest-input-interval samples.
+   * 拥有独立 JSON，身份/纳秒采用十进制字符串，未执行阶段为
+   * null；精简模式保留最新、最慢及最长传入间隔帧。 */
+  [[nodiscard]] auto encodeApplicationProfiling(const ApplicationProfiling& profile,
+                                                bool history = true) -> Result<std::string>;
 
   /**
    * Main-thread application loop with fixed simulation and per-frame callbacks.
@@ -78,6 +120,14 @@ export namespace Dot::Core {
     [[nodiscard]] auto window() const -> const Platform::Window&;
     [[nodiscard]] auto input() const -> const Platform::InputState&;
     [[nodiscard]] auto events() -> Signal<Platform::Event>&;
+    /** Opt-in bounded diagnostics, on the owner thread. Keep the last 120 steps,
+     * slowest step and longest supplied interval, including callback failures. Repeating
+     * the current value preserves history; disabling releases it. A toggle inside
+     * a callback invalidates that in-progress sample without borrowing dead state.
+     * 所有者线程可选诊断，保留最近 120 次 step、最慢帧及最长传入间隔帧，含回调失败；同值
+     * 设置保留历史，关闭释放数据。回调内切换丢弃当前样本，不借用已释放状态。 */
+    [[nodiscard]] auto setProfiling(bool enabled) -> Result<void>;
+    [[nodiscard]] auto profiling() const -> Result<ApplicationProfiling>;
 
   private:
     struct Impl;

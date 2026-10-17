@@ -28,6 +28,13 @@ requirements remain:
 | Example experience | Feature Lab and Prism Relay's rigged character, native traversal, sphere-swept shoulder camera and imported industrial PBR equipment/ventilation | Finished realistic sci-fi character/environment art, broader workflow and performance evidence |
 | Production evidence | Focused headless behavior/GPU tests and past macOS product checks | Real project workflow, stress/performance and shipping evidence beyond test counts |
 
+Native application CPU diagnostics now expose actual event/prepare/fixed/update/render
+step envelopes through the editor and player `--profile` output. Retained slowest
+steps and longest supplied intervals preserve startup/hitch evidence after history
+eviction. These measurements exclude process initialization/teardown and idle waits;
+they do not complete the remaining performance, streaming or background-work goals.
+See [profiling scope](Profiling.md).
+
 Prioritize complete usable
 editor/game workflows and clear engine contracts. Do not accumulate one-off visual
 acceptance executables, procedural example-generation scripts or staged test counts

@@ -4,8 +4,10 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <memory_resource>
+#include <nlohmann/json.hpp>
 #include <source_location>
 #include <stdexcept>
 #include <string>
@@ -13,6 +15,7 @@
 #include <vector>
 
 import Dot.Core;
+import Dot.Core.Application;
 
 using namespace Dot::Core;
 using namespace std::chrono_literals;
@@ -21,6 +24,46 @@ TEST_CASE("core.result.success") {
   Result<int> result{42};
   REQUIRE(result.has_value());
   CHECK(*result == 42);
+}
+
+TEST_CASE("core.application_profile_json_preserves_exact_metadata_and_optional_phases") {
+  using Json = nlohmann::json;
+  ApplicationProfiling profile;
+  const auto empty = Json::parse(encodeApplicationProfiling(profile).value());
+  CHECK(empty["session"] == "0");
+  CHECK(empty["latest"].is_null());
+  CHECK(empty["slowest"].is_null());
+  CHECK(empty["frames"].empty());
+  profile.enabled = true;
+  profile.session = std::numeric_limits<std::uint64_t>::max();
+  profile.sampled = profile.session;
+  ApplicationFrameTiming frame;
+  frame.frame.index = profile.session;
+  frame.frame.updates = std::numeric_limits<std::size_t>::max();
+  frame.frame.elapsed = 1s;
+  frame.frame.dropped = 1ms;
+  frame.totalNanoseconds = profile.session;
+  frame.eventsNanoseconds = 0;
+  frame.renderNanoseconds = profile.session;
+  frame.error = Error{ErrorCode::Io, "读取 \"asset\" failed", std::source_location::current()};
+  profile.frames = {frame};
+  profile.slowest = frame;
+  profile.longestInterval = frame;
+  const auto full = Json::parse(encodeApplicationProfiling(profile).value());
+  CHECK(full["session"] == "18446744073709551615");
+  CHECK(full["latest"]["frame"] == full["session"]);
+  CHECK(full["latest"]["updates"] == "18446744073709551615");
+  CHECK(full["latest"]["eventsNanoseconds"] == "0");
+  CHECK(full["latest"]["fixedNanoseconds"].is_null());
+  CHECK(full["latest"]["elapsedNanoseconds"] == "1000000000");
+  CHECK(full["latest"]["droppedNanoseconds"] == "1000000");
+  CHECK(full["latest"]["renderNanoseconds"] == full["session"]);
+  CHECK(full["latest"]["error"]["message"] == frame.error->message);
+  CHECK(full["latest"] == full["slowest"]);
+  CHECK(full["latest"] == full["longestInterval"]);
+  const auto compact = Json::parse(encodeApplicationProfiling(profile, false).value());
+  CHECK_FALSE(compact.contains("frames"));
+  CHECK(compact["latest"] == full["frames"][0]);
 }
 
 TEST_CASE("core.result.failure_context") {
