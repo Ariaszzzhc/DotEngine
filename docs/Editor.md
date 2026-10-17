@@ -1847,9 +1847,9 @@ startup after irreversible replacement. The error owns a code/message. The last
 16 request results survive scene changes; new Play creates an independent sequence.
 
 A queued load begins owned CPU resource preflight at the end of the variable update.
-Saved scene loading, graphics/image/HDR checks and initial skin validation run on a
-worker's independent scene; the old game continues input, scripts, physics,
-animation/audio and rendering while the request is Loading. The owner later
+Saved scene loading, graphics/image/HDR checks, initial skin validation and animation
+library file decoding run on a worker's independent scene; the old game continues
+input, scripts, physics, animation/audio and rendering while the request is Loading. The owner later
 rehydrates exactly the validated scene and prepares services before retiring the
 old game. Only one cut is processed per update; a target Start callback may queue
 the following cut for a later update. `GameSession::pollScene` can consume an
@@ -1865,6 +1865,17 @@ this is not a filesystem-wide snapshot against concurrent edits. Close/fault can
 uncommitted work and retires its flow record; destruction joins without detaching.
 Cancellation is cooperative: a decoder or bounded skin-validation pass can finish
 before the join completes.
+
+The preparation result also owns immutable initial ClipAsset handles, shared by exact
+authored path. Reference accounting preserves the existing scene limits of 1024 clip
+references, 30000 channels and one million keys, including repeated references to
+shared clips. Only initially enabled libraries load. The owner requires complete
+prepared coverage and keeps normal target/binding, authority and sampling validation;
+there is no missing-clip disk fallback. Initial preparation caches are then released
+while live players own their libraries. Unchanged players keep those values/clocks;
+later description replacement reads current files as before. No worker World/player
+handle crosses threads. Initial game/Play startup, runtime description reloads and
+remaining native/script service work still execute on the owner.
 
 After old Stop, the retired native audio requests real worker teardown and stays
 in one owned retirement slot. Old realm/physics/animation are released on the

@@ -10734,3 +10734,84 @@ No distribution archive is produced. Formatting/whitespace and ownership/error/
 platform/coverage reviews pass before commit. Remaining resource/animation/service
 preparation, final wrapped-panel sight/pointer acceptance, Prism checkpoint workflow,
 final art, populated-game production evidence and the overall goal remain unfinished.
+
+## 2026-10-17 — Prepared initial animation libraries
+
+The previous real Prism Relay cut sampled animation JSON decoding in the owner
+Update. Extend the existing ScenePreparation job to decode initially enabled clip
+libraries alongside graphics/skin preflight. Its immutable result owns ClipAsset
+values deduplicated by exact authored path, with strict path/file checks and real
+codec errors. Preserve the existing scene limits: 1024 references, 30000 channels
+and one million keys; repeated references count toward aggregate budgets even when
+their immutable data is shared. Cancellation remains cooperative between clips;
+an individual bounded decoder can finish before joining.
+
+Only immutable Clip handles cross threads. The owner reconstructs its own World
+and uses ScenePlayers/AnimationSession::createPrepared, requiring complete initial
+coverage without a disk fallback. Native target, writer/physics authority, binding
+and sampling validation remain intact. Release the preparation lookup after initial
+binding; players retain their libraries for normal play/fades. Later description
+replacement reads current files and preserves real reload failures/recovery. The
+ordinary create(decoded) factory still retains partial draft overrides for preview
+service lifetime. Initial game/Play startup, runtime description reloads and other
+native/script service work remain on the owner. This is not filesystem snapshotting,
+general asset streaming or complete asynchronous scene activation.
+
+Five enduring regressions in existing targets cover cross-thread immutable ownership
+and deduplication, disabled/missing/malformed/case-aliased sources, aggregate shared
+channel accounting, complete prepared coverage, duplicate/unused/invalid inputs,
+the full 1024-reference boundary, caller-handle release, native binding/authority
+rejection and later file-refresh failure/recovery. The real GameSession test replaces
+a scene, advances its native animation, retains unchanged playback after an external
+file change, then faults honestly when a changed description requires that bad file.
+Authoring remains unchanged. No new executable, device-using unit or desktop-window
+automatic test is added.
+
+Focused Debug passes 71/71 in 11.37s. Full Debug passes 1394/1394 in 220.68s;
+Release/NDEBUG passes 1394/1394 in 32.16s. Counts: 426 unit, 968 integration;
+overlapping labels include 225 compiler, 162 offscreen, 37 audio-native, 34 platform
+and 21 process. Builds/tests and actual products run sequentially. Only arm64 macOS
+is executed; the caller's compiler/linker environment remains intact.
+
+The actual Release editor opens the saved editable Prism Relay project, performs
+three cuts and explicitly rejects a target whose last animation file is temporarily
+malformed. The old scope stays running and accepts real W/Space input, ending at
+[-3,1.4277507067,1.3469730616] with observed peak Y 1.4277507067. Restore the exact
+owned resource bytes before retrying; the cut then succeeds. A missing scene also
+fails without commit. Stop returns the exact clean authoring scene; saved/stopped
+PNGs match SHA-256 77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+The existing functional mannequin and industrial scene remain visually unchanged;
+this does not complete the final realistic character/environment art.
+
+Export through the real workspace, relocate the game and physically hide authoring.
+All 115 content files / 66,211,235 bytes match saved sources and the preceding export;
+no TypeScript/map source files ship. One native process performs an externally
+sampled cut; another performs six moving cuts and rejects a missing scene. Controls
+retire and all three owned product processes exit zero. Authoring is physically
+restored, the deliberately changed clip's SHA-256 is restored, and the prior
+persistent checkpoint hash remains unchanged.
+
+The six-second external stack sample, requested at 1ms, observes 12 loadClip samples
+under the ScenePreparation worker and none under the owner. Native audio endpoint
+opening still contributes two owner wait samples. These are sampled observations,
+not exhaustive absence proofs. The native sampled run retains Update 30.980583ms at
+step 117 and Prepare 32.986125ms at 105 after history advances to 454..573; greatest
+total is 44.231958ms, longest supplied interval 45.488167ms. The separate six-cut run
+retains Update 56.973292ms at 138 and Prepare 29.479666ms at 104 after history starts
+at 215; greatest total is 73.766541ms, interval 75.031167ms. The editor records Update
+79.699167ms at 180 after history reaches 550..669. All retained phase peaks bound
+their matching in-history values, with exact full-record identity where present;
+observed history/extrema have no whole-step errors, pauses or fixed-time drops.
+Startup, cache/OS state, moving workload and sampling overhead differ, so these are
+local observations rather than a controlled speedup or FPS claim. Activation spikes
+remain and require further work.
+
+Binary arm64/linkage/hash metadata, complete profiles, commands/receipts/responses,
+transition histories, external stack sample, replay scripts and PNGs remain under
+ignored build/animation-preparation-review. Remove the owned editor/native validation
+copies and compiled helper cache after inspection; retain projects/data/build caches.
+No distribution archive is produced. Formatting/whitespace and ownership/error/
+platform/coverage reviews pass before commit. Desktop lock prevents new human-style
+interaction; final wrapped-panel sight/pointer acceptance remains outstanding.
+Remaining service/startup preparation, Prism checkpoint restoration/feedback, larger
+production workflows, final art and the overall engine goal remain unfinished.

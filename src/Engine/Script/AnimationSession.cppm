@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <span>
 
 export module Dot.Script.AnimationSession;
 
@@ -8,6 +9,7 @@ export import Dot.Script.Host;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.World.Scene;
+import Dot.Animation.ScenePlayers;
 
 export namespace Dot::Script {
   /** Owns native scene players and their shared scene. Callbacks retain service
@@ -21,6 +23,13 @@ export namespace Dot::Script {
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
                                      const Core::FileSystem& files)
         -> Core::Result<AnimationSession>;
+    /** Complete initial decoded libraries, with native validation and no initial
+     * disk fallback. Later description changes retain ordinary file-refresh rules.
+     * 完整初始解码库，保留原生校验且不回退首次磁盘加载；后续描述修改仍按通常规则重读文件。 */
+    [[nodiscard]] static auto createPrepared(std::shared_ptr<World::Scene> scene,
+                                             const Core::FileSystem& files,
+                                             std::span<const Animation::ClipAsset> decoded)
+        -> Core::Result<AnimationSession>;
     AnimationSession(const AnimationSession&) = delete;
     auto operator=(const AnimationSession&) -> AnimationSession& = delete;
     AnimationSession(AnimationSession&&) noexcept;
@@ -32,6 +41,10 @@ export namespace Dot::Script {
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
 
   private:
+    [[nodiscard]] static auto createSession(std::shared_ptr<World::Scene> scene,
+                                            const Core::FileSystem& files,
+                                            std::span<const Animation::ClipAsset> decoded,
+                                            bool prepared) -> Core::Result<AnimationSession>;
     struct Impl;
     explicit AnimationSession(std::shared_ptr<Impl> impl);
     std::shared_ptr<Impl> m_impl;

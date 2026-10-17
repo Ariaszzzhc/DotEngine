@@ -6,6 +6,8 @@
 #include <thread>
 #include <utility>
 
+#include "ScenePreparation.hpp"
+
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
 import Dot.Animation.ScenePlayers;
@@ -165,6 +167,40 @@ TEST_CASE("animation.game_session_saved_clone_fixed_variable_fault_and_close_use
   CHECK(session.stats()->state == Project::SessionState::Faulted);
   REQUIRE(session.close());
   CHECK(session.stats()->state == Project::SessionState::Closed);
+}
+
+TEST_CASE(
+    "animation.scene_replacement_uses_prepared_clips_then_refreshes_runtime_description_edits") {
+  Fixture f;
+  REQUIRE(f.project.saveStartup(*f.scene));
+  REQUIRE(World::saveScene(f.files, "scenes/next.dotscene", *f.scene));
+  const auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto session = Project::GameSession::create(f.project, compiler).value();
+  REQUIRE(session.start());
+  auto old = session.scene().value();
+  auto request = session.requestScene("scenes/next.dotscene").value();
+  REQUIRE(session.update(0));
+  auto completed = Tests::awaitScene(session, request);
+  REQUIRE_MESSAGE(completed, (completed ? "" : completed.error().message));
+  CHECK(completed->failures.empty());
+  REQUIRE(session.sceneRequest(request)->committed);
+  const auto active = session.scene().value();
+  CHECK(active->id() != old->id());
+  auto target = active->findEntity(f.target.value).value();
+  REQUIRE(session.update(.5));
+  CHECK(active->transform(target)->position.x == .5F);
+  REQUIRE(f.files.writeTextAtomic("assets/move.dotanimation", "invalid after initial publication"));
+  REQUIRE(session.update(.25));
+  CHECK(active->transform(target)->position.x == .75F);
+  auto properties = f.properties;
+  properties.speed = 2;
+  REQUIRE(active->setAnimationPlayer(active->findEntity(f.owner.value).value(), properties));
+  const auto pose = active->transform(target).value();
+  CHECK_FALSE(session.update(.25));
+  CHECK(session.stats()->state == Project::SessionState::Faulted);
+  CHECK(active->transform(target)->position == pose.position);
+  REQUIRE(session.close());
+  CHECK(f.scene->transform(f.target)->position.x == 0);
 }
 
 TEST_CASE("animation.scene_player_manual_library_controls_keep_authoring_and_original_rest") {

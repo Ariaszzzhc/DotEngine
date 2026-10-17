@@ -6,6 +6,7 @@ module;
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -155,7 +156,23 @@ namespace Dot::Script {
 
   auto AnimationSession::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& files)
       -> Core::Result<AnimationSession> {
-    auto players = Animation::ScenePlayers::create(std::move(scene), files);
+    return createSession(std::move(scene), files, {}, false);
+  }
+
+  auto AnimationSession::createPrepared(std::shared_ptr<World::Scene> scene,
+                                        const Core::FileSystem& files,
+                                        std::span<const Animation::ClipAsset> decoded)
+      -> Core::Result<AnimationSession> {
+    return createSession(std::move(scene), files, decoded, true);
+  }
+
+  auto AnimationSession::createSession(std::shared_ptr<World::Scene> scene,
+                                       const Core::FileSystem& files,
+                                       std::span<const Animation::ClipAsset> decoded, bool prepared)
+      -> Core::Result<AnimationSession> {
+    auto players = prepared
+                       ? Animation::ScenePlayers::createPrepared(std::move(scene), files, decoded)
+                       : Animation::ScenePlayers::create(std::move(scene), files);
 
     if (!players) {
       return std::unexpected(players.error());

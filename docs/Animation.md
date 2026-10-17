@@ -345,6 +345,19 @@ physics authority checks still apply. Copies of the shared clip handles are reta
 no temporary resource files or source writes are used. Existing default callers still
 load their actual disk assets.
 
+GameSession scene replacement decodes complete initially enabled libraries on its
+owned ScenePreparation worker and transfers immutable Clip handles, not World or
+player handles. ScenePlayers::createPrepared and AnimationSession::createPrepared
+require every enabled initial library asset, with no disk fallback. They keep native
+target/authority and aggregate checks, then drop the temporary decoded lookup after
+initial binding. Live players retain all library handles for normal playback/fades.
+Subsequent authored-description replacement loads current files, preserving refresh
+and recoverable rebind behavior. The existing scene bounds remain 1024 references,
+30000 channels and one million keys; shared files count once in storage but every
+reference counts toward library budgets. This does not move initial session startup
+or runtime description reloads off the owner. The ordinary create(decoded) factory
+continues to retain explicit immutable overrides for draft preview service lifetime.
+
 AnimationPreview accepts an optional decoded draft from the selected player's library,
 selects that library slot only in its isolated clone, and exposes the draft asset in its
 native snapshot. Enabled skins are CPU-validated at the initial sampled pose before

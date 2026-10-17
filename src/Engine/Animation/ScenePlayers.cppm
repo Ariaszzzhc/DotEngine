@@ -58,6 +58,16 @@ export namespace Dot::Animation {
                                      const Core::FileSystem& assets,
                                      std::span<const ClipAsset> decoded = {})
         -> Core::Result<ScenePlayers>;
+    /** Require complete initial decoded libraries without disk fallback. Validate
+     * native bindings/authority normally, then release the preparation cache;
+     * later description replacements load current files. Keep the existing scene
+     * limits: 1024 clip references, 30000 channels and 1000000 keys.
+     * 要求完整初始解码库，不回退磁盘；保留原生绑定/权限校验，随后释放准备缓存，
+     * 后续描述替换重读当前文件；保留既有场景限制：1024 片段引用、30000 通道、1000000 键。 */
+    [[nodiscard]] static auto createPrepared(std::shared_ptr<World::Scene> scene,
+                                             const Core::FileSystem& assets,
+                                             std::span<const ClipAsset> decoded)
+        -> Core::Result<ScenePlayers>;
     ScenePlayers(const ScenePlayers&) = delete;
     auto operator=(const ScenePlayers&) -> ScenePlayers& = delete;
     ScenePlayers(ScenePlayers&&) noexcept;
@@ -98,6 +108,10 @@ export namespace Dot::Animation {
         -> Core::Result<void>;
 
   private:
+    [[nodiscard]] static auto createPlayers(std::shared_ptr<World::Scene> scene,
+                                            const Core::FileSystem& assets,
+                                            std::span<const ClipAsset> decoded, bool prepared)
+        -> Core::Result<ScenePlayers>;
     struct Impl;
     explicit ScenePlayers(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> m_impl;

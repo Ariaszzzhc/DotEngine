@@ -15,6 +15,7 @@ module;
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 module Dot.Project.ScenePreparation;
 
@@ -29,6 +30,8 @@ import Dot.Graphics.Geometry;
 import Dot.Graphics.Image;
 import Dot.Graphics.Environment;
 import Dot.Graphics.Renderer;
+import Dot.Animation.Files;
+import Dot.Animation.ScenePlayers;
 
 namespace Dot::Project {
   namespace {
@@ -294,11 +297,94 @@ namespace Dot::Project {
       return {};
     }
 
+    /** Initial libraries share immutable decoded clips by exact authored path.
+     * Account references, not only unique data, against the existing player
+     * channel/key limits. Native scene bindings and writer checks stay on owner.
+     * 初始库按精确编辑路径共享不可变解码片段；按引用而非仅唯一数据累计既有通道/键预算。
+     * 原生场景绑定及写入权限校验仍在所有者线程执行。 */
+    auto sceneAnimations(const Core::FileSystem& files, const World::Scene& scene,
+                         std::stop_token stop) -> Core::Result<std::vector<Animation::ClipAsset>> {
+      auto players = scene.animationPlayers();
+
+      if (!players) {
+        return std::unexpected(players.error());
+      }
+
+      std::vector<Animation::ClipAsset> clips;
+      std::unordered_map<std::string, std::size_t> unique;
+      std::size_t references{}, channels{}, keys{};
+
+      for (const auto& player : *players) {
+        if (!player.properties.enabled) {
+          continue;
+        }
+
+        if (player.properties.clips.size() > 1024 - references) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Scene animation exceeds 1024 clip references");
+        }
+
+        references += player.properties.clips.size();
+
+        for (const auto& path : player.properties.clips) {
+          if (stop.stop_requested()) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Scene animation preparation cancelled");
+          }
+
+          auto found = unique.find(path);
+
+          if (found == unique.end()) {
+            auto checked = sceneFile(files, path);
+
+            if (!checked) {
+              return std::unexpected(checked.error());
+            }
+
+            auto loaded = Animation::loadClip(
+                files, std::filesystem::path{std::u8string(path.begin(), path.end())});
+
+            if (!loaded) {
+              return std::unexpected(loaded.error());
+            }
+
+            const auto index = clips.size();
+            clips.push_back({path, std::move(*loaded)});
+            found = unique.emplace(path, index).first;
+          }
+
+          auto description = clips[found->second].value.description();
+
+          if (!description) {
+            return std::unexpected(description.error());
+          }
+
+          if ((*description)->tracks.size() > 30000 - channels) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Scene animation library channel budget exceeded");
+          }
+
+          channels += (*description)->tracks.size();
+
+          for (const auto& track : (*description)->tracks) {
+            if (track.keys.size() > 1000000 - keys) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Scene animation library key budget exceeded");
+            }
+
+            keys += track.keys.size();
+          }
+        }
+      }
+
+      return clips;
+    }
   }  // namespace
 
   struct PreparedScene::Data {
     std::filesystem::path root;
     std::string text;
+    std::vector<Animation::ClipAsset> clips;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -351,13 +437,19 @@ namespace Dot::Project {
       return std::unexpected(skins.error());
     }
 
+    auto animations = sceneAnimations(files, *scene, stop);
+
+    if (!animations) {
+      return std::unexpected(animations.error());
+    }
+
     if (stop.stop_requested()) {
       return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
     }
 
     auto canonical = World::encodeScene(*scene);
-    return canonical ? Core::Result<PreparedScene>{PreparedScene{
-                           std::make_shared<const Data>(Data{files.root(), std::move(*canonical)})}}
+    return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
+                           Data{files.root(), std::move(*canonical), std::move(*animations)})}}
                      : std::unexpected(canonical.error());
   }
 
@@ -367,6 +459,15 @@ namespace Dot::Project {
     }
 
     return World::decodeScene(m_data->text);
+  }
+
+  auto PreparedScene::animationClips() const
+      -> Core::Result<std::span<const Animation::ClipAsset>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    return std::span<const Animation::ClipAsset>{m_data->clips};
   }
 
   auto PreparedScene::accepts(const Core::FileSystem& files, const World::Scene& scene) const

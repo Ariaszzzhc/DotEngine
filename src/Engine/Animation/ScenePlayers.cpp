@@ -366,6 +366,20 @@ namespace Dot::Animation {
 
   auto ScenePlayers::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& assets,
                             std::span<const ClipAsset> decoded) -> Core::Result<ScenePlayers> {
+    return createPlayers(std::move(scene), assets, decoded, false);
+  }
+
+  auto ScenePlayers::createPrepared(std::shared_ptr<World::Scene> scene,
+                                    const Core::FileSystem& assets,
+                                    std::span<const ClipAsset> decoded)
+      -> Core::Result<ScenePlayers> {
+    return createPlayers(std::move(scene), assets, decoded, true);
+  }
+
+  auto ScenePlayers::createPlayers(std::shared_ptr<World::Scene> scene,
+                                   const Core::FileSystem& assets,
+                                   std::span<const ClipAsset> decoded, bool prepared)
+      -> Core::Result<ScenePlayers> {
     if (!scene) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Animation players require a scene");
     }
@@ -383,27 +397,45 @@ namespace Dot::Animation {
       }
 
       auto impl = std::make_unique<Impl>(std::move(scene), assets);
+      std::set<std::string> used;
+      std::size_t references{};
 
-      for (const auto& value : decoded) {
-        bool used{};
-
-        for (const auto& player : *descriptions) {
-          used = used
-                 || (player.properties.enabled
-                     && std::ranges::find(player.properties.clips, value.asset)
-                            != player.properties.clips.end());
+      for (const auto& player : *descriptions) {
+        if (!player.properties.enabled) {
+          continue;
         }
 
-        if (!used || value.asset.size() > 1024 || !value.asset.starts_with("assets/")
-            || !value.asset.ends_with(".dotanimation") || !Core::isPortableRelativePath(value.asset)
-            || !Core::isValidUtf8(value.asset) || !value.value.description()
+        if (player.properties.clips.size() > 1024 - references) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Scene animation exceeds 1024 clip references");
+        }
+
+        references += player.properties.clips.size();
+        used.insert(player.properties.clips.begin(), player.properties.clips.end());
+      }
+
+      for (const auto& value : decoded) {
+        if (!used.contains(value.asset) || value.asset.size() > 1024
+            || !value.asset.starts_with("assets/") || !value.asset.ends_with(".dotanimation")
+            || !Core::isPortableRelativePath(value.asset) || !Core::isValidUtf8(value.asset)
+            || !value.value.description()
             || !impl->m_decoded.emplace(value.asset, value.value).second) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Invalid, duplicate or unused decoded animation asset");
         }
       }
 
+      if (prepared && impl->m_decoded.size() != used.size()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Prepared animation assets do not cover enabled libraries");
+      }
+
       auto ready = impl->synchronize();
+
+      if (ready && prepared) {
+        impl->m_decoded.clear();
+      }
+
       return ready ? Core::Result<ScenePlayers>{ScenePlayers(std::move(impl))}
                    : std::unexpected(ready.error());
     } catch (const std::exception& error) {

@@ -518,7 +518,15 @@ namespace Dot::Project {
       }
 
       impl->m_audio.emplace(std::move(*audio));
-      auto animations = Script::AnimationSession::create(impl->m_scene, assets);
+      auto animations = [&]() -> Core::Result<Script::AnimationSession> {
+        if (!preflight) {
+          return Script::AnimationSession::create(impl->m_scene, assets);
+        }
+
+        auto clips = preflight->animationClips();
+        return clips ? Script::AnimationSession::createPrepared(impl->m_scene, assets, *clips)
+                     : std::unexpected(clips.error());
+      }();
 
       if (!animations) {
         return std::unexpected(animations.error());

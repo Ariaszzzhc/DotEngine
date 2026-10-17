@@ -280,9 +280,11 @@ TEST_CASE("scene_players.decoded_asset_boundary_rejects_unused_duplicate_and_inv
   auto value = Animation::loadClip(fixture.files, fixture.properties.clips[0]).value();
   std::vector<Animation::ClipAsset> decoded{{fixture.properties.clips[0], value}};
   REQUIRE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  CHECK_FALSE(Animation::ScenePlayers::createPrepared(scene, fixture.files, decoded));
   CHECK(World::encodeScene(*scene).value() == before);
   decoded.push_back(decoded.front());
   CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
+  CHECK_FALSE(Animation::ScenePlayers::createPrepared(scene, fixture.files, decoded));
   decoded = {{"assets/unused.dotanimation", value}};
   CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
   decoded = {{fixture.properties.clips[0], {}}};
@@ -292,6 +294,88 @@ TEST_CASE("scene_players.decoded_asset_boundary_rejects_unused_duplicate_and_inv
   decoded.resize(1025);
   CHECK_FALSE(Animation::ScenePlayers::create(scene, fixture.files, decoded));
   CHECK(World::encodeScene(*scene).value() == before);
+}
+
+TEST_CASE(
+    "scene_players.prepared_libraries_own_initial_values_then_refresh_replaced_descriptions") {
+  Fixture f;
+  auto scene = std::make_shared<World::Scene>(
+      World::decodeScene(World::encodeScene(f.source).value()).value());
+  std::vector<Animation::ClipAsset> clips;
+
+  for (const auto& path : f.properties.clips) {
+    clips.push_back({path, Animation::loadClip(f.files, path).value()});
+    REQUIRE(f.files.writeTextAtomic(path, "changed outside the supplied initial clip data"));
+  }
+
+  const auto before = World::encodeScene(*scene).value();
+  CHECK_FALSE(Animation::ScenePlayers::create(scene, f.files));
+  auto result = Animation::ScenePlayers::createPrepared(scene, f.files, clips);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  auto players = std::move(*result);
+  clips.clear();
+  CHECK(World::encodeScene(*scene).value() == before);
+  const auto owner = scene->findEntity(f.owner.value).value();
+  const auto target = scene->findEntity(f.target.value).value();
+  REQUIRE(players.advance(.5));
+  CHECK(scene->transform(target)->position.x == .5F);
+  REQUIRE(players.play(owner, 1, true));
+  CHECK(scene->transform(target)->position.x == 20);
+  auto changed = f.properties;
+  changed.speed = 2;
+  REQUIRE(scene->setAnimationPlayer(owner, changed));
+  const auto failedPose = World::encodeScene(*scene).value();
+  CHECK_FALSE(players.advance(.5));
+  CHECK(World::encodeScene(*scene).value() == failedPose);
+
+  for (const auto& path : changed.clips) {
+    auto value = Animation::Clip::create({"Reloaded",
+                                          {{0,
+                                            Animation::Path::Translation,
+                                            Animation::Interpolation::Linear,
+                                            {{0, {40, 0, 0, 0}}, {2, {42, 0, 0, 0}}}}}})
+                     .value();
+    REQUIRE(Animation::saveClip(f.files, path, value));
+  }
+
+  REQUIRE(players.advance(.5));
+  CHECK(scene->transform(target)->position.x == 41);
+  CHECK(players.state(owner)->clip == 0);
+  CHECK(players.state(owner)->playback.time == 1);
+  REQUIRE(scene->setRigidBody(target, World::RigidBody{}));
+  CHECK_FALSE(Animation::ScenePlayers::createPrepared(
+      scene, f.files,
+      std::array{Animation::ClipAsset{changed.clips[0],
+                                      Animation::loadClip(f.files, changed.clips[0]).value()},
+                 Animation::ClipAsset{changed.clips[1],
+                                      Animation::loadClip(f.files, changed.clips[1]).value()}}));
+}
+
+TEST_CASE("scene_players.prepared_library_accepts_the_full_scene_reference_boundary") {
+  Fixture f;
+  auto scene = std::make_shared<World::Scene>(World::Scene::create().value());
+  const auto owner = scene->createEntity("Player").value();
+  const auto target = scene->createEntity("Target").value();
+  auto clip = Animation::loadClip(f.files, f.properties.clips[0]).value();
+  World::AnimationPlayer properties;
+  properties.targets = {{0, target.value}};
+  std::vector<Animation::ClipAsset> clips;
+
+  for (int index = 0; index < 1024; ++index) {
+    const auto path = "assets/prepared" + std::to_string(index) + ".dotanimation";
+    properties.clips.push_back(path);
+    clips.push_back({path, clip});
+  }
+
+  REQUIRE(scene->setAnimationPlayer(owner, properties));
+  auto players = Animation::ScenePlayers::createPrepared(scene, f.files, clips);
+  REQUIRE_MESSAGE(players, (players ? "" : players.error().message));
+  REQUIRE(players->play(owner, 1023, true));
+  REQUIRE(players->advance(.5));
+  CHECK(scene->transform(target)->position.x == .5F);
+  CHECK(players->stats()->channels == 1024);
+  clips.push_back({"assets/extra.dotanimation", clip});
+  CHECK_FALSE(Animation::ScenePlayers::createPrepared(scene, f.files, clips));
 }
 
 TEST_CASE(

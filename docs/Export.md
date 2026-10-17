@@ -252,7 +252,10 @@ marked `truncated` and retain valid UTF-8. Hot-reload errors remain visible unde
 `player.source`; native stderr retains normal lifecycle/startup diagnostics.
 
 Mailbox polling shares the native owner loop. GameSession now validates scene
-graphics/images/HDR/skins on an owned CPU worker while the old game keeps running.
+graphics/images/HDR/skins and decodes initial animation libraries on an owned CPU
+worker while the old game keeps running. Native animation binding remains on the
+owner; complete prepared clips are required, and later description edits reload
+current files normally.
 Retired audio uses one owned asynchronous teardown slot, observed as
 `player.retiringAudio`; the next cut stays Pending until it is reaped. This reports
 ownership, not whether buffered PCM is audible. Close/destruction join all native

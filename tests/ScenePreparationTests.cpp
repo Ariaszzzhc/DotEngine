@@ -1,11 +1,14 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Core.Files;
 import Dot.Core.Result;
@@ -13,6 +16,9 @@ import Dot.Core.StagedDirectory;
 import Dot.Project.ScenePreparation;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
+import Dot.Animation.Files;
+import Dot.Animation.ScenePlayers;
+import Dot.Math;
 
 namespace {
   using namespace Dot;
@@ -70,8 +76,104 @@ TEST_CASE("scene_preparation.owned_proof_rehydrates_on_calling_thread_and_matche
   CHECK(owned);
   auto moved = std::move(prepared);
   CHECK_FALSE(prepared.scene());
+  CHECK_FALSE(prepared.animationClips());
   CHECK_FALSE(prepared.accepts(f.files, scene));
   CHECK(moved.scene()->name().value() == "Prepared");
+}
+
+TEST_CASE("scene_preparation.initial_animation_clips_are_unique_owned_and_thread_portable") {
+  Fixture f;
+  const auto target = f.scene.entities()->front().id;
+  const auto otherTarget = f.scene.createEntity("Other target").value();
+  const auto owner = f.scene.createEntity("Player").value();
+  const auto other = f.scene.createEntity("Other player").value();
+  auto clip = Animation::Clip::create({"Move",
+                                       {{0,
+                                         Animation::Path::Translation,
+                                         Animation::Interpolation::Linear,
+                                         {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                  .value();
+  REQUIRE(Animation::saveClip(f.files, "assets/move.dotanimation", clip));
+  REQUIRE(f.scene.setAnimationPlayer(
+      owner, World::AnimationPlayer{{"assets/move.dotanimation"}, {{0, target.value}}}));
+  REQUIRE(f.scene.setAnimationPlayer(
+      other, World::AnimationPlayer{{"assets/move.dotanimation"}, {{0, otherTarget.value}}}));
+  REQUIRE(World::saveScene(f.files, "scenes/main.dotscene", f.scene));
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene").value();
+  wait(job);
+  auto prepared = job.take().value();
+  REQUIRE(prepared.animationClips()->size() == 1);
+  CHECK(prepared.animationClips()->front().asset == "assets/move.dotanimation");
+  bool advanced{};
+  std::thread caller([copy = prepared, files = f.files, target = target.value,
+                      otherTarget = otherTarget.value, &advanced] {
+    auto scene = std::make_shared<World::Scene>(copy.scene().value());
+    auto players
+        = Animation::ScenePlayers::createPrepared(scene, files, copy.animationClips().value());
+    advanced = players && players->advance(.5)
+               && scene->transform(scene->findEntity(target).value())->position.x == .5F
+               && scene->transform(scene->findEntity(otherTarget).value())->position.x == .5F;
+  });
+  caller.join();
+  CHECK(advanced);
+  CHECK(f.scene.transform(target)->position.x == 0);
+  REQUIRE(f.files.writeTextAtomic("assets/move.dotanimation",
+                                  "changed after the owned data was consumed"));
+  CHECK(prepared.animationClips()->front().value.sample(.5)->front().value.x == .5F);
+}
+
+TEST_CASE(
+    "scene_preparation.animation_sources_and_shared_reference_budgets_fail_without_fallback") {
+  Fixture f;
+  const auto target = f.scene.entities()->front().id;
+  const auto owner = f.scene.createEntity("Player").value();
+  World::AnimationPlayer properties{{"assets/missing.dotanimation"}, {{0, target.value}}};
+  properties.enabled = false;
+  REQUIRE(f.scene.setAnimationPlayer(owner, properties));
+  auto disabled = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                                   World::encodeScene(f.scene).value())
+                      .value();
+  wait(disabled);
+  CHECK(disabled.take()->animationClips()->empty());
+  properties.enabled = true;
+  REQUIRE(f.files.writeTextAtomic("assets/bad.dotanimation", "{}"));
+
+  for (const auto* path :
+       {"assets/missing.dotanimation", "assets/bad.dotanimation", "assets/BAD.dotanimation"}) {
+    properties.clips = {path};
+    REQUIRE(f.scene.setAnimationPlayer(owner, properties));
+    auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                                World::encodeScene(f.scene).value())
+                   .value();
+    wait(job);
+    CHECK_FALSE(job.take());
+  }
+
+  Animation::ClipDescription description;
+  description.name = "Reference budget";
+
+  for (std::uint32_t index = 0; index < 15001; ++index) {
+    const auto path = static_cast<Animation::Path>(index % 3);
+    const auto value = path == Animation::Path::Rotation ? Dot::Math::Vec4{0, 0, 0, 1}
+                       : path == Animation::Path::Scale  ? Dot::Math::Vec4{1, 1, 1, 0}
+                                                         : Dot::Math::Vec4{};
+    description.tracks.push_back({index / 3, path, Animation::Interpolation::Step, {{0, value}}});
+  }
+
+  auto clip = Animation::Clip::create(std::move(description)).value();
+  REQUIRE(Animation::saveClip(f.files, "assets/budget.dotanimation", clip));
+  properties.clips = {"assets/budget.dotanimation"};
+  REQUIRE(f.scene.setAnimationPlayer(owner, properties));
+  const auto other = f.scene.createEntity("Other player").value();
+  REQUIRE(f.scene.setAnimationPlayer(other, properties));
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                              World::encodeScene(f.scene).value())
+                 .value();
+  wait(job);
+  auto failed = job.take();
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().code == Core::ErrorCode::Unavailable);
+  CHECK(failed.error().message.find("channel budget") != std::string::npos);
 }
 
 TEST_CASE("scene_preparation.strict_paths_bad_sources_and_assets_reject_without_fallback") {
