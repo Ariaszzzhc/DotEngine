@@ -475,6 +475,7 @@ namespace Dot::Graphics {
     wgpu::Buffer m_indices;
     SkinInfo m_info{};
     std::uint32_t m_next{1};
+    bool m_pending{};
     bool m_tracked{};
 
     ~Impl() {
@@ -494,6 +495,69 @@ namespace Dot::Graphics {
                                     : Core::Result<void>{};
     }
   };
+
+  struct SkinBatch::Impl {
+    std::shared_ptr<Diagnostics> m_owner;
+    wgpu::Instance m_instance;
+    std::vector<std::shared_ptr<SkinnedMesh::Impl>> m_states;
+    wgpu::Buffer m_readback;
+    std::shared_ptr<Pending<bool>> m_pending;
+    wgpu::Future m_future{};
+    std::chrono::steady_clock::time_point m_started;
+    std::optional<Core::Error> m_error;
+    bool m_locked{};
+    bool m_complete{};
+
+    auto release() noexcept -> void {
+      if (m_readback) {
+        m_readback.Destroy();
+        m_readback = {};
+      }
+
+      if (m_future.id) {
+        /** Pinned Dawn marks an aborted map ready during Destroy. Reap its
+         * WaitAnyOnly callback with zero timeout, including abandoned batches.
+         * 固定版 Dawn 在 Destroy 时将取消的映射标记就绪；零超时回收 WaitAnyOnly 回调，
+         * 包括被放弃的批次，避免将完成记录积存到实例销毁。 */
+        const auto status = m_instance.WaitAny(m_future, 0);
+
+        if (status != wgpu::WaitStatus::Success && m_owner->alive.load()) {
+          constexpr std::string_view message = "Cancelled skin map did not retire immediately";
+          m_owner->record("Retire skin mapping", static_cast<unsigned>(status),
+                          {message.data(), message.size()});
+        }
+
+        m_future = {};
+      }
+
+      m_instance = {};
+
+      if (m_locked) {
+        for (const auto& state : m_states) {
+          state->m_pending = false;
+        }
+
+        m_locked = false;
+      }
+
+      m_states.clear();
+    }
+
+    ~Impl() {
+      release();
+    }
+  };
+
+  SkinBatch::SkinBatch() noexcept = default;
+
+  SkinBatch::SkinBatch(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  SkinBatch::SkinBatch(SkinBatch&&) noexcept = default;
+
+  auto SkinBatch::operator=(SkinBatch&&) noexcept -> SkinBatch& = default;
+
+  SkinBatch::~SkinBatch() = default;
 
   SkinnedMesh::SkinnedMesh() noexcept = default;
 
@@ -4482,7 +4546,8 @@ namespace Dot::Graphics {
     return preparation && preparation->jobs[0].pipeline && preparation->jobs[1].pipeline;
   }
 
-  auto Renderer::updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void> {
+  auto Renderer::beginSkinUpdateImpl(std::span<const SkinUpdate> updates, bool waitPipelines)
+      -> Core::Result<SkinBatch> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Renderer was moved");
     }
@@ -4490,16 +4555,12 @@ namespace Dot::Graphics {
     auto valid = m_impl->check();
 
     if (!valid) {
-      return valid;
+      return std::unexpected(valid.error());
     }
 
     if (updates.size() > 128) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Skin update batch exceeds 128 controllers");
-    }
-
-    if (updates.empty()) {
-      return {};
     }
 
     auto& gpu = *m_impl;
@@ -4514,10 +4575,16 @@ namespace Dot::Graphics {
       }
 
       const auto& state = *update.skin->m_impl;
+
+      if (state.m_pending) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Skin controller already has a pending update");
+      }
+
       valid = Animation::validateSkinPalette(state.m_skin, update.palette);
 
       if (!valid) {
-        return valid;
+        return std::unexpected(valid.error());
       }
 
       if (state.m_info.updates == std::numeric_limits<std::uint64_t>::max()
@@ -4529,19 +4596,48 @@ namespace Dot::Graphics {
       vertices += state.m_info.vertices;
     }
 
-    valid = gpu.ensureSkinPipelines();
+    if (!updates.empty()) {
+      if (waitPipelines) {
+        valid = gpu.ensureSkinPipelines();
+      } else {
+        auto ready = skinPipelinesReady();
+        valid = !ready    ? Core::Result<void>{std::unexpected(ready.error())}
+                : !*ready ? Core::fail(Core::ErrorCode::InvalidState,
+                                       "Asynchronous skin submission requires prepared pipelines")
+                          : Core::Result<void>{};
+      }
 
-    if (!valid) {
-      return valid;
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
     }
 
     try {
+      auto job = std::make_unique<SkinBatch::Impl>();
+      job->m_owner = gpu.diagnostics;
+      job->m_instance = gpu.instance;
+      job->m_started = std::chrono::steady_clock::now();
+
+      for (const auto& update : updates) {
+        job->m_states.push_back(update.skin->m_impl);
+      }
+
+      if (updates.empty()) {
+        job->m_complete = true;
+        return SkinBatch(std::move(job));
+      }
+
+      for (const auto& state : job->m_states) {
+        state->m_pending = true;
+      }
+
+      job->m_locked = true;
       ErrorScope scope(gpu.instance, gpu.device);
 
       wgpu::BufferDescriptor readbackDescriptor;
       readbackDescriptor.size = updates.size() * 32;
       readbackDescriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-      auto readback = gpu.device.CreateBuffer(&readbackDescriptor);
+      job->m_readback = gpu.device.CreateBuffer(&readbackDescriptor);
       auto encoder = gpu.device.CreateCommandEncoder();
 
       for (std::size_t i = 0; i < updates.size(); ++i) {
@@ -4581,7 +4677,7 @@ namespace Dot::Graphics {
         const auto faces = (mesh.info.indices == 0 ? mesh.info.vertices : mesh.info.indices) / 3;
         pass.DispatchWorkgroups((faces + 63) / 64);
         pass.End();
-        encoder.CopyBufferToBuffer(state.m_report, 0, readback, i * 32, 32);
+        encoder.CopyBufferToBuffer(state.m_report, 0, job->m_readback, i * 32, 32);
       }
 
       auto commands = encoder.Finish();
@@ -4590,41 +4686,111 @@ namespace Dot::Graphics {
 
       if (!valid) {
         gpu.m_skinPreparation->error = valid.error();
-        return valid;
+        return std::unexpected(valid.error());
       }
 
-      auto report = mappedSkinWords(gpu.instance, readback, updates.size() * 32);
+      job->m_pending = std::make_shared<Pending<bool>>();
+      job->m_pending->error = "Skin buffer mapping failed";
+      job->m_future = job->m_readback.MapAsync(
+          wgpu::MapMode::Read, 0, updates.size() * 32, wgpu::CallbackMode::WaitAnyOnly,
+          [pending = job->m_pending](wgpu::MapAsyncStatus status,
+                                     wgpu::StringView message) noexcept {
+            pending->value = status == wgpu::MapAsyncStatus::Success;
 
-      if (!report) {
-        return std::unexpected(report.error());
+            if (!pending->value) {
+              describeFailure(pending->error, "Skin readback", static_cast<unsigned>(status),
+                              message);
+            }
+          });
+      return SkinBatch(std::move(job));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin GPU skin update: " + std::string(error.what()));
+    }
+  }
+
+  auto Renderer::beginSkinUpdate(std::span<const SkinUpdate> updates) -> Core::Result<SkinBatch> {
+    return beginSkinUpdateImpl(updates, false);
+  }
+
+  auto Renderer::pollSkinUpdate(SkinBatch& batch) -> Core::Result<bool> {
+    if (!m_impl || !batch.m_impl || batch.m_impl->m_owner != m_impl->diagnostics) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Skin batch requires its live renderer");
+    }
+
+    auto valid = m_impl->check();
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto& job = *batch.m_impl;
+
+    if (job.m_error) {
+      return std::unexpected(*job.m_error);
+    }
+
+    if (job.m_complete) {
+      return true;
+    }
+
+    const auto fail = [&](Core::ErrorCode code, std::string message) -> Core::Result<bool> {
+      job.release();
+      job.m_error = Core::fail(code, std::move(message)).error();
+      return std::unexpected(*job.m_error);
+    };
+
+    try {
+      const auto status = m_impl->instance.WaitAny(job.m_future, 0);
+
+      if (status == wgpu::WaitStatus::TimedOut
+          && std::chrono::steady_clock::now() - job.m_started < std::chrono::seconds(10)) {
+        return false;
+      }
+
+      if (status != wgpu::WaitStatus::Success || !job.m_pending->value) {
+        return fail(Core::ErrorCode::External,
+                    status == wgpu::WaitStatus::TimedOut  ? "Skin update exceeded ten seconds"
+                    : status != wgpu::WaitStatus::Success ? "Skin update completion poll failed"
+                                                          : job.m_pending->error);
+      }
+
+      const auto bytes = job.m_states.size() * 32;
+      const auto* words
+          = static_cast<const std::uint32_t*>(job.m_readback.GetConstMappedRange(0, bytes));
+
+      if (!words) {
+        return fail(Core::ErrorCode::External, "Skin readback returned no bytes");
       }
 
       std::vector<Bounds> bounds;
-      bounds.reserve(updates.size());
+      bounds.reserve(job.m_states.size());
 
-      for (std::size_t i = 0; i < updates.size(); ++i) {
-        const auto* words = report->data() + i * 8;
-        const Bounds value{{skinBound(words[1]), skinBound(words[2]), skinBound(words[3])},
-                           {skinBound(words[4]), skinBound(words[5]), skinBound(words[6])}};
+      for (std::size_t i = 0; i < job.m_states.size(); ++i) {
+        const auto* row = words + i * 8;
+        const Bounds value{{skinBound(row[1]), skinBound(row[2]), skinBound(row[3])},
+                           {skinBound(row[4]), skinBound(row[5]), skinBound(row[6])}};
 
-        if (words[0] != 0 || (words[7] & 6U) == 6U || !Math::isFinite(value.minimum)
+        if (row[0] != 0 || (row[7] & 6U) == 6U || !Math::isFinite(value.minimum)
             || !Math::isFinite(value.maximum) || value.minimum.x > value.maximum.x
             || value.minimum.y > value.maximum.y || value.minimum.z > value.maximum.z) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "GPU skin deformation invalid at batch index " + std::to_string(i)
-                                + ": singular/overflow/tangent seam/mixed orientation ("
-                                + std::to_string(words[0]) + ", " + std::to_string(words[7]) + ")");
+          return fail(Core::ErrorCode::InvalidArgument,
+                      "GPU skin deformation invalid at batch index " + std::to_string(i)
+                          + ": singular/overflow/tangent seam/mixed orientation ("
+                          + std::to_string(row[0]) + ", " + std::to_string(row[7]) + ")");
         }
 
         bounds.push_back(value);
       }
 
-      for (std::size_t i = 0; i < updates.size(); ++i) {
-        auto& state = *updates[i].skin->m_impl;
+      /** No allocations after validation; all views publish as one owner-thread commit.
+       * 校验完成后不再分配，所有视图在所属线程一次提交发布。 */
+      for (std::size_t i = 0; i < job.m_states.size(); ++i) {
+        auto& state = *job.m_states[i];
         auto& mesh = *state.m_mesh.m_impl;
         mesh.vertices = state.m_vertices[state.m_next];
         mesh.bounds = bounds[i];
-        const auto flags = (*report)[i * 8 + 7];
+        const auto flags = words[i * 8 + 7];
         mesh.hasNormalMapFrame = mesh.m_uvFrame && (flags & 1U) == 0;
         mesh.m_poseOrientation = (flags & 4U) != 0 ? -1.F : 1.F;
         state.m_info.bounds = bounds[i];
@@ -4633,11 +4799,44 @@ namespace Dot::Graphics {
         state.m_next ^= 1U;
       }
 
-      return {};
+      job.m_complete = true;
+      job.release();
+      return true;
     } catch (const std::exception& error) {
-      return Core::fail(Core::ErrorCode::External,
-                        "Update GPU skins: " + std::string(error.what()));
+      return fail(Core::ErrorCode::External, "Poll GPU skin update: " + std::string(error.what()));
     }
+  }
+
+  auto Renderer::finishSkinUpdate(SkinBatch& batch) -> Core::Result<void> {
+    auto ready = pollSkinUpdate(batch);
+
+    if (!ready || *ready) {
+      return ready ? Core::Result<void>{} : std::unexpected(ready.error());
+    }
+
+    auto& job = *batch.m_impl;
+    const auto deadline = job.m_started + std::chrono::seconds(10);
+    const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        deadline - std::chrono::steady_clock::now());
+    const auto status = m_impl->instance.WaitAny(
+        job.m_future, static_cast<std::uint64_t>(std::max<std::int64_t>(0, remaining.count())));
+
+    if (status != wgpu::WaitStatus::Success) {
+      job.m_error
+          = Core::fail(Core::ErrorCode::Unavailable, "Skin update completion wait failed").error();
+      job.release();
+      return std::unexpected(*job.m_error);
+    }
+
+    ready = pollSkinUpdate(batch);
+    return ready && *ready ? Core::Result<void>{}
+           : !ready ? Core::Result<void>{std::unexpected(ready.error())}
+                    : Core::fail(Core::ErrorCode::External, "Skin completion was not published");
+  }
+
+  auto Renderer::updateSkins(std::span<const SkinUpdate> updates) -> Core::Result<void> {
+    auto job = beginSkinUpdateImpl(updates, true);
+    return job ? finishSkinUpdate(*job) : Core::Result<void>{std::unexpected(job.error())};
   }
 
   auto Renderer::readSkin(const SkinnedMesh& skin) -> Core::Result<std::vector<Vertex>> {

@@ -12,6 +12,7 @@ import Dot.Animation.SkinFiles;
 import Dot.Assets.Mesh;
 import Dot.Assets.Material;
 import Dot.Core.Files;
+import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Graphics.Geometry;
 import Dot.Graphics.Renderer;
@@ -62,7 +63,7 @@ namespace {
   };
 }  // namespace
 
-TEST_CASE("skin.scene_gpu_preparation_follows_visibility_without_loading_or_publishing_pose") {
+TEST_CASE("skin.scene_gpu_preparation_follows_visibility_and_rejects_missing_initial_assets") {
   Fixture f;
   auto renderer = Renderer::create().value();
   auto service = SceneRenderer::create(renderer).value();
@@ -90,8 +91,7 @@ TEST_CASE("skin.scene_gpu_preparation_follows_visibility_without_loading_or_publ
     ready = service.prepare(f.scene);
   }
 
-  REQUIRE(ready);
-  REQUIRE(*ready == ScenePreparationStage::Ready);
+  REQUIRE_FALSE(ready);
   CHECK(renderer.skinPipelinesReady().value());
   CHECK(service.stats()->bytes == 0);
   CHECK(renderer.resourceStats()->skins == 0);
@@ -100,7 +100,7 @@ TEST_CASE("skin.scene_gpu_preparation_follows_visibility_without_loading_or_publ
   CHECK_FALSE(service.renderInto(f.scene, target));
   CHECK(target.info()->frames == 0);
   auto loaded = SceneRenderer::create(renderer, f.files).value();
-  CHECK(loaded.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK(loaded.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
   REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
   REQUIRE(loaded.renderInto(f.scene, target));
   CHECK(target.info()->frames == 1);
@@ -309,4 +309,125 @@ TEST_CASE("skin.scene_gpu_invalid_joint_blend_preserves_target_and_all_residency
   REQUIRE(service.renderInto(f.scene, target));
   CHECK(renderer.readTarget(target)->pixels != before.pixels);
   CHECK(service.stats()->bytes == bytes);
+}
+
+namespace {
+  auto prepareInitial(SceneRenderer& service, const World::Scene& scene) -> ScenePreparationStage {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto ready = service.prepare(scene);
+
+    while (ready && *ready != ScenePreparationStage::Ready
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      ready = service.prepare(scene);
+    }
+
+    REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
+    return *ready;
+  }
+}  // namespace
+
+TEST_CASE("skin.scene_initial_pose_preparation_cancels_stale_hidden_and_cleared_batches") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  auto target = renderer.createTarget(32, 32).value();
+  REQUIRE(service.renderInto(f.scene, target));
+  const auto before = renderer.readTarget(target).value();
+  REQUIRE(service.clearCache());
+  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::SkinPoses);
+  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  CHECK(service.stats()->skins == 1);
+  CHECK(renderer.readTarget(target)->pixels == before.pixels);
+  REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
+  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::SkinPoses);
+  auto mesh = f.scene.entity(f.owner)->mesh.value();
+  mesh.visible = false;
+  REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
+  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK(service.stats()->skins == 0);
+  CHECK(renderer.resourceStats()->skins == 0);
+  mesh.visible = true;
+  REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
+  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  REQUIRE(service.clearCache());
+  CHECK(renderer.resourceStats()->skins == 0);
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  REQUIRE(service.renderInto(f.scene, target));
+  CHECK(renderer.readTarget(target)->pixels != before.pixels);
+  CHECK(service.bounds(f.scene, f.owner)->minimum.x == doctest::Approx(.5));
+  REQUIRE(f.scene.setTransform(f.joint, {{2, 0, 0}}));
+  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  REQUIRE(service.renderInto(f.scene, target));
+  CHECK(service.bounds(f.scene, f.owner)->minimum.x == doctest::Approx(1.5));
+}
+
+TEST_CASE("skin.scene_initial_invalid_blend_retains_target_and_recovers_latest_pose") {
+  Fixture f;
+  const auto tip = f.scene.createEntity("Tip").value();
+  auto description = *f.skin.description().value();
+  description.inverseBindMatrices.resize(2);
+
+  for (auto& influence : description.vertices) {
+    influence.joints[1] = 1;
+    influence.weights = {.5F, .5F};
+  }
+
+  REQUIRE(Animation::saveSkin(f.files, f.properties.asset,
+                              Animation::Skin::create(std::move(description)).value()));
+  f.properties.joints.push_back(tip.value);
+  REQUIRE(f.scene.setSkin(f.owner, f.properties));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  auto target = renderer.createTarget(32, 32).value();
+  REQUIRE(service.renderInto(f.scene, target));
+  const auto before = renderer.readTarget(target).value();
+  REQUIRE(service.clearCache());
+  REQUIRE(f.scene.setTransform(tip, {{}, {}, {-1, 1, 1}}));
+  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  auto result = service.prepare(f.scene);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (result && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    result = service.prepare(f.scene);
+  }
+
+  REQUIRE_FALSE(result);
+  CHECK(result.error().code == Core::ErrorCode::InvalidArgument);
+  auto retained = service.prepare(f.scene);
+  REQUIRE_FALSE(retained);
+  CHECK(retained.error().message == result.error().message);
+  CHECK(renderer.readTarget(target)->pixels == before.pixels);
+  REQUIRE(f.scene.setTransform(tip, {{1, 0, 0}}));
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  REQUIRE(service.renderInto(f.scene, target));
+  CHECK(renderer.readTarget(target)->pixels != before.pixels);
+}
+
+TEST_CASE("skin.scene_initial_preparation_finishes_while_joints_advance_and_draws_latest_pose") {
+  Fixture f;
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
+  REQUIRE(service.clearCache());
+  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  auto stage = ScenePreparationStage::SkinPoses;
+  float position{};
+
+  while (stage != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
+    position += .001F;
+    REQUIRE(f.scene.setTransform(f.joint, {{position, 0, 0}}));
+    auto next = service.prepare(f.scene);
+    REQUIRE_MESSAGE(next, (next ? "" : next.error().message));
+    stage = *next;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(stage == ScenePreparationStage::Ready);
+  REQUIRE(service.render(f.scene, 32, 32));
+  CHECK(service.bounds(f.scene, f.owner)->minimum.x == doctest::Approx(position - .5F));
+  CHECK(service.bounds(f.scene, f.owner)->maximum.x == doctest::Approx(position + .5F));
 }

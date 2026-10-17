@@ -1910,7 +1910,8 @@ background GPU staging/streaming and additive runtime scenes remain unfinished.
 Required environment bake/surface/sky, shadow, SSAO and skin compute pipelines compile asynchronously
 while editor events, agent requests and GUI continue. `workspace.view.loading` is
 `"environment-pipeline"`, `"shadow-pipelines"`, `"occlusion-pipelines"`,
-`"skin-pipelines"`, `"environment-map"` or `"material-textures"` while pending,
+`"skin-pipelines"`, `"initial-skin-poses"`, `"environment-map"` or
+`"material-textures"` while pending,
 null otherwise, independently of `error`. A pending view has no completed pixels for picking or
 capture. Screenshot requests still use the normal queue/confirmation protocol;
 inspect their final state, since queued is not pixel success. Scene names environment

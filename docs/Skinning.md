@@ -75,6 +75,7 @@ It validates the complete CPU request before queue writes, computes packed verti
 and tangent frames on GPU, checks triangle handedness, and reduces signed float
 bounds through monotonic integer atomic keys. A compact status batch is mapped once;
 only after every result succeeds are all buffers, bounds and counters published.
+The explicit synchronous path uses the same transaction described below.
 Invalid palettes, blended singularity, float overflow or handedness seams retain
 all previous views. Source geometry is always used, so poses do not accumulate.
 
@@ -85,10 +86,58 @@ uses cofactors and determinant sign; tangents are orthogonalized and reflected W
 is retained. Deformation can remove/recover a normal-map frame; eligibility combines
 static normals/UVs with current GPU triangle geometry.
 
-readSkin is explicit owned GPU vertex readback for diagnostics. Normal updates
-read only a compact status/bounds report, but that wait is synchronous. These APIs
-are not an asynchronous skin pipeline or populated-game frame-time guarantee.
+`beginSkinUpdate` submits a move-only SkinBatch with prepared pipelines; it owns
+controller handles and driver-copied palette data before return, borrowing no caller
+spans. An empty batch is complete. A controller allows one unpublished job at a time;
+overlapping async or synchronous updates reject. Queries and readSkin retain the
+last published pose. `pollSkinUpdate` checks completion with zero GPU status wait,
+validates the complete report and atomically publishes all views/bounds/counters.
+No callback publishes scene state. Completed polls are idempotent; errors persist.
+`finishSkinUpdate` explicitly waits within the same ten-second deadline;
+`updateSkins` prepares pipelines as necessary, then uses begin/finish on that same
+transaction. Async begin requires already prepared pipelines and never hides a
+pipeline compilation wait. Submission still includes owner-thread allocation,
+queue writes and ordinary GPU validation-scope processing.
+
+Destroying/move-replacing an unpublished job cancels publication and unlocks its
+controllers without waiting for GPU completion. Queued resource references and
+callback-owned completion data retain their own lifetimes; cancelled work cannot
+later mutate views. Jobs can be destroyed after renderer shutdown once quiescent.
+Operations require the originating live renderer/owner thread and reject GUI
+reentry. Failure/abandonment unlocks retry without changing previous geometry.
+Owned logical readback storage is 32 bytes per pending controller beyond resident
+skin bytes; controller exclusivity bounds it to maxSkins * 32 (<=32 KiB). This
+excludes backend-retained in-flight allocations after handle destruction, as with
+other logical GPU resource counters. Cancellation destroys the map and reaps its
+already-signalled WaitAnyOnly callback with zero timeout, avoiding accumulation of
+unobserved completion records until instance teardown.
+Caller-retained completed job objects own their small completion/error records.
+
+readSkin remains explicit synchronous owned GPU vertex readback for diagnostics.
+Ongoing scene animation and exact explicit drawing still use synchronous updateSkins;
+this change does not establish a fully asynchronous frame pipeline or populated-game
+frame-time guarantee.
 ## Scene, editor and export consumption
+
+SceneRenderer's incremental `prepare` now adds an `initial-skin-poses` stage after
+pipelines/materials. New visible/rebound controllers load their ordinary assets,
+submit one owned GPU transaction and poll without a completion wait; readiness
+queries remain pure. Native initial startup stays in its loading loop until this
+stage completes; the editor shares that preparation implementation. Hidden/deleted/
+rebound owners, scene replacement, clearCache and destruction cancel unpublished
+work. Missing assets or invalid GPU deformation report errors while target pixels
+remain untouched. Loading source geometry/controller buffers still uses existing
+synchronous resource operations.
+
+A submitted first pose is retained while joints keep advancing, avoiding perpetual
+cancel/resubmit starvation. The cache records the actual submitted palette; every
+subsequent draw compares the current palette and completes any necessary exact
+update before publishing pixels. Explicit drawing/bounds queries supersede owned
+unpublished preparation and use their synchronous transaction. No stale cached pose
+is presented as current. Ready concerns prepared resources, not completed rendering.
+Identical failed initial requests retain their errors; a corrected palette permits
+a new transaction. Native later scene cuts/resource changes retain their existing synchronous rendering
+path; this is not streaming or an async animation-frame policy.
 
 SceneRenderer loads enabled saved skin components automatically. Immutable file
 data and static source meshes are shared; each mesh owner retains one GPU skin

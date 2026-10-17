@@ -6021,6 +6021,8 @@ namespace Dot::Editor {
                           ? Json("occlusion-pipelines")
                       : m_preparationStage == Graphics::ScenePreparationStage::Skins
                           ? Json("skin-pipelines")
+                      : m_preparationStage == Graphics::ScenePreparationStage::SkinPoses
+                          ? Json("initial-skin-poses")
                       : m_preparationStage == Graphics::ScenePreparationStage::EnvironmentMap
                           ? Json("environment-map")
                       : m_preparationStage == Graphics::ScenePreparationStage::Materials
@@ -10617,6 +10619,8 @@ namespace Dot::Editor {
                                      ? "Preparing ambient occlusion shaders..."
                                  : m_preparationStage == Graphics::ScenePreparationStage::Skins
                                      ? "Preparing skinning shaders..."
+                                 : m_preparationStage == Graphics::ScenePreparationStage::SkinPoses
+                                     ? "Preparing initial skin poses..."
                                  : m_preparationStage
                                          == Graphics::ScenePreparationStage::EnvironmentMap
                                      ? "Preparing HDR environment..."

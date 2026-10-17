@@ -11247,3 +11247,140 @@ support the results above, without claiming physical keyboard/IME/pointer or wra
 panel human acceptance. Native text fields, visual layout authoring, full text
 shaping/bidi, finished Prism art, resource streaming, larger game scale and overall
 production engine/editor maturity remain unfinished.
+
+## 2026-10-18 — Initial skin transactions in loading
+
+Continue from actual Prism native frame stalls, without treating render-phase peaks
+as proof of text cost. Export the saved PrismWidgets project through the real product
+CLI and repeat twenty M/Tab/Tab/M cycles in an owned native process. Record application
+profiles, exact requests/results and a twelve-second native stack sample. The sample
+shows substantial SceneRenderer/updateSkins/mappedSkinWords queue waits (878 sampled
+occurrences under that stack), plus Metal nextDrawable acquisition. Text preparation
+also appears but is much smaller in this trace. Full scene inspection/JSON/control
+polling contributes substantial measurement overhead. Retain the sample/profile;
+these are functional investigation records, not an unobstructed FPS benchmark or
+proof of one universal bottleneck. No font/shader/color change follows from guessing.
+
+Add move-only SkinBatch transactions to the existing renderer. Async submission
+requires prepared pipelines, validates the complete CPU request, owns controller
+handles and driver-copied palettes, submits existing GPU deformation/validation and
+starts a compact map. It does not publish buffers/bounds/revisions. Each controller
+allows one unpublished job; overlapping requests fail. Zero-status-wait polling
+validates the whole report before one owner-thread publication. Explicit finish uses
+the same ten-second completion deadline; the existing synchronous updateSkins API
+prepares pipelines and uses that same begin/finish implementation. ReadSkin remains
+explicit synchronous diagnostics. Every existing signed bound, singularity/overflow,
+normal/tangent frame and batch-atomicity contract remains enforced.
+
+The job retains errors, permits idempotent completed polling and owns all unpublished
+resources. Abandonment/move replacement cancels publication and unlocks retry without
+waiting for GPU completion; late callback data cannot publish state. Old views stay
+readable until actual publication. Shared controller handles and callback data retain
+their own lifetime, including quiescent job destruction after renderer shutdown.
+Owned logical staging is 32 bytes per pending controller beyond resident skin bytes;
+controller exclusivity bounds it to maxSkins * 32, at most 32 KiB. Backend-retained
+in-flight allocations after handle destruction are excluded, as with other logical
+resource counters.
+
+SceneRenderer incremental preparation now loads/submits first visible/rebound poses
+and exposes initial-skin-poses through native loading status and editor UI/JSON.
+Queries remain pure and no preparation call produces pixels. Binding/visibility/
+scene/cache changes discard owned unpublished work. Submission and polls share normal
+product resource ownership, with no synthetic ready geometry. Source mesh loading,
+GPU allocations/writes and validation scopes retain their existing synchronous work.
+
+A review identifies a starvation risk if every advancing joint palette cancels an
+unfinished initial transaction. Keep the submitted pose while owners stay stable;
+record its exact palette on completion. Exact drawing compares the latest scene pose
+and validates any further update before producing pixels. Add an advancing-joint
+regression instead of freezing animation or displaying an old pose as current.
+A failed initial transaction retains its diagnostic for the same request; changed
+palettes discard that failed transaction and permit retry. Explicit synchronous
+drawing/bounds supersede unpublished initial preparation.
+Ongoing animation-frame updates and native later scene-cut rendering remain
+synchronous; a fully asynchronous dynamic frame pipeline is still unfinished.
+
+Six new cases in the existing offscreen target cover input ownership, withheld and
+atomic publication, conflicting writers, invalid mixed deformation and retained
+failure/retry, controller/job/renderer moves and thread/GUI guards, abandonment and
+renderer teardown, hidden/cleared/stale scene preparation, invalid initial pose
+recovery and continuously advancing joints with latest-pose drawing. Extend the
+existing visibility test: missing initial assets now fail during prepare, rather
+than being declared ready until render. No desktop windows or new executable are
+added to automatic tests. Initial compilation catches omitted Core::Error source
+initialization and a test's missing specific Core.Result import; construct errors
+through Core::fail and add the explicit module import. First focused Debug passes
+87/87 in 56.17s; the final full suite includes the added liveness case.
+
+The first full Debug run catches a recovery regression introduced by liveness
+coalescing: after invalid initial deformation, a corrected palette with the same
+owners still observes the retained failed job. Preserve errors for identical input,
+but discard a failed transaction when its requested palette changes. Strengthen the
+recovery test to compare retained diagnostics and verify correction/new publication.
+Keep the failing full log; do not classify it as an environment or GPU flake.
+
+Cancellation review checks the pinned Dawn source: destroying a pending map marks
+its completion event ready. Retain the originating instance through cancellation
+and reap that WaitAnyOnly callback with zero timeout, preventing unobserved events
+from accumulating until instance teardown. Add quiescent off-thread abandonment
+and renderer-move-with-pending-job checks. No vendor sources are edited.
+
+Final lifetime/Prism Debug checks pass 58/58 in 32.69s. Final full Debug passes
+1423/1423 in 231.90s, and Release/NDEBUG passes 1423/1423 in 33.94s. Counts are
+435 unit and 988 integration; overlapping labels include 232 compiler, 170
+offscreen, 37 audio-native, 34 platform and 21 process. Builds, CTest and actual
+products run sequentially. The earlier recovery-only check passes 7/7 in 5.25s;
+the first full run's actual 1422/1423 failure and the corrected intermediate full
+233.05s pass remain in ignored evidence. No environment override/sanitizer or
+Windows/Linux execution is claimed; only arm64 macOS is exercised.
+
+The actual Release editor creates PrismPreparation from the current template,
+applies/undoes/redoes uiFontSize 20 to 22, saves/closes/reopens, then runs Play.
+Airborne pause preserves exact character transforms, completed simulation counters
+and actual scene/skin/menu pixels during 60 attempted movement frames. Grounded
+paused save, movement/resume, paused restore, malformed clock rejection, Stop and
+fresh isolated Play all pass. Two completed paused target PNGs are byte identical;
+Stop restores exact clean authoring and its saved baseline PNG hash remains
+77b56bcc914309b96692e3a34313f91eaa84e46152493019562592b57b353695.
+Both editor processes exit zero and retire controls with empty stderr. JSON exposes
+the new loading label by the shared implementation; this run's captured editor
+responses do not happen to sample its brief initial-skin-poses interval. Do not
+claim that interval was captured visually.
+
+Export from that saved workspace, relocate the unpacked native game and physically
+hide the owned authoring project. All 115 content files / 66,213,359 bytes match
+saved sources, with no TypeScript/map files. The pinned font/notice ship and font
+SHA-256 remains 81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Two actual native processes report Preparing initial skin poses before starting
+the game. They pass airborne freeze/refusal, grounded paused save, fresh unpaused
+restart after paused exit, damaged owned save refusal preserving pose/bytes, exact
+file restoration/retry, paused restore, resumed movement, scene replacement and
+stale scoped request rejection. Recorded menu revisions reach actual presentation,
+without text overflow or script failures. Both exit zero and retire controls.
+Stderr retains ordinary preparation status and a real dropped fixed-time notice;
+audio synchronization does not fault, without a listening claim.
+
+A separate current native export of unchanged PrismWidgets repeats the same twenty
+M/Tab/Tab/M cycles with the same control/profile/12-second sampling method. Baseline
+and current exports have identical 115 content hashes and logical input area
+1280x800, and both reach 166 actual text rasterizations. Both native processes exit
+zero/retire controls. Observed Render maxima are 77,494,041 ns and 27,127,291 ns;
+these are single-process records with polling, driver/cache and timing variation,
+not a repeated controlled speedup result or a smooth-frame guarantee. The new trace
+still has synchronous finishSkinUpdate calls during ongoing animation. Initial pose
+preparation is now incremental; dynamic-frame waits remain explicit unfinished work.
+
+Restore authoring and verify five earlier persistent checkpoint hashes. Record
+source/binary hashes, Mach-O arm64 architecture and load-command/dependency evidence
+before removing only owned validation App/native copies and temporary helper/cache
+files. Current editor-export and CLI-export native executable hashes match; native
+LLVM runtime references remain executable-relative. Keep both editable projects,
+user saves, actual requests/results, native samples, profiles, manifests and PNGs
+under ignored build/text-latency-review. No distribution archive is created.
+Review correctness, atomic ownership/cancellation/error paths, platform assumptions,
+formatting and behavioral coverage; whitespace and clang-format checks pass.
+
+Computer use again reports the Mac locked. Physical keyboard/IME/pointer and wrapped
+panel acceptance remain unverified. First-pose preparation does not finish dynamic
+frame latency, resource streaming, finished Prism art, larger-game validation or the
+overall production engine/editor goal.

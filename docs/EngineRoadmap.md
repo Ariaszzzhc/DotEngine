@@ -46,3 +46,8 @@ computer use for human-style interaction and unexpected UI problems.
 
 Implementation targets remain arm64 macOS and x86_64 Windows/Linux. Only macOS is
 locally validated; Windows/Linux execution is outside the requested local scope.
+
+Initial visible skin poses now join incremental loading with owned GPU transactions,
+zero-wait polling, cancellation and atomic validation/publication. Subsequent animated
+pose updates and explicit drawing remain synchronous; resource streaming and broader
+frame-latency work remain open. See [skinning contracts](Skinning.md).

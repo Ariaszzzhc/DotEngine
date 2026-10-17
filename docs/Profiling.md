@@ -125,3 +125,13 @@ and [rendering contracts](Rendering.md). Renderer preparation/encoding/submissio
 exclude outer scene/resource/script/physics/GUI work. Optional GPU timestamp
 intervals cover physical render passes; overlapping intervals are not additive as
 frame time. GPU drops/errors and unavailable capabilities remain explicit.
+
+Initial visible skin poses are now submitted/polled in incremental resource
+preparation. CPU prepare samples include owner-thread allocation/submission/polling,
+while GPU worker time is not a CPU interval. Animated pose updates during rendering
+still map their compact validation/bounds report synchronously. Native sampling of
+Prism menu cycles identified that queue wait and Metal drawable acquisition as
+substantial render-stack work; it did not establish that text rasterization caused
+the largest hitch. Repeated full scene inspection also contributes control/JSON
+cost, so those agent-driven records are functional investigation evidence rather
+than an unobstructed player benchmark.

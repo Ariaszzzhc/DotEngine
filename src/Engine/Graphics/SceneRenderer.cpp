@@ -110,6 +110,18 @@ namespace Dot::Graphics {
       std::uint64_t bytes;
     };
 
+    struct InitialSkin {
+      std::uint64_t owner;
+      std::vector<Math::Mat4> palette;
+      auto operator==(const InitialSkin&) const -> bool = default;
+    };
+
+    struct PendingSkin {
+      std::vector<InitialSkin> rows;
+      SkinBatch batch;
+      bool failed{};
+    };
+
     struct MaterialEntry {
       Material material;
       std::vector<std::string> textures;
@@ -179,6 +191,7 @@ namespace Dot::Graphics {
     std::uint64_t skinScene{};
     std::unordered_map<std::uint64_t, SkinEntry> skins;
     std::unordered_map<std::string, Animation::Skin> skinAssets;
+    std::optional<PendingSkin> pendingSkin;
     std::optional<MaterialPreview> preview;
     std::optional<PendingMaterial> pendingMaterial;
     std::unique_ptr<ImageJob> imageJob;
@@ -422,6 +435,8 @@ namespace Dot::Graphics {
     auto pruneSkins(const World::Scene& scene, const std::vector<World::EntityInfo>& entities,
                     bool visibleOnly) -> void {
       if (skinScene != scene.id()) {
+        pendingSkin.reset();
+
         for (const auto& [id, entry] : skins) {
           bytes -= entry.bytes;
         }
@@ -448,6 +463,7 @@ namespace Dot::Graphics {
                           && key(*entity->mesh).value() == iterator->second.mesh;
 
         if (!keep) {
+          pendingSkin.reset();
           bytes -= iterator->second.bytes;
           iterator = skins.erase(iterator);
         } else {
@@ -1276,6 +1292,121 @@ namespace Dot::Graphics {
       }
     }
 
+    /** Prepare only new/rebound controllers, never throttle current animation poses.
+     * Compare owned palettes before polling so changed scenes cannot publish stale work.
+     * 仅准备新建/改绑控制器，不节流已有动画姿态；轮询前比较拥有的调色板，防止变化场景发布旧工作。
+     */
+    auto prepareInitialSkins(const World::Scene& scene) -> Core::Result<bool> {
+      try {
+        auto entities = scene.entities();
+
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
+
+        auto requirements = prune(scene, *entities);
+
+        if (!requirements) {
+          return std::unexpected(requirements.error());
+        }
+
+        std::vector<InitialSkin> rows;
+
+        for (const auto& entity : *entities) {
+          if (!entity.mesh || !entity.mesh->visible || !entity.skin || !entity.skin->enabled) {
+            continue;
+          }
+
+          auto resourceKey = key(*entity.mesh);
+
+          if (!resourceKey) {
+            return std::unexpected(resourceKey.error());
+          }
+
+          auto source = cache.find(*resourceKey);
+
+          if (source == cache.end()) {
+            auto loaded = load(*entity.mesh);
+
+            if (!loaded) {
+              return std::unexpected(loaded.error());
+            }
+
+            source = cache.emplace(*resourceKey, std::move(*loaded)).first;
+            bytes += source->second.bytes;
+          }
+
+          auto bound = skin(scene, entity, *resourceKey, source->second);
+
+          if (!bound) {
+            return std::unexpected(bound.error());
+          }
+
+          if ((*bound)->palette.empty()) {
+            auto palette = (*bound)->binding.palette(scene);
+
+            if (!palette) {
+              return std::unexpected(palette.error());
+            }
+
+            rows.push_back({entity.id.value, std::move(*palette)});
+          }
+        }
+
+        std::ranges::sort(rows, {}, &InitialSkin::owner);
+
+        if (pendingSkin
+            && (!std::ranges::equal(pendingSkin->rows, rows, {}, &InitialSkin::owner,
+                                    &InitialSkin::owner)
+                || (pendingSkin->failed && pendingSkin->rows != rows))) {
+          pendingSkin.reset();
+        }
+
+        if (rows.empty()) {
+          return true;
+        }
+
+        if (!pendingSkin) {
+          std::vector<SkinUpdate> updates;
+          updates.reserve(rows.size());
+
+          for (const auto& row : rows) {
+            updates.push_back({&skins.at(row.owner).controller, row.palette});
+          }
+
+          auto submitted = renderer->beginSkinUpdate(updates);
+
+          if (!submitted) {
+            return std::unexpected(submitted.error());
+          }
+
+          pendingSkin.emplace(PendingSkin{std::move(rows), std::move(*submitted)});
+          return false;
+        }
+
+        auto ready = renderer->pollSkinUpdate(pendingSkin->batch);
+
+        if (!ready) {
+          pendingSkin->failed = true;
+          return std::unexpected(ready.error());
+        }
+
+        if (!*ready) {
+          return false;
+        }
+
+        for (auto& row : pendingSkin->rows) {
+          skins.at(row.owner).palette = std::move(row.palette);
+        }
+
+        pendingSkin.reset();
+        return true;
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          "Prepare initial skin poses: " + std::string(error.what()));
+      }
+    }
+
     auto frame(const World::Scene& scene, float aspect, const SceneView& camera)
         -> Core::Result<Frame> {
       try {
@@ -1319,6 +1450,9 @@ namespace Dot::Graphics {
           return std::unexpected(requirements.error());
         }
 
+        /** Explicit synchronous drawing supersedes unpublished preparation.
+         * 显式同步绘制取代未发布的准备事务。 */
+        pendingSkin.reset();
         Frame frame;
         frame.camera = *view;
         /** Draw pointers borrow these mesh handles; reserve once and keep the frame
@@ -1595,7 +1729,28 @@ namespace Dot::Graphics {
       }
     }
 
-    return missingMaterial ? ScenePreparationStage::Materials : ScenePreparationStage::Ready;
+    if (missingMaterial) {
+      return ScenePreparationStage::Materials;
+    }
+
+    for (const auto& entity : *entities) {
+      if (entity.mesh && entity.mesh->visible && entity.skin && entity.skin->enabled) {
+        const auto found = m_impl->skins.find(entity.id.value);
+        auto resourceKey = key(*entity.mesh);
+
+        if (!resourceKey) {
+          return std::unexpected(resourceKey.error());
+        }
+
+        if (m_impl->skinScene != scene.id() || found == m_impl->skins.end()
+            || found->second.mesh != *resourceKey || found->second.properties != *entity.skin
+            || found->second.palette.empty()) {
+          return ScenePreparationStage::SkinPoses;
+        }
+      }
+    }
+
+    return ScenePreparationStage::Ready;
   }
 
   auto SceneRenderer::prepare(const World::Scene& scene) -> Core::Result<ScenePreparationStage> {
@@ -1690,7 +1845,7 @@ namespace Dot::Graphics {
     }
 
     if (*stage == ScenePreparationStage::Ready && !m_impl->pendingMaterial && !m_impl->imageJob
-        && !m_impl->pendingEnvironment && !m_impl->hdrJob) {
+        && !m_impl->pendingEnvironment && !m_impl->hdrJob && !m_impl->pendingSkin) {
       return ScenePreparationStage::Ready;
     }
 
@@ -1710,7 +1865,14 @@ namespace Dot::Graphics {
       return std::unexpected(materials.error());
     }
 
-    return *materials ? ScenePreparationStage::Ready : ScenePreparationStage::Materials;
+    if (!*materials) {
+      return ScenePreparationStage::Materials;
+    }
+
+    auto poses = m_impl->prepareInitialSkins(scene);
+    return !poses   ? Core::Result<ScenePreparationStage>{std::unexpected(poses.error())}
+           : *poses ? ScenePreparationStage::Ready
+                    : ScenePreparationStage::SkinPoses;
   }
 
   auto SceneRenderer::render(const World::Scene& scene, std::uint32_t width, std::uint32_t height,
@@ -1890,6 +2052,7 @@ namespace Dot::Graphics {
         return std::unexpected(entities.error());
       }
 
+      m_impl->pendingSkin.reset();
       m_impl->pruneSkins(scene, *entities, false);
       auto found = m_impl->cache.find(*resourceKey);
 
@@ -2085,6 +2248,7 @@ namespace Dot::Graphics {
       return checked;
     }
 
+    m_impl->pendingSkin.reset();
     m_impl->environment.reset();
     m_impl->materials.clear();
     m_impl->textures.clear();

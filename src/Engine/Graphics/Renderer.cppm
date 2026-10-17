@@ -301,9 +301,34 @@ export namespace Dot::Graphics {
 
   private:
     friend class Renderer;
+    friend class SkinBatch;
     struct Impl;
     explicit SkinnedMesh(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;
+  };
+
+  /** Owns one unpublished GPU skin transaction and its controllers. Submission
+   * never changes views; zero-wait polling publishes the entire validated batch.
+   * Destruction cancels publication and unlocks controllers without waiting on GPU.
+   * At most one job per controller; compact readbacks are <=32 bytes/controller.
+   * Owner-thread operations; quiescent destruction may outlive the renderer.
+   * 拥有一个未发布的 GPU 蒙皮事务及其控制器；提交不改变视图，零等待轮询整批校验后发布。
+   * 销毁取消发布并解锁控制器，不等待 GPU；每控制器至多一项任务，紧凑读回每控制器至多 32 字节。
+   * 操作限所属线程，静止销毁可晚于渲染器。 */
+  class SkinBatch {
+  public:
+    SkinBatch() noexcept;
+    SkinBatch(const SkinBatch&) = delete;
+    auto operator=(const SkinBatch&) -> SkinBatch& = delete;
+    SkinBatch(SkinBatch&&) noexcept;
+    auto operator=(SkinBatch&&) noexcept -> SkinBatch&;
+    ~SkinBatch();
+
+  private:
+    friend class Renderer;
+    struct Impl;
+    explicit SkinBatch(std::unique_ptr<Impl> impl) noexcept;
+    std::unique_ptr<Impl> m_impl;
   };
 
   struct SkinUpdate {
@@ -545,6 +570,18 @@ export namespace Dot::Graphics {
     /** Pure owner-thread readiness; allowed in GUI, never starts/polls jobs.
      * 所属线程只读就绪查询，允许 GUI 调用，不启动/轮询任务。 */
     [[nodiscard]] auto skinPipelinesReady() const -> Core::Result<bool>;
+    /** Asynchronous submission requires prepared skin pipelines. Copies request
+     * handles/palettes before return; no caller span is retained. Empty batches are
+     * immediately complete. A pending controller rejects overlapping updates.
+     * Poll uses no GPU wait; finish explicitly waits within the same ten-second
+     * deadline. Both publish only after complete GPU validation, with retained errors.
+     * 异步提交须已准备蒙皮管线；返回前复制请求句柄/调色板，不保留调用者 span。
+     * 空批次立即完成，待处理控制器拒绝重叠更新。poll 不等待 GPU，finish 显式等待同一
+     * 十秒期限；整批 GPU 校验完成才发布，错误保留。 */
+    [[nodiscard]] auto beginSkinUpdate(std::span<const SkinUpdate> updates)
+        -> Core::Result<SkinBatch>;
+    [[nodiscard]] auto pollSkinUpdate(SkinBatch& batch) -> Core::Result<bool>;
+    [[nodiscard]] auto finishSkinUpdate(SkinBatch& batch) -> Core::Result<void>;
     /** At most 128 distinct skins / four million vertices per call. Validate on
      * CPU, compute vertices/frames/bounds on GPU, read one compact status batch,
      * then publish every posed buffer/bound together. Failure retains all previous
@@ -853,6 +890,8 @@ export namespace Dot::Graphics {
         -> Core::Result<PresentResult>;
 
   private:
+    [[nodiscard]] auto beginSkinUpdateImpl(std::span<const SkinUpdate> updates, bool waitPipelines)
+        -> Core::Result<SkinBatch>;
     [[nodiscard]] auto uploadTextureImpl(const Image& image, const TextureOptions& options,
                                          std::span<const Image> levels) -> Core::Result<Texture>;
     struct Impl;

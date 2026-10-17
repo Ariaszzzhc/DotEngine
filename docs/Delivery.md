@@ -49,3 +49,8 @@ Local validation covers macOS arm64 only. Windows/Linux have implementation
 support without local execution evidence. Portable packaging remains an explicit
 capability; ordinary stages do not produce new distribution archives. Release
 identity signing/notarization and installer publication remain unfinished.
+
+Initial visible skin poses now join incremental loading with owned GPU transactions,
+zero-wait polling, cancellation and atomic validation/publication. Subsequent animated
+pose updates and explicit drawing remain synchronous; resource streaming and broader
+frame-latency work remain open. See [skinning contracts](Skinning.md).

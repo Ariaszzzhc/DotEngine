@@ -522,3 +522,161 @@ TEST_CASE(
   changed(renderer, controller, uniform);
   CHECK(controller.info()->updates == updates + 1);
 }
+
+namespace {
+  auto prepareSkins(Renderer& renderer) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto ready = renderer.prepareSkinPipelines();
+
+    while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      ready = renderer.prepareSkinPipelines();
+    }
+
+    REQUIRE(ready);
+    REQUIRE(*ready);
+  }
+}  // namespace
+
+TEST_CASE("skin.gpu_async_batch_owns_input_and_publishes_only_on_owner_poll") {
+  auto renderer = Renderer::create().value();
+  const auto geometry = quad().value();
+  const auto skin = skinFor(geometry);
+  auto source = renderer.upload(geometry).value();
+  auto controller = renderer.createSkin(source, skin).value();
+  std::array<Math::Mat4, 2> palette;
+  palette[0] = Math::compose({.5F, .25F, 0}, {}, {1, 1, 1}).value();
+  const auto expected = deformMesh(geometry, skin, palette).value();
+  const std::array updates{SkinUpdate{&controller, palette}};
+  CHECK_FALSE(renderer.beginSkinUpdate(updates));
+  CHECK_FALSE(renderer.skinPipelinesReady().value());
+  prepareSkins(renderer);
+  auto job = renderer.beginSkinUpdate(updates).value();
+  palette[0] = {};
+  CHECK(controller.info()->updates == 0);
+  CHECK(same(renderer.readSkin(controller).value(), geometry.vertices));
+  CHECK(controller.info()->updates == 0);
+  CHECK_FALSE(renderer.beginSkinUpdate(updates));
+  CHECK_FALSE(renderer.updateSkins(updates));
+  auto foreign = Renderer::create().value();
+  CHECK_FALSE(foreign.pollSkinUpdate(job));
+  bool wrongThread{};
+  std::thread worker(
+      [&] { wrongThread = !renderer.pollSkinUpdate(job) && !renderer.finishSkinUpdate(job); });
+  worker.join();
+  CHECK(wrongThread);
+  auto moved = std::move(job);
+  CHECK_FALSE(renderer.pollSkinUpdate(job));
+  auto activeRenderer = std::move(renderer);
+  CHECK_FALSE(renderer.pollSkinUpdate(moved));
+  REQUIRE(activeRenderer.finishSkinUpdate(moved));
+  renderer = std::move(activeRenderer);
+  CHECK(renderer.pollSkinUpdate(moved).value());
+  REQUIRE(renderer.finishSkinUpdate(moved));
+  CHECK(controller.info()->updates == 1);
+  CHECK(same(renderer.readSkin(controller).value(), expected.vertices));
+  auto next = renderer.beginSkinUpdate(updates).value();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  auto ready = renderer.pollSkinUpdate(next);
+
+  while (ready && !*ready && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ready = renderer.pollSkinUpdate(next);
+  }
+
+  REQUIRE(ready);
+  REQUIRE(*ready);
+  CHECK(controller.info()->updates == 2);
+  CHECK(same(renderer.readSkin(controller).value(), geometry.vertices));
+}
+
+TEST_CASE("skin.gpu_async_failure_is_atomic_retained_and_unlocks_retry") {
+  auto renderer = Renderer::create().value();
+  const auto geometry = quad().value();
+  auto description = *skinFor(geometry).description().value();
+
+  for (auto& influence : description.vertices) {
+    influence.joints[1] = 1;
+    influence.weights = {.5F, .5F};
+  }
+
+  const auto skin = Animation::Skin::create(std::move(description)).value();
+  auto source = renderer.upload(geometry).value();
+  auto first = renderer.createSkin(source, skin).value();
+  auto second = renderer.createSkin(source, skin).value();
+  std::array<Math::Mat4, 2> valid;
+  std::array<Math::Mat4, 2> invalid;
+  valid[0] = valid[1] = Math::compose({.5F, 0, 0}, {}, {1, 1, 1}).value();
+  invalid[1] = Math::compose({}, {}, {-1, 1, 1}).value();
+  prepareSkins(renderer);
+  const std::array updates{SkinUpdate{&first, valid}, SkinUpdate{&second, invalid}};
+  auto job = renderer.beginSkinUpdate(updates).value();
+  auto failed = renderer.finishSkinUpdate(job);
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().code == Core::ErrorCode::InvalidArgument);
+  auto retained = renderer.pollSkinUpdate(job);
+  REQUIRE_FALSE(retained);
+  CHECK(retained.error().message == failed.error().message);
+  CHECK(first.info()->updates == 0);
+  CHECK(second.info()->updates == 0);
+  CHECK(same(renderer.readSkin(first).value(), geometry.vertices));
+  CHECK(same(renderer.readSkin(second).value(), geometry.vertices));
+  changed(renderer, first, valid);
+  changed(renderer, second, valid);
+  CHECK(first.info()->updates == 1);
+  CHECK(second.info()->updates == 1);
+}
+
+TEST_CASE("skin.gpu_abandoned_batches_unlock_controllers_and_own_teardown") {
+  SkinBatch empty;
+  auto renderer = Renderer::create().value();
+  CHECK_FALSE(renderer.pollSkinUpdate(empty));
+  auto completed = renderer.beginSkinUpdate({}).value();
+  CHECK(renderer.pollSkinUpdate(completed).value());
+  const auto geometry = quad().value();
+  const auto skin = skinFor(geometry);
+  auto source = renderer.upload(geometry).value();
+  auto controller = renderer.createSkin(source, skin).value();
+  prepareSkins(renderer);
+  std::array<Math::Mat4, 2> palette;
+  const std::array updates{SkinUpdate{&controller, palette}};
+
+  for (int i = 0; i < 3; ++i) {
+    {
+      auto abandoned = renderer.beginSkinUpdate(updates).value();
+      CHECK(controller.info()->updates == static_cast<std::uint64_t>(i));
+      std::thread release([owned = std::move(abandoned)] {});
+      release.join();
+    }
+
+    changed(renderer, controller, palette);
+  }
+
+  std::optional<SkinBatch> survivor;
+  {
+    auto temporary = Renderer::create().value();
+    auto mesh = temporary.upload(geometry).value();
+    auto owned = temporary.createSkin(mesh, skin).value();
+    prepareSkins(temporary);
+    const std::array request{SkinUpdate{&owned, palette}};
+    survivor.emplace(temporary.beginSkinUpdate(request).value());
+    owned = {};
+    CHECK(temporary.resourceStats()->skins == 1);
+  }
+
+  CHECK_FALSE(renderer.pollSkinUpdate(*survivor));
+  survivor.reset();
+  auto live = renderer.beginSkinUpdate(updates).value();
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Core::Result<void> {
+        CHECK_FALSE(renderer.pollSkinUpdate(live));
+        CHECK_FALSE(renderer.beginSkinUpdate(updates));
+        return {};
+      },
+      8, 8));
+  REQUIRE(renderer.closeGui());
+  REQUIRE(renderer.finishSkinUpdate(live));
+  controller = {};
+  CHECK(renderer.resourceStats()->skins == 0);
+}

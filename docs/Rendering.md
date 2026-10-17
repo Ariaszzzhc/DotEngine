@@ -871,3 +871,9 @@ physical color, shadow, SSAO and picking paths. readSkin is explicit owned diagn
 readback; regular updates map only compact bounds/status. The status wait is
 synchronous and has no populated-scene performance claim. Automatic imported-skin
 scene resources, editor binding and animation mixing remain unfinished.
+
+Initial visible skin deformation joins incremental scene preparation through an
+owned atomic GPU transaction and zero-wait polling. See [skinning](Skinning.md) for
+cancellation, exclusive controller ownership and exact drawing contracts. Later
+animation poses, explicit readback and exact-frame rendering remain synchronous;
+this is not evidence of a fully asynchronous frame pipeline.
