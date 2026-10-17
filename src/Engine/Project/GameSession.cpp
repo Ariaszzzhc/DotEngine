@@ -119,7 +119,6 @@ namespace Dot::Project {
       std::unordered_set<std::string> seen;
       std::unordered_map<std::string, Assets::MaterialDescription> materials;
       std::unordered_map<std::string, Graphics::MeshSurface> surfaces;
-      std::unordered_map<std::string, bool> normalEncoding;
       std::uint64_t bytes{};
       const auto account = [&](std::uint64_t size) -> Core::Result<void> {
         if (size > 512ULL * 1024 * 1024 - bytes) {
@@ -269,23 +268,11 @@ namespace Dot::Project {
               return std::unexpected(image.error());
             }
 
-            bool validNormal = true;
-
-            for (std::size_t pixel = 2; pixel < image->pixels.size(); pixel += 4) {
-              validNormal = validNormal && image->pixels[pixel] >= 128;
-            }
-
-            normalEncoding.emplace((*texture)->path, validNormal);
             auto counted = account(image->pixels.size());
 
             if (!counted) {
               return counted;
             }
-          }
-
-          if (texture == &material->normalTexture && !normalEncoding.at((*texture)->path)) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Scene normal map requires source B>=128: " + (*texture)->path);
           }
         }
       }

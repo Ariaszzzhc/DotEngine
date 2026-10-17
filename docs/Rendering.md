@@ -93,8 +93,9 @@ an explicit material choice for debug/emissive content, not an old renderer.
 Texture conventions follow [glTF material data](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#materials):
 base/emissive colors are normally sRGB; packed roughness G/metallic B and tangent
 normal RGB are linear data. Factors multiply sampled values. Normal scale [0,8]
-applies to tangent X/Y before normalization. This implementation requires normal
-source B>=128, keeping decoded Z positive through mip/filtering. Occlusion and
+applies to tangent X/Y before normalization. RGB decodes to signed XYZ, preserving
+negative Z samples rather than clamping source data. Filtered directions with
+squared length at most 1e-12 retain the geometric normal. Occlusion and
 transparency blending are not implemented by this direct-light stage.
 
 Lit meshes require complete unit normals; a requested normal texture also requires
@@ -173,7 +174,9 @@ Each non-null texture slot contains `path` and a complete `sampling` object:
 Nearest filtering requires anisotropy one. Paths are portable, lowercase-suffix
 `.png`/`.jpg`/`.jpeg` paths relative to the project root, including when the material
 lives in a subdirectory. Color slots may be sRGB/linear; normal and packed MR slots
-must be linear and require the physical model. Normal images require source B>=128.
+must be linear and require the physical model. Signed normal RGB is preserved at
+import, authoring preview, Play and export; sampled near-zero directions retain
+the geometric normal instead of creating a zero shading frame.
 A null slot deliberately uses its documented constant; an invalid present slot fails.
 
 An entity's `material` component binds `{ "asset": "assets/copper.dotmaterial" }`.

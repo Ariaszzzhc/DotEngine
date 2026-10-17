@@ -165,7 +165,13 @@ fn fragmentMain(input: Output, @builtin(front_facing) frontFacing: bool)
 
     let mapped = (encodedNormal * 2.0 - vec3f(1.0))
       * vec3f(camera.material.z, camera.material.z, 1.0);
-    n = unit(t * mapped.x + b * mapped.y + n * mapped.z);
+
+    /** Filtering opposite signed normals may cancel. Keep the geometric normal
+     * when there is no direction; never publish a zero shading frame.
+     * 相反带符号法线经滤波可能抵消；无方向时保留几何法线，避免发布零着色坐标系。 */
+    if (dot(mapped, mapped) > 1e-12) {
+      n = unit(t * mapped.x + b * mapped.y + n * mapped.z);
+    }
   }
 
   let metallic = clamp(camera.material.x * mr.b, 0.0, 1.0);

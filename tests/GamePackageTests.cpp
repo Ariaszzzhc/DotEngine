@@ -13,7 +13,9 @@
 import Dot.Core.Files;
 import Dot.Assets.Material;
 import Dot.Assets.Mesh;
+import Dot.Assets.Image;
 import Dot.Graphics.Geometry;
+import Dot.Graphics.Image;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GamePackage;
@@ -225,6 +227,11 @@ TEST_CASE("game_package_persists_physical_authoring_and_rejects_missing_material
       GamePackage::publish(fixture.project, scene, compiler, fixture.directory.files(), "game"));
   CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "game"));
   material.baseColorTexture.reset();
+  material.normalTexture = Dot::Assets::TextureSource{"assets/signed-normal.png"};
+  material.normalTexture->sampling.colorSpace = Dot::Graphics::ColorSpace::Linear;
+  const auto normal
+      = Dot::Assets::encodeImage(Dot::Graphics::Image{1, 1, {128, 128, 0, 255}}).value();
+  REQUIRE(fixture.project.files()->writeAtomic("assets/signed-normal.png", normal));
   REQUIRE(Dot::Assets::saveMaterial(fixture.project.files().value(), "assets/metal.dotmaterial",
                                     material));
   auto bad = Dot::Graphics::quad().value();
@@ -247,6 +254,7 @@ TEST_CASE("game_package_persists_physical_authoring_and_rejects_missing_material
   auto saved = package.scene().value();
   CHECK(saved.entities()->at(1).material->asset == "assets/metal.dotmaterial");
   CHECK(saved.entities()->back().light->intensity == 4);
+  CHECK(package.files()->readBytes("assets/signed-normal.png").value() == normal);
 }
 
 TEST_CASE("game_package.environment_hdr_survives_relocation_and_invalid_sources_block_publish") {

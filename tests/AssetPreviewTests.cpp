@@ -100,7 +100,7 @@ TEST_CASE("asset_preview.material_sphere_mesh_bounds_hdr_normal_errors_and_no_so
       = Assets::TextureSource{"normal.png", {.colorSpace = Graphics::ColorSpace::Linear}};
   REQUIRE(preview.render("red.dotmaterial", 32, &material));
   f.image("normal.png", {1, 1, {128, 128, 0, 255}});
-  CHECK_FALSE(preview.render("red.dotmaterial", 32, &material));
+  REQUIRE(preview.render("red.dotmaterial", 32, &material));
   REQUIRE(Assets::saveMesh(f.files, "mesh.dotmesh", Graphics::cube({100, 30, 40}).value()));
   auto mesh = preview.render("mesh.dotmesh", 64);
   REQUIRE(mesh);

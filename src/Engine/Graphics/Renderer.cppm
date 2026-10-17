@@ -376,9 +376,11 @@ export namespace Dot::Graphics {
     /** Linear packed G=roughness, B=metallic data; factors multiply samples.
      * 线性打包数据 G=粗糙度、B=金属度，因子乘采样值。 */
     std::optional<Texture> metallicRoughnessTexture{};
-    /** Linear tangent-space RGB normals with source B>=128 (positive Z); requires
+    /** Linear tangent-space RGB normals decoded to signed XYZ, including negative
+     * Z. Degenerate filtered directions retain the geometric normal. Requires
      * nondegenerate position/UV faces.
-     * 线性切线空间 RGB 法线，源 B>=128（正 Z），要求位置/UV 三角面非退化。 */
+     * 线性切线空间 RGB 法线解码为带符号 XYZ，包含负 Z；滤波后的退化方向保留几何法线，
+     * 要求位置/UV 三角面非退化。 */
     std::optional<Texture> normalTexture{};
     std::optional<Texture> emissiveTexture{};
     std::optional<Texture> occlusionTexture{};

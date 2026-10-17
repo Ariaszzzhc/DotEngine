@@ -512,7 +512,6 @@ namespace Dot::Graphics {
     wgpu::TextureView view;
     wgpu::Sampler sampler;
     TextureInfo info{};
-    bool normalEncoding{};
     std::uint64_t bytes{};
     bool tracked{};
 
@@ -1691,8 +1690,7 @@ namespace Dot::Graphics {
 
             if (!textures[index] || textures[index]->owner != diagnostics
                 || ((index == 1 || index == 2 || index == 4)
-                    && textures[index]->info.options.colorSpace != ColorSpace::Linear)
-                || (index == 2 && !textures[index]->normalEncoding)) {
+                    && textures[index]->info.options.colorSpace != ColorSpace::Linear)) {
               return Core::fail(Core::ErrorCode::InvalidArgument,
                                 "Invalid/foreign material texture or nonlinear data texture");
             }
@@ -3678,13 +3676,6 @@ namespace Dot::Graphics {
       texture->owner = m_impl->diagnostics;
       texture->bytes = bytes;
       texture->info = {image.width, image.height, levels, options};
-      texture->normalEncoding = options.colorSpace == ColorSpace::Linear;
-
-      for (std::size_t index = 2; texture->normalEncoding && index < image.pixels.size();
-           index += 4) {
-        texture->normalEncoding = image.pixels[index] >= 128;
-      }
-
       ErrorScope scope(m_impl->instance, m_impl->device);
       wgpu::TextureDescriptor descriptor;
       descriptor.size = {image.width, image.height, 1};

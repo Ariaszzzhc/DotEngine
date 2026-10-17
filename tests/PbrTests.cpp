@@ -196,11 +196,6 @@ TEST_CASE("pbr.invalid_material_geometry_textures_and_transforms_retain_last_fra
   draws[0].material.normalTexture = device.uploadTexture(Image{1, 1, {128, 128, 255, 255}}).value();
   CHECK_FALSE(device.renderMeshesInto(target, draws, {}));
   draws[0].material = material();
-  draws[0].material.normalTexture
-      = device.uploadTexture(Image{1, 1, {128, 128, 0, 255}}, {.colorSpace = ColorSpace::Linear})
-            .value();
-  CHECK_FALSE(device.renderMeshesInto(target, draws, {}));
-  draws[0].material = material();
   draws[0].transform.data[0] = 0;
   CHECK_FALSE(device.renderMeshesInto(target, draws, {}));
   draws[0].transform = {};
@@ -210,6 +205,34 @@ TEST_CASE("pbr.invalid_material_geometry_textures_and_transforms_retain_last_fra
   CHECK(target.info()->frames == 1);
   draws[0].transform = {};
   REQUIRE(device.renderMeshesInto(target, draws, {}));
+}
+
+TEST_CASE("pbr.signed_rgb_normals_and_cancelled_filtering_keep_finite_correct_radiance") {
+  auto device = renderer();
+  auto mesh = device.upload(physicalQuad()).value();
+  auto surface = material();
+  const auto geometric = sample(device, mesh, surface);
+  surface.normalTexture
+      = device.uploadTexture(Image{1, 1, {128, 128, 0, 255}}, {.colorSpace = ColorSpace::Linear})
+            .value();
+  const auto backward = sample(device, mesh, surface);
+  CHECK(backward[0] == 0);
+  CHECK(backward[1] == 0);
+  CHECK(backward[2] == 0);
+  CHECK(backward[3] == 1);
+  surface.normalTexture = device
+                              .uploadTexture(Image{2, 1, {255, 255, 255, 255, 0, 0, 0, 255}},
+                                             {.colorSpace = ColorSpace::Linear, .mipmaps = false})
+                              .value();
+  const auto cancelled = sample(device, mesh, surface);
+
+  for (std::size_t channel = 0; channel < 4; ++channel) {
+    CHECK(std::isfinite(cancelled[channel]));
+    CHECK(cancelled[channel] == doctest::Approx(geometric[channel]).epsilon(0.001));
+  }
+
+  surface.normalScale = 0;
+  CHECK(sample(device, mesh, surface)[0] == doctest::Approx(geometric[0]).epsilon(0.001));
 }
 
 TEST_CASE("pbr.lighting_is_owned_transactional_and_thread_bound") {

@@ -399,9 +399,12 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
   backward.normalTexture = Assets::TextureSource{"assets/backward-normal.png"};
   backward.normalTexture->sampling.colorSpace = Graphics::ColorSpace::Linear;
   REQUIRE(Assets::saveMaterial(files, "assets/backward.dotmaterial", backward));
+  auto corruptNormal = backward;
+  corruptNormal.normalTexture->path = "assets/corrupt.png";
+  REQUIRE(Assets::saveMaterial(files, "assets/corrupt-normal.dotmaterial", corruptNormal));
 
   for (const std::string kind :
-       {"mesh", "texture", "pbr-frame", "normal-encoding", "hdr", "audio", "animation"}) {
+       {"mesh", "texture", "pbr-frame", "normal-image", "hdr", "audio", "animation"}) {
     auto candidate = fixture.scene("Invalid");
     auto actor = candidate.entities()->front().id;
 
@@ -413,14 +416,15 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
     } else if (kind == "texture") {
       REQUIRE(candidate.setMeshRenderer(actor, World::MeshRenderer{}));
       REQUIRE(candidate.setMaterial(actor, World::MaterialBinding{"assets/corrupt.dotmaterial"}));
-    } else if (kind == "pbr-frame" || kind == "normal-encoding") {
+    } else if (kind == "pbr-frame" || kind == "normal-image") {
       World::MeshRenderer mesh;
       mesh.kind = World::MeshKind::Asset;
       mesh.asset = kind == "pbr-frame" ? "assets/no-normals.obj" : "assets/normal-frame.dotmesh";
       REQUIRE(candidate.setMeshRenderer(actor, mesh));
       REQUIRE(candidate.setMaterial(
-          actor, World::MaterialBinding{kind == "pbr-frame" ? "assets/physical.dotmaterial"
-                                                            : "assets/backward.dotmaterial"}));
+          actor,
+          World::MaterialBinding{kind == "pbr-frame" ? "assets/physical.dotmaterial"
+                                                     : "assets/corrupt-normal.dotmaterial"}));
     } else if (kind == "hdr") {
       World::Environment environment;
       environment.asset = "assets/corrupt.hdr";
@@ -448,8 +452,8 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
       CHECK(result.error->message.find("normals") != std::string::npos);
     }
 
-    if (kind == "normal-encoding") {
-      CHECK(result.error->message.find("B>=128") != std::string::npos);
+    if (kind == "normal-image") {
+      CHECK(result.error->message.find("corrupt.png") != std::string::npos);
     }
 
     CHECK(session.scene().value().get() == original.get());
@@ -457,6 +461,18 @@ TEST_CASE("scene_transition.asset_decode_and_native_service_failures_preserve_ol
     CHECK(Audio::Mixer::backendMemory().bytes == audio.bytes);
   }
 
+  auto candidate = fixture.scene("Signed normal source");
+  const auto actor = candidate.entities()->front().id;
+  World::MeshRenderer mesh;
+  mesh.kind = World::MeshKind::Asset;
+  mesh.asset = "assets/normal-frame.dotmesh";
+  REQUIRE(candidate.setMeshRenderer(actor, mesh));
+  REQUIRE(candidate.setMaterial(actor, World::MaterialBinding{"assets/backward.dotmaterial"}));
+  REQUIRE(World::saveScene(files, "scenes/signed-normal.dotscene", candidate));
+  const auto accepted = session.requestScene("scenes/signed-normal.dotscene").value();
+  good(session.update(0));
+  CHECK(session.sceneRequest(accepted)->committed);
+  CHECK(session.scene().value()->name().value() == "Signed normal source");
   good(session.close());
 }
 

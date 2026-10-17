@@ -336,7 +336,7 @@ namespace Dot::Project {
       std::unordered_set<std::string> meshes;
       std::unordered_map<std::string, Assets::MaterialDescription> materials;
       std::unordered_map<std::string, Graphics::MeshSurface> surfaces;
-      std::unordered_map<std::string, bool> images;
+      std::unordered_set<std::string> images;
       std::unordered_set<std::string> clips;
 
       for (const auto& entity : validationScene->entities().value()) {
@@ -427,18 +427,7 @@ namespace Dot::Project {
                                   "Export texture " + source.path + ": " + image.error().message);
               }
 
-              bool normalEncoding = true;
-
-              for (std::size_t pixel = 2; pixel < image->pixels.size(); pixel += 4) {
-                normalEncoding = normalEncoding && image->pixels[pixel] >= 128;
-              }
-
-              found = images.emplace(source.path, normalEncoding).first;
-            }
-
-            if (index == 2 && !found->second) {
-              return Core::fail(Core::ErrorCode::InvalidArgument,
-                                "Export normal map requires source B>=128: " + source.path);
+              images.insert(source.path);
             }
           }
         }

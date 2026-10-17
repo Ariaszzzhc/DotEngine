@@ -71,6 +71,21 @@ TEST_CASE("model.glb_and_external_gltf_preserve_frames_pbr_images_and_hierarchy"
   }
 }
 
+TEST_CASE("model.signed_normal_pixels_survive_import_without_clamping_or_replacement") {
+  Fixture fixture;
+  auto source = fixture.source();
+  const auto document = Json::parse(source.readText("surface.gltf").value());
+  const auto texture = document["materials"][0]["normalTexture"]["index"].get<std::size_t>();
+  const auto image = document["textures"][texture]["source"].get<std::size_t>();
+  const auto path = document["images"][image]["uri"].get<std::string>();
+  const Graphics::Image expected{2, 1, {119, 214, 120, 255, 128, 128, 0, 255}};
+  REQUIRE(source.writeAtomic(path, Assets::encodeImage(expected).value()));
+  auto model = Assets::loadModel(source, "surface.gltf", "assets/model");
+  REQUIRE_MESSAGE(model, (model ? "" : model.error().message));
+  CHECK(Assets::decodeImage(model->images[image].png)->pixels == expected.pixels);
+  CHECK(model->materials[0].normalTexture->sampling.colorSpace == Graphics::ColorSpace::Linear);
+}
+
 TEST_CASE("model.invalid_ranges_uris_cycles_extensions_and_capacities_fail") {
   Fixture fixture;
   const auto original = Json::parse(fixture.source().readText("surface.gltf").value());

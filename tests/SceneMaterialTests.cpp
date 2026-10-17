@@ -235,7 +235,8 @@ TEST_CASE("scene_material.invalid_or_partial_resources_and_budgets_fail_without_
   material.emissiveTexture.reset();
   Dot::Graphics::TextureOptions linear;
   linear.colorSpace = Dot::Graphics::ColorSpace::Linear;
-  material.normalTexture = Dot::Assets::TextureSource{"color.png", linear};
+  REQUIRE(fixture.files.writeTextAtomic("corrupt-normal.png", "not an image"));
+  material.normalTexture = Dot::Assets::TextureSource{"corrupt-normal.png", linear};
   REQUIRE(Dot::Assets::saveMaterial(fixture.files, "surface.dotmaterial", material));
   CHECK_FALSE(drawing.renderInto(fixture.scene, target));
   CHECK(device.resourceStats()->textures == 0);
@@ -251,7 +252,14 @@ TEST_CASE("scene_material.invalid_or_partial_resources_and_budgets_fail_without_
   CHECK(target.info()->frames == 1);
   auto rootless = Dot::Graphics::SceneRenderer::create(device).value();
   CHECK_FALSE(rootless.renderInto(fixture.scene, target));
+  material.normalTexture = Dot::Assets::TextureSource{"color.png", linear};
+  REQUIRE(Dot::Assets::saveMaterial(fixture.files, "surface.dotmaterial", material));
   REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(target.info()->frames == 2);
+  CHECK(drawing.stats()->textures == 2);
+  REQUIRE(drawing.renderInto(fixture.scene, target));
+  CHECK(target.info()->frames == 3);
+  CHECK(drawing.stats()->textures == 2);
 }
 
 TEST_CASE("scene_material_light_limit_and_camera_override_are_validated_before_submission") {

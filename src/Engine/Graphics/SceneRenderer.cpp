@@ -93,7 +93,6 @@ namespace Dot::Graphics {
     struct TextureEntry {
       Texture texture;
       std::uint64_t bytes;
-      bool normalEncoding;
     };
 
     struct SkinEntry {
@@ -514,11 +513,6 @@ namespace Dot::Graphics {
         auto existing = textures.find(key);
 
         if (existing != textures.end()) {
-          if (index == 2 && !existing->second.normalEncoding) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Normal texture requires source B>=128: " + source.path);
-          }
-
           *slots[index] = existing->second.texture;
           continue;
         }
@@ -526,11 +520,6 @@ namespace Dot::Graphics {
         auto local = pending.find(key);
 
         if (local != pending.end()) {
-          if (index == 2 && !local->second.normalEncoding) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Normal texture requires source B>=128: " + source.path);
-          }
-
           *slots[index] = local->second.texture;
           continue;
         }
@@ -540,17 +529,6 @@ namespace Dot::Graphics {
         if (!image) {
           return Core::fail(image.error().code,
                             "Material texture '" + source.path + "': " + image.error().message);
-        }
-
-        bool normalEncoding = true;
-
-        for (std::size_t pixel = 2; normalEncoding && pixel < image->pixels.size(); pixel += 4) {
-          normalEncoding = image->pixels[pixel] >= 128;
-        }
-
-        if (index == 2 && !normalEncoding) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Normal texture requires source B>=128: " + source.path);
         }
 
         const auto size = textureBytes(*image, source.sampling.mipmaps);
@@ -567,7 +545,7 @@ namespace Dot::Graphics {
         }
 
         *slots[index] = *uploaded;
-        pending.emplace(key, TextureEntry{std::move(*uploaded), size, normalEncoding});
+        pending.emplace(key, TextureEntry{std::move(*uploaded), size});
         pendingBytes += size;
       }
 

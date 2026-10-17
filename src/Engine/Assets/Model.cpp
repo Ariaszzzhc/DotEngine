@@ -680,7 +680,6 @@ namespace Dot::Assets {
       }
 
       std::size_t pixelBytes{};
-      std::vector<bool> normalImages;
 
       for (std::size_t i = 0; i < data->images_count; ++i) {
         const auto& image = data->images[i];
@@ -701,13 +700,6 @@ namespace Dot::Assets {
         }
 
         auto decoded = take(decodeImage(encoded));
-        bool normal = true;
-
-        for (std::size_t b = 2; b < decoded.pixels.size(); b += 4) {
-          normal = normal && decoded.pixels[b] >= 128;
-        }
-
-        normalImages.push_back(normal);
         require(decoded.pixels.size() <= 256 * 1024 * 1024 - pixelBytes,
                 "Model decoded image budget exceeded");
         pixelBytes += decoded.pixels.size();
@@ -797,12 +789,6 @@ namespace Dot::Assets {
           m.occlusionTexture
               = texture(sourceMaterial.occlusion_texture, Graphics::ColorSpace::Linear);
           m.emissiveTexture = texture(sourceMaterial.emissive_texture, Graphics::ColorSpace::Srgb);
-
-          if (sourceMaterial.normal_texture.texture) {
-            require(normalImages[cgltf_image_index(data.get(),
-                                                   sourceMaterial.normal_texture.texture->image)],
-                    "Normal image has unsupported nonpositive Z encoding");
-          }
         }
 
         take(validateMaterial(m));

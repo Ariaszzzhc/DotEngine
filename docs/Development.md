@@ -8102,3 +8102,46 @@ pass. Removed eight owned helper/request files and the isolated example copy;
 retained only response/log/result evidence in ignored build storage. Original examples,
 user references, caches and existing archives are preserved; reference files remain
 untracked. No caller compiler/linker setting, dependency or distribution archive changed.
+
+## Signed RGB normal textures
+
+Actual Poly Haven utility/duct model imports exposed the old whole-image B>=128
+restriction: a small number of JPEG edge samples contain negative tangent Z.
+The importer rejected both real assets before publishing their native bundles.
+Normal textures now preserve full signed RGB directions through model import,
+texture upload, scene/material preview, Play preparation and data/native export.
+Removed redundant positive-Z flags and pixel scans from those paths. Linear data
+sampling, valid geometry/tangent frames, decoded-image limits, resource ownership
+and transactional load/publication requirements remain enforced.
+
+Surface shading normalizes signed directions. Opposing samples can cancel through
+filtering, so a direction with squared length <=1e-12 retains the geometric normal;
+source pixels are never clamped or replaced. The new offscreen regression verifies
+negative-Z radiance and cancellation against the geometric reference, including
+normal scale zero. A new model regression verifies signed pixel preservation.
+Existing preview, scene transition, export and scene-material cache cases now cover
+supported signed normals and retain malformed-image, color-space, frame-lifetime and
+partial-resource rollback checks. Source/color and normal bindings of the same image
+continue to use distinct sampling cache keys. No new format/version or dependency.
+
+The initial related 39 checks pass (9.80s), and the signed-normal export case passes
+(0.40s). The first combined full Debug run passes 1266/1268 (193.03s): one older
+scene-material assertion still expected negative Z rejection and was updated to
+exercise a corrupt image plus valid signed/cache reuse; a larger-template CLI
+fixture exceeded its 10s helper wait (addressed in the example authoring stage).
+Those two repaired cases pass (12.85s). A missing explicit Graphics.Image test
+import was corrected before successful Debug/Release builds. No production process
+or script execution deadline changed.
+
+Final combined worktree suites pass 1268/1268 in Debug (193.39s) and Release
+(21.09s, assertions disabled), with 385 unit and 883 integration cases. Integration
+includes 194 compiler, 133 durable offscreen, 32 native-audio, 28 platform and 20
+process cases. Automated suites open no desktop windows. Validation is macOS arm64
+only; Windows/Linux source targets were not executed. These results do not establish
+finished game quality or overall engine production readiness.
+
+Final review covers signed/mip-filtered directions, finite shader fallback, linear
+sampling, geometric frame validation, pixel preservation, texture-cache ownership,
+partial-load resource release and consistent import/preview/Play/export behavior.
+All twelve changed C++ files pass clang-format; WGSL control-flow spacing and staged
+whitespace checks pass. No caller compiler/linker configuration or dependencies changed.
