@@ -11,6 +11,7 @@ module;
 #include <unordered_set>
 #include <utility>
 #include <variant>
+#include <vector>
 
 module Dot.Graphics.SceneRenderer;
 
@@ -100,6 +101,7 @@ namespace Dot::Graphics {
       World::SkinBinding properties;
       Animation::SceneSkin binding;
       SkinnedMesh controller;
+      std::vector<Math::Mat4> palette;
       std::uint64_t bytes;
     };
 
@@ -452,7 +454,8 @@ namespace Dot::Graphics {
       skinAssets.try_emplace(entity.skin->asset, *loaded);
       auto inserted = skins.emplace(
           entity.id.value,
-          SkinEntry{meshKey, *entity.skin, std::move(*binding), std::move(*controller), residency});
+          SkinEntry{
+              meshKey, *entity.skin, std::move(*binding), std::move(*controller), {}, residency});
       bytes += residency;
       return &inserted.first->second;
     }
@@ -755,8 +758,10 @@ namespace Dot::Graphics {
         frame.draws.reserve(drawCount);
         std::vector<std::vector<Math::Mat4>> palettes;
         std::vector<SkinUpdate> updates;
+        std::vector<SkinEntry*> changedSkins;
         palettes.reserve(128);
         updates.reserve(128);
+        changedSkins.reserve(128);
 
         for (const auto& entity : *entities) {
           if (!entity.mesh || !entity.mesh->visible) {
@@ -826,8 +831,12 @@ namespace Dot::Graphics {
               return std::unexpected(palette.error());
             }
 
-            palettes.push_back(std::move(*palette));
-            updates.push_back({&(*bound)->controller, palettes.back()});
+            if (*palette != (*bound)->palette) {
+              palettes.push_back(std::move(*palette));
+              updates.push_back({&(*bound)->controller, palettes.back()});
+              changedSkins.push_back(*bound);
+            }
+
             mesh = (*bound)->controller.mesh().value();
           }
 
@@ -874,6 +883,12 @@ namespace Dot::Graphics {
 
           if (!updated) {
             return std::unexpected(updated.error());
+          }
+
+          /** Commit pose dependencies only after the whole GPU batch validates.
+           * 仅整个 GPU 批次校验成功后发布姿态依赖。 */
+          for (std::size_t i = 0; i < changedSkins.size(); ++i) {
+            changedSkins[i]->palette = std::move(palettes[i]);
           }
         }
 
@@ -1115,11 +1130,15 @@ namespace Dot::Graphics {
           return std::unexpected(palette.error());
         }
 
-        const std::array updates{SkinUpdate{&(*bound)->controller, *palette}};
-        auto updated = m_impl->renderer->updateSkins(updates);
+        if (*palette != (*bound)->palette) {
+          const std::array updates{SkinUpdate{&(*bound)->controller, *palette}};
+          auto updated = m_impl->renderer->updateSkins(updates);
 
-        if (!updated) {
-          return std::unexpected(updated.error());
+          if (!updated) {
+            return std::unexpected(updated.error());
+          }
+
+          (*bound)->palette = std::move(*palette);
         }
 
         return transformedBounds((*bound)->controller.info()->bounds, *transform);

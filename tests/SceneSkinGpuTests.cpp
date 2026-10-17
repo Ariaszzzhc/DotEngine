@@ -93,6 +93,34 @@ TEST_CASE("skin.scene_gpu_matches_saved_cpu_reference_bounds_picking_and_persist
   CHECK(service.stats()->meshes == 1);
 }
 
+TEST_CASE("skin.scene_gpu_unchanged_pose_reuses_shadows_across_bounds_and_picking") {
+  Fixture f;
+  const auto light = f.scene.createEntity("Light").value();
+  REQUIRE(f.scene.setLight(
+      light,
+      World::Light{.shadows = ShadowSettings{.resolution = 128, .cascades = 1, .distance = 12}}));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  const auto first = service.render(f.scene, 64, 64).value();
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(service.render(f.scene, 64, 64)->pixels == first.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  CHECK(renderer.visibilityStats()->mesh->shadowDraws == 0);
+  REQUIRE(service.bounds(f.scene, f.owner));
+  REQUIRE(service.pick(f.scene, 64, 64, {.5F, .5F}));
+  CHECK(service.render(f.scene, 64, 64)->pixels == first.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  REQUIRE(f.scene.setTransform(f.joint, {{.5F, 0, 0}}));
+  REQUIRE(service.bounds(f.scene, f.owner));
+  CHECK(service.render(f.scene, 64, 64)->pixels != first.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  REQUIRE(f.scene.setTransform(f.joint, {}));
+  CHECK(service.render(f.scene, 64, 64)->pixels == first.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(service.render(f.scene, 64, 64)->pixels == first.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+}
+
 TEST_CASE("skin.scene_gpu_ignored_mesh_reflection_preserves_physical_faces_picking_and_normals") {
   Fixture f;
   Assets::MaterialDescription material;

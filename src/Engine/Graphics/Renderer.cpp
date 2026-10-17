@@ -299,6 +299,7 @@ namespace Dot::Graphics {
     bool hasTangents{};
     bool m_uvFrame{};
     bool m_skinned{};
+    std::uint64_t m_geometryRevision{};
     float m_poseOrientation{1};
     std::shared_ptr<Impl> m_source;
     std::uint64_t vertexBytes{};
@@ -584,6 +585,52 @@ namespace Dot::Graphics {
     wgpu::RenderPipeline shadowEnvironmentPipeline;
     wgpu::RenderPipeline shadowDepthPipeline;
     wgpu::Texture shadowTexture;
+
+    struct ShadowCasterState {
+      std::weak_ptr<Mesh::Impl> mesh;
+      std::uint64_t revision;
+      Math::Mat4 model;
+      bool masked;
+      float opacity;
+      float cutoff;
+      std::weak_ptr<Texture::Impl> texture;
+
+      auto matches(const ShadowCasterState& other) const -> bool {
+        const auto sameOwner = [](const auto& left, const auto& right) {
+          return !left.owner_before(right) && !right.owner_before(left);
+        };
+        return sameOwner(mesh, other.mesh) && revision == other.revision && model == other.model
+               && masked == other.masked
+               && (!masked
+                   || (opacity == other.opacity && cutoff == other.cutoff
+                       && sameOwner(texture, other.texture)));
+      }
+    };
+
+    struct ShadowFaceState {
+      ShadowTile tile;
+      Math::Mat4 matrix;
+      std::vector<std::uint32_t> casters;
+    };
+
+    /** Exact depth dependencies, with weak resource identity and no content hashes.
+     * One bounded draw table and face index lists avoid duplicating caster data.
+     * 精确深度依赖，使用弱资源身份而非内容哈希；一份有界绘制表及逐面索引避免复制投射物数据。 */
+    struct ShadowCacheState {
+      std::vector<ShadowCasterState> casters;
+      std::vector<ShadowFaceState> faces;
+    };
+
+    ShadowCacheState m_shadowCache;
+    std::optional<ShadowCacheState> m_pendingShadowCache;
+
+    auto commitShadowCache() -> void {
+      if (m_pendingShadowCache) {
+        m_shadowCache = std::move(*m_pendingShadowCache);
+        m_pendingShadowCache.reset();
+      }
+    }
+
     std::optional<OcclusionSettings> occlusion;
     std::array<wgpu::Texture, 4> occlusionTextures;
     wgpu::RenderPipeline geometryPipeline;
@@ -1019,6 +1066,8 @@ namespace Dot::Graphics {
       }
 
       shadowTexture = std::move(texture);
+      m_shadowCache = {};
+      m_pendingShadowCache.reset();
       shadowResolution = atlas.dimension;
       shadowLayers = atlas.layers;
       shadowBytes
@@ -2118,8 +2167,21 @@ namespace Dot::Graphics {
     auto encodeShadows(const wgpu::CommandEncoder& encoder, std::span<const PreparedDraw> draws,
                        std::span<const FrameShadow> sources, const ShadowAtlas& atlas)
         -> Core::Result<void> {
+      /** Invalidate before encoding: an abandoned/failed submission cannot certify
+       * atlas contents. Publish the candidate only after queue/error-scope success.
+       * 编码前失效：放弃或失败提交不能证明图集内容；仅队列/错误作用域成功后发布候选。 */
+      const auto previous = std::exchange(m_shadowCache, {});
+      m_pendingShadowCache.reset();
+      ShadowCacheState candidate;
+      candidate.casters.reserve(draws.size());
+
+      for (const auto& draw : draws) {
+        candidate.casters.push_back({draw.mesh, draw.mesh->m_geometryRevision, draw.uniform.model,
+                                     draw.uniform.alpha.x == 1, draw.uniform.tint.w,
+                                     draw.uniform.alpha.y, draw.textures[0]});
+      }
+
       struct Face {
-        ShadowTile tile;
         DrawBatches plan;
         wgpu::Buffer storage;
       };
@@ -2143,22 +2205,64 @@ namespace Dot::Graphics {
             return std::unexpected(plan.error());
           }
 
-          std::vector<CoverageData> matrices;
-          matrices.reserve(plan->indices.size());
+          candidate.faces.push_back(
+              {atlas.sources[source][layer], fit.matrices[layer], plan->indices});
+          faces.push_back({std::move(*plan), {}});
+        }
+      }
 
-          for (const auto index : plan->indices) {
-            auto matrix = Math::multiply(fit.matrices[layer], draws[index].uniform.model);
+      std::vector<std::vector<std::size_t>> oldPages(atlas.layers);
+      std::vector<std::vector<std::size_t>> pages(atlas.layers);
+
+      for (std::size_t i = 0; i < previous.faces.size(); ++i) {
+        oldPages[previous.faces[i].tile.layer].push_back(i);
+      }
+
+      for (std::size_t i = 0; i < candidate.faces.size(); ++i) {
+        pages[candidate.faces[i].tile.layer].push_back(i);
+      }
+
+      std::vector<bool> dirty(atlas.layers);
+
+      for (std::uint32_t layer = 0; layer < atlas.layers; ++layer) {
+        dirty[layer] = oldPages[layer].size() != pages[layer].size();
+
+        for (std::size_t i = 0; !dirty[layer] && i < pages[layer].size(); ++i) {
+          const auto& before = previous.faces[oldPages[layer][i]];
+          const auto& after = candidate.faces[pages[layer][i]];
+          dirty[layer] = before.tile != after.tile || before.matrix != after.matrix
+                         || before.casters.size() != after.casters.size();
+
+          for (std::size_t j = 0; !dirty[layer] && j < after.casters.size(); ++j) {
+            dirty[layer]
+                = !previous.casters[before.casters[j]].matches(candidate.casters[after.casters[j]]);
+          }
+        }
+
+        if (!dirty[layer]) {
+          ++pendingVisibility.shadowPagesReused;
+          continue;
+        }
+
+        ++pendingVisibility.shadowPagesUpdated;
+
+        for (const auto index : pages[layer]) {
+          auto& face = faces[index];
+          const auto& state = candidate.faces[index];
+          std::vector<CoverageData> matrices;
+          matrices.reserve(face.plan.indices.size());
+
+          for (const auto drawIndex : face.plan.indices) {
+            auto matrix = Math::multiply(state.matrix, draws[drawIndex].uniform.model);
 
             if (!matrix) {
               return Core::fail(matrix.error().code,
                                 "Shadow instance matrix: " + matrix.error().message);
             }
 
-            const auto& data = draws[index].uniform;
+            const auto& data = draws[drawIndex].uniform;
             matrices.push_back({*matrix, data.tint, data.flags, data.alpha, {}});
           }
-
-          wgpu::Buffer storage;
 
           if (!matrices.empty()) {
             auto buffer = instanceBuffer(matrices.data(), matrices.size() * sizeof(CoverageData));
@@ -2167,16 +2271,19 @@ namespace Dot::Graphics {
               return std::unexpected(buffer.error());
             }
 
-            storage = *buffer;
+            face.storage = *buffer;
           }
-
-          faces.push_back({atlas.sources[source][layer], std::move(*plan), std::move(storage)});
         }
       }
 
-      /** Clear each physical layer once; per-face clears would erase adjacent tiles.
-       * 每个物理图层只清除一次，逐面清除会擦掉相邻图块。 */
+      /** Refresh whole physical pages: clearing one dirty tile would erase its
+       * unchanged neighbours. Retained pages are neither cleared nor rendered.
+       * 重绘整个物理页：清除单个脏图块会擦掉未变化邻块；复用页既不清除也不绘制。 */
       for (std::uint32_t layer = 0; layer < atlas.layers; ++layer) {
+        if (!dirty[layer]) {
+          continue;
+        }
+
         wgpu::TextureViewDescriptor view;
         view.dimension = wgpu::TextureViewDimension::e2D;
         view.baseArrayLayer = layer;
@@ -2192,13 +2299,9 @@ namespace Dot::Graphics {
         auto pass = encoder.BeginRenderPass(&descriptor);
         pass.SetPipeline(shadowDepthPipeline);
 
-        for (const auto& face : faces) {
-          const auto& tile = face.tile;
-
-          if (tile.layer != layer) {
-            continue;
-          }
-
+        for (const auto index : pages[layer]) {
+          const auto& face = faces[index];
+          const auto& tile = candidate.faces[index].tile;
           pass.SetViewport(static_cast<float>(tile.x), static_cast<float>(tile.y),
                            static_cast<float>(tile.size), static_cast<float>(tile.size), 0, 1);
           pass.SetScissorRect(tile.x, tile.y, tile.size, tile.size);
@@ -2217,6 +2320,7 @@ namespace Dot::Graphics {
         pass.End();
       }
 
+      m_pendingShadowCache = std::move(candidate);
       return {};
     }
 
@@ -2670,7 +2774,7 @@ namespace Dot::Graphics {
     auto readback(std::uint32_t width, std::uint32_t height, F&& encodeTarget,
                   wgpu::Texture existing = {},
                   wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm,
-                  std::uint32_t layer = 0, std::uint32_t mip = 0, bool commitOcclusion = false)
+                  std::uint32_t layer = 0, std::uint32_t mip = 0, bool commitMeshState = false)
         -> Core::Result<Readback> {
       const auto maximum = std::min(maxReadbackDimension, info.maxTextureDimension);
 
@@ -2718,7 +2822,11 @@ namespace Dot::Graphics {
         return std::unexpected(checked.error());
       }
 
-      if (commitOcclusion && occlusionPending) {
+      if (commitMeshState) {
+        commitShadowCache();
+      }
+
+      if (commitMeshState && occlusionPending) {
         occlusionReady = true;
         occlusionPending = false;
       }
@@ -2820,7 +2928,7 @@ namespace Dot::Graphics {
     }
 
     template <typename F>
-    auto presentFrame(F&& encodeTarget, bool commitOcclusion = false)
+    auto presentFrame(F&& encodeTarget, bool commitMeshState = false)
         -> Core::Result<PresentResult> {
       if (!surface) {
         return Core::fail(Core::ErrorCode::InvalidState, "Renderer has no native surface");
@@ -2906,7 +3014,11 @@ namespace Dot::Graphics {
         return std::unexpected(checked.error());
       }
 
-      if (commitOcclusion && occlusionPending) {
+      if (commitMeshState) {
+        commitShadowCache();
+      }
+
+      if (commitMeshState && occlusionPending) {
         occlusionReady = true;
         occlusionPending = false;
       }
@@ -3547,6 +3659,7 @@ namespace Dot::Graphics {
         mesh.m_poseOrientation = (flags & 4U) != 0 ? -1.F : 1.F;
         state.m_info.bounds = bounds[i];
         ++state.m_info.updates;
+        mesh.m_geometryRevision = state.m_info.updates;
         state.m_next ^= 1U;
       }
 
@@ -4293,6 +4406,8 @@ namespace Dot::Graphics {
 
     if (atlas->sources.empty()) {
       m_impl->shadowTexture = nullptr;
+      m_impl->m_shadowCache = {};
+      m_impl->m_pendingShadowCache.reset();
       m_impl->shadowResolution = 0;
       m_impl->shadowLayers = 0;
       m_impl->shadowBytes = 0;
@@ -4473,6 +4588,7 @@ namespace Dot::Graphics {
       m_impl->occlusionPending = false;
     }
 
+    m_impl->commitShadowCache();
     ++target.m_impl->info.frames;
     m_impl->visibility.mesh = m_impl->pendingVisibility;
     return {};

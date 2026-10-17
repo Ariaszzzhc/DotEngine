@@ -81,9 +81,11 @@ export namespace Dot::Graphics {
   };
 
   /** Instance quantities and actual GPU mesh draw commands, excluding sky/fullscreen/
-   * GUI passes. Shadow quantities include every cascade. Publish after successful
+   * GUI passes. Shadow quantities count submitted work, excluding cached pages;
+   * page counters distinguish redraws from retained depth. Publish after successful
    * submission/validation; failures retain the previous report.
-   * 区分实例数量与实际 GPU 网格绘制命令，不含天空/全屏/GUI；阴影计入所有级联，
+   * 区分实例数量与实际 GPU 网格绘制命令，不含天空/全屏/GUI；阴影仅计提交工作，
+   * 不计复用页；页计数区分重绘与保留深度，
    * 成功提交/校验后发布，失败保留旧报告。 */
   struct MeshFrameStats {
     std::size_t inputInstances{};
@@ -97,6 +99,8 @@ export namespace Dot::Graphics {
     std::size_t solidDraws{};
     std::size_t blendedDraws{};
     std::size_t shadowDraws{};
+    std::size_t shadowPagesUpdated{};
+    std::size_t shadowPagesReused{};
     std::size_t occlusionDraws{};
     SpatialStats spatial;
     auto operator==(const MeshFrameStats&) const -> bool = default;
@@ -529,8 +533,11 @@ export namespace Dot::Graphics {
      * Lit draws require complete unit normals and finite affine world transforms;
      * no-direct-light frames retain emission and explicitly bound IBL. Explicit
      * shadows support all light kinds within the configured atlas budget.
+     * Unchanged physical depth pages are retained using exact projection/caster/
+     * coverage dependencies; cache ownership never keeps assets alive.
      * 事务式替换未来帧拥有的相机/直接光数据；受光绘制要求完整单位法线和有限仿射世界变换，
-     * 无直接光帧保留自发光及显式绑定的 IBL；方向光、点光及聚光均可在图集预算内显式投影。 */
+     * 无直接光帧保留自发光及显式绑定的 IBL；方向光、点光及聚光均可在图集预算内显式投影。
+     * 按精确投影/投射物/覆盖依赖保留未变化物理深度页，缓存所有权不会延长资产生命期。 */
     [[nodiscard]] auto setLighting(const Lighting& lighting) -> Core::Result<void>;
     [[nodiscard]] auto lighting() const -> Core::Result<Lighting>;
 

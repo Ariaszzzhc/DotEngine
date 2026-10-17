@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 import Dot.Graphics.Renderer;
@@ -456,10 +457,137 @@ TEST_CASE("shadows.gpu_all_64_point_sources_pack_and_last_light_keeps_real_occlu
   CHECK(fixture.renderer.resourceStats()->shadowBytes == 24 * 1024 * 1024);
   CHECK(fixture.red(all, {1, 0, 0}) < .01F);
   CHECK(fixture.red(all, {-1, 0, 0}) > .3F);
+  CHECK(fixture.render().pixels == all.pixels);
+  const auto reused = fixture.renderer.visibilityStats()->mesh.value();
+  CHECK(reused.shadowDraws == 0);
+  CHECK(reused.shadowPagesUpdated == 0);
+  CHECK(reused.shadowPagesReused > 0);
+  fixture.lights.lights[1].intensity = 40;
+  fixture.lights.lights[1].color = {0, 1, 0};
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto neighbours = fixture.render();
+  CHECK(neighbours.pixels != all.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 0);
+  // Change one packed source; its neighbours must survive the whole-page clear.
+  // 改变一组已打包光源，整页清除后其相邻图块必须保持正确。
+  fixture.lights.lights.front().position.x -= 1;
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  CHECK(fixture.render().pixels == neighbours.pixels);
+  const auto partial = fixture.renderer.visibilityStats()->mesh.value();
+  CHECK(partial.shadowPagesUpdated > 0);
+  CHECK(partial.shadowPagesUpdated <= 6);
+  CHECK(partial.shadowPagesReused > 0);
+  CHECK(partial.shadowPagesUpdated + partial.shadowPagesReused == reused.shadowPagesReused);
+  fixture.lights.lights[1].intensity = 0;
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  CHECK(fixture.render().pixels == all.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 0);
   light.intensity = 80;
   fixture.lights.lights.assign(1, light);
   REQUIRE(fixture.renderer.setLighting(fixture.lights));
   const auto single = fixture.render();
   CHECK(single.pixels == all.pixels);
   CHECK(fixture.renderer.resourceStats()->shadowBytes == 6 * 128 * 128 * 4);
+}
+
+TEST_CASE("shadows.gpu_cache_reuses_depth_across_shading_changes_and_invalidates_camera") {
+  Fixture fixture;
+  const auto first = fixture.render();
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(fixture.render().pixels == first.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 0);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowDraws == 0);
+  fixture.lights.lights[0].intensity *= .5F;
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto dimmed = fixture.render();
+  CHECK(dimmed.pixels != first.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 0);
+  fixture.draws[0].material.roughness = .5F;
+  fixture.draws[0].receivesShadow = false;
+  fixture.render();
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  fixture.lights.viewPosition.x += 1;
+  fixture.camera
+      = Dot::Math::multiply(
+            Dot::Math::orthographic(-4, 4, -4, 4, .1F, 12).value(),
+            Dot::Math::lookAt(fixture.lights.viewPosition, {1, 0, 0}, {0, 0, -1}).value())
+            .value();
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  fixture.render();
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+}
+
+TEST_CASE("shadows.gpu_cache_updates_only_local_pages_affected_by_moving_casters") {
+  Fixture fixture;
+  auto spot = fixture.lights.lights[0];
+  spot.kind = LightKind::Spot;
+  spot.position = {0, 6, 0};
+  spot.direction = {0, -1, 0};
+  spot.range = 10;
+  spot.intensity = 80;
+  auto remote = spot;
+  remote.position.x = 30;
+  fixture.lights.lights = {spot, remote};
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  std::array draws{fixture.draws[0], fixture.draws[1], fixture.draws[1]};
+  draws[2].transform = Dot::Math::compose({30, 1, 0}).value();
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  const auto first = fixture.renderer.readHdrTarget(fixture.target).value();
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 2);
+  draws[2].transform = Dot::Math::compose({31, 1, 0}).value();
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  CHECK(fixture.renderer.readHdrTarget(fixture.target)->pixels == first.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  draws[2].castsShadow = false;
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 1);
+  REQUIRE(fixture.renderer.renderMeshesInto(fixture.target, draws, fixture.camera));
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 0);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 2);
+}
+
+TEST_CASE("shadows.gpu_cache_does_not_retain_resources_or_confuse_expired_mask_with_white") {
+  Fixture fixture;
+  auto texture = fixture.renderer.uploadTexture(Image{1, 1, {255, 255, 255, 0}}).value();
+  fixture.draws[1].material.alphaMode = AlphaMode::Mask;
+  fixture.draws[1].material.baseColorTexture = texture;
+  CHECK(fixture.red(fixture.render(), {1, 0, 0}) > .4F);
+  fixture.draws[1].material.baseColorTexture.reset();
+  texture = {};
+  CHECK(fixture.renderer.resourceStats()->textures == 0);
+  CHECK(fixture.red(fixture.render(), {1, 0, 0}) < .01F);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  fixture.caster = {};
+  CHECK(fixture.renderer.resourceStats()->meshes == 1);
+  fixture.caster = fixture.renderer.upload(cube({.5F, .5F, .5F}).value()).value();
+  fixture.render();
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+}
+
+TEST_CASE("shadows.gpu_cache_abandoned_encoding_preserves_target_and_recovers_with_fresh_depth") {
+  Fixture fixture;
+  fixture.lights.lights[0].kind = LightKind::Point;
+  fixture.lights.lights[0].position = {-2, 3, 0};
+  REQUIRE(fixture.renderer.setLighting(fixture.lights));
+  const auto first = fixture.render();
+  const auto report = fixture.renderer.visibilityStats()->mesh.value();
+  const auto frames = fixture.target.info()->frames;
+  REQUIRE(fixture.renderer.setOcclusion(OcclusionSettings{}));
+  Dot::Math::Mat4 shear;
+  shear.data[8] = .5F;
+  const auto camera = Dot::Math::multiply(fixture.camera, shear).value();
+  const auto invalid = fixture.renderer.renderMeshesInto(fixture.target, fixture.draws, camera);
+  REQUIRE_FALSE(invalid);
+  CHECK(invalid.error().message.find("occlusion") != std::string::npos);
+  CHECK(fixture.renderer.visibilityStats()->mesh.value() == report);
+  CHECK(fixture.target.info()->frames == frames);
+  CHECK(fixture.renderer.readHdrTarget(fixture.target)->pixels == first.pixels);
+  REQUIRE(fixture.renderer.setOcclusion(std::nullopt));
+  CHECK(fixture.render().pixels == first.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesUpdated == 6);
+  CHECK(fixture.render().pixels == first.pixels);
+  CHECK(fixture.renderer.visibilityStats()->mesh->shadowPagesReused == 6);
 }

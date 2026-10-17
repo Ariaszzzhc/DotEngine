@@ -19,7 +19,7 @@ requirements remain:
 
 | Area | Current implementation | Evidence still needed or unfinished work |
 | --- | --- | --- |
-| Rendering | PBR material/texture slots, HDRI IBL, mixed directional/point/spot soft shadows with a bounded atlas and local-face culling, SSAO and HDR/tone mapping | Temporal quality, cached/pooled shadow work, resource streaming and populated-scene performance |
+| Rendering | PBR material/texture slots, HDRI IBL, mixed directional/point/spot soft shadows with a bounded atlas, local-face culling and retained unchanged depth pages, SSAO and HDR/tone mapping | Temporal quality, pooled submission, resource streaming and measured populated-scene frame costs |
 | Content/animation | Native resources, OBJ/glTF/GLB import, GPU skinning, animation cross-fades, isolated audition, live skeleton inspection, existing-clip key editing/save/undo, sampled curves and cross-track group key selection/retiming and owned copy/paste across a player's clips shared with agents | Native curve-drag acceptance, dope-sheet/multi-key value/tangent-handle and skeleton/binding authoring, layered/state-machine workflows and scalability |
 | Physics/gameplay | Rigid bodies with linear CCD, queries/contacts, saved Y-up character components, scene movement/jumping/stairs/slopes/platforms, native character query/contact proxies, unified virtual ground/wall/peer events and script/Inspector/agent controls | Populated-game character scalability |
 | Game state | Shared JSON state/revision checks, atomic slots, stable app IDs/user directories, built-in script services and isolated Play/editor-agent controls; see [storage contracts](GameState.md) | Background I/O, crash recovery/cloud persistence and complete game-specific checkpoint workflows |

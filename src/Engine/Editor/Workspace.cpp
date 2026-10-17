@@ -5316,6 +5316,8 @@ namespace Dot::Editor {
                  {"solidDraws", frame.solidDraws},
                  {"blendedDraws", frame.blendedDraws},
                  {"shadowDraws", frame.shadowDraws},
+                 {"shadowPagesUpdated", frame.shadowPagesUpdated},
+                 {"shadowPagesReused", frame.shadowPagesReused},
                  {"occlusionDraws", frame.occlusionDraws},
                  {"spatial",
                   {{"indexed", frame.spatial.indexedInstances},
@@ -6611,6 +6613,8 @@ namespace Dot::Editor {
                            frame.occlusionInstances);
         ImGui::TextWrapped("GPU draws: color %zu, shadows %zu, SSAO %zu", frame.colorDraws,
                            frame.shadowDraws, frame.occlusionDraws);
+        ImGui::TextWrapped("Shadow atlas pages: %zu updated, %zu reused", frame.shadowPagesUpdated,
+                           frame.shadowPagesReused);
         ImGui::TextWrapped("Solid / blended instances: %zu / %zu; GPU draws: %zu / %zu",
                            frame.solidInstances, frame.blendedInstances, frame.solidDraws,
                            frame.blendedDraws);

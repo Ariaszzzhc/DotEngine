@@ -341,6 +341,15 @@ TEST_CASE("skin.gpu_shared_deformation_matches_shadow_and_ssao_reference_passes"
   changed(renderer, controller, palette);
   const auto actual = renderer.renderMeshes(draws, camera, 96, 96).value();
   const auto guides = renderer.readOcclusion().value();
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
+  CHECK(renderer.renderMeshes(draws, camera, 96, 96)->pixels == actual.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowDraws == 0);
+  // Both ping-pong buffers are reused; content revisions must still invalidate depth.
+  // 两次更新会轮回复用顶点缓冲，内容修订仍必须使深度缓存失效。
+  changed(renderer, controller, palette);
+  changed(renderer, controller, palette);
+  CHECK(renderer.renderMeshes(draws, camera, 96, 96)->pixels == actual.pixels);
+  CHECK(renderer.visibilityStats()->mesh->shadowPagesUpdated == 1);
   auto reference = renderer.upload(deformMesh(mesh, skin, palette).value()).value();
   draws[0].mesh = &reference;
   const auto expected = renderer.renderMeshes(draws, camera, 96, 96).value();

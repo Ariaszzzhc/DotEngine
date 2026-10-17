@@ -862,6 +862,12 @@ for actual GPU commands, distinct from `input`/`visible`/`culled`/`shadow`/`occl
 instance quantities. Rendering labels the two rows explicitly. Per-instance variation
 is preserved after batching and does not change scene/Inspector authoring contracts.
 
+`shadowPagesUpdated` and `shadowPagesReused` count physical shadow-atlas layers
+redrawn or retained in that submission, also shown in Rendering. Retained pages
+still provide shadows, with no depth draws or instance uploads; `shadow` and
+`shadowDraws` count only work submitted this frame. Camera/caster/coverage changes
+invalidate relevant depth automatically through the shared renderer implementation.
+
 The Rendering pane also shows actual CPU visibility tests: BVH nodes, world AABBs,
 exact local-box tests and unindexed homogeneous tests. `inspect.workspace.view.draws.spatial`
 includes indexed/changed/refitted quantities and rebuild status for the last successful

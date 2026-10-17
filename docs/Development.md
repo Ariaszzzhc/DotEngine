@@ -8287,3 +8287,87 @@ requests; retained useful JSON/log/PNG evidence in ignored build storage. Existi
 build caches, archives and untracked user references are preserved. Finished
 realistic character art, cohesive environment direction, populated-scene performance
 and the overall engine/editor/game objective remain incomplete.
+
+## Retained shadow depth and unchanged skin poses
+
+The populated PrismRelay viewport repeatedly submitted 246 shadow draws even when
+nothing changed. Added exact per-physical-layer shadow depth reuse to the shared
+renderer, including runtime and editor consumers. Cache dependencies include face
+projection/tile, candidate mesh ownership identity, successful geometry revision,
+world transform and mask coverage inputs. Point/spot faces retain local frustum
+culling; directional faces retain off-camera casters. Dirty layers redraw every
+resident tile after one clear, preserving unchanged neighbours. Reused layers skip
+depth clear, instance upload and mesh draws. Shading-only intensity/color/receiver/
+roughness/filter/bias changes reuse unchanged depth.
+
+Weak ownership comparisons distinguish an expired texture from no texture and
+prevent pointer reuse or accidental mesh/texture residency. No hash-equality
+assumption, extra depth texture or GPU budget change is introduced. One draw table
+and face index lists bound CPU snapshots to 10,000 inputs and 384 faces. Geometry
+revisions advance only after validated skin batches, including ping-pong vertex
+buffer reuse. Encoding invalidates the old certificate; only successful queue/error
+validation publishes replacement dependencies. Abandoned/failed work therefore
+forces a fresh pass rather than trusting possibly stale depth. Atlas removal/
+replacement discards the cache. Input/fit/classification/batch planning still runs.
+
+SceneRenderer also retains exact last-validated joint palettes per owner. Unchanged
+poses no longer execute GPU skin deformation or invalidate shadow depth during
+render/bounds/picking. Changed visible palettes remain one atomic batch and publish
+only after successful validation; rebound/hidden/deleted/scoped owners follow the
+existing lifecycle. An explicit vector include corrected a first-build failure
+from relying on imported standard-library comparison declarations.
+
+Mesh frame statistics expose updated/reused physical page counters through the
+ordinary Rendering panel and strict live inspection. Shadow instances/draws now
+mean newly submitted work, excluding retained pages. Five durable offscreen cases
+cover unchanged/shading-only frames and camera changes, isolated local movement/
+removal, expired mask resources and mesh lifetime, abandoned encoding recovery,
+and unchanged scene skins across rendering/bounds/picking. Existing all-64-point
+packing and native skin/SSAO reference cases additionally cover shared-page
+neighbours and repeated buffer use. No unit test creates a device/window.
+
+The first focused run passes sixteen of seventeen cases; its recovery fixture
+sheared a world axis that did not skew this top-down camera's image axes, so it did
+not reach the intended AO error. Correcting the fixture's image-plane shear makes
+the real validation fail as intended and verifies preserved pixels/report plus
+fresh-depth recovery. All twenty-four related shadow/scene-skin cases then pass
+(32.53s). No production behavior was changed to force a fixture failure.
+
+Actual Release editor Game view retains all seven PrismRelay shadow layers, with
+zero new shadow instances/draws instead of the previous 734/246. Its 1480x574 PNG
+is byte-identical to the previous result. Agent Play input holds W/Space for twenty
+frames (plus its normal release frame); Player moves from [-3,0,2] to approximately
+[-3,1.7538,1.3366], with no diagnostics, render error or dropped fixed time. The
+sampled animated frame updates six layers/reuses one, submits 211 shadow draws,
+and still draws 180 input meshes/34 color batches. Other observed animated frames
+reuse three layers. These are actual work counts, not CPU/GPU timing or FPS claims.
+Stop restores clean authoring and the exact prior PNG, then all seven layers reuse.
+The first native helper incorrectly expected its own actor-summary field in the
+raw inspect-play response; it was corrected to scene.entities. That owned process
+closed normally, and the complete second workflow succeeds. Both native sessions
+have empty stderr and retired control directories; the complete workflow verifies
+the native editor exits 0. The first helper exits with its schema mistake after
+closing its owned editor during cleanup. No gameplay/scene assets
+are changed, and no distribution archive is requested or produced.
+
+Final Debug/Release builds succeed. Full Debug CTest passes 1274/1274 (189.00s).
+Final review then strengthens the shared-page regression by lighting a neighbouring
+source in green, verifying visible changed pixels before moving the adjacent
+zero-intensity source; equality now detects accidental erasure of lit neighbouring
+tiles. This test is rebuilt and rechecked in Debug (1/1, 1.27s); production code
+is unchanged. Full Release with that strengthened case passes 1274/1274 (20.30s,
+assertions disabled). The suites contain 398 unit and 876 integration cases,
+including 194 compiler, 138 durable offscreen, 32 native-audio, 28 platform and
+20 process cases. Automated suites open no desktop windows. macOS arm64 is the
+only executed platform; Windows/Linux source support is not a validation claim.
+
+Reviewed cache publication after submission, rejected-frame recovery, weak resource
+lifetime/expiry, count/counter bounds, exact coverage dependencies, skin pose
+transactions, shared-page clears and Runtime/viewport/agent consistency. All eight
+changed C++ sources/interfaces pass clang-format; whitespace checks pass. No new
+dependencies, compiler/linker configuration, serialized layout, test executable or
+project asset changes. Removed 33 owned temporary helper/request files, retaining
+useful logs/responses and native PNGs in ignored build storage. Existing caches,
+archives and untracked user references remain preserved. Finished realistic
+character/environment art, measured populated-scene frame costs, streaming and
+the overall engine/editor/game objective remain unfinished.

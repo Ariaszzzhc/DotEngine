@@ -437,8 +437,8 @@ completed target. These working buffers remain separate from asset residency.
 World caster bounds are validated once per frame. Local faces conservatively cull
 transformed mesh bounds against their own frustum, independently of main-camera
 visibility; directional fits retain off-camera overlapping casters. Every face has
-independent batch/instance storage. Large scenes still need pooled submission,
-cached updates and GPU-driven/spatial local-light work. Range/cone attenuation of
+independent batch/instance storage when its physical page changes. Large scenes still
+need pooled submission and GPU-driven/spatial local-light work. Range/cone attenuation of
 zero, or zero intensity, skips shadow filtering without changing light contribution.
 
 Saved scene lights retain the strict shadows object with all eight settings; mesh
@@ -472,6 +472,43 @@ index, rather than passing full matrix arrays by value through sampling helpers.
 Filtering/submission optimization remains unfinished. Radial coverage
 limits affect shadowing only; the light's existing smooth range/cone attenuation
 continues independently. IBL, emission and other lights are not shadowed by this map.
+
+### Retained shadow depth pages
+
+Each physical atlas layer retains validated depth between mesh submissions. Exact
+face tile/projection and relevant caster inputs determine reuse: shared mesh identity,
+successful geometry revision, world transform, and mask mode/opacity/cutoff/base-color
+texture identity. Local faces compare only their conservative frustum candidates;
+directional faces retain their existing off-camera caster policy. Lighting color/
+intensity, receiver flags, roughness and filter/bias changes do not redraw unchanged
+depth. Projection, layout, geometry or mask-coverage changes invalidate affected pages.
+A dirty page clears and redraws all of its tiles together, preserving unchanged
+neighbour tiles. Reused pages perform no depth clear, instance-buffer upload or draw.
+
+Identity uses weak ownership, distinguishing an expired resource from an absent
+texture without retaining meshes/textures or relying on hash equality. Skin updates
+advance geometry revisions only after the full deformation batch validates, including
+ping-pong buffer reuse. SceneRenderer keeps the last validated joint palette per
+owner: exact unchanged palettes reuse deformation across drawing, bounds and picking;
+changed palettes publish only after successful atomic GPU updates. Animated poses
+continue to invalidate their actual shadow pages.
+
+Cache candidates are published after successful GPU submission/error validation.
+Abandoned encoding or failed submission leaves depth uncertified, so the next mesh
+pass rebuilds it. Atlas replacement or removal discards retained dependencies.
+The CPU state is bounded by 10,000 draw records and 384 face index lists; it stores
+one draw table per snapshot rather than copies of geometry per face. Projection,
+input validation, classification and batch planning still run each frame. This
+reduces submitted depth work, without claiming streaming, a static/dynamic split,
+per-tile clears or measured CPU/GPU frame time.
+
+`MeshFrameStats.shadowPagesUpdated`/`shadowPagesReused` report actual physical layers
+redrawn/retained. Shadow instance/draw counters count newly submitted work only;
+a fully reused frame reports zero shadow draws while still receiving shadows.
+The Rendering pane and live editor inspection expose the same counters. Durable
+offscreen regressions cover pixel equality, independent local updates, shared-page
+neighbours, resource expiry, camera/coverage changes, skin buffer reuse and abandoned
+encoding recovery.
 
 点光使用独立于相机的六面透视阴影，聚光使用外半角两倍的透视视角（投影时半角须小于
 90 度）。局部阴影径向覆盖不超过光源 range 与 shadows.distance 的较小值；级数及
