@@ -140,7 +140,7 @@ creates independent content, preserving the original link only on its original r
 Runtime/Play/export use materialized entities without reading link source files.
 Editor insertion/refresh resolves saved linked sources recursively before flattening
 the resulting materialization. Variants, applying overrides back to source,
-source-path retargeting and inline field markers remain unfinished. `Dot.World.SceneLinks`
+source-path retargeting remain unfinished. `Dot.World.SceneLinks`
 provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
 owns validated link metadata. Existing target handles remain untouched until callers
 publish the complete candidate.
@@ -207,6 +207,49 @@ without moving selection. Applied overrides remain readable during pending draft
 Play and preview; mutation controls use ordinary authoring guards. UI and agent
 operations share the native `findSceneLinkRoot`, `inspectSceneOverrides`,
 `prepareSceneOverrideRevert` and `prepareSceneBaselineRevert` implementations.
+
+## Field indicators and restoring a component
+
+The entity Inspector marks overridden Transform/component headings with `*` and
+shows applied counts beside the corresponding fields, including Name, Parent and
+removed components. **Restore field** restores that entire top-level field from
+the last refreshed baseline in one document transaction. Other fields, placement,
+selection and entity reservations remain. Undo/redo and Save use ordinary history.
+Pending Inspector/resource drafts must be applied or reset first; indicators count
+only committed authoring differences, including during Play or audition.
+
+`inspect-scene-overrides.sceneOverrides.fields` maps top-level field names to
+complete property-override counts for the requested entity/instance filter. Counts
+are independent of offset/limit, including an empty final page. Added/deleted-node
+entries contribute to `total`, but have no inherited field counts. An unlinked
+entity and an unchanged placement root return empty fields. The workspace exposes
+the selected entity's independent filter under `workspace.sceneFieldOverrides`,
+with revision, page and error; changing the lower list to Whole instance does not
+change field indicators.
+
+```json
+{"command":"edit","revision":"17","operations":[{"op":"revert-scene-field","root":"20","entity":"22","field":"material"}]}
+```
+
+Every field is required, with no extras. `field` is one native top-level entity
+field, such as `name`, `parent`, `transform`, `mesh`, `material` or `script`. It is
+not a JSON Pointer. `id`, unknown fields, stale requests, missing nodes, placement
+roots, local additions and nodes outside that instance reject. Use existing node
+revert operations for additions/deletions. Unchanged fields are no-ops.
+
+`Dot.World.SceneLinks::prepareSceneFieldRevert` uses the stored, target-remapped
+baseline without source I/O or new entity IDs. It restores complete components,
+including all script properties even beyond the 256-key selected-revert limit.
+Arrays remain atomic and absent components remain null. Invalid final parent,
+skin, animation or mutually exclusive component relationships fail atomically;
+repair dependencies or restore related fields in one edit batch. It does not write
+shared material/clip assets or apply local overrides back to the source.
+
+Prism Relay's twelve straight ducts and fourteen supports are linked to
+`assets/airducts/straight.dotscene` and `brace.dotscene`. Open and save a source,
+return to the bay, then explicitly refresh the desired placement roots. Play and
+exports keep using saved materializations. Field indicators and Restore field
+share this same native operation with strict agent editing.
 
 ## Layered source identities
 

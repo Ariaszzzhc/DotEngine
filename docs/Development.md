@@ -8471,3 +8471,104 @@ The earlier physical W observation was Chinese IME interception, not evidence of
 movement defect; this stage's movement evidence uses structured product input.
 Finished realistic character/environment art, whole-application performance,
 resource streaming and the overall engine/editor/game objective remain unfinished.
+
+## Linked field restoration through Prism production
+
+Added complete top-level property counts to native override inspection, independent
+of pagination and excluding added/deleted-node entries. The entity Inspector marks
+applied Transform/component overrides and provides Restore field beside the owning
+fields, including Name, Parent and removed components. Indicators query the selected
+entity independently of the lower whole-instance list and exclude unapplied drafts.
+Stable widget identities retain collapse state when markers change.
+
+The strict revert-scene-field document edit and GUI share native
+prepareSceneFieldRevert. It restores one whole field from the stored, target-remapped
+baseline without source I/O or new entity identities. Complete script properties
+can be restored beyond the selected-key operation's 256-key limit. Other fields,
+placement, selection and allocation reservations remain. Invalid ownership/fields,
+stale revisions and invalid final native dependencies reject atomically. Unchanged
+fields preserve document scope/revision/history. No shared material/clip resource or
+source file is implicitly edited.
+
+Four new CPU-only cases cover pagination-independent counts, over-256 property
+restoration, independently owned results, removed/added components, unchanged fields,
+foreign/missing/deleted/local entities, foreign threads, invalid restored parents,
+remapped skin/animation references and demoted camera/listener flags. Two document
+cases cover strict schemas, missing/wrong/extra fields, stale revisions, later-batch
+failure, selection/history/no-op/save/reopen and restoration with the source absent.
+An initial test compared expected wrappers instead of their successful owned values;
+that test compilation error was corrected without changing production behavior.
+
+Used the actual Release editor to replace all twelve PrismRelay straight ducts and
+fourteen supports with links to their existing scene assets. The 341 authored
+entities retain exactly the same names, transforms, components and hierarchy after
+remapping 116 placement/source values. The reserved main floor advances from 472 to
+588. Native saved links contain the real source baselines/mappings/namespaces; no
+handwritten provenance or direct scene-file replacement was used. Baseline, linked
+and reopened 1480x574 Game PNGs are byte-identical, SHA-256
+c345f04406d3defdfa323c9e357adfcbc7ef85a74b2c81879f4a458f6ae23fbe.
+
+Actual Inspector staging keeps field counts empty before Apply. Applying a local
+name and transform produces both counts; restoring Transform retains the local name,
+Undo/Redo restores each state, and a pending name draft blocks restoration without
+mutation. Restoring the remaining field returns the document clean. Open/save of
+the straight source, refresh of all twelve placements, preservation of a local
+name and restoration to the newly refreshed baseline succeed. Returning the source
+name restores all authored entities. Source save legitimately publishes the
+Document's reserved allocation floor (355 to 588), and linked namespace observations
+advance accordingly; that metadata change is retained rather than regressed. The
+first helper confused highest identity 471 with entity count 341 and was corrected
+before saving; another equality gate was corrected to account explicitly for these
+monotonic namespace floors. Actual data/pixel checks remain strict.
+
+Computer use inspects the real field markers, controls and final authored scene.
+Simulated button clicks retain an unrelated SDL pointer coordinate, including after
+using a development bundle with its own copied executable and standard resources.
+They do not establish native mouse activation of Restore field. Product JSON
+restoration is verified; no fake GUI input or test-only hook substitutes for it.
+One close-response helper races retirement of its temporary mailbox and times out;
+the native editor nevertheless exits zero with the control directory removed.
+Subsequent close checks retain actual queued receipts and verify owned process exit
+instead of claiming an unread applied response.
+
+Created an independent Prism project through project-action, then used its actual
+native workspace to import the existing licensed utility-cabinet glTF, add a linked
+placement, edit/save its own PBR material, author a point light and child static
+collider, check scripts, save, close and reopen. The reopened scene equals the
+saved scene, with 346 entities and 27 links. Structured W/Space Play input moves
+Player from [-3,0,2] to [-3,1.4705257,1.3894497]; observed height reaches 1.4705257.
+An external player.ts edit visibly renames that same runtime entity after hot reload
+(frame 75), proving execution of the new source. Original bytes are restored,
+movement continues and the restored on-disk project type-checks. Stop retains the
+clean authoring scene and exact pre-Play PNG. No Play diagnostics/errors or dropped
+fixed time are recorded in this session.
+
+Workspace native export succeeds. All 116 exported content files (45,988,267 bytes)
+match the saved authored project byte-for-byte; compiled modules contain no temporary
+reload marker. Moved the native export and moved its authoring directory away before
+running the actual DotGame for 180 frames; it exits zero. This run reports one frame
+exceeding one second and 5,099,999,796ns of dropped fixed updates. A subsequent two-
+frame run exits zero in 1.0711s and still reports 466,666,648ns dropped. These expose
+startup/frame stalls, not stable throughput; their exact loading/pipeline/scheduling
+costs remain unlocated. No warning was suppressed or timing bound loosened. The
+native export is temporary validation output, not a new editor distribution/archive.
+
+Debug/Release configure and final builds succeed. Full Debug CTest passes 1284/1284
+(201.06s); full Release/NDEBUG passes 1284/1284 (21.11s). The suites contain 402 unit
+and 882 integration cases, including 194 compiler, 142 offscreen, 32 native-audio,
+28 platform and 20 process cases (labels overlap). Focused native/document/example
+checks pass 20/20 in Debug (1.41s). Automatic suites open no desktop windows; native
+product workflows above are separate deliberate checks. Only macOS arm64 is tested.
+
+Reviewed the complete code/data diff for ownership, failure propagation, field and
+page boundaries, allocation monotonicity, remapped native references, atomic history,
+GUI draft guards/cache identity and platform assumptions. All six changed C++ files
+pass clang-format and whitespace checks pass. No dependency, compiler/linker setting,
+serialized format, compatibility loader or test executable is added. Updated stale
+README, FeatureLab, EditorDesign, Delivery and roadmap summaries against current
+capabilities. Useful logs, raw responses, PNGs and result.json remain under ignored
+build/prism-workflow; obsolete owned helpers/requests and temporary native export
+are removed. Existing build caches, prior archives and untracked user references
+are preserved. Finished realistic sci-fi art, native pointer acceptance, measured
+startup/whole-application costs, background loading/compilation and overall engine/
+editor/game production goals remain unfinished.

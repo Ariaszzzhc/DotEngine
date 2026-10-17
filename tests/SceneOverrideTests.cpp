@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <span>
@@ -82,12 +83,14 @@ TEST_CASE("scene_overrides.paged_inspection_is_stable_filtered_owned_and_read_on
   CHECK(full.changes[0].source == 1);
   CHECK(full.changes[0].baseline == R"("Parent")");
   CHECK(full.changes[0].local == R"("Local name")");
+  CHECK(full.fields == std::map<std::string, std::size_t>{{"name", 1}, {"transform", 2}});
 
   for (std::size_t offset = 0; offset < full.total; ++offset) {
     const auto page = f.page({}, offset, 1);
     CHECK(page.total == full.total);
     REQUIRE(page.changes.size() == 1);
     CHECK(page.changes[0].key == full.changes[offset].key);
+    CHECK(page.fields == full.fields);
   }
 
   CHECK(f.page({}, full.total, 1).changes.empty());
@@ -98,6 +101,132 @@ TEST_CASE("scene_overrides.paged_inspection_is_stable_filtered_owned_and_read_on
   CHECK_FALSE(inspectSceneOverrides(f.target, {f.target.id(), 2}, {}, 0, 0));
   CHECK_FALSE(inspectSceneOverrides(f.target, {f.target.id(), 2}, {}, 0, 257));
   CHECK(text(f.target) == before);
+}
+
+TEST_CASE("scene_overrides.field_counts_and_restore_cover_changes_beyond_a_page") {
+  Fixture f;
+  auto script = *f.target.entity({f.target.id(), 3})->script;
+  auto properties = Json::parse(script.properties);
+
+  for (int index = 0; index < 300; ++index) {
+    properties["property" + std::to_string(index)] = index;
+  }
+
+  script.properties = properties.dump();
+  REQUIRE(f.target.setScript({f.target.id(), 3}, script));
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Local name"));
+  const auto before = text(f.target);
+  const auto page = f.page(3, 301, 1);
+  CHECK(page.total == 301);
+  CHECK(page.changes.empty());
+  CHECK(page.fields == std::map<std::string, std::size_t>{{"name", 1}, {"script", 300}});
+  auto restored
+      = prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, "script");
+  REQUIRE_MESSAGE(restored, (restored ? "" : restored.error().message));
+  CHECK(restored->created.empty());
+  CHECK(restored->scene.nextEntityValue().value() == f.target.nextEntityValue().value());
+  CHECK(restored->scene.entity({restored->scene.id(), 3})->script->properties
+        == f.source.entity({f.source.id(), 1})->script->properties);
+  CHECK(restored->scene.entity({restored->scene.id(), 3})->name == "Local name");
+  CHECK(inspectSceneOverrides(restored->scene, restored->root)->fields
+        == std::map<std::string, std::size_t>{{"name", 1}});
+  CHECK(text(f.target) == before);
+  f.target = std::move(restored->scene);
+  CHECK(page.fields.at("script") == 300);
+}
+
+TEST_CASE("scene_overrides.field_restore_preserves_siblings_and_handles_whole_components") {
+  Fixture f;
+  REQUIRE(f.target.setTransform({f.target.id(), 3}, {{7, 8, 9}, {}, {2, 3, 4}}));
+  REQUIRE(f.target.setMeshRenderer({f.target.id(), 3}, {}));
+  REQUIRE(f.target.setMaterial({f.target.id(), 3}, MaterialBinding{"assets/local.dotmaterial"}));
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Local"));
+  CHECK(f.page(3).fields
+        == std::map<std::string, std::size_t>{
+            {"material", 1}, {"mesh", 1}, {"name", 1}, {"transform", 2}});
+
+  for (const auto* field : {"mesh", "material", "transform"}) {
+    auto result = prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, field);
+    REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+    f.target = std::move(result->scene);
+  }
+
+  REQUIRE(f.target.entity({f.target.id(), 3})->mesh);
+  CHECK(f.target.entity({f.target.id(), 3})->mesh->kind == MeshKind::Cube);
+  CHECK_FALSE(f.target.entity({f.target.id(), 3})->material);
+  CHECK(Json::parse(text(f.target))["entities"][2]["transform"]
+        == Json::parse(text(f.source))["entities"][0]["transform"]);
+  CHECK(f.page().fields == std::map<std::string, std::size_t>{{"name", 1}});
+  const auto before = text(f.target);
+  auto unchanged
+      = prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, "transform");
+  REQUIRE(unchanged);
+  CHECK(text(unchanged->scene) == before);
+}
+
+TEST_CASE("scene_overrides.field_restore_rejects_invalid_ownership_fields_and_dependencies") {
+  Fixture f;
+  const auto added = f.target.createEntity("Local").value();
+  REQUIRE(f.target.setParent(added, EntityId{f.target.id(), 2}));
+  const auto before = text(f.target);
+
+  for (const auto* field : {"", "id", "unknown", "/name", "script/properties"}) {
+    CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, field));
+    CHECK(text(f.target) == before);
+  }
+
+  for (const auto entity : {EntityId{f.target.id(), 1}, EntityId{f.target.id(), 2}, added,
+                            EntityId{f.target.id(), 999}, EntityId{f.source.id(), 3}}) {
+    CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 2}, entity, "name"));
+    CHECK(text(f.target) == before);
+  }
+
+  CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.source.id(), 2}, {f.target.id(), 3}, "name"));
+  CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 1}, {f.target.id(), 3}, "name"));
+  std::thread foreign([&] {
+    CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, "name"));
+  });
+  foreign.join();
+  REQUIRE(f.target.setParent({f.target.id(), 4}, EntityId{f.target.id(), 2}));
+  REQUIRE(f.target.destroyEntity({f.target.id(), 3}));
+  const auto broken = text(f.target);
+  CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 4}, "parent"));
+  CHECK_FALSE(prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), 3}, "name"));
+  CHECK(text(f.target) == broken);
+  CHECK(f.page(added.value).fields.empty());
+  CHECK(f.page(3).fields.empty());
+}
+
+TEST_CASE("scene_overrides.field_restore_remaps_native_bindings_and_demotes_primary_flags") {
+  Fixture f;
+  REQUIRE(f.source.setSkin({f.source.id(), 1}, SkinBinding{"assets/body.dotskin", {2}}));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, 2}};
+  REQUIRE(f.source.setAnimationPlayer({f.source.id(), 1}, animation));
+  REQUIRE(f.source.setCamera({f.source.id(), 2}, Camera{.primary = true}));
+  REQUIRE(f.source.setAudioListener({f.source.id(), 2}, AudioListener{true}));
+  auto linked = prepareSceneLinkUpdate(f.target, f.source, {f.target.id(), 2}, 5).value();
+  f.target = std::move(linked.scene);
+  REQUIRE(f.target.setSkin({f.target.id(), 3}, {}));
+  REQUIRE(f.target.setAnimationPlayer({f.target.id(), 3}, {}));
+  REQUIRE(f.target.setCamera({f.target.id(), 4}, {}));
+  REQUIRE(f.target.setAudioListener({f.target.id(), 4}, {}));
+
+  for (const auto* field : {"skin", "animation", "camera", "audioListener"}) {
+    const auto id
+        = std::string_view(field) == "skin" || std::string_view(field) == "animation" ? 3U : 4U;
+    auto restored
+        = prepareSceneFieldRevert(f.target, {f.target.id(), 2}, {f.target.id(), id}, field);
+    REQUIRE_MESSAGE(restored, (restored ? "" : restored.error().message));
+    f.target = std::move(restored->scene);
+  }
+
+  CHECK(f.target.entity({f.target.id(), 3})->skin->joints == std::vector<std::uint64_t>{4});
+  CHECK(f.target.entity({f.target.id(), 3})->animation->targets[0].entity == 4);
+  CHECK_FALSE(f.target.entity({f.target.id(), 4})->camera->primary);
+  CHECK_FALSE(f.target.entity({f.target.id(), 4})->audioListener->primary);
+  CHECK(f.page().total == 0);
 }
 
 TEST_CASE("scene_overrides.json_pointer_escaping_missing_null_and_atomic_arrays_revert_exactly") {

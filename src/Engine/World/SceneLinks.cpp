@@ -507,11 +507,15 @@ namespace Dot::World {
                           "Override filter is outside this instance");
       }
 
-      SceneOverridePage page{root, data->link.asset, node, offset, limit, 0, {}};
+      SceneOverridePage page{root, data->link.asset, node, offset, limit, 0, {}, {}};
       visitOverrides(
           *data, node,
           [&](const SceneOverrideKey& key, auto source, const Json* before, const Json* after) {
             const auto index = page.total++;
+
+            if (key.kind == SceneOverrideKind::Property) {
+              ++page.fields[key.path.substr(1, key.path.find('/', 1) - 1)];
+            }
 
             if (index >= offset && page.changes.size() < limit) {
               std::optional<SceneSourceKey> sourceKey;
@@ -536,6 +540,58 @@ namespace Dot::World {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Inspect scene overrides: " + std::string(error.what()));
+    }
+  }
+
+  auto prepareSceneFieldRevert(const Scene& target, EntityId root, EntityId entity,
+                               std::string_view field) -> Core::Result<SceneLinkUpdate> {
+    try {
+      auto live = target.entity(entity);
+
+      if (!live) {
+        return std::unexpected(live.error());
+      }
+
+      auto data = overrideData(target, root);
+
+      if (!data) {
+        return std::unexpected(data.error());
+      }
+
+      const auto source = data->sources.find(entity.value);
+
+      if (source == data->sources.end()) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Field revert requires an inherited node of this instance");
+      }
+
+      const auto& expected = data->expected.at(source->second);
+
+      if (field == "id" || !expected.contains(field)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown or immutable scene field");
+      }
+
+      auto& entities = data->document["entities"];
+      auto local = std::ranges::find_if(
+          entities, [&](const auto& value) { return Codec::id(value["id"]) == entity.value; });
+      (*local)[field] = expected[field];
+      auto prepared = decodeScene(data->document.dump());
+
+      if (!prepared) {
+        return Core::fail(prepared.error().code, "Revert scene field: " + prepared.error().message);
+      }
+
+      auto bounded = encodeScene(*prepared);
+
+      if (!bounded) {
+        return std::unexpected(bounded.error());
+      }
+
+      const EntityId restoredRoot{prepared->id(), root.value};
+      return SceneLinkUpdate{std::move(*prepared), restoredRoot, {}};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Revert scene field: " + std::string(error.what()));
     }
   }
 

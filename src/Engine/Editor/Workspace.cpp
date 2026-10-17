@@ -524,6 +524,10 @@ namespace Dot::Editor {
     std::string m_overrideRevision;
     std::string m_overrideContext;
     std::string m_overrideError;
+    Json m_fieldOverrides;
+    std::string m_fieldRevision;
+    std::string m_fieldContext;
+    std::string m_fieldError;
     std::string m_importSource;
     std::string m_environmentRevision;
     Json m_environmentDraft;
@@ -5035,6 +5039,7 @@ namespace Dot::Editor {
     }
 
     auto workspaceStatus() -> Core::Result<Json> {
+      refreshFieldOverrides();
       auto focused = m_application->window().focused();
 
       if (!focused) {
@@ -5086,6 +5091,8 @@ namespace Dot::Editor {
             {"revision", m_overrideRevision},
             {"page", m_overridePage},
             {"error", m_overrideError}}},
+          {"sceneFieldOverrides",
+           {{"revision", m_fieldRevision}, {"page", m_fieldOverrides}, {"error", m_fieldError}}},
           {"propertiesText", m_propertiesText},
           {"propertiesInvalid", m_propertiesInvalid},
           {"play", playStatus()},
@@ -5115,6 +5122,83 @@ namespace Dot::Editor {
       }
 
       return result;
+    }
+
+    /** Field indicators use complete native counts, never the displayed override
+     * page. Keep the entity filter separate from the whole-instance list.
+     * 字段标记采用原生完整计数，不从当前分页推算；实体过滤独立于完整实例列表。 */
+    auto refreshFieldOverrides() -> void {
+      const auto revision = m_snapshot["revision"].get<std::string>();
+      const auto context
+          = m_snapshot["scenePath"].get<std::string>() + ':' + m_snapshot["selected"].dump();
+
+      if (revision == m_fieldRevision && context == m_fieldContext) {
+        return;
+      }
+
+      m_fieldRevision = revision;
+      m_fieldContext = context;
+      m_fieldOverrides = nullptr;
+      m_fieldError.clear();
+
+      if (m_snapshot["selected"].is_null()) {
+        return;
+      }
+
+      auto result = m_document->dispatch(Json{{"command", "inspect-scene-overrides"},
+                                              {"entity", m_snapshot["selected"]},
+                                              {"scope", "entity"},
+                                              {"offset", 0},
+                                              {"limit", 1}}
+                                             .dump());
+
+      if (result) {
+        m_fieldOverrides = Codec::parseJson(*result)["sceneOverrides"];
+      } else {
+        m_fieldError = result.error().message;
+      }
+    }
+
+    auto fieldOverrideCount(std::string_view field) const -> std::size_t {
+      if (m_fieldOverrides.is_null()) {
+        return 0;
+      }
+
+      const auto& fields = m_fieldOverrides["fields"];
+      const auto found = fields.find(field);
+      return found == fields.end() ? 0 : found->get<std::size_t>();
+    }
+
+    auto fieldOverrideControl(const char* field, std::optional<std::string>& restore) -> void {
+      const auto count = fieldOverrideCount(field);
+
+      if (count == 0) {
+        return;
+      }
+
+      ImGui::PushID(field);
+      ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark),
+                         "%s: %zu applied override(s)", label(field).c_str(), count);
+
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Saved baseline differences; unapplied Inspector edits are excluded.");
+      }
+
+      ImGui::BeginDisabled(pendingInspector() || pendingText() || m_pendingClose || m_sceneDialog
+                           || m_captureDialog);
+
+      if (ImGui::SmallButton("Restore field")) {
+        restore = field;
+      }
+
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(
+            "Restore this complete field from the last refreshed baseline.\n"
+            "Apply or reset pending drafts first. Undo restores the local edits.");
+      }
+
+      ImGui::EndDisabled();
+      ImGui::PopID();
     }
 
     auto sceneOverrideInspector() -> void {
@@ -5909,6 +5993,7 @@ namespace Dot::Editor {
 
     auto inspector() -> void {
       const auto stats = m_document->stats().value();
+      refreshFieldOverrides();
 
       if (!stats.selected) {
         ImGui::TextWrapped("Select an entity in the scene tree to edit its properties.");
@@ -5920,6 +6005,13 @@ namespace Dot::Editor {
         ImGui::TextWrapped("%zu selected. Properties below edit the active entity only.",
                            stats.selection.size());
       }
+
+      if (!m_fieldError.empty()) {
+        ImGui::TextWrapped("Field override inspection: %s", m_fieldError.c_str());
+      }
+
+      std::optional<std::string> restore;
+      fieldOverrideControl("name", restore);
 
       std::string name = m_edit["name"].get<std::string>();
 
@@ -5933,6 +6025,7 @@ namespace Dot::Editor {
 
       std::string parent
           = m_edit["parent"].is_null() ? "None" : m_edit["parent"].get<std::string>();
+      fieldOverrideControl("parent", restore);
 
       {
         PropertyRow row{"Parent (local pose)"};
@@ -5958,7 +6051,11 @@ namespace Dot::Editor {
         }
       }
 
-      if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+      const auto transformTitle
+          = fieldOverrideCount("transform") ? "Transform *###transform" : "Transform###transform";
+
+      if (ImGui::CollapsingHeader(transformTitle, ImGuiTreeNodeFlags_DefaultOpen)) {
+        fieldOverrideControl("transform", restore);
         fields(m_edit["transform"]);
       }
 
@@ -5966,9 +6063,12 @@ namespace Dot::Editor {
            {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script", "material",
             "light", "animation", "skin", "character"}) {
         ImGui::PushID(component);
-        const auto title = label(component);
+        const auto title = label(component) + (fieldOverrideCount(component) ? " *" : "");
+        const auto header = title + "###component";
 
         if (m_edit[component].is_null()) {
+          fieldOverrideControl(component, restore);
+
           if (std::string_view(component) == "skin" && m_edit["mesh"].is_null()) {
             ImGui::TextDisabled("Add a mesh before a skin binding");
           } else if ((std::string_view(component) == "character" && !m_edit["rigidBody"].is_null())
@@ -5998,7 +6098,9 @@ namespace Dot::Editor {
               m_propertiesInvalid = false;
             }
           }
-        } else if (ImGui::CollapsingHeader(title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        } else if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+          fieldOverrideControl(component, restore);
+
           if (std::string_view(component) == "script") {
             auto description = m_edit[component];
             description.erase("properties");
@@ -6233,6 +6335,13 @@ namespace Dot::Editor {
       }
 
       ImGui::EndDisabled();
+
+      if (restore) {
+        edit(Json::array({{{"op", "revert-scene-field"},
+                           {"root", m_fieldOverrides["root"]},
+                           {"entity", m_edit["id"]},
+                           {"field", *restore}}}));
+      }
     }
 
     auto safeExecute(std::string_view request) -> Core::Result<std::string> {

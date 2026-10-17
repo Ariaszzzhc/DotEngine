@@ -79,7 +79,8 @@ Surfaces root retains the five models and shared project material references. In
 Assets, select it and choose Add scene instance to place an independent copy;
 the new root supports normal movement, hierarchy, undo/redo and saving. The asset
 contains no camera/environment: use Scene view while editing it. This is scene
-content reuse; linked updates and overrides remain future work. See
+content reuse; Add linked scene separately enables explicit source refresh and
+local overrides with field indicators and stored-baseline restore. See
 [scene-content operations](../../docs/SceneContent.md).
 
 ## HDR environment
@@ -98,7 +99,8 @@ SHA256: `e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45`.
 The camera's directional headlight explicitly requests four 512-pixel shadow
 cascades over 50 m with comparison filtering. Light/mesh inspectors can edit saved
 shadow quality and casting/receiving. This demonstrates authored directional
-shadows; point/spot casting and advanced shadow tooling remain planned.
+shadows; Lighting Studio also demonstrates native point/spot shadows. Advanced
+shadow tooling remains unfinished.
 
 The saved scene also enables geometric SSAO with its local HDR environment and
 directional shadows. Editor Rendering controls retain radius, bias, strength and

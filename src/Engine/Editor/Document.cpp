@@ -188,6 +188,7 @@ namespace Dot::Editor {
               {"offset", page.offset},
               {"limit", page.limit},
               {"total", page.total},
+              {"fields", page.fields},
               {"nextOffset", page.offset + page.changes.size() < page.total
                                  ? Json(page.offset + page.changes.size())
                                  : Json(nullptr)},
@@ -469,9 +470,12 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (op == "revert-scene-overrides" || op == "revert-scene-baseline") {
+      if (op == "revert-scene-overrides" || op == "revert-scene-baseline"
+          || op == "revert-scene-field") {
         if (op == "revert-scene-overrides") {
           Codec::requireFields(command, {"op", "root", "keys"});
+        } else if (op == "revert-scene-field") {
+          Codec::requireFields(command, {"op", "root", "entity", "field"});
         } else {
           Codec::requireFields(command, {"op", "root"});
         }
@@ -499,6 +503,10 @@ namespace Dot::Editor {
         const World::EntityId root{target->id(), Codec::id(command["root"])};
         auto updated = op == "revert-scene-overrides"
                            ? World::prepareSceneOverrideRevert(*target, root, keys)
+                       : op == "revert-scene-field"
+                           ? World::prepareSceneFieldRevert(
+                                 *target, root, {target->id(), Codec::id(command["entity"])},
+                                 command["field"].get<std::string>())
                            : World::prepareSceneBaselineRevert(*target, root);
 
         if (!updated) {
@@ -1734,11 +1742,12 @@ namespace Dot::Editor {
                               "Override page offset exceeds total");
           }
 
-          overrides = {{"linked", false},       {"root", nullptr},
-                       {"asset", nullptr},      {"node", std::to_string(entity.value)},
-                       {"scope", "none"},       {"offset", 0},
-                       {"limit", limit},        {"total", 0},
-                       {"nextOffset", nullptr}, {"changes", Json::array()}};
+          overrides = {{"linked", false},          {"root", nullptr},
+                       {"asset", nullptr},         {"node", std::to_string(entity.value)},
+                       {"scope", "none"},          {"offset", 0},
+                       {"limit", limit},           {"total", 0},
+                       {"fields", Json::object()}, {"nextOffset", nullptr},
+                       {"changes", Json::array()}};
         }
 
         const auto& selection = m_impl->m_history[m_impl->m_cursor].selection;

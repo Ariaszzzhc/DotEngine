@@ -42,6 +42,11 @@ The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.
 Mechanical services are grouped in the hierarchy; the imported duct kit and reusable
 straight/support scene assets remain editable in the project.
+The twelve straight ducts and fourteen supports are linked instances. Open and save
+their source scenes, then Refresh source on the desired placement roots to propagate
+changes. Inspector field markers identify applied local overrides; Restore field
+returns a whole component to the last refreshed baseline without changing siblings.
+Play and exported games consume the saved instances without source-file refresh.
 Lighting uses directional cascades and three local point-light shadow sources, SSAO and HDR tone
 mapping. Local maps use 512px faces within the shared depth-atlas budget. The adapted Quaternius
 CC0 mannequin includes idle, walk, jog, sprint, jump start, airborne and landing

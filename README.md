@@ -51,13 +51,15 @@ unexpected UI investigations. See [project home](docs/ProjectHome.md) and
 
 ## Current boundaries
 
-Implemented foundations include PBR textures/materials, HDRI IBL, directional soft
-shadows, SSAO, HDR/tone mapping, glTF/GLB import, GPU skinning/animation cross-fades,
+Implemented foundations include PBR textures/materials, HDRI IBL, directional/point/spot soft
+shadows, SSAO, HDR/tone mapping, opt-in renderer sampling, glTF/GLB import, GPU skinning/animation cross-fades,
 rigid-body physics, native character physics and audio. The docked editor supports
 scene/resource/material authoring, selection/gizmos, undo/redo, isolated Play and
 native export. These features do not establish a mature editor or large-game
-production readiness. Humanoid content and shoulder-camera integration, production content
-workflows and populated-scene scalability remain unfinished.
+production readiness. Prism Relay has a rigged mannequin, native character traversal,
+sphere-swept shoulder camera and linked industrial assemblies. Finished realistic
+character/environment art, production workflows and populated-scene scalability
+remain unfinished.
 
 Engine development has resumed after cleanup. See
 [current evidence](docs/Delivery.md), [goal boundaries](docs/EngineRoadmap.md) and

@@ -1808,6 +1808,10 @@ add explicit source refresh, local property/deletion overrides, revert and unlin
 These edits use the same revision/history implementation in the GUI and agent API.
 The linked override inspector adds paged property/deletion/addition inspection and
 selected/full stored-baseline revert, including operation without the source file.
+Inspector field counts and starred headings identify applied overrides independently
+of list pagination. Restore field reverts a whole native component/top-level field
+through the shared `revert-scene-field` edit. Pending drafts remain separate; see
+[field contracts](SceneContent.md#field-indicators-and-restoring-a-component).
 See the [query and revert contracts](SceneContent.md#inspecting-and-reverting-applied-overrides).
 Override records also expose persistent `sourceKey` provenance. Canonical baseline
 references can change during source materialization; these layered keys retain the

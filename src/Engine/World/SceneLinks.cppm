@@ -2,6 +2,7 @@ module;
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -52,6 +53,9 @@ export namespace Dot::World {
     std::size_t limit{};
     std::size_t total{};
     std::vector<SceneOverride> changes;
+    /** Complete top-level property counts for this filter, independent of paging.
+     * 当前过滤范围的完整顶层属性计数，不受分页影响。 */
+    std::map<std::string, std::size_t> fields;
   };
 
   /** Direct ownership wins, otherwise search ancestors; no owning link is a
@@ -88,6 +92,15 @@ export namespace Dot::World {
    * 还原全部继承属性/删除并移除本地新增，保留放置及无关实体；即使源文件不可用仍使用
    * 存储基线，最终场景及文件限制依旧适用。 */
   [[nodiscard]] auto prepareSceneBaselineRevert(const Scene& target, EntityId root)
+      -> Core::Result<SceneLinkUpdate>;
+
+  /** Restore one complete top-level field of a live inherited node from the
+   * stored remapped baseline. Placement roots, additions, id and unknown fields
+   * reject. No source I/O or new entity IDs; final native references must remain valid.
+   * 从已重映射的存储基线恢复存活继承节点的完整顶层字段；拒绝放置根、新增节点、id 及
+   * 未知字段。不读源文件或分配实体身份，最终原生引用仍须有效。 */
+  [[nodiscard]] auto prepareSceneFieldRevert(const Scene& target, EntityId root, EntityId entity,
+                                             std::string_view field)
       -> Core::Result<SceneLinkUpdate>;
 
   /** Link a materialized copy to a project source, with an owned baseline and

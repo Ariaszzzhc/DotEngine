@@ -24,13 +24,15 @@ scene lighting, exposure, camera, selection and all numeric values.
 
 Existing scene/document, material/light/environment/AO authoring, external source
 opening, Play/Stop, exports and navigation/selection provide real controls to arrange.
-The reference's terrain/stone artwork, thumbnails, transform gizmos, pause/step and
-profiler require their own implementations and verification before appearing as
-functional tools. Performance labels require measurements. No rendered mock scene
+The reference's terrain/stone artwork and pause/step are not current features.
+Asset thumbnails, XYZ transform gizmos and opt-in renderer sampling have native
+implementations; their boundaries are documented in Editor.md. Renderer intervals
+exclude other application work and cannot be labelled game FPS. No rendered mock scene
 or fixed status value may stand in for a live engine result.
 已有编辑、材质/光照/环境/AO、外部源码打开、Play/Stop、导出和导航/选择可重新布局。
-参考图中的地形/石拱美术、缩略图、变换 gizmo、暂停/步进和 profiler 须先实现并验证；
-性能标签必须来自测量，不得以效果图或固定状态替代实时引擎结果。
+参考图中的地形/石拱美术及暂停/步进仍未提供；资源缩略图、XYZ 操纵器和可选渲染器
+采样已有原生实现，其边界见 Editor.md。渲染区间不含整应用工作，不能标为游戏 FPS；
+不得以效果图或固定状态替代实时引擎结果。
 
 The workspace now uses real docked windows with the reference's initial proportions.
 Users can drag tabs/splitters or undock panels inside the native editor window, focus
@@ -51,9 +53,9 @@ Inter 提供西文字形并由上游整合 CJK，一份可缩放字体支持一�
 系统安装字体。[Upstream / 上游](https://github.com/be5invis/Sarasa-Gothic#what-are-the-names).
 
 Layout and theme currently live for the workspace session. Persisted per-user
-profiles, plane/uniform-scale tools, thumbnails and further production tools remain planned.
+profiles, plane/uniform-scale tools and further production tools remain planned.
 The concepts and this contract do not establish a mature editor or polished game.
-布局与主题当前在工作区会话内保留；用户配置持久化、变换 gizmo、缩略图及更多
+布局与主题当前在工作区会话内保留；用户配置持久化、平面/统一缩放操纵器及更多
 生产工具仍待实现。效果图和本约定均不表示成熟编辑器或高质量游戏已经完成。
 
 World/local Move handles now project actual selected transforms onto the live Scene
