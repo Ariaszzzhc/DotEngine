@@ -404,6 +404,7 @@ namespace Dot::Runtime {
                     : *prepared == Graphics::ScenePreparationStage::Occlusion
                         ? "ambient occlusion shaders"
                     : *prepared == Graphics::ScenePreparationStage::Skins     ? "skinning shaders"
+                    : *prepared == Graphics::ScenePreparationStage::Geometry  ? "geometry"
                     : *prepared == Graphics::ScenePreparationStage::SkinPoses ? "initial skin poses"
                     : *prepared == Graphics::ScenePreparationStage::EnvironmentMap
                         ? "HDR environment"

@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 export module Dot.Graphics.Geometry;
@@ -52,6 +53,9 @@ export namespace Dot::Graphics {
     bool hasNormals{};
     bool hasTangents{};
     bool hasNormalMapFrame{};
+    /** UV/tangent prerequisites for a deformed frame; pose validation is separate.
+     * 变形坐标框架的 UV/切线前提，姿态校验另行进行。 */
+    bool hasSkinUvFrame{};
   };
 
   /** Analyze validated triangles without a device. Normal maps require complete
@@ -61,6 +65,26 @@ export namespace Dot::Graphics {
    * 无设备分析已校验三角面；法线贴图要求完整法线、非退化位置及 UV 绝对值 <=1e6。
    * 无作者切线时，导数坐标框架要求 UV 绝对面积 >=1e-12、相对面积 >1e-6；共用表面要求。 */
   [[nodiscard]] auto meshSurface(const MeshData& mesh) -> Core::Result<MeshSurface>;
+
+  /** Immutable owned CPU geometry and validated surface metadata, without a device.
+   * Creation consumes/copies input and can run on a worker. Shared copies/readers
+   * are thread independent; moved/default handles fail. GPU upload still belongs
+   * to its renderer owner and need not repeat vertex/surface analysis.
+   * 无设备的不可变自有几何及已校验表面元数据，可在工作线程创建；消耗或复制输入，
+   * 共享副本/读取不绑定线程，默认及移后句柄明确失败。GPU 上传仍归渲染器线程，
+   * 无需重复顶点/表面分析。 */
+  class PreparedMesh {
+  public:
+    PreparedMesh() = default;
+    [[nodiscard]] static auto create(MeshData data) -> Core::Result<PreparedMesh>;
+    [[nodiscard]] auto data() const -> Core::Result<const MeshData*>;
+    [[nodiscard]] auto surface() const -> Core::Result<MeshSurface>;
+
+  private:
+    struct Data;
+    explicit PreparedMesh(std::shared_ptr<const Data> data) noexcept;
+    std::shared_ptr<const Data> m_data;
+  };
 
   /** Produce independently owned, non-indexed triangles with winding-derived
    * flat normals. Preserve colors/UVs/source, explicitly clear tangents because

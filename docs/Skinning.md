@@ -127,8 +127,9 @@ queries remain pure. Native initial startup stays in its loading loop until this
 stage completes; the editor shares that preparation implementation. Hidden/deleted/
 rebound owners, scene replacement, clearCache and destruction cancel unpublished
 work. Missing assets or invalid GPU deformation report errors while target pixels
-remain untouched. Loading source geometry/controller buffers still uses existing
-synchronous resource operations.
+remain untouched. A preceding geometry stage reads/decodes immutable mesh/skin data
+on one owned CPU worker; it publishes at most one mesh or controller per owner poll.
+GPU allocation/uploads and binding remain on the owner.
 
 A submitted first pose is retained while joints keep advancing, avoiding perpetual
 cancel/resubmit starvation. The cache records the actual submitted palette; every
@@ -138,7 +139,7 @@ unpublished preparation and use their synchronous transaction. No stale cached p
 is presented as current. Ready concerns prepared resources, not completed rendering.
 Identical failed initial requests retain their errors; a corrected palette permits
 a new transaction. Later native resource changes use the same incremental preparation,
-with ordinary geometry uploads and resource operations still on the owner thread.
+with geometry CPU preparation on the worker and GPU uploads/binding still on the owner.
 
 SceneRenderer loads enabled saved skin components automatically. Immutable file
 data and static source meshes are shared; each mesh owner retains one GPU skin

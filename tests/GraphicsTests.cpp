@@ -354,3 +354,28 @@ TEST_CASE("graphics.mesh_api_rejects_worker_thread") {
   CHECK(rejected);
   CHECK(renderer->upload(*geometry));
 }
+
+TEST_CASE("graphics.prepared_mesh_upload_matches_raw_pixels_and_rejects_invalid_lifetimes") {
+  auto renderer = Renderer::create().value();
+  auto geometry = cube().value();
+  auto prepared = PreparedMesh::create(geometry).value();
+  auto raw = renderer.upload(geometry).value();
+  auto uploaded = renderer.uploadPrepared(prepared).value();
+  const std::array rawDraws{MeshDraw{&raw}};
+  const std::array preparedDraws{MeshDraw{&uploaded}};
+  CHECK(renderer.renderMeshes(rawDraws, {}, 32, 32)->pixels
+        == renderer.renderMeshes(preparedDraws, {}, 32, 32)->pixels);
+  CHECK(renderer.resourceStats()->meshes == 2);
+  CHECK_FALSE(renderer.uploadPrepared({}));
+  bool rejected{};
+  std::thread worker([&] { rejected = !renderer.uploadPrepared(prepared); });
+  worker.join();
+  CHECK(rejected);
+  prepared = {};
+  CHECK(renderer.renderMeshes(preparedDraws, {}, 32, 32));
+  uploaded = {};
+  raw = {};
+  CHECK(renderer.resourceStats()->meshes == 0);
+  auto moved = std::move(renderer);
+  CHECK_FALSE(renderer.uploadPrepared(PreparedMesh::create(std::move(geometry)).value()));
+}

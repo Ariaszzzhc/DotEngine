@@ -77,7 +77,7 @@ TEST_CASE("skin.scene_gpu_preparation_follows_visibility_and_rejects_missing_ini
   REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
   f.properties.enabled = false;
   REQUIRE(f.scene.setSkin(f.owner, f.properties));
-  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Ready);
+  CHECK(service.prepare(f.scene).value() == ScenePreparationStage::Geometry);
   CHECK_FALSE(renderer.skinPipelinesReady().value());
   f.properties.enabled = true;
   REQUIRE(f.scene.setSkin(f.owner, f.properties));
@@ -100,7 +100,7 @@ TEST_CASE("skin.scene_gpu_preparation_follows_visibility_and_rejects_missing_ini
   CHECK_FALSE(service.renderInto(f.scene, target));
   CHECK(target.info()->frames == 0);
   auto loaded = SceneRenderer::create(renderer, f.files).value();
-  CHECK(loaded.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  CHECK(loaded.prepare(f.scene).value() == ScenePreparationStage::Geometry);
   REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
   REQUIRE(loaded.renderInto(f.scene, target));
   CHECK(target.info()->frames == 1);
@@ -325,6 +325,21 @@ namespace {
     REQUIRE_MESSAGE(ready, (ready ? "" : ready.error().message));
     return *ready;
   }
+
+  auto preparePosePending(SceneRenderer& service, const World::Scene& scene) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto stage = service.prepare(scene);
+
+    while (stage && *stage != ScenePreparationStage::SkinPoses
+           && *stage != ScenePreparationStage::Ready
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      stage = service.prepare(scene);
+    }
+
+    REQUIRE_MESSAGE(stage, (stage ? "" : stage.error().message));
+    REQUIRE(*stage == ScenePreparationStage::SkinPoses);
+  }
 }  // namespace
 
 TEST_CASE("skin.scene_initial_pose_preparation_cancels_stale_hidden_and_cleared_batches") {
@@ -336,8 +351,8 @@ TEST_CASE("skin.scene_initial_pose_preparation_cancels_stale_hidden_and_cleared_
   REQUIRE(service.renderInto(f.scene, target));
   const auto before = renderer.readTarget(target).value();
   REQUIRE(service.clearCache());
-  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::SkinPoses);
-  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  CHECK(service.readiness(f.scene).value() == ScenePreparationStage::Geometry);
+  preparePosePending(service, f.scene);
   CHECK(service.stats()->skins == 1);
   CHECK(renderer.readTarget(target)->pixels == before.pixels);
   REQUIRE(f.scene.setTransform(f.joint, {{1, 0, 0}}));
@@ -350,7 +365,7 @@ TEST_CASE("skin.scene_initial_pose_preparation_cancels_stale_hidden_and_cleared_
   CHECK(renderer.resourceStats()->skins == 0);
   mesh.visible = true;
   REQUIRE(f.scene.setMeshRenderer(f.owner, mesh));
-  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  preparePosePending(service, f.scene);
   REQUIRE(service.clearCache());
   CHECK(renderer.resourceStats()->skins == 0);
   REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
@@ -385,7 +400,7 @@ TEST_CASE("skin.scene_initial_invalid_blend_retains_target_and_recovers_latest_p
   const auto before = renderer.readTarget(target).value();
   REQUIRE(service.clearCache());
   REQUIRE(f.scene.setTransform(tip, {{}, {}, {-1, 1, 1}}));
-  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  preparePosePending(service, f.scene);
   auto result = service.prepare(f.scene);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
@@ -412,7 +427,7 @@ TEST_CASE("skin.scene_initial_preparation_finishes_while_joints_advance_and_draw
   auto service = SceneRenderer::create(renderer, f.files).value();
   REQUIRE(prepareInitial(service, f.scene) == ScenePreparationStage::Ready);
   REQUIRE(service.clearCache());
-  REQUIRE(service.prepare(f.scene).value() == ScenePreparationStage::SkinPoses);
+  preparePosePending(service, f.scene);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   auto stage = ScenePreparationStage::SkinPoses;
   float position{};
@@ -721,4 +736,40 @@ TEST_CASE("skin.async_invalid_deformation_preserves_pixels_and_recovers_without_
   CHECK(renderer.readTarget(target)->pixels != before.pixels);
   REQUIRE(service.clearCache());
   CHECK(renderer.resourceStats()->skins == 0);
+}
+
+TEST_CASE("skin.scene_geometry_preparation_shares_cpu_skin_and_publishes_one_controller_per_poll") {
+  Fixture f;
+  const auto other = f.scene.createEntity("Second mesh").value();
+  REQUIRE(f.scene.setMeshRenderer(other, f.scene.entity(f.owner)->mesh));
+  REQUIRE(f.scene.setSkin(other, f.properties));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, f.files).value();
+  auto stage = service.prepare(f.scene);
+  bool removed{};
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (stage && *stage != ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < deadline) {
+    const auto count = service.stats()->skins;
+
+    if (count == 1 && !removed) {
+      REQUIRE(std::filesystem::remove(f.files.root() / f.properties.asset));
+      removed = true;
+    }
+
+    stage = service.prepare(f.scene);
+    CHECK(service.stats()->skins <= count + 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(stage);
+  REQUIRE(*stage == ScenePreparationStage::Ready);
+  CHECK(removed);
+  CHECK(service.stats()->meshes == 1);
+  CHECK(service.stats()->skins == 2);
+  REQUIRE(service.render(f.scene, 32, 32));
+  REQUIRE(service.clearCache());
+  CHECK(renderer.resourceStats()->skins == 0);
+  CHECK(renderer.resourceStats()->meshes == 0);
 }

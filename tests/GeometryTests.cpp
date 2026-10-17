@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <thread>
+#include <utility>
 
 import Dot.Graphics.Geometry;
 import Dot.Core.Result;
@@ -285,4 +287,51 @@ TEST_CASE("geometry.authored_tangent_frames_validate_ownership_and_normal_genera
   mesh.vertices.front().tangent = {1, 0, 0, -1};
   mesh.vertices.front().normal = {};
   CHECK_FALSE(validateMesh(mesh));
+}
+
+TEST_CASE("geometry.prepared_mesh_owns_validated_data_across_copy_move_and_threads") {
+  auto source = cube({2, 4, 6}).value();
+  auto prepared = PreparedMesh::create(source).value();
+  source.vertices[0].position.x = 100;
+  CHECK(prepared.surface()->bounds.maximum.x == 1);
+  CHECK(prepared.surface()->hasNormalMapFrame);
+  CHECK(prepared.surface()->hasSkinUvFrame);
+  auto shared = prepared;
+  auto moved = std::move(prepared);
+  CHECK_FALSE(prepared.data());
+  CHECK_FALSE(prepared.surface());
+  CHECK(shared.data().value() == moved.data().value());
+  bool valid{};
+  std::thread reader([owned = std::move(shared), &valid]() mutable {
+    valid = owned.data().value()->vertices.size() == 24;
+    valid = valid && owned.surface()->bounds.minimum.z == -3;
+    owned = {};
+  });
+  reader.join();
+  CHECK(valid);
+  CHECK(moved.data().value()->indices.size() == 36);
+  CHECK_FALSE(PreparedMesh{}.data());
+  CHECK_FALSE(PreparedMesh::create({}));
+  source.indices[0] = 1000;
+  CHECK_FALSE(PreparedMesh::create(std::move(source)));
+}
+
+TEST_CASE("geometry.prepared_surface_distinguishes_bind_degeneracy_from_skin_uv_requirements") {
+  auto mesh = quad().value();
+
+  for (auto& vertex : mesh.vertices) {
+    vertex.position = {};
+  }
+
+  auto prepared = PreparedMesh::create(mesh).value();
+  CHECK_FALSE(prepared.surface()->hasNormalMapFrame);
+  CHECK(prepared.surface()->hasSkinUvFrame);
+
+  for (auto& vertex : mesh.vertices) {
+    vertex.texCoord = {};
+  }
+
+  CHECK_FALSE(PreparedMesh::create(mesh)->surface()->hasSkinUvFrame);
+  mesh.vertices[0].position.x = std::numeric_limits<float>::infinity();
+  CHECK_FALSE(PreparedMesh::create(std::move(mesh)));
 }

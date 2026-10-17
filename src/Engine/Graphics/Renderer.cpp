@@ -4280,54 +4280,41 @@ namespace Dot::Graphics {
       return std::unexpected(checked.error());
     }
 
-    checked = validateMesh(data);
+    auto surface = meshSurface(data);
+    return surface ? uploadAnalyzed(data, *surface)
+                   : Core::Result<Mesh>{std::unexpected(surface.error())};
+  }
+
+  auto Renderer::uploadPrepared(const PreparedMesh& prepared) -> Core::Result<Mesh> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Renderer has been moved from");
+    }
+
+    auto checked = m_impl->check();
 
     if (!checked) {
       return std::unexpected(checked.error());
     }
 
+    auto data = prepared.data();
+    auto surface = prepared.surface();
+    return data && surface
+               ? uploadAnalyzed(**data, *surface)
+               : Core::Result<Mesh>{std::unexpected(!data ? data.error() : surface.error())};
+  }
+
+  auto Renderer::uploadAnalyzed(const MeshData& data, const MeshSurface& surface)
+      -> Core::Result<Mesh> {
     auto& gpu = *m_impl;
     auto mesh = std::make_shared<Mesh::Impl>();
     mesh->owner = gpu.diagnostics;
     mesh->info = {static_cast<std::uint32_t>(data.vertices.size()),
                   static_cast<std::uint32_t>(data.indices.size())};
-    auto surface = meshSurface(data);
-
-    if (!surface) {
-      return std::unexpected(surface.error());
-    }
-
-    mesh->bounds = surface->bounds;
-    mesh->hasNormals = surface->hasNormals;
-    mesh->hasNormalMapFrame = surface->hasNormalMapFrame;
-    mesh->hasTangents = surface->hasTangents;
-    mesh->m_uvFrame = surface->hasNormals;
-    const auto corners = data.indices.empty() ? data.vertices.size() : data.indices.size();
-
-    for (std::size_t face = 0; !surface->hasNormalMapFrame && mesh->m_uvFrame && face < corners;
-         face += 3) {
-      const auto vertex = [&](std::size_t i) -> const Vertex& {
-        return data.vertices[data.indices.empty() ? face + i : data.indices[face + i]];
-      };
-      const auto& a = vertex(0);
-      const auto& b = vertex(1);
-      const auto& c = vertex(2);
-      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
-      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
-      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
-      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
-      const auto determinant = ux * vy - uy * vx;
-      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
-      mesh->m_uvFrame = mesh->hasTangents
-                        || (scale > 0 && std::abs(determinant) >= 1e-12
-                            && std::abs(determinant) > scale * 1e-6);
-
-      for (const auto* v : {&a, &b, &c}) {
-        mesh->m_uvFrame
-            = mesh->m_uvFrame && std::abs(v->texCoord.x) <= 1e6 && std::abs(v->texCoord.y) <= 1e6;
-      }
-    }
-
+    mesh->bounds = surface.bounds;
+    mesh->hasNormals = surface.hasNormals;
+    mesh->hasNormalMapFrame = surface.hasNormalMapFrame;
+    mesh->hasTangents = surface.hasTangents;
+    mesh->m_uvFrame = surface.hasSkinUvFrame;
     mesh->vertexBytes = data.vertices.size() * sizeof(Vertex);
     mesh->indexBytes = data.indices.size() * sizeof(std::uint32_t);
     ErrorScope scope(gpu.instance, gpu.device);
@@ -4346,7 +4333,7 @@ namespace Dot::Graphics {
       gpu.queue.WriteBuffer(mesh->indices, 0, data.indices.data(), mesh->indexBytes);
     }
 
-    checked = scope.finish();
+    auto checked = scope.finish();
 
     if (!checked) {
       return std::unexpected(checked.error());

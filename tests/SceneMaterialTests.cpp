@@ -117,7 +117,8 @@ TEST_CASE("scene_material.async_preparation_keeps_frames_private_and_matches_dir
 
   while (state && *state != Dot::Graphics::ScenePreparationStage::Ready
          && std::chrono::steady_clock::now() < deadline) {
-    CHECK(moved.stats()->materials == 0);
+    CHECK(moved.stats()->materials
+          == (*state == Dot::Graphics::ScenePreparationStage::Geometry ? 1U : 0U));
     CHECK(target.info()->frames == 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     state = moved.prepare(fixture.scene);

@@ -311,3 +311,11 @@ A response without its original request cannot
 acknowledge a new request with that ID: repair the owned mailbox or use a fresh ID.
 This does not add authentication, hostile-race isolation, automatic receipt eviction
 or an unbounded session; the documented capacity and terminal failure rules apply.
+
+Initial native rendering also reports Preparing geometry while the shared service
+prepares all visible meshes/controllers. CPU file/decode/surface work runs on its
+owned geometry worker; owner polls publish at most one mesh/controller at a time.
+Only then do initial GPU skin poses finish and script Start run. The normal event/
+control/loading loop continues; closing during preparation owns and joins outstanding
+work. GPU uploads, earlier whole-project/session preparation and other services
+still have synchronous costs. A finite presentation budget retains its meaning.

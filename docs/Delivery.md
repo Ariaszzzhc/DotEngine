@@ -56,3 +56,10 @@ Play/native frames now overlap skin completion with simulation using bounded own
 snapshots and actual completed-frame provenance. Explicit drawing/readback, owner
 resource uploads and some driver operations remain synchronous; resource streaming
 and broader frame-latency work remain open. See [skinning contracts](Skinning.md).
+
+Visible mesh/skin CPU reads, decode and surface analysis now run in a bounded owned
+geometry worker. Incremental scene readiness includes all visible GPU sources, with
+at most one mesh/controller residency publication per poll. Independent material
+drafts preserve progress, and cancellation/clear/source changes prevent late data.
+GPU uploads/binding, other asset services and broader streaming/pacing remain open.
+See [prepared geometry](Rendering.md#prepared-geometry-residency).

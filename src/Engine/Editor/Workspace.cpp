@@ -6048,21 +6048,22 @@ namespace Dot::Editor {
       return {
           {"mode", publishedPlay() ? "play" : (m_editorView ? "editor" : "game")},
           {"ready", ready},
-          {"loading", m_preparationStage == Graphics::ScenePreparationStage::Environment
-                          ? Json("environment-pipeline")
-                      : m_preparationStage == Graphics::ScenePreparationStage::Shadows
-                          ? Json("shadow-pipelines")
-                      : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
-                          ? Json("occlusion-pipelines")
-                      : m_preparationStage == Graphics::ScenePreparationStage::Skins
-                          ? Json("skin-pipelines")
-                      : m_preparationStage == Graphics::ScenePreparationStage::SkinPoses
-                          ? Json("initial-skin-poses")
-                      : m_preparationStage == Graphics::ScenePreparationStage::EnvironmentMap
-                          ? Json("environment-map")
-                      : m_preparationStage == Graphics::ScenePreparationStage::Materials
-                          ? Json("material-textures")
-                          : Json(nullptr)},
+          {"loading",
+           m_preparationStage == Graphics::ScenePreparationStage::Environment
+               ? Json("environment-pipeline")
+           : m_preparationStage == Graphics::ScenePreparationStage::Shadows
+               ? Json("shadow-pipelines")
+           : m_preparationStage == Graphics::ScenePreparationStage::Occlusion
+               ? Json("occlusion-pipelines")
+           : m_preparationStage == Graphics::ScenePreparationStage::Skins ? Json("skin-pipelines")
+           : m_preparationStage == Graphics::ScenePreparationStage::Geometry ? Json("geometry")
+           : m_preparationStage == Graphics::ScenePreparationStage::SkinPoses
+               ? Json("initial-skin-poses")
+           : m_preparationStage == Graphics::ScenePreparationStage::EnvironmentMap
+               ? Json("environment-map")
+           : m_preparationStage == Graphics::ScenePreparationStage::Materials
+               ? Json("material-textures")
+               : Json(nullptr)},
           {"scene", scene ? Json(std::to_string((*scene)->id())) : Json(nullptr)},
           {"error", m_previewError.empty() ? Json(nullptr) : Json(m_previewError)},
           {"draws", std::move(draws)},
@@ -10718,6 +10719,8 @@ namespace Dot::Editor {
                                      ? "Preparing ambient occlusion shaders..."
                                  : m_preparationStage == Graphics::ScenePreparationStage::Skins
                                      ? "Preparing skinning shaders..."
+                                 : m_preparationStage == Graphics::ScenePreparationStage::Geometry
+                                     ? "Preparing geometry..."
                                  : m_preparationStage == Graphics::ScenePreparationStage::SkinPoses
                                      ? "Preparing initial skin poses..."
                                  : m_preparationStage

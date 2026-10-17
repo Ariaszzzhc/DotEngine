@@ -881,3 +881,30 @@ last completed pixels until the next validated frame can draw. Completed receipt
 and pickAsync identify that actual snapshot; target identity/size and source changes
 invalidate old work. Explicit readback and exact-frame rendering remain synchronous.
 See the bounded dynamic-frame section in Skinning for lifetime and backpressure.
+
+## Prepared geometry residency
+
+PreparedMesh owns immutable validated CPU vertices/indices, bounds and normal/tangent/
+UV metadata without creating a device. Its shared copies can cross worker threads;
+default/moved handles fail. Renderer::uploadPrepared consumes the same data and
+surface contract as ordinary upload without rescanning all vertices/faces on the
+render thread. GPU buffers retain their own lifetime after CPU data releases.
+Skin UV prerequisites remain distinct from the static nondegenerate surface frame.
+
+SceneRenderer::prepare includes Geometry before initial skin poses. A separate
+single CPU worker reads/decode/analyzes one mesh or skin at a time, with at most one
+active or staged result. Each owner poll publishes at most one mesh or controller;
+shared source files/controllers use the existing caches and GPU byte budgets. A
+ready scene now has all visible geometry resident, rather than discovering ordinary
+meshes during its first draw. HDR/LDR preparation retains its separate bounded slot.
+
+Cancellation/clear/source changes prohibit late publication and reap finished jobs;
+explicit exact drawing/bounds supersede pending preparation. Material drafts do not
+cancel independent geometry work. Destruction requests stop and joins outstanding
+codecs before device teardown; an active file/codec is not forcibly interrupted.
+Same-source decode failures persist until explicit reload or source change. GPU
+budget failures retain staged CPU data for retry after unused residency retires.
+No preparation call claims pixels. CPU file buffers/codec working memory are separate
+from logical GPU cache bytes. Uploads, binding, driver validation, material metadata
+and other asset consumers still have owner costs; this is incremental residency
+preparation, not general streaming or a frame-time guarantee.

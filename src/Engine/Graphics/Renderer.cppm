@@ -557,6 +557,9 @@ export namespace Dot::Graphics {
     [[nodiscard]] auto adapterInfo() const -> Core::Result<AdapterInfo>;
     [[nodiscard]] auto surfaceSize() const -> Core::Result<Platform::Extent>;
     [[nodiscard]] auto upload(const MeshData& data) -> Core::Result<Mesh>;
+    /** Upload owned prevalidated CPU data without repeating vertex/surface scans.
+     * 上传自有且已校验的 CPU 数据，不重复顶点/表面扫描。 */
+    [[nodiscard]] auto uploadPrepared(const PreparedMesh& data) -> Core::Result<Mesh>;
     /** Share one static source upload, allocate two posed buffers and owned skin
      * resources. Initially exposes bind geometry; no pose is fabricated. Reject
      * foreign/dynamic sources and mismatched counts, enforce residency budgets.
@@ -909,6 +912,8 @@ export namespace Dot::Graphics {
         -> Core::Result<SkinBatch>;
     [[nodiscard]] auto uploadTextureImpl(const Image& image, const TextureOptions& options,
                                          std::span<const Image> levels) -> Core::Result<Texture>;
+    [[nodiscard]] auto uploadAnalyzed(const MeshData& data, const MeshSurface& surface)
+        -> Core::Result<Mesh>;
     struct Impl;
     explicit Renderer(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

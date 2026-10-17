@@ -11630,3 +11630,122 @@ checks pass. Computer use again reports the Mac locked; human keyboard/IME/point
 and wrapped-panel acceptance remain unverified. This does not finish background
 control/resource I/O, streaming, stable populated-game frame pacing, final Prism art,
 large-game/long-running evidence or the overall engine/editor objective.
+
+## 2026-10-18 — Prepare visible geometry off the renderer
+
+The real native startup trace still samples SceneRenderer::Impl::load and meshSurface
+on the render callback. Source inspection confirms mesh file reads/decode, repeated
+vertex/surface analysis and the first frame's ordinary mesh uploads are synchronous.
+Move CPU geometry work into owned preparation while keeping device creation/upload,
+scene binding and publication on their originating owner. This is a foundation for
+responsive residency preparation, not completed streaming or general load-time proof.
+
+Add device-free immutable PreparedMesh data with validated bounds, normal/tangent
+and UV metadata. Shared copies/readers cross CPU threads; default/moved handles fail.
+Renderer::uploadPrepared uses that same metadata without scanning every vertex/face
+again. Ordinary upload keeps its validation contract and shares actual buffer upload;
+it no longer duplicates its initial mesh validation. Move deformed-UV prerequisites
+from the renderer into the common surface analysis, preserving the distinct static
+nondegenerate versus potentially deformed frame requirements. GPU buffers own their
+lifetime independently after CPU source release. No file format/compatibility layer,
+installed public header tree or dependency change is introduced.
+
+SceneRenderer incremental preparation now includes Geometry for every visible source,
+not just the initial skinned subset. One separate owned geometry CPU worker/result
+reads/decode/analyzes a mesh or immutable skin; it never borrows World, binding,
+controller or renderer objects. Shared meshes and skin assets remain cached. Owner
+polls publish at most one mesh or skin controller before continuing first-pose GPU
+validation. Mesh analysis is prepared before upload; GPU allocation/writes/error scopes,
+binding and material metadata retain owner costs. Existing GPU cache budget and
+asset file/count limits remain, with transient codec buffers separate from logical
+GPU residency. HDR/LDR retains its own bounded worker slot. A single large upload
+can still stall; this is not chunked or spatial resource streaming.
+
+Readiness is pure/GUI-safe and now includes all visible geometry residency. Preparing
+a resource never claims pixels. Same-source decode failures persist until explicit
+clear/source change. GPU budget failures retain the staged CPU result, allowing a
+retry after unneeded residency is pruned, even when the source file is then absent.
+Cancel/clear/source changes discard stale results without joining an active codec;
+exact drawing/bounds supersede preparation, and destruction requests stop/joins
+before device teardown. Scene skin bindings are created from current owner data.
+Material drafts are independent: continuing their edits must not repeatedly cancel
+unchanged geometry work and starve progress. GUI/JSON viewport status and native
+loading title/stderr share the new geometry phase.
+
+Add ten enduring cases in existing targets: two device-free immutable ownership/
+validation/surface unit cases and eight offscreen cases for raw/prepared upload
+pixels and invalid lifetime/owner, shared geometry pixels/one-publication quota,
+pure GUI/move/thread guards, hidden/clear/close cancellation, sticky failures with
+explicit reload/new source, budget recovery from owned data after source removal,
+shared skin data/controller quotas and continuing material-draft progress. Initial
+skin tests wait through geometry before asserting an actual pending GPU pose batch.
+The first 90-case focused run passes 85 and exposes five old preparation assumptions:
+Geometry now precedes SkinPoses, and a complete material can already be cached while
+geometry remains pending. Update those assertions around the changed contract while
+retaining exact no-draw/cancellation/pose validation checks. Focused 96/96 then passes
+in 45.37 s; the final draft/cancellation/ownership boundary group passes 10/10 in
+4.28 s. Full Debug 1,446/1,446 in 242.54 s and Release/NDEBUG 1,446/1,446 in 35.75 s
+pass sequentially: 438 unit / 1008 integration, 185 offscreen GPU and 232 compiler.
+No unit opens devices/windows, and no automatic integration opens desktop windows.
+Preserve caller LLVM/CPPFLAGS/LDFLAGS, pinned dependencies and no sanitizers. Only
+macOS arm64 is run; Windows/Linux execution is not claimed.
+
+The actual editor creates an editable Prism project and records environment-map,
+material-textures, shadow-pipelines and geometry loading states before a completed
+view. Inspector script font size 20→22 and directional intensity 3.4→3.74 pass
+stage/apply/undo/redo/save. Structured material roughness 1→0.62 passes staging,
+commit, undo/redo, save, close and reopen without conflating scene/material histories.
+Play passes initial loading, movement/jump, airborne pause/save refusal, exact frozen
+pixels/pose/steps, observed grounded save, paused checkpoint restore retaining live
+unrelated data, malformed clock refusal and Space Return without jumping. Stop restores
+clean saved authoring; fresh Play has a new scope and isolated empty save storage.
+Saved/stopped PNG SHA-256 stays exactly the previous authored baseline
+69c7b60d720e3426b3826acb75d4aaad161704a7479e1f78c435c9bac3de9f6d;
+paused before/after PNGs are byte identical. Actual HUD target text is readable with
+no overflow. Both editor processes exit zero/retire controls and have empty stderr.
+
+Export through the saved workspace, relocate the unpacked game and physically hide
+only the owned source project. All 115 content files / 66,213,373 bytes match saved
+sources, without TypeScript/map files. Font/notice ship and font SHA-256 remains
+81fc5857cbc9b05a16a75c7ad3e848032df52dddd29192f14b48d4b449c973f7.
+Two actual native processes report Preparing geometry before first-pose readiness
+and Start, then pass airborne freeze/refusal, observed landing/grounded paused save,
+fresh unpaused restart after paused exit, damaged owned slot refusal preserving pose/
+bytes, exact repair/retry, paused restore, resumed movement, scene replacement/stale
+scope rejection and Space Return without jumping. Presented HUD source/revision/
+button versions match actual UI, without overflow/script failures. Both exit zero
+and retire controls. Stderr includes ordinary preparation status and one real dropped
+fixed-time notice (116666662 ns); no audio synchronization fault or listening claim.
+
+An actual native process is closed while inspect still reports Preparing and stderr
+has reached Preparing geometry. It exits zero, retires its control, writes no saves
+and never reaches the Start announcement; the profile has no callback errors. A
+separate --frames 1 smoke exits zero after its first real game presentation, with
+131 retained profile samples including loading. No loading/deferred attempt is
+substituted for that presentation.
+
+Matched pre-change/current native startup exports retain identical 115 content hashes
+and use the same eight-second startup sampling/profile method. Baseline samples the
+synchronous scene load/surface path; current sampling records uploadPrepared and no
+synchronous SceneRenderer::Impl::load. The brief geometry worker executions were not
+captured as separate stacks, so do not claim sampled worker CPU attribution. Code,
+owned-job regressions, actual loading state and close-in-geometry validate its scope.
+Observed prepare peaks are 37,487,333 / 37,250,917 ns and render peaks 209,175,500 /
+12,155,750 ns. These single-process records include driver/cache/scheduler and polling
+variation, and different iteration counts; they are not a universal speedup, overall
+frame-time bound or game FPS. Earlier project/session preflight, exact tools, GPU
+uploads, driver calls and other asset consumers retain synchronous costs.
+
+Final workspace/CLI native and editor hashes match current Release outputs. Record
+arm64 Mach-O architecture, load commands, dependencies and executable-relative native
+LLVM runtimes before removing only owned App/unpacked native copies and temporary
+helper/cache files. Restore the owned source path and verify ten prior persistent
+slot hashes. Retain editable projects, saves, actual requests/results, images,
+profiles, native stacks, manifests and source/binary evidence under ignored
+build/geometry-loading-review. No distribution archive is created. Review correctness,
+immutable versus thread-bound ownership, stale cancellation, budget retry, no-fake
+readiness/pixels, module/platform assumptions, formatting and meaningful coverage;
+whitespace/clang-format checks pass. Computer use reports the Mac locked; physical
+keyboard/IME/pointer and wrapped-panel acceptance remain unverified. Full streaming,
+stable larger-game pacing, final Prism art, long-run production evidence and the
+overall engine/editor goal remain unfinished.

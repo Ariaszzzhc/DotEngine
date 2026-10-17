@@ -3,9 +3,12 @@ module;
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <expected>
+#include <memory>
 #include <numbers>
 #include <string>
+#include <utility>
 
 module Dot.Graphics.Geometry;
 
@@ -157,7 +160,63 @@ namespace Dot::Graphics {
       }
     }
 
+    result.hasSkinUvFrame = result.hasNormals;
+
+    for (std::size_t face = 0; !result.hasNormalMapFrame && result.hasSkinUvFrame && face < count;
+         face += 3) {
+      const auto& a = corner(face);
+      const auto& b = corner(face + 1);
+      const auto& c = corner(face + 2);
+      const auto ux = static_cast<double>(b.texCoord.x) - a.texCoord.x;
+      const auto uy = static_cast<double>(b.texCoord.y) - a.texCoord.y;
+      const auto vx = static_cast<double>(c.texCoord.x) - a.texCoord.x;
+      const auto vy = static_cast<double>(c.texCoord.y) - a.texCoord.y;
+      const auto determinant = ux * vy - uy * vx;
+      const auto scale = std::hypot(ux, uy) * std::hypot(vx, vy);
+      result.hasSkinUvFrame = result.hasTangents
+                              || (scale > 0 && std::abs(determinant) >= 1e-12
+                                  && std::abs(determinant) > scale * 1e-6);
+
+      for (const auto* vertex : {&a, &b, &c}) {
+        result.hasSkinUvFrame = result.hasSkinUvFrame && std::abs(vertex->texCoord.x) <= 1e6
+                                && std::abs(vertex->texCoord.y) <= 1e6;
+      }
+    }
+
     return result;
+  }
+
+  struct PreparedMesh::Data {
+    MeshData mesh;
+    MeshSurface surface;
+  };
+
+  PreparedMesh::PreparedMesh(std::shared_ptr<const Data> data) noexcept : m_data(std::move(data)) {
+  }
+
+  auto PreparedMesh::create(MeshData data) -> Core::Result<PreparedMesh> {
+    auto metadata = meshSurface(data);
+
+    if (!metadata) {
+      return std::unexpected(metadata.error());
+    }
+
+    try {
+      return PreparedMesh{std::make_shared<const Data>(std::move(data), *metadata)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare mesh source: " + std::string(error.what()));
+    }
+  }
+
+  auto PreparedMesh::data() const -> Core::Result<const MeshData*> {
+    return m_data ? Core::Result<const MeshData*>{&m_data->mesh}
+                  : Core::fail(Core::ErrorCode::InvalidState, "Prepared mesh is empty or moved");
+  }
+
+  auto PreparedMesh::surface() const -> Core::Result<MeshSurface> {
+    return m_data ? Core::Result<MeshSurface>{m_data->surface}
+                  : Core::fail(Core::ErrorCode::InvalidState, "Prepared mesh is empty or moved");
   }
 
   auto withFlatNormals(const MeshData& mesh) -> Core::Result<MeshData> {

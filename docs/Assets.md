@@ -101,3 +101,12 @@ remaps entity/parent/joint/animation-target IDs and commits one document history
 transaction. Undo retains the reusable asset directory. Imported physical models
 need authored scene lighting
 or an HDR environment to be visible; no substitute illumination is persisted.
+
+Scene rendering now prepares mesh/skin CPU data through an owned geometry worker.
+Native/OBJ mesh files retain their 64-MiB input limit and existing vertex/index
+limits; skin files retain their own 64-MiB/count validation. Only immutable prepared
+geometry/skin handles cross into owner-thread GPU residency. One active/staged
+geometry result bounds retained preparation output, with transient codec buffers
+separate from GPU cache accounting. See [residency preparation](Rendering.md#prepared-geometry-residency).
+This does not make import, whole-project preflight, export, explicit drawing/bounds
+or every asset API asynchronous. Serialize file edits through explicit cache refresh.

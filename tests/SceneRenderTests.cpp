@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -12,6 +13,8 @@
 #include <vector>
 
 import Dot.Graphics.SceneRenderer;
+import Dot.Assets.Mesh;
+import Dot.Assets.Material;
 import Dot.Graphics.Renderer;
 import Dot.Core.Files;
 import Dot.Core.Result;
@@ -410,4 +413,251 @@ TEST_CASE("scene_render.frustum_reduces_dense_scene_submissions_and_camera_chang
   CHECK(pixel1[1] > 200);
   CHECK(static_cast<int>(pixel1[1]) > static_cast<int>(pixel1[0]) + 100);
   CHECK(pixel1 != pixel0);
+}
+
+namespace {
+  auto waitGeometry(SceneRenderer& service, const Scene& scene) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto state = service.prepare(scene);
+
+    while (state && *state != ScenePreparationStage::Ready
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      state = service.prepare(scene);
+    }
+
+    REQUIRE_MESSAGE(state, (state ? "" : state.error().message));
+    REQUIRE(*state == ScenePreparationStage::Ready);
+  }
+
+  auto setAsset(Scene& scene, EntityId entity, std::string path) -> void {
+    auto mesh = scene.entity(entity)->mesh.value();
+    mesh.kind = MeshKind::Asset;
+    mesh.asset = std::move(path);
+    REQUIRE(scene.setMeshRenderer(entity, mesh));
+  }
+}  // namespace
+
+TEST_CASE(
+    "scene_render.geometry_preparation_uploads_one_shared_resource_per_poll_and_matches_pixels") {
+  Directory directory;
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  auto mesh = quad().value();
+  REQUIRE(Dot::Assets::saveMesh(files, "a.dotmesh", mesh));
+  REQUIRE(Dot::Assets::saveMesh(files, "b.dotmesh", mesh));
+  auto scene = makeScene();
+  setAsset(scene, addQuad(scene, -.5F, {1, 0, 0, 1}), "a.dotmesh");
+  setAsset(scene, addQuad(scene, .5F, {0, 1, 0, 1}), "a.dotmesh");
+  setAsset(scene, addQuad(scene, 0, {0, 0, 1, 1}), "b.dotmesh");
+  addQuad(scene, 0, {1, 1, 1, 1});
+  auto reference = Renderer::create().value();
+  auto direct = SceneRenderer::create(reference, files).value();
+  const auto expected = direct.render(scene, 32, 32).value();
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, files).value();
+  CHECK(service.readiness(scene).value() == ScenePreparationStage::Geometry);
+  auto target = renderer.createTarget(32, 32).value();
+  REQUIRE(renderer.renderMeshesInto(target, {}, {}, {1, 0, 1, 1}));
+  const auto before = renderer.readTarget(target).value();
+  auto state = service.prepare(scene);
+  REQUIRE(state);
+  CHECK(*state == ScenePreparationStage::Geometry);
+  CHECK(service.stats()->meshes == 0);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (state && *state != ScenePreparationStage::Ready
+         && std::chrono::steady_clock::now() < deadline) {
+    const auto count = service.stats()->meshes;
+    state = service.prepare(scene);
+    CHECK(service.stats()->meshes <= count + 1);
+    CHECK(renderer.readTarget(target)->pixels == before.pixels);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(state);
+  REQUIRE(*state == ScenePreparationStage::Ready);
+  CHECK(service.stats()->meshes == 3);
+  REQUIRE(std::filesystem::remove(directory.root / "a.dotmesh"));
+  REQUIRE(std::filesystem::remove(directory.root / "b.dotmesh"));
+  REQUIRE(service.renderInto(scene, target));
+  CHECK(renderer.readTarget(target)->pixels == expected.pixels);
+}
+
+TEST_CASE("scene_render.geometry_readiness_is_pure_and_owner_gui_move_boundaries_preserve_work") {
+  auto scene = makeScene();
+  addQuad(scene, 0, {1, 0, 0, 1});
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer).value();
+  CHECK(service.readiness(scene).value() == ScenePreparationStage::Geometry);
+  CHECK(service.readiness(scene).value() == ScenePreparationStage::Geometry);
+  CHECK(renderer.resourceStats()->meshes == 0);
+  REQUIRE(renderer.enableGui());
+  REQUIRE(renderer.renderGui(
+      [&]() -> Dot::Core::Result<void> {
+        CHECK(service.readiness(scene).value() == ScenePreparationStage::Geometry);
+        CHECK_FALSE(service.prepare(scene));
+        return {};
+      },
+      8, 8));
+  REQUIRE(renderer.closeGui());
+  bool rejected{};
+  std::thread worker([&] { rejected = !service.prepare(scene) && !service.readiness(scene); });
+  worker.join();
+  CHECK(rejected);
+  CHECK(renderer.resourceStats()->meshes == 0);
+  REQUIRE(service.prepare(scene).value() == ScenePreparationStage::Geometry);
+  auto moved = std::move(service);
+  CHECK_FALSE(service.prepare(scene));
+  waitGeometry(moved, scene);
+  CHECK(renderer.resourceStats()->meshes == 1);
+  REQUIRE(moved.clearCache());
+  CHECK(renderer.resourceStats()->meshes == 0);
+}
+
+TEST_CASE("scene_render.geometry_cancellation_discards_late_missing_hidden_and_cleared_work") {
+  Directory directory;
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  REQUIRE(Dot::Assets::saveMesh(files, "valid.dotmesh", quad().value()));
+  auto scene = makeScene();
+  const auto owner = addQuad(scene, 0, {0, 1, 0, 1});
+  setAsset(scene, owner, "missing.dotmesh");
+  auto renderer = Renderer::create().value();
+
+  {
+    auto service = SceneRenderer::create(renderer, files).value();
+    REQUIRE(service.prepare(scene).value() == ScenePreparationStage::Geometry);
+    auto hidden = scene.entity(owner)->mesh.value();
+    hidden.visible = false;
+    REQUIRE(scene.setMeshRenderer(owner, hidden));
+    CHECK(service.prepare(scene).value() == ScenePreparationStage::Ready);
+    CHECK(renderer.resourceStats()->meshes == 0);
+    hidden.visible = true;
+    hidden.asset = "valid.dotmesh";
+    REQUIRE(scene.setMeshRenderer(owner, hidden));
+    waitGeometry(service, scene);
+    CHECK(service.stats()->meshes == 1);
+    REQUIRE(service.clearCache());
+    CHECK(renderer.resourceStats()->meshes == 0);
+    REQUIRE(service.prepare(scene).value() == ScenePreparationStage::Geometry);
+    REQUIRE(service.clearCache());
+    CHECK(renderer.resourceStats()->meshes == 0);
+    waitGeometry(service, scene);
+    REQUIRE(service.clearCache());
+    REQUIRE(service.prepare(scene).value() == ScenePreparationStage::Geometry);
+  }
+
+  CHECK(renderer.resourceStats()->meshes == 0);
+}
+
+TEST_CASE("scene_render.geometry_errors_require_explicit_reload_or_new_source_and_never_draw") {
+  for (bool newSource : {false, true}) {
+    Directory directory;
+    auto files = Dot::Core::FileSystem::open(directory.root).value();
+    auto scene = makeScene();
+    setAsset(scene, addQuad(scene, 0, {0, 1, 0, 1}), "missing.dotmesh");
+    auto renderer = Renderer::create().value();
+    auto service = SceneRenderer::create(renderer, files).value();
+    auto target = renderer.createTarget(16, 16).value();
+    auto state = service.prepare(scene);
+    REQUIRE(state);
+    CHECK(*state == ScenePreparationStage::Geometry);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    while (state && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      state = service.prepare(scene);
+    }
+
+    REQUIRE_FALSE(state);
+    CHECK(state.error().message.find("missing.dotmesh") != std::string::npos);
+    CHECK(target.info()->frames == 0);
+    CHECK(renderer.resourceStats()->meshes == 0);
+    REQUIRE(Dot::Assets::saveMesh(files, "missing.dotmesh", quad().value()));
+    CHECK_FALSE(service.readiness(scene));
+    CHECK_FALSE(service.prepare(scene));
+
+    if (newSource) {
+      scene = Dot::World::decodeScene(Dot::World::encodeScene(scene).value()).value();
+    } else {
+      REQUIRE(service.clearCache());
+    }
+
+    waitGeometry(service, scene);
+    REQUIRE(service.renderInto(scene, target));
+    CHECK(target.info()->frames == 1);
+  }
+}
+
+TEST_CASE("scene_render.geometry_budget_retry_reuses_owned_data_after_unneeded_sources_retire") {
+  Directory directory;
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  const auto mesh = quad().value();
+  REQUIRE(Dot::Assets::saveMesh(files, "a.dotmesh", mesh));
+  REQUIRE(Dot::Assets::saveMesh(files, "b.dotmesh", mesh));
+  auto scene = makeScene();
+  const auto first = addQuad(scene, 0, {1, 0, 0, 1});
+  setAsset(scene, first, "a.dotmesh");
+  const auto bytes
+      = mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(std::uint32_t);
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, files, bytes).value();
+  waitGeometry(service, scene);
+  auto target = renderer.createTarget(16, 16).value();
+  REQUIRE(service.renderInto(scene, target));
+  const auto before = renderer.readTarget(target).value();
+  setAsset(scene, addQuad(scene, 0, {0, 0, 1, 1}), "b.dotmesh");
+  auto state = service.prepare(scene);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+  while (state && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    state = service.prepare(scene);
+  }
+
+  REQUIRE_FALSE(state);
+  CHECK(state.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(renderer.readTarget(target)->pixels == before.pixels);
+  REQUIRE(std::filesystem::remove(directory.root / "b.dotmesh"));
+  auto hidden = scene.entity(first)->mesh.value();
+  hidden.visible = false;
+  REQUIRE(scene.setMeshRenderer(first, hidden));
+  waitGeometry(service, scene);
+  CHECK(service.stats()->meshes == 1);
+  CHECK(service.stats()->bytes == bytes);
+  REQUIRE(service.renderInto(scene, target));
+  CHECK(renderer.readTarget(target)->pixels != before.pixels);
+}
+
+TEST_CASE("scene_render.geometry_progress_is_independent_of_continuing_material_drafts") {
+  Directory directory;
+  auto files = Dot::Core::FileSystem::open(directory.root).value();
+  REQUIRE(Dot::Assets::saveMesh(files, "mesh.dotmesh", quad().value()));
+  Dot::Assets::MaterialDescription description;
+  REQUIRE(Dot::Assets::saveMaterial(files, "surface.dotmaterial", description));
+  const auto original = files.readText("surface.dotmaterial").value();
+  auto scene = makeScene();
+  const auto owner = addQuad(scene, 0, {1, 1, 1, 1});
+  setAsset(scene, owner, "mesh.dotmesh");
+  REQUIRE(scene.setMaterial(owner, MaterialBinding{"surface.dotmaterial"}));
+  auto renderer = Renderer::create().value();
+  auto service = SceneRenderer::create(renderer, files).value();
+  REQUIRE(service.prepare(scene).value() == ScenePreparationStage::Geometry);
+  auto stage = ScenePreparationStage::Geometry;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  std::size_t changes{};
+
+  while (stage != ScenePreparationStage::Ready && std::chrono::steady_clock::now() < deadline) {
+    description.roughness = (changes++ % 2 == 0) ? .4F : .6F;
+    REQUIRE(service.previewMaterial(MaterialPreview{"surface.dotmaterial", description}));
+    auto next = service.prepare(scene);
+    REQUIRE_MESSAGE(next, (next ? "" : next.error().message));
+    stage = *next;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  CHECK(changes > 0);
+  CHECK(stage == ScenePreparationStage::Ready);
+  CHECK(service.stats()->meshes == 1);
+  CHECK(files.readText("surface.dotmaterial").value() == original);
+  REQUIRE(service.render(scene, 16, 16));
 }

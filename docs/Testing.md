@@ -77,3 +77,11 @@ regular/directory/symlink/dangling response boundaries, case spelling, malformed
 request leaves, repair/retry, full 4096-entry retained history and response overflow.
 They use owned temporary files without devices/windows. Actual CLI/editor/player
 checks separately verify retained history, idempotent side effects and control cost.
+
+Prepared-geometry unit cases retain immutable copy/move/thread ownership, malformed
+inputs and static-versus-deformed UV requirements without a device. Offscreen cases
+compare raw/prepared upload pixels, lifetime/owner rejection, shared incremental
+geometry pixels, one-publication quotas, pure GUI readiness, cancellation/move/close,
+sticky decode errors/reload, budget retry from owned CPU data after source removal,
+shared skin data and progress during continuing material drafts. Existing skin tests
+wait through geometry before asserting an actual pending initial GPU batch.

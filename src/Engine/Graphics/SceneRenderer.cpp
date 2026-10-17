@@ -165,6 +165,44 @@ namespace Dot::Graphics {
       std::optional<Core::Error> error;
     };
 
+    struct GeometryRequest {
+      std::uint64_t scene;
+      /** Zero identifies a shared mesh; nonzero identifies a skin-controller owner.
+       * 零表示共享网格，非零表示需要蒙皮控制器的所有者。 */
+      std::uint64_t owner;
+      World::MeshKind kind;
+      std::string mesh;
+      std::string path;
+      auto operator==(const GeometryRequest&) const -> bool = default;
+    };
+
+    struct GeometryData {
+      std::variant<PreparedMesh, Animation::Skin> source;
+      std::string warning;
+    };
+
+    struct GeometryResult {
+      std::mutex mutex;
+      std::optional<Core::Result<GeometryData>> value;
+    };
+
+    struct GeometryJob {
+      GeometryRequest request;
+      std::shared_ptr<GeometryResult> result;
+      std::jthread thread;
+      bool canceled{};
+    };
+
+    struct StagedGeometry {
+      GeometryRequest request;
+      GeometryData value;
+    };
+
+    struct GeometryFailure {
+      GeometryRequest request;
+      Core::Error error;
+    };
+
     struct FrameSkin {
       std::uint64_t owner;
       std::size_t index;
@@ -252,6 +290,9 @@ namespace Dot::Graphics {
     std::unordered_map<std::uint64_t, SkinEntry> skins;
     std::unordered_map<std::string, Animation::Skin> skinAssets;
     std::optional<PendingSkin> pendingSkin;
+    std::unique_ptr<GeometryJob> geometryJob;
+    std::optional<StagedGeometry> stagedGeometry;
+    std::optional<GeometryFailure> geometryFailure;
     std::optional<MaterialPreview> preview;
     std::optional<PendingMaterial> pendingMaterial;
     std::unique_ptr<ImageJob> imageJob;
@@ -329,6 +370,8 @@ namespace Dot::Graphics {
         discardFrames();
         cancelMaterialPreparation();
         cancelEnvironmentPreparation();
+        cancelGeometryPreparation();
+        geometryJob.reset();
         imageJob.reset();
         hdrJob.reset();
         static_cast<void>(detachEnvironment());
@@ -568,7 +611,8 @@ namespace Dot::Graphics {
     }
 
     auto skin(const World::Scene& scene, const World::EntityInfo& entity,
-              const std::string& meshKey, const Entry& source) -> Core::Result<SkinEntry*> {
+              const std::string& meshKey, const Entry& source,
+              const Animation::Skin* prepared = nullptr) -> Core::Result<SkinEntry*> {
       auto existing = skins.find(entity.id.value);
 
       if (existing != skins.end()) {
@@ -580,9 +624,9 @@ namespace Dot::Graphics {
       }
 
       auto cached = skinAssets.find(entity.skin->asset);
-      auto loaded = cached != skinAssets.end()
-                        ? Core::Result<Animation::Skin>{cached->second}
-                        : Animation::loadSkin(*assets, assetPath(entity.skin->asset));
+      auto loaded = cached != skinAssets.end() ? Core::Result<Animation::Skin>{cached->second}
+                    : prepared ? Core::Result<Animation::Skin>{*prepared}
+                               : Animation::loadSkin(*assets, assetPath(entity.skin->asset));
 
       if (!loaded) {
         return std::unexpected(loaded.error());
@@ -1397,6 +1441,292 @@ namespace Dot::Graphics {
       }
     }
 
+    /** One CPU geometry job/result at a time; no scene/renderer crosses threads.
+     * Cancellation drops publication immediately and reaps only completed codecs.
+     * 单个 CPU 几何任务/结果，不跨线程传递场景或渲染器；取消立即禁止发布，仅回收已结束编解码。
+     */
+    auto cancelGeometryPreparation() -> void {
+      stagedGeometry.reset();
+      geometryFailure.reset();
+
+      if (geometryJob) {
+        geometryJob->canceled = true;
+        geometryJob->thread.request_stop();
+      }
+    }
+
+    auto takeGeometry() -> std::optional<Core::Result<GeometryData>> {
+      if (!geometryJob) {
+        return std::nullopt;
+      }
+
+      std::optional<Core::Result<GeometryData>> result;
+
+      {
+        std::lock_guard lock(geometryJob->result->mutex);
+        result = std::move(geometryJob->result->value);
+      }
+
+      if (result) {
+        geometryJob.reset();
+      }
+
+      return result;
+    }
+
+    auto startGeometry(const GeometryRequest& request) -> void {
+      auto job = std::make_unique<GeometryJob>();
+      job->request = request;
+      job->result = std::make_shared<GeometryResult>();
+      job->thread = std::jthread([state = job->result, request, files = assets,
+                                  maximum = budget](std::stop_token stop) {
+        Core::Result<GeometryData> result
+            = Core::fail(Core::ErrorCode::External, "Geometry preparation did not run");
+
+        try {
+          const auto build = [&]() -> Core::Result<GeometryData> {
+            if (stop.stop_requested()) {
+              return Core::fail(Core::ErrorCode::Unavailable, "Geometry preparation canceled");
+            }
+
+            if (request.owner) {
+              if (!files) {
+                return Core::fail(Core::ErrorCode::InvalidState,
+                                  "Scene skin requires an asset root");
+              }
+
+              auto loaded = Animation::loadSkin(*files, assetPath(request.path));
+              return loaded ? Core::Result<GeometryData>{GeometryData{std::move(*loaded), {}}}
+                            : std::unexpected(loaded.error());
+            }
+
+            MeshData mesh;
+            std::string warning;
+
+            if (request.kind == World::MeshKind::Asset) {
+              if (!files) {
+                return Core::fail(Core::ErrorCode::InvalidState,
+                                  "Scene renderer has no asset root");
+              }
+
+              auto loaded = Assets::loadMesh(*files, assetPath(request.path));
+
+              if (!loaded) {
+                return std::unexpected(loaded.error());
+              }
+
+              mesh = std::move(loaded->data);
+              warning = std::move(loaded->warnings);
+            } else {
+              auto primitive = request.kind == World::MeshKind::Cube ? cube() : quad();
+
+              if (!primitive) {
+                return std::unexpected(primitive.error());
+              }
+
+              mesh = std::move(*primitive);
+            }
+
+            const auto bytes = mesh.vertices.size() * sizeof(Vertex)
+                               + mesh.indices.size() * sizeof(std::uint32_t);
+
+            if (bytes > maximum) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Scene mesh exceeds cache byte budget");
+            }
+
+            auto prepared = PreparedMesh::create(std::move(mesh));
+            return prepared ? Core::Result<GeometryData>{GeometryData{std::move(*prepared),
+                                                                      std::move(warning)}}
+                            : std::unexpected(prepared.error());
+          };
+          result = build();
+
+          if (stop.stop_requested()) {
+            result = Core::fail(Core::ErrorCode::Unavailable, "Geometry preparation canceled");
+          }
+
+          if (!result) {
+            result = Core::fail(result.error().code, "Prepare scene geometry '" + request.path
+                                                         + "': " + result.error().message);
+          }
+        } catch (const std::exception& error) {
+          result = Core::fail(Core::ErrorCode::External,
+                              "Prepare scene geometry: " + std::string(error.what()));
+        } catch (...) {
+          result = Core::fail(Core::ErrorCode::External, "Unknown geometry preparation failure");
+        }
+
+        std::lock_guard lock(state->mutex);
+        state->value.emplace(std::move(result));
+      });
+      geometryJob = std::move(job);
+    }
+
+    auto wantedGeometry(const World::Scene& scene,
+                        const std::vector<World::EntityInfo>& entities) const
+        -> Core::Result<std::optional<GeometryRequest>> {
+      std::optional<GeometryRequest> wanted;
+
+      for (const auto& entity : entities) {
+        if (!entity.mesh || !entity.mesh->visible) {
+          continue;
+        }
+
+        auto resource = key(*entity.mesh);
+
+        if (!resource) {
+          return std::unexpected(resource.error());
+        }
+
+        if (!cache.contains(*resource) && (!wanted || *resource < wanted->mesh)) {
+          wanted = GeometryRequest{scene.id(), 0, entity.mesh->kind, *resource, entity.mesh->asset};
+        }
+      }
+
+      if (wanted) {
+        return wanted;
+      }
+
+      for (const auto& entity : entities) {
+        if (!entity.mesh || !entity.mesh->visible || !entity.skin || !entity.skin->enabled) {
+          continue;
+        }
+
+        auto resource = key(*entity.mesh);
+
+        if (!resource) {
+          return std::unexpected(resource.error());
+        }
+
+        const auto current = skins.find(entity.id.value);
+        const bool ready = skinScene == scene.id() && current != skins.end()
+                           && current->second.mesh == *resource
+                           && current->second.properties == *entity.skin;
+
+        if (!ready && (!wanted || entity.id.value < wanted->owner)) {
+          wanted = GeometryRequest{scene.id(), entity.id.value, entity.mesh->kind, *resource,
+                                   entity.skin->asset};
+        }
+      }
+
+      return wanted;
+    }
+
+    auto prepareGeometry(const World::Scene& scene) -> Core::Result<bool> {
+      try {
+        auto entities = scene.entities();
+
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
+
+        auto requirements = prune(scene, *entities);
+        auto wanted = requirements ? wantedGeometry(scene, *entities)
+                                   : Core::Result<std::optional<GeometryRequest>>{
+                                         std::unexpected(requirements.error())};
+
+        if (!wanted) {
+          return std::unexpected(wanted.error());
+        }
+
+        if (!*wanted || (stagedGeometry && stagedGeometry->request != **wanted)
+            || (geometryJob && geometryJob->request != **wanted)
+            || (geometryFailure && geometryFailure->request != **wanted)) {
+          cancelGeometryPreparation();
+        }
+
+        if (geometryJob) {
+          const auto request = geometryJob->request;
+          const auto canceled = geometryJob->canceled;
+          auto ready = takeGeometry();
+
+          if (!ready) {
+            return !*wanted;
+          }
+
+          if (!canceled) {
+            if (!*ready) {
+              geometryFailure.emplace(request, ready->error());
+              return std::unexpected(ready->error());
+            }
+
+            stagedGeometry.emplace(request, std::move(**ready));
+          }
+        }
+
+        if (!*wanted) {
+          return true;
+        }
+
+        if (geometryFailure) {
+          return std::unexpected(geometryFailure->error);
+        }
+
+        const auto& request = **wanted;
+        const auto cachedSkin = request.owner ? skinAssets.find(request.path) : skinAssets.end();
+
+        if (stagedGeometry || cachedSkin != skinAssets.end()) {
+          if (request.owner) {
+            auto owner = scene.findEntity(request.owner);
+            auto entity = owner ? scene.entity(*owner)
+                                : Core::Result<World::EntityInfo>{std::unexpected(owner.error())};
+
+            if (!entity) {
+              return std::unexpected(entity.error());
+            }
+
+            const auto& asset = stagedGeometry
+                                    ? std::get<Animation::Skin>(stagedGeometry->value.source)
+                                    : cachedSkin->second;
+            auto prepared = skin(scene, *entity, request.mesh, cache.at(request.mesh), &asset);
+
+            if (!prepared) {
+              return std::unexpected(prepared.error());
+            }
+          } else {
+            const auto& source = std::get<PreparedMesh>(stagedGeometry->value.source);
+            const auto data = source.data().value();
+            const auto size = data->vertices.size() * sizeof(Vertex)
+                              + data->indices.size() * sizeof(std::uint32_t);
+
+            if (size > budget - bytes) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Scene mesh cache byte budget exceeded");
+            }
+
+            auto mesh = renderer->uploadPrepared(source);
+
+            if (!mesh) {
+              return std::unexpected(mesh.error());
+            }
+
+            cache.emplace(request.mesh,
+                          Entry{std::move(*mesh), size, std::move(stagedGeometry->value.warning),
+                                source.surface()->bounds});
+            bytes += size;
+          }
+
+          stagedGeometry.reset();
+          wanted = wantedGeometry(scene, *entities);
+
+          if (!wanted || !*wanted) {
+            return wanted ? Core::Result<bool>{true} : std::unexpected(wanted.error());
+          }
+
+          if ((**wanted).owner && skinAssets.contains((**wanted).path)) {
+            return false;
+          }
+        }
+
+        startGeometry(**wanted);
+        return false;
+      } catch (const std::exception& error) {
+        return Core::fail(Core::ErrorCode::External,
+                          "Prepare scene geometry: " + std::string(error.what()));
+      }
+    }
+
     /** Prepare only new/rebound controllers, never throttle current animation poses.
      * Compare owned palettes before polling so changed scenes cannot publish stale work.
      * 仅准备新建/改绑控制器，不节流已有动画姿态；轮询前比较拥有的调色板，防止变化场景发布旧工作。
@@ -1826,6 +2156,7 @@ namespace Dot::Graphics {
 
         if (!asynchronous) {
           discardFrames();
+          cancelGeometryPreparation();
         }
 
         Frame frame;
@@ -2135,6 +2466,20 @@ namespace Dot::Graphics {
       return ScenePreparationStage::Materials;
     }
 
+    auto geometry = m_impl->wantedGeometry(scene, *entities);
+
+    if (!geometry) {
+      return std::unexpected(geometry.error());
+    }
+
+    if (*geometry) {
+      if (m_impl->geometryFailure && m_impl->geometryFailure->request == **geometry) {
+        return std::unexpected(m_impl->geometryFailure->error);
+      }
+
+      return ScenePreparationStage::Geometry;
+    }
+
     for (const auto& entity : *entities) {
       if (entity.mesh && entity.mesh->visible && entity.skin && entity.skin->enabled) {
         const auto found = m_impl->skins.find(entity.id.value);
@@ -2172,6 +2517,12 @@ namespace Dot::Graphics {
       return gui ? Core::fail(Core::ErrorCode::InvalidState,
                               "Scene preparation inside GUI callback")
                  : Core::Result<ScenePreparationStage>{std::unexpected(gui.error())};
+    }
+
+    if ((m_impl->geometryJob && m_impl->geometryJob->request.scene != scene.id())
+        || (m_impl->stagedGeometry && m_impl->stagedGeometry->request.scene != scene.id())
+        || (m_impl->geometryFailure && m_impl->geometryFailure->request.scene != scene.id())) {
+      m_impl->cancelGeometryPreparation();
     }
 
     auto stage = readiness(scene);
@@ -2247,7 +2598,8 @@ namespace Dot::Graphics {
     }
 
     if (*stage == ScenePreparationStage::Ready && !m_impl->pendingMaterial && !m_impl->imageJob
-        && !m_impl->pendingEnvironment && !m_impl->hdrJob && !m_impl->pendingSkin) {
+        && !m_impl->pendingEnvironment && !m_impl->hdrJob && !m_impl->pendingSkin
+        && !m_impl->geometryJob && !m_impl->stagedGeometry) {
       return ScenePreparationStage::Ready;
     }
 
@@ -2269,6 +2621,13 @@ namespace Dot::Graphics {
 
     if (!*materials) {
       return ScenePreparationStage::Materials;
+    }
+
+    auto geometry = m_impl->prepareGeometry(scene);
+
+    if (!geometry || !*geometry) {
+      return geometry ? Core::Result<ScenePreparationStage>{ScenePreparationStage::Geometry}
+                      : std::unexpected(geometry.error());
     }
 
     auto poses = m_impl->prepareInitialSkins(scene);
@@ -2620,6 +2979,7 @@ namespace Dot::Graphics {
       }
 
       m_impl->discardFrames();
+      m_impl->cancelGeometryPreparation();
       m_impl->pendingSkin.reset();
       m_impl->pruneSkins(scene, *entities, false);
       auto found = m_impl->cache.find(*resourceKey);
@@ -2804,6 +3164,7 @@ namespace Dot::Graphics {
     }
 
     m_impl->discardFrames();
+    m_impl->cancelGeometryPreparation();
     m_impl->cancelMaterialPreparation();
     m_impl->cancelEnvironmentPreparation();
     checked = m_impl->detachEnvironment();

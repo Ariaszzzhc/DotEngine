@@ -32,7 +32,8 @@ export namespace Dot::Graphics {
     Skins,
     SkinPoses,
     EnvironmentMap,
-    Materials
+    Materials,
+    Geometry
   };
 
   struct SceneRenderStats {
@@ -122,27 +123,30 @@ export namespace Dot::Graphics {
     auto operator=(SceneRenderer&&) noexcept -> SceneRenderer&;
     ~SceneRenderer();
 
-    /** Prepare pipelines, the HDR environment and visible materials incrementally.
-     * HDR/LDR reads/decode/mips use one owned worker, at most one bounded pyramid;
-     * each poll uploads at most one texture on the owner. Publish complete materials
-     * and GPU-completed environment maps only; retain the old binding until drawn.
-     * GPU bake completion uses zero-wait polling. Small material JSON reads, GPU
-     * uploads and other assets remain synchronous. No pixels are produced.
-     * Initial visible skin poses submit one owned atomic GPU batch and poll it
-     * without waiting. Changed bindings discard unpublished work. Advancing joints
-     * reuse the submitted transaction; drawing validates the latest palette before
-     * producing pixels. Later animated updates and explicit rendering stay synchronous.
-     * Compact readbacks add <=32 bytes/controller beyond resident skin storage.
-     * Clear/draft/scene cancellation discards late work without joining a codec;
-     * destruction requests stop and joins active work before renderer teardown.
-     * 渐进准备管线、HDR 环境及可见材质；单个拥有的工作线程读取/解码/生成至多一张有界
-     * mip 金字塔，每次轮询在所属线程至多上传一张纹理，仅完整材质发布到缓存。
-     * 环境仅在 GPU 完成后发布缓存，绘制前保留旧绑定；零等待轮询烘焙完成。
-     * 初始可见蒙皮姿态提交拥有的原子 GPU 批次并零等待轮询；绑定变化丢弃旧任务。
-     * 关节推进复用已提交事务，绘制前校验最新调色板，之后才产生像素。
-     * 紧凑读回在常驻存储外每控制器至多增加 32 字节；后续动画更新及显式绘制仍同步。
-     * 小型材质 JSON、GPU 上传及其他资产仍同步，不生成像素。
-     * 清缓存/草稿/场景取消丢弃迟到结果，不在帧内等待编解码；销毁请求停止并等待工作结束。 */
+    /** Incremental pipeline/environment/material/geometry and first-pose preparation.
+     * HDR/LDR decode/mips share one owned worker and one bounded pyramid; a separate
+     * single geometry worker owns at most one mesh/skin decode or staged result.
+     * Workers never borrow scenes, controllers or devices. Mesh vertex/surface
+     * analysis produces immutable PreparedMesh data. Each poll publishes at most
+     * one mesh or skin controller and one texture on the owner; uploads, binding,
+     * small material JSON and driver validation remain owner operations.
+     * Publish complete materials and GPU-completed environment maps only. Initial
+     * skin poses use an owned atomic batch with zero-wait polls; animated Play/player
+     * frames use the bounded async frame path. Explicit drawing remains exact/sync.
+     * Readiness includes all visible geometry; preparation never draws pixels.
+     * Decode errors persist for the same source until clear/change. GPU budget
+     * failures retain owned CPU data for retry after unneeded residency retires.
+     * Cancel/clear/source changes and exact operations discard late data without joining an active
+     * codec; destruction requests stop and joins before renderer teardown.
+     * 渐进准备管线、环境、材质、几何和初始姿态。HDR/LDR 共用一个有界金字塔工作线程；
+     * 另一个几何线程至多拥有一个网格/蒙皮解码或暂存结果，不借用场景、控制器或设备。
+     * 顶点/表面分析产生不可变 PreparedMesh；每次在所属线程至多发布一个网格或蒙皮控制器
+     * 及一张贴图。上传、绑定、小型材质 JSON 和驱动校验仍在所属线程进行。
+     * 仅完整材质及 GPU 完成的环境发布；初始蒙皮原子批次零等待轮询，动态 Play/原生游戏
+     * 使用有界异步帧路径，显式绘制仍精确同步。就绪包含所有可见几何，准备不绘制像素。
+     * 同源解码失败保持至清缓存或来源变化；GPU 预算失败保留 CPU 结果，释放无用常驻项后可重试。
+     * 取消/清缓存/换源及显式同步操作禁止迟到数据发布，不等待活动编解码；销毁停止并在设备退出前回收。
+     */
     [[nodiscard]] auto prepare(const World::Scene& scene) -> Core::Result<ScenePreparationStage>;
     /** Pure current-scene readiness, including inside GUI layout. No I/O, polling,
      * preparation or cache mutation. Ready concerns only the prepared requirements.

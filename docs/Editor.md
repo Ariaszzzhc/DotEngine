@@ -2110,3 +2110,11 @@ publication. Observe the actual error and repair malformed owned entries. For a
 selected orphan ID, a fresh ID is also available; a queued path alone is never
 completion. Filesystem scans,
 JSON dispatch and writes still run on the calling thread.
+
+The shared viewport loading state also includes geometry. It covers background
+mesh/skin reads, decoding and surface analysis plus incremental owner-thread GPU
+residency. workspace.view.loading reports geometry and the viewport shows Preparing
+geometry through the same implementation. Ready includes all visible sources; a
+loading/error acknowledgement is not a completed view. Capture waits for actual
+completed matching pixels. Material drafts continue independently while geometry
+prepares; Stop, source changes and resource cache refresh retire obsolete results.
