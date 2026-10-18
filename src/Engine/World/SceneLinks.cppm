@@ -3,6 +3,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -21,6 +22,41 @@ export namespace Dot::World {
     Scene scene;
     EntityId root;
     std::vector<std::uint64_t> created;
+  };
+
+  enum class SceneLinkAction { Refresh, RestoreSource, Retarget };
+
+  /** Owned, creator-thread source update transaction. Capture target once, append 1..256
+   * ordered source changes, then validate/decode the final scene once. Inputs stay unchanged;
+   * append failure is terminal and finish publishes only an independent candidate. Repeated
+   * roots use the preceding staged baseline/path. Native storage budgets apply after each
+   * append; final references/components/hierarchy must validate together. Moves retain owner,
+   * no scene/source handles are borrowed beyond a call, and destruction simply discards work.
+   * 拥有且限创建线程的来源更新事务；一次捕获目标，顺序添加 1..256 项来源变更，最后统一
+   * 校验/解码场景。输入不变，添加失败即终止；完成仅返回独立候选。重复根使用此前暂存的
+   * 基线/路径；每次添加遵守原生存储预算，最终统一校验引用/组件/层级。移动保留所属线程，
+   * 调用后不借用场景/来源句柄，销毁仅丢弃工作。 */
+  class SceneLinkBatch {
+  public:
+    [[nodiscard]] static auto begin(const Scene& target, std::uint64_t firstValue)
+        -> Core::Result<SceneLinkBatch>;
+    SceneLinkBatch(const SceneLinkBatch&) = delete;
+    auto operator=(const SceneLinkBatch&) -> SceneLinkBatch& = delete;
+    SceneLinkBatch(SceneLinkBatch&&) noexcept;
+    auto operator=(SceneLinkBatch&&) noexcept -> SceneLinkBatch&;
+    ~SceneLinkBatch();
+    [[nodiscard]] auto sourcePath(EntityId root) const -> Core::Result<std::string>;
+    [[nodiscard]] auto append(const SceneSourceSnapshot& source, EntityId root,
+                              SceneLinkAction action = SceneLinkAction::Refresh)
+        -> Core::Result<void>;
+    /** Consume once; root is the last updated root and created contains surviving values.
+     * 消费一次；root 为最后更新的根，created 仅含仍存活的值。 */
+    [[nodiscard]] auto finish() -> Core::Result<SceneLinkUpdate>;
+
+  private:
+    struct Impl;
+    explicit SceneLinkBatch(std::unique_ptr<Impl> impl) noexcept;
+    std::unique_ptr<Impl> m_impl;
   };
 
   struct SceneFieldApply {

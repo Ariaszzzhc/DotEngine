@@ -196,6 +196,104 @@ namespace Dot::Editor {
               {"changes", std::move(changes)}};
     }
 
+    auto sourceUpdate(const Json& command) -> bool {
+      if (!command.is_object()) {
+        return false;
+      }
+
+      const auto found = command.find("op");
+      return found != command.end() && found->is_string()
+             && (*found == "refresh-scene-instance" || *found == "revert-scene-instance"
+                 || *found == "retarget-scene-instance");
+    }
+
+    /** Consecutive source updates share one owned candidate and one final native validation.
+     * Keep only the current source snapshot; repeated adjacent paths reuse it within this
+     * caller-serialized edit, with no cache across edits or unbounded retained source graphs.
+     * 连续来源更新共用一个拥有候选及最终原生校验；仅保留当前来源快照，同一路径相邻请求在
+     * 调用者串行编辑内复用，不跨编辑缓存或无界保留依赖图。 */
+    auto sourceUpdates(Json& scene, std::span<const Json> commands, std::size_t& index,
+                       std::uint64_t& next, std::vector<std::uint64_t>& created,
+                       std::vector<std::uint64_t>& selection, const Project::Project& project,
+                       std::string_view activePath) -> Core::Result<void> {
+      auto target = decodeCandidate(scene, next);
+
+      if (!target) {
+        return std::unexpected(target.error());
+      }
+
+      auto batch = World::SceneLinkBatch::begin(*target, next);
+
+      if (!batch) {
+        return std::unexpected(batch.error());
+      }
+
+      const auto begin = index;
+      std::optional<World::SceneSourceSnapshot> current;
+      std::string currentPath;
+
+      for (std::size_t offset = 0; offset < commands.size(); ++offset) {
+        index = begin + offset;
+        const auto& command = commands[offset];
+        const auto op = command["op"].get<std::string>();
+        const bool retarget = op == "retarget-scene-instance";
+
+        if (retarget) {
+          Codec::requireFields(command, {"op", "entity", "path"});
+        } else {
+          Codec::requireFields(command, {"op", "entity"});
+        }
+
+        const World::EntityId root{target->id(), Codec::id(command["entity"])};
+        auto path = retarget ? Core::Result<std::string>{command["path"].get<std::string>()}
+                             : batch->sourcePath(root);
+
+        if (!path) {
+          return std::unexpected(path.error());
+        }
+
+        if (!current || currentPath != *path) {
+          current.reset();
+          auto source = loadContent(project, *path, activePath);
+
+          if (!source) {
+            return std::unexpected(source.error());
+          }
+
+          current.emplace(std::move(*source));
+          currentPath = *path;
+        }
+
+        const auto action = retarget                        ? World::SceneLinkAction::Retarget
+                            : op == "revert-scene-instance" ? World::SceneLinkAction::RestoreSource
+                                                            : World::SceneLinkAction::Refresh;
+        auto appended = batch->append(*current, root, action);
+
+        if (!appended) {
+          return appended;
+        }
+      }
+
+      auto prepared = batch->finish();
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      auto encoded = World::encodeScene(prepared->scene);
+      auto floor = prepared->scene.nextEntityValue();
+
+      if (!encoded || !floor) {
+        return std::unexpected(!encoded ? encoded.error() : floor.error());
+      }
+
+      next = floor->value_or(exhausted);
+      created.insert(created.end(), prepared->created.begin(), prepared->created.end());
+      selection = {prepared->root.value};
+      scene = Codec::parseJson(*encoded);
+      return {};
+    }
+
     auto find(Json& entities, std::uint64_t id) -> Json* {
       auto found = std::ranges::find_if(
           entities, [id](const auto& value) { return Codec::id(value["id"]) == id; });
@@ -531,14 +629,8 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (op == "refresh-scene-instance" || op == "revert-scene-instance"
-          || op == "unlink-scene-instance" || op == "retarget-scene-instance") {
-        if (op == "retarget-scene-instance") {
-          Codec::requireFields(command, {"op", "entity", "path"});
-        } else {
-          Codec::requireFields(command, {"op", "entity"});
-        }
-
+      if (op == "unlink-scene-instance") {
+        Codec::requireFields(command, {"op", "entity"});
         const auto id = Codec::id(command["entity"]);
         auto target = decodeCandidate(scene, next);
 
@@ -553,35 +645,11 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::NotFound, "Entity is not a linked scene root");
         }
 
-        if (op == "unlink-scene-instance") {
-          links.erase(link);
-          auto changed = target->setSceneLinks(links);
+        links.erase(link);
+        auto changed = target->setSceneLinks(links);
 
-          if (!changed) {
-            return changed;
-          }
-        } else {
-          const auto path
-              = op == "retarget-scene-instance" ? command["path"].get<std::string>() : link->asset;
-          auto source = loadContent(project, path, activePath);
-
-          if (!source) {
-            return std::unexpected(source.error());
-          }
-
-          auto updated
-              = op == "retarget-scene-instance"
-                    ? World::prepareSceneLinkRetarget(*target, *source, {target->id(), id}, next)
-                    : World::prepareSceneLinkUpdate(*target, *source, {target->id(), id}, next,
-                                                    op == "revert-scene-instance");
-
-          if (!updated) {
-            return std::unexpected(updated.error());
-          }
-
-          created.insert(created.end(), updated->created.begin(), updated->created.end());
-          next = updated->scene.nextEntityValue()->value_or(exhausted);
-          target = std::move(updated->scene);
+        if (!changed) {
+          return changed;
         }
 
         auto encoded = World::encodeScene(*target);
@@ -1309,8 +1377,24 @@ namespace Dot::Editor {
       auto selection = m_impl->m_history[m_impl->m_cursor].selection;
 
       for (std::size_t index = 0; index < commands.size(); ++index) {
-        auto result = operation(candidate, commands[index], next, created, selection,
-                                m_impl->m_project, m_impl->m_path);
+        Core::Result<void> result;
+
+        if (sourceUpdate(commands[index])) {
+          std::size_t end = index + 1;
+
+          while (end < commands.size() && sourceUpdate(commands[end])) {
+            ++end;
+          }
+
+          const auto segment
+              = std::span<const Json>{commands.get_ref<const Json::array_t&>()}.subspan(
+                  index, end - index);
+          result = sourceUpdates(candidate, segment, index, next, created, selection,
+                                 m_impl->m_project, m_impl->m_path);
+        } else {
+          result = operation(candidate, commands[index], next, created, selection,
+                             m_impl->m_project, m_impl->m_path);
+        }
 
         if (!result) {
           return Core::fail(result.error().code, "Edit operation " + std::to_string(index) + ": "

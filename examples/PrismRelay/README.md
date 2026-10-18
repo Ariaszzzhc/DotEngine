@@ -92,7 +92,8 @@ Mechanical services are grouped in the hierarchy; the imported duct kit and reus
 straight/support scene assets remain editable in the project.
 The twelve straight ducts and fourteen supports are linked instances. Open and save
 their source scenes, then Refresh source on the desired placement roots to propagate
-changes. Inspector field markers identify applied local overrides; Restore field
+changes. **Refresh all N instances in scene** updates the active scene's same-source
+placements in one undoable edit. Inspector field markers identify applied local overrides; Restore field
 returns a whole component to the last refreshed baseline without changing siblings.
 Apply field to source writes one overridden field to its saved source after conflict
 checks, then rebases that instance. Other placements refresh explicitly; scene Undo

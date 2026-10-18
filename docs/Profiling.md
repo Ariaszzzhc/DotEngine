@@ -154,3 +154,30 @@ Prism native investigation, audio synchronization no longer builds/sorts complet
 entity descriptions, and physics no longer clones render/skin/animation components.
 This is a reduction in native snapshot work; it does not complete resource streaming,
 background native cooking, scene mutation validation costs or animation synchronization.
+
+## Prism source-update measurements
+
+Warm Release editor measurements on Apple M4 Pro/Metal, arm64 macOS, use the same
+342-entity Prism authoring scene with 26 links and a 1480x574 viewport. Three
+ordinary edit requests per case preserve scene content; all twelve corresponding
+operation arrays, results and result selections agree before/after. Final captures
+use the same camera/selection. Values
+are application Prepare phase peaks for the request step, including mailbox/JSON/
+document work. They are not GPU intervals or unobstructed game-frame measurements.
+
+| Actual operation | Previous median | Shared native candidate median |
+| --- | ---: | ---: |
+| Unchanged name | 32.31 ms | 31.88 ms |
+| Refresh one source placement | 58.93 ms | 57.11 ms |
+| Refresh twelve shared-source placements | 343.22 ms | 59.88 ms |
+| Refresh all twenty-six source placements | 700.98 ms | 61.45 ms |
+
+The 12/26 cases reduce this prepare envelope by about 82.6%/91.2%. Their three-run
+ranges are 341.06..344.26 → 59.79..60.46 ms and 699.50..709.72 → 61.42..62.31 ms.
+The static native viewport PNGs before/after are byte-identical, SHA-256
+`b075e0fa07517fa861351167ec1226e5c944353f03d7a25aba336f749387f380`.
+This verifies the measured no-op authoring workload, not general large-game
+throughput. Individual operations, source I/O and final document publication still
+run synchronously; the remaining roughly 61 ms prepare step is not a frame-deadline
+guarantee. Raw profiles, requests, scene/view context, binary fingerprints and
+comparison records remain in ignored build/scene-work-review.

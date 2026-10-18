@@ -2198,3 +2198,92 @@ TEST_CASE("document.retarget_batch_relinks_shared_placements_in_one_undoable_tra
   REQUIRE(document.redo(revision(document)));
   CHECK(state(document)["scene"] == after["scene"]);
 }
+
+TEST_CASE("document.source_batches_preserve_order_across_edits_and_follow_staged_retarget_paths") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  REQUIRE(source.createEntity("Incoming node"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/moved.dotscene", source));
+  REQUIRE(std::filesystem::remove(fixture.root / "game/assets/panels.dotscene"));
+  const auto before = state(document);
+  auto changed = edit(
+      document,
+      Json::array(
+          {{{"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}},
+           {{"op", "refresh-scene-instance"}, {"entity", "3"}},
+           {{"op", "name"}, {"entity", "4"}, {"name", "Local name between source groups"}},
+           {{"op", "retarget-scene-instance"}, {"entity", "6"}, {"path", "assets/moved.dotscene"}},
+           {{"op", "refresh-scene-instance"}, {"entity", "3"}}}));
+  CHECK(changed.created == (std::vector<std::uint64_t>{9, 10}));
+  const auto after = state(document);
+  CHECK(after["historyEntries"].get<std::size_t>()
+        == before["historyEntries"].get<std::size_t>() + 1);
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 4})->name
+        == "Local name between source groups");
+  CHECK(document.scene().value()->sceneLinks()->at(0).asset == "assets/moved.dotscene");
+  CHECK(document.scene().value()->sceneLinks()->at(1).asset == "assets/moved.dotscene");
+  REQUIRE(document.undo(revision(document)));
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  CHECK(document.stats()->nextEntity == 11);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+}
+
+TEST_CASE("document.source_batch_failure_discards_work_and_later_edits_reread_saved_sources") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  REQUIRE(source.createEntity("Incoming node"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/moved.dotscene", source));
+  const auto before = state(document);
+  auto result = document.apply(
+      Json::array(
+          {{{"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}},
+           {{"op", "retarget-scene-instance"},
+            {"entity", "6"},
+            {"path", "assets/missing.dotscene"}}})
+          .dump(),
+      revision(document));
+  REQUIRE_FALSE(result);
+  CHECK(result.error().message.find("operation 1") != std::string::npos);
+  CHECK(state(document) == before);
+  REQUIRE(source.renameEntity({source.id(), 1}, "Fresh saved version"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/moved.dotscene", source));
+  edit(document,
+       Json::array(
+           {{{"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}},
+            {{"op", "retarget-scene-instance"},
+             {"entity", "6"},
+             {"path", "assets/moved.dotscene"}}}));
+  const auto* scene = document.scene().value();
+  CHECK(scene->entity({scene->id(), 4})->name == "Fresh saved version");
+  CHECK(scene->entity({scene->id(), 7})->name == "Fresh saved version");
+}
+
+TEST_CASE("document.source_batch_commits_only_after_final_cross_instance_references_validate") {
+  Fixture fixture;
+  auto original = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  edit(document, Json::array({{{"op", "parent"}, {"entity", "7"}, {"parent", "5"}}}));
+  REQUIRE(original.destroyEntity({original.id(), 2}));
+  REQUIRE(Dot::World::saveScene(fixture.project().files().value(), "assets/reduced.dotscene",
+                                original));
+  const auto before = state(document);
+  const Json retarget{
+      {"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/reduced.dotscene"}};
+  CHECK_FALSE(document.apply(Json::array({retarget}).dump(), revision(document)));
+  CHECK(state(document) == before);
+  edit(document, Json::array({retarget, {{"op", "revert-scene-instance"}, {"entity", "6"}}}));
+  const auto* scene = document.scene().value();
+  CHECK_FALSE(scene->findEntity(5));
+  CHECK(scene->entity({scene->id(), 7})->parent->value == 6);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+}

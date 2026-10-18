@@ -200,7 +200,9 @@ isolated ImGui/SDL3/WebGPU contexts.
 Linked scene instances can explicitly adopt a moved/copied source through the
 Inspector's **Use selected scene as source** and **Relink all N instances in scene**
 actions. Both use the strict `retarget-scene-instance` edit, including atomic
-multi-placement batches and ordinary undo/save. See [source association and identity
+multi-placement batches and ordinary undo/save. Consecutive source updates share
+one native candidate and final validation; later edit calls reread saved sources.
+See [source association and identity
 contracts](SceneContent.md#relinking-moved-or-copied-sources).
 
 ## Native workspace

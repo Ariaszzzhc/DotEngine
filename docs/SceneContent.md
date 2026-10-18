@@ -301,8 +301,10 @@ Sources are read once per distinct portable asset path within one operation and
 shared dependencies are materialized independently at each placement. Instances
 process in root-value order, making temporary allocations deterministic. Original
 local identities and physical reservations are captured before processing links;
-working allocations never become source-local origins. Each operation has a fresh
-cache; explicit refresh observes newly saved files, without stale persistent caches.
+working allocations never become source-local origins. Each resolution has a fresh
+cache. Consecutive document source updates reuse only their current resolved source
+within that edit segment; later edits observe newly saved files without persistent
+caches. Caller serialization of source writers still applies.
 
 Cycles and any reference back to the active linked document reject. Missing,
 malformed, aliased/symlink or inaccessible dependencies also reject; embedded
@@ -430,3 +432,46 @@ returns a CPU-only independent `SceneLinkUpdate`. It shares the ordinary refresh
 implementation and publishes no input scene or source file. Scene/document limits
 and failure/ownership contracts remain unchanged; this does not provide automatic
 project-wide asset relocation or arbitrary model/skeleton correspondence authoring.
+
+
+## Preparing multiple source updates
+
+Inspector's **Refresh all N instances in scene** submits the same strict edit array
+available to agents, applying the current saved source to its placements together.
+The ordinary 256-operation/1 MiB limits and draft/Play guards apply.
+
+Consecutive refresh/restore-source/relink operations in one edit array now share
+one owned native candidate. Their order, local overrides, target values, namespace
+reservations and selection behavior remain explicit. A different edit kind ends
+the segment; the following source segment starts from that staged document. The
+whole edit still publishes one scene/history step or nothing. Repeated roots follow
+the preceding staged path/baseline, including retarget followed by refresh.
+
+The editor retains only the current resolved source in each segment. Adjacent
+requests for the same path reuse that snapshot; changing path drops it before
+reading the next graph. Nothing survives into another edit, so failed/retried edits
+reread saved files. This retains existing caller-serialized file semantics and
+per-graph budgets, without promising a filesystem-wide snapshot. Source files are
+never written by these edits.
+
+`Dot.World.SceneLinks::SceneLinkBatch` is the shared CPU-only native foundation.
+Begin captures target data once; append accepts 1..256 ordered refresh, restore-
+source or retarget actions; finish consumes the transaction and returns one
+independent validated scene. Inputs can be destroyed after their calls because
+the transaction retains owned JSON/provenance rather than borrowed Scene handles.
+Move preserves the creator thread. An owner-thread append failure faults the entire
+transaction; finish cannot publish its earlier work. Finish is single-use.
+
+Each append enforces the existing working-node, baseline, mapping, namespace and
+observed physical-reservation budgets. Replaced metadata vectors release their old
+capacity; surviving created values are reported while consumed allocation values
+remain reserved. Final component/reference/hierarchy validation happens together.
+A temporary dangling reference may be repaired by a later explicit restore in that
+same source segment; leaving it unrepaired rejects the final scene. Normal source
+removal/override conflicts still reject during append. Native single-source helpers
+use this same implementation.
+
+This removes repeated full-target reconstruction inside a source update segment.
+Source resolution and final document publication still run on the owner thread;
+background dependency I/O, resource streaming and large-scene frame deadlines
+remain separate unfinished work.

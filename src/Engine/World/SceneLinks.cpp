@@ -6,9 +6,11 @@ module;
 #include <functional>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -953,191 +955,395 @@ namespace Dot::World {
                     : Core::Result<SceneLinkUpdate>{std::unexpected(snapshot.error())};
   }
 
-  namespace {
-    auto prepareLinkChange(const Scene& target, const SceneSourceSnapshot& snapshot, EntityId root,
-                           std::uint64_t firstValue, bool revert, bool retarget)
-        -> Core::Result<SceneLinkUpdate> {
-      try {
-        auto valid = validateSceneSourceSnapshot(snapshot);
+  struct SceneLinkBatch::Impl {
+    std::thread::id m_owner{std::this_thread::get_id()};
+    std::uint64_t m_scope{};
+    std::uint64_t m_next{};
+    std::uint64_t m_last{};
+    std::size_t m_count{};
+    Json m_document;
+    Nodes m_nodes;
+    std::vector<SceneLink> m_links;
+    std::vector<std::uint64_t> m_created;
+    std::optional<Core::Error> m_fault;
+    bool m_finished{};
 
-        if (!valid) {
-          return std::unexpected(valid.error());
-        }
-
-        auto owner = target.entity(root);
-        auto links = target.sceneLinks();
-        auto text = canonicalSource(snapshot);
-        auto encoded = encodeScene(target);
-        auto floor = target.nextEntityValue();
-
-        if (!owner || !links || !text || !encoded || !floor) {
-          return std::unexpected(!owner     ? owner.error()
-                                 : !links   ? links.error()
-                                 : !text    ? text.error()
-                                 : !encoded ? encoded.error()
-                                            : floor.error());
-        }
-
-        auto found = std::ranges::find(*links, root.value, &SceneLink::root);
-
-        if (found == links->end() || (!retarget && found->asset != snapshot.asset)) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Linked source asset does not match the instance");
-        }
-
-        if (retarget) {
-          found->asset = snapshot.asset;
-
-          for (auto& space : found->namespaces) {
-            if (space.prefix.empty()) {
-              space.asset = snapshot.asset;
-            }
-          }
-        }
-
-        const auto maximum = std::numeric_limits<std::uint64_t>::max();
-
-        if (firstValue == 0 || firstValue < floor->value_or(maximum)) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Refresh requires the reserved allocation floor");
-        }
-
-        std::vector<SceneSourceOrigin> previousOrigins;
-        Values oldMapping, mapping;
-        std::map<SceneSourceKey, SceneLinkMapping> oldKeys;
-        std::map<std::uint64_t, SceneSourceKey> incomingKeys;
-        std::map<SceneSourceKey, std::uint64_t> incomingValues;
-
-        for (const auto& pair : found->mapping) {
-          previousOrigins.push_back({pair.source, pair.key});
-          oldMapping.emplace(pair.source, pair.target);
-          oldKeys.emplace(pair.key, pair);
-        }
-
-        valid = validateSceneSourceUpdate(snapshot.asset, previousOrigins, found->namespaces,
-                                          text->origins, snapshot.namespaces);
-
-        if (!valid) {
-          return std::unexpected(valid.error());
-        }
-
-        for (const auto& origin : text->origins) {
-          incomingKeys.emplace(origin.entity, origin.key);
-          incomingValues.emplace(origin.key, origin.entity);
-        }
-
-        const auto incoming = Codec::parseJson(text->text);
-        auto next = firstValue;
-        std::vector<std::uint64_t> created;
-
-        for (const auto& entity : incoming["entities"]) {
-          const auto id = Codec::id(entity["id"]);
-          const auto old = oldKeys.find(incomingKeys.at(id));
-
-          if (old != oldKeys.end()) {
-            mapping.emplace(id, old->second.target);
-          } else {
-            if (next == maximum) {
-              return Core::fail(Core::ErrorCode::Unavailable,
-                                "Linked scene entity allocation is exhausted");
-            }
-
-            mapping.emplace(id, next);
-            created.push_back(next++);
-          }
-        }
-
-        const auto previous = nodes(Codec::parseJson(found->baseline), oldMapping, root.value);
-        const auto current = nodes(incoming, mapping, root.value);
-        auto document = Codec::parseJson(*encoded);
-        Nodes local;
-
-        for (const auto& entity : document["entities"]) {
-          local.emplace(Codec::id(entity["id"]), entity);
-        }
-
-        for (const auto& pair : found->mapping) {
-          const auto entry = local.find(pair.target);
-
-          if (!incomingValues.contains(pair.key)) {
-            if (entry != local.end() && !revert && entry->second != previous.at(pair.source)) {
-              return Core::fail(Core::ErrorCode::InvalidState, "Source removed an overridden node: "
-                                                                   + std::to_string(pair.source));
-            }
-
-            local.erase(pair.target);
-          }
-        }
-
-        for (const auto& [id, value] : current) {
-          const auto old = oldKeys.find(incomingKeys.at(id));
-          const auto entry = local.find(mapping.at(id));
-
-          if (old == oldKeys.end() || revert) {
-            if (entry == local.end() && old != oldKeys.end()) {
-              created.push_back(mapping.at(id));
-            }
-
-            local[mapping.at(id)] = value;
-          } else if (entry != local.end()) {
-            entry->second = *merge(std::optional<Json>{previous.at(old->second.source)},
-                                   std::optional<Json>{entry->second}, std::optional<Json>{value});
-          }
-        }
-
-        document["entities"] = Json::array();
-
-        for (auto& [id, value] : local) {
-          document["entities"].push_back(std::move(value));
-        }
-
-        found->baseline = std::move(text->text);
-        found->mapping.clear();
-        found->namespaces = snapshot.namespaces;
-
-        for (const auto& [sourceValue, targetValue] : mapping) {
-          found->mapping.push_back({sourceValue, targetValue, incomingKeys.at(sourceValue)});
-        }
-
-        document.erase("links");
-        document["nextEntity"] = next == maximum ? Json(nullptr) : Json(std::to_string(next));
-        auto prepared = decodeScene(document.dump());
-
-        if (!prepared) {
-          return Core::fail(prepared.error().code,
-                            "Linked scene refresh: " + prepared.error().message);
-        }
-
-        auto changed = prepared->setSceneLinks(*links);
-
-        if (!changed) {
-          return std::unexpected(changed.error());
-        }
-
-        auto bounded = encodeScene(*prepared);
-
-        if (!bounded) {
-          return std::unexpected(bounded.error());
-        }
-
-        const EntityId handle{prepared->id(), root.value};
-        return SceneLinkUpdate{std::move(*prepared), handle, std::move(created)};
-      } catch (const std::exception& error) {
-        return Core::fail(Core::ErrorCode::External,
-                          "Refresh linked scene: " + std::string(error.what()));
+    auto check() const -> Core::Result<void> {
+      if (m_owner != std::this_thread::get_id()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Scene link batch requires its owner");
       }
+
+      if (m_fault) {
+        return std::unexpected(*m_fault);
+      }
+
+      return m_finished ? Core::fail(Core::ErrorCode::InvalidState, "Scene link batch is finished")
+                        : Core::Result<void>{};
+    }
+
+    auto storage(const SceneLink& replaced, const SceneSourceSnapshot& source,
+                 std::size_t bytes) const -> Core::Result<void> {
+      std::size_t mappings = source.origins.size();
+      std::size_t spaces = source.namespaces.size();
+      std::size_t observed{};
+
+      for (const auto& space : source.namespaces) {
+        observed += space.entities.size();
+      }
+
+      for (const auto& link : m_links) {
+        if (link.root == replaced.root) {
+          continue;
+        }
+
+        bytes += link.baseline.size();
+        mappings += link.mapping.size();
+        spaces += link.namespaces.size();
+
+        for (const auto& space : link.namespaces) {
+          observed += space.entities.size();
+        }
+      }
+
+      if (bytes > 64 * 1024 * 1024 || mappings > 10000 || spaces > 10000 || observed > 100000) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Scene link batch exceeds native storage budgets");
+      }
+
+      return {};
+    }
+
+    auto update(const SceneSourceSnapshot& snapshot, EntityId root, SceneLinkAction action)
+        -> Core::Result<void> {
+      if (action != SceneLinkAction::Refresh && action != SceneLinkAction::RestoreSource
+          && action != SceneLinkAction::Retarget) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown scene link action");
+      }
+
+      if (m_count == 256 || root.scene != m_scope || !m_nodes.contains(root.value)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid scene link batch root or capacity");
+      }
+
+      auto valid = validateSceneSourceSnapshot(snapshot);
+
+      if (!valid) {
+        return valid;
+      }
+
+      auto text = canonicalSource(snapshot);
+
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+
+      auto found = std::ranges::find(m_links, root.value, &SceneLink::root);
+      const bool revert = action == SceneLinkAction::RestoreSource;
+      const bool retarget = action == SceneLinkAction::Retarget;
+
+      if (found == m_links.end() || (!retarget && found->asset != snapshot.asset)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Linked source asset does not match the instance");
+      }
+
+      valid = storage(*found, snapshot, text->text.size());
+
+      if (!valid) {
+        return valid;
+      }
+
+      if (retarget) {
+        found->asset = snapshot.asset;
+
+        for (auto& space : found->namespaces) {
+          if (space.prefix.empty()) {
+            space.asset = snapshot.asset;
+          }
+        }
+      }
+
+      const auto maximum = std::numeric_limits<std::uint64_t>::max();
+      std::vector<SceneSourceOrigin> previousOrigins;
+      Values oldMapping, mapping;
+      std::map<SceneSourceKey, SceneLinkMapping> oldKeys;
+      std::map<std::uint64_t, SceneSourceKey> incomingKeys;
+      std::map<SceneSourceKey, std::uint64_t> incomingValues;
+
+      for (const auto& pair : found->mapping) {
+        previousOrigins.push_back({pair.source, pair.key});
+        oldMapping.emplace(pair.source, pair.target);
+        oldKeys.emplace(pair.key, pair);
+      }
+
+      valid = validateSceneSourceUpdate(snapshot.asset, previousOrigins, found->namespaces,
+                                        text->origins, snapshot.namespaces);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      for (const auto& origin : text->origins) {
+        incomingKeys.emplace(origin.entity, origin.key);
+        incomingValues.emplace(origin.key, origin.entity);
+      }
+
+      const auto incoming = Codec::parseJson(text->text);
+      auto& next = m_next;
+      auto& created = m_created;
+
+      for (const auto& entity : incoming["entities"]) {
+        const auto id = Codec::id(entity["id"]);
+        const auto old = oldKeys.find(incomingKeys.at(id));
+
+        if (old != oldKeys.end()) {
+          mapping.emplace(id, old->second.target);
+        } else {
+          if (next == maximum) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Linked scene entity allocation is exhausted");
+          }
+
+          mapping.emplace(id, next);
+          created.push_back(next++);
+        }
+      }
+
+      const auto previous = nodes(Codec::parseJson(found->baseline), oldMapping, root.value);
+      const auto current = nodes(incoming, mapping, root.value);
+      auto& local = m_nodes;
+
+      for (const auto& pair : found->mapping) {
+        const auto entry = local.find(pair.target);
+
+        if (!incomingValues.contains(pair.key)) {
+          if (entry != local.end() && !revert && entry->second != previous.at(pair.source)) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Source removed an overridden node: " + std::to_string(pair.source));
+          }
+
+          local.erase(pair.target);
+        }
+      }
+
+      for (const auto& [id, value] : current) {
+        const auto old = oldKeys.find(incomingKeys.at(id));
+        const auto entry = local.find(mapping.at(id));
+
+        if (old == oldKeys.end() || revert) {
+          if (entry == local.end() && old != oldKeys.end()) {
+            created.push_back(mapping.at(id));
+          }
+
+          local[mapping.at(id)] = value;
+        } else if (entry != local.end()) {
+          entry->second = *merge(std::optional<Json>{previous.at(old->second.source)},
+                                 std::optional<Json>{entry->second}, std::optional<Json>{value});
+        }
+      }
+
+      if (m_nodes.size() > 10000) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Scene link batch exceeds 10000 working nodes");
+      }
+
+      found->baseline = std::move(text->text);
+      std::vector<SceneLinkMapping> nextMapping;
+      nextMapping.reserve(mapping.size());
+
+      for (const auto& [sourceValue, targetValue] : mapping) {
+        nextMapping.push_back({sourceValue, targetValue, incomingKeys.at(sourceValue)});
+      }
+
+      auto nextNamespaces = snapshot.namespaces;
+      found->mapping = std::move(nextMapping);
+      found->namespaces = std::move(nextNamespaces);
+
+      std::erase_if(m_created, [&](auto value) { return !m_nodes.contains(value); });
+      m_last = root.value;
+      ++m_count;
+      return {};
+    }
+  };
+
+  SceneLinkBatch::SceneLinkBatch(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  SceneLinkBatch::SceneLinkBatch(SceneLinkBatch&&) noexcept = default;
+
+  auto SceneLinkBatch::operator=(SceneLinkBatch&&) noexcept -> SceneLinkBatch& = default;
+
+  SceneLinkBatch::~SceneLinkBatch() = default;
+
+  auto SceneLinkBatch::begin(const Scene& target, std::uint64_t firstValue)
+      -> Core::Result<SceneLinkBatch> {
+    try {
+      auto links = target.sceneLinks();
+      auto floor = target.nextEntityValue();
+      auto encoded = encodeScene(target);
+
+      if (!links || !floor || !encoded) {
+        return std::unexpected(!links ? links.error() : !floor ? floor.error() : encoded.error());
+      }
+
+      if (firstValue == 0
+          || firstValue < floor->value_or(std::numeric_limits<std::uint64_t>::max())) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Refresh requires the reserved allocation floor");
+      }
+
+      auto impl = std::make_unique<Impl>();
+      impl->m_scope = target.id();
+      impl->m_next = firstValue;
+      impl->m_links = std::move(*links);
+      impl->m_document = Codec::parseJson(*encoded);
+
+      for (auto& entity : impl->m_document["entities"]) {
+        const auto id = Codec::id(entity["id"]);
+        impl->m_nodes.emplace(id, std::move(entity));
+      }
+
+      impl->m_document.erase("entities");
+      impl->m_document.erase("links");
+      return SceneLinkBatch{std::move(impl)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin scene link batch: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneLinkBatch::sourcePath(EntityId root) const -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene link batch was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (root.scene != m_impl->m_scope) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Scene link root belongs to another scope");
+    }
+
+    const auto found = std::ranges::find(m_impl->m_links, root.value, &SceneLink::root);
+    return found == m_impl->m_links.end()
+               ? Core::Result<std::string>{Core::fail(Core::ErrorCode::NotFound,
+                                                      "Entity is not a linked scene root")}
+               : Core::Result<std::string>{found->asset};
+  }
+
+  auto SceneLinkBatch::append(const SceneSourceSnapshot& source, EntityId root,
+                              SceneLinkAction action) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene link batch was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    try {
+      auto result = m_impl->update(source, root, action);
+
+      if (!result) {
+        m_impl->m_fault = result.error();
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      m_impl->m_fault = Core::fail(Core::ErrorCode::External,
+                                   "Prepare scene link batch: " + std::string(error.what()))
+                            .error();
+      return std::unexpected(*m_impl->m_fault);
+    }
+  }
+
+  auto SceneLinkBatch::finish() -> Core::Result<SceneLinkUpdate> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene link batch was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    m_impl->m_finished = true;
+
+    try {
+      if (m_impl->m_count == 0) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Scene link batch requires at least one change");
+      }
+
+      auto& document = m_impl->m_document;
+      document["entities"] = Json::array();
+
+      for (auto& [id, value] : m_impl->m_nodes) {
+        document["entities"].push_back(std::move(value));
+      }
+
+      const auto next = m_impl->m_next;
+      document["nextEntity"] = next == std::numeric_limits<std::uint64_t>::max()
+                                   ? Json(nullptr)
+                                   : Json(std::to_string(next));
+      auto prepared = decodeScene(document.dump());
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      auto linked = prepared->setSceneLinks(m_impl->m_links);
+
+      if (!linked) {
+        return std::unexpected(linked.error());
+      }
+
+      auto bounded = encodeScene(*prepared);
+
+      if (!bounded) {
+        return std::unexpected(bounded.error());
+      }
+
+      const EntityId root{prepared->id(), m_impl->m_last};
+      return SceneLinkUpdate{std::move(*prepared), root, std::move(m_impl->m_created)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Finish scene link batch: " + std::string(error.what()));
+    }
+  }
+
+  namespace {
+    auto prepareLinkChange(const Scene& target, const SceneSourceSnapshot& source, EntityId root,
+                           std::uint64_t firstValue, SceneLinkAction action)
+        -> Core::Result<SceneLinkUpdate> {
+      auto batch = SceneLinkBatch::begin(target, firstValue);
+
+      if (!batch) {
+        return std::unexpected(batch.error());
+      }
+
+      auto appended = batch->append(source, root, action);
+      return appended ? batch->finish()
+                      : Core::Result<SceneLinkUpdate>{std::unexpected(appended.error())};
     }
   }  // namespace
 
   auto prepareSceneLinkUpdate(const Scene& target, const SceneSourceSnapshot& source, EntityId root,
                               std::uint64_t firstValue, bool revert)
       -> Core::Result<SceneLinkUpdate> {
-    return prepareLinkChange(target, source, root, firstValue, revert, false);
+    return prepareLinkChange(target, source, root, firstValue,
+                             revert ? SceneLinkAction::RestoreSource : SceneLinkAction::Refresh);
   }
 
   auto prepareSceneLinkRetarget(const Scene& target, const SceneSourceSnapshot& source,
                                 EntityId root, std::uint64_t firstValue)
       -> Core::Result<SceneLinkUpdate> {
-    return prepareLinkChange(target, source, root, firstValue, false, true);
+    return prepareLinkChange(target, source, root, firstValue, SceneLinkAction::Retarget);
   }
 }  // namespace Dot::World

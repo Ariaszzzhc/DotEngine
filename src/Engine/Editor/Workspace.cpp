@@ -7598,6 +7598,9 @@ namespace Dot::Editor {
       ImGui::Text("%zu overrides", page["total"].get<std::size_t>());
       const bool readOnly = playing() || previewing() || m_transform || pendingInspector()
                             || pendingEnvironment() || pendingOcclusion();
+      const auto& links = m_snapshot["scene"]["links"];
+      const auto related = std::ranges::count_if(
+          links, [&](const auto& link) { return link["asset"] == page["asset"]; });
       ImGui::BeginDisabled(readOnly);
 
       if (ImGui::Button("Open source scene")) {
@@ -7612,6 +7615,21 @@ namespace Dot::Editor {
         }
       }
 
+      ImGui::BeginDisabled(related < 2 || related > 256);
+      const auto refreshAll = "Refresh all " + std::to_string(related) + " instances in scene";
+
+      if (ImGui::Button(refreshAll.c_str())) {
+        requestedEdits = Json::array();
+
+        for (const auto& link : links) {
+          if (link["asset"] == page["asset"]) {
+            requestedEdits->push_back({{"op", "refresh-scene-instance"}, {"entity", link["root"]}});
+          }
+        }
+      }
+
+      ImGui::EndDisabled();
+
       ImGui::TextWrapped("Relink to a moved or copied version of this source. Local edits stay.");
       ImGui::BeginDisabled(!m_selectedResource.ends_with(".dotscene"));
 
@@ -7621,9 +7639,6 @@ namespace Dot::Editor {
                          {"path", m_selectedResource}};
       }
 
-      const auto& links = m_snapshot["scene"]["links"];
-      const auto related = std::ranges::count_if(
-          links, [&](const auto& link) { return link["asset"] == page["asset"]; });
       ImGui::BeginDisabled(related < 2 || related > 256);
       const auto relinkAll = "Relink all " + std::to_string(related) + " instances in scene";
 
@@ -7643,7 +7658,7 @@ namespace Dot::Editor {
       ImGui::EndDisabled();
 
       if (related > 256) {
-        ImGui::TextWrapped("One edit supports up to 256 instances. Relink smaller batches.");
+        ImGui::TextWrapped("One edit supports up to 256 instances. Update smaller batches.");
       }
 
       if (m_selectedResource.ends_with(".dotscene")) {

@@ -5,6 +5,7 @@
 #include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -605,4 +606,161 @@ TEST_CASE("scene_links.retarget_remaps_native_references_and_demotes_primary_com
   CHECK_FALSE(updated.scene.entity({updated.scene.id(), 5})->audioListener->primary);
   source.asset = "../invalid.dotscene";
   CHECK_FALSE(prepareSceneLinkRetarget(f.target, source, {f.target.id(), 2}, 5));
+}
+
+TEST_CASE("scene_links.batch_matches_ordered_single_updates_and_preserves_input") {
+  Fixture f;
+  f.target = std::move(prepareLinkedScene(f.target, f.source, "assets/panels.dotscene", 5)->scene);
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Local first"));
+  REQUIRE(f.target.renameEntity({f.target.id(), 6}, "Local second"));
+  REQUIRE(f.source.createEntity("Incoming node"));
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  const auto before = text(f.target);
+  auto sequential = prepareSceneLinkUpdate(f.target, source, {f.target.id(), 2}, 8).value();
+  sequential
+      = prepareSceneLinkUpdate(sequential.scene, source, {sequential.scene.id(), 5}, 9).value();
+  auto batch = SceneLinkBatch::begin(f.target, 8).value();
+  REQUIRE(batch.append(source, {f.target.id(), 2}));
+  REQUIRE(batch.append(source, {f.target.id(), 5}));
+  auto prepared = batch.finish().value();
+  CHECK(text(prepared.scene) == text(sequential.scene));
+  CHECK(prepared.created == (std::vector<std::uint64_t>{8, 9}));
+  CHECK(prepared.root.value == 5);
+  CHECK(text(f.target) == before);
+}
+
+TEST_CASE("scene_links.batch_owns_inputs_and_never_reuses_retired_staged_allocations") {
+  std::optional<SceneLinkBatch> batch;
+
+  {
+    Fixture f;
+    const EntityId root{f.target.id(), 2};
+    batch.emplace(SceneLinkBatch::begin(f.target, 5).value());
+    auto node = f.source.createEntity("Temporary source node").value();
+
+    {
+      auto source = captureSceneSource(f.source, "assets/moved.dotscene").value();
+      REQUIRE(batch->append(source, root, SceneLinkAction::Retarget));
+    }
+
+    CHECK(batch->sourcePath(root).value() == "assets/moved.dotscene");
+    REQUIRE(f.source.destroyEntity(node));
+
+    {
+      auto source = captureSceneSource(f.source, "assets/moved.dotscene").value();
+      REQUIRE(batch->append(source, root));
+    }
+
+    REQUIRE(f.source.createEntity("Surviving new source node"));
+
+    {
+      auto source = captureSceneSource(f.source, "assets/moved.dotscene").value();
+      REQUIRE(batch->append(source, root));
+    }
+  }
+
+  auto prepared = batch->finish().value();
+  CHECK(prepared.created == std::vector<std::uint64_t>{6});
+  CHECK_FALSE(prepared.scene.findEntity(5));
+  CHECK(prepared.scene.entity({prepared.scene.id(), 6})->name == "Surviving new source node");
+  CHECK(prepared.scene.nextEntityValue().value() == 7);
+}
+
+TEST_CASE("scene_links.batch_append_failure_is_terminal_without_publishing_earlier_work") {
+  Fixture f;
+  f.target = std::move(prepareLinkedScene(f.target, f.source, "assets/panels.dotscene", 5)->scene);
+  REQUIRE(f.target.renameEntity({f.target.id(), 7}, "Local deletion conflict"));
+  auto removed = decodeScene(text(f.source)).value();
+  REQUIRE(removed.destroyEntity({removed.id(), 2}));
+  REQUIRE(f.source.createEntity("Incoming node"));
+  auto first = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto second = captureSceneSource(removed, "assets/panels.dotscene").value();
+  const auto before = text(f.target);
+  auto batch = SceneLinkBatch::begin(f.target, 8).value();
+  REQUIRE(batch.append(first, {f.target.id(), 2}));
+  auto rejected = batch.append(second, {f.target.id(), 5});
+  REQUIRE_FALSE(rejected);
+  auto finished = batch.finish();
+  REQUIRE_FALSE(finished);
+  CHECK(finished.error().message == rejected.error().message);
+  CHECK_FALSE(batch.append(first, {f.target.id(), 5}));
+  CHECK(text(f.target) == before);
+}
+
+TEST_CASE("scene_links.batch_validates_final_native_references_after_explicit_dependent_restore") {
+  Fixture f;
+  f.target = std::move(prepareLinkedScene(f.target, f.source, "assets/panels.dotscene", 5)->scene);
+  REQUIRE(f.target.setParent({f.target.id(), 6}, EntityId{f.target.id(), 4}));
+  auto reduced = decodeScene(text(f.source)).value();
+  REQUIRE(reduced.destroyEntity({reduced.id(), 2}));
+  auto incoming = captureSceneSource(reduced, "assets/reduced.dotscene").value();
+  auto original = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, incoming, {f.target.id(), 2}, 8));
+  auto incomplete = SceneLinkBatch::begin(f.target, 8).value();
+  REQUIRE(incomplete.append(incoming, {f.target.id(), 2}, SceneLinkAction::Retarget));
+  CHECK_FALSE(incomplete.finish());
+  auto batch = SceneLinkBatch::begin(f.target, 8).value();
+  REQUIRE(batch.append(incoming, {f.target.id(), 2}, SceneLinkAction::Retarget));
+  REQUIRE(batch.append(original, {f.target.id(), 5}, SceneLinkAction::RestoreSource));
+  auto prepared = batch.finish().value();
+  CHECK_FALSE(prepared.scene.findEntity(4));
+  CHECK(prepared.scene.entity({prepared.scene.id(), 6})->parent->value == 5);
+  CHECK(f.target.entity({f.target.id(), 6})->parent->value == 4);
+}
+
+TEST_CASE("scene_links.batch_owner_move_empty_and_consumed_lifetimes_are_explicit") {
+  Fixture f;
+  const EntityId root{f.target.id(), 2};
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(SceneLinkBatch::begin(f.target, 4));
+  auto empty = SceneLinkBatch::begin(f.target, 5).value();
+  CHECK_FALSE(empty.finish());
+  CHECK_FALSE(empty.append(source, root));
+  auto batch = SceneLinkBatch::begin(f.target, 5).value();
+  auto moved = std::move(batch);
+  CHECK_FALSE(batch.sourcePath(root));
+  bool rejected{};
+  std::thread other([&] {
+    rejected = !moved.sourcePath(root) && !moved.append(source, root) && !moved.finish();
+  });
+  other.join();
+  CHECK(rejected);
+  REQUIRE(moved.append(source, root));
+  REQUIRE(moved.finish());
+  CHECK_FALSE(moved.finish());
+}
+
+TEST_CASE("scene_links.batch_bounds_change_count_before_any_external_publication") {
+  Fixture f;
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto batch = SceneLinkBatch::begin(f.target, 5).value();
+
+  for (int i = 0; i < 256; ++i) {
+    REQUIRE(batch.append(source, {f.target.id(), 2}));
+  }
+
+  CHECK_FALSE(batch.append(source, {f.target.id(), 2}));
+  CHECK_FALSE(batch.finish());
+  auto invalid = SceneLinkBatch::begin(f.target, 5).value();
+  CHECK_FALSE(invalid.append(source, {f.target.id(), 2}, static_cast<SceneLinkAction>(99)));
+  CHECK_FALSE(invalid.finish());
+}
+
+TEST_CASE("scene_links.batch_bounds_working_nodes_while_input_remains_unchanged") {
+  Fixture f;
+
+  for (int i = 4; i < 9999; ++i) {
+    REQUIRE(f.target.createEntity("Existing"));
+  }
+
+  const auto before = text(f.target);
+  auto batch = SceneLinkBatch::begin(f.target, 10000).value();
+  REQUIRE(f.source.createEntity("Last available node"));
+  auto first = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  REQUIRE(batch.append(first, {f.target.id(), 2}));
+  REQUIRE(f.source.createEntity("Overflow node"));
+  auto second = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(batch.append(second, {f.target.id(), 2}));
+  CHECK_FALSE(batch.finish());
+  CHECK(text(f.target) == before);
 }

@@ -13849,3 +13849,110 @@ activation/panel layout acceptance is not claimed. Windows/Linux remain untested
 Automatic project-wide relocation, arbitrary unrelated-source correspondence,
 background dependency I/O, variants/topology application, complete art and overall
 large-game/production readiness remain unfinished.
+
+## Native source update transactions (2026-10-18)
+
+Measure the actual editable Prism project before changing its implementation.
+Three warm Release runs through ordinary edit requests show application Prepare
+phase peaks of 32.308..32.355 ms for an unchanged name, 58.445..59.033 ms for one
+source refresh, 341.056..344.257 ms for twelve shared-source placements, and
+699.496..709.716 ms for all twenty-six source placements. The document remains
+byte-equivalent in each case. These are sampled owner-step envelopes including
+mailbox/JSON/document work, not GPU intervals, unobstructed gameplay FPS or universal
+benchmarks. Preserve the native phase records, source description and old binary
+fingerprint. Capture a real static authoring viewport for matched-image checking.
+
+The document loop currently decodes/reconstructs the whole target for every source
+operation. Introduce an owned native SceneLinkBatch: capture target once, append
+ordered refresh/restore-source/retarget changes, then validate/decode the final
+scene once. Native single-source helpers use that same implementation. Preserve
+three-way overrides, namespace/retired-key checks, native reference remapping and
+allocation high-water values. Report only surviving created values. Working-node
+and baseline/mapping/namespace/physical-reservation budgets apply during append;
+final component/reference/hierarchy validation remains authoritative. Replaced
+metadata vectors release capacity. No borrowed Scene/source handles outlive calls.
+
+A failed owner-thread append faults the transaction, preventing publication of
+earlier staged work; finalization is single-use and owner/thread/move contracts
+are explicit. Consecutive source operations in a document edit share this candidate.
+Interleaved ordinary edits flush the segment, preserving original operation order.
+Repeated roots consult their staged source path. Keep only the current resolved
+source snapshot for adjacent same-path requests, dropping it before the next
+graph; no file cache survives another edit. All publication/history/selection stays
+inside the existing document transaction, and source files remain untouched.
+
+Seven native CPU unit regressions cover equivalence to ordered single updates,
+owned input lifetimes and retired temporary allocations, terminal failure, explicit
+repair of final cross-instance references, owner/move/empty/consumed lifetimes,
+256-change capacity and the 10000-working-node boundary. Three document integration
+cases cover interleaved/repeated retarget ordering, discarded partial work and
+fresh later source reads, and final cross-instance validation. None initializes
+windows/devices. The initial foundation and document integration builds retain all
+53 existing relevant checks; after the ten cases, 63/63 pass in 7.57 s. Complete
+builds/tests and matched native workflow measurements follow below.
+
+Final verification on arm64 macOS, with the caller's compiler/CPPFLAGS/LDFLAGS:
+
+- Complete Debug build/CTest: 1606/1606 in 260.88 s. Complete Release/NDEBUG
+  build/CTest: 1606/1606 in 37.56 s, comprising 514 pure unit and 1092 integration
+  cases (186 offscreen GPU, 247 compiler, 37 native audio, 34 platform and 21 process
+  labels). Builds/tests run sequentially and separately from real native apps.
+- Add Inspector's Refresh all N instances in scene through the same strict document
+  edit array; bounds/draft/Play guards remain shared. Final Debug/Release rebuilds
+  and 63 related source/link/resolver/document cases pass in 4.84 s and 0.36 s.
+  Formatting, whitespace, ownership/error/lifetime/storage/identity/thread/platform
+  review pass. No automated test opens a desktop window/device.
+
+The actual before/after Release editors use the identical 342-entity, 26-link
+Prism scene on Apple M4 Pro/Metal. Across three warm runs, Prepare medians change
+32.311 → 31.884 ms for the same-name baseline, 58.929 → 57.108 ms for one source,
+343.217 → 59.879 ms for twelve placements, and 700.979 → 61.448 ms for all twenty-
+six. These last two request-step envelopes fall about 82.6%/91.2%; they include
+control/JSON/document work and do not establish gameplay FPS or broader throughput.
+The native 1480x574 authoring PNGs are byte-identical, SHA-256
+b075e0fa07517fa861351167ec1226e5c944353f03d7a25aba336f749387f380.
+The scene, editor camera and selection agree. Preserve full native phase records
+and the old/new binary fingerprints; no time, sample, warning or budget is relaxed.
+
+In the same final native editor, author a local inherited duct label, Save, edit
+the real saved service-source tint and Save, then reopen the main scene. Temporarily
+move only that owned source outside the project. A batch prepares fourteen brace
+updates before the missing fifteenth source fails as operation 14. Complete
+document/revision/selection/history/allocation data remains unchanged. Restore the
+exact file and apply all twenty-six updates. The twelve changed-source instances
+adopt the new tint, preserve the local label/placement, and commit one history entry.
+Undo/redo restore the complete prior/new descriptions. Save both the main scene and
+character-action study, reopen main and confirm the saved description.
+
+Real Play observes the updated source materializations, moves the capsule and saves/
+moves away/restores through native F6/F7 input and asynchronous disk receipts.
+Capture a real game viewport PNG, Stop back to unchanged authoring and export a
+normal native game. Restore the temporary source tint and local label using the
+same product edits/saves/refreshes across both scenes; the authoring scene and all
+123 existing project files exactly match their pre-stage hashes. After actual
+editor exit 0, read its retained close result and explicitly acknowledge/clear.
+
+Relocate the changed-content game and temporarily hide only its owned authoring
+tree. Two fresh native processes observe the updated instance labels/tints/
+placements without authoring/compiler access. The first moves/saves/moves away/
+restores; the second restores that persisted slot. Both have zero runtime script
+failures/diagnostics, real completed rendering and native HUD rasterization. Their
+restored coordinates, and the editor Play restore, exactly equal the saved float
+coordinates. Each exits 0 before its persistent close response is consumed/cleared.
+Restore the authoring tree and confirm no owned mailbox/cache residue.
+
+Preserve all 30 prior guarded saves and the new independent slot for 31 guarded
+files, 19 original model/source-art files, all 123 prior editable-project files and
+the changed game's 162 files. The tested standalone binary matches the final signed
+runtime kit; six Debug/Release executable fingerprints are recorded. Keep raw
+requests/results/consumption records, profiles, matched/changed viewport images,
+intermediate authored scenes, source backup, project, normal exported game and
+process completions in ignored build/scene-work-review. Remove only this stage's
+temporary Python helpers/bytecode after verification; no release archive is made.
+
+Computer use still reports the Mac locked with automatic unlock unsuccessful; no
+physical mouse activation or panel-layout acceptance is claimed. Windows/Linux,
+background dependency I/O, asynchronous final document publication, general scene
+streaming, hard frame deadlines, finished art and overall production readiness
+remain unproven or unfinished. The source transaction is groundwork for those
+remaining capabilities, not a claim that moving work off-thread is complete.
