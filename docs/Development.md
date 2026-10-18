@@ -14793,3 +14793,121 @@ game/save. No release archive is produced. Desktop inventory still reports a loc
 Mac, so physical mouse/keyboard/layout and subjective hearing remain unverified.
 Only macOS execution is claimed; full streaming, final art/audio and overall production
 maturity remain open.
+
+## 2026-10-18 — Controllable native initial preparation
+
+Native development-project and exported-game startup now use a real pending
+GameSession before advertising control and entering their frame loop. The session
+owns frozen scene bytes, resource preparation, source compilation when applicable,
+and a deferred native audio endpoint. The compiled path owns its existing program
+generation without invoking TypeScript. Initial source provenance is recaptured;
+obsolete generations are cancelled/discarded and counted before service publication.
+Those counters survive later scene replacement and remain separate from hot reload.
+
+Before native services exist, scope is zero and clock/scripts are absent. Scene,
+game-data, input and lifecycle operations reject; status/close use the same existing
+strict player controller. Resource/compilation failures retain their contextual cause
+while actual owned teardown is polled to Faulted. Cancellation reaps both CPU jobs,
+closes the endpoint, releases callback/compiler/file ownership and reaches Closed
+without Start. Moving the unbound session retains owner-thread affinity. Synchronous
+close/destruction still join outstanding work.
+
+After the immutable resource proof and real device readiness are available, native
+services adopt prepared data and publish Ready without Start. The frontend prepares
+GPU resources, calls beginStart once and polls actual audio activation before normal
+simulation/input. Status includes initial resource/script/audio work and the native
+frontend's later graphics/activation stages. Close/Escape during pending preparation
+request the same cancellation and keep loading frames/control alive until cleanup;
+close acceptance is not process completion. There is no second startup mailbox,
+fabricated running scope, synchronous resource retry or silent audio fallback.
+
+This closes the standalone initial-preparation follow-up from the previous milestone.
+It does not remove package auditing and its owned full-content snapshot, saved scene
+metadata/snapshot, window/graphics/font setup, owner-thread source capture, native
+binding/VM construction, GPU work or every shutdown cost. OS window-close/destruction
+and synchronous close may join native work. General streaming and application-scale
+performance remain open.
+
+Validation on arm64 macOS:
+
+- Six durable cases in existing compiler/audio-native targets cover actual absent
+  initial services followed by explicit Start, frozen compiled scene/program ownership
+  and retained PCM after source corruption, bad-resource error retention through
+  teardown, cancellation after moving a confirmed live compiler child with exact
+  process/generation and callback lifetime cleanup, obsolete-source discard/recompile
+  with counters retained across scene replacement, and real deferred native activation/
+  cancellation with unchanged backend allocation counts. No windows open in these tests.
+- Thirteen focused startup/player-control cases pass in 5.94 seconds. Strict test
+  compilation first rejects an unparenthesized compound assertion; correct the test
+  expression and rebuild. Expectations, budgets and timeouts are not weakened.
+- Full Debug: 1669/1669 in 266.44 seconds. Full Release/NDEBUG: 1669/1669 in 37.71
+  seconds. Each has 535 unit and 1134 integration cases, including 263 compiler,
+  39 audio-native and 186 durable offscreen cases. Builds, tests and native product
+  processes run sequentially. Formatting and diff whitespace checks pass. No new
+  target/dependency, windowed automated test or release archive.
+
+Actual product evidence stays in ignored build/player-startup-review. Create an
+ordinary PrismNativeStartup project using the product creator and reuse the prior
+ordinary project's saved ServiceAnnex, external gate and existing native assets/
+example tones. Author the new gate and paused main voice through normal editor
+operations and save a 343-entity main. Open the saved ten-entity room, return to main,
+Play, move with D, load/unload with F8/F9, and save/move/restore with F6/F7. After
+Stop the exact authoring scene returns. The actual 1480x574 capture shows the loaded
+room and HUD. Views are ready without errors; entity/renderer-input counts change
+343/181 to 354/185 to 343/181. The original voice stays paused at source frame 100;
+room load produces two assets/voices with one playing spatial mono voice, and
+last-use removal returns one asset/voice with no room voice. Checkpoint feet error
+is zero at the unchanged 1e-5 bound.
+
+The first temporary orchestration attempt calls Play before graphics are ready.
+The editor correctly returns Unavailable, but the helper exits and its native process
+is subsequently absent without a captured exit code. Preserve this failure and its
+unretired endpoint/archive: clear-control correctly rejects active metadata, and no
+manual mailbox edits or crash-recovery claim substitute for supported cleanup.
+After confirmed process absence, reopen the saved project, wait for actual view
+readiness and complete the workflow. A later helper response-shape mistake is
+repaired while retaining that same native process/handle, without restarting it or
+replaying mutations. The completed editor has actual exit 0, all 68 replies ACKed
+and its closed endpoint/archive explicitly cleared. The interrupted attempt's raw
+requests/replies and stale archive remain as evidence; its ninth queued inspection
+has no claimed result. Abandoned active-session recovery remains a limitation.
+
+Run the actual development-project entry and observe scope zero/null clock/scripts
+with one initial compile attempt before Close. Run the relocated exported game and
+close during scope-zero resource preparation. Both processes have actual exit 0,
+no game save, and consumed/cleared close replies only after actual completion.
+Exported-game processes run while only their owned authoring project is hidden.
+An independent copied game with same-length invalid startup-tone bytes passes the
+package size audit but fails real audio decoding after endpoint publication, with
+exact asset path/container-mismatch error and actual exit 1. It has no fake Running
+fallback; its retired empty archive is explicitly cleared.
+
+Two more fresh exported native processes against the same new save directory expose
+actual scope-zero resources, graphics readiness, Starting/activation and Running
+with a null final preparation label. Both repeat movement, room load/unload, native
+HUD/render completion and audio resource reclamation. Their loaded snapshots have
+354 entities, 57/80 completed native frames, failureCount 0 and empty diagnostics.
+Native one's save/restore and native two's restore of native one's checkpoint both
+have zero feet error. Restore the authoring path. All six completed product processes
+have actual captured results: five exit 0, the intentional bad-resource case exits 1.
+All their replies are ACKed and closed archives cleared. The interrupted first editor
+is reported separately, not counted as a clean exit or completed cleanup.
+
+Retain whole-application profiling: editor initial peak Prepare 37.278958 ms and
+same-frame total 38.438875 ms; peak Update 1.203667 ms. Native one's whole-process
+peak Prepare is 25.531375 ms and same-frame total 25.711625 ms. These still expose
+owner-thread hitches. Native lifetime phase peaks include startup and gameplay;
+retained frame rings are not complete launch traces. No controlled comparison,
+isolated resource/constructor attribution, cold-cache or 60 Hz claim is made.
+
+All 2394 previous project/game/save guards remain unchanged. Retain 2866 guarded
+files including this ordinary 131-file project, two 170-file normal/intentional-error
+games and one native save. Twenty-seven current Debug/Release/kit/game Mach-O paths
+pass strict signing; kit and both copied DotGame hashes match, and ordinary tones
+remain byte-identical to prior assets. Remove owned temporary orchestration helpers
+after all current product handles are terminal, preserving raw control/error/log/
+profile/timeline/capture evidence, ordinary projects/games/saves and the interrupted
+archive. No art/audio generation or new release archive. Desktop inspection still
+reports a locked Mac; human mouse/keyboard/layout and subjective hearing remain
+unverified. Only macOS execution is claimed. Final character/environment/audio,
+full streaming and overall production maturity remain open.

@@ -33,6 +33,7 @@ import Dot.Script.AudioSession;
 import Dot.Script.AnimationSession;
 import Dot.Assets.SceneSkins;
 import Dot.Project.ScenePreparation;
+import Dot.Script.Compilation;
 import Dot.Script.SceneFlow;
 import Dot.Script.GameData;
 
@@ -80,6 +81,21 @@ namespace Dot::Project {
   };
 
   struct GameSession::Impl {
+    struct Initial {
+      std::optional<std::string> bytes;
+      std::optional<ScenePreparation> resources;
+      std::optional<PreparedScene> proof;
+      std::optional<Script::CompilationJob> compilation;
+      std::optional<Script::CompiledProgram> program;
+      std::optional<Audio::Playback> playback;
+      bool obsolete{};
+    };
+
+    std::optional<Initial> m_initial;
+    std::optional<SessionPreparation> m_initialPhase;
+    std::optional<Core::Error> m_initialError;
+    std::uint64_t m_initialCompiles{};
+    std::uint64_t m_discardedInitial{};
     std::shared_ptr<World::Scene> m_scene;
     std::thread::id m_thread{std::this_thread::get_id()};
     std::uint64_t m_identity{};
@@ -113,6 +129,34 @@ namespace Dot::Project {
      * Gate the next preparation until reaped, bounding native endpoints to two.
      * 仅退役音频保留旧场景，不保留旧 realm/物理/动画；回收前不开始下次准备，端点至多两个。 */
     std::optional<Script::AudioSession> m_retiredAudio;
+
+    ~Impl() {
+      if (m_initial) {
+        if (m_initial->resources) {
+          m_initial->resources->requestStop();
+        }
+
+        if (m_initial->compilation) {
+          m_initial->compilation->requestStop();
+        }
+      }
+    }
+
+    auto cancelInitial() -> Core::Result<void> {
+      auto& initial = *m_initial;
+      m_state = SessionState::Cancelling;
+      m_initialPhase = SessionPreparation::Teardown;
+
+      if (initial.resources) {
+        initial.resources->requestStop();
+      }
+
+      if (initial.compilation) {
+        initial.compilation->requestStop();
+      }
+
+      return initial.playback ? initial.playback->requestClose() : Core::Result<void>{};
+    }
 
     auto retireServices() noexcept -> void {
       if (m_preparation) {
@@ -151,6 +195,10 @@ namespace Dot::Project {
               || m_state == SessionState::Cancelling)) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Game session is closed, faulted or cancelling");
+      }
+
+      if (!allowTerminal && !m_scene) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Game scene services are not prepared");
       }
 
       if (!allowTerminal && m_scene->id() != m_identity) {
@@ -425,6 +473,332 @@ namespace Dot::Project {
   GameSession::~GameSession() {
     if (m_impl && m_impl->m_flow) {
       m_impl->retireServices();
+    }
+  }
+
+  auto GameSession::begin(const Project& project, const Script::TypeScriptCompiler& compiler,
+                          const GameSessionConfig& config) -> Core::Result<GameSession> {
+    auto valid = validate(config);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto description = project.description();
+    auto files = project.files();
+    auto scene = project.loadStartup();
+
+    if (!description || !files || !scene) {
+      return std::unexpected(!description ? description.error()
+                             : !files     ? files.error()
+                                          : scene.error());
+    }
+
+    auto bytes = World::encodeScene(*scene);
+    return bytes ? beginPreparation(*files, std::move(*description), std::move(*bytes), config,
+                                    &compiler, nullptr)
+                 : std::unexpected(bytes.error());
+  }
+
+  auto GameSession::beginCompiled(const Core::FileSystem& assets, const Description& description,
+                                  const World::Scene& scene, const Script::CompiledProgram& program,
+                                  const GameSessionConfig& config) -> Core::Result<GameSession> {
+    auto valid = validate(config);
+    auto metadata = validateDescription(description);
+    auto modules = program.modules();
+
+    if (!valid || !metadata || !modules) {
+      return std::unexpected(!valid      ? valid.error()
+                             : !metadata ? metadata.error()
+                                         : modules.error());
+    }
+
+    if (description.hotReload) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Compiled sessions require hotReload=false");
+    }
+
+    auto bytes = World::encodeScene(scene);
+    return bytes
+               ? beginPreparation(assets, description, std::move(*bytes), config, nullptr, &program)
+               : std::unexpected(bytes.error());
+  }
+
+  auto GameSession::beginPreparation(const Core::FileSystem& assets, Description description,
+                                     std::string sceneBytes, const GameSessionConfig& config,
+                                     const Script::TypeScriptCompiler* compiler,
+                                     const Script::CompiledProgram* program)
+      -> Core::Result<GameSession> {
+    try {
+      auto impl = std::make_unique<Impl>();
+      impl->m_description = std::move(description);
+      impl->m_files = assets;
+      impl->m_config = config;
+      impl->m_audioMode = config.audioMode;
+      impl->m_state = SessionState::Preparing;
+      impl->m_initialPhase = SessionPreparation::Resources;
+      impl->m_initial.emplace();
+      impl->m_initial->bytes = std::move(sceneBytes);
+
+      if (compiler) {
+        impl->m_compiler = *compiler;
+      }
+
+      if (program) {
+        impl->m_initial->program = *program;
+      }
+
+      return GameSession{std::move(impl)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin game preparation: " + std::string(error.what()));
+    }
+  }
+
+  auto GameSession::pollPreparation() -> Core::Result<SessionState> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (!m_impl->m_initial) {
+      return m_impl->m_state;
+    }
+
+    /** Keep the old flag alive until its reentry guard releases after publication.
+     * 发布替换后，须保留旧标记的所有者直到重入守卫退出。 */
+    std::unique_ptr<Impl> retired;
+    ActiveScope active{m_impl->m_active};
+    auto& initial = *m_impl->m_initial;
+    const auto failed = [&](Core::Error error) -> Core::Result<SessionState> {
+      if (!m_impl->m_initialError) {
+        m_impl->m_initialError = std::move(error);
+      }
+
+      auto closed = m_impl->cancelInitial();
+
+      if (!closed) {
+        m_impl->m_initialError->message += "; teardown: " + closed.error().message;
+      }
+
+      return std::unexpected(*m_impl->m_initialError);
+    };
+
+    try {
+      if (m_impl->m_state == SessionState::Cancelling) {
+        if (initial.resources) {
+          auto ready = initial.resources->ready();
+
+          if (!ready) {
+            return failed(ready.error());
+          }
+
+          if (!*ready) {
+            return SessionState::Cancelling;
+          }
+
+          initial.resources.reset();
+        }
+
+        if (initial.compilation) {
+          auto ready = initial.compilation->ready();
+
+          if (!ready) {
+            return failed(ready.error());
+          }
+
+          if (!*ready) {
+            return SessionState::Cancelling;
+          }
+
+          initial.compilation.reset();
+        }
+
+        if (initial.playback) {
+          auto closed = initial.playback->pollClosed();
+
+          if (closed && !*closed) {
+            return SessionState::Cancelling;
+          }
+
+          auto result = closed ? initial.playback->close()
+                               : Core::Result<void>{std::unexpected(closed.error())};
+
+          if (!result && !m_impl->m_initialError) {
+            m_impl->m_initialError = result.error();
+          }
+        }
+
+        m_impl->m_initial.reset();
+        m_impl->m_initialPhase.reset();
+        m_impl->m_config.scripts.services.clear();
+        m_impl->m_compiler.reset();
+        m_impl->m_files.reset();
+        m_impl->m_state = m_impl->m_initialError ? SessionState::Faulted : SessionState::Closed;
+        return m_impl->m_state;
+      }
+
+      if (!initial.playback && m_impl->m_audioMode == SessionAudio::Playback) {
+        auto config = m_impl->m_config.audio;
+        config.deferredStart = true;
+        auto endpoint = Audio::Playback::begin(config);
+
+        if (!endpoint) {
+          return failed(endpoint.error());
+        }
+
+        initial.playback.emplace(std::move(*endpoint));
+      }
+
+      if (!initial.resources && !initial.proof) {
+        auto job = ScenePreparation::begin(*m_impl->m_files, m_impl->m_description.startScene,
+                                           std::move(initial.bytes), ScenePreparationKind::Complete,
+                                           m_impl->m_config.audioLimits);
+
+        if (!job) {
+          return failed(job.error());
+        }
+
+        initial.resources.emplace(std::move(*job));
+      }
+
+      if (initial.resources) {
+        auto ready = initial.resources->ready();
+
+        if (!ready) {
+          return failed(ready.error());
+        }
+
+        if (*ready) {
+          auto proof = initial.resources->take();
+          initial.resources.reset();
+
+          if (!proof) {
+            return failed(proof.error());
+          }
+
+          initial.proof.emplace(std::move(*proof));
+        }
+      }
+
+      if (m_impl->m_compiler) {
+        auto captured = m_impl->m_compiler->captureProject(*m_impl->m_files,
+                                                           m_impl->m_description.scriptsDirectory);
+
+        if (!captured) {
+          return failed(captured.error());
+        }
+
+        if (initial.compilation) {
+          auto source = initial.compilation->source();
+          auto ready = initial.compilation->ready();
+
+          if (!source || !ready) {
+            return failed(!source ? source.error() : ready.error());
+          }
+
+          if (!source->equals(*captured)) {
+            initial.obsolete = true;
+            initial.compilation->requestStop();
+          }
+
+          if (*ready) {
+            auto program = initial.compilation->take();
+            initial.compilation.reset();
+
+            if (initial.obsolete) {
+              ++m_impl->m_discardedInitial;
+            } else if (!program) {
+              return failed(program.error());
+            } else {
+              initial.program.emplace(std::move(*program));
+            }
+          }
+        }
+
+        if (initial.program) {
+          auto source = initial.program->source();
+
+          if (!source) {
+            return failed(source.error());
+          }
+
+          if (!source->equals(*captured)) {
+            initial.program.reset();
+            ++m_impl->m_discardedInitial;
+          }
+        }
+
+        if (!initial.compilation && !initial.program) {
+          auto job = Script::CompilationJob::begin(*m_impl->m_compiler, *captured);
+
+          if (!job) {
+            return failed(job.error());
+          }
+
+          initial.obsolete = false;
+          initial.compilation.emplace(std::move(*job));
+          ++m_impl->m_initialCompiles;
+        }
+      }
+
+      if (!initial.program) {
+        m_impl->m_initialPhase = SessionPreparation::Scripts;
+        return SessionState::Preparing;
+      }
+
+      if (!initial.proof) {
+        m_impl->m_initialPhase = SessionPreparation::Resources;
+        return SessionState::Preparing;
+      }
+
+      if (initial.playback) {
+        auto ready = initial.playback->pollReady();
+
+        if (!ready) {
+          return failed(ready.error());
+        }
+
+        if (!*ready) {
+          m_impl->m_initialPhase = SessionPreparation::Audio;
+          return SessionState::Preparing;
+        }
+      }
+
+      m_impl->m_initialPhase = SessionPreparation::Services;
+      auto scene = initial.proof->scene();
+
+      if (!scene) {
+        return failed(scene.error());
+      }
+
+      auto prepared = prepareSession(
+          *m_impl->m_files, m_impl->m_description, std::move(*scene), m_impl->m_config,
+          m_impl->m_compiler ? &*m_impl->m_compiler : nullptr, &*initial.program,
+          m_impl->m_description.startScene, nullptr, {}, nullptr,
+          initial.playback ? &*initial.playback : nullptr, &*initial.proof);
+
+      if (initial.playback && !initial.playback->configuration()) {
+        initial.playback.reset();
+      }
+
+      if (!prepared) {
+        return failed(prepared.error());
+      }
+
+      prepared->m_impl->m_initialCompiles = m_impl->m_initialCompiles;
+      prepared->m_impl->m_discardedInitial = m_impl->m_discardedInitial;
+      m_impl.swap(prepared->m_impl);
+      retired = std::move(prepared->m_impl);
+      return m_impl->m_state;
+    } catch (const std::exception& error) {
+      return failed(
+          {Core::ErrorCode::External, "Poll game preparation: " + std::string(error.what()), {}});
     }
   }
 
@@ -820,6 +1194,10 @@ namespace Dot::Project {
       return std::unexpected(checked.error());
     }
 
+    if (!m_impl->m_scene) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game scene services are not prepared");
+    }
+
     if (m_impl->m_scene->id() != m_impl->m_identity) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session scene was moved/replaced");
     }
@@ -844,6 +1222,16 @@ namespace Dot::Project {
                             {},
                             {},
                             {}};
+    result.preparation = m_impl->m_initialPhase;
+    result.preparationError = m_impl->m_initialError;
+    result.preparationCompileAttempts = m_impl->m_initialCompiles;
+    result.discardedScriptCompilations = m_impl->m_discardedInitial;
+
+    if (!m_impl->m_scene) {
+      result.location.path = m_impl->m_description.startScene;
+      return result;
+    }
+
     auto location = m_impl->m_flow->location();
     auto latest = m_impl->m_flow->latest();
 
@@ -1027,8 +1415,9 @@ namespace Dot::Project {
     }
 
     auto checked = m_impl->check(true);
-    return checked ? Core::Result<Script::GameData>{*m_impl->m_progress}
-                   : Core::Result<Script::GameData>{std::unexpected(checked.error())};
+    return checked && m_impl->m_progress ? Core::Result<Script::GameData>{*m_impl->m_progress}
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Game data is not prepared")
+                     : std::unexpected(checked.error());
   }
 
   auto GameSession::gameClock() const -> Core::Result<Script::GameClock> {
@@ -1242,8 +1631,9 @@ namespace Dot::Project {
     }
 
     auto checked = m_impl->check(true);
-    return checked ? m_impl->m_flow->status(id)
-                   : Core::Result<Script::SceneRequest>{std::unexpected(checked.error())};
+    return checked && m_impl->m_flow ? m_impl->m_flow->status(id)
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Scene requests are not prepared")
+                     : std::unexpected(checked.error());
   }
 
   auto GameSession::processSceneRequest(Script::ScriptReport& report, bool beginPending)
@@ -1393,6 +1783,8 @@ namespace Dot::Project {
        * Stop 钩子不可回滚；先准备全部服务及路径所有权，再接受替换，使旧写入失效并允许
        * 新 Start 排队下一请求。 */
       replacement->m_lifetimeFixedSteps = m_impl->m_lifetimeFixedSteps;
+      replacement->m_initialCompiles = m_impl->m_initialCompiles;
+      replacement->m_discardedInitial = m_impl->m_discardedInitial;
       auto accepted
           = m_impl->m_flow->commit(request.id, replacement->m_identity, std::move(request.path));
 
@@ -1666,6 +2058,16 @@ namespace Dot::Project {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
     }
 
+    if (m_impl->m_initial) {
+      auto checked = m_impl->check(true);
+
+      if (!checked) {
+        return checked;
+      }
+
+      return m_impl->cancelInitial();
+    }
+
     if (!m_impl->m_audio) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game audio is closed");
     }
@@ -1688,6 +2090,11 @@ namespace Dot::Project {
   auto GameSession::pollPreparationClosed() const -> Core::Result<bool> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    if (m_impl->m_initial || !m_impl->m_scene) {
+      auto checked = m_impl->check(true);
+      return checked ? Core::Result<bool>{!m_impl->m_initial} : std::unexpected(checked.error());
     }
 
     if (!m_impl->m_audio) {
@@ -1810,6 +2217,36 @@ namespace Dot::Project {
     }
 
     if (m_impl->m_state == SessionState::Closed) {
+      return Script::ScriptReport{};
+    }
+
+    if (m_impl->m_initial) {
+      auto requested = requestPreparationClose();
+      ActiveScope active{m_impl->m_active};
+      auto& initial = *m_impl->m_initial;
+      initial.resources.reset();
+      initial.compilation.reset();
+      auto closed = initial.playback ? initial.playback->close() : Core::Result<void>{};
+      m_impl->m_initial.reset();
+      m_impl->m_initialPhase.reset();
+      m_impl->m_config.scripts.services.clear();
+      m_impl->m_compiler.reset();
+      m_impl->m_files.reset();
+      m_impl->m_state = SessionState::Closed;
+
+      if (!requested || !closed) {
+        return std::unexpected(!requested ? requested.error() : closed.error());
+      }
+
+      return Script::ScriptReport{};
+    }
+
+    if (!m_impl->m_scene) {
+      ActiveScope active{m_impl->m_active};
+      m_impl->m_config.scripts.services.clear();
+      m_impl->m_compiler.reset();
+      m_impl->m_files.reset();
+      m_impl->m_state = SessionState::Closed;
       return Script::ScriptReport{};
     }
 

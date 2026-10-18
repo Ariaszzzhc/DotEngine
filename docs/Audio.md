@@ -385,9 +385,10 @@ rejects consumers with different limits, preserving encoded-source budget semant
 GameSession's append/replacement worker and initial asynchronous editor Play use
 that session's configured limits, and first native binding adopts their proof. The second synchronization after Start uses
 ordinary refresh rules for script-authored changes. Synchronous initial session
-creation without a proof, later dynamic file reads, backend batches/activation and
-retirement still have their existing costs. This is bounded resource preparation,
-not general streaming or a guarantee about endpoint presentation latency.
+creation without a proof retains its existing path. Native project/game startup now
+polls actual resource/compilation/deferred device tasks and activation in the live
+loop. Later dynamic file reads, backend batches and retirement still have their
+existing costs. This is bounded resource preparation, not general streaming or a guarantee about endpoint presentation latency.
 
 场景准备工作线程按精确预算解码唯一 PCM，不创建混音器或设备；最终监听器/位姿/声部
 容量由原生绑定检查。首次绑定消费完整准备结果，不回退磁盘；缓存引用期间保留数据及

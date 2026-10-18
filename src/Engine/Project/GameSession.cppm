@@ -33,7 +33,8 @@ export import Dot.Audio.SceneAudio;
 
 export namespace Dot::Project {
   enum class SessionAudio { Offline, Playback };
-  enum class SessionState { Ready, Running, Faulted, Closed, Starting, Cancelling };
+  enum class SessionState { Ready, Running, Faulted, Closed, Starting, Cancelling, Preparing };
+  enum class SessionPreparation { Resources, Scripts, Audio, Services, Teardown };
 
   /** Logical input-area size, matching InputState pointer units. Disabled areas
    * cancel UI gestures on focus/viewport loss; zero sizes are legal only when disabled.
@@ -69,13 +70,18 @@ export namespace Dot::Project {
     /** Owns one retired endpoint until real teardown is reaped; not an audible-state flag.
      * 真实清理回收前拥有一个退役端点，不表示当前是否可听。 */
     bool retiringAudio{};
-    Script::GameClockSnapshot clock{1, false};
+    /** Absent until actual initial scene services exist. 服务建立前没有实际游戏时钟。 */
+    std::optional<Script::GameClockSnapshot> clock{};
     std::uint64_t simulatedFixedSteps{};
     std::uint64_t simulatedUpdates{};
     /** Completed native fixed phases across scene replacement, including debugger
      * steps; per-scene counters above still reset on replacement.
      * 跨场景的已完成原生固定阶段（含调试单步）；上方场景计数仍随替换重置。 */
     std::uint64_t lifetimeFixedSteps{};
+    std::optional<SessionPreparation> preparation{};
+    std::optional<Core::Error> preparationError{};
+    std::uint64_t preparationCompileAttempts{};
+    std::uint64_t discardedScriptCompilations{};
   };
 
   /** Owns the active project scene and its input, scripts, real physics,
@@ -98,6 +104,30 @@ export namespace Dot::Project {
                                      const Script::TypeScriptCompiler& compiler,
                                      const GameSessionConfig& config = {})
         -> Core::Result<GameSession>;
+    /** Freeze saved scene metadata and own initial resource/compilation/audio tasks.
+     * Poll without advancing simulation; only Ready has constructed scene services.
+     * Start remains explicit. Snapshot/package metadata and native binding still have
+     * owner costs; asset-root files must outlive preparation/session. No public
+     * scene/game-data/input access or lifecycle dispatch before services exist.
+     * 冻结保存场景元数据并拥有资源/编译/音频准备任务；轮询不推进模拟，仅 Ready 已建立
+     * 场景服务，Start 仍须显式调用。快照/包元数据及原生绑定仍有所有者开销；服务建立前
+     * 不开放场景/游戏数据/输入，也不分发生命周期；资产根目录文件须更长寿。 */
+    [[nodiscard]] static auto begin(const Project& project,
+                                    const Script::TypeScriptCompiler& compiler,
+                                    const GameSessionConfig& config = {})
+        -> Core::Result<GameSession>;
+    [[nodiscard]] static auto beginCompiled(const Core::FileSystem& assets,
+                                            const Description& description,
+                                            const World::Scene& scene,
+                                            const Script::CompiledProgram& program,
+                                            const GameSessionConfig& config = {})
+        -> Core::Result<GameSession>;
+    /** Errors are retained while owned teardown is polled to Faulted; cancellation
+     * reaches Closed only after tasks/endpoints are reaped. Destruction/close still
+     * join outstanding work. Owner-thread, non-reentrant, no gameplay dispatch.
+     * 错误保留至拥有任务清理后进入 Faulted；取消须回收任务/端点才到 Closed。
+     * 销毁/close 仍等待未完成工作；限所有者线程、不可重入，不分发游戏逻辑。 */
+    [[nodiscard]] auto pollPreparation() -> Core::Result<SessionState>;
     /** Clone a validated authoring scene into a fresh scope without saving or
      * borrowing it. Project resources/scripts remain rooted at the project.
      * A supplied origin keeps an owned initial snapshot for returns during this
@@ -211,8 +241,11 @@ export namespace Dot::Project {
     [[nodiscard]] auto pollStart() -> Core::Result<bool>;
     /** Cancel unpublished preparation without hooks; retain until teardown completes.
      * Cancelling rejects startup/gameplay; close also skips hooks after cancellation.
+     * Initial CPU jobs are reaped by pollPreparation; pollPreparationClosed only
+     * observes completion. Later activation teardown uses the same close observation.
      * 无钩子地取消未发布的准备，清理完成前须保留所有权；取消中拒绝启动/游戏操作，
-     * 后续 close 也跳过钩子。 */
+     * 后续 close 也跳过钩子；初始 CPU 任务由 pollPreparation 回收，pollPreparationClosed
+     * 仅观察完成，后续激活清理沿用同一关闭观察接口。 */
     [[nodiscard]] auto requestPreparationClose() -> Core::Result<void>;
     [[nodiscard]] auto pollPreparationClosed() const -> Core::Result<bool>;
     /** Requires start. Each variable call first dispatches unscaled onFrame,
@@ -248,6 +281,12 @@ export namespace Dot::Project {
     [[nodiscard]] auto close() -> Core::Result<Script::ScriptReport>;
 
   private:
+    [[nodiscard]] static auto beginPreparation(const Core::FileSystem& assets,
+                                               Description description, std::string sceneBytes,
+                                               const GameSessionConfig& config,
+                                               const Script::TypeScriptCompiler* compiler,
+                                               const Script::CompiledProgram* program)
+        -> Core::Result<GameSession>;
     struct Origin;
     [[nodiscard]] static auto prepare(const Project& project,
                                       const Script::TypeScriptCompiler& compiler,

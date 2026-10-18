@@ -1,6 +1,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -207,9 +208,9 @@ namespace Dot::Runtime {
       sessionConfig.audioMode = Project::SessionAudio::Playback;
       sessionConfig.audio.output.volume = options.volume;
       auto session
-          = game ? Project::GameSession::createCompiled(*files, *description, game->scene().value(),
-                                                        game->program().value(), sessionConfig)
-                 : Project::GameSession::create(*project, *compiler, sessionConfig);
+          = game ? Project::GameSession::beginCompiled(*files, *description, game->scene().value(),
+                                                       game->program().value(), sessionConfig)
+                 : Project::GameSession::begin(*project, *compiler, sessionConfig);
 
       if (!session) {
         return std::unexpected(session.error());
@@ -246,10 +247,6 @@ namespace Dot::Runtime {
 
       auto scene = session->scene();
 
-      if (!scene) {
-        return std::unexpected(scene.error());
-      }
-
       std::optional<std::string> lastReloadError;
       std::uint64_t lastSceneRequest{};
       std::uint64_t presentedHudScope{};
@@ -268,6 +265,11 @@ namespace Dot::Runtime {
       auto lastTitle = description->name;
       bool delayed = false;
       bool started = false;
+      bool activating = false;
+      bool deferredExit = false;
+      std::optional<Core::Error> startupError;
+      std::optional<Project::SessionPreparation> startupStage;
+      std::optional<std::string> nativePreparation{"scene-resources"};
       std::optional<Graphics::ScenePreparationStage> loadingStage;
       std::size_t gameFrames{};
       const auto dispatch
@@ -297,6 +299,33 @@ namespace Dot::Runtime {
         return observe(report->frame);
       };
 
+      const auto requestExit = [&]() -> Core::Result<void> {
+        auto stats = session->stats();
+
+        if (!stats) {
+          return std::unexpected(stats.error());
+        }
+
+        if (stats->state == Project::SessionState::Preparing
+            || stats->state == Project::SessionState::Starting
+            || stats->state == Project::SessionState::Cancelling) {
+          auto requested = stats->state == Project::SessionState::Cancelling
+                               ? Core::Result<void>{}
+                               : session->requestPreparationClose();
+
+          if (!requested) {
+            return requested;
+          }
+
+          deferredExit = true;
+          nativePreparation = "teardown";
+        } else {
+          application->stop();
+        }
+
+        return {};
+      };
+
       Core::LoopCallbacks callbacks;
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
         if (control) {
@@ -310,7 +339,11 @@ namespace Dot::Runtime {
                 }
 
                 if (*closing) {
-                  application->stop();
+                  auto requested = requestExit();
+
+                  if (!requested) {
+                    return std::unexpected(requested.error());
+                  }
                 }
 
                 if (result) {
@@ -335,10 +368,16 @@ namespace Dot::Runtime {
                       return std::unexpected(!textActive ? textActive.error() : logical.error());
                     }
 
-                    response["native"] = {{"focused", *focused},
-                                          {"pointerCaptured", *captured},
-                                          {"textInputActive", *textActive},
-                                          {"inputArea", {logical->width, logical->height}}};
+                    response["native"]
+                        = {{"focused", *focused},
+                           {"pointerCaptured", *captured},
+                           {"textInputActive", *textActive},
+                           {"inputArea", {logical->width, logical->height}},
+                           {"preparation",
+                            response["player"]["preparation"].is_null()
+                                ? (nativePreparation ? nlohmann::json(*nativePreparation)
+                                                     : nlohmann::json(nullptr))
+                                : response["player"]["preparation"]}};
                     auto text = textRenderer->stats();
 
                     if (!text) {
@@ -397,8 +436,101 @@ namespace Dot::Runtime {
         const bool quitting = input.key(Platform::Key::Escape).pressed;
 
         if (quitting) {
-          application->stop();
+          auto requested = requestExit();
+
+          if (!requested) {
+            return requested;
+          }
+
+          if (!application->running()) {
+            return {};
+          }
+        }
+
+        if (deferredExit) {
+          auto stats = session->stats();
+
+          if (!stats) {
+            return std::unexpected(stats.error());
+          }
+
+          if (stats->location.scope == 0) {
+            auto terminal = session->pollPreparation();
+
+            if (!terminal) {
+              return std::unexpected(terminal.error());
+            }
+
+            if (*terminal == Project::SessionState::Closed
+                || *terminal == Project::SessionState::Faulted) {
+              application->stop();
+            }
+          } else {
+            auto closed = session->pollPreparationClosed();
+
+            if (!closed) {
+              return std::unexpected(closed.error());
+            }
+
+            if (*closed) {
+              application->stop();
+            }
+          }
+
           return {};
+        }
+
+        auto preparing = session->stats();
+
+        if (!preparing) {
+          return std::unexpected(preparing.error());
+        }
+
+        if (preparing->state == Project::SessionState::Preparing
+            || (preparing->state == Project::SessionState::Cancelling
+                && preparing->location.scope == 0)) {
+          auto prepared = session->pollPreparation();
+
+          if (!prepared && !startupError) {
+            startupError = prepared.error();
+          }
+
+          auto status = session->stats();
+
+          if (!status) {
+            return std::unexpected(status.error());
+          }
+
+          if (status->state == Project::SessionState::Faulted) {
+            return std::unexpected(*status->preparationError);
+          }
+
+          if (status->state != Project::SessionState::Ready) {
+            if (status->preparation && startupStage != status->preparation) {
+              constexpr std::array phases{"scene resources", "scripts", "audio", "scene services",
+                                          "cleanup"};
+              auto title = application->window().setTitle(
+                  description->name + " - Preparing "
+                  + phases.at(static_cast<std::size_t>(*status->preparation)));
+
+              if (!title) {
+                return title;
+              }
+
+              startupStage = status->preparation;
+              constexpr std::array names{"scene-resources", "scripts", "audio", "scene-services",
+                                         "teardown"};
+              nativePreparation = names.at(static_cast<std::size_t>(*status->preparation));
+            }
+
+            return {};
+          }
+
+          scene = session->scene();
+
+          if (!scene) {
+            return std::unexpected(scene.error());
+          }
         }
 
         if (!started) {
@@ -431,29 +563,47 @@ namespace Dot::Runtime {
               }
 
               loadingStage = *prepared;
+              nativePreparation = phase;
             }
 
             return {};
           }
 
-          auto report = session->start();
+          if (!activating) {
+            auto report = session->beginStart();
 
-          if (!report) {
-            return std::unexpected(report.error());
+            if (!report) {
+              return std::unexpected(report.error());
+            }
+
+            auto checked = observe(*report);
+
+            if (!checked) {
+              return checked;
+            }
+
+            activating = true;
+            nativePreparation = "activation";
           }
 
-          auto checked = observe(*report);
+          auto active = session->pollStart();
 
-          if (!checked) {
-            return checked;
+          if (!active) {
+            return std::unexpected(active.error());
+          }
+
+          if (!*active) {
+            return {};
           }
 
           started = true;
+          nativePreparation.reset();
 
-          if (loadingStage) {
+          if (loadingStage || startupStage) {
             std::println(stderr, "Scene resources ready; starting game");
-            lastTitle.clear();
           }
+
+          lastTitle.clear();
         }
 
         auto requested = session->pointerCaptureRequested();
@@ -696,6 +846,10 @@ namespace Dot::Runtime {
           return Core::fail(Core::ErrorCode::External, "Player loop: " + std::string(error.what()));
         }
       }();
+      if (run && startupError) {
+        run = std::unexpected(*startupError);
+      }
+
       auto closed = session->close();
       auto retired = control ? control->close() : Core::Result<void>{};
 

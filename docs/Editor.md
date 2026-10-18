@@ -2774,11 +2774,14 @@ resources when resource work remains after compilation.
 
 Source capture, scene snapshot/cloning, native binding, script construction/Start,
 GPU residency and some teardown still have owner-thread costs. Synchronous PlaySession
-creation and standalone game startup retain their existing paths; this does not
-complete all startup, cancellation or streaming goals for every application entry.
+creation retains its convenience path. Native project/exported-game startup now
+has its own real pending GameSession and live control/teardown polling; see
+[native preparation](Control.md#native-initial-preparation--独立游戏初始准备). Owner
+binding, package/device setup and broader streaming work remain.
 
 初次 Play 以冻结的未保存场景字节启动独立 CPU 资源任务，与编译及延后音频端点并行。
 CPU 准备完成前不构造脚本/执行 Start，设备激活后才发布运行场景；Stop/错误须回收全部
 拥有任务及原生清理才终止。
 工具栏与严格状态操作显示同一真实阶段。源码捕获、场景克隆、原生绑定及脚本构造仍有
-所有者线程开销；同步便利工厂和独立游戏启动路径仍待继续推进。
+所有者线程开销；同步便利工厂保留现有路径；独立游戏的真实准备/控制流程另见上述契约，绑定及包/设备
+建立开销仍待继续推进。

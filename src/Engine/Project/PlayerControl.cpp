@@ -96,8 +96,8 @@ namespace Dot::Project {
     }
 
     auto status(const GameSessionStats& stats) const -> Json {
-      constexpr std::array states{"preparing", "running",  "faulted",
-                                  "closed",    "starting", "cancelling"};
+      constexpr std::array states{"preparing", "running",    "faulted",  "closed",
+                                  "starting",  "cancelling", "preparing"};
       const auto held = m_input.stats();
       Json source = nullptr;
 
@@ -108,7 +108,15 @@ namespace Dot::Project {
                   {"error", stats.source->error ? errorJson(*stats.source->error) : Json(nullptr)}};
       }
 
+      constexpr std::array phases{"resources", "scripts", "audio", "services", "teardown"};
       return {{"state", states.at(static_cast<std::size_t>(stats.state))},
+              {"preparation", stats.preparation
+                                  ? Json(phases.at(static_cast<std::size_t>(*stats.preparation)))
+                                  : Json(nullptr)},
+              {"preparationError",
+               stats.preparationError ? errorJson(*stats.preparationError) : Json(nullptr)},
+              {"preparationCompileAttempts", std::to_string(stats.preparationCompileAttempts)},
+              {"discardedScriptCompilations", std::to_string(stats.discardedScriptCompilations)},
               {"closing", m_closing},
               {"scope", std::to_string(m_scope)},
               {"path", stats.location.path ? Json(*stats.location.path) : Json(nullptr)},
@@ -125,12 +133,15 @@ namespace Dot::Project {
               {"transition", stats.transition ? transitionJson(*stats.transition) : Json(nullptr)},
               {"retiringAudio", stats.retiringAudio},
               {"clock",
-               {{"paused", stats.clock.paused},
-                {"revision", std::to_string(stats.clock.revision)},
-                {"step", stats.clock.step
-                             ? Json{{"id", std::to_string(stats.clock.step->id)},
-                                    {"state", Script::gameStepStateName(stats.clock.step->state)}}
-                             : Json(nullptr)}}},
+               !stats.clock
+                   ? Json(nullptr)
+                   : Json{{"paused", stats.clock->paused},
+                          {"revision", std::to_string(stats.clock->revision)},
+                          {"step", stats.clock->step
+                                       ? Json{{"id", std::to_string(stats.clock->step->id)},
+                                              {"state",
+                                               Script::gameStepStateName(stats.clock->step->state)}}
+                                       : Json(nullptr)}}},
               {"simulatedFixedSteps", std::to_string(stats.simulatedFixedSteps)},
               {"simulatedUpdates", std::to_string(stats.simulatedUpdates)},
               {"lifetimeFixedSteps", std::to_string(stats.lifetimeFixedSteps)},

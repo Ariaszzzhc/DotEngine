@@ -122,3 +122,42 @@ windows or devices. Actual editor/Prism workflows verify delayed reads after nat
 shutdown, source/scene authoring, Play, export and relocated player use of this same
 transport. Such evidence does not establish overall production-engine maturity or
 Windows/Linux execution.
+
+## Native initial preparation / 独立游戏初始准备
+
+Native project and exported-game frontends now create an actual pending GameSession
+before entering their frame loop and advertising the control endpoint. Its first
+poll owns CPU resource preparation, source compilation when applicable, and deferred
+native audio opening. status/close remain usable while these tasks are pending.
+There is no second startup mailbox or fabricated running session.
+
+Before initial scene services exist, player.state is preparing, scope is "0",
+clock/scripts are null and preparation names resources, scripts or audio. The
+preparationError field retains the initial failure cause; preparationCompileAttempts
+and discardedScriptCompilations report actual initial source jobs independently
+of live reload statistics and survive scene replacement. inspect, game-data and
+runtime scoped operations reject before their real services exist. A ready scene
+can be inspected while graphics readiness/activation still delays Running. Native
+metadata includes its actual preparation label for resource/shader/activation work;
+null means no initial work remains. State/labels are observations, not percentages
+or frame-latency promises.
+
+close requests the same engine cancellation used by native Escape. The frontend
+continues polling teardown and presents loading frames until tasks/endpoints are
+reaped, then exits; a successful reply only acknowledges the request. Keep waiting
+for actual process completion before consuming the final close reply. A resource
+failure is retained during teardown and ultimately exits with the real error; it
+never falls back to synchronous loading or a silent audio endpoint. Process error,
+logs and retired receipts remain authoritative if the process ends before another
+status poll. Initial compilation/source failure never dispatches game Start.
+
+Package auditing and its owned content snapshot, saved scene metadata/snapshot,
+window/graphics/font setup, native service construction and later VM/GPU work still
+have synchronous costs. OS window-close/destruction and synchronous close can join
+outstanding native work. This changes initial resource/compilation/device waiting
+inside the live loop; it does not complete every launch/teardown or streaming goal.
+
+独立开发项目与导出游戏都以真实待准备会话进入主循环；任务期间可查询状态及请求关闭。
+服务建立前范围为零、时钟/脚本为空，访问场景、游戏数据或运行控制明确失败。关闭等待
+拥有任务及端点清理后才退出，受理回复不等于进程已退出；资源错误保留原因并真实失败。
+包审计/内容快照、元数据、窗口/设备/字体建立、原生绑定及后续 VM/GPU 仍有同步开销。

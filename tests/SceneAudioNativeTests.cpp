@@ -588,3 +588,74 @@ TEST_CASE("audio.native_scene_uses_owned_prepared_pcm_without_file_fallback") {
   REQUIRE(audio->closePlayback());
   CHECK(audio->pollPlaybackClosed().value());
 }
+
+TEST_CASE("audio.game_session_initial_jobs_defer_native_activation_and_cancel_owned_endpoints") {
+  using namespace Dot;
+  DotTest::Audio::Directory directory;
+  auto files = directory.files();
+  DotTest::Audio::writeWave(files, "tone.wav", std::vector<float>(48000, .25F));
+  auto scene = World::Scene::create().value();
+  const auto owner = scene.createEntity("Prepared native source").value();
+  World::AudioSource source;
+  source.asset = "tone.wav";
+  source.voice.looping = true;
+  REQUIRE(scene.setAudioSource(owner, source));
+  REQUIRE(scene.setScript(owner, World::ScriptComponent{"player.ts", "Player"}));
+  auto program = compiled(files, "onStart(){invoke('observe.start',[audio.stats()]);}");
+  Project::Description description;
+  description.applicationId = "audio-initial-test";
+  description.hotReload = false;
+  Project::GameSessionConfig config;
+  config.audioMode = Project::SessionAudio::Playback;
+  config.audio.output.volume = 0;
+  std::vector<Json> observed;
+  config.scripts.services.push_back(
+      {"observe.start", [&](std::string_view text) -> Core::Result<std::optional<std::string>> {
+         observed.push_back(Json::parse(text).at(0));
+         return std::nullopt;
+       }});
+  auto session
+      = Project::GameSession::beginCompiled(files, description, scene, program, config).value();
+  CHECK_FALSE(session.scene());
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+
+  while (session.stats()->state == Project::SessionState::Preparing) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    REQUIRE(session.pollPreparation());
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  CHECK(session.stats()->state == Project::SessionState::Ready);
+  CHECK(observed.empty());
+  auto report = session.beginStart();
+  REQUIRE(report);
+  REQUIRE(report->failures.empty());
+  REQUIRE(observed.size() == 1);
+  CHECK(observed.front()["playback"]["state"] == "prepared");
+
+  while (!session.pollStart().value()) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  REQUIRE(session.close());
+  const auto mixer = Audio::Mixer::backendMemory();
+  const auto output = Audio::Output::backendMemory();
+  auto cancelled
+      = Project::GameSession::beginCompiled(files, description, scene, program, config).value();
+  REQUIRE(cancelled.pollPreparation());
+  REQUIRE(cancelled.requestPreparationClose());
+
+  while (cancelled.stats()->state == Project::SessionState::Cancelling) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    REQUIRE(cancelled.pollPreparation());
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  CHECK(cancelled.stats()->state == Project::SessionState::Closed);
+  CHECK(cancelled.pollPreparationClosed().value());
+  CHECK_FALSE(cancelled.scene());
+  CHECK(observed.size() == 1);
+  CHECK(Audio::Mixer::backendMemory().bytes == mixer.bytes);
+  CHECK(Audio::Output::backendMemory().bytes == output.bytes);
+}

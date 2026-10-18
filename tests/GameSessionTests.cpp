@@ -19,6 +19,7 @@
 
 import Dot.Project;
 import Dot.Project.GameSession;
+import Dot.Project.PlayerControl;
 import Dot.Core.Result;
 import Dot.Core.Process;
 import Dot.World.Scene;
@@ -95,6 +96,22 @@ namespace {
       REQUIRE(project.files()->writeTextAtomic("scripts/mover.ts", source));
     }
   };
+
+  auto awaitInitial(GameSession& session, SessionState target) -> Dot::Core::Result<SessionState> {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+
+    for (;;) {
+      auto result = session.pollPreparation();
+
+      if (!result || *result == target) {
+        return result;
+      }
+
+      REQUIRE((*result == SessionState::Preparing || *result == SessionState::Cancelling));
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+  }
 
   auto good(Dot::Core::Result<Dot::Script::ScriptReport> report) -> void {
     REQUIRE_MESSAGE(report, (report ? "" : report.error().message));
@@ -1074,5 +1091,157 @@ TEST_CASE("game_session_initial_resource_proof_owns_native_data_and_rejects_mism
   REQUIRE(session.renderAudio(output));
   CHECK(std::ranges::all_of(output, [](float sample) { return std::abs(sample - .125F) < 1e-5F; }));
   CHECK(World::encodeScene(authoring).value() == baseline);
+  good(session.close());
+}
+
+TEST_CASE("game_session.begin_exposes_actual_pending_services_then_explicit_start") {
+  Fixture fixture;
+  fixture.controller();
+  auto result = GameSession::begin(fixture.project, fixture.compiler());
+  REQUIRE(result);
+  auto session = std::move(*result);
+  auto control = Dot::Project::PlayerControl::create(session).value();
+  const auto before = nlohmann::json::parse(control.perform(R"({"command":"status"})").value());
+  CHECK(before["player"]["state"] == "preparing");
+  CHECK(before["player"]["preparation"] == "resources");
+  CHECK(before["player"]["scope"] == "0");
+  CHECK(before["player"]["clock"].is_null());
+  CHECK(before["player"]["scripts"].is_null());
+  CHECK_FALSE(session.scene());
+  CHECK_FALSE(session.gameData());
+  CHECK_FALSE(session.gameClock());
+  CHECK_FALSE(session.hud());
+  CHECK_FALSE(session.sceneInstances());
+  CHECK_FALSE(session.sceneRequest(1));
+  CHECK_FALSE(session.start());
+  CHECK_FALSE(session.fixedUpdate());
+  CHECK_FALSE(session.update(0));
+  CHECK_FALSE(session.stats()->clock);
+  CHECK_FALSE(control.perform(R"({"command":"inspect"})"));
+  CHECK_FALSE(control.perform(R"({"command":"status","extra":true})"));
+  CHECK_FALSE(control.perform(R"({"command":"game-data","value":{"command":"snapshot"}})"));
+  REQUIRE(awaitInitial(session, SessionState::Ready));
+  CHECK(session.stats()->location.scope != 0);
+  REQUIRE(session.stats()->clock);
+  CHECK(session.stats()->preparationCompileAttempts == 1);
+  CHECK(actor(session).name == "Cube");
+  CHECK(session.stats()->simulatedUpdates == 0);
+  good(session.start());
+  CHECK(actor(session).name.starts_with("start"));
+  good(session.close());
+}
+
+TEST_CASE("game_session.begin_compiled_owns_generation_and_frozen_initial_scene") {
+  Fixture fixture(false);
+  fixture.controller();
+  auto files = fixture.project.files().value();
+  auto program = fixture.compiler().compileProject(files).value();
+  auto published = program.publish(files, "compiled").value();
+  auto imported = Dot::Script::CompiledProgram::loadPublished(published).value();
+  auto description = fixture.project.description().value();
+  auto authoring = fixture.project.loadStartup().value();
+  auto session = GameSession::beginCompiled(files, description, authoring, imported).value();
+  REQUIRE(authoring.renameEntity(authoring.entities()->at(1).id, "Changed after snapshot"));
+  REQUIRE(files.writeTextAtomic("scripts/mover.ts", "invalid later TypeScript"));
+  REQUIRE(awaitInitial(session, SessionState::Ready));
+  CHECK(session.stats()->preparationCompileAttempts == 0);
+  CHECK(actor(session).name == "Cube");
+  REQUIRE(files.writeTextAtomic("assets/tone.wav", "unavailable after native binding"));
+  good(session.start());
+  std::vector<float> samples(32);
+  REQUIRE(session.renderAudio(samples));
+  CHECK(std::ranges::all_of(samples, [](float value) { return std::abs(value - .125F) < 1e-5F; }));
+  good(session.close());
+}
+
+TEST_CASE("game_session.begin_resource_failure_retains_error_through_owned_teardown") {
+  Fixture fixture;
+  fixture.controller();
+  REQUIRE(fixture.project.files()->writeTextAtomic("assets/tone.wav", "not encoded audio"));
+  auto session = GameSession::begin(fixture.project, fixture.compiler()).value();
+  auto control = Dot::Project::PlayerControl::create(session).value();
+  auto result = awaitInitial(session, SessionState::Ready);
+  REQUIRE_FALSE(result);
+  CHECK(result.error().message.find("tone.wav") != std::string::npos);
+  CHECK(session.stats()->state == SessionState::Cancelling);
+  CHECK_FALSE(session.scene());
+  REQUIRE(awaitInitial(session, SessionState::Faulted));
+  CHECK(session.pollPreparationClosed().value());
+  const auto status = nlohmann::json::parse(control.perform(R"({"command":"status"})").value());
+  CHECK(status["player"]["state"] == "faulted");
+  CHECK(status["player"]["scope"] == "0");
+  CHECK(status["player"]["clock"].is_null());
+  CHECK(status["player"]["preparationError"]["message"].get<std::string>().find("tone.wav")
+        != std::string::npos);
+  good(session.close());
+  CHECK(session.stats()->state == SessionState::Closed);
+  CHECK_FALSE(session.gameData());
+}
+
+TEST_CASE("game_session.begin_cancels_live_compiler_after_move_without_publishing_services") {
+  Fixture fixture;
+  fixture.controller();
+  REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", "sleep"));
+  const auto generations = Dot::Script::compilerGenerations();
+  const auto processes = Dot::Core::processResources();
+  auto tool = Dot::Script::TypeScriptCompiler::create(DOT_COMPILER_FIXTURE).value();
+  auto ownership = std::make_shared<int>(1);
+  std::weak_ptr<int> released = ownership;
+  GameSessionConfig config;
+  config.scripts.services.push_back(
+      {"lifetime", [ownership](std::string_view) -> Dot::Core::Result<std::optional<std::string>> {
+         return std::to_string(*ownership);
+       }});
+  auto original = GameSession::begin(fixture.project, tool, config).value();
+  config.scripts.services.clear();
+  ownership.reset();
+  CHECK_FALSE(released.expired());
+  REQUIRE(original.pollPreparation());
+  auto session = std::move(original);
+  CHECK_FALSE(original.pollPreparation());
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+
+  while (Dot::Core::processResources().children == processes.children) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    REQUIRE(session.pollPreparation());
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  auto control = Dot::Project::PlayerControl::create(session).value();
+  REQUIRE(control.perform(R"({"command":"close"})"));
+  CHECK(control.closing().value());
+  REQUIRE(session.requestPreparationClose());
+  REQUIRE(awaitInitial(session, SessionState::Closed));
+  CHECK(session.pollPreparationClosed().value());
+  CHECK(released.expired());
+  CHECK_FALSE(session.scene());
+  CHECK(session.stats()->location.scope == 0);
+  CHECK(Dot::Core::processResources().children == processes.children);
+  CHECK(Dot::Core::processResources().handles == processes.handles);
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  good(session.close());
+}
+
+TEST_CASE("game_session.begin_discards_obsolete_source_before_initial_native_construction") {
+  Fixture fixture(true, 1);
+  fixture.controller(2);
+  auto session = GameSession::begin(fixture.project, fixture.compiler()).value();
+  REQUIRE(session.pollPreparation());
+  fixture.writeController(7);
+  REQUIRE(awaitInitial(session, SessionState::Ready));
+  CHECK(session.stats()->preparationCompileAttempts == 2);
+  CHECK(session.stats()->discardedScriptCompilations == 1);
+  CHECK(actor(session).name == "Cube");
+  good(session.start());
+  REQUIRE(session.publish(held()));
+  good(session.fixedUpdate());
+  CHECK(actor(session).transform.position.x == doctest::Approx(7));
+  const auto previous = session.stats()->location.scope;
+  const auto request = session.requestScene("scenes/main.dotscene").value();
+  good(session.update(0));
+  good(Dot::Tests::awaitScene(session, request));
+  CHECK(session.stats()->location.scope != previous);
+  CHECK(session.stats()->preparationCompileAttempts == 2);
+  CHECK(session.stats()->discardedScriptCompilations == 1);
   good(session.close());
 }
