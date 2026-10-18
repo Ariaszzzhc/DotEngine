@@ -826,19 +826,33 @@ namespace Dot::Editor {
       }
     }
 
+    /** Finish product cleanup before retiring its transport, preserving every failure context.
+     * 先完成产品清理再退役控制通道，并保留所有失败上下文。 */
     auto finish(Core::Result<void> result) -> Core::Result<void> {
-      if (!m_application->running() && playing()) {
-        auto stopped = stopPlay();
+      if (!m_application->running()) {
+        if (playing()) {
+          auto stopped = stopPlay();
 
-        if (!stopped) {
-          return Core::fail(stopped.error().code,
-                            (result ? std::string{} : result.error().message + "; ")
-                                + "Play cleanup: " + stopped.error().message);
+          if (!stopped) {
+            result = Core::fail(stopped.error().code,
+                                (result ? std::string{} : result.error().message + "; ")
+                                    + "Play cleanup: " + stopped.error().message);
+          }
         }
-      }
 
-      if (!m_application->running() && m_closeError) {
-        return std::unexpected(*m_closeError);
+        if (m_closeError && (result || result.error().message != m_closeError->message)) {
+          result = Core::fail(
+              m_closeError->code,
+              (result ? std::string{} : result.error().message + "; ") + m_closeError->message);
+        }
+
+        auto retired = m_control->close();
+
+        if (!retired) {
+          result = Core::fail(retired.error().code,
+                              (result ? std::string{} : result.error().message + "; ")
+                                  + "Retire workspace control: " + retired.error().message);
+        }
       }
 
       return result;
@@ -16007,6 +16021,20 @@ namespace Dot::Editor {
     }
 
     return m_impl->m_control->files().transform([](const auto& files) { return files.root(); });
+  }
+
+  auto Workspace::receiptDirectory() const -> Core::Result<std::filesystem::path> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Workspace was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return m_impl->m_control->receipts().transform([](const auto& files) { return files.root(); });
   }
 
   auto Workspace::captureViewport() -> Core::Result<Graphics::Image> {

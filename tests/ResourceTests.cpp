@@ -10,6 +10,7 @@
 #include <vector>
 
 import Dot.Core.Files;
+import Dot.Core.Control;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Result;
 import Dot.Assets.Mesh;
@@ -250,4 +251,18 @@ TEST_CASE("resources.scene_tree_supports_native_files_without_exposing_project_m
   CHECK_FALSE(resources.createDirectory(".dot-private"));
   CHECK_FALSE(resources.createDirectory("assets/.dot-stage-user"));
   CHECK_FALSE(resources.createText("scenes/.dot-stage-user.dotscene", "{}"));
+}
+
+TEST_CASE("resources.live_control_and_retained_replies_stay_outside_asset_catalogs") {
+  Fixture f;
+  auto resources = ResourceStore::open(f.project).value();
+  const auto original = resources.list()->size();
+  auto parent = Dot::Core::FileSystem::open(f.files().root() / "assets").value();
+  auto control = Dot::Core::Control::create(parent).value();
+  const auto receipts = control.receipts()->root();
+  CHECK(resources.list()->size() == original);
+  REQUIRE(control.close());
+  CHECK(resources.list()->size() == original);
+  REQUIRE(Dot::Core::clearControlReceipts(receipts));
+  CHECK(resources.list()->size() == original);
 }

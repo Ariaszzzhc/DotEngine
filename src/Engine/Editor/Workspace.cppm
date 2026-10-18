@@ -60,6 +60,9 @@ export namespace Dot::Editor {
     [[nodiscard]] auto dispatch(std::string_view request) -> Core::Result<std::string>;
     [[nodiscard]] auto snapshot() const -> Core::Result<std::string>;
     [[nodiscard]] auto controlDirectory() const -> Core::Result<std::filesystem::path>;
+    /** Persistent replies survive the live endpoint; callers consume/clear them explicitly.
+     * 回执在实时端点退役后保留，由调用者显式消费/清理。 */
+    [[nodiscard]] auto receiptDirectory() const -> Core::Result<std::filesystem::path>;
     /** Read actual completed viewport pixels; reject hidden, failed or stale scene,
      * camera, Play frame and material previews. Does not render another view.
      * 读取实际完成视口像素；拒绝隐藏、失败或场景/相机/Play 帧/材质过期的预览，不另行渲染。 */

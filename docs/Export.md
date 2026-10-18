@@ -187,7 +187,7 @@ Escape/window close and the product close request use the same application stop
 and session shutdown. Without `--control`, normal focus-pausing behavior remains.
 
 After creating its real session, the process prints and flushes one JSON line with
-`ok`, `kind: "player"` and the canonical `control` path. Mailbox readiness is not
+`ok`, `kind: "player"` and canonical `control`/`receipts` paths. Mailbox readiness is not
 game readiness: inspect `player.state` until `running`. Native compiler/VM/audio
 setup before this announcement is still synchronous. Initial renderer preparation
 continues in the regular loop and appears as `preparing`; this interface does not
@@ -217,8 +217,11 @@ for invalid UTF-8. A normal command
 failure is recorded as `ok:false` with contextual code/message and no automatic
 retry. A response failure after dispatch is terminal and explicitly reports that
 effects may have committed; neither the workspace nor player replays it. On exit,
-the control directory is retired. A close response can disappear during retirement;
-observe the owned process exit and control retirement to confirm shutdown.
+the live control directory is retired, while its reply archive remains readable.
+Consume read results with `ack-control` and clear owned closed sessions with
+`clear-control`; `control-status` exposes capacity, retirement and uncertain/unprocessed
+IDs. A close acknowledgement is separate from owned process exit/cleanup success.
+See [shared lifetime, quota and cleanup contracts](Control.md).
 
 Commands use strict complete objects with no unknown fields:
 

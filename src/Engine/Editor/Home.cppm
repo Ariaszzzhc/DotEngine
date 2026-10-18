@@ -21,6 +21,9 @@ export namespace Dot::Editor {
     std::filesystem::path resources;
     int width{960};
     int height{640};
+    /** Empty uses the process temporary directory; explicit control parents must exist.
+     * 空路径使用进程临时目录，显式控制父目录须已存在。 */
+    std::filesystem::path controlParent;
   };
 
   /** Shared strict open/create operation used by GUI and automation. Open does
@@ -33,12 +36,12 @@ export namespace Dot::Editor {
       -> Core::Result<Project::Project>;
 
   /** Main-thread native project selector with shared commands and an owned
-   * control directory. Selection stops its loop, but keeps responses alive until
-   * destruction. Native folder selection uses an owned asynchronous SDL callback
-   * mailbox. Cancellation preserves the form; selected project folders use the
-   * same strict open operation. releaseWindow requires any dialog to finish.
-   * releaseWindow releases GUI/video before opening a workspace.
-   * 主线程原生项目选择器，共享命令并持有控制目录；选择停止循环，但响应保留到销毁。
+   * control directory. Selection retires its endpoint after the loop; shared receipt
+   * archives remain until explicit clear. Native folder selection uses an owned asynchronous SDL
+   * callback mailbox. Cancellation preserves the form; selected project folders use the same strict
+   * open operation. releaseWindow requires any dialog to finish. releaseWindow releases GUI/video
+   * before opening a workspace.
+   * 主线程原生项目选择器，共享命令并持有控制目录；选择后停止循环并退役端点，响应保留至显式清理。
    * 异步 SDL 文件夹选择使用拥有的回调邮箱，取消保留表单，选择项目复用严格打开操作。
    * releaseWindow 要求对话框先完成，在打开工作区前释放 GUI/视频资源。 */
   class Home {
@@ -54,6 +57,9 @@ export namespace Dot::Editor {
     [[nodiscard]] auto dispatch(std::string_view request) -> Core::Result<std::string>;
     [[nodiscard]] auto selection() const -> Core::Result<std::optional<Project::Project>>;
     [[nodiscard]] auto controlDirectory() const -> Core::Result<std::filesystem::path>;
+    /** Persistent replies survive the live endpoint; callers consume/clear them explicitly.
+     * 回执在实时端点退役后保留，由调用者显式消费/清理。 */
+    [[nodiscard]] auto receiptDirectory() const -> Core::Result<std::filesystem::path>;
     [[nodiscard]] auto releaseWindow() -> Core::Result<void>;
 
   private:

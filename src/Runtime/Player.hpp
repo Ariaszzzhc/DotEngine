@@ -43,6 +43,7 @@ namespace Dot::Runtime {
                 PlayerLayout layout) -> int;
   auto parsePlayerOptions(std::span<const std::string_view> arguments, bool positionalBudget)
       -> Core::Result<PlayerOptions>;
+  auto playerReceiptAction(std::string_view command, std::string_view target) -> int;
   auto sendPlayerRequest(std::string_view control, std::string_view id, std::string_view request)
       -> int;
 }  // namespace Dot::Runtime

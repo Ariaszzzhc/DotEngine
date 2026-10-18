@@ -447,6 +447,14 @@ TEST_CASE("editor_home_cli_actions_and_bad_budgets_share_project_operations") {
     CHECK(error["error"]["code"] == "InvalidArgument");
     CHECK(error["error"]["message"].get<std::string>().find("frame budget") != std::string::npos);
   }
+
+  for (const auto& args : std::vector<std::vector<std::string>>{
+           {"home", "--control", ""},
+           {"home", "--control", "missing"},
+           {"home", "--control"},
+           {"home", "--control", utf(directory.root), "--control", utf(directory.root)}}) {
+    command(directory, args, false);
+  }
 }
 
 TEST_CASE("editor_document_scene_files_use_one_cli_session_and_keep_startup_bytes") {
@@ -564,9 +572,9 @@ TEST_CASE("runtime_and_standalone_send_queue_the_shared_owned_product_protocol_w
     return R"({"ok":true,"value":"actual"})";
   }));
   CHECK(calls == 1);
-  CHECK(
-      Json::parse(mailbox.files()->readText("responses/same-id.json").value())["response"]["value"]
-      == "actual");
+  CHECK(Json::parse(
+            mailbox.receipts()->readText("responses/same-id.json").value())["response"]["value"]
+        == "actual");
   REQUIRE(parent.writeTextAtomic("输入 request.json", R"({"command":"close"})"));
   auto conflict = Dot::Core::runProcess(
       {DOT_GAME_EXECUTABLE,
@@ -575,6 +583,46 @@ TEST_CASE("runtime_and_standalone_send_queue_the_shared_owned_product_protocol_w
   REQUIRE(conflict);
   CHECK(conflict->exitCode == 1);
   CHECK(calls == 1);
+  const auto archive = mailbox.receipts()->root();
+
+  for (const auto* executable :
+       {DOT_EDITOR_EXECUTABLE, DOT_RUNTIME_EXECUTABLE, DOT_GAME_EXECUTABLE}) {
+    auto status
+        = Dot::Core::runProcess({executable, {"control-status", utf(archive)}, directory.root});
+    REQUIRE(status);
+    REQUIRE(status->exitCode == 0);
+    CHECK(Json::parse(status->standardOutput)["state"] == "ready");
+    auto activeClear
+        = Dot::Core::runProcess({executable, {"clear-control", utf(archive)}, directory.root});
+    REQUIRE(activeClear);
+    CHECK(activeClear->exitCode == 1);
+  }
+
+  REQUIRE(mailbox.close());
+  CHECK_FALSE(std::filesystem::exists(control));
+  CHECK(std::filesystem::exists(response));
+
+  for (const auto* executable :
+       {DOT_EDITOR_EXECUTABLE, DOT_RUNTIME_EXECUTABLE, DOT_GAME_EXECUTABLE}) {
+    auto status
+        = Dot::Core::runProcess({executable, {"control-status", utf(archive)}, directory.root});
+    REQUIRE(status);
+    REQUIRE(status->exitCode == 0);
+    CHECK(Json::parse(status->standardOutput)["state"] == "closed");
+    auto ack = Dot::Core::runProcess({executable, {"ack-control", utf(response)}, directory.root});
+    REQUIRE(ack);
+    CHECK(ack->exitCode == 0);
+    CHECK(Json::parse(
+              Dot::Core::FileSystem::open(archive)->readText("responses/same-id.json").value())
+          == (Json{{"consumed", true}}));
+  }
+
+  auto cleared = Dot::Core::runProcess(
+      {DOT_GAME_EXECUTABLE, {"clear-control", utf(archive)}, directory.root});
+  REQUIRE(cleared);
+  CHECK(cleared->exitCode == 0);
+  CHECK_FALSE(std::filesystem::exists(archive));
+  CHECK(parent.readText("输入 request.json").value() == R"({"command":"close"})");
   CHECK(Dot::Core::processResources().children == 0);
   CHECK(Dot::Core::processResources().handles == 0);
 }

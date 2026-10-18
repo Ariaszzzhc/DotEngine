@@ -26,7 +26,7 @@ Full destruction while an OS picker is pending has no manual acceptance claim.
 
 ```text
 DotEditor
-DotEditor home [frames]
+DotEditor home [frames] [--control <existing-parent>]
 DotEditor project-action <resources-root> <request-file>
 ```
 
@@ -62,7 +62,7 @@ operations do not provide hostile-race isolation or crash durability guarantees.
 ## Automation and handoff
 
 The home emits a JSON line containing kind=project-home and its temporary control
-path, then flushes stdout. It accepts inspect/open/create/close requests through
+and persistent receipts paths, then flushes stdout. It accepts inspect/open/create/close requests through
 the same request/response files as the workspace:
 
 ```text
@@ -78,12 +78,16 @@ may be staged for editing. Actual open/create retains full filesystem validation
 Close ends the selection loop when no native picker is pending. Request IDs use 1..64 ASCII letters/digits/_/- and may not be
 reused for different content. At most 4096 request files and 256 pending requests
 are allowed, with up to 16 processed per frame in lexical order. Successful
-selection marks the home session selected, rejecting later submissions.
+selection retires the home endpoint before workspace handoff.
 
-Home responses remain alive while the entered workspace owns the main flow.
+Home now uses the shared Core control service. Its persistent replies remain readable
+after the home endpoint and owning process retire; explicit acknowledgement/cleanup
+uses the same product CLI as workspace/player replies.
 After selection the editor prints another JSON line with kind=workspace and the
-new control path. Use that workspace channel for subsequent scene/resource/Play/
-export operations. Closing the editor removes the owned home control directory.
+new control/receipts paths. Use that workspace channel for subsequent scene/resource/Play/
+export operations. The owned live home control directory is already retired before workspace entry.
+Its results persist until explicit clear. `home [frames] --control <existing-parent>`
+selects an owned transport parent; see [reply contracts](Control.md).
 A response-write failure after effects remains terminal and reports that creation
 may have committed; subsequent calls cannot hide that error or replay actions.
 The created project remains available for reopening. This is local automation,

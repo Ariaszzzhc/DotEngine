@@ -206,7 +206,7 @@ DotEditor send <control-directory> <request-id> <request-file>
 
 `open` opens the project startup scene, a native window and the packaged Sarasa UI SC Regular font (with Inter Western glyphs). A zero/omitted frame budget runs until closed; a positive budget is useful
 for diagnostics. It prints and flushes one JSON line containing `ok` and an absolute
-`control` path. Window dimensions start at 1280x800 with minimum 800x480.
+`control` and persistent `receipts` paths. Window dimensions start at 1280x800 with minimum 800x480.
 
 The scene tree selects entities; the inspector edits names, local transforms,
 parents and native components. Script properties use strict JSON object
@@ -231,7 +231,9 @@ publishes standalone native games or data packages through the shared command be
 
 `send` reads one <=1 MiB strict UTF-8 JSON object and atomically publishes a request.
 It returns `queued:true` and an absolute `response` path, **not** applied success.
-Read that JSON file to observe the actual outcome. The record contains the original
+Read that JSON file to observe the actual outcome, including after endpoint retirement.
+Read/copy results before `ack-control`; clear owned closed sessions explicitly with
+`clear-control`. See [reply lifetime and capacity](Control.md). The record contains the original
 request string in `source` (null for unreadable/non-UTF-8 input) and the native
 result/error in `response`. Document
 commands are the same inspect/edit/select/undo/redo/save protocol above. Inspect

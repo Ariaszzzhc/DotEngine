@@ -13602,3 +13602,135 @@ staging/control residue, and restored authoring. Six Debug/Release binary hashes
 are recorded; the development app matched the final editor before its removal.
 Remove six owned helpers and their bytecode; keep raw evidence and normal editable
 project/native-game artifacts. Remote main has not advanced during this stage.
+
+## Persistent product control replies (2026-10-18)
+
+Follow the actual Prism workflow's lost final close reply: an endpoint retired
+before the polling client copied its ephemeral response. Keep Core control's live
+request directory RAII-owned, but publish a separate bounded reply session under
+the parent's reserved private cache. Home, workspace, Runtime and standalone Game
+advertise both paths and use the same transport; Home no longer has a separate
+scanner/writer. Selection retires Home before workspace entry, preserving its actual
+create/open result. No legacy layout reader or release archive is introduced.
+
+Add strict control-status, ack-control and clear-control operations through the
+three real product frontends. Acknowledgement replaces only an already-read record
+with an explicit consumed tombstone. Retain the request ledger and dispatched-ID
+set so lost/deleted results or consumed retries never replay mutations. Default
+limits are 64 MiB/result, 256 MiB/reply session and 64 sessions/parent, with existing
+4096 identities/256 pending requests; reserve the entire potential result plus
+escaped source before effects. Full capacity pauses dispatch and reports blocked
+until the client consumes replies. Never silently evict unread results.
+
+Retirement records uncertain dispatched IDs separately from known undispatched
+requests. Missing/damaged queue data reports unknown unprocessed work, not an empty
+queue. Persist retirement before endpoint removal; explicit close reports cleanup
+errors. Closed transport state is independent of application teardown/process exit.
+Clear validates private provenance, closed state, absent live endpoint and all
+remaining records before deleting bodies, then metadata; interrupted cleanup is
+retryable. Reject aliases, symlinks, unknown files and arbitrary caller roots.
+Unadvertised unused initialization failures clean their empty owned archive; an
+exposed session remains until explicit cleanup. Crash recovery is not implemented.
+Keep both live/cache directories outside asset catalogs and exported packages.
+
+Fourteen enduring file/CPU regressions extend existing integration targets, covering
+retained close outcomes, acknowledgements/no replay, capacity pause/resume, session
+limits, uncertain outcomes, lost receipts/queues, partial cleanup, failed retirement
+retry, unadvertised destruction, symlink rejection and resource visibility. Extend
+the existing headless executable test to exercise the same new receipt operations
+through Editor, Runtime and Game; none of these tests opens a window/device.
+
+The initial Debug build exposed Home's distinct old mailbox type; migrate Home to
+the shared service rather than adding a parallel receipt implementation. An initial
+complete Debug run passed 1583/1584 in 258.31 s; the sole failure was the existing
+headless executable case reading the old live response path. Repair that assertion
+and extend it to cover real frontend status/ack/cleanup. Relevant Debug checks
+then passed 35/35 in 5.66 s and complete Release checks passed 1584/1584 in 36.66 s.
+Further retirement/cleanup boundary review adds the missing-queue, partial-cleanup
+and alias cases; their final full-build and native product results follow below.
+
+Complete Debug/CTest passes 1587/1587 in 259.81 s; complete Release/NDEBUG CTest
+passes 1587/1587 in 36.70 s (502 unit, 1085 integration, including 186 offscreen,
+247 compiler, 37 native-audio, 34 platform and 21 process labels). Final review
+also indexes and exact-matches acknowledgement targets, rejecting internal leaf
+symlinks and case aliases before reading/replacing any body. Extend existing
+regressions without adding a test executable. A review cleanup mistakenly removed
+Home's staged-directory import, still required for blank-project creation; restore
+that import after the compiler rejects it, without weakening diagnostics. Final
+rebuild/relevant Debug/Release checks and actual native evidence follow below.
+
+The first real relocated player exposed an actual client/product race: client
+acknowledgement's sibling atomic temporary file appeared inside responses while the
+native loop indexed receipts. The strict scanner rejected it and the player exited
+1 with `Invalid control response filename/type`; this is not counted as native
+acceptance. Preserve its raw records, closed metadata (including the undispatched
+snapshot request), unchanged game and newly created checkpoint separately.
+
+Fix publication at the ownership boundary: prepare both results and acknowledgements
+in an RAII-owned sibling staging directory outside responses, flush through the
+existing file service, then atomically rename one complete leaf into the scan tree.
+Do not teach the scanner to ignore arbitrary files or weaken its type/path checks.
+Report explicit staging-retirement failure after publication with that context.
+Add an enduring concurrent client-ack/product-poll regression in the existing file
+integration target. Its initial compile exposed unparenthesized conditional INFO
+macros; parenthesize them without relaxing compiler warnings. Rebuild the actual
+products before repeating the exported workflow.
+
+Final verification on arm64 macOS, with caller compiler/CPPFLAGS/LDFLAGS retained:
+
+- Final Debug rebuild and 34 relevant file/resource/frontend cases: 34/34 in
+  8.91 s. The complete earlier Debug run is 1587/1587 in 259.81 s before the last
+  acknowledgement/publication refinements; do not call it a final 1588-case run.
+- Final Release rebuild/full CTest with NDEBUG: 1588/1588 in 37.29 s, comprising
+  502 unit and 1086 integration cases, with 186 offscreen GPU, 247 compiler,
+  37 native-audio, 34 platform and 21 process labels. Each configuration's new
+  concurrent client/product case passes ten consecutive runs: Debug 6.21 s and
+  Release 0.94 s. Builds/CTest run sequentially, before actual native applications.
+  No automated test opens a desktop window; warnings/assertions are not weakened.
+- Final source formatting, whitespace, ownership/error/path/capacity/thread/platform
+  review pass. Six final Debug/Release binary fingerprints are retained. The tested
+  standalone player exactly matches the final signed runtime kit.
+
+The actual native Home creates an ordinary Prism project. Wait until the workspace
+is announced and the old Home endpoint is absent before reading its real creation
+result; status reports closed/no transport fault, acknowledgement retains only the
+consumed marker, and explicit cleanup succeeds while the same process runs its
+workspace. Rename a fixture, retry that consumed edit under the identical ID and
+prove no revision advance/replay, undo/redo, Save and reopen the same scene; the
+complete saved authoring description remains equal. An initial Play request after
+reopen correctly reports resources still preparing. Preserve that ordinary failure
+and continue in the same process after actual view readiness, without recreating
+the project or replaying the successful edit.
+
+Drive real Play movement, save a grounded checkpoint, move away and restore through
+F6/F7 input and asynchronous game-data completion. Capture a real viewport PNG,
+Stop back to the unchanged saved authoring scene and export. After the editor's
+actual owned process exits 0 and its endpoint is gone, read the persistent close
+result, then acknowledge and clear. After the publication race fix, use the final
+Home to open that existing project, again read its retired selection result, repeat
+Play/save/restore/capture/export and delayed close observation with the rebuilt
+editor. The final editor restore differs from the checkpoint by about 1.23e-7 m.
+
+Relocate the final native game and temporarily hide only its owned authoring tree.
+Two fresh native player processes run without that tree/compiler. The first moves,
+saves, moves away and restores; the second restores the same persisted checkpoint.
+Both have zero runtime script failures/diagnostics, actual completed rendering/HUD
+rasterization, exit 0 and retired live endpoints. Only after actual process completion
+read each retained close result through the exported Game CLI, then acknowledge and
+clear. Both final restored positions differ from the stored checkpoint by about
+4.10e-8 m. Capacity/transport observations are separate from exit success.
+
+Restore authoring. All 27 prior guarded saves remain unchanged; preserve the failed
+attempt's checkpoint and final independent checkpoint for 29 guarded save files.
+Nineteen source-art/model files and all 162 files in each final/failed exported kit
+remain unchanged. No owned live/cache directory remains. Preserve requests, source/
+response/consumption records, normal and failed native logs, process completions,
+metadata, editable project, both game artifacts, viewport images, profiles and
+fingerprints in ignored build/control-receipts-review. Remove only this stage's
+temporary helper/bytecode after verification; no release archive is produced.
+
+Computer use again reports the Mac locked and automatic unlock unsuccessful. No
+physical mouse/keyboard or final panel-layout acceptance is claimed. Windows/Linux,
+crash durability/abandoned-session recovery, asynchronous application retirement,
+resource streaming, finished art and overall production readiness remain unproven
+or unfinished; this stage resolves an observed product workflow reliability gap.

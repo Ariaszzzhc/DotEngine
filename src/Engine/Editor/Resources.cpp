@@ -405,6 +405,11 @@ namespace Dot::Editor {
 
         for (auto iterator = Fs::recursive_directory_iterator(*resolved);
              iterator != Fs::recursive_directory_iterator{}; ++iterator) {
+          if (utf(iterator->path().filename()).starts_with(".dot-stage-")) {
+            iterator.disable_recursion_pending();
+            continue;
+          }
+
           if (static_cast<std::size_t>(iterator.depth()) >= m_impl->m_limits.depth) {
             return Core::fail(Core::ErrorCode::Unavailable, "Resource hierarchy depth exceeded");
           }

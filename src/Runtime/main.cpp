@@ -26,6 +26,13 @@ auto main(int argc, char** argv) -> int {
       return 0;
     }
 
+    if (argc == 3
+        && (std::string_view(argv[1]) == "control-status"
+            || std::string_view(argv[1]) == "ack-control"
+            || std::string_view(argv[1]) == "clear-control")) {
+      return Dot::Runtime::playerReceiptAction(argv[1], argv[2]);
+    }
+
     if (argc == 5 && std::string_view(argv[1]) == "send") {
       return Dot::Runtime::sendPlayerRequest(argv[2], argv[3], argv[4]);
     }
@@ -34,10 +41,12 @@ auto main(int argc, char** argv) -> int {
     const bool project = argc >= 4 && std::string_view(argv[1]) == "--project";
 
     if (!game && !project) {
-      std::println(stderr,
-                   "Usage: DotRuntime --version | send <control> <id> <request-file> | "
-                   "(--game <package> | --project <root> <compiler>) "
-                   "[frames] [--profile <file>] [--control <parent>] [--data-directory <root>]");
+      std::println(
+          stderr,
+          "Usage: DotRuntime --version | send <control> <id> <request-file> | "
+          "control-status <receipts> | ack-control <response> | clear-control <receipts> | "
+          "(--game <package> | --project <root> <compiler>) "
+          "[frames] [--profile <file>] [--control <parent>] [--data-directory <root>]");
       return 2;
     }
 

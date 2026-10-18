@@ -91,4 +91,16 @@ namespace Dot::Runtime {
       return 1;
     }
   }
+
+  auto playerReceiptAction(std::string_view command, std::string_view target) -> int {
+    auto result = Core::performControlReceiptAction(command, path(target));
+
+    if (!result) {
+      std::println(stderr, "{}", result.error().message);
+      return 1;
+    }
+
+    std::println("{}", *result);
+    return 0;
+  }
 }  // namespace Dot::Runtime

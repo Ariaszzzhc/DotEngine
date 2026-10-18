@@ -228,7 +228,13 @@ namespace Dot::Runtime {
         const auto utf = control->files()->root().generic_u8string();
         std::println("{}", nlohmann::json{{"ok", true},
                                           {"kind", "player"},
-                                          {"control", std::string(utf.begin(), utf.end())}}
+                                          {"control", std::string(utf.begin(), utf.end())},
+                                          {"receipts",
+                                           [&] {
+                                             const auto text
+                                                 = control->receipts()->root().generic_u8string();
+                                             return std::string(text.begin(), text.end());
+                                           }()}}
                                .dump());
         std::fflush(stdout);
       }

@@ -19,6 +19,7 @@
 #include "../Engine/Serialization/Json.hpp"
 
 import Dot.Core.Files;
+import Dot.Core.Control;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GamePackage;
@@ -153,8 +154,10 @@ namespace {
     }
   }
 
-  auto home(std::size_t frames) -> int {
-    auto opened = Dot::Editor::Home::open();
+  auto home(std::size_t frames, const std::filesystem::path& controlParent = {}) -> int {
+    Dot::Editor::HomeConfig config;
+    config.controlParent = controlParent;
+    auto opened = Dot::Editor::Home::open(config);
 
     if (!opened) {
       return error(opened.error());
@@ -163,7 +166,8 @@ namespace {
     auto selector = std::move(*opened);
     std::println("{}", Json{{"ok", true},
                             {"kind", "project-home"},
-                            {"control", utf(selector.controlDirectory().value())}}
+                            {"control", utf(selector.controlDirectory().value())},
+                            {"receipts", utf(selector.receiptDirectory().value())}}
                            .dump());
     std::fflush(stdout);
     auto run = selector.run(frames);
@@ -199,7 +203,8 @@ namespace {
 
     std::println("{}", Json{{"ok", true},
                             {"kind", "workspace"},
-                            {"control", utf(workspace->controlDirectory().value())}}
+                            {"control", utf(workspace->controlDirectory().value())},
+                            {"receipts", utf(workspace->receiptDirectory().value())}}
                            .dump());
     std::fflush(stdout);
     auto shown = workspace->run(frames);
@@ -212,19 +217,38 @@ namespace {
  * 命令向自动化客户端公开共享项目操作。 */
 auto main(int argc, char** argv) -> int {
   try {
-    if (argc == 1 || ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "home")) {
-      std::size_t frames = 0;
+    if (argc == 1 || (argc >= 2 && std::string_view(argv[1]) == "home")) {
+      std::size_t frames{};
+      bool budget{};
+      std::filesystem::path controlParent;
 
-      if (argc == 3) {
-        const std::string_view value(argv[2]);
-        const auto count = std::from_chars(value.data(), value.data() + value.size(), frames);
+      for (int argument = 2; argument < argc; ++argument) {
+        const std::string_view value(argv[argument]);
 
-        if (value.empty() || count.ec != std::errc{} || count.ptr != value.data() + value.size()) {
-          return error({Dot::Core::ErrorCode::InvalidArgument, "Invalid home frame budget", {}});
+        if (value == "--control" && controlParent.empty() && argument + 1 < argc) {
+          controlParent = path(argv[++argument]);
+
+          if (controlParent.empty()) {
+            return error({Dot::Core::ErrorCode::InvalidArgument,
+                          "Home control parent must not be empty",
+                          {}});
+          }
+        } else if (!budget && !value.starts_with("--")) {
+          const auto count = std::from_chars(value.data(), value.data() + value.size(), frames);
+
+          if (value.empty() || count.ec != std::errc{}
+              || count.ptr != value.data() + value.size()) {
+            return error({Dot::Core::ErrorCode::InvalidArgument, "Invalid home frame budget", {}});
+          }
+
+          budget = true;
+        } else {
+          return error(
+              {Dot::Core::ErrorCode::InvalidArgument, "Invalid home control/frame option", {}});
         }
       }
 
-      return home(frames);
+      return home(frames, controlParent);
     }
 
     if (argc == 4 && std::string_view(argv[1]) == "project-action") {
@@ -305,11 +329,27 @@ auto main(int argc, char** argv) -> int {
         return error(workspace.error());
       }
 
-      std::println(
-          "{}", Json{{"ok", true}, {"control", utf(workspace->controlDirectory().value())}}.dump());
+      std::println("{}", Json{{"ok", true},
+                              {"control", utf(workspace->controlDirectory().value())},
+                              {"receipts", utf(workspace->receiptDirectory().value())}}
+                             .dump());
       std::fflush(stdout);
       auto result = workspace->run(frames);
       return result ? 0 : error(result.error());
+    }
+
+    if (argc == 3
+        && (std::string_view(argv[1]) == "control-status"
+            || std::string_view(argv[1]) == "ack-control"
+            || std::string_view(argv[1]) == "clear-control")) {
+      auto result = Dot::Core::performControlReceiptAction(argv[1], path(argv[2]));
+
+      if (!result) {
+        return error(result.error());
+      }
+
+      std::println("{}", *result);
+      return 0;
     }
 
     if (argc == 5 && std::string_view(argv[1]) == "send") {
@@ -408,10 +448,12 @@ auto main(int argc, char** argv) -> int {
     }
 
     return error({Dot::Core::ErrorCode::InvalidArgument,
-                  "Usage: DotEditor [home [frames]] | project-action <resources> <request-file> | "
+                  "Usage: DotEditor [home [frames] [--control <parent>]] | project-action "
+                  "<resources> <request-file> | "
                   "export <root> <parent> <folder> <compiler> <kit> | export-data "
                   "<root> <parent> <folder> <compiler> | open <root> "
-                  "[frames] | send <control> <id> <request-file> | "
+                  "[frames] | send <control> <id> <request-file> | control-status <receipts> | "
+                  "ack-control <response> | clear-control <receipts> | "
                   "create <parent> <folder> <name> | "
                   "inspect <root> | "
                   "configure <root> <json-file> | save-scene <root> <dotscene-file> | "

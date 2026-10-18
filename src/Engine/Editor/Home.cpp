@@ -21,6 +21,7 @@ module Dot.Editor.Home;
 import Dot.Core.Application;
 import Dot.Core.Events;
 import Dot.Core.StagedDirectory;
+import Dot.Core.Control;
 import Dot.Core.Text;
 import Dot.Graphics.Renderer;
 import Dot.Platform.System;
@@ -60,14 +61,6 @@ namespace Dot::Editor {
       return Codec::parseJson(source);
     }
 
-    auto error(const Core::Error& value) -> Json {
-      constexpr const char* names[]{"InvalidArgument", "NotFound",     "Io",
-                                    "Unavailable",     "InvalidState", "External"};
-      return {
-          {"ok", false},
-          {"error", {{"code", names[static_cast<int>(value.code)]}, {"message", value.message}}}};
-    }
-
     auto catalog() -> Json {
       return Json::array({{{"id", "blank"}, {"name", "Camera and cube"}},
                           {{"id", "prism"}, {"name", "Prism Relay character"}},
@@ -88,13 +81,6 @@ namespace Dot::Editor {
       ActiveScope(const ActiveScope&) = delete;
       auto operator=(const ActiveScope&) -> ActiveScope& = delete;
     };
-
-    auto requestId(std::string_view value) -> bool {
-      return !value.empty() && value.size() <= 64 && std::ranges::all_of(value, [](char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-               || c == '_' || c == '-';
-      });
-    }
   }  // namespace
 
   auto performProjectAction(const Core::FileSystem& resources, std::string_view request)
@@ -168,7 +154,7 @@ namespace Dot::Editor {
   struct Home::Impl {
     std::thread::id m_thread{std::this_thread::get_id()};
     Core::FileSystem m_resources;
-    Core::StagedDirectory m_control;
+    Core::Control m_control;
     std::optional<Core::Application> m_application;
     std::optional<Graphics::Renderer> m_renderer;
     Core::Signal<Platform::Event>::Connection m_events;
@@ -186,7 +172,7 @@ namespace Dot::Editor {
     bool m_dialogProject{};
     Json m_controls = Json::object();
 
-    Impl(Core::FileSystem resources, Core::StagedDirectory control)
+    Impl(Core::FileSystem resources, Core::Control control)
         : m_resources(std::move(resources)), m_control(std::move(control)) {
     }
 
@@ -359,17 +345,6 @@ namespace Dot::Editor {
         auto response = Json{{"ok", true}, {"root", root}}.dump();
         m_selected.emplace(std::move(*selected));
         m_application->stop();
-        auto stored = m_control.files()->writeTextAtomic(
-            "session.json",
-            Json{{"protocol", 1}, {"state", "selected"}, {"kind", "project-home"}, {"root", root}}
-                .dump());
-
-        if (!stored) {
-          return Core::fail(stored.error().code,
-                            "Project is ready at " + root
-                                + "; home metadata write failed: " + stored.error().message);
-        }
-
         return response;
       } catch (const std::exception& value) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -382,61 +357,18 @@ namespace Dot::Editor {
         return std::unexpected(*m_fault);
       }
 
-      auto files = m_control.files().value();
-      std::vector<Fs::path> pending;
-      std::size_t entries = 0;
+      auto processed
+          = m_control.process([this](std::string_view request) { return execute(request); },
+                              [this] { return m_application->running(); });
 
-      for (const auto& entry : Fs::directory_iterator(files.root() / "requests")) {
-        if (++entries > 4096 || entry.path().extension() != ".json"
-            || !requestId(utf(entry.path().stem()))
-            || !Fs::is_regular_file(entry.symlink_status())) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Invalid/excessive home mailbox entries");
+      if (!processed) {
+        auto failure = m_control.failure();
+
+        if (failure && *failure) {
+          m_fault = std::move(**failure);
         }
 
-        const auto responsePath = files.root() / "responses" / entry.path().filename();
-
-        if (Fs::exists(responsePath)) {
-          if (!Fs::is_regular_file(Fs::symlink_status(responsePath))) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Home response must be a regular file");
-          }
-        } else {
-          pending.push_back(entry.path().filename());
-        }
-
-        if (pending.size() > 256) {
-          return Core::fail(Core::ErrorCode::Unavailable, "Home pending request limit exceeded");
-        }
-      }
-
-      std::ranges::sort(pending);
-
-      for (std::size_t index = 0; index < std::min<std::size_t>(16, pending.size()); ++index) {
-        auto source = files.readText(Fs::path{"requests"} / pending[index], 1024 * 1024);
-        m_fault = Core::Error{
-            Core::ErrorCode::External, "Home action may have committed; response incomplete", {}};
-        auto response = source ? execute(*source)
-                               : Core::Result<std::string>{std::unexpected(source.error())};
-        auto written = files.writeTextAtomic(
-            Fs::path{"responses"} / pending[index],
-            Json{{"source", source ? Json(*source) : Json(nullptr)},
-                 {"response", response ? Codec::parseJson(*response) : error(response.error())}}
-                .dump());
-
-        if (!written) {
-          m_fault = Core::Error{
-              written.error().code,
-              "Home action may have committed; mailbox is terminal: " + written.error().message,
-              {}};
-          return std::unexpected(*m_fault);
-        }
-
-        m_fault.reset();
-
-        if (!m_application->running()) {
-          break;
-        }
+        return std::unexpected(processed.error());
       }
 
       return {};
@@ -715,27 +647,16 @@ namespace Dot::Editor {
         return std::unexpected(resources.error());
       }
 
-      auto temporary = Core::FileSystem::open(Fs::temp_directory_path()).value();
-      auto control = Core::StagedDirectory::create(temporary);
+      auto parent = Core::FileSystem::open(config.controlParent.empty() ? Fs::temp_directory_path()
+                                                                        : config.controlParent);
+      auto control = parent ? Core::Control::create(*parent, R"({"kind":"project-home"})")
+                            : Core::Result<Core::Control>{std::unexpected(parent.error())};
 
       if (!control) {
         return std::unexpected(control.error());
       }
 
       auto impl = std::make_unique<Impl>(std::move(*resources), std::move(*control));
-      auto files = impl->m_control.files().value();
-      auto requests = files.createDirectories("requests");
-      auto responses = files.createDirectories("responses");
-      auto metadata = files.writeTextAtomic(
-          "session.json",
-          Json{{"protocol", 1}, {"state", "ready"}, {"kind", "project-home"}}.dump());
-
-      if (!requests || !responses || !metadata) {
-        return std::unexpected(!requests    ? requests.error()
-                               : !responses ? responses.error()
-                                            : metadata.error());
-      }
-
       Core::ApplicationConfig application;
       application.window = {"DotEngine Projects", config.width, config.height, false, true, true};
       application.pauseOnFocusLoss = false;
@@ -828,6 +749,17 @@ namespace Dot::Editor {
 
     ActiveScope active(m_impl->m_active);
     auto result = m_impl->m_application->step(elapsed, m_impl->callbacks());
+
+    if (!result || !m_impl->m_application->running()) {
+      auto retired = m_impl->m_control.close();
+
+      if (!retired) {
+        return Core::fail(retired.error().code,
+                          (result ? std::string{} : result.error().message + "; ")
+                              + "Retire home control: " + retired.error().message);
+      }
+    }
+
     return result.transform([](auto) {});
   }
 
@@ -852,6 +784,17 @@ namespace Dot::Editor {
 
     ActiveScope active(m_impl->m_active);
     auto result = m_impl->m_application->run(m_impl->callbacks(), frames);
+
+    if (!result || !m_impl->m_application->running()) {
+      auto retired = m_impl->m_control.close();
+
+      if (!retired) {
+        return Core::fail(retired.error().code,
+                          (result ? std::string{} : result.error().message + "; ")
+                              + "Retire home control: " + retired.error().message);
+      }
+    }
+
     return result;
   }
 
@@ -874,6 +817,17 @@ namespace Dot::Editor {
     return checked
                ? m_impl->m_control.files().transform([](const auto& files) { return files.root(); })
                : std::unexpected(checked.error());
+  }
+
+  auto Home::receiptDirectory() const -> Core::Result<Fs::path> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Home was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_control.receipts().transform(
+                         [](const auto& files) { return files.root(); })
+                   : std::unexpected(checked.error());
   }
 
   auto Home::releaseWindow() -> Core::Result<void> {

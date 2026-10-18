@@ -21,6 +21,13 @@
  * 播放相邻游戏包，不依赖工作目录或编译器。 */
 auto main(int argc, char** argv) -> int {
   try {
+    if (argc == 3
+        && (std::string_view(argv[1]) == "control-status"
+            || std::string_view(argv[1]) == "ack-control"
+            || std::string_view(argv[1]) == "clear-control")) {
+      return Dot::Runtime::playerReceiptAction(argv[1], argv[2]);
+    }
+
     if (argc == 5 && std::string_view(argv[1]) == "send") {
       return Dot::Runtime::sendPlayerRequest(argv[2], argv[3], argv[4]);
     }
