@@ -7581,7 +7581,7 @@ namespace Dot::Editor {
        * 在全部控件结束前冻结视图数据，编辑可能替换快照。 */
       const auto page = m_overridePage;
       const auto query = m_overrideQuery;
-      std::optional<Json> requestedView, requestedEdit;
+      std::optional<Json> requestedView, requestedEdit, requestedEdits;
       std::optional<std::string> requestedSource;
       ImGui::SeparatorText("Linked scene overrides");
       ImGui::TextWrapped("Source: %s", page["asset"].get<std::string>().c_str());
@@ -7610,6 +7610,46 @@ namespace Dot::Editor {
         if (ImGui::Button(label)) {
           requestedEdit = {{"op", op}, {"entity", page["root"]}};
         }
+      }
+
+      ImGui::TextWrapped("Relink to a moved or copied version of this source. Local edits stay.");
+      ImGui::BeginDisabled(!m_selectedResource.ends_with(".dotscene"));
+
+      if (ImGui::Button("Use selected scene as source")) {
+        requestedEdit = {{"op", "retarget-scene-instance"},
+                         {"entity", page["root"]},
+                         {"path", m_selectedResource}};
+      }
+
+      const auto& links = m_snapshot["scene"]["links"];
+      const auto related = std::ranges::count_if(
+          links, [&](const auto& link) { return link["asset"] == page["asset"]; });
+      ImGui::BeginDisabled(related < 2 || related > 256);
+      const auto relinkAll = "Relink all " + std::to_string(related) + " instances in scene";
+
+      if (ImGui::Button(relinkAll.c_str())) {
+        requestedEdits = Json::array();
+
+        for (const auto& link : links) {
+          if (link["asset"] == page["asset"]) {
+            requestedEdits->push_back({{"op", "retarget-scene-instance"},
+                                       {"entity", link["root"]},
+                                       {"path", m_selectedResource}});
+          }
+        }
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+
+      if (related > 256) {
+        ImGui::TextWrapped("One edit supports up to 256 instances. Relink smaller batches.");
+      }
+
+      if (m_selectedResource.ends_with(".dotscene")) {
+        ImGui::TextWrapped("New source: %s", m_selectedResource.c_str());
+      } else {
+        ImGui::TextWrapped("Select a scene asset to relink this instance.");
       }
 
       if (ImGui::Button("Revert all overrides")) {
@@ -7695,6 +7735,8 @@ namespace Dot::Editor {
         sessionAction(*requestedView);
       } else if (requestedEdit) {
         edit(Json::array({*requestedEdit}));
+      } else if (requestedEdits) {
+        edit(*requestedEdits);
       } else if (requestedSource) {
         openSceneAsset(*requestedSource);
       }

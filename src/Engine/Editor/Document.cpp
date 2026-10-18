@@ -532,8 +532,13 @@ namespace Dot::Editor {
       }
 
       if (op == "refresh-scene-instance" || op == "revert-scene-instance"
-          || op == "unlink-scene-instance") {
-        Codec::requireFields(command, {"op", "entity"});
+          || op == "unlink-scene-instance" || op == "retarget-scene-instance") {
+        if (op == "retarget-scene-instance") {
+          Codec::requireFields(command, {"op", "entity", "path"});
+        } else {
+          Codec::requireFields(command, {"op", "entity"});
+        }
+
         const auto id = Codec::id(command["entity"]);
         auto target = decodeCandidate(scene, next);
 
@@ -556,14 +561,19 @@ namespace Dot::Editor {
             return changed;
           }
         } else {
-          auto source = loadContent(project, link->asset, activePath);
+          const auto path
+              = op == "retarget-scene-instance" ? command["path"].get<std::string>() : link->asset;
+          auto source = loadContent(project, path, activePath);
 
           if (!source) {
             return std::unexpected(source.error());
           }
 
-          auto updated = World::prepareSceneLinkUpdate(*target, *source, {target->id(), id}, next,
-                                                       op == "revert-scene-instance");
+          auto updated
+              = op == "retarget-scene-instance"
+                    ? World::prepareSceneLinkRetarget(*target, *source, {target->id(), id}, next)
+                    : World::prepareSceneLinkUpdate(*target, *source, {target->id(), id}, next,
+                                                    op == "revert-scene-instance");
 
           if (!updated) {
             return std::unexpected(updated.error());

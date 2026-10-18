@@ -466,3 +466,143 @@ TEST_CASE("scene_links.apply_rejects_invalid_combined_source_hierarchy") {
                                      "parent", 4));
   CHECK(text(linked.scene) == before);
 }
+
+TEST_CASE("scene_links.retarget_preserves_overrides_identity_placement_and_other_instances") {
+  Fixture f;
+  auto second = prepareLinkedScene(f.target, f.source, "assets/panels.dotscene", 5).value();
+  f.target = std::move(second.scene);
+  const auto sibling = f.target.sceneLinks()->at(1);
+  const auto local = f.target.createEntity("Local addition").value();
+  REQUIRE(f.target.setParent(local, EntityId{f.target.id(), 2}));
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Local panel"));
+  REQUIRE(f.target.destroyEntity({f.target.id(), 4}));
+  REQUIRE(f.source.renameEntity({f.source.id(), 1}, "Relocated panel"));
+  auto mesh = f.source.entity({f.source.id(), 1})->mesh.value();
+  mesh.visible = false;
+  REQUIRE(f.source.setMeshRenderer({f.source.id(), 1}, mesh));
+  REQUIRE(f.source.createEntity("New source node"));
+  auto source = captureSceneSource(f.source, "assets/moved/panels.dotscene").value();
+  const auto before = text(f.target);
+  const auto sourceBefore = text(source.scene);
+  auto updated = prepareSceneLinkRetarget(f.target, source, {f.target.id(), 2}, 9);
+  REQUIRE_MESSAGE(updated, (updated ? "" : updated.error().message));
+  CHECK(text(f.target) == before);
+  CHECK(text(source.scene) == sourceBefore);
+  CHECK(updated->created == std::vector<std::uint64_t>{9});
+  CHECK(updated->root.value == 2);
+  CHECK(updated->scene.transform(updated->root)->position.x == 10);
+  CHECK(updated->scene.entity({updated->scene.id(), 3})->name == "Local panel");
+  CHECK_FALSE(updated->scene.entity({updated->scene.id(), 3})->mesh->visible);
+  CHECK_FALSE(updated->scene.findEntity(4));
+  CHECK(updated->scene.findEntity(local.value).has_value());
+  CHECK(updated->scene.sceneLinks()->at(1) == sibling);
+  const auto link = updated->scene.sceneLinks()->front();
+  CHECK(link.asset == source.asset);
+  CHECK(link.namespaces.front().asset == source.asset);
+  CHECK(link.mapping[0].target == 3);
+  CHECK(link.mapping[1].target == 4);
+  CHECK(link.mapping[2].target == 9);
+  auto reopened = decodeScene(text(updated->scene)).value();
+  auto repeated = prepareSceneLinkRetarget(reopened, source, {reopened.id(), 2}, 10).value();
+  CHECK(text(repeated.scene) == text(reopened));
+  CHECK(repeated.created.empty());
+  auto reset = prepareSceneBaselineRevert(reopened, {reopened.id(), 2}).value();
+  CHECK(reset.scene.entity({reset.scene.id(), 3})->name == "Relocated panel");
+  CHECK(reset.scene.findEntity(4).has_value());
+  CHECK_FALSE(reset.scene.findEntity(local.value));
+  CHECK(reset.scene.transform(reset.root)->position.x == 10);
+}
+
+TEST_CASE("scene_links.retarget_keeps_source_reservations_and_rejects_retired_key_reuse") {
+  Fixture f;
+  REQUIRE(f.source.reserveEntityValuesBefore(10));
+  f.target = std::move(f.update().scene);
+  const auto before = text(f.target);
+  auto replacement = Scene::create().value();
+  REQUIRE(replacement.createEntity("Panel"));
+  auto incoming = captureSceneSource(replacement, "assets/moved.dotscene").value();
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, incoming, {f.target.id(), 2}, 5));
+  REQUIRE(replacement.createEntityWithId("Reused retired identity", 5));
+  REQUIRE(replacement.reserveEntityValuesBefore(10));
+  incoming = captureSceneSource(replacement, "assets/moved.dotscene").value();
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, incoming, {f.target.id(), 2}, 5));
+  CHECK(text(f.target) == before);
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, incoming, {f.target.id(), 3}, 5));
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, incoming, {f.target.id() + 1, 2}, 5));
+}
+
+TEST_CASE("scene_links.retarget_conflicts_never_publish_partial_paths_or_node_changes") {
+  for (const bool dangling : {false, true}) {
+    Fixture f;
+
+    if (dangling) {
+      const auto local = f.target.createEntity("Local child").value();
+      REQUIRE(f.target.setParent(local, EntityId{f.target.id(), 4}));
+    } else {
+      REQUIRE(f.target.renameEntity({f.target.id(), 4}, "Overridden child"));
+    }
+
+    REQUIRE(f.source.destroyEntity({f.source.id(), 2}));
+    auto source = captureSceneSource(f.source, "assets/moved.dotscene").value();
+    const auto before = text(f.target);
+    const auto next = f.target.nextEntityValue()->value();
+    CHECK_FALSE(prepareSceneLinkRetarget(f.target, source, {f.target.id(), 2}, next));
+    CHECK(text(f.target) == before);
+    CHECK(f.target.sceneLinks()->front().asset == "assets/panels.dotscene");
+  }
+}
+
+TEST_CASE("scene_links.retarget_nested_keys_survive_new_materialization_and_keep_child_assets") {
+  Fixture f;
+  auto assembly = Scene::create("Assembly").value();
+  assembly = std::move(prepareLinkedScene(assembly, f.source, "assets/leaf.dotscene", 1)->scene);
+  auto original = captureSceneSource(assembly, "assets/assembly.dotscene").value();
+  auto target = Scene::create("Level").value();
+  auto linked = prepareLinkedScene(target, original, 1).value();
+  const auto mapping = linked.scene.sceneLinks()->front().mapping;
+  const auto value
+      = std::ranges::find(mapping, SceneSourceKey{1, 1}, &SceneLinkMapping::key)->target;
+  REQUIRE(linked.scene.renameEntity({linked.scene.id(), value}, "Nested local override"));
+  REQUIRE(f.source.createEntity("New nested node"));
+  const std::map<std::string, std::string> saved{{"assets/moved-assembly.dotscene", text(assembly)},
+                                                 {"assets/leaf.dotscene", text(f.source)}};
+  auto incoming = resolveSceneSource("assets/moved-assembly.dotscene", [&](std::string_view asset,
+                                                                           std::size_t) {
+                    return Dot::Core::Result<std::string>{saved.at(std::string(asset))};
+                  }).value();
+  auto updated = prepareSceneLinkRetarget(linked.scene, incoming.source, linked.root,
+                                          linked.scene.nextEntityValue()->value());
+  REQUIRE_MESSAGE(updated, (updated ? "" : updated.error().message));
+  CHECK(updated->scene.entity({updated->scene.id(), value})->name == "Nested local override");
+  CHECK(updated->created.size() == 1);
+  CHECK(updated->scene.sceneLinks()->front().mapping[1].key == (SceneSourceKey{1, 1}));
+  auto changed = incoming.source.namespaces;
+  auto nested = std::ranges::find(changed, SceneSourceKey{1}, &SceneSourceNamespace::prefix);
+  REQUIRE(nested != changed.end());
+  nested->asset = "assets/unrelated-leaf.dotscene";
+  incoming.source.namespaces = std::move(changed);
+  CHECK_FALSE(prepareSceneLinkRetarget(linked.scene, incoming.source, linked.root,
+                                       linked.scene.nextEntityValue()->value()));
+}
+
+TEST_CASE("scene_links.retarget_remaps_native_references_and_demotes_primary_components") {
+  Fixture f;
+  const auto mesh = EntityId{f.source.id(), 1};
+  const auto joint = f.source.createEntity("Joint").value();
+  REQUIRE(f.source.setSkin(mesh, SkinBinding{"assets/body.dotskin", {joint.value}}));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, joint.value}};
+  REQUIRE(f.source.setAnimationPlayer(mesh, animation));
+  REQUIRE(f.source.setCamera(joint, Camera{.primary = true}));
+  REQUIRE(f.source.setAudioListener(joint, AudioListener{true}));
+  auto source = captureSceneSource(f.source, "assets/moved.dotscene").value();
+  auto updated = prepareSceneLinkRetarget(f.target, source, {f.target.id(), 2}, 5).value();
+  auto native = updated.scene.entity({updated.scene.id(), 3}).value();
+  CHECK(native.skin->joints == std::vector<std::uint64_t>{5});
+  CHECK(native.animation->targets[0].entity == 5);
+  CHECK_FALSE(updated.scene.entity({updated.scene.id(), 5})->camera->primary);
+  CHECK_FALSE(updated.scene.entity({updated.scene.id(), 5})->audioListener->primary);
+  source.asset = "../invalid.dotscene";
+  CHECK_FALSE(prepareSceneLinkRetarget(f.target, source, {f.target.id(), 2}, 5));
+}

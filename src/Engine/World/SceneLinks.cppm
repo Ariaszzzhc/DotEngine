@@ -157,4 +157,20 @@ export namespace Dot::World {
   [[nodiscard]] auto prepareSceneLinkUpdate(const Scene& target, const SceneSourceSnapshot& source,
                                             EntityId root, std::uint64_t firstValue,
                                             bool revert = false) -> Core::Result<SceneLinkUpdate>;
+
+  /** Explicitly associate one instance with a relocated or copied source lineage, then refresh.
+   * Only the root asset namespace changes identity; persistent node keys, nested source assets
+   * and allocation reservations retain ordinary refresh checks. Local
+   * overrides/deletions/additions, placement and unrelated instances follow the same three-way
+   * merge. Choosing a replacement explicitly asserts shared lineage; unrelated sources are not
+   * matched by name. No old-source reads, source writes or input mutation; failures publish
+   * nothing.
+   * 显式将一个实例关联到移动或复制的同源场景并刷新；仅根资产命名空间允许改变路径，持久节点键、
+   * 嵌套源资产及分配预留沿用普通刷新校验。本地覆盖/删除/新增、放置及无关实例遵守同一三方合并。
+   * 不按名称匹配无关来源，选择替代文件即显式声明其同源；不读旧源、不写源或修改输入，失败不发布任何状态。
+   */
+  [[nodiscard]] auto prepareSceneLinkRetarget(const Scene& target,
+                                              const SceneSourceSnapshot& source, EntityId root,
+                                              std::uint64_t firstValue)
+      -> Core::Result<SceneLinkUpdate>;
 }  // namespace Dot::World

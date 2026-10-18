@@ -140,7 +140,8 @@ creates independent content, preserving the original link only on its original r
 Runtime/Play/export use materialized entities without reading link source files.
 Editor insertion/refresh resolves saved linked sources recursively before flattening
 the resulting materialization. Whole-field application is described below; variants,
-whole-instance/topology application and source-path retargeting remain unfinished.
+whole-instance/topology application remain unfinished. Explicit source-path relinking
+is described below.
 `Dot.World.SceneLinks` provides CPU-only `prepareLinkedScene` and `prepareSceneLinkUpdate` candidates; Scene
 owns validated link metadata. Existing target handles remain untouched until callers
 publish the complete candidate.
@@ -288,7 +289,8 @@ missing provenance is rejected without a compatibility loader.
 ## Recursive source resolution
 
 `Dot.World.SceneResolver` resolves saved source dependencies before editor
-`link-scene`, `instantiate-scene`, `refresh-scene-instance` and `revert-scene-instance`.
+`link-scene`, `instantiate-scene`, `refresh-scene-instance`, `revert-scene-instance`
+and `retarget-scene-instance`.
 Every intermediate source refreshes its own links before its parent is merged.
 Intermediate property/deletion/addition overrides remain in effect, even when the
 outer operation restores source nodes. Removing a node overridden in an intermediate
@@ -373,3 +375,58 @@ failure retains the document and explicitly reports that the file may have commi
 a response/catalog failure after publication likewise reports possible/actual effects.
 Pending drafts, Play, animation audition, transform gestures and conflicting dialogs
 reject workspace application. GUI and agent commands share the same operation.
+
+
+## Relinking moved or copied sources
+
+Select the instance or one of its inherited nodes, then choose the replacement
+`.dotscene` in Assets. Inspector's **Use selected scene as source** relinks that
+instance. **Relink all N instances in scene** relinks every placement of its current
+immediate source in the active document as one undoable edit. Other documents need
+their own explicit edits. Source files are not moved or written by relinking.
+
+```json
+{"command":"edit","revision":"18","operations":[{"op":"retarget-scene-instance","entity":"20","path":"assets/relocated/Equipment.dotscene"}]}
+```
+
+Use the link root's value in `entity`. The operation requires exactly op/entity/path;
+the enclosing edit carries the current revision. To relink several placements,
+put one operation per root in the same operations array, as the Inspector does.
+The ordinary 1..256 operation/1 MiB edit limits apply; the all-in-scene button is
+disabled above 256 placements, and larger sets need explicit smaller batches.
+The entire batch commits once or fails without changing selection/history/allocation
+or publishing a partial set of paths. The last operation's root becomes selected.
+
+Choosing a replacement explicitly asserts that it is a moved/copied version of the
+same source lineage. Correspondence uses persistent logical node keys; names and
+hierarchy appearance do not establish lineage. There is no independent file UUID
+proof for arbitrary unrelated scenes that happen to reuse the same numeric keys.
+Use the saved copy's preserved identities and review the resulting overrides.
+
+The new saved source is resolved with the normal cycle, path, case, dependency and
+aggregate graph budgets. The old file is never read, so a missing old path can be
+repaired. The active document cannot become its own source, directly or through
+dependencies. Only the root namespace asset path changes; nested namespaces keep
+their source assets and all allocation floors/retired-value reservations retain
+ordinary refresh validation. New keys allocate above the document's reserved floor.
+
+The same three-way merge preserves local property overrides, local deletions and
+additions, placement transforms, stable target values and native references. Other
+instances stay unchanged unless included in the batch. Removed overridden nodes,
+dangling references and invalid merged components reject. Imported primary camera/
+listener flags remain demoted. Parent/skin/animation references use the ordinary
+validated remapping; script JSON values remain literal. This is an explicit
+source association followed by refresh, without implicit matching by node names.
+
+Undo/redo, Save/reopen, override inspection/baseline restore, future Refresh source
+and Apply field to source all use the new association. Undo restores the prior
+association/baseline even if that file remains missing; it does not undo external
+file moves or edits. Choosing the current path performs ordinary refresh; if the
+source and selection are already current, it leaves revision/history unchanged.
+Play and exports keep using materialized content without reading authoring sources.
+
+Native `prepareSceneLinkRetarget` accepts a validated `SceneSourceSnapshot` and
+returns a CPU-only independent `SceneLinkUpdate`. It shares the ordinary refresh
+implementation and publishes no input scene or source file. Scene/document limits
+and failure/ownership contracts remain unchanged; this does not provide automatic
+project-wide asset relocation or arbitrary model/skeleton correspondence authoring.

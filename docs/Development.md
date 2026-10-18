@@ -13734,3 +13734,118 @@ physical mouse/keyboard or final panel-layout acceptance is claimed. Windows/Lin
 crash durability/abandoned-session recovery, asynchronous application retirement,
 resource streaming, finished art and overall production readiness remain unproven
 or unfinished; this stage resolves an observed product workflow reliability gap.
+
+## Relinking authored scene sources (2026-10-18)
+
+Prism's twelve straight ducts and fourteen supports already use linked scene
+assets, but moving/copying a source leaves only Refresh or Unlink. Recovering an
+association previously required recreating the placement and its local overrides.
+Add explicit source-path relinking from the native identity/merge foundation through
+the ordinary document transaction and Inspector. Choosing a replacement asserts
+same lineage; correspondence uses persistent keys, without name matching or an
+independent UUID proof for arbitrary unrelated scenes with coincident numeric keys.
+
+`prepareSceneLinkRetarget` shares the existing three-way refresh implementation.
+Allow only the root namespace's asset path to change; retain child asset identity,
+source allocation floors and retired-key checks. Preserve local fields/deletions/
+additions, placement, target identities and native reference remapping. Read only
+the new saved source graph, including normal budgets/cycle checks; a missing old
+file is repairable. Conflict/validation failures publish nothing. The CPU preparation
+performs no I/O or source writes.
+
+The strict retarget-scene-instance edit requires entity/path and the enclosing
+revision. Inspector uses the selected scene asset for one instance or every same-
+source placement in the active document. The all-in-scene action submits the same
+atomic edit batch available to agents, with one history entry. Other documents
+require explicit edits. Save/reopen, Undo/Redo, overrides/restore, later Refresh and
+Apply field to source retain the new association. Runtime/export consume saved
+materializations; no automatic file move/global project rewrite is claimed.
+
+Five enduring CPU unit cases cover stable keys/placement/local changes and unaffected
+siblings, source reservations/retired IDs, conflicts/dangling references, nested
+materialization with preserved child assets, and skin/animation references/primary
+flags. Three document file integration cases cover missing-old-source recovery,
+save/reopen/history/no-op and Apply to the new file, strict/stale/path/batch failures,
+and shared placements in one undoable batch. No test opens a window/device.
+
+Initial test compilation rejects an incomplete designated mesh initializer, a
+spurious comparison between an expected result and nullopt, and a copied JSON loop
+variable. Use the actual mesh descriptor, remove the invalid comparison and bind
+by reference; retain warning policy. The first corrected Debug build and forty
+related source/link/document cases pass in 2.59 s. Subsequent complete builds/tests
+and actual editor/Prism/export validation follow below.
+
+Verification on arm64 macOS, preserving caller compiler/CPPFLAGS/LDFLAGS:
+
+- Complete Debug build/CTest: 1596/1596 in 260.10 s. Complete Release/NDEBUG
+  build/CTest: 1596/1596 in 36.95 s, comprising 507 pure unit and 1089 integration
+  cases (186 offscreen GPU, 247 compiler, 37 native-audio, 34 platform and 21 process
+  labels). Builds/tests run sequentially, before actual native applications.
+- Final review bounds the all-in-scene button to the ordinary 256-operation edit
+  limit and constructs its operation array only on activation. Document/graph work
+  remains synchronous; no project-wide filesystem snapshot or concurrency isolation
+  is claimed. Final Debug/Release rebuilds and 53 related source/link/resolver/document
+  cases pass in 3.17 s and 0.24 s. Formatting, whitespace, ownership/error/identity/
+  history/capacity/platform review pass; warnings/assertions remain enabled as
+  configured. No automated test opens a desktop window/device.
+
+Continue the existing editable Prism project rather than changing source example
+art. Rename one inherited duct mesh locally, Save, open its source and tint its
+mesh through normal document edits. Save scene as a new service-trunk asset. Move
+only the old owned source file outside the project, preserving its original bytes.
+Return to the main scene. A normal Refresh at the missing old path fails without
+mutation; a stale relink revision rejects. Relink one instance and verify the other
+eleven remain associated with the old path. Undo/redo restore that complete source
+association, then submit the Inspector-equivalent batch for all twelve placements.
+
+The first driver incorrectly expected retained historyEntries to increase despite
+an existing redo branch. Actual replies show two retained entries before and after,
+with canRedo changing true to false: the new edit prunes that branch. Preserve this
+driver failure and continue in the same live process. One Undo returns all twelve
+associations to the old path; one Redo restores the complete new scene. No repeated
+creation or hidden editor restart is used to bypass the observation.
+
+Select the new scene asset and the instance through normal product operations.
+Inspect overrides, then Apply the local mesh name to its new source; the response
+reports the new path and a real write. Explicitly refresh the other placements to
+adopt that saved field. Save the main scene. Open the ordinary character-action
+study, relink its twelve corresponding placements to the same source, Save, and
+return to the main scene. Both saved descriptions keep all entity IDs, placement
+transforms, scene settings and other entity fields unchanged outside the intended
+inherited names/tints; the study's Player movement script remains absent.
+
+Start actual Play after native view readiness; inspect all twelve new source
+associations/material tints, move the character and save/move away/restore with
+F6/F7 and real asynchronous disk receipts. A real viewport PNG shows the native
+scene/checkpoint caption. Stop restores the exact saved authoring scene. Export
+through the product operation and close normally; observe actual owned process
+exit 0 before reading/acknowledging/clearing its retained close response. The Play
+restore differs from its checkpoint by about 4.10e-8 m.
+
+Relocate the game and temporarily hide only its owned authoring tree. Two fresh
+native game processes verify the relinked materializations/placement/name/tint
+values without authoring/compiler access. The first moves, saves, moves away and
+restores; the second restores the same persisted checkpoint. Both report zero
+runtime failures/diagnostics and actual completed rendering. Their observed restored
+positions exactly match the stored float coordinates, and both exit 0 with retired
+endpoints. Read their close responses only after process completion, then explicitly
+acknowledge/clear through the exported player. Restore the authoring directory.
+
+All 29 earlier guarded saves remain unchanged; preserve the new independent slot
+for 30 guarded save files. Preserve all 19 original model/source-art files, 120
+unrelated editable-project files, the old source's archived bytes, and every one of
+the final game's 162 files. Both prior 162-file game artifacts also remain unchanged.
+The tested standalone binary matches the final signed runtime kit; six Debug/Release
+binary fingerprints are retained. The old source stays intentionally moved out of
+the editable project, while both affected scenes use its saved replacement. No
+owned control/cache residue remains.
+
+Retain raw requests/responses/acknowledgements, failed driver observation, owned
+process completions, saved scenes, editable project, old-source backup, viewport,
+game, profiles and guards in ignored build/scene-relink-review. Remove only this
+stage's temporary driver/bytecode; no release archive is created. Computer use
+again reports the Mac locked and automatic unlock unsuccessful, so native mouse
+activation/panel layout acceptance is not claimed. Windows/Linux remain untested.
+Automatic project-wide relocation, arbitrary unrelated-source correspondence,
+background dependency I/O, variants/topology application, complete art and overall
+large-game/production readiness remain unfinished.

@@ -2076,3 +2076,125 @@ TEST_CASE("document.source_apply_prepares_history_before_external_publication") 
   CHECK(state(bounded) == before);
   CHECK(files.readText("assets/panels.dotscene").value() == disk);
 }
+
+TEST_CASE("document.retarget_missing_source_retains_history_overrides_and_new_source_application") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", "Local panel name"}}}));
+  const auto before = state(document);
+  const auto sibling = document.scene().value()->sceneLinks()->at(1);
+  std::filesystem::rename(fixture.root / "game/assets/panels.dotscene",
+                          fixture.root / "game/assets/moved.dotscene");
+  const auto files = fixture.project().files().value();
+  auto mesh = source.entity({source.id(), 1})->mesh.value();
+  mesh.visible = false;
+  REQUIRE(source.setMeshRenderer({source.id(), 1}, mesh));
+  REQUIRE(source.createEntity("New source node"));
+  REQUIRE(Dot::World::saveScene(files, "assets/moved.dotscene", source));
+  const auto sourceBytes = files.readText("assets/moved.dotscene").value();
+  const Json relink{
+      {"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}};
+  auto changed = edit(document, Json::array({relink}));
+  CHECK(changed.created == std::vector<std::uint64_t>{9});
+  CHECK(document.scene().value()->sceneLinks()->at(1) == sibling);
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 4})->name
+        == "Local panel name");
+  CHECK_FALSE(document.scene().value()->entity({document.scene().value()->id(), 4})->mesh->visible);
+  CHECK(files.readText("assets/moved.dotscene").value() == sourceBytes);
+  const auto after = state(document);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+  const auto repeated = state(document);
+  CHECK_FALSE(edit(document, Json::array({relink})).changed);
+  CHECK(state(document) == repeated);
+  REQUIRE(document.save(revision(document)));
+  auto reopened = fixture.document();
+  CHECK(reopened.scene().value()->sceneLinks()->front().asset == "assets/moved.dotscene");
+  auto applied = request(
+      reopened,
+      {{"command", "apply-scene-field"}, {"root", "3"}, {"entity", "4"}, {"field", "name"}});
+  CHECK(applied["sourceApplied"]["path"] == "assets/moved.dotscene");
+  auto persisted = Dot::World::loadScene(files, "assets/moved.dotscene").value();
+  CHECK(persisted.entity({persisted.id(), 1})->name == "Local panel name");
+  CHECK_FALSE(std::filesystem::exists(fixture.root / "game/assets/panels.dotscene"));
+  CHECK_FALSE(
+      reopened.apply(Json::array({{{"op", "refresh-scene-instance"}, {"entity", "6"}}}).dump(),
+                     revision(reopened)));
+}
+
+TEST_CASE("document.retarget_strict_paths_cycles_stale_and_failed_batches_preserve_every_state") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  REQUIRE(source.createEntity("Incoming extra node"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/moved.dotscene", source));
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto before = state(document);
+  Json relink{
+      {"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}};
+
+  for (const auto* path : {"../outside.dotscene", "assets/missing.dotscene", "scenes/main.dotscene",
+                           "assets/.dot-stage-owned/source.dotscene", "assets/Moved.dotscene"}) {
+    auto invalid = relink;
+    invalid["path"] = path;
+    CHECK_FALSE(document.apply(Json::array({invalid}).dump(), revision(document)));
+    CHECK(state(document) == before);
+  }
+
+  for (const Json& invalid :
+       {Json{{"op", "retarget-scene-instance"}, {"entity", "3"}},
+        Json{{"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", nullptr}},
+        Json{{"op", "retarget-scene-instance"},
+             {"entity", "3"},
+             {"path", "assets/moved.dotscene"},
+             {"ignored", true}},
+        Json{{"op", "retarget-scene-instance"},
+             {"entity", "4"},
+             {"path", "assets/moved.dotscene"}}}) {
+    CHECK_FALSE(document.apply(Json::array({invalid}).dump(), revision(document)));
+    CHECK(state(document) == before);
+  }
+
+  CHECK_FALSE(document.apply(Json::array({relink}).dump(), revision(document) - 1));
+  CHECK_FALSE(document.apply(Json::array({relink, {{"op", "remove"}, {"entity", "999"}}}).dump(),
+                             revision(document)));
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.retarget_batch_relinks_shared_placements_in_one_undoable_transaction") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", "First placement"}},
+                              {{"op", "name"}, {"entity", "7"}, {"name", "Second placement"}}}));
+  REQUIRE(source.setTransform({source.id(), 1}, {{2, 0, 0}}));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/moved.dotscene", source));
+  const auto before = state(document);
+  edit(document,
+       Json::array(
+           {{{"op", "retarget-scene-instance"}, {"entity", "3"}, {"path", "assets/moved.dotscene"}},
+            {{"op", "retarget-scene-instance"},
+             {"entity", "6"},
+             {"path", "assets/moved.dotscene"}}}));
+  const auto after = state(document);
+  CHECK(after["historyEntries"].get<std::size_t>()
+        == before["historyEntries"].get<std::size_t>() + 1);
+  const auto* scene = document.scene().value();
+  CHECK(scene->sceneLinks()->at(0).asset == "assets/moved.dotscene");
+  CHECK(scene->sceneLinks()->at(1).asset == "assets/moved.dotscene");
+  CHECK(scene->entity({scene->id(), 4})->name == "First placement");
+  CHECK(scene->entity({scene->id(), 7})->name == "Second placement");
+  CHECK(scene->transform({scene->id(), 4})->position.x == 2);
+  CHECK(scene->transform({scene->id(), 7})->position.x == 2);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+}

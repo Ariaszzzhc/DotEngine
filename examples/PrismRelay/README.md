@@ -97,6 +97,13 @@ returns a whole component to the last refreshed baseline without changing siblin
 Apply field to source writes one overridden field to its saved source after conflict
 checks, then rebases that instance. Other placements refresh explicitly; scene Undo
 does not undo the shared source file.
+After moving or saving a copy of a duct source scene, select its replacement in
+Assets and use **Use selected scene as source** in the linked instance's Inspector.
+**Relink all N instances in scene** updates the twelve straight runs or fourteen
+support placements together, retaining local overrides and placement transforms.
+Save each affected scene explicitly, including the character-action study when
+reorganizing shared sources. Use copied scenes with preserved source identities;
+see [relinking contracts](../../docs/SceneContent.md#relinking-moved-or-copied-sources).
 Play and exported games consume the saved instances without source-file refresh.
 Lighting uses directional cascades and three local point-light shadow sources, SSAO and HDR tone
 mapping. Local maps use 512px faces within the shared depth-atlas budget.
