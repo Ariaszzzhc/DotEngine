@@ -2531,3 +2531,65 @@ unchanged. These operations do not rewrite saved controller definitions.
 状态机创建、绑定、表单、历史、保存、预览和运行参数均有共用产品实现的严格机器操作。
 表单可暂留不完整引用，应用须先通过完整原生预检；应用/撤销重做明确重启独立暂停预览。
 存盘检查外部冲突并原子替换；场景绑定与状态机资源分别应用/保存，不混入脚本源码编辑器。
+
+### Reviewed model reimport
+
+Assets > Actions offers **Review model reimport** using Import source and the existing
+native bundle Path (for example `assets/utility-box`). Save the scene and close other
+asset editors first. The review prepares a private project on one CPU worker; changed
+existing files begin unresolved. Inspect text before/after (at most 16 KiB per side),
+choose **Use source** or **Keep project** for each entire file, then **Validate model
+choices** and **Apply reviewed model**. Added files use source. Files no longer generated
+by the source remain in the bundle. Binary changes report sizes; inspect their source
+in the appropriate external authoring tool. Keeping a material preserves all its
+project settings, rather than merging selected properties.
+
+This first reimport contract requires matching native node IDs/names/parents,
+mesh/material/skin/animation bindings and model descriptor layout. Structural changes
+fail explicitly. It does not provide stable source GUIDs, infer node renames/reordering,
+merge material properties, delete retired assets, or edit source files. Review the source
+correspondence when similarly named source nodes or primitives are rearranged. Geometry,
+pixels, material values, poses and clip contents can change within the accepted layout.
+
+Candidate validation uses the product's CPU scene preparation for every saved scene in
+a complete private project snapshot, including retained project resources. It does not
+compile scripts or prove GPU/audio residency. Apply/revert require saved, stopped
+authoring without drafts; asset readers are stopped and caches invalidated first.
+Exact resource catalog and file bytes (including project metadata) must still match the
+review baseline. A conflict leaves the published bundle unchanged and requires preparing
+a new review. External editors must serialize writes through publication. Replacement
+uses two no-overwrite renames with rollback, not an atomic directory exchange or a
+crash/hostile-race guarantee. A failed rollback reports where original files remain.
+
+After apply, refresh linked scene instances explicitly using their existing source
+refresh operation, review local overrides, then save. Reimport changes asset files and
+is separate from scene undo. **Revert model files** restores the complete previous
+bundle only while saved project bytes remain unchanged; later scene saves or external
+asset edits reject it. Accepting/closing an applied review keeps the published files and
+releases its retained backup. Closing a preparing/validating review cancels and joins
+its worker; destruction does not automatically revert applied files.
+
+The same strict operations are available through the running editor's JSON channel:
+
+```json
+{"command":"prepare-model-reimport","revision":"12","source":"/absolute/utility.gltf","path":"assets/utility-box"}
+{"command":"inspect-model-reimport","session":"1","offset":0,"limit":64}
+{"command":"inspect-model-reimport-file","session":"1","revision":"2","path":"assets/utility-box/materials/0.dotmaterial"}
+{"command":"choose-model-reimport","session":"1","revision":"2","path":"assets/utility-box/materials/0.dotmaterial","choice":"project"}
+{"command":"choose-model-reimport","session":"1","revision":"3","path":"assets/utility-box/model.dotscene","choice":"source"}
+{"command":"validate-model-reimport","session":"1","revision":"4"}
+{"command":"inspect-model-reimport","session":"1"}
+{"command":"apply-model-reimport","session":"1","revision":"6"}
+{"command":"revert-model-reimport","session":"1","revision":"7"}
+{"command":"close-model-reimport","session":"1","revision":"8"}
+```
+
+Use returned identities/revisions, not the illustrative numbers above. Preparation and
+validation advance the review revision on completion. Inspect returns `preparing`,
+`review`, `validating`, `ready`, `applied`, `reverted` or `failed`, plus errors/warnings and
+paged changes with path, before/after sizes, added flag and choice. Begin optionally
+accepts source `scene` 0..1023. Pages allow offset 0..8192 and limit 1..256. File previews
+return explicit text/truncated flags. Every mutation rejects stale identities/revisions;
+unknown fields and invalid choices are errors. One review per workspace bounds ownership.
+Limits are 8192 resource entries, 64 levels, 64 MiB/file and 512 MiB each for project
+snapshot and generated bundle. First import retains its existing synchronous implementation.

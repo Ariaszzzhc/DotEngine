@@ -120,6 +120,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/Document.cpp
     src/Engine/Editor/HierarchyTree.cpp
     src/Engine/Editor/Resources.cpp
+    src/Engine/Editor/ModelReimport.cpp
     src/Engine/Editor/MaterialDocument.cpp
     src/Engine/Editor/AssetPreview.cpp
     src/Engine/Editor/PreviewWorker.cpp
@@ -282,6 +283,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/Document.cppm
         src/Engine/Editor/HierarchyTree.cppm
         src/Engine/Editor/Resources.cppm
+        src/Engine/Editor/ModelReimport.cppm
         src/Engine/Editor/MaterialDocument.cppm
         src/Engine/Editor/AssetPreview.cppm
         src/Engine/Editor/PreviewWorker.cppm

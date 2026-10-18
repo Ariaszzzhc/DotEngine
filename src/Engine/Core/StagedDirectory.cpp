@@ -38,25 +38,39 @@ namespace Dot::Core {
   namespace {
     std::atomic<std::uint64_t> sequence{};
 
+    auto renameError(const std::filesystem::path& from, const std::filesystem::path& to) noexcept
+        -> int {
+#if defined(_WIN32)
+      return MoveFileExW(from.c_str(), to.c_str(), 0) ? 0 : static_cast<int>(GetLastError());
+#elif defined(__APPLE__)
+      return renamex_np(from.c_str(), to.c_str(), RENAME_EXCL) == 0 ? 0 : errno;
+#else
+      return renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE) == 0 ? 0
+                                                                                            : errno;
+#endif
+    }
+
+    auto renameMessage(int error) -> std::string {
+#if defined(_WIN32)
+      return "Win32 error " + std::to_string(error);
+#else
+      return std::error_code(error, std::generic_category()).message();
+#endif
+    }
+
     auto renameExclusive(const std::filesystem::path& from, const std::filesystem::path& to)
         -> Result<void> {
-#if defined(_WIN32)
-      if (!MoveFileExW(from.c_str(), to.c_str(), 0)) {
-        return fail(ErrorCode::Io,
-                    "Publish directory: Win32 error " + std::to_string(GetLastError()));
-      }
-#elif defined(__APPLE__)
-      if (renamex_np(from.c_str(), to.c_str(), RENAME_EXCL) != 0) {
-        return fail(ErrorCode::Io, "Publish directory: "
-                                       + std::error_code(errno, std::generic_category()).message());
-      }
-#else
-      if (renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE) != 0) {
-        return fail(ErrorCode::Io, "Publish directory: "
-                                       + std::error_code(errno, std::generic_category()).message());
-      }
-#endif
-      return {};
+      const auto error = renameError(from, to);
+      return error == 0 ? Result<void>{}
+                        : fail(ErrorCode::Io, "Publish directory: " + renameMessage(error));
+    }
+
+    auto replacementName(const std::filesystem::path& name) -> bool {
+      const auto utf = name.generic_u8string();
+      const std::string text(utf.begin(), utf.end());
+      return !name.empty() && !name.has_root_path() && name.filename() == name && name != "."
+             && name != ".." && text.find('\0') == std::string::npos
+             && text.find('\\') == std::string::npos && isValidUtf8(text);
     }
   }  // namespace
 
@@ -192,4 +206,80 @@ namespace Dot::Core {
                       + std::string(error.what()));
     }
   }
+
+  auto StagedDirectory::replace(const std::filesystem::path& name) -> Result<StagedDirectory> {
+    return replace(m_parent, name);
+  }
+
+  auto StagedDirectory::replace(const FileSystem& destinationParent,
+                                const std::filesystem::path& name) -> Result<StagedDirectory> {
+    if (m_staging.empty() || destinationParent.root().empty()) {
+      return fail(ErrorCode::InvalidState, "Replacement staging was moved or published");
+    }
+
+    try {
+      if (!replacementName(name)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "Replacement name must be one UTF-8 relative component");
+      }
+
+      const auto destination = destinationParent.root() / name;
+      const auto sourceStatus = std::filesystem::symlink_status(m_staging);
+      const auto targetStatus = std::filesystem::symlink_status(destination);
+
+      if (destination == m_staging || std::filesystem::is_symlink(sourceStatus)
+          || !std::filesystem::is_directory(sourceStatus)
+          || std::filesystem::is_symlink(targetStatus)
+          || !std::filesystem::is_directory(targetStatus)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "Replacement requires two distinct regular directories");
+      }
+
+      auto previous = create(m_parent);
+
+      if (!previous) {
+        return std::unexpected(previous.error());
+      }
+
+      const auto bytes = previous->m_staging.generic_u8string();
+      const std::string recovery(bytes.begin(), bytes.end());
+      std::error_code error;
+      const bool removed = std::filesystem::remove(previous->m_staging, error);
+
+      if (error || !removed) {
+        return fail(ErrorCode::Io, "Prepare replacement backup: " + error.message());
+      }
+
+      const auto reserved = renameError(destination, previous->m_staging);
+
+      if (reserved != 0) {
+        previous->m_staging.clear();
+        return fail(ErrorCode::Io, "Reserve previous directory: " + renameMessage(reserved));
+      }
+
+      /** No throwing operation may destroy ownership of the original between renames.
+       * 两次改名之间不执行可能抛出并导致原目录被析构删除的操作。 */
+      const auto published = renameError(m_staging, destination);
+
+      if (published != 0) {
+        const auto restored = renameError(previous->m_staging, destination);
+        previous->m_staging.clear();
+
+        if (restored == 0) {
+          return fail(ErrorCode::Io, "Replacement failed; original directory restored: "
+                                         + renameMessage(published));
+        }
+
+        return fail(ErrorCode::Io,
+                    "Replacement and rollback failed; original directory retained at '" + recovery
+                        + "': " + renameMessage(restored));
+      }
+
+      m_staging.clear();
+      return std::move(*previous);
+    } catch (const std::exception& error) {
+      return fail(ErrorCode::External, "Replace staged directory: " + std::string(error.what()));
+    }
+  }
+
 }  // namespace Dot::Core

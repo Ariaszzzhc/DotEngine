@@ -110,3 +110,10 @@ geometry result bounds retained preparation output, with transient codec buffers
 separate from GPU cache accounting. See [residency preparation](Rendering.md#prepared-geometry-residency).
 This does not make import, whole-project preflight, export, explicit drawing/bounds
 or every asset API asynchronous. Serialize file edits through explicit cache refresh.
+
+Existing native model bundles can now use the editor's [reviewed reimport](Editor.md#reviewed-model-reimport)
+flow. This preserves resource paths within a matching layout, requires explicit choices
+for changed project files, validates a private project, and retains a reversible previous
+bundle during the review session. It does not infer stable identity across source topology
+changes or merge source/project edits automatically. Serialize external writes through
+publication and refresh existing linked instances explicitly after applying.

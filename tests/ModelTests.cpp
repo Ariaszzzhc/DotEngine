@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -11,6 +14,7 @@ import Dot.Assets.Image;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Resources;
+import Dot.Editor.ModelReimport;
 import Dot.Editor.Document;
 import Dot.Project;
 import Dot.World.Scene;
@@ -38,6 +42,37 @@ namespace {
       return Core::FileSystem::open(files.root() / "source").value();
     }
   };
+
+  auto wait(Editor::ModelReimport& review) -> Editor::ReimportStatus {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    auto state = review.status(0, 256).value();
+
+    while ((state.state == Editor::ReimportState::Preparing
+            || state.state == Editor::ReimportState::Validating)
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      state = review.status(0, 256).value();
+    }
+
+    REQUIRE(state.state != Editor::ReimportState::Preparing);
+    REQUIRE(state.state != Editor::ReimportState::Validating);
+    return state;
+  }
+
+  auto chooseAll(Editor::ModelReimport& review, Editor::ReimportChoice choice)
+      -> Editor::ReimportStatus {
+    auto state = review.status(0, 256).value();
+    const auto files = state.changes;
+
+    for (const auto& file : files) {
+      REQUIRE(review.choose(file.path, file.added ? Editor::ReimportChoice::Source : choice,
+                            state.revision));
+      state = review.status(0, 256).value();
+    }
+
+    return state;
+  }
+
 }  // namespace
 
 TEST_CASE("model.glb_and_external_gltf_preserve_frames_pbr_images_and_hierarchy") {
@@ -266,4 +301,222 @@ TEST_CASE("model.alpha_modes_preserve_factor_vertex_texture_and_cutoff") {
     CHECK(model->primitives[0].mesh.vertices[0].color.w == .25F);
     CHECK(Assets::decodeImage(model->images[0].png)->pixels[3] == 64);
   }
+}
+
+TEST_CASE("model.reimport_reviews_owned_choices_preserves_material_and_reverts_complete_bundle") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project").value();
+  auto store = Editor::ResourceStore::open(project).value();
+  REQUIRE(store.importModel(f.source().root() / "surface.gltf", "assets/model"));
+  const auto originalScene = project.files()->readText("assets/model/model.dotscene").value();
+  const auto originalMesh = project.files()->readBytes("assets/model/meshes/0.dotmesh").value();
+  auto material
+      = Json::parse(project.files()->readText("assets/model/materials/0.dotmaterial").value());
+  material["roughness"] = .91;
+  const auto authored = material.dump(2);
+  REQUIRE(project.files()->writeTextAtomic("assets/model/materials/0.dotmaterial", authored));
+  REQUIRE(project.files()->writeTextAtomic("assets/model/notes.txt", "retain local file"));
+  auto source = Json::parse(f.source().readText("surface.gltf").value());
+  source["nodes"][0]["translation"] = {2., 0., 0.};
+  REQUIRE(f.source().writeTextAtomic("surface.gltf", source.dump()));
+  auto mesh = f.source().readBytes("surface.bin").value();
+  float x{};
+  std::memcpy(&x, mesh.data(), sizeof(x));
+  x += .125F;
+  std::memcpy(mesh.data(), &x, sizeof(x));
+  REQUIRE(f.source().writeAtomic("surface.bin", mesh));
+  auto review
+      = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+            .value();
+  auto state = wait(review);
+  REQUIRE_MESSAGE(state.state == Editor::ReimportState::Review, state.error);
+  CHECK_FALSE(review.validate(state.revision));
+  CHECK_FALSE(review.status(0, 0));
+  CHECK_FALSE(review.status(0, 257));
+  CHECK_FALSE(review.choose("absent", Editor::ReimportChoice::Source, state.revision));
+  CHECK(project.files()->readText("assets/model/model.dotscene").value() == originalScene);
+  CHECK(project.files()->readBytes("assets/model/meshes/0.dotmesh").value() == originalMesh);
+  auto preview = review.file("assets/model/materials/0.dotmaterial", state.revision);
+  REQUIRE(preview);
+  CHECK(preview->text);
+  CHECK(preview->before == authored);
+  CHECK(preview->after != authored);
+  const auto stale = state.revision;
+  state = chooseAll(review, Editor::ReimportChoice::Source);
+  CHECK_FALSE(review.validate(stale));
+  REQUIRE(review.choose("assets/model/materials/0.dotmaterial", Editor::ReimportChoice::Project,
+                        state.revision));
+  state = review.status().value();
+  REQUIRE(review.validate(state.revision));
+  state = wait(review);
+  REQUIRE_MESSAGE(state.state == Editor::ReimportState::Ready, state.error);
+  REQUIRE(review.apply(state.revision));
+  state = review.status().value();
+  CHECK(state.state == Editor::ReimportState::Applied);
+  CHECK(project.files()->readText("assets/model/materials/0.dotmaterial").value() == authored);
+  CHECK(project.files()->readText("assets/model/notes.txt").value() == "retain local file");
+  CHECK(project.files()->readBytes("assets/model/meshes/0.dotmesh").value() != originalMesh);
+  CHECK(project.files()->readText("assets/model/model.dotscene").value() != originalScene);
+  CHECK(store.list());
+  REQUIRE(review.revert(state.revision));
+  CHECK(project.files()->readText("assets/model/model.dotscene").value() == originalScene);
+  CHECK(project.files()->readBytes("assets/model/meshes/0.dotmesh").value() == originalMesh);
+  CHECK(project.files()->readText("assets/model/materials/0.dotmaterial").value() == authored);
+  CHECK(review.status()->state == Editor::ReimportState::Reverted);
+  CHECK_FALSE(review.revert(review.status()->revision));
+}
+
+TEST_CASE("model.reimport_rejects_structural_changes_and_stale_project_bytes_without_publication") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project").value();
+  auto store = Editor::ResourceStore::open(project).value();
+  REQUIRE(store.importModel(f.source().root() / "surface.gltf", "assets/model"));
+  const auto original = f.source().readText("surface.gltf").value();
+  auto source = Json::parse(original);
+  source["nodes"][0]["name"] = "renamed";
+  REQUIRE(f.source().writeTextAtomic("surface.gltf", source.dump()));
+
+  {
+    auto review
+        = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+              .value();
+    const auto state = wait(review);
+    CHECK(state.state == Editor::ReimportState::Failed);
+    CHECK(state.error.find("stable-layout") != std::string::npos);
+    CHECK_FALSE(review.apply(state.revision));
+  }
+
+  REQUIRE(f.source().writeTextAtomic("surface.gltf", original));
+  auto review
+      = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+            .value();
+  auto state = wait(review);
+  REQUIRE(state.state == Editor::ReimportState::Review);
+  REQUIRE(review.validate(state.revision));
+  state = wait(review);
+  REQUIRE_MESSAGE(state.state == Editor::ReimportState::Ready, state.error);
+  const auto baseline = project.files()->readText("scripts/Mover.ts").value();
+  REQUIRE(project.files()->writeTextAtomic("scripts/Mover.ts", baseline + "\n"));
+  CHECK_FALSE(review.apply(state.revision));
+  REQUIRE(project.files()->writeTextAtomic("scripts/Mover.ts", baseline));
+  REQUIRE(review.apply(state.revision));
+  state = review.status().value();
+  REQUIRE(project.files()->writeTextAtomic("assets/new.txt", "external edit"));
+  CHECK_FALSE(review.revert(state.revision));
+  CHECK(project.files()->readText("assets/new.txt").value() == "external edit");
+  CHECK(store.list());
+}
+
+TEST_CASE("model.reimport_validation_failure_keeps_project_and_reports_referenced_asset") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project").value();
+  auto store = Editor::ResourceStore::open(project).value();
+  REQUIRE(store.importModel(f.source().root() / "surface.gltf", "assets/model"));
+  auto material
+      = Json::parse(project.files()->readText("assets/model/materials/0.dotmaterial").value());
+  material["baseColorTexture"]["path"] = "assets/missing.png";
+  const auto broken = material.dump();
+  REQUIRE(project.files()->writeTextAtomic("assets/model/materials/0.dotmaterial", broken));
+  auto review
+      = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+            .value();
+  auto state = wait(review);
+  REQUIRE_MESSAGE(state.state == Editor::ReimportState::Review, state.error);
+  state = chooseAll(review, Editor::ReimportChoice::Project);
+  REQUIRE(review.validate(state.revision));
+  state = wait(review);
+  CHECK(state.state == Editor::ReimportState::Review);
+  CHECK_FALSE(state.error.empty());
+  CHECK_FALSE(review.apply(state.revision));
+  CHECK(project.files()->readText("assets/model/materials/0.dotmaterial").value() == broken);
+  state = chooseAll(review, Editor::ReimportChoice::Source);
+  REQUIRE(review.validate(state.revision));
+  state = wait(review);
+  REQUIRE_MESSAGE(state.state == Editor::ReimportState::Ready, state.error);
+  CHECK(review.apply(state.revision));
+}
+
+TEST_CASE("model.reimport_owner_move_invalid_boundaries_and_cancel_release_private_trees") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project").value();
+  auto store = Editor::ResourceStore::open(project).value();
+  REQUIRE(store.importModel(f.source().root() / "surface.gltf", "assets/model"));
+  const auto root = project.files()->root();
+  const auto count = [&] {
+    return std::distance(std::filesystem::directory_iterator(root),
+                         std::filesystem::directory_iterator{});
+  };
+  const auto before = count();
+  CHECK_FALSE(Editor::ModelReimport::begin(project, "", "../escape"));
+  CHECK_FALSE(Editor::ModelReimport::begin(project, "", "assets/model", 1024));
+
+  {
+    auto original
+        = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+              .value();
+    auto moved = std::move(original);
+    CHECK_FALSE(original.status());
+    CHECK_FALSE(original.validate(1));
+    bool rejected{};
+    std::thread thread([&] { rejected = !moved.status(); });
+    thread.join();
+    CHECK(rejected);
+    const auto state = wait(moved);
+    CHECK(state.state == Editor::ReimportState::Review);
+    CHECK_FALSE(moved.file("missing", state.revision));
+  }
+
+  CHECK(count() == before);
+
+  {
+    auto pending
+        = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+              .value();
+  }
+
+  CHECK(count() == before);
+  CHECK(store.list());
+  std::filesystem::create_symlink(f.source().root() / "surface.gltf",
+                                  f.source().root() / "link.gltf");
+  auto invalid
+      = Editor::ModelReimport::begin(project, f.source().root() / "link.gltf", "assets/model")
+            .value();
+  CHECK(wait(invalid).state == Editor::ReimportState::Failed);
+}
+
+TEST_CASE("model.reimport_added_files_require_source_and_accepting_keeps_published_data") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project").value();
+  auto store = Editor::ResourceStore::open(project).value();
+  REQUIRE(store.importModel(f.source().root() / "surface.gltf", "assets/model"));
+  auto source = Json::parse(f.source().readText("surface.gltf").value());
+  source["materials"].push_back(source["materials"][0]);
+  REQUIRE(f.source().writeTextAtomic("surface.gltf", source.dump()));
+  const auto root = project.files()->root();
+  const auto before = std::distance(std::filesystem::directory_iterator(root),
+                                    std::filesystem::directory_iterator{});
+
+  {
+    auto review
+        = Editor::ModelReimport::begin(project, f.source().root() / "surface.gltf", "assets/model")
+              .value();
+    auto state = wait(review);
+    REQUIRE_MESSAGE(state.state == Editor::ReimportState::Review, state.error);
+    const auto added
+        = std::ranges::find_if(state.changes, [](const auto& change) { return change.added; });
+    REQUIRE(added != state.changes.end());
+    CHECK(added->choice == Editor::ReimportChoice::Source);
+    CHECK_FALSE(review.choose(added->path, Editor::ReimportChoice::Project, state.revision));
+    state = chooseAll(review, Editor::ReimportChoice::Source);
+    REQUIRE(review.validate(state.revision));
+    state = wait(review);
+    REQUIRE_MESSAGE(state.state == Editor::ReimportState::Ready, state.error);
+    REQUIRE(review.apply(state.revision));
+  }
+
+  CHECK(std::distance(std::filesystem::directory_iterator(root),
+                      std::filesystem::directory_iterator{})
+        == before);
+  CHECK(project.files()->readText("assets/model/materials/2.dotmaterial"));
+  CHECK(store.list());
 }

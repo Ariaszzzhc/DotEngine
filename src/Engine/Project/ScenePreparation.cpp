@@ -40,6 +40,20 @@ import Dot.Animation.ScenePlayers;
 
 namespace Dot::Project {
   namespace {
+    auto preparationInput(const std::string& path, const std::optional<std::string>& initial)
+        -> Core::Result<void> {
+      if (!Core::isPortableRelativePath(path) || !path.ends_with(".dotscene")
+          || path.starts_with(".dot-stage-") || path.find("/.dot-stage-") != std::string::npos
+          || (initial
+              && (initial->empty() || initial->size() > 64 * 1024 * 1024
+                  || !Core::isValidUtf8(*initial)))) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid scene preparation path/initial bytes");
+      }
+
+      return {};
+    }
+
     auto sceneFile(const Core::FileSystem& files, const std::string& name) -> Core::Result<void> {
       namespace Fs = std::filesystem;
       const Fs::path relative{std::u8string(name.begin(), name.end())};
@@ -409,119 +423,129 @@ namespace Dot::Project {
 
   PreparedScene::~PreparedScene() = default;
 
-  auto PreparedScene::validate(const Core::FileSystem& files, const std::string& path,
-                               const std::optional<std::string>& initial, std::stop_token stop)
+  auto PreparedScene::create(const Core::FileSystem& files, const std::string& path,
+                             const std::optional<std::string>& initial, std::stop_token stop)
       -> Core::Result<PreparedScene> {
-    if (stop.stop_requested()) {
-      return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
+    auto valid = preparationInput(path, initial);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
     }
 
-    auto text = [&]() -> Core::Result<std::string> {
-      if (initial) {
-        return *initial;
+    try {
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
       }
 
-      auto checked = sceneFile(files, path);
-      return checked
-                 ? files.readText(std::filesystem::path{std::u8string(path.begin(), path.end())})
-                 : std::unexpected(checked.error());
-    }();
-    auto scene = text ? World::decodeScene(*text)
-                      : Core::Result<World::Scene>{std::unexpected(text.error())};
+      auto text = [&]() -> Core::Result<std::string> {
+        if (initial) {
+          return *initial;
+        }
 
-    if (!scene) {
-      return std::unexpected(scene.error());
-    }
+        auto checked = sceneFile(files, path);
+        return checked
+                   ? files.readText(std::filesystem::path{std::u8string(path.begin(), path.end())})
+                   : std::unexpected(checked.error());
+      }();
+      auto scene = text ? World::decodeScene(*text)
+                        : Core::Result<World::Scene>{std::unexpected(text.error())};
 
-    auto graphics = sceneGraphics(files, *scene, stop);
+      if (!scene) {
+        return std::unexpected(scene.error());
+      }
 
-    if (!graphics) {
-      return std::unexpected(graphics.error());
-    }
+      auto graphics = sceneGraphics(files, *scene, stop);
 
-    auto skins = Assets::validateSceneSkins(files, *scene);
+      if (!graphics) {
+        return std::unexpected(graphics.error());
+      }
 
-    if (!skins) {
-      return std::unexpected(skins.error());
-    }
+      auto skins = Assets::validateSceneSkins(files, *scene);
 
-    auto animations = sceneAnimations(files, *scene, stop);
+      if (!skins) {
+        return std::unexpected(skins.error());
+      }
 
-    if (!animations) {
-      return std::unexpected(animations.error());
-    }
+      auto animations = sceneAnimations(files, *scene, stop);
 
-    if (stop.stop_requested()) {
-      return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
-    }
-
-    std::vector<Animation::ControllerAsset> controllers;
-    std::set<std::string> uniqueControllers;
-    auto players = scene->animationPlayers();
-
-    if (!players) {
-      return std::unexpected(players.error());
-    }
-
-    for (const auto& player : *players) {
-      if (!player.properties.enabled || !player.properties.controller
-          || !uniqueControllers.insert(*player.properties.controller).second) {
-        continue;
+      if (!animations) {
+        return std::unexpected(animations.error());
       }
 
       if (stop.stop_requested()) {
-        return Core::fail(Core::ErrorCode::Unavailable, "Controller preparation cancelled");
+        return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
       }
 
-      const auto& controllerPath = *player.properties.controller;
-      auto loaded = Animation::loadController(
-          files,
-          std::filesystem::path{std::u8string(controllerPath.begin(), controllerPath.end())});
+      std::vector<Animation::ControllerAsset> controllers;
+      std::set<std::string> uniqueControllers;
+      auto players = scene->animationPlayers();
 
-      if (!loaded) {
-        return std::unexpected(loaded.error());
+      if (!players) {
+        return std::unexpected(players.error());
       }
 
-      controllers.push_back({controllerPath, std::move(*loaded)});
-    }
+      for (const auto& player : *players) {
+        if (!player.properties.enabled || !player.properties.controller
+            || !uniqueControllers.insert(*player.properties.controller).second) {
+          continue;
+        }
 
-    std::optional<UI::Asset> ui;
-    auto binding = scene->ui();
+        if (stop.stop_requested()) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Controller preparation cancelled");
+        }
 
-    if (!binding) {
-      return std::unexpected(binding.error());
-    }
+        const auto& controllerPath = *player.properties.controller;
+        auto loaded = Animation::loadController(
+            files,
+            std::filesystem::path{std::u8string(controllerPath.begin(), controllerPath.end())});
 
-    if (*binding) {
-      auto loaded = UI::loadLayout(
-          files, std::filesystem::path{std::u8string((**binding).begin(), (**binding).end())});
+        if (!loaded) {
+          return std::unexpected(loaded.error());
+        }
 
-      if (!loaded) {
-        return std::unexpected(loaded.error());
+        controllers.push_back({controllerPath, std::move(*loaded)});
       }
 
-      ui = UI::Asset{**binding, std::move(*loaded)};
+      std::optional<UI::Asset> ui;
+      auto binding = scene->ui();
+
+      if (!binding) {
+        return std::unexpected(binding.error());
+      }
+
+      if (*binding) {
+        auto loaded = UI::loadLayout(
+            files, std::filesystem::path{std::u8string((**binding).begin(), (**binding).end())});
+
+        if (!loaded) {
+          return std::unexpected(loaded.error());
+        }
+
+        ui = UI::Asset{**binding, std::move(*loaded)};
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "UI preparation cancelled");
+      }
+
+      auto meshes = Physics::loadSceneCollisionMeshes(files, *scene, stop);
+
+      if (!meshes) {
+        return std::unexpected(meshes.error());
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Collision mesh preparation cancelled");
+      }
+
+      auto canonical = World::encodeScene(*scene);
+      return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
+                             Data{files.root(), std::move(*canonical), std::move(*animations),
+                                  std::move(controllers), std::move(ui), std::move(*meshes)})}}
+                       : std::unexpected(canonical.error());
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External, "Prepare scene: " + std::string(error.what()));
     }
-
-    if (stop.stop_requested()) {
-      return Core::fail(Core::ErrorCode::Unavailable, "UI preparation cancelled");
-    }
-
-    auto meshes = Physics::loadSceneCollisionMeshes(files, *scene, stop);
-
-    if (!meshes) {
-      return std::unexpected(meshes.error());
-    }
-
-    if (stop.stop_requested()) {
-      return Core::fail(Core::ErrorCode::Unavailable, "Collision mesh preparation cancelled");
-    }
-
-    auto canonical = World::encodeScene(*scene);
-    return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
-                           Data{files.root(), std::move(*canonical), std::move(*animations),
-                                std::move(controllers), std::move(ui), std::move(*meshes)})}}
-                     : std::unexpected(canonical.error());
   }
 
   auto PreparedScene::scene() const -> Core::Result<World::Scene> {
@@ -597,7 +621,7 @@ namespace Dot::Project {
                     initial = std::move(initial)](std::stop_token stop) {
             auto result = [&]() -> Core::Result<PreparedScene> {
               try {
-                return PreparedScene::validate(files, path, initial, stop);
+                return PreparedScene::create(files, path, initial, stop);
               } catch (const std::exception& error) {
                 return Core::fail(Core::ErrorCode::External,
                                   "Background scene preparation: " + std::string(error.what()));
@@ -631,13 +655,10 @@ namespace Dot::Project {
   auto ScenePreparation::begin(const Core::FileSystem& files, std::string path,
                                std::optional<std::string> initial)
       -> Core::Result<ScenePreparation> {
-    if (!Core::isPortableRelativePath(path) || !path.ends_with(".dotscene")
-        || path.starts_with(".dot-stage-") || path.find("/.dot-stage-") != std::string::npos
-        || (initial
-            && (initial->empty() || initial->size() > 64 * 1024 * 1024
-                || !Core::isValidUtf8(*initial)))) {
-      return Core::fail(Core::ErrorCode::InvalidArgument,
-                        "Invalid scene preparation path/initial bytes");
+    auto valid = preparationInput(path, initial);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
     }
 
     try {

@@ -36,6 +36,21 @@ export namespace Dot::Core {
      * 目标为同父目录内单个相对名称，发布错误保留暂存可重试；重命名后的打开失败明确
      * 报告已发布，不删除目标。 */
     [[nodiscard]] auto publish(const std::filesystem::path& name) -> Result<FileSystem>;
+    /** Replace an existing regular directory and return ownership of its complete
+     * previous tree as sibling staging. The caller serializes readers/writers.
+     * Prepare the backup before mutation; publication failure restores the old
+     * name. Failed rollback preserves old data at the reported backup path.
+     * Success is two no-replace renames, not a cross-platform atomic exchange or
+     * crash-durability guarantee. Both trees remain owned on pre-publication failure.
+     * 替换现存普通目录，返回其完整旧树的同级暂存所有权，调用者须串行读写。
+     * 修改前准备备份，发布失败恢复旧名称；回滚失败保留旧数据并报告备份路径。
+     * 成功由两次不替换重命名组成，不保证跨平台原子交换或崩溃持久性；发布前失败保留两棵树。 */
+    [[nodiscard]] auto replace(const std::filesystem::path& name) -> Result<StagedDirectory>;
+    /** Same-filesystem destination parent may differ; retain the previous tree in the staging
+     * parent, allowing private backups outside a published resource catalog.
+     * 同文件系统的目标父目录可不同；旧树保留在暂存父目录，允许备份置于资源目录之外。 */
+    [[nodiscard]] auto replace(const FileSystem& destinationParent,
+                               const std::filesystem::path& name) -> Result<StagedDirectory>;
 
   private:
     StagedDirectory(FileSystem parent, std::filesystem::path staging) noexcept;

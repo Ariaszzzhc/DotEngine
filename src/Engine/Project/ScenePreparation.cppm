@@ -34,6 +34,11 @@ export namespace Dot::Project {
     PreparedScene(PreparedScene&&) noexcept;
     auto operator=(PreparedScene&&) noexcept -> PreparedScene&;
     ~PreparedScene();
+    /** CPU preparation on the calling thread; optional cancellation between bounded assets.
+     * 在调用线程进行 CPU 准备，在有界资源之间响应取消。 */
+    [[nodiscard]] static auto create(const Core::FileSystem& files, const std::string& path,
+                                     const std::optional<std::string>& initial,
+                                     std::stop_token stop) -> Core::Result<PreparedScene>;
     [[nodiscard]] auto scene() const -> Core::Result<World::Scene>;
     /** Borrowed until the last owning proof releases. Consumers copy immutable
      * clip handles before publication; no worker scene/player handles escape.
@@ -54,10 +59,6 @@ export namespace Dot::Project {
   private:
     struct Data;
     explicit PreparedScene(std::shared_ptr<const Data> data) noexcept;
-    [[nodiscard]] static auto validate(const Core::FileSystem& files, const std::string& path,
-                                       const std::optional<std::string>& initial,
-                                       std::stop_token stop) -> Core::Result<PreparedScene>;
-    friend class ScenePreparation;
     std::shared_ptr<const Data> m_data;
   };
 

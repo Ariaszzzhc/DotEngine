@@ -1,5 +1,9 @@
 #include <doctest/doctest.h>
 
+#if defined(__APPLE__)
+#  include <sys/stat.h>
+#endif
+
 #include <expected>
 #include <filesystem>
 #include <random>
@@ -150,3 +154,80 @@ TEST_CASE("staged_directory.explicit_discard_releases_ownership_and_failure_can_
   REQUIRE(staging.discard());
   CHECK(std::filesystem::is_empty(parent.root));
 }
+
+TEST_CASE("staged_directory.replacement_owns_previous_and_can_restore_across_parents") {
+  Parent parent;
+  REQUIRE(parent.files().createDirectories("assets/model"));
+  REQUIRE(parent.files().writeTextAtomic("assets/model/value", "old"));
+  REQUIRE(parent.files().createDirectories("private"));
+  const auto hidden = Dot::Core::FileSystem::open(parent.root / "private").value();
+  const auto assets = Dot::Core::FileSystem::open(parent.root / "assets").value();
+  auto staging = Dot::Core::StagedDirectory::create(hidden).value();
+  REQUIRE(staging.files()->writeTextAtomic("value", "new"));
+  auto previous = staging.replace(assets, "model");
+  REQUIRE(previous);
+  CHECK_FALSE(staging.files());
+  CHECK(parent.files().readText("assets/model/value").value() == "new");
+  CHECK(previous->files()->readText("value").value() == "old");
+  const auto backup = previous->files()->root();
+
+  {
+    auto displaced = previous->replace(assets, "model");
+    REQUIRE(displaced);
+    CHECK(displaced->files()->readText("value").value() == "new");
+    CHECK(parent.files().readText("assets/model/value").value() == "old");
+    CHECK_FALSE(previous->files());
+  }
+
+  CHECK_FALSE(std::filesystem::exists(backup));
+  CHECK(std::filesystem::is_empty(hidden.root()));
+  CHECK(parent.files().readText("assets/model/value").value() == "old");
+}
+
+TEST_CASE("staged_directory.replacement_rejects_invalid_targets_without_losing_either_tree") {
+  Parent parent;
+  REQUIRE(parent.files().createDirectories("model"));
+  REQUIRE(parent.files().writeTextAtomic("model/value", "old"));
+  REQUIRE(parent.files().writeTextAtomic("file", "user"));
+  std::filesystem::create_directory_symlink(parent.root / "model", parent.root / "link");
+  auto staging = Dot::Core::StagedDirectory::create(parent.files()).value();
+  REQUIRE(staging.files()->writeTextAtomic("value", "new"));
+
+  for (const auto* name : {"", ".", "..", "a/b", "a\\b", "/absolute", "absent", "file", "link"}) {
+    CHECK_FALSE(staging.replace(name));
+  }
+
+  CHECK_FALSE(staging.replace(staging.files()->root().filename()));
+  CHECK(staging.files()->readText("value").value() == "new");
+  CHECK(parent.files().readText("model/value").value() == "old");
+  CHECK(parent.files().readText("file").value() == "user");
+}
+
+#if defined(__APPLE__)
+TEST_CASE("staged_directory.failed_publication_restores_original_name_and_retains_candidate") {
+  Parent parent;
+  REQUIRE(parent.files().createDirectories("model"));
+  REQUIRE(parent.files().writeTextAtomic("model/value", "old"));
+  auto staging = Dot::Core::StagedDirectory::create(parent.files()).value();
+  REQUIRE(staging.files()->writeTextAtomic("value", "new"));
+  const auto root = staging.files()->root();
+
+  struct Flags {
+    std::filesystem::path path;
+
+    ~Flags() {
+      chflags(path.c_str(), 0);
+    }
+  } flags{root};
+
+  REQUIRE(chflags(root.c_str(), UF_IMMUTABLE) == 0);
+  auto rejected = staging.replace("model");
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().message.find("original directory restored") != std::string::npos);
+  CHECK(parent.files().readText("model/value").value() == "old");
+  CHECK(staging.files()->readText("value").value() == "new");
+  CHECK(std::distance(std::filesystem::directory_iterator(parent.root),
+                      std::filesystem::directory_iterator{})
+        == 2);
+}
+#endif

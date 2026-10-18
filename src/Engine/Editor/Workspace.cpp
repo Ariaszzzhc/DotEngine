@@ -61,6 +61,7 @@ import Dot.Assets.ImageExport;
 import Dot.Platform.Dialog;
 import Dot.Graphics.View;
 import Dot.Editor.Resources;
+import Dot.Editor.ModelReimport;
 import Dot.Editor.MaterialDocument;
 import Dot.Editor.AssetPreview;
 import Dot.Editor.PreviewWorker;
@@ -496,6 +497,11 @@ namespace Dot::Editor {
     std::optional<Project::Project> m_project;
     WorkspaceConfig m_config;
     std::optional<ResourceStore> m_resources;
+    std::optional<ModelReimport> m_reimport;
+    std::uint64_t m_reimportSession{};
+    std::size_t m_reimportOffset{};
+    std::string m_reimportFile;
+
     std::optional<TextDocument> m_text;
     std::optional<MaterialDocument> m_material;
     Json m_materialForm;
@@ -5746,6 +5752,177 @@ namespace Dot::Editor {
             .dump();
       }
 
+      if (command == "prepare-model-reimport") {
+        Codec::requireFields(parsed, {"command", "path", "source", "revision"}, {"scene"});
+
+        if (m_reimport || playing() || previewing() || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+            || m_captureDialog || m_document->stats()->dirty || m_clipDocument
+            || m_controllerDocument || m_uiEditor
+            || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || m_reimportSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Model reimport requires saved, stopped authoring with closed drafts and no review");
+        }
+
+        std::optional<std::uint32_t> scene;
+
+        if (parsed.contains("scene")) {
+          if (!parsed["scene"].is_number_unsigned()
+              || parsed["scene"].get<std::uint64_t>() > 1023) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Model scene must be 0..1023");
+          }
+
+          scene = parsed["scene"].get<std::uint32_t>();
+        }
+
+        const auto source = parsed["source"].get<std::string>();
+        auto review = ModelReimport::begin(
+            *m_project, std::filesystem::path(std::u8string(source.begin(), source.end())),
+            parsed["path"].get<std::string>(), scene);
+
+        if (!review) {
+          return std::unexpected(review.error());
+        }
+
+        m_reimport.emplace(std::move(*review));
+        ++m_reimportSession;
+        m_reimportOffset = 0;
+        m_reimportFile.clear();
+        return Json{{"ok", true}, {"review", reimportStatus().value()}}.dump();
+      }
+
+      if (command == "inspect-model-reimport" || command == "inspect-model-reimport-file"
+          || command == "choose-model-reimport" || command == "validate-model-reimport"
+          || command == "apply-model-reimport" || command == "revert-model-reimport"
+          || command == "close-model-reimport") {
+        if (command == "inspect-model-reimport") {
+          Codec::requireFields(parsed, {"command", "session"}, {"offset", "limit"});
+        } else if (command == "choose-model-reimport") {
+          Codec::requireFields(parsed, {"command", "session", "revision", "path", "choice"});
+        } else if (command == "inspect-model-reimport-file") {
+          Codec::requireFields(parsed, {"command", "session", "revision", "path"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "revision"});
+        }
+
+        if (!m_reimport || Codec::id(parsed["session"]) != m_reimportSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Model reimport session changed");
+        }
+
+        if (command == "inspect-model-reimport") {
+          for (const auto* field : {"offset", "limit"}) {
+            if (parsed.contains(field)
+                && (!parsed[field].is_number_unsigned()
+                    || parsed[field].get<std::uint64_t>() > 8192)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid reimport page");
+            }
+          }
+
+          auto status = reimportStatus(parsed.value("offset", std::size_t{}),
+                                       parsed.value("limit", std::size_t{64}));
+          return status ? Core::Result<std::string>{Json{{"ok", true}, {"review", *status}}.dump()}
+                        : std::unexpected(status.error());
+        }
+
+        const auto revision = Codec::id(parsed["revision"]);
+
+        if (command == "inspect-model-reimport-file") {
+          auto file = m_reimport->file(parsed["path"].get<std::string>(), revision);
+          return file ? Core::Result<std::string>{Json{
+                            {"ok", true},
+                            {"text", file->text},
+                            {"truncated", file->truncated},
+                            {"before", file->before},
+                            {"after", file->after}}.dump()}
+                      : std::unexpected(file.error());
+        }
+
+        Core::Result<void> changed;
+
+        if (command == "choose-model-reimport") {
+          const auto choice = parsed["choice"].get<std::string>();
+
+          if (choice != "source" && choice != "project") {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "Choice must be source or project");
+          }
+
+          changed = m_reimport->choose(
+              parsed["path"].get<std::string>(),
+              choice == "source" ? ReimportChoice::Source : ReimportChoice::Project, revision);
+        } else if (command == "validate-model-reimport") {
+          changed = m_reimport->validate(revision);
+        } else if (command == "close-model-reimport") {
+          auto status = m_reimport->status();
+
+          if (!status || status->revision != revision) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Model reimport revision changed");
+          }
+
+          m_reimport.reset();
+          m_reimportFile.clear();
+          return Json{{"ok", true}, {"review", nullptr}}.dump();
+        } else {
+          if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+              || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
+              || m_document->stats()->dirty || m_clipDocument || m_controllerDocument
+              || m_uiEditor) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Apply/revert requires saved, stopped authoring without drafts");
+          }
+
+          auto observed = m_reimport->status();
+          const auto required
+              = command == "apply-model-reimport" ? ReimportState::Ready : ReimportState::Applied;
+
+          if (!observed || observed->revision != revision || observed->state != required) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Model reimport state or revision changed");
+          }
+
+          auto stopped = stopPreviews();
+
+          if (!stopped) {
+            return std::unexpected(stopped.error());
+          }
+
+          m_previewWorker.reset();
+          m_previewsStopped = false;
+          clearPreviews();
+          auto cleared = m_drawing->clearCache();
+
+          if (!cleared) {
+            return std::unexpected(cleared.error());
+          }
+
+          changed = command == "apply-model-reimport" ? m_reimport->apply(revision)
+                                                      : m_reimport->revert(revision);
+          m_assetRefresh = true;
+          m_renderedView.reset();
+          m_previewReady = false;
+
+          if (changed) {
+            m_text.reset();
+            m_material.reset();
+            resetMaterialForm();
+            auto refreshed = catalog();
+
+            if (!refreshed) {
+              return Core::fail(
+                  refreshed.error().code,
+                  "Model files committed; catalog refresh failed: " + refreshed.error().message);
+            }
+          }
+        }
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        return Json{{"ok", true}, {"review", reimportStatus().value()}}.dump();
+      }
+
       if (command == "import-model") {
         Codec::requireFields(parsed, {"command", "path", "source"}, {"scene"});
         const auto name = parsed["path"].get<std::string>();
@@ -9673,8 +9850,169 @@ namespace Dot::Editor {
       }
     }
 
+    auto reimportStatus(std::size_t offset = 0, std::size_t limit = 64) -> Core::Result<Json> {
+      if (!m_reimport) {
+        return Core::fail(Core::ErrorCode::InvalidState, "No model reimport review is open");
+      }
+
+      auto status = m_reimport->status(offset, limit);
+
+      if (!status) {
+        return std::unexpected(status.error());
+      }
+
+      constexpr std::array names{"preparing", "review",   "validating", "ready",
+                                 "applied",   "reverted", "failed"};
+      constexpr std::array choices{"unresolved", "source", "project"};
+      Json files = Json::array();
+
+      for (const auto& change : status->changes) {
+        files.push_back({{"path", change.path},
+                         {"beforeBytes", change.beforeBytes},
+                         {"afterBytes", change.afterBytes},
+                         {"added", change.added},
+                         {"choice", choices[static_cast<std::size_t>(change.choice)]}});
+      }
+
+      return Json{{"session", std::to_string(m_reimportSession)},
+                  {"revision", std::to_string(status->revision)},
+                  {"state", names[static_cast<std::size_t>(status->state)]},
+                  {"path", status->path},
+                  {"error", status->error},
+                  {"count", status->count},
+                  {"offset", offset},
+                  {"files", files},
+                  {"warnings", status->warnings}};
+    }
+
+    auto reimportPanel() -> void {
+      if (!m_reimport
+          || !ImGui::CollapsingHeader("Model reimport", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+      }
+
+      auto observed = reimportStatus(m_reimportOffset, 16);
+
+      if (!observed) {
+        ImGui::TextWrapped("%s", observed.error().message.c_str());
+        return;
+      }
+
+      const auto value = *observed;
+      const auto state = value["state"].get<std::string>();
+      const auto request = [&](const char* command) {
+        return Json{
+            {"command", command}, {"session", value["session"]}, {"revision", value["revision"]}};
+      };
+      const auto act = [&](const Json& command) {
+        auto result = safeExecute(command.dump());
+        m_message = result ? "" : result.error().message;
+      };
+      ImGui::TextWrapped("%s: %s", value["path"].get_ref<const std::string&>().c_str(),
+                         state.c_str());
+      ImGui::TextWrapped(
+          "Choose every changed file, validate, then apply. Keep project retains the entire file.");
+      ImGui::TextWrapped(
+          "Node identity and bindings must match. Retired source files are retained.");
+
+      if (!value["error"].get_ref<const std::string&>().empty()) {
+        ImGui::TextWrapped("%s", value["error"].get_ref<const std::string&>().c_str());
+      }
+
+      for (const auto& warning : value["warnings"]) {
+        ImGui::TextWrapped("%s", warning.get_ref<const std::string&>().c_str());
+      }
+
+      for (const auto& entry : value["files"]) {
+        const auto name = entry["path"].get<std::string>();
+        ImGui::PushID(name.c_str());
+        ImGui::TextWrapped("%s (%llu -> %llu bytes)", name.c_str(),
+                           entry["beforeBytes"].get<unsigned long long>(),
+                           entry["afterBytes"].get<unsigned long long>());
+        ImGui::TextUnformatted(entry["choice"].get_ref<const std::string&>().c_str());
+
+        if (ImGui::Button("Inspect change")) {
+          m_reimportFile = name;
+        }
+
+        ImGui::BeginDisabled(state != "review");
+
+        if (ImGui::Button("Use source")) {
+          auto command = request("choose-model-reimport");
+          command["path"] = name;
+          command["choice"] = "source";
+          act(command);
+        }
+
+        ImGui::SameLine();
+        ImGui::BeginDisabled(entry["added"].get<bool>());
+
+        if (ImGui::Button("Keep project")) {
+          auto command = request("choose-model-reimport");
+          command["path"] = name;
+          command["choice"] = "project";
+          act(command);
+        }
+
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+        ImGui::PopID();
+      }
+
+      if (m_reimportOffset > 0 && ImGui::Button("Previous changes")) {
+        m_reimportOffset -= 16;
+      }
+
+      if (m_reimportOffset + 16 < value["count"].get<std::size_t>()
+          && ImGui::Button("Next changes")) {
+        m_reimportOffset += 16;
+      }
+
+      if (!m_reimportFile.empty() && state != "preparing" && state != "validating") {
+        auto preview = m_reimport->file(m_reimportFile, Codec::id(value["revision"]));
+
+        if (preview && preview->text) {
+          ImGui::TextWrapped("%s%s", m_reimportFile.c_str(),
+                             preview->truncated ? " (first 16 KiB per file)" : "");
+          ImGui::TextUnformatted("Project before");
+          ImGui::BeginChild("reimport-before", {0, 180}, ImGuiChildFlags_Borders);
+          ImGui::TextWrapped("%s", preview->before.c_str());
+          ImGui::EndChild();
+          ImGui::TextUnformatted("Source after");
+          ImGui::BeginChild("reimport-after", {0, 180}, ImGuiChildFlags_Borders);
+          ImGui::TextWrapped("%s", preview->after.c_str());
+          ImGui::EndChild();
+        } else if (preview) {
+          ImGui::TextWrapped("Binary change: compare the source asset and reported byte counts.");
+        }
+      }
+
+      if (state == "review" && ImGui::Button("Validate model choices")) {
+        act(request("validate-model-reimport"));
+      }
+
+      if (state == "ready" && ImGui::Button("Apply reviewed model")) {
+        act(request("apply-model-reimport"));
+      }
+
+      if (state == "applied") {
+        ImGui::TextWrapped(
+            "Applied. Refresh linked instances explicitly. Revert requires unchanged saved project "
+            "files.");
+
+        if (ImGui::Button("Revert model files")) {
+          act(request("revert-model-reimport"));
+        }
+      }
+
+      if (ImGui::Button(state == "applied" ? "Accept and close review" : "Close model review")) {
+        act(request("close-model-reimport"));
+      }
+    }
+
     auto resourcesPanel() -> void {
       ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+      reimportPanel();
       searchField("##asset-search", "Search project assets", "resources", m_assetFilter);
       ImGui::SameLine();
 
@@ -9726,6 +10064,16 @@ namespace Dot::Editor {
           auto result = safeExecute(
               Json{{"command", "import-model"}, {"path", m_newPath}, {"source", m_importSource}}
                   .dump());
+          m_message = result ? "" : result.error().message;
+        }
+
+        if (ImGui::Button("Review model reimport")) {
+          auto result
+              = safeExecute(Json{{"command", "prepare-model-reimport"},
+                                 {"path", m_newPath},
+                                 {"source", m_importSource},
+                                 {"revision", std::to_string(m_document->stats()->revision)}}
+                                .dump());
           m_message = result ? "" : result.error().message;
         }
 

@@ -326,3 +326,23 @@ TEST_CASE("scene_preparation.ui_defaults_are_owned_and_missing_resources_fail_be
   wait(none);
   CHECK_FALSE(none.take()->ui().value());
 }
+
+TEST_CASE("scene_preparation.synchronous_proof_uses_same_path_and_initial_boundaries") {
+  Fixture f;
+  const auto initial = World::encodeScene(f.scene).value();
+
+  for (const auto* path :
+       {"", "../escape.dotscene", "scenes/main.txt", ".dot-stage-secret/scene.dotscene"}) {
+    CHECK_FALSE(Project::PreparedScene::create(f.files, path, initial, {}));
+    CHECK_FALSE(Project::ScenePreparation::begin(f.files, path, initial));
+  }
+
+  CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/main.dotscene", std::string{}, {}));
+  auto proof = Project::PreparedScene::create(f.files, "scenes/main.dotscene", initial, {});
+  REQUIRE(proof);
+  CHECK(proof->accepts(f.files, f.scene).value());
+  std::stop_source stopped;
+  stopped.request_stop();
+  CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/main.dotscene", initial,
+                                             stopped.get_token()));
+}
