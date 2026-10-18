@@ -176,6 +176,23 @@ export namespace Dot::World {
     auto operator==(const AnimationPlayerInfo&) const -> bool = default;
   };
 
+  struct TransformInfo {
+    EntityId id;
+    Transform transform;
+    std::optional<EntityId> parent;
+  };
+
+  struct ColliderInfo {
+    EntityId id;
+    std::optional<RigidBody> rigidBody;
+    std::optional<CharacterController> character;
+  };
+
+  struct AudioSourceInfo {
+    EntityId id;
+    AudioSource properties;
+  };
+
   /** Owned snapshot; editing it does not mutate the scene.
    * 拥有数据的快照，修改快照不会更改场景。 */
   struct EntityInfo {
@@ -286,6 +303,16 @@ export namespace Dot::World {
     /** Snapshots sorted by creation ID for deterministic consumers.
      * 按创建 ID 排序的快照，供消费者确定性使用。 */
     [[nodiscard]] auto entities() const -> Core::Result<std::vector<EntityInfo>>;
+    /** Owned ID-sorted subsystem snapshots; never copy unrelated components.
+     * Every live entity has a transform; colliders contain exactly one physical
+     * description; audioSources includes only source owners. Results retain values
+     * after mutation/destruction. Same owner/scope checks as entities().
+     * 子系统快照按 ID 排序并拥有数据，不复制无关组件；所有有效实体均有变换，碰撞体恰有
+     * 一种物理描述，音源列表仅含音源所有者。修改/销毁后快照保留原值，所有者/范围校验同 entities()。
+     */
+    [[nodiscard]] auto transforms() const -> Core::Result<std::vector<TransformInfo>>;
+    [[nodiscard]] auto colliders() const -> Core::Result<std::vector<ColliderInfo>>;
+    [[nodiscard]] auto audioSources() const -> Core::Result<std::vector<AudioSourceInfo>>;
     [[nodiscard]] auto renameEntity(EntityId entity, std::string_view name) -> Core::Result<void>;
     /** Owned local pose only, without copying names/scripts/other components.
      * Same owner/scope/liveness checks as entity().

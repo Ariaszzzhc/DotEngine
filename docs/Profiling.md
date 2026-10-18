@@ -113,7 +113,11 @@ script Start callbacks or game updates. During asynchronous compilation it conti
 presents a clear surface with a loading title. These loading application steps are
 profiled but do not consume the requested game-frame budget. Thus `sampled` may be
 larger than the budget; the profile's fixed callback counts are application clock
-steps, not proof of gameplay updates before startup. The phase transitions are
+steps, not proof of gameplay updates before startup. After startup, asynchronous
+presentation may also require multiple application steps per completed game frame.
+The finite game-frame budget counts completed presentations, while CPU history
+records every application step, including pending-render work. Per-step medians
+therefore do not establish displayed FPS or GPU cost. The phase transitions are
 reported on stderr. Zero frames still means run until closed. Subsequent synchronous
 resource work remains included and catch-up/drop warnings are unchanged.
 
@@ -135,3 +139,18 @@ substantial render-stack work; it did not establish that text rasterization caus
 the largest hitch. Repeated full scene inspection also contributes control/JSON
 cost, so those agent-driven records are functional investigation evidence rather
 than an unobstructed player benchmark.
+
+## Native subsystem attribution
+
+Application phases locate an expensive envelope; an OS CPU sample can then identify
+which native service is spending time inside it. Keep the exact content, executable
+configuration, sample window and raw stack report. Statistical stack counts are not
+invocation counts or precise per-method timings. Async rendering/waits and differing
+fixed-step counts also prevent treating one before/after history as a formal FPS
+benchmark. Compare the same work and preserve independent behavior/image evidence.
+
+Scene observations now provide owned pose/collider/audio subsets. In the actual
+Prism native investigation, audio synchronization no longer builds/sorts complete
+entity descriptions, and physics no longer clones render/skin/animation components.
+This is a reduction in native snapshot work; it does not complete resource streaming,
+background native cooking, scene mutation validation costs or animation synchronization.

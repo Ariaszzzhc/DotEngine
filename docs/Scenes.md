@@ -218,3 +218,29 @@ script properties are not interpreted as entity references. Returned affected
 children are owned and sorted by entity value. Live handles retain their scene
 scope; committed removed IDs are never reused. See [editor operations](Editor.md#hierarchy-organization)
 for selection/history/save behavior and [SDK operations](Scripting.md#hierarchy-operations).
+
+## Owned native subsystem observations
+
+`Scene::entities()` remains the complete, deterministic owned snapshot used by
+scene codecs/editor inspection. It sorts compact identities before creating full
+component descriptions. Subsystem loops use narrower owned observations:
+
+| Native query | Result |
+| --- | --- |
+| `transforms()` | All live IDs, local poses and parents, in ID order |
+| `colliders()` | Only rigid-body/character owners, with their physical description |
+| `audioSources()` | Only source owners and their authored audio properties |
+| `primaryAudioListener()` | Current primary listener identity, or explicit NotFound |
+
+These queries neither borrow EnTT/component storage nor initialize backends. Values
+remain independent after component edits, subtree removal, scene moves or destruction;
+only the owned values can cross threads. Query calls retain the scene's creating-
+thread/moved-state checks. Physical membership still enforces rigid-body/character
+exclusion. They do not cache an obsolete set of owners or skip failed properties.
+
+SceneSimulation synchronizes from collider descriptions and prepares writeback from
+all topology/pose records. SceneAudio observes sources and the listener directly.
+This avoids cloning unrelated names, scripts, material paths, skin joints and
+animation libraries on each native tick. Parent-before-child writeback, full world-
+transform validation, atomic failed edits, voice/PCM budgets, source retention and
+listener motion baselines retain their existing behavior.

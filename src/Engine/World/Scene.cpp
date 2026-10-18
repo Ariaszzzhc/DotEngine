@@ -289,6 +289,21 @@ namespace Dot::World {
       return found->second;
     }
 
+    /** Sort compact identities before materializing owned descriptions; moving
+     * complete entity DTOs during sort repeatedly moves large optional members.
+     * 先排序紧凑身份，再构造拥有描述，避免排序完整实体时移动无关的大型可选载荷。 */
+    auto ordered() const -> std::vector<std::pair<std::uint64_t, entt::entity>> {
+      std::vector<std::pair<std::uint64_t, entt::entity>> result;
+      result.reserve(lookup.size());
+
+      for (const auto& entry : lookup) {
+        result.push_back(entry);
+      }
+
+      std::ranges::sort(result, {}, &decltype(result)::value_type::first);
+      return result;
+    }
+
     auto snapshot(entt::entity native) const -> EntityInfo {
       const auto& value = registry.get<Identity>(native);
       const auto parent = registry.get<Hierarchy>(native).parent;
@@ -1030,15 +1045,128 @@ namespace Dot::World {
       return std::unexpected(checked.error());
     }
 
-    std::vector<EntityInfo> entities;
-    entities.reserve(m_impl->lookup.size());
+    try {
+      const auto order = m_impl->ordered();
+      std::vector<EntityInfo> entities;
+      entities.reserve(order.size());
 
-    for (const auto& entry : m_impl->lookup) {
-      entities.push_back(m_impl->snapshot(entry.second));
+      for (const auto& [id, native] : order) {
+        (void)id;
+        entities.push_back(m_impl->snapshot(native));
+      }
+
+      return entities;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Snapshot scene entities: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::transforms() const -> Core::Result<std::vector<TransformInfo>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
     }
 
-    std::ranges::sort(entities, {}, [](const EntityInfo& entity) { return entity.id.value; });
-    return entities;
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      const auto order = m_impl->ordered();
+      std::vector<TransformInfo> result;
+      result.reserve(order.size());
+
+      for (const auto& [id, native] : order) {
+        const auto parent = m_impl->registry.get<Hierarchy>(native).parent;
+        result.push_back(
+            {{m_impl->identity, id},
+             m_impl->registry.get<Transform>(native),
+             parent ? std::optional{EntityId{m_impl->identity, *parent}} : std::nullopt});
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Snapshot scene transforms: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::colliders() const -> Core::Result<std::vector<ColliderInfo>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      const auto& registry = m_impl->registry;
+      std::vector<std::pair<std::uint64_t, entt::entity>> order;
+
+      for (const auto native : registry.view<const RigidBody>()) {
+        order.push_back({registry.get<Identity>(native).value, native});
+      }
+
+      for (const auto native : registry.view<const CharacterController>()) {
+        order.push_back({registry.get<Identity>(native).value, native});
+      }
+
+      std::ranges::sort(order, {}, &decltype(order)::value_type::first);
+      std::vector<ColliderInfo> result;
+      result.reserve(order.size());
+
+      for (const auto& [id, native] : order) {
+        const auto* body = registry.try_get<RigidBody>(native);
+        const auto* character = registry.try_get<CharacterController>(native);
+        result.push_back({{m_impl->identity, id},
+                          body ? std::optional{*body} : std::nullopt,
+                          character ? std::optional{*character} : std::nullopt});
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Snapshot scene colliders: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::audioSources() const -> Core::Result<std::vector<AudioSourceInfo>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      const auto& registry = m_impl->registry;
+      std::vector<std::pair<std::uint64_t, entt::entity>> order;
+
+      for (const auto native : registry.view<const AudioSource>()) {
+        order.push_back({registry.get<Identity>(native).value, native});
+      }
+
+      std::ranges::sort(order, {}, &decltype(order)::value_type::first);
+      std::vector<AudioSourceInfo> result;
+      result.reserve(order.size());
+
+      for (const auto& [id, native] : order) {
+        result.push_back({{m_impl->identity, id}, registry.get<AudioSource>(native)});
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Snapshot scene audio sources: " + std::string(error.what()));
+    }
   }
 
   auto Scene::renameEntity(EntityId entity, std::string_view name) -> Core::Result<void> {
@@ -1986,11 +2114,11 @@ namespace Dot::World {
       return std::unexpected(checked.error());
     }
 
-    for (const auto& entry : m_impl->lookup) {
-      const auto* listener = m_impl->registry.try_get<AudioListener>(entry.second);
+    const auto& registry = m_impl->registry;
 
-      if (listener && listener->primary) {
-        return EntityId{m_impl->identity, entry.first};
+    for (const auto native : registry.view<const AudioListener>()) {
+      if (registry.get<AudioListener>(native).primary) {
+        return EntityId{m_impl->identity, registry.get<Identity>(native).value};
       }
     }
 

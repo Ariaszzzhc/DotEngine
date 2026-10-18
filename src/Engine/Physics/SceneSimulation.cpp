@@ -383,7 +383,7 @@ namespace Dot::Physics {
     bool committed = false;
 
     try {
-      auto entities = scene.entities();
+      auto entities = scene.colliders();
 
       if (!entities) {
         return std::unexpected(entities.error());
@@ -618,7 +618,7 @@ namespace Dot::Physics {
     }
 
     try {
-      auto entities = scene.entities();
+      auto entities = scene.transforms();
 
       if (!entities) {
         m_impl->m_faulted = true;

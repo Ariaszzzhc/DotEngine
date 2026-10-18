@@ -32,7 +32,11 @@ requirements remain:
 Native application CPU diagnostics now expose actual event/prepare/fixed/update/render
 step envelopes through the editor and player `--profile` output. Retained slowest
 steps, longest supplied intervals and independent phase peaks preserve startup/hitch
-evidence after history eviction without conflating costs from different frames. These measurements exclude process initialization/teardown and idle waits;
+evidence after history eviction without conflating costs from different frames. Native subsystem snapshots now avoid copying unrelated render/skin/script/animation
+components for physics/audio synchronization, while retaining full transform and
+resource validation. Typed ownership and real native profiles have local evidence;
+whole-scene mutation/animation synchronization and larger populated-game costs remain.
+These measurements exclude process initialization/teardown and idle waits;
 they do not complete the remaining performance, streaming or background-work goals.
 See [profiling scope](Profiling.md).
 

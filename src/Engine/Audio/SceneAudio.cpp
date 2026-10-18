@@ -156,7 +156,7 @@ namespace Dot::Audio {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene audio scope/timestep");
       }
 
-      auto entities = scene.entities();
+      auto entities = scene.audioSources();
 
       if (!entities) {
         return std::unexpected(entities.error());
@@ -171,41 +171,41 @@ namespace Dot::Audio {
         std::optional<EntityId> listenerEntity;
         Listener listener;
 
-        for (const auto& entity : *entities) {
-          if (entity.audioListener && entity.audioListener->primary) {
-            listenerEntity = entity.id;
-            auto world = context(pose(scene, entity.id), entity.id);
+        auto primary = scene.primaryAudioListener();
 
-            if (!world) {
-              return std::unexpected(world.error());
-            }
+        if (!primary && primary.error().code != Core::ErrorCode::NotFound) {
+          return std::unexpected(primary.error());
+        }
 
-            listener.position = world->position;
-            listener.rotation = world->rotation;
-            listener.velocity = m_listenerEntity == listenerEntity
-                                    ? velocity(listener.position, m_listener.position, seconds)
-                                    : Math::Vec3{};
-            auto normalized = context(validatedListener(listener), entity.id);
+        if (primary) {
+          listenerEntity = *primary;
+          auto world = context(pose(scene, *primary), *primary);
 
-            if (!normalized) {
-              return std::unexpected(normalized.error());
-            }
-
-            listener = *normalized;
+          if (!world) {
+            return std::unexpected(world.error());
           }
+
+          listener.position = world->position;
+          listener.rotation = world->rotation;
+          listener.velocity = m_listenerEntity == listenerEntity
+                                  ? velocity(listener.position, m_listener.position, seconds)
+                                  : Math::Vec3{};
+          auto normalized = context(validatedListener(listener), *primary);
+
+          if (!normalized) {
+            return std::unexpected(normalized.error());
+          }
+
+          listener = *normalized;
         }
 
         for (const auto& entity : *entities) {
-          if (!entity.audioSource) {
-            continue;
-          }
-
           if (bindings.size() >= m_mixerConfig.maxVoices) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
                               "Scene audio exceeds voice capacity");
           }
 
-          const auto& properties = *entity.audioSource;
+          const auto& properties = entity.properties;
           auto spatial = SpatialSettings{};
           static_cast<SpatialProperties&>(spatial) = properties.spatial;
           const auto old = m_bindings.find(entity.id.value);

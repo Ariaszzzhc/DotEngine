@@ -13100,3 +13100,108 @@ font and completes real movement/save/restore with exit 0. Relevant malformed
 runtime/control command cases pass as part of the 74-case targeted checks; those
 headless command tests do not open desktop windows. Keep diagnostic records under
 ignored build/frame-cost-review. Windows/Linux remain unvalidated.
+
+## 2026-10-18 — Native subsystem snapshots
+
+Use actual Prism native application profiles and OS stack samples to locate
+snapshot overhead. The real Release baseline spends a substantial sampled branch
+inside SceneAudio synchronization, including full Scene::entities construction and
+large DTO sorting. Physics also clones full descriptions for collider preparation
+and hierarchy writeback. These loops need only a small subset of the available
+render/script/skin/animation data.
+
+Add owned, ID-sorted Scene::transforms, colliders and audioSources observations.
+TransformInfo carries identity/local pose/parent for every live node. ColliderInfo
+contains only rigid-body or character ownership/properties. AudioSourceInfo carries
+only source ownership/properties, with primary listener identity queried separately.
+Use const EnTT views for component-only queries; empty read queries do not create
+missing component pools. Results own all strings/data, retain scene identities after
+moves and remain readable after component removal/scene destruction. Query calls
+still require the creating thread and reject moved scenes. Allocation failures
+return contextual expected errors. Full entities() sorts compact identity/native
+pairs before materializing its complete owned descriptions, preserving its ordering
+and codec/editor semantics.
+
+SceneSimulation synchronizes collider records and writes back using all topology/
+pose records. SceneAudio observes only sources plus the actual primary listener;
+NotFound means explicit listener absence, while other failures propagate. Keep full
+world-transform/camera validation, atomic failed mutations, motion writeback,
+collider/character exclusion, voice/PCM capacities, retained source settings,
+listener/source velocity and teleport baselines. No scheduling/rendering shortcut,
+skipped validation, cached stale membership or extra persistent component cache is
+introduced. Animation synchronization and whole-scene mutation validation still
+have measurable costs; they are not claimed fixed by this change.
+
+Four permanent pure CPU regressions cover sparse/full observation agreement and
+ordering after storage removal, owned strings/parents after edits/subtree removal/
+destruction, foreign-thread/move boundaries, primary-listener demotion, and the
+10000-entity scene capacity with sparse membership updates. They do not initialize
+windows, files, physics worlds or audio/render devices, and assert no timing bound.
+The maximum-population unit case is not a 10000-object rendered-game claim.
+
+Verification on arm64 macOS, with the caller's compiler/linker environment retained:
+
+- Debug full build and complete CTest: 1550/1550 in 256.82 s. The existing bounded
+  scene-preparation case passes without competing builds or any deadline change.
+- After final const-view refinement, Debug targeted checks: 74/74 in 11.15 s.
+- Final Release full build and complete CTest: 1550/1550 in 36.47 s, with NDEBUG.
+  Inventory: 502 pure unit / 1048 integration cases, including 186 offscreen GPU,
+  246 compiler, 37 native audio, 34 platform and 21 process cases.
+- Review module boundaries, ownership, empty/moved/thread behavior, error propagation,
+  deterministic identity ordering and unchanged native semantics. Formatting and
+  whitespace checks pass. No dependency/compiler override, sanitizer, installed
+  public-header tree or dedicated acceptance executable is introduced.
+
+Controlled native diagnostics use the same unchanged 124-file precompiled Prism
+content, Release DotRuntime, the same 1280x800 logical window configuration and a
+budget of 2000 completed game presentations. Run the native player without concurrent builds
+or tests, then sample its live PID for five seconds at 1 ms after running/warmup.
+Retain raw CPU traces, command/compile evidence, native profiles and content hashes.
+The baseline is the font-layout fix before snapshot changes; the final trace uses
+this implementation. Both processes exit 0 with no retained frame errors. Each
+profile owns 120 observations from 9919/10403 application steps respectively.
+Observed retained per-step medians, in milliseconds:
+
+| Application phase | Before | Final |
+| --- | --- | --- |
+| Fixed callbacks | 0.651500 | 0.461417 |
+| Variable callbacks | 1.226042 | 1.152188 |
+| Whole step | 1.654000 | 1.485646 |
+
+These are diagnostic observations, not displayed FPS or a general benchmark.
+Asynchronous presentation waiting steps and fixed callback counts differ; resource
+streaming, GPU time, startup/retirement and production-scale performance are not
+established. A separate first candidate trace is retained without substituting it
+for the final result. Native stack sampling no longer shows full scene snapshots
+under audio synchronization; later animation/script/mutation costs remain visible.
+
+Exercise the actual final editor with a newly created editable Prism project.
+Import the retained licensed utility glTF through import-model, create a linked
+placement and bind its rendered native mesh as a static collider. Rename, undo,
+redo, save and reopen through document operations. The initial immediate Play
+request explicitly rejects still-preparing graphics; observe completed readiness
+before retrying. Play moves the character from x=-3 to x=5.746605396. Externally edit
+and restore camera source, verifying two real watcher/migration generations without
+script diagnostics. Capture and inspect actual game pixels through the product
+PNG operation. Export the current saved project with the new linked asset and 19
+mesh colliders through the same editor.
+
+Relocate that complete native game and temporarily hide only the owned authoring
+project. Two new DotGame processes perform movement/save/move-away/restore and
+cross-process restore using isolated storage. Both exit 0, retain no script
+failures, present native text and restore within 1.859683e-5 m (normal settled pose
+adjustment). The standalone profiles retain 120 error-free steps from 1341/1028
+samples. A separate Release DotRuntime --game run presents the same relocated
+package and pinned text, then exits 0. All four workflow control directories retire;
+all 170 exported file hashes remain unchanged. Restore the authoring project.
+Preserve all 22 earlier persistent save hashes plus the new isolated slot, yielding
+23 guarded saves. Source templates and source assets remain unchanged.
+
+Keep raw product requests/responses, native exports, editable projects, image,
+profiles/samples, fingerprints and saved checkpoint under ignored
+build/frame-cost-review. Remove only owned helper scripts and their bytecode;
+preserve build caches/reference assets/user saves. Inspect native kit-relative
+linkage. No release archive is created. Computer use still reports the Mac locked;
+physical mouse/IME interaction remains unverified. Windows/Linux remain unvalidated.
+This advances native runtime cost and a complete authoring workflow, without proving
+large-game production readiness or completing the remaining goal.
