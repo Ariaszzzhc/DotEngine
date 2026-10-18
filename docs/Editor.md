@@ -2875,3 +2875,14 @@ It creates a regular scene resource; end audition, Open scene to edit it, then u
 it in retargeting or insert it as ordinary scene content. A catalog failure after
 publication explicitly reports that the scene was saved. No new pose file format,
 mesh rebinding or automatic calibration is introduced.
+
+## Resource creation conflicts
+
+New resource and single-file import operations now use native complete-file
+no-replace publication after validation. This also protects pose/reference and
+retarget-clip creation if another creator occupies the destination after the UI's
+initial check. A failed clip publication leaves its Ready result and unstaged
+Inspector intact; recover the destination explicitly before accepting again.
+Existing-file editing/saving remains a separate baseline-checked replacement
+operation. This does not introduce project-wide concurrent editing or alias locks;
+see [atomic resource creation](Assets.md#atomic-creation-of-new-resources).

@@ -479,7 +479,11 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::InvalidState, "Resource destination already exists");
       }
 
-      return m_impl->m_files.writeTextAtomic(path(name), text);
+      auto created = m_impl->m_files.createTextAtomic(path(name), text);
+      return created ? created
+                     : Core::Result<void>{
+                           Core::fail(created.error().code, "Create resource " + std::string(name)
+                                                                + ": " + created.error().message)};
     } catch (const std::exception& error) {
       return external("Create resource text", error);
     }
@@ -765,7 +769,11 @@ namespace Dot::Editor {
         }
       }
 
-      return m_impl->m_files.writeAtomic(path(destination), *bytes);
+      auto created = m_impl->m_files.createAtomic(path(destination), *bytes);
+      return created ? created
+                     : Core::Result<void>{Core::fail(created.error().code,
+                                                     "Import resource " + std::string(destination)
+                                                         + ": " + created.error().message)};
     } catch (const std::exception& error) {
       return external("Import resource", error);
     }

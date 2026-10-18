@@ -15292,3 +15292,97 @@ text-field and narrow-layout acceptance remains unverified due macOS lock; the G
 uses the same compiled operation as the actual machine route. Automatic reference
 alignment, skeleton rebinding/IK/contact correction, final art, streaming and overall
 large-game production maturity remain unfinished.
+
+
+## 2026-10-18 — Exclusive resource-file publication
+
+Review the real reference/clip creation path after sampled-pose authoring. Resource
+creation/import checked absence and then called the replacing atomic writer, leaving
+a window where another writer's destination could be overwritten. Add a native
+complete-file no-replace API and route both text creation and file import through it.
+Existing scene/content/pose/clip/controller/profile/material/UI/script creation already
+shares ResourceStore and acquires the fix without a second product implementation.
+Intentional existing-document/scene/save replacement retains its original semantics.
+
+Reuse one owned sibling prepare/write/flush/close path, then select replacing or
+exclusive publication. Match the existing staged-directory native policy: Darwin
+RENAME_EXCL, Linux RENAME_NOREPLACE, Windows MoveFileExW without replacement. Do not
+fall back to a replacing rename or partial destination writes if unsupported.
+Resolve only the parent for creation and keep the final entry lexical, so an existing
+dangling final symlink cannot redirect creation. Parent paths remain root constrained;
+this does not claim hostile concurrent directory isolation or project-wide alias locks.
+
+Temporary native names are owned before creating the handle, so pathname allocation
+cannot lose a created file. Destruction closes/removes owned staging without allocating;
+failed name reservation clears non-owned names. Hide sibling names from the live
+resource catalog using the existing staging prefix. Preserve existing replacement
+permission/flush behavior. Reject NUL-containing roots/paths, and give FileSystem
+explicit copy/move descriptors: a moved source cannot silently resolve against the
+process current directory. Non-template/platform details stay in implementation units.
+
+CPU filesystem regressions cover complete binary/empty/Unicode creation, occupied
+files/hardlinks/directories, dangling/ordinary/outside final symlinks, internal versus
+escaping parents, invalid/NUL/missing paths, explicit descriptor ownership and cleanup.
+Eight independent filesystem creators race one destination while a reader checks that
+every observed success is an entire known payload. Eight independently opened resource
+stores race text creation against file import, preserving one complete resource and
+unchanged external source. Existing replacement/permissions/complete-reader regressions
+remain active. These use existing integration targets with no windows/devices or
+per-stage acceptance executable. Initial 38 relevant cases pass; the two concurrency
+cases each pass 20 repeated executions (40 invocations) in 4.25 seconds. Full results
+and actual editor/native evidence follow below.
+
+Final Debug configure/build and full 1699/1699 pass in 269.57 seconds; Release
+configure/build and full Release/NDEBUG 1699/1699 pass in 38.81 seconds. Counts are
+547 unit and 1152 integration, including 265 compiler, 39 audio-native and 186
+offscreen cases. Review covers moved/copy root descriptors, native string/handle
+ownership before creation, allocation-free cleanup, parent versus final-link
+resolution, replacement permissions, complete flush/close before publication,
+no unsupported-operation fallback, and shared resource import/creation call sites.
+Formatting and diff checks pass. No dependency/compiler/linker environment changes.
+
+Actual Release editor creates an ordinary PrismCreate project. Create UTF-8/CRLF
+text, reject duplicate creation without changing bytes, then edit/save the same
+file successfully through the normal text document route. Import the retained GLB
+as an ordinary binary resource, verify byte equality and reject duplicate import
+without source/destination changes. These operations leave authoring scene/revision
+unchanged. Audition paused Idle; an independently written marker occupies the new
+pose destination, so Save pose rejects and preserves its bytes. Remove only that
+owned marker and create the ordinary reference. Open it, edit/save a real head
+joint, undo/save the original pose and inspect actual native pixels. This also
+proves intentional existing-scene replacement remains available.
+
+Prepare the existing 51-pair retarget against that reference. After Ready, an
+independent writer occupies its output path. Publication rejects, retains Ready
+and leaves Inspector unstaged; marker bytes remain unchanged. Preserve evidence,
+remove only the owned marker and accept the same proof with all inputs unchanged.
+Apply/save, audition the created clip at .4 seconds, Play/Stop with exact authoring
+restoration and export/relocate the Study game. This applied conflict case validates
+workflow recovery; the native scheduling race itself is covered by concurrent CPU
+filesystem/store tests, without test-only hooks or a fabricated paused kernel call.
+
+Restore the study default, then Main movement/jump, Grounded observation, additive
+action/pause/completed simulation step/resume and F6/move/F7. Restore feet error is
+zero at the unchanged 1e-5 bound; Stop restores authoring before exporting Main.
+Hide only the owned source project and run relocated Study plus two fresh Main
+native processes using one new explicit save directory. All have actual completed
+frames/HUD, failureCount zero and empty runtime diagnostics; final completed frame
+counters 26/259/33 are workflow evidence, not performance claims. Same-process and
+fresh-process restore errors are zero. All four owned native handles have actual
+exit zero before close reply consumption, all 234 replies are ACKed and all four
+retired endpoints are cleared. Restore the authoring path. Native stderr contains
+only expected startup-preparation progress; editor stderr is empty. No current
+abandoned endpoint or timeout-based restart.
+
+All 4984 prior project/game/save guards remain unchanged. Retain 5501 guarded files
+including this ordinary 146-file project, two 185-file relocated games and save.
+Twenty-seven current Debug/Release/kit/export Mach-O paths pass strict signing;
+both Release game hashes match the current kit. Remove temporary orchestration/
+requests after native completion while preserving raw replies, imported resources,
+markers/evidence, actual captures and project/game/save data. Examples and their
+licensed source/locomotion assets remain unchanged. No release archive, generated
+art/mesh tool or new acceptance executable. Only macOS arm64 execution is verified;
+Windows/Linux native paths are implemented but not executed here. Project-wide
+alias locks, concurrent existing-resource editing, hostile parent isolation and
+crash recovery remain separate work. Overall production/game/art/streaming goals
+remain unfinished; creation integrity does not establish general engine maturity.

@@ -117,3 +117,39 @@ for changed project files, validates a private project, and retains a reversible
 bundle during the review session. It does not infer stable identity across source topology
 changes or merge source/project edits automatically. Serialize external writes through
 publication and refresh existing linked instances explicitly after applying.
+
+## Atomic creation of new resources
+
+Text-resource creation and single-file import now publish a complete flushed sibling
+through `FileSystem::createAtomic` / `createTextAtomic`. The final native rename
+refuses an occupied destination, including a final dangling symlink. An existence
+check in the asset browser is useful validation; it no longer selects a replacing
+write after that check. Two creators of the same filesystem destination cannot both
+succeed while that destination remains present. Readers see absence or one complete
+published payload. Private `.dot-stage-file-*` preparation names stay outside the
+live resource catalog; failures clean their owned temporary file.
+
+This shared path covers new scenes/content/pose references, animation clips,
+controllers, retarget profiles, materials, UI/script/text resources and ordinary
+single-file imports. Directory model/project/export publication continues using the
+existing no-replace staged-directory operation. Updating an existing text document,
+scene or save slot still uses its existing baseline checks and explicit replacing
+write. New-resource creation does not make concurrent edits safe or lock the whole
+project. Directory spelling/ASCII alias scans remain validation, not cross-process
+alias locks; the native guarantee concerns the actual filesystem destination.
+Canonical parent resolution constrains paths to the root, without claiming isolation
+from hostile concurrent parent changes. Parents must already exist. Moved root
+descriptors and NUL-containing paths reject. Copies keep independent root descriptors;
+moving invalidates the source. Neither file nor directory crash durability is promised.
+
+The implementation uses the same native no-replace policy as staged directories:
+[Darwin RENAME_EXCL](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/rename.2),
+[Linux RENAME_NOREPLACE](https://man7.org/linux/man-pages/man2/rename.2.html), and
+[Windows MoveFileExW without replacement](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+Unsupported filesystem/OS operations fail contextually; there is no check-and-overwrite
+fallback or directly visible partial-file write. Windows/Linux implementation is
+present, but current execution evidence is macOS only.
+
+新建资源先完成独立暂存与刷新，再以原生不替换改名发布；同一实际目标并发创建只会有一个
+成功，不覆盖既有文件、目录或末级链接。文件导入与资源创建共用实现，普通编辑保存仍保留
+原有替换语义。此保证不等同于项目级别名锁、并发编辑事务、恶意父路径隔离或崩溃持久性。

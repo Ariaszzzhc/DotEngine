@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cstddef>
 #include <expected>
@@ -64,6 +67,10 @@ TEST_CASE("files.root_validation") {
   REQUIRE(files.has_value());
   CHECK(files->root() == Fs::canonical(directory.root));
   CHECK_FALSE(FileSystem::open({}).has_value());
+  auto nulRoot = directory.root.native();
+  nulRoot.push_back(Fs::path::value_type{});
+  nulRoot.append(Fs::path{"suffix"}.native());
+  CHECK_FALSE(FileSystem::open(Fs::path{nulRoot}));
   CHECK_FALSE(FileSystem::open(directory.base / "missing").has_value());
   std::ofstream(directory.root / "file.txt") << "file";
   CHECK_FALSE(FileSystem::open(directory.root / "file.txt").has_value());
@@ -216,4 +223,131 @@ TEST_CASE("files.concurrent_replacement_has_complete_snapshots") {
   writer.join();
   CHECK(failures.load() == 0);
   CHECK(std::distance(Fs::directory_iterator(directory.root), Fs::directory_iterator{}) == 1);
+}
+
+TEST_CASE("files.exclusive_creation_keeps_complete_binary_empty_and_unicode_contents") {
+  Directory d;
+  auto files = d.files();
+  const std::vector<std::byte> data{std::byte{0}, std::byte{255}, std::byte{10}};
+  REQUIRE(files.createAtomic("binary.dat", data));
+  CHECK(files.readBytes("binary.dat").value() == data);
+  const auto conflict = files.createTextAtomic("binary.dat", "overwrite");
+  REQUIRE_FALSE(conflict);
+  CHECK(conflict.error().code == ErrorCode::InvalidState);
+  CHECK(files.readBytes("binary.dat").value() == data);
+  REQUIRE(files.createAtomic("empty.dat", {}));
+  CHECK(files.readBytes("empty.dat", 0)->empty());
+  REQUIRE(files.createTextAtomic(Fs::path{u8"姿态.json"}, "reference 世界"));
+  CHECK(files.readText(Fs::path{u8"姿态.json"}).value() == "reference 世界");
+  CHECK(std::distance(Fs::directory_iterator(d.root), Fs::directory_iterator{}) == 3);
+}
+
+TEST_CASE("files.exclusive_creation_rejects_occupied_paths_and_cleans_failed_staging") {
+  Directory d;
+  auto files = d.files();
+  REQUIRE(files.createTextAtomic("original.dat", "original"));
+  Fs::create_hard_link(d.root / "original.dat", d.root / "alias.dat");
+  REQUIRE(Fs::create_directory(d.root / "directory"));
+  CHECK_FALSE(files.createTextAtomic("alias.dat", "changed"));
+  CHECK(files.readText("original.dat").value() == "original");
+  CHECK_FALSE(files.createTextAtomic("directory", "changed"));
+  CHECK(Fs::is_directory(d.root / "directory"));
+
+  for (const auto& path : {Fs::path{}, Fs::path{"."}, Fs::path{".."}, Fs::path{"trailing/"},
+                           Fs::path{"../outside/escape.dat"}, Fs::path{"missing/file.dat"},
+                           d.outside / "absolute.dat", Fs::path{std::string{"nul\0tail", 8}}}) {
+    CHECK_FALSE(files.createTextAtomic(path, "blocked"));
+  }
+
+  CHECK_FALSE(Fs::exists(d.root / "nul"));
+  CHECK(std::distance(Fs::directory_iterator(d.root), Fs::directory_iterator{}) == 3);
+  auto copy = files;
+  auto moved = std::move(files);
+  CHECK(copy.root() == moved.root());
+  copy = std::move(moved);
+  CHECK_FALSE(moved.resolve("original.dat"));
+  moved = copy;
+  CHECK_FALSE(files.createTextAtomic("moved.dat", "blocked"));
+  CHECK_FALSE(files.writeTextAtomic("moved.dat", "blocked"));
+  CHECK_FALSE(files.resolve("moved.dat"));
+  CHECK(moved.readText("original.dat").value() == "original");
+}
+
+#if !defined(_WIN32)
+TEST_CASE("files.exclusive_creation_preserves_final_symlinks_including_dangling_targets") {
+  Directory d;
+  const auto files = d.files();
+  REQUIRE(files.createTextAtomic("real.dat", "original"));
+  Fs::create_symlink("real.dat", d.root / "linked.dat");
+  Fs::create_symlink("missing.dat", d.root / "dangling.dat");
+  Fs::create_symlink(d.outside / "outside.dat", d.root / "outside-link.dat");
+  Fs::create_directory_symlink(d.outside, d.root / "external-parent");
+  CHECK_FALSE(files.createTextAtomic("linked.dat", "changed"));
+  CHECK_FALSE(files.createTextAtomic("dangling.dat", "changed"));
+  CHECK_FALSE(files.createTextAtomic("outside-link.dat", "changed"));
+  CHECK_FALSE(files.createTextAtomic("external-parent/changed.dat", "changed"));
+  CHECK(files.readText("real.dat").value() == "original");
+  CHECK(Fs::is_symlink(Fs::symlink_status(d.root / "dangling.dat")));
+  CHECK_FALSE(Fs::exists(d.root / "missing.dat"));
+  CHECK_FALSE(Fs::exists(d.outside / "outside.dat"));
+  CHECK(std::distance(Fs::directory_iterator(d.root), Fs::directory_iterator{}) == 5);
+  REQUIRE(Fs::create_directory(d.root / "nested"));
+  Fs::create_directory_symlink("nested", d.root / "internal-parent");
+  REQUIRE(files.createTextAtomic("internal-parent/allowed.dat", "inside"));
+  CHECK(files.readText("nested/allowed.dat").value() == "inside");
+}
+#endif
+
+TEST_CASE("files.concurrent_exclusive_creators_have_one_winner_and_no_partial_reader_snapshot") {
+  Directory d;
+  constexpr std::size_t count = 8;
+  std::array<std::string, count> payloads;
+
+  for (std::size_t i = 0; i < count; ++i) {
+    payloads[i] = std::to_string(i) + std::string((i + 1) * 64 * 1024, char('a' + i));
+  }
+
+  std::barrier start{static_cast<std::ptrdiff_t>(count + 1)};
+  std::atomic<unsigned> completed{};
+  std::atomic<unsigned> winners{};
+  std::atomic<unsigned> failures{};
+  std::vector<std::jthread> writers;
+
+  for (std::size_t i = 0; i < count; ++i) {
+    writers.emplace_back([&, i] {
+      const auto files = FileSystem::open(d.root).value();
+      start.arrive_and_wait();
+      const auto result = files.createTextAtomic("shared.dat", payloads[i]);
+
+      if (result) {
+        ++winners;
+      } else if (result.error().code != ErrorCode::InvalidState) {
+        ++failures;
+      }
+
+      ++completed;
+    });
+  }
+
+  start.arrive_and_wait();
+  const auto reader = d.files();
+
+  do {
+    auto snapshot = reader.readText("shared.dat");
+
+    if (snapshot) {
+      if (std::ranges::find(payloads, *snapshot) == payloads.end()) {
+        ++failures;
+      }
+    } else if (snapshot.error().code != ErrorCode::NotFound) {
+      ++failures;
+    }
+  } while (completed.load() != count);
+
+  writers.clear();
+  CHECK(winners.load() == 1);
+  CHECK(failures.load() == 0);
+  const auto saved = reader.readText("shared.dat").value();
+  CHECK(std::ranges::find(payloads, saved) != payloads.end());
+  CHECK(std::distance(Fs::directory_iterator(d.root), Fs::directory_iterator{}) == 1);
 }

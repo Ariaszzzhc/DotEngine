@@ -77,3 +77,9 @@ content, with internal native-reference remapping, current CPU skin validation a
 frozen animation components. Shared GUI/agent publication preserves authoring and
 preview clocks/history; captured references can reopen/edit and feed offline retargeting.
 Skeleton rebinding, automatic alignment and contact correction remain separate work.
+
+New resource files and single-file imports now use native flushed no-replace
+publication, closing the absence-check/replacing-write window for competing creators.
+Root descriptor ownership and final-symlink/NUL boundaries have CPU regressions,
+with shared editor creation paths. Existing-file editing still requires serialized
+writers; project-wide concurrent editing/alias locks and crash recovery remain open.

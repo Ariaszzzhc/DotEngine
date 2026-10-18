@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <barrier>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -265,4 +268,49 @@ TEST_CASE("resources.live_control_and_retained_replies_stay_outside_asset_catalo
   CHECK(resources.list()->size() == original);
   REQUIRE(Dot::Core::clearControlReceipts(receipts));
   CHECK(resources.list()->size() == original);
+}
+
+TEST_CASE("resources.independent_text_and_import_writers_keep_one_complete_resource") {
+  Fixture f;
+  constexpr std::size_t count = 8;
+  const auto root = f.project.files()->root();
+  const auto source = f.storage.files().value();
+  const std::array payloads{std::string(256 * 1024, 'a'), std::string(512 * 1024, 'b')};
+  REQUIRE(source.createTextAtomic("external.txt", payloads[1]));
+  std::barrier start{static_cast<std::ptrdiff_t>(count + 1)};
+  std::atomic<unsigned> winners{};
+  std::atomic<unsigned> failures{};
+  std::vector<std::jthread> writers;
+
+  for (std::size_t i = 0; i < count; ++i) {
+    writers.emplace_back([&, i] {
+      auto project = Dot::Project::Project::open(root).value();
+      auto store = ResourceStore::open(project).value();
+      start.arrive_and_wait();
+      auto result = i % 2 ? store.createText("assets/shared.txt", payloads[0])
+                          : store.importFile(source.root() / "external.txt", "assets/shared.txt");
+
+      if (result) {
+        ++winners;
+      } else if (result.error().code != Dot::Core::ErrorCode::InvalidState) {
+        ++failures;
+      }
+    });
+  }
+
+  start.arrive_and_wait();
+  writers.clear();
+  CHECK(winners.load() == 1);
+  CHECK(failures.load() == 0);
+  const auto actual = f.files().readText("assets/shared.txt").value();
+  CHECK(std::ranges::find(payloads, actual) != payloads.end());
+  CHECK(source.readText("external.txt").value() == payloads[1]);
+  const auto store = ResourceStore::open(f.project).value();
+  const auto entries = store.list().value();
+  CHECK(std::ranges::none_of(entries, [](const auto& entry) {
+    return entry.path.find(".dot-stage-") != std::string::npos;
+  }));
+  CHECK(std::distance(std::filesystem::directory_iterator(root / "assets"),
+                      std::filesystem::directory_iterator{})
+        == 1);
 }
