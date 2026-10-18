@@ -2704,3 +2704,29 @@ return explicit text/truncated flags. Every mutation rejects stale identities/re
 unknown fields and invalid choices are errors. One review per workspace bounds ownership.
 Limits are 8192 resource entries, 64 levels, 64 MiB/file and 512 MiB each for project
 snapshot and generated bundle. First import uses the background preparation/publication workflow above.
+
+
+## Additive content during Play
+
+The Play viewport's **Add scene content** chooser appends a saved scene while the
+current game continues. Each active instance shows its source path and a
+**Remove scene content** button. These use the same GameSession and strict product
+operations as scripts and the standalone player:
+
+```json
+{"command":"append-play-scene","session":"1","revision":"4","path":"assets/room.dotscene"}
+{"command":"play-scene-status","session":"1","request":"2"}
+{"command":"play-scene-instances","session":"1"}
+{"command":"remove-play-scene","session":"1","revision":"4","scope":"9","root":"350"}
+```
+
+Mutations require the current document revision, running Play, current session and
+no pending close; removal additionally requires the instance's current scope/root.
+Accepted requests return an ID. Status includes `kind`, scoped `root` or null,
+`committed` and terminal errors. The instance query returns `{instances:[{root,path}]}`
+without advancing gameplay. One request is active at a time. These operations do
+not edit the authoring document or undo history. See the [runtime content contract](Scripting.md#additive-runtime-scene-content)
+for exact membership, dependency rejection and publication failure semantics.
+
+Play 中可追加已保存片段并按实例卸载，GUI/严格 JSON/脚本共用产品实现；操作不修改编辑
+文档。请求接受不等于加载完成，须读取最终状态；外部原生引用会阻止卸载，发布后故障不伪装回滚。

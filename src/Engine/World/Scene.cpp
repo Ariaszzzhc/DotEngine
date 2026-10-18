@@ -32,6 +32,7 @@ import Dot.Audio.Source;
 import Dot.Script.Source;
 import Dot.World.SceneFiles;
 import Dot.World.SceneIdentity;
+import Dot.World.SceneContent;
 
 namespace Dot::World {
   namespace {
@@ -1711,6 +1712,117 @@ namespace Dot::World {
     }
 
     return m_impl->world(entity.value);
+  }
+
+  auto Scene::appendContent(const Scene& content, const Transform& placement,
+                            std::optional<EntityId> parent) -> Core::Result<SceneAttachment> {
+    auto next = nextEntityValue();
+
+    if (!next) {
+      return std::unexpected(next.error());
+    }
+
+    if (!*next) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Scene entity values exhausted");
+    }
+
+    try {
+      auto prepared = prepareSceneInstance(*this, content, **next, placement, parent);
+
+      if (!prepared) {
+        return std::unexpected(prepared.error());
+      }
+
+      SceneAttachment result{{m_impl->identity, prepared->root.value}, {}};
+      result.entities.reserve(prepared->entities.size() + 1);
+      result.entities.push_back(result.root);
+
+      for (const auto& mapping : prepared->entities) {
+        result.entities.push_back({m_impl->identity, mapping.target.value});
+      }
+
+      /** Only this insertion path preserves scope: every existing value survives.
+       * 仅此追加路径保留范围：每个已有实体值均保留。 */
+      prepared->scene.m_impl->identity = m_impl->identity;
+      m_impl.swap(prepared->scene.m_impl);
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Append scene content: " + std::string(error.what()));
+    }
+  }
+
+  auto Scene::removeContent(std::span<const EntityId> entities) -> Core::Result<void> {
+    auto count = entityCount();
+
+    if (!count) {
+      return std::unexpected(count.error());
+    }
+
+    if (entities.empty() || entities.size() > 10000) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Content ownership requires 1..10000 handles");
+    }
+
+    try {
+      std::unordered_set<std::uint64_t> removed;
+      removed.reserve(entities.size());
+
+      for (const auto entity : entities) {
+        if (entity.scene != m_impl->identity || entity.value == 0
+            || entity.value >= m_impl->nextEntity || !removed.insert(entity.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid content ownership handle");
+        }
+      }
+
+      for (const auto& [value, native] : m_impl->lookup) {
+        if (removed.contains(value)) {
+          continue;
+        }
+
+        const auto parent = m_impl->registry.get<Hierarchy>(native).parent;
+
+        if (parent && removed.contains(*parent)) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Content has a surviving child " + std::to_string(value));
+        }
+
+        if (const auto* skin = m_impl->registry.try_get<SkinBinding>(native)) {
+          for (const auto joint : skin->joints) {
+            if (removed.contains(joint)) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Content is referenced by skin owner " + std::to_string(value));
+            }
+          }
+        }
+
+        if (const auto* player = m_impl->registry.try_get<AnimationPlayer>(native)) {
+          for (const auto& target : player->targets) {
+            if (removed.contains(target.entity)) {
+              return Core::fail(
+                  Core::ErrorCode::InvalidState,
+                  "Content is referenced by animation player " + std::to_string(value));
+            }
+          }
+        }
+      }
+
+      for (const auto value : removed) {
+        const auto found = m_impl->lookup.find(value);
+
+        if (found != m_impl->lookup.end()) {
+          m_impl->registry.destroy(found->second);
+          m_impl->lookup.erase(found);
+        }
+      }
+
+      std::erase_if(m_impl->links, [&](const auto& link) { return removed.contains(link.root); });
+      m_impl->worldCache.clear();
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Remove scene content: " + std::string(error.what()));
+    }
   }
 
   auto Scene::destroyEntity(EntityId entity) -> Core::Result<void> {

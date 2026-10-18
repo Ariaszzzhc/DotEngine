@@ -239,3 +239,102 @@ TEST_CASE("scene_content.instance_preparation_respects_reserved_and_exhausted_ta
   CHECK_FALSE(prepareSceneInstance(target, source, 1001));
   CHECK_FALSE(target.nextEntityValue().value());
 }
+
+TEST_CASE("scene_content.runtime_append_preserves_scope_handles_globals_and_native_references") {
+  auto target = Scene::create("Running").value();
+  auto player = target.createEntity("Player").value();
+  REQUIRE(target.setTransform(player, {{3, 2, 1}}));
+  REQUIRE(target.setCamera(player, Camera{.primary = true}));
+  REQUIRE(target.setUi("assets/active.dotui"));
+  auto source = Scene::create("Room").value();
+  auto mesh = source.createEntity("Rig").value();
+  auto joint = source.createEntity("Joint").value();
+  REQUIRE(source.setMeshRenderer(mesh, MeshRenderer{}));
+  REQUIRE(source.setSkin(mesh, SkinBinding{"assets/rig.dotskin", {joint.value}}));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, joint.value}};
+  REQUIRE(source.setAnimationPlayer(mesh, animation));
+  REQUIRE(source.setCamera(joint, Camera{.primary = true}));
+  REQUIRE(source.setAudioListener(joint, AudioListener{true}));
+  REQUIRE(source.setUi("assets/ignored.dotui"));
+  const auto before = snapshot(source);
+  const auto scope = target.id();
+  auto added = target.appendContent(source, {{10, 0, 0}}, player);
+  REQUIRE_MESSAGE(added, (added ? "" : added.error().message));
+  REQUIRE(added->entities.size() == 3);
+  CHECK(target.id() == scope);
+  CHECK(target.entity(player)->name == "Player");
+  CHECK(target.entity(player)->transform.position.x == 3);
+  CHECK(target.entity(added->root)->parent == player);
+  CHECK(target.ui().value() == "assets/active.dotui");
+  CHECK(target.entity(added->entities[1])->skin->joints[0] == added->entities[2].value);
+  CHECK(target.entity(added->entities[1])->animation->targets[0].entity
+        == added->entities[2].value);
+  CHECK_FALSE(target.entity(added->entities[2])->camera->primary);
+  CHECK_FALSE(target.entity(added->entities[2])->audioListener->primary);
+  CHECK(snapshot(source) == before);
+  const auto floor = target.nextEntityValue().value();
+  REQUIRE(target.removeContent(added->entities));
+  CHECK(target.id() == scope);
+  CHECK(target.entityCount().value() == 1);
+  CHECK(target.entity(player));
+  CHECK(target.nextEntityValue().value() == floor);
+  REQUIRE(target.removeContent(added->entities));
+  CHECK(target.createEntity()->value >= *floor);
+}
+
+TEST_CASE(
+    "scene_content.runtime_removal_rejects_external_hierarchy_skin_and_animation_atomically") {
+  auto target = Scene::create("Running").value();
+  auto outside = target.createEntity("Outside").value();
+  auto source = Scene::create("Content").value();
+  REQUIRE(source.createEntity("Member"));
+  auto added = target.appendContent(source).value();
+  auto member = added.entities[1];
+  REQUIRE(target.setParent(outside, member));
+  auto before = snapshot(target);
+  CHECK_FALSE(target.removeContent(added.entities));
+  CHECK(snapshot(target) == before);
+  REQUIRE(target.setParent(outside, std::nullopt));
+  REQUIRE(target.setMeshRenderer(outside, MeshRenderer{}));
+  REQUIRE(target.setSkin(outside, SkinBinding{"assets/rig.dotskin", {member.value}}));
+  before = snapshot(target);
+  CHECK_FALSE(target.removeContent(added.entities));
+  CHECK(snapshot(target) == before);
+  REQUIRE(target.setSkin(outside, std::nullopt));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, member.value}};
+  REQUIRE(target.setAnimationPlayer(outside, animation));
+  before = snapshot(target);
+  CHECK_FALSE(target.removeContent(added.entities));
+  CHECK(snapshot(target) == before);
+  REQUIRE(target.setAnimationPlayer(outside, std::nullopt));
+  REQUIRE(target.setParent(member, outside));
+  REQUIRE(target.destroyEntity(added.root));
+  REQUIRE(target.removeContent(added.entities));
+  CHECK(target.entity(outside));
+  CHECK_FALSE(target.entity(member));
+}
+
+TEST_CASE("scene_content.runtime_failures_preserve_world_and_allocation") {
+  auto target = Scene::create("Running").value();
+  auto outside = target.createEntity("Outside").value();
+  auto empty = Scene::create("Empty").value();
+  auto source = Scene::create("Content").value();
+  REQUIRE(source.createEntity());
+  const auto before = snapshot(target);
+  CHECK_FALSE(target.appendContent(empty));
+  CHECK_FALSE(target.appendContent(source, {}, EntityId{source.id(), 1}));
+  CHECK_FALSE(target.removeContent({}));
+  CHECK_FALSE(target.removeContent(std::array{outside, outside}));
+  CHECK_FALSE(target.removeContent(std::array{EntityId{source.id(), 1}}));
+  CHECK(snapshot(target) == before);
+  CHECK(std::async(std::launch::async, [&] {
+          return !target.appendContent(source) && !target.removeContent(std::array{outside});
+        }).get());
+  REQUIRE(target.reserveEntityValuesBefore(std::nullopt));
+  CHECK_FALSE(target.appendContent(source));
+  CHECK(target.entity(outside));
+}

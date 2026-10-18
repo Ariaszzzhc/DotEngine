@@ -5,14 +5,22 @@ module;
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 export module Dot.Script.SceneFlow;
 
 export import Dot.Script.Host;
 import Dot.Core.Result;
+import Dot.World.Scene;
 
 export namespace Dot::Script {
   enum class SceneRequestState { Pending, Loading, Succeeded, Failed, Cancelled };
+  enum class SceneRequestKind { Replace, Append, Remove };
+
+  struct SceneInstance {
+    World::EntityId root;
+    std::string path;
+  };
 
   struct SceneLocation {
     std::uint64_t scope;
@@ -25,6 +33,8 @@ export namespace Dot::Script {
     SceneRequestState state{SceneRequestState::Pending};
     bool committed{};
     std::optional<Core::Error> error;
+    SceneRequestKind kind{SceneRequestKind::Replace};
+    std::optional<World::EntityId> root;
   };
 
   /** Owned frame-boundary request queue; never loads files or executes scripts.
@@ -48,6 +58,21 @@ export namespace Dot::Script {
     [[nodiscard]] auto location() const -> Core::Result<SceneLocation>;
     [[nodiscard]] auto request(std::string_view path, std::uint64_t scope)
         -> Core::Result<std::uint64_t>;
+    /** Append/remove share the single frame-boundary queue. At most 64 live
+     * instances; ownership survives request-history eviction, but not replacement.
+     * 追加/移除共享单个帧边界队列；最多 64 个存活实例，所有权独立于请求历史淘汰，替换时清空。 */
+    [[nodiscard]] auto append(std::string_view path, std::uint64_t scope)
+        -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto remove(World::EntityId root) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto instances() const -> Core::Result<std::vector<SceneInstance>>;
+    [[nodiscard]] auto members(World::EntityId root) const
+        -> Core::Result<std::vector<World::EntityId>>;
+    /** Called only after native publication; allocation failure retains committed
+     * truth and requires scheduler fault handling.
+     * 发布后调用；分配失败保留已提交事实，调度器须处理故障。 */
+    [[nodiscard]] auto commitContent(std::uint64_t id,
+                                     std::optional<World::SceneAttachment> attachment = {})
+        -> Core::Result<void>;
     [[nodiscard]] auto status(std::uint64_t id) const -> Core::Result<SceneRequest>;
     [[nodiscard]] auto latest() const -> Core::Result<std::optional<SceneRequest>>;
     [[nodiscard]] auto pending() const -> Core::Result<std::optional<SceneRequest>>;

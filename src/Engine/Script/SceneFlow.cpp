@@ -14,6 +14,7 @@ module;
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "../Serialization/Json.hpp"
 
@@ -57,6 +58,7 @@ namespace Dot::Script {
 
     auto requestJson(const SceneRequest& value) -> Json {
       constexpr std::array states{"pending", "loading", "succeeded", "failed", "cancelled"};
+      constexpr std::array kinds{"replace", "append", "remove"};
       constexpr std::array codes{"InvalidArgument", "NotFound",     "Io",
                                  "Unavailable",     "InvalidState", "External"};
       Json error = nullptr;
@@ -68,6 +70,10 @@ namespace Dot::Script {
 
       return {{"id", std::to_string(value.id)},
               {"path", value.path},
+              {"kind", kinds.at(static_cast<std::size_t>(value.kind))},
+              {"root", value.root ? Json{{"scene", std::to_string(value.root->scene)},
+                                         {"value", std::to_string(value.root->value)}}
+                                  : Json(nullptr)},
               {"state", states.at(static_cast<std::size_t>(value.state))},
               {"committed", value.committed},
               {"error", std::move(error)}};
@@ -100,6 +106,13 @@ namespace Dot::Script {
     std::optional<std::uint64_t> m_pending;
     std::optional<std::uint64_t> m_loading;
     bool m_retired{};
+
+    struct OwnedInstance {
+      SceneInstance description;
+      std::vector<World::EntityId> entities;
+    };
+
+    std::vector<OwnedInstance> m_instances;
 
     explicit Impl(SceneLocation location) : m_location(std::move(location)) {
     }
@@ -193,7 +206,9 @@ namespace Dot::Script {
 
     try {
       const auto id = m_impl->m_next;
-      SceneRequest record{id, std::string(path), SceneRequestState::Pending, false, {}};
+      SceneRequest record{
+          id, std::string(path), SceneRequestState::Pending, false, {}, SceneRequestKind::Replace,
+          {}};
       m_impl->m_records[id % m_impl->m_records.size()] = std::move(record);
       m_impl->m_pending = id;
       ++m_impl->m_next;
@@ -201,6 +216,132 @@ namespace Dot::Script {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Queue scene request: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneFlow::append(std::string_view path, std::uint64_t scope)
+      -> Core::Result<std::uint64_t> {
+    auto owned = instances();
+
+    if (!owned) {
+      return std::unexpected(owned.error());
+    }
+
+    if (owned->size() >= 64) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Live scene instance limit reached");
+    }
+
+    auto id = request(path, scope);
+
+    if (id) {
+      m_impl->find(*id)->kind = SceneRequestKind::Append;
+    }
+
+    return id;
+  }
+
+  auto SceneFlow::instances() const -> Core::Result<std::vector<SceneInstance>> {
+    auto checked = location();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      std::vector<SceneInstance> result;
+      result.reserve(m_impl->m_instances.size());
+
+      for (const auto& instance : m_impl->m_instances) {
+        result.push_back(instance.description);
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Read scene instances: " + std::string(error.what()));
+    }
+  }
+
+  auto SceneFlow::members(World::EntityId root) const
+      -> Core::Result<std::vector<World::EntityId>> {
+    auto checked = location();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    for (const auto& instance : m_impl->m_instances) {
+      if (instance.description.root == root) {
+        try {
+          return instance.entities;
+        } catch (const std::exception& error) {
+          return Core::fail(Core::ErrorCode::External,
+                            "Read instance ownership: " + std::string(error.what()));
+        }
+      }
+    }
+
+    return Core::fail(Core::ErrorCode::NotFound, "Unknown scene instance root");
+  }
+
+  auto SceneFlow::remove(World::EntityId root) -> Core::Result<std::uint64_t> {
+    auto owned = members(root);
+
+    if (!owned) {
+      return std::unexpected(owned.error());
+    }
+
+    const auto found = std::ranges::find_if(
+        m_impl->m_instances, [&](const auto& value) { return value.description.root == root; });
+    auto id = request(found->description.path, root.scene);
+
+    if (id) {
+      auto* record = m_impl->find(*id);
+      record->kind = SceneRequestKind::Remove;
+      record->root = root;
+    }
+
+    return id;
+  }
+
+  auto SceneFlow::commitContent(std::uint64_t id, std::optional<World::SceneAttachment> attachment)
+      -> Core::Result<void> {
+    auto checked = location();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto* record = m_impl->find(id);
+
+    if (!record || m_impl->m_loading != id || m_impl->m_retired
+        || (record->kind != SceneRequestKind::Append && record->kind != SceneRequestKind::Remove)
+        || (record->kind == SceneRequestKind::Append) != attachment.has_value()
+        || (attachment
+            && (attachment->root.scene != checked->scope || attachment->entities.empty()))) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Content publication does not match its request");
+    }
+
+    record->committed = true;
+
+    try {
+      if (attachment) {
+        record->root = attachment->root;
+        m_impl->m_instances.push_back(
+            {{attachment->root, record->path}, std::move(attachment->entities)});
+      } else {
+        std::erase_if(m_impl->m_instances, [&](const auto& instance) {
+          return instance.description.root == record->root;
+        });
+      }
+
+      record->state = SceneRequestState::Succeeded;
+      m_impl->m_loading.reset();
+      return {};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Record published content: " + std::string(error.what()));
     }
   }
 
@@ -306,11 +447,12 @@ namespace Dot::Script {
     auto* record = m_impl->find(id);
 
     if (!record || m_impl->m_loading != id || scope == 0 || scope == m_impl->m_location.scope
-        || record->path != path) {
+        || record->kind != SceneRequestKind::Replace || record->path != path) {
       return Core::fail(Core::ErrorCode::InvalidState,
                         "Scene request does not match prepared publication");
     }
 
+    m_impl->m_instances.clear();
     m_impl->m_location = {scope, std::move(path)};
     record->state = SceneRequestState::Succeeded;
     record->committed = true;
@@ -384,7 +526,8 @@ namespace Dot::Script {
     try {
       HostBindings result;
 
-      for (const auto* name : {"scenes.current", "scenes.request", "scenes.status"}) {
+      for (const auto* name : {"scenes.current", "scenes.request", "scenes.status", "scenes.append",
+                               "scenes.remove", "scenes.instances"}) {
         result.push_back(
             {name,
              [flow = *this, location = SceneLocation{scope, path},
@@ -404,7 +547,8 @@ namespace Dot::Script {
                try {
                  const auto args = Serialization::Detail::parseJson(arguments, 8);
                  const std::string_view method{name};
-                 const auto count = method == "scenes.current" ? 0U : 1U;
+                 const auto count
+                     = (method == "scenes.current" || method == "scenes.instances") ? 0U : 1U;
 
                  if (!args.is_array() || args.size() != count) {
                    return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -415,13 +559,58 @@ namespace Dot::Script {
                    return std::optional{locationJson(location).dump()};
                  }
 
-                 if (method == "scenes.request") {
+                 if (method == "scenes.instances") {
+                   auto values = flow.instances();
+
+                   if (!values) {
+                     return std::unexpected(values.error());
+                   }
+
+                   Json result = Json::array();
+
+                   for (const auto& value : *values) {
+                     if (value.root.scene == location.scope) {
+                       result.push_back({{"root",
+                                          {{"scene", std::to_string(value.root.scene)},
+                                           {"value", std::to_string(value.root.value)}}},
+                                         {"path", value.path}});
+                     }
+                   }
+
+                   return std::optional{result.dump()};
+                 }
+
+                 if (method == "scenes.remove") {
+                   const auto& root = args[0];
+
+                   if (!root.is_object() || root.size() != 2 || !root.contains("scene")
+                       || !root.contains("value")) {
+                     return Core::fail(Core::ErrorCode::InvalidArgument,
+                                       "Expected scoped instance root");
+                   }
+
+                   auto scene = identifier(root["scene"]);
+                   auto value = identifier(root["value"]);
+
+                   if (!scene || !value || *scene != location.scope) {
+                     return Core::fail(Core::ErrorCode::InvalidArgument,
+                                       "Invalid instance root scope");
+                   }
+
+                   auto requested = flow.remove({*scene, *value});
+                   return requested ? Reply{std::optional{Json(std::to_string(*requested)).dump()}}
+                                    : Reply{std::unexpected(requested.error())};
+                 }
+
+                 if (method == "scenes.request" || method == "scenes.append") {
                    if (!args[0].is_string()) {
                      return Core::fail(Core::ErrorCode::InvalidArgument,
                                        "Scene path must be a string");
                    }
 
-                   auto requested = flow.request(args[0].get<std::string>(), location.scope);
+                   auto requested = method == "scenes.append"
+                                        ? flow.append(args[0].get<std::string>(), location.scope)
+                                        : flow.request(args[0].get<std::string>(), location.scope);
                    return requested ? Reply{std::optional{Json(std::to_string(*requested)).dump()}}
                                     : Reply{std::unexpected(requested.error())};
                  }
@@ -446,8 +635,11 @@ namespace Dot::Script {
                                    "Scene host: " + std::string(error.what()));
                }
              },
-             std::string_view(name) == "scenes.request" ? HostAccess::ReadWrite
-                                                        : HostAccess::ReadOnly});
+             (std::string_view(name) == "scenes.request"
+              || std::string_view(name) == "scenes.append"
+              || std::string_view(name) == "scenes.remove")
+                 ? HostAccess::ReadWrite
+                 : HostAccess::ReadOnly});
       }
 
       return result;

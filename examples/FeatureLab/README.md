@@ -245,3 +245,16 @@ CC0 Modular Airduct Rectangular 01 geometry, shared with Prism Relay's
 `assets/airducts/meshes/0.dotmesh`. Source, upstream inputs and license evidence are
 recorded in [asset sources](assets/Sources.md).
 Native resource SHA-256: `94e135a1648c690240d2bb0b64f94565a793b9b528273575ee6f0aacc5ae362a`.
+
+
+## Additive scene services
+
+The SDK inventory includes `scenes.append`, `scenes.instances` and `scenes.remove`.
+The audit checks owned instance observations and explicit invalid-path/unknown-root
+failures without queuing an accidental scene cut during its other checks. The Play
+viewport can append saved materialized content and remove each instance through
+the same native queue. Existing entities, clocks and script objects retain their
+scope; source globals/UI are excluded. See [runtime composition](../../docs/Scripting.md#additive-runtime-scene-content)
+for ownership and publication failure semantics. These audit checks cover the error
+boundary; the successful production loop is validated through an authored project,
+actual Play and relocated native exports.

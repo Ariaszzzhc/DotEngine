@@ -14247,3 +14247,112 @@ physical pointer or final panel-layout acceptance is claimed. Only arm64 macOS r
 are verified. General variants, selective topology apply, automatic project-wide
 refresh/relocation, streaming, finished sci-fi art and overall production readiness
 remain open; this complete instance publication path does not prove those goals.
+
+## 2026-10-18 — Additive runtime scene content
+
+Implemented saved-content append/removal through the existing frame-boundary scene
+queue. World::Scene appends a fully validated candidate while retaining its scene
+scope and every existing value; it returns owned exact membership including a new
+placement container. Source primary cameras/listeners are demoted and native
+skin/animation targets remap. Exact removal rejects surviving external hierarchy,
+skin and animation references before mutation, tolerates already destroyed members
+and never recycles reserved values. Reparenting does not transfer ownership.
+
+SceneFlow records replace/append/remove requests with kind, optional scoped root,
+commit truth and contextual errors. One pending/loading operation remains the
+limit. Up to 64 live instance ownership records survive the last-16 request history;
+replacement clears that ownership. New SDK append/instances/remove methods,
+GameSession/Play APIs, Play's saved-content chooser/removal rows and strict
+editor/player JSON commands use the same implementation. Script preparation denies
+mutating bindings. Play preparation rejects instance operations until publication.
+
+Content preflight uses the owned CPU worker, stripping source environment, AO, UI
+and authoring links before checking actual entity resources. Saved materialized
+content is used even when its path matches an unsaved Play origin. On completion,
+insertion uses the latest live target rather than an earlier gameplay snapshot.
+Existing realm objects, clock, native physics motion and animation clocks persist;
+services synchronize additions/removals and only new components Start. Published
+native synchronization or constructor/Start/Stop failures are committed failures and
+fault the session. Preflight/ownership failure retains gameplay. Completed callbacks
+cannot be rolled back. Candidate construction, native binding, audio/dynamic asset
+reads and GPU residency remain owner-side work; this is not complete streaming.
+
+FeatureLab's SDK inventory and audit now observe instance DTOs and assert the two
+new invalid-path/unknown-instance errors. The precise error total becomes 21.
+This audit covers those boundaries; successful composition is also exercised in the
+actual authored Prism workflow below, rather than inferred from the inventory.
+
+Validation on arm64 macOS:
+
+- 11 new focused cases: five CPU-only unit cases and six existing-target file/
+  compiler integration cases. They cover atomic scope/allocator retention,
+  remapped native references, exact removal/dependency rejection, history eviction,
+  thread/scope/access/capacity boundaries, real TypeScript SDK calls, unused globals
+  versus missing entity assets, retained script lifecycle/pause, dynamic velocity
+  against an independent reference session, animation-clock continuity and
+  pre-publication versus committed script failure. Existing Play preparation
+  coverage also exercises all three new native operations before Start.
+- Full Debug CTest: 1643/1643, 265.22 seconds; full Release with assertions disabled:
+  1643/1643, 37.55 seconds. Each has 532 unit and 1111 integration cases; the latter
+  include 186 durable offscreen cases. Builds/tests and actual product sessions ran
+  sequentially. A final explicit iterator-header audit rebuilds both compiler
+  targets and reruns the real additive SDK case successfully in both configurations.
+  No new acceptance executable, visual probe or dependency was added.
+- Initial strict builds caught aggregate initialization, explicit module-import and
+  test DTO/type mistakes; fixed with warnings remaining errors. Focused fixtures
+  initially omitted required mesh components before skin bindings; corrected.
+  Earlier full passes identified the stale FeatureLab inventory and then its old
+  expected-error total. Both were corrected; the final complete passes above pass.
+  No timeout, host/VM budget, assertion or rendering threshold was relaxed.
+
+Reviewed scene-scope retention, membership ownership, publication/error truth,
+worker lifetime, shared GUI/JSON/SDK paths, formatting and platform assumptions.
+The clang-format dry run and git diff whitespace check pass.
+
+Actual production workflow, retained in ignored build/runtime-content-review:
+
+1. The product project creator made PrismComposition from the ordinary Prism
+   template (342 entities). In the real editor, create/save ServiceAnnex.dotscene
+   using two linked imported duct sources: ten materialized entities, two authoring
+   links. Author a normal external TypeScript AnnexGate using the scene SDK and
+   existing progress HUD, attach it through the document component operation, save
+   the main scene (343 entities), and include F8/F9 instructions in its README.
+2. Start real Play and use D plus F8 while moving. The world grows 343 to 354 and
+   returns to 343 with F9. Player value 7 and scope 83 remain; player X progresses
+   -1.381892 to -0.449190 through the append interval. Existing authoring links stay
+   26, excluding the fragment's two links. The original gate starts once. Completed
+   viewport evidence has real renderer input counts 181 to 185 to 181, with ready
+   views/no loading errors; a retained PNG shows the actual 3D game and checkpoint
+   HUD. Native rendering is therefore observed beyond a scene-record count.
+3. Move/save with F6, move away, restore with F7; the actual player position agrees
+   with saved feet within 1.00583e-7 (limit 1e-5). Missing-content requests fail
+   uncommitted while Play continues, and extra request fields reject. Stop restores
+   the exact authored main scene. Export the ordinary game and relocate its folder.
+4. Hide only this owned authoring project during two fresh native game processes.
+   Both load/unload the fragment via the game's ordinary keys, preserve scope,
+   produce completed rendering/HUD work and report failureCount 0/empty diagnostics.
+   Native one saves a real checkpoint; native two restores it within 1.00583e-7 and
+   also exercises direct append-scene/remove-scene/status/instance-list controls.
+   Their loaded snapshots have 85 and 54 completed frames and five HUD
+   rasterizations each; later native-two evidence has 109 completed frames.
+5. All five owned editor/game processes, including two investigation restarts,
+   actually exit 0. Close responses are read after process exit, acknowledged and
+   their retired receipt tokens cleared; live endpoints and token directories are
+   absent. The first helper incorrectly rejected the legitimate ok field in an
+   acknowledgement; the second queried a Play scene before publication and received
+   the correct InvalidState. Fix only those ignored helpers and continue the same
+   saved project; preserve the earlier raw requests, errors, ACKs and exit records.
+6. Recheck 626 prior project/save/game/art files, the new 125-file editable project,
+   the relocated 164-file game and all 38 retained saves. Verify 20 final Mach-O
+   files with strict codesign; the exported executable matches the signed runtime
+   kit. Restore the owned project path, remove only this stage's temporary helper
+   after validation and retain all normal projects, games, saves and raw evidence.
+
+The append interval's application profile observes owner Prepare peaking at
+20.918958 ms and that frame at 23.502875 ms. This includes the editor's owner work,
+not an isolated composition benchmark or a 60-Hz guarantee. Broader resource I/O,
+publication cost, GPU pacing and streaming remain work to do. Computer use again
+reports a locked Mac with unsuccessful automatic unlock, so physical pointer/
+keyboard and final panel-layout acceptance are not claimed. Windows/Linux are not
+executed here. Finished sci-fi art, broader authoring/streaming and overall engine/
+editor/game production maturity remain open; this stage does not complete the goal.

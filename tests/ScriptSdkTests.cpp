@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <iterator>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -12,6 +13,7 @@
 
 import Dot.Script.Compiler;
 import Dot.Script.SceneHost;
+import Dot.Script.SceneFlow;
 import Dot.Script.Runtime;
 import Dot.Core.Files;
 import Dot.World.Scene;
@@ -485,4 +487,42 @@ export function run(): string[] {
         == nlohmann::json::array(
             {std::to_string(first.value) + ":目标🙂", std::to_string(second.value) + ":目标🙂"}));
   CHECK_FALSE(vm.stats()->faulted);
+}
+
+TEST_CASE("script_sdk.additive_scene_requests_use_scoped_native_ownership_and_status") {
+  Project project;
+  project.write(R"ts(
+import {scenes} from 'dot:engine';
+export function append(): string { return scenes.append('assets/room.dotscene'); }
+export function status(id: string): string { return scenes.status(id).kind; }
+export function remove(): string { return scenes.remove(scenes.instances()[0]!.root); }
+export function count(): number { return scenes.instances().length; }
+)ts");
+  auto program = compile(project);
+  auto scene = nativeScene();
+  auto flow = SceneFlow::create(scene->id(), std::nullopt).value();
+  auto bindings = sceneBindings(scene).value();
+  auto services = flow.bindings(scene->id(), std::nullopt).value();
+  bindings.insert(bindings.end(), std::make_move_iterator(services.begin()),
+                  std::make_move_iterator(services.end()));
+  auto vm = Runtime::create(program.files().value(), {}, std::move(bindings)).value();
+  auto entry = module(vm);
+  const auto id = std::stoull(
+      nlohmann::json::parse(vm.call(entry, "append").value().value()).get<std::string>());
+  CHECK(vm.call(entry, "status", "[\"" + std::to_string(id) + "\"]").value().value()
+        == "\"append\"");
+  REQUIRE(flow.begin(id));
+  auto content = Dot::World::Scene::create("Room").value();
+  REQUIRE(content.createEntity("Member"));
+  auto attachment = scene->appendContent(content).value();
+  REQUIRE(flow.commitContent(id, attachment));
+  CHECK(vm.call(entry, "count").value().value() == "1");
+  const auto remove = std::stoull(
+      nlohmann::json::parse(vm.call(entry, "remove").value().value()).get<std::string>());
+  REQUIRE(flow.begin(remove));
+  REQUIRE(scene->removeContent(attachment.entities));
+  REQUIRE(flow.commitContent(remove));
+  CHECK(vm.call(entry, "count").value().value() == "0");
+  CHECK(vm.call(entry, "status", "[\"" + std::to_string(remove) + "\"]").value().value()
+        == "\"remove\"");
 }

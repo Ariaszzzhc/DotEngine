@@ -39,10 +39,15 @@ namespace Dot::Project {
 
     auto transitionJson(const Script::SceneRequest& request) -> Json {
       constexpr std::array states{"pending", "loading", "succeeded", "failed", "cancelled"};
+      constexpr std::array kinds{"replace", "append", "remove"};
       return {{"id", std::to_string(request.id)},
               {"path", request.path},
               {"state", states.at(static_cast<std::size_t>(request.state))},
               {"committed", request.committed},
+              {"kind", kinds.at(static_cast<std::size_t>(request.kind))},
+              {"root", request.root ? Json{{"scene", std::to_string(request.root->scene)},
+                                           {"value", std::to_string(request.root->value)}}
+                                    : Json(nullptr)},
               {"error", request.error ? errorJson(*request.error) : Json(nullptr)}};
     }
   }  // namespace
@@ -259,6 +264,26 @@ namespace Dot::Project {
                       : std::unexpected(result.error());
       }
 
+      if (command == "scene-instances") {
+        Codec::requireFields(value, {"command"});
+        auto values = m_impl->m_session->sceneInstances();
+
+        if (!values) {
+          return std::unexpected(values.error());
+        }
+
+        Json result = Json::array();
+
+        for (const auto& instance : *values) {
+          result.push_back({{"root",
+                             {{"scene", std::to_string(instance.root.scene)},
+                              {"value", std::to_string(instance.root.value)}}},
+                            {"path", instance.path}});
+        }
+
+        return Json{{"ok", true}, {"instances", std::move(result)}}.dump();
+      }
+
       if (command == "scene-status") {
         Codec::requireFields(value, {"command", "request"});
         auto result = m_impl->m_session->sceneRequest(Codec::id(value["request"]));
@@ -273,8 +298,10 @@ namespace Dot::Project {
         Codec::requireFields(value, {"command", "scope", "value"});
       } else if (command == "cancel-input") {
         Codec::requireFields(value, {"command", "scope"});
-      } else if (command == "request-scene") {
+      } else if (command == "request-scene" || command == "append-scene") {
         Codec::requireFields(value, {"command", "scope", "path"});
+      } else if (command == "remove-scene") {
+        Codec::requireFields(value, {"command", "scope", "root"});
       } else if (command == "animation-state") {
         Codec::requireFields(value, {"command", "scope", "entity"});
       } else if (command == "animation-parameters") {
@@ -339,9 +366,14 @@ namespace Dot::Project {
                       : std::unexpected(result.error());
       }
 
-      if (command == "request-scene") {
+      if (command == "request-scene" || command == "append-scene" || command == "remove-scene") {
         effects = true;
-        auto result = m_impl->m_session->requestScene(value["path"].get<std::string>());
+        auto result
+            = command == "remove-scene"
+                  ? m_impl->m_session->removeScene({m_impl->m_scope, Codec::id(value["root"])})
+              : command == "append-scene"
+                  ? m_impl->m_session->appendScene(value["path"].get<std::string>())
+                  : m_impl->m_session->requestScene(value["path"].get<std::string>());
         return result ? Core::Result<std::string>{Json{
                             {"ok", true},
                             {"request",

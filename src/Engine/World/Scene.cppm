@@ -35,6 +35,14 @@ export namespace Dot::World {
     auto operator==(const EntityId&) const -> bool = default;
   };
 
+  /** Exact runtime ownership, including the placement container. Reparenting does
+   * not transfer ownership; values remain reserved after removal.
+   * 精确运行时所有权，包含放置容器；改父级不转移所有权，移除后仍预留实体值。 */
+  struct SceneAttachment {
+    EntityId root;
+    std::vector<EntityId> entities;
+  };
+
   /** source indexes the flattened baseline; key carries persistent logical
    * provenance, independent of intermediate native IDs. source 索引展平基线，
    * key 保存不依赖中间原生 ID 的持久逻辑来源。 */
@@ -284,6 +292,20 @@ export namespace Dot::World {
         -> Core::Result<EntityId>;
     /** Destroy the entity and its entire subtree. 删除实体及其整个子树。 */
     [[nodiscard]] auto destroyEntity(EntityId entity) -> Core::Result<void>;
+    /** Atomically append materialized content while preserving this scene's scope
+     * and existing handles. Source globals/links are excluded, primary flags demoted,
+     * native references remapped. No files, devices or script callbacks are touched.
+     * 原子追加已展开内容并保留当前范围及已有句柄；排除来源全局数据/链接，取消主标记，
+     * 重映射原生引用；不读文件、不接触设备或执行脚本回调。 */
+    [[nodiscard]] auto appendContent(const Scene& content, const Transform& placement = {},
+                                     std::optional<EntityId> parent = {})
+        -> Core::Result<SceneAttachment>;
+    /** Remove exactly these owned values, tolerating already destroyed members.
+     * Foreign/duplicate handles or surviving hierarchy/skin/animation references
+     * fail before mutation; unrelated descendants are never implicitly deleted.
+     * 精确移除拥有实体，容许已删除成员；外来/重复句柄或存活父级/蒙皮/动画引用在修改前失败，
+     * 不隐式删除无关后代。 */
+    [[nodiscard]] auto removeContent(std::span<const EntityId> entities) -> Core::Result<void>;
     [[nodiscard]] auto findEntity(std::uint64_t value) const -> Core::Result<EntityId>;
     /** Exact valid UTF-8 name lookup, sorted by creation ID. Return every duplicate
      * and an empty owned list when absent, without copying unrelated components.

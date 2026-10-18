@@ -52,7 +52,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.#checked.add(name);
   }
 
-  private expectedError(action: () => void, code: string): void {
+  private expectedError(action: () => void, code: string): HostError {
     try {
       action();
     } catch (error) {
@@ -61,7 +61,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
           'HostError',
           value.name === 'DotHostError' && value.code === code && value.message.length > 0);
       ++this.#errors;
-      return;
+      return value;
     }
 
     throw new Error('Expected native failure: ' + code);
@@ -504,6 +504,14 @@ export class Audit extends ScriptComponent<{contract: string}> {
       scenes.status('0');
     }, 'InvalidArgument');
     this.check('scenes.status', scenes.current().scope === this.self.id.scene);
+    const instances = scenes.instances();
+    this.check('scenes.instances', Array.isArray(instances)
+        && instances.every(value => value.root.scene === this.self.id.scene));
+    const append = this.expectedError(() => scenes.append('../invalid.dotscene'), 'InvalidArgument');
+    this.check('scenes.append', append.code === 'InvalidArgument');
+    const remove = this.expectedError(
+        () => scenes.remove({scene: this.self.id.scene, value: '18446744073709551614'}), 'NotFound');
+    this.check('scenes.remove', remove.code === 'NotFound');
   }
 
   #saveTicket: SaveTicket|null = null;

@@ -1019,7 +1019,7 @@ export class Door extends ScriptComponent {
 }
 ```
 
-`scenes.status(id)` returns owned `{id,path,state,committed,error}`. IDs are local to
+`scenes.status(id)` returns owned `{id,path,kind,root,state,committed,error}`. IDs are local to
 the GameSession, monotonic across its cuts, with the last 16 retained. Unknown or
 expired IDs fail; errors use stable HostErrorCode names. Acceptance is pending, not
 success. Preparation failures keep the current world running; check the result to
@@ -1105,3 +1105,41 @@ completion/cancellation/failure; this does not unpause or advance audio by simul
 Paused fixed calls skip game callbacks/physics; paused variable calls skip Update
 and advance animation by zero. Audio, input, rendering, reload and explicit scene
 requests continue. See [phase ordering, ownership and product controls](GameClock.md).
+
+
+## Additive runtime scene content
+
+`scenes.append(path)` queues saved materialized `.dotscene` entities under a new
+identity-transform container in the current world. It shares the replacement
+queue and request history; inspect `scenes.status(id)` until terminal. `kind` is
+`replace`, `append` or `remove`; a published append returns a scoped `root`.
+`scenes.instances()` returns the active `{root,path}` list independently of the
+last 16 request records, with at most 64 live instances. Duplicate source paths
+produce independent IDs. Replacement clears this ownership list; stale roots fail.
+
+The source's environment, AO, UI and authoring links are stripped before CPU
+resource preflight. Native skin/animation references remap, primary cameras and
+listeners are demoted, and opaque script JSON remains literal. Existing world
+scope, entity handles, script objects, clock, physics motion and animation state
+remain active; only newly attached components receive Start. Content is read from
+the saved file even when its path matches an unsaved Play origin.
+
+`scenes.remove(root)` queues removal of the original member list, including its
+container. Reparenting members does not transfer ownership; already destroyed
+members are tolerated and their values never reused. Surviving external children,
+skin joints or animation targets into those members reject removal before mutation.
+New script-spawned children are external to this list: remove/reparent them first.
+Script-property JSON is not interpreted as native references.
+
+Preflight or ownership failure leaves the active world running. After publication,
+native synchronization or component construction/Start/Stop failure reports
+`committed:true` and faults the session; completed callbacks cannot be rolled back.
+Successful composition synchronizes existing services without replacing the realm
+or rebuilding physics. This is functional additive composition, not asynchronous
+GPU residency: candidate construction, native binding, audio and dynamic asset
+synchronization still run on the owner and may reread resource files. Asset edits
+must be serialized through publication, as for scene replacement.
+
+追加/卸载共享帧边界队列，接受请求不代表完成。实例保留精确成员所有权，来源全局设置与
+编辑链接不导入；已有玩家、脚本、物理及动画继续运行。发布前失败保留游戏，发布后同步或
+钩子失败标记已提交并使会话故障；尚不代表完整后台资源流送或 GPU 驻留。

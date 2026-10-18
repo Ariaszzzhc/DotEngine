@@ -9,6 +9,7 @@
 
 import Dot.Core.Result;
 import Dot.Script.SceneFlow;
+import Dot.World.Scene;
 
 namespace {
   using namespace Dot::Script;
@@ -63,7 +64,7 @@ TEST_CASE("scene_flow.host_is_strict_and_bound_reads_keep_their_realm_location")
   auto flow = SceneFlow::create(1, std::nullopt).value();
   auto old = flow.bindings(1, std::nullopt).value();
   auto candidate = flow.bindings(2, "scenes/Next.dotscene").value();
-  REQUIRE(old.size() == 3);
+  REQUIRE(old.size() == 6);
   CHECK(old[0].access == HostAccess::ReadOnly);
   CHECK(old[1].access == HostAccess::ReadWrite);
   CHECK(old[2].access == HostAccess::ReadOnly);
@@ -143,4 +144,75 @@ TEST_CASE("scene_flow.retains_bounded_owned_results_and_thread_move_lifetime_con
   CHECK(retained.state == SceneRequestState::Succeeded);
   CHECK(retained.path == "scenes/a.dotscene");
   CHECK_FALSE(moved.commit(id, 22, "scenes/end.dotscene"));
+}
+
+TEST_CASE("scene_flow.additive_ownership_survives_history_and_replacement_retires_it") {
+  auto flow = SceneFlow::create(10, "scenes/main.dotscene").value();
+  const auto add = flow.append("assets/room.dotscene", 10).value();
+  CHECK(flow.status(add)->kind == SceneRequestKind::Append);
+  REQUIRE(flow.begin(add));
+  CHECK_FALSE(flow.commit(add, 20, "assets/room.dotscene"));
+  REQUIRE(flow.commitContent(add, Dot::World::SceneAttachment{{10, 20}, {{10, 20}, {10, 21}}}));
+  CHECK(flow.location()->scope == 10);
+  CHECK(flow.location()->path == "scenes/main.dotscene");
+  CHECK(flow.status(add)->root == Dot::World::EntityId{10, 20});
+
+  for (int index = 0; index < 20; ++index) {
+    auto rejected = flow.request("scenes/missing.dotscene", 10).value();
+    REQUIRE(flow.begin(rejected));
+    REQUIRE(flow.fail(rejected, failure()));
+  }
+
+  CHECK_FALSE(flow.status(add));
+  REQUIRE(flow.instances()->size() == 1);
+  REQUIRE(flow.members({10, 20})->size() == 2);
+  CHECK_FALSE(flow.remove({11, 20}));
+  auto remove = flow.remove({10, 20}).value();
+  REQUIRE(flow.begin(remove));
+  CHECK(flow.status(remove)->kind == SceneRequestKind::Remove);
+  REQUIRE(flow.fail(remove, failure()));
+  CHECK(flow.instances()->size() == 1);
+  remove = flow.remove({10, 20}).value();
+  REQUIRE(flow.begin(remove));
+  REQUIRE(flow.commitContent(remove));
+  CHECK(flow.instances()->empty());
+  CHECK(flow.status(remove)->committed);
+  const auto again = flow.append("assets/room.dotscene", 10).value();
+  REQUIRE(flow.begin(again));
+  REQUIRE(flow.commitContent(again, Dot::World::SceneAttachment{{10, 30}, {{10, 30}}}));
+  const auto cut = flow.request("scenes/next.dotscene", 10).value();
+  REQUIRE(flow.begin(cut));
+  REQUIRE(flow.commit(cut, 11, "scenes/next.dotscene"));
+  CHECK(flow.instances()->empty());
+  CHECK_FALSE(flow.remove({10, 30}));
+}
+
+TEST_CASE("scene_flow.additive_host_scope_access_and_limits_are_strict") {
+  auto flow = SceneFlow::create(1, std::nullopt).value();
+  auto bindings = flow.bindings(1, std::nullopt).value();
+  REQUIRE(bindings.size() == 6);
+  CHECK(bindings[3].access == HostAccess::ReadWrite);
+  CHECK(bindings[4].access == HostAccess::ReadWrite);
+  CHECK(bindings[5].access == HostAccess::ReadOnly);
+  CHECK_FALSE(bindings[3].callback("[42]"));
+  CHECK_FALSE(bindings[4].callback(R"([{"scene":"1","value":"2","extra":1}])"));
+  CHECK_FALSE(bindings[4].callback(R"([{"scene":"2","value":"2"}])"));
+  CHECK_FALSE(bindings[5].callback("[1]"));
+
+  for (std::uint64_t value = 1; value <= 64; ++value) {
+    auto id = flow.append("assets/room.dotscene", 1).value();
+    REQUIRE(flow.begin(id));
+    REQUIRE(flow.commitContent(id, Dot::World::SceneAttachment{{1, value}, {{1, value}}}));
+  }
+
+  CHECK_FALSE(flow.append("assets/room.dotscene", 1));
+  CHECK(Json::parse(bindings[5].callback("[]").value().value()).size() == 64);
+  auto remove = Json::parse(bindings[4].callback(R"([{"scene":"1","value":"1"}])").value().value())
+                    .get<std::string>();
+  REQUIRE(flow.begin(std::stoull(remove)));
+  REQUIRE(flow.commitContent(std::stoull(remove)));
+  auto last = flow.append("assets/room.dotscene", 1).value();
+  flow.retire();
+  CHECK(flow.status(last)->state == SceneRequestState::Cancelled);
+  CHECK_FALSE(bindings[3].callback(R"(["assets/room.dotscene"])"));
 }

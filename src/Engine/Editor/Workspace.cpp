@@ -211,10 +211,15 @@ namespace Dot::Editor {
 
     auto sceneRequestJson(const Script::SceneRequest& value) -> Json {
       constexpr std::array states{"pending", "loading", "succeeded", "failed", "cancelled"};
+      constexpr std::array kinds{"replace", "append", "remove"};
       return {{"id", std::to_string(value.id)},
               {"path", value.path},
               {"state", states.at(static_cast<std::size_t>(value.state))},
               {"committed", value.committed},
+              {"kind", kinds.at(static_cast<std::size_t>(value.kind))},
+              {"root", value.root ? Json{{"scene", std::to_string(value.root->scene)},
+                                         {"value", std::to_string(value.root->value)}}
+                                  : Json(nullptr)},
               {"error", value.error ? errorJson(*value.error)["error"] : Json(nullptr)}};
     }
 
@@ -6531,8 +6536,36 @@ namespace Dot::Editor {
         return Json{{"ok", true}, {"result", std::move(value)}}.dump();
       }
 
-      if (command == "request-play-scene" || command == "play-scene-status") {
-        if (command == "request-play-scene") {
+      if (command == "play-scene-instances") {
+        Codec::requireFields(parsed, {"command", "session"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Instance query requires current Play");
+        }
+
+        auto values = m_play->sceneInstances();
+
+        if (!values) {
+          return std::unexpected(values.error());
+        }
+
+        Json result = Json::array();
+
+        for (const auto& value : *values) {
+          result.push_back({{"root",
+                             {{"scene", std::to_string(value.root.scene)},
+                              {"value", std::to_string(value.root.value)}}},
+                            {"path", value.path}});
+        }
+
+        return Json{{"ok", true}, {"instances", std::move(result)}}.dump();
+      }
+
+      if (command == "request-play-scene" || command == "append-play-scene"
+          || command == "remove-play-scene" || command == "play-scene-status") {
+        if (command == "remove-play-scene") {
+          Codec::requireFields(parsed, {"command", "session", "revision", "scope", "root"});
+        } else if (command != "play-scene-status") {
           Codec::requireFields(parsed, {"command", "session", "revision", "path"});
         } else {
           Codec::requireFields(parsed, {"command", "session", "request"});
@@ -6558,7 +6591,11 @@ namespace Dot::Editor {
                             "without pending close");
         }
 
-        auto id = m_play->requestScene(parsed["path"].get<std::string>());
+        auto id = command == "remove-play-scene"
+                      ? m_play->removeScene({Codec::id(parsed["scope"]), Codec::id(parsed["root"])})
+                  : command == "append-play-scene"
+                      ? m_play->appendScene(parsed["path"].get<std::string>())
+                      : m_play->requestScene(parsed["path"].get<std::string>());
         return id ? Core::Result<std::string>{Json{
                         {"ok", true},
                         {"request", std::to_string(*id)},
@@ -11886,6 +11923,43 @@ namespace Dot::Editor {
           }
 
           ImGui::EndCombo();
+        }
+
+        if (ImGui::BeginCombo("Add scene content", "Choose a saved scene")) {
+          for (const auto& entry : m_catalog) {
+            const auto& path = entry["path"].get_ref<const std::string&>();
+
+            if (entry["type"] != "directory" && path.ends_with(".dotscene")
+                && ImGui::Selectable(path.c_str())) {
+              sessionAction({{"command", "append-play-scene"},
+                             {"session", std::to_string(m_playSession)},
+                             {"revision", std::to_string(m_document->stats()->revision)},
+                             {"path", path}});
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        auto instances = m_play->sceneInstances();
+
+        if (instances) {
+          for (const auto& instance : *instances) {
+            ImGui::PushID(std::to_string(instance.root.value).c_str());
+            ImGui::TextWrapped("%s", instance.path.c_str());
+
+            if (ImGui::Button("Remove scene content")) {
+              sessionAction({{"command", "remove-play-scene"},
+                             {"session", std::to_string(m_playSession)},
+                             {"revision", std::to_string(m_document->stats()->revision)},
+                             {"scope", std::to_string(instance.root.scene)},
+                             {"root", std::to_string(instance.root.value)}});
+            }
+
+            ImGui::PopID();
+          }
+        } else {
+          ImGui::TextWrapped("%s", instances.error().message.c_str());
         }
 
         ImGui::EndDisabled();

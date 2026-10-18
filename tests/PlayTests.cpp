@@ -507,6 +507,9 @@ TEST_CASE("play.preparation_freezes_authoring_and_publishes_only_after_activatio
   CHECK(play.stats()->state == PlayState::Preparing);
   CHECK_FALSE(play.stats()->started);
   CHECK_FALSE(play.stats()->clock);
+  CHECK_FALSE(play.sceneInstances());
+  CHECK_FALSE(play.appendScene("scenes/main.dotscene"));
+  CHECK_FALSE(play.removeScene({authoring.id(), actor.value}));
   CHECK_FALSE(play.gameClock());
   CHECK(play.stats()->preparation == PlayPreparation::Scene);
   CHECK_FALSE(play.scene());

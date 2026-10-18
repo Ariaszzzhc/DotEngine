@@ -1058,6 +1058,144 @@ namespace Dot::Project {
     return m_impl->m_flow->request(path, m_impl->m_identity);
   }
 
+  auto GameSession::appendScene(std::string_view path) -> Core::Result<std::uint64_t> {
+    auto checked = stats();
+
+    if (!checked || checked->state != SessionState::Running) {
+      return checked ? Core::fail(Core::ErrorCode::InvalidState,
+                                  "Scene append requires running gameplay")
+                     : std::unexpected(checked.error());
+    }
+
+    return m_impl->m_flow->append(path, m_impl->m_identity);
+  }
+
+  auto GameSession::removeScene(World::EntityId root) -> Core::Result<std::uint64_t> {
+    auto checked = stats();
+
+    if (!checked || checked->state != SessionState::Running) {
+      return checked ? Core::fail(Core::ErrorCode::InvalidState,
+                                  "Scene removal requires running gameplay")
+                     : std::unexpected(checked.error());
+    }
+
+    return m_impl->m_flow->remove(root);
+  }
+
+  auto GameSession::sceneInstances() const -> Core::Result<std::vector<Script::SceneInstance>> {
+    auto checked = stats();
+    return checked
+               ? m_impl->m_flow->instances()
+               : Core::Result<std::vector<Script::SceneInstance>>{std::unexpected(checked.error())};
+  }
+
+  auto GameSession::processContentRequest(const Script::SceneRequest& request,
+                                          const PreparedScene* preflight,
+                                          Script::ScriptReport& report) -> Core::Result<void> {
+    bool published{};
+    const auto failed = [&](Core::Error error) -> Core::Result<void> {
+      error.message = published
+                          ? "Scene content published; synchronization failed: " + error.message
+                          : "Scene content preparation failed; gameplay retained: " + error.message;
+      auto recorded = m_impl->m_flow->fail(request.id, error);
+
+      if (published || !recorded) {
+        m_impl->m_state = SessionState::Faulted;
+        m_impl->retireServices();
+        return recorded ? Core::Result<void>{std::unexpected(std::move(error))} : recorded;
+      }
+
+      return {};
+    };
+
+    try {
+      ActiveScope active{m_impl->m_active};
+      std::optional<World::SceneAttachment> attachment;
+
+      if (request.kind == Script::SceneRequestKind::Append) {
+        auto content = preflight->scene();
+
+        if (!content) {
+          return failed(content.error());
+        }
+
+        auto added = m_impl->m_scene->appendContent(*content);
+
+        if (!added) {
+          return failed(added.error());
+        }
+
+        attachment.emplace(std::move(*added));
+      } else {
+        auto members = m_impl->m_flow->members(*request.root);
+
+        if (!members) {
+          return failed(members.error());
+        }
+
+        auto removed = m_impl->m_scene->removeContent(*members);
+
+        if (!removed) {
+          return failed(removed.error());
+        }
+      }
+
+      published = true;
+      auto accepted = m_impl->m_flow->commitContent(request.id, std::move(attachment));
+
+      if (!accepted) {
+        return failed(accepted.error());
+      }
+
+      const auto synchronize = [&]() -> Core::Result<void> {
+        auto physics = m_impl->m_physics->synchronize();
+
+        if (!physics) {
+          return std::unexpected(physics.error());
+        }
+
+        auto animation = m_impl->m_animations->advance(0);
+
+        if (!animation) {
+          return std::unexpected(animation.error());
+        }
+
+        return m_impl->m_audio->synchronize();
+      };
+      auto ready = synchronize();
+
+      if (!ready) {
+        return failed(ready.error());
+      }
+
+      auto started = m_impl->m_live ? m_impl->m_live->start() : m_impl->m_scripts->start();
+
+      if (!started) {
+        return failed(started.error());
+      }
+
+      const auto faulted = started->realmFaulted || !started->failures.empty();
+      std::optional<Core::Error> error;
+
+      if (!started->failures.empty()) {
+        error = started->failures.front().error;
+      }
+
+      append(report, std::move(*started));
+
+      if (faulted) {
+        return failed(error.value_or(
+            Core::Error{Core::ErrorCode::InvalidState, "Content script realm faulted", {}}));
+      }
+
+      auto synchronized = synchronize();
+      return synchronized ? Core::Result<void>{} : failed(synchronized.error());
+    } catch (const std::exception& error) {
+      return failed(
+          {Core::ErrorCode::External, "Publish scene content: " + std::string(error.what()), {}});
+    }
+  }
+
   auto GameSession::sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
@@ -1102,11 +1240,19 @@ namespace Dot::Project {
         return begun;
       }
 
+      if (request.kind == Script::SceneRequestKind::Remove) {
+        return processContentRequest(request, nullptr, report);
+      }
+
       try {
-        auto initial = m_impl->m_origin && m_impl->m_origin->path == request.path
+        auto initial = request.kind == Script::SceneRequestKind::Replace && m_impl->m_origin
+                               && m_impl->m_origin->path == request.path
                            ? std::optional<std::string>{m_impl->m_origin->bytes}
                            : std::nullopt;
-        auto started = ScenePreparation::begin(*m_impl->m_files, request.path, std::move(initial));
+        auto started = ScenePreparation::begin(*m_impl->m_files, request.path, std::move(initial),
+                                               request.kind == Script::SceneRequestKind::Append
+                                                   ? ScenePreparationKind::Content
+                                                   : ScenePreparationKind::Complete);
 
         if (!started) {
           return m_impl->m_flow->fail(request.id, started.error());
@@ -1135,6 +1281,12 @@ namespace Dot::Project {
     auto preflight = m_impl->m_preparation->take();
     m_impl->m_preparation.reset();
     m_impl->m_preparingRequest.reset();
+
+    if (request.kind == Script::SceneRequestKind::Append) {
+      return preflight ? processContentRequest(request, &*preflight, report)
+                       : m_impl->m_flow->fail(request.id, preflight.error());
+    }
+
     bool committed = false;
     bool published = false;
     std::unique_ptr<Impl> replacement;

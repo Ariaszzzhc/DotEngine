@@ -830,3 +830,31 @@ TEST_CASE("animation.controller_reserves_inactive_state_writers_and_prepared_def
   CHECK_FALSE(players->advance(.25));
   CHECK(players->state(f.owner)->playback.time == .5);
 }
+
+TEST_CASE("animation.additive_scene_publication_retains_existing_player_clock") {
+  Fixture fixture;
+  REQUIRE(fixture.project.saveStartup(*fixture.scene));
+  auto content = World::Scene::create("Empty room").value();
+  REQUIRE(content.createEntity("Marker"));
+  REQUIRE(World::saveScene(fixture.files, "scenes/room.dotscene", content));
+  const auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto session = Project::GameSession::create(fixture.project, compiler).value();
+  REQUIRE(session.start());
+  REQUIRE(session.update(.5));
+  auto scene = session.scene().value();
+  auto owner = scene->findEntity(fixture.owner.value).value();
+  auto before = session.animationState(owner)->playback.time;
+  CHECK(before == .5);
+  const auto id = session.appendScene("scenes/room.dotscene").value();
+  REQUIRE(session.update(0));
+  REQUIRE(Dot::Tests::awaitScene(session, id));
+  CHECK(session.animationState(owner)->playback.time == before);
+  REQUIRE(session.update(.25));
+  CHECK(session.animationState(owner)->playback.time == .75);
+  const auto root = session.sceneRequest(id)->root.value();
+  auto remove = session.removeScene(root).value();
+  REQUIRE(session.update(0));
+  CHECK(session.sceneRequest(remove)->committed);
+  CHECK(session.animationState(owner)->playback.time == .75);
+  REQUIRE(session.close());
+}

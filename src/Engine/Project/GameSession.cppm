@@ -7,6 +7,7 @@ module;
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 export module Dot.Project.GameSession;
 
@@ -175,6 +176,14 @@ export namespace Dot::Project {
      * 在无退役音频的下一变动帧末尾开始替换；接受不等于完成，须查询请求结果。准备失败保留旧场景；
      * 提交后的停止/启动失败使新会话故障。 */
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    /** Additive content keeps the current realm, clock and native simulation.
+     * Preflight failure preserves gameplay; published synchronization/hook failure
+     * is committed and faults the session. Source globals/UI are not imported.
+     * 追加内容保留当前 realm、时钟及原生模拟；预检失败保留游戏，发布后同步/钩子失败
+     * 标记已提交并使会话故障；不导入来源全局设置/UI。 */
+    [[nodiscard]] auto appendScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto removeScene(World::EntityId root) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto sceneInstances() const -> Core::Result<std::vector<Script::SceneInstance>>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     /** Poll resource preflight/retired audio without advancing Update/fixed time
      * or beginning pending cuts. A ready replacement may dispatch Stop/Start and
@@ -252,6 +261,9 @@ export namespace Dot::Project {
         const Script::SceneFlow* flow = nullptr, std::shared_ptr<const Origin> origin = {},
         const Script::GameData* progress = nullptr, Audio::Playback* preparedPlayback = nullptr,
         const PreparedScene* preflight = nullptr) -> Core::Result<GameSession>;
+    [[nodiscard]] auto processContentRequest(const Script::SceneRequest& request,
+                                             const PreparedScene* preflight,
+                                             Script::ScriptReport& report) -> Core::Result<void>;
     [[nodiscard]] auto processSceneRequest(Script::ScriptReport& report, bool beginPending)
         -> Core::Result<void>;
     struct Impl;

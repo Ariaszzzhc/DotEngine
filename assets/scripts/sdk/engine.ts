@@ -1372,7 +1372,14 @@ export interface SceneRequest {
   path: string;
   state: 'pending'|'loading'|'succeeded'|'failed'|'cancelled';
   committed: boolean;
+  kind: 'replace'|'append'|'remove';
+  root: EntityId|null;
   error: {code: HostErrorCode; message: string}|null;
+}
+
+export interface SceneInstance {
+  root: EntityId;
+  path: string;
 }
 
 export const scenes = Object.freeze({
@@ -1382,6 +1389,23 @@ export const scenes = Object.freeze({
 
   request(path: string): string {
     return invoke('scenes.request', [path]) as string;
+  },
+
+  /** Append saved materialized entities at identity, preserving current gameplay.
+   * Globals/UI are excluded; failures after publication report committed=true.
+   * 按单位变换追加已保存展开实体，保留当前游戏；排除全局/UI，发布后失败标记 committed=true。 */
+  append(path: string): string {
+    return invoke('scenes.append', [path]) as string;
+  },
+
+  /** Remove exactly an instance's original members; external native references reject it.
+   * 精确移除实例原有成员，外部原生引用会阻止卸载。 */
+  remove(root: EntityId): string {
+    return invoke('scenes.remove', [root]) as string;
+  },
+
+  instances(): SceneInstance[] {
+    return invoke('scenes.instances', []) as SceneInstance[];
   },
 
   status(id: string): SceneRequest {

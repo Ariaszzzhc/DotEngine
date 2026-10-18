@@ -346,3 +346,31 @@ TEST_CASE("scene_preparation.synchronous_proof_uses_same_path_and_initial_bounda
   CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/main.dotscene", initial,
                                              stopped.get_token()));
 }
+
+TEST_CASE("scene_preparation.content_excludes_unused_globals_but_checks_entity_assets") {
+  Fixture f;
+  REQUIRE(f.scene.setEnvironment(World::Environment{"assets/missing.hdr"}));
+  REQUIRE(f.scene.setUi("assets/missing.dotui"));
+  REQUIRE(World::saveScene(f.files, "scenes/content.dotscene", f.scene));
+  auto full = Project::PreparedScene::create(f.files, "scenes/content.dotscene", {}, {});
+  CHECK_FALSE(full);
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/content.dotscene", {},
+                                              Project::ScenePreparationKind::Content)
+                 .value();
+  wait(job);
+  auto result = job.take();
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  auto content = result->scene().value();
+  CHECK_FALSE(content.environment()->has_value());
+  CHECK_FALSE(content.ui()->has_value());
+  CHECK_FALSE(result->ui()->has_value());
+  CHECK(content.entityCount().value() == 1);
+  auto entity = f.scene.entities()->front();
+  auto mesh = *entity.mesh;
+  mesh.kind = World::MeshKind::Asset;
+  mesh.asset = "assets/missing.dotmesh";
+  REQUIRE(f.scene.setMeshRenderer(entity.id, mesh));
+  REQUIRE(World::saveScene(f.files, "scenes/content.dotscene", f.scene));
+  CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/content.dotscene", {}, {},
+                                             Project::ScenePreparationKind::Content));
+}

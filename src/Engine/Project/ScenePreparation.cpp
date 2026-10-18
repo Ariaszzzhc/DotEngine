@@ -424,9 +424,13 @@ namespace Dot::Project {
   PreparedScene::~PreparedScene() = default;
 
   auto PreparedScene::create(const Core::FileSystem& files, const std::string& path,
-                             const std::optional<std::string>& initial, std::stop_token stop)
-      -> Core::Result<PreparedScene> {
+                             const std::optional<std::string>& initial, std::stop_token stop,
+                             ScenePreparationKind kind) -> Core::Result<PreparedScene> {
     auto valid = preparationInput(path, initial);
+
+    if (kind != ScenePreparationKind::Complete && kind != ScenePreparationKind::Content) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene preparation kind");
+    }
 
     if (!valid) {
       return std::unexpected(valid.error());
@@ -452,6 +456,20 @@ namespace Dot::Project {
 
       if (!scene) {
         return std::unexpected(scene.error());
+      }
+
+      if (kind == ScenePreparationKind::Content) {
+        auto environment = scene->setEnvironment(std::nullopt);
+        auto occlusion = scene->setOcclusion(std::nullopt);
+        auto ui = scene->setUi(std::nullopt);
+        auto links = scene->setSceneLinks({});
+
+        if (!environment || !occlusion || !ui || !links) {
+          return std::unexpected(!environment ? environment.error()
+                                 : !occlusion ? occlusion.error()
+                                 : !ui        ? ui.error()
+                                              : links.error());
+        }
       }
 
       auto graphics = sceneGraphics(files, *scene, stop);
@@ -616,12 +634,13 @@ namespace Dot::Project {
     bool m_taken{};
     std::jthread m_worker;
 
-    Impl(Core::FileSystem files, std::string path, std::optional<std::string> initial)
+    Impl(Core::FileSystem files, std::string path, std::optional<std::string> initial,
+         ScenePreparationKind kind)
         : m_worker([state = m_completion, files = std::move(files), path = std::move(path),
-                    initial = std::move(initial)](std::stop_token stop) {
+                    initial = std::move(initial), kind](std::stop_token stop) {
             auto result = [&]() -> Core::Result<PreparedScene> {
               try {
-                return PreparedScene::create(files, path, initial, stop);
+                return PreparedScene::create(files, path, initial, stop, kind);
               } catch (const std::exception& error) {
                 return Core::fail(Core::ErrorCode::External,
                                   "Background scene preparation: " + std::string(error.what()));
@@ -653,7 +672,7 @@ namespace Dot::Project {
   ScenePreparation::~ScenePreparation() = default;
 
   auto ScenePreparation::begin(const Core::FileSystem& files, std::string path,
-                               std::optional<std::string> initial)
+                               std::optional<std::string> initial, ScenePreparationKind kind)
       -> Core::Result<ScenePreparation> {
     auto valid = preparationInput(path, initial);
 
@@ -662,7 +681,12 @@ namespace Dot::Project {
     }
 
     try {
-      return ScenePreparation{std::make_unique<Impl>(files, std::move(path), std::move(initial))};
+      if (kind != ScenePreparationKind::Complete && kind != ScenePreparationKind::Content) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid scene preparation kind");
+      }
+
+      return ScenePreparation{
+          std::make_unique<Impl>(files, std::move(path), std::move(initial), kind)};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Start scene preparation: " + std::string(error.what()));

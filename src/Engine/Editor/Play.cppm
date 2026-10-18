@@ -114,6 +114,9 @@ export namespace Dot::Editor {
                                std::optional<Project::GameInputArea> area = std::nullopt,
                                bool textInputActive = false) -> Core::Result<void>;
     [[nodiscard]] auto requestScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto appendScene(std::string_view path) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto removeScene(World::EntityId root) -> Core::Result<std::uint64_t>;
+    [[nodiscard]] auto sceneInstances() const -> Core::Result<std::vector<Script::SceneInstance>>;
     [[nodiscard]] auto sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest>;
     [[nodiscard]] auto gameData() const -> Core::Result<Script::GameData>;
     [[nodiscard]] auto inspectAnimation(World::EntityId owner) const -> Core::Result<std::string>;

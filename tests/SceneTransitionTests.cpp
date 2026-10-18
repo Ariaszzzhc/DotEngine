@@ -611,3 +611,116 @@ TEST_CASE("scene_transition.loading_keeps_old_gameplay_and_close_cancels_without
   CHECK(fixture.observations.back()["phase"] == "stop");
   CHECK_FALSE(session.pollScene());
 }
+
+TEST_CASE("scene_transition.additive_content_keeps_live_scope_realm_clock_and_native_state") {
+  for (const bool live : {false, true}) {
+    Fixture fixture(live);
+    auto session = fixture.session();
+    good(session.start());
+    auto scene = session.scene().value();
+    const auto actor = scene->entities()->front().id;
+    auto clock = session.gameClock().value();
+    REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+    const auto pose = scene->worldTransform(actor)->data;
+    const auto add = session.appendScene("scenes/next.dotscene").value();
+    good(session.update(0));
+    good(Dot::Tests::awaitScene(session, add));
+    auto record = session.sceneRequest(add).value();
+    REQUIRE(record.root);
+    CHECK(record.state == Script::SceneRequestState::Succeeded);
+    CHECK(record.committed);
+    CHECK(session.scene().value() == scene);
+    CHECK(session.scene().value()->id() == actor.scene);
+    CHECK(scene->worldTransform(actor)->data == pose);
+    CHECK(clock.snapshot()->paused);
+    CHECK(fixture.observations.size() == 2);
+    CHECK(fixture.observations[0]["phase"] == "start");
+    CHECK(fixture.observations[1]["phase"] == "start");
+    CHECK(fixture.observations[1]["where"]["scope"] == std::to_string(actor.scene));
+    REQUIRE(session.sceneInstances()->size() == 1);
+    auto camera = scene->primaryCamera().value();
+    CHECK(camera.value == 2);
+    auto external = scene->createEntity("Player dependency").value();
+    REQUIRE(scene->setParent(external, *record.root));
+    const auto rejected = session.removeScene(*record.root).value();
+    good(session.update(0));
+    CHECK(session.sceneRequest(rejected)->state == Script::SceneRequestState::Failed);
+    CHECK_FALSE(session.sceneRequest(rejected)->committed);
+    CHECK(session.sceneInstances()->size() == 1);
+    REQUIRE(scene->setParent(external, std::nullopt));
+    const auto remove = session.removeScene(*record.root).value();
+    good(session.update(0));
+    CHECK(session.sceneRequest(remove)->state == Script::SceneRequestState::Succeeded);
+    CHECK(session.sceneRequest(remove)->committed);
+    CHECK(session.sceneInstances()->empty());
+    CHECK(scene->entity(actor));
+    CHECK(scene->entity(external));
+    CHECK_FALSE(scene->entity(*record.root));
+    CHECK(fixture.observations.size() == 3);
+    CHECK(fixture.observations.back()["phase"] == "stop");
+    CHECK(clock.snapshot()->paused);
+    good(session.close());
+  }
+}
+
+TEST_CASE("scene_transition.additive_missing_assets_keep_gameplay_and_start_failure_is_committed") {
+  Fixture fixture;
+  auto session = fixture.session();
+  good(session.start());
+  auto scene = session.scene().value();
+  const auto missing = session.appendScene("scenes/missing.dotscene").value();
+  good(session.update(0));
+  const auto before = World::encodeScene(*scene).value();
+  good(Dot::Tests::awaitScene(session, missing));
+  CHECK(session.sceneRequest(missing)->state == Script::SceneRequestState::Failed);
+  CHECK_FALSE(session.sceneRequest(missing)->committed);
+  CHECK(session.sceneInstances()->empty());
+  CHECK(session.stats()->state == Project::SessionState::Running);
+  CHECK(World::encodeScene(*scene).value() == before);
+  CHECK(scene->entityCount().value() == 2);
+  auto bad = fixture.scene("Bad", {{"failPrepare", true}});
+  REQUIRE(World::saveScene(fixture.project.files().value(), "scenes/bad.dotscene", bad));
+  const auto failed = session.appendScene("scenes/bad.dotscene").value();
+  good(session.update(0));
+  auto publication = Dot::Tests::awaitScene(session, failed);
+  CHECK_FALSE(publication);
+  CHECK(session.sceneRequest(failed)->state == Script::SceneRequestState::Failed);
+  CHECK(session.sceneRequest(failed)->committed);
+  CHECK(session.stats()->state == Project::SessionState::Faulted);
+  CHECK(session.scene().value() == scene);
+  CHECK(scene->entityCount().value() == 5);
+  good(session.close());
+}
+
+TEST_CASE("scene_transition.additive_publication_retains_dynamic_body_velocity") {
+  Fixture fixture;
+  auto content = fixture.scene("Distant room");
+  auto node = content.entities()->front().id;
+  REQUIRE(content.setTransform(node, {{100, 0, 0}}));
+  REQUIRE(World::saveScene(fixture.project.files().value(), "scenes/distant.dotscene", content));
+  auto session = fixture.session();
+  auto reference = fixture.session();
+  good(session.start());
+  good(reference.start());
+
+  for (int frame = 0; frame < 10; ++frame) {
+    good(session.fixedUpdate());
+    good(reference.fixedUpdate());
+  }
+
+  const auto id = session.appendScene("scenes/distant.dotscene").value();
+  good(session.update(0));
+  good(Dot::Tests::awaitScene(session, id));
+  REQUIRE(session.sceneRequest(id)->committed);
+  good(session.fixedUpdate());
+  good(reference.fixedUpdate());
+  auto actual = session.scene().value();
+  auto expected = reference.scene().value();
+  const auto y = actual->transform(actual->findEntity(1).value())->position.y;
+  CHECK(y < 0);
+  CHECK(y
+        == doctest::Approx(expected->transform(expected->findEntity(1).value())->position.y)
+               .epsilon(1e-6));
+  good(session.close());
+  good(reference.close());
+}

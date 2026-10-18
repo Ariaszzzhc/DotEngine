@@ -238,7 +238,10 @@ Commands use strict complete objects with no unknown fields:
 | animation-parameters | scope, entity, value | Atomic typed controller intent, without advancing time |
 | reset-animation-controller | scope, entity | Reset defaults/entry pose; retain global player pause and layer clocks |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
-| scene-status | request | Retained actual replacement result |
+| append-scene | scope, path | Append saved content while retaining current world/realm/simulation |
+| remove-scene | scope, root | Remove an active instance by exact original membership |
+| scene-instances | none | Owned active `{root,path}` list, independent of request-history eviction |
+| scene-status | request | Retained actual replacement/append/remove result, including kind/root/commit status |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |
 
 Scene scopes and scene-request IDs are nonzero decimal strings. Input/scene requests require

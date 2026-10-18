@@ -777,6 +777,49 @@ namespace Dot::Editor {
                    : Core::Result<std::uint64_t>{std::unexpected(checked.error())};
   }
 
+  auto PlaySession::appendScene(std::string_view path) -> Core::Result<std::uint64_t> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session->appendScene(path)
+                   : Core::Result<std::uint64_t>{std::unexpected(checked.error())};
+  }
+
+  auto PlaySession::removeScene(World::EntityId root) -> Core::Result<std::uint64_t> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? m_impl->m_session->removeScene(root)
+                   : Core::Result<std::uint64_t>{std::unexpected(checked.error())};
+  }
+
+  auto PlaySession::sceneInstances() const -> Core::Result<std::vector<Script::SceneInstance>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    if (!m_impl->m_stats.started) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play has not started");
+    }
+
+    auto checked = m_impl->check();
+    return checked
+               ? m_impl->m_session->sceneInstances()
+               : Core::Result<std::vector<Script::SceneInstance>>{std::unexpected(checked.error())};
+  }
+
   auto PlaySession::sceneRequest(std::uint64_t id) const -> Core::Result<Script::SceneRequest> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");

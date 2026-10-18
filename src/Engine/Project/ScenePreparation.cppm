@@ -18,6 +18,10 @@ import Dot.Physics.Mesh;
 export namespace Dot::Project {
   class ScenePreparation;
 
+  /** Content preparation excludes globals/UI/authoring links before resource work.
+   * 内容预检先排除全局设置/UI/编辑链接，再检查实体资源。 */
+  enum class ScenePreparationKind { Complete, Content };
+
   /** Immutable proof of CPU graphics/skin validation and owned initial animation
    * clips/controllers and collision geometry for exact scene bytes/root. Animation
    * binding/authority still validate on the owner; only immutable assets cross threads. Rehydration
@@ -38,7 +42,9 @@ export namespace Dot::Project {
      * 在调用线程进行 CPU 准备，在有界资源之间响应取消。 */
     [[nodiscard]] static auto create(const Core::FileSystem& files, const std::string& path,
                                      const std::optional<std::string>& initial,
-                                     std::stop_token stop) -> Core::Result<PreparedScene>;
+                                     std::stop_token stop,
+                                     ScenePreparationKind kind = ScenePreparationKind::Complete)
+        -> Core::Result<PreparedScene>;
     [[nodiscard]] auto scene() const -> Core::Result<World::Scene>;
     /** Borrowed until the last owning proof releases. Consumers copy immutable
      * clip handles before publication; no worker scene/player handles escape.
@@ -72,7 +78,8 @@ export namespace Dot::Project {
   class ScenePreparation {
   public:
     [[nodiscard]] static auto begin(const Core::FileSystem& files, std::string path,
-                                    std::optional<std::string> initial = {})
+                                    std::optional<std::string> initial = {},
+                                    ScenePreparationKind kind = ScenePreparationKind::Complete)
         -> Core::Result<ScenePreparation>;
     ScenePreparation(const ScenePreparation&) = delete;
     auto operator=(const ScenePreparation&) -> ScenePreparation& = delete;
