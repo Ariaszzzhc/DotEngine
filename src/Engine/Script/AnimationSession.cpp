@@ -83,6 +83,8 @@ namespace Dot::Script {
           for (const auto& layer : state->layers) {
             layers.push_back(
                 {{"name", layer.name},
+                 {"mode", Animation::layerModeName(layer.mode)},
+                 {"referenceTimeSeconds", layer.referenceTime},
                  {"durationSeconds", layer.duration},
                  {"timeSeconds", layer.playback.time},
                  {"weight", layer.playback.weight},

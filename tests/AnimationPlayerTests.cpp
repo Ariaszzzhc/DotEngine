@@ -81,6 +81,31 @@ TEST_CASE("animation.layer_authoring_round_trip_and_strict_masks_preserve_source
   json = Json::parse(encoded);
   json["layers"][0]["mask"][0]["extra"] = 0;
   CHECK_FALSE(decodePlayerProperties(json.dump()));
+  auto additive = player;
+  additive.layers[0].mode = LayerMode::Additive;
+  additive.layers[0].referenceTime = .75;
+  const auto relative = encodePlayerProperties(additive).value();
+  CHECK(decodePlayerProperties(relative).value() == additive);
+
+  for (const auto* field : {"mode", "referenceTime"}) {
+    json = Json::parse(relative);
+    json["layers"][0].erase(field);
+    CHECK_FALSE(decodePlayerProperties(json.dump()));
+  }
+
+  json = Json::parse(relative);
+  json["layers"][0]["mode"] = "unknown";
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  json["layers"][0]["mode"] = "override";
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  json = Json::parse(relative);
+  json["layers"][0]["referenceTime"] = true;
+  CHECK_FALSE(decodePlayerProperties(json.dump()));
+  additive.layers[0].referenceTime = -1;
+  CHECK_FALSE(validatePlayerProperties(additive));
+  additive.layers[0].referenceTime = 0;
+  additive.layers[0].mode = static_cast<LayerMode>(99);
+  CHECK_FALSE(validatePlayerProperties(additive));
   CHECK(encodePlayerProperties(player).value() == encoded);
 }
 

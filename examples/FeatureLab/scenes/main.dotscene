@@ -810,6 +810,8 @@
               }
             ],
             "name": "PanelTurn",
+            "mode": "override",
+            "referenceTime": 0.0,
             "playOnStart": false,
             "speed": 1.0,
             "weight": 0.5

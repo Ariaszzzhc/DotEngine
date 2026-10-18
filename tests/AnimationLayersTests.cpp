@@ -253,3 +253,47 @@ TEST_CASE("animation_layers.zero_duration_clips_hold_and_still_complete_weight_f
   CHECK(layers.sample()->empty());
   CHECK_FALSE(layers.states()->front().playback.active);
 }
+
+TEST_CASE(
+    "animation_layers.additive_reference_is_fixed_owned_and_validated_only_for_masked_tracks") {
+  LayerDefinition definition{"Offset", motion(), {{0, Path::Translation}}, 1, 1,
+                             false,    true,     LayerMode::Additive,      1};
+  auto layers = Layers::create(std::array{definition}).value();
+  CHECK(layers.states()->front().mode == LayerMode::Additive);
+  CHECK(layers.states()->front().referenceTime == 1);
+  const auto before = layers.sample().value();
+  REQUIRE(before.size() == 1);
+  REQUIRE(before.front().reference);
+  CHECK(before.front().reference->x == 2);
+  CHECK(before.front().channel.value.x == 0);
+  definition.clip = {};
+  auto next = layers.advanced(2).value();
+  CHECK(next.sample()->front().channel.value.x == 4);
+  CHECK(next.sample()->front().reference->x == 2);
+  auto moved = std::move(next);
+  CHECK_FALSE(next.sample());
+  CHECK(moved.sample()->front().reference->x == 2);
+  CHECK(before.front().reference->x == 2);
+  definition.clip = motion();
+  definition.referenceTime = 2;
+  CHECK(Layers::create(std::array{definition}));
+
+  for (double time : {-1., 2.01, std::numeric_limits<double>::infinity()}) {
+    definition.referenceTime = time;
+    CHECK_FALSE(Layers::create(std::array{definition}));
+  }
+
+  definition.referenceTime = 1;
+  definition.mask = {{1, Path::Scale, 0}};
+  CHECK_FALSE(Layers::create(std::array{definition}));
+  definition.referenceTime = 0;
+  CHECK(Layers::create(std::array{definition}));
+  definition.mode = static_cast<LayerMode>(99);
+  CHECK_FALSE(Layers::create(std::array{definition}));
+  CHECK(layerModeName(definition.mode) == "unknown");
+  definition.mode = LayerMode::Override;
+  definition.referenceTime = .5;
+  CHECK_FALSE(Layers::create(std::array{definition}));
+  definition.referenceTime = 0;
+  CHECK(Layers::create(std::array{definition})->sample()->empty());
+}

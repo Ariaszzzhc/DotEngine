@@ -12540,6 +12540,8 @@
               }
             ],
             "name": "Inspection",
+            "mode": "additive",
+            "referenceTime": 0.0,
             "playOnStart": false,
             "speed": 1.0,
             "weight": 1.0

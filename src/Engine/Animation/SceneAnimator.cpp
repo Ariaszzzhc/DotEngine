@@ -4,6 +4,7 @@ module;
 #include <cmath>
 #include <exception>
 #include <expected>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -81,6 +82,54 @@ namespace Dot::Animation {
       return Math::Vec4{static_cast<float>(std::lerp(double(first.x), double(last.x), weight)),
                         static_cast<float>(std::lerp(double(first.y), double(last.y), weight)),
                         static_cast<float>(std::lerp(double(first.z), double(last.z), weight)), 0};
+    }
+
+    auto product(Math::Quat first, Math::Quat last) -> Core::Result<Math::Quat> {
+      return Math::normalized(
+          {static_cast<float>(double(first.w) * last.x + double(first.x) * last.w
+                              + double(first.y) * last.z - double(first.z) * last.y),
+           static_cast<float>(double(first.w) * last.y - double(first.x) * last.z
+                              + double(first.y) * last.w + double(first.z) * last.x),
+           static_cast<float>(double(first.w) * last.z + double(first.x) * last.y
+                              - double(first.y) * last.x + double(first.z) * last.w),
+           static_cast<float>(double(first.w) * last.w - double(first.x) * last.x
+                              - double(first.y) * last.y - double(first.z) * last.z)});
+    }
+
+    /** Add local offsets to the current ordered pose, never to the last output.
+     * Rotation is current * slerp(identity, inverse(reference) * sample, weight);
+     * scale uses current * lerp(1, sample/reference, weight), preserving signs.
+     * Reference sampling validates invertible scales before configuration publication.
+     * 向当前有序候选姿态叠加局部偏移，绝不反馈上一输出；旋转后乘最短参考差，缩放乘
+     * 加权比例并保留符号。配置发布前采样验证参考缩放可逆；最终场景事务验证合成结果。 */
+    auto additive(Path path, Math::Vec4 current, Math::Vec4 sample, Math::Vec4 reference,
+                  double weight) -> Core::Result<Math::Vec4> {
+      if (path == Path::Rotation) {
+        auto delta = product({-reference.x, -reference.y, -reference.z, reference.w},
+                             {sample.x, sample.y, sample.z, sample.w});
+        auto weighted = delta ? Math::slerp({}, *delta, weight)
+                              : Core::Result<Math::Quat>{std::unexpected(delta.error())};
+        auto result = weighted ? product({current.x, current.y, current.z, current.w}, *weighted)
+                               : Core::Result<Math::Quat>{std::unexpected(weighted.error())};
+        return result ? Core::Result<Math::Vec4>{{result->x, result->y, result->z, result->w}}
+                      : std::unexpected(result.error());
+      }
+
+      const auto component = [&](double base, double value, double origin) {
+        return path == Path::Translation ? base + weight * (value - origin)
+                                         : base * std::lerp(1.0, value / origin, weight);
+      };
+      const auto x = component(current.x, sample.x, reference.x);
+      const auto y = component(current.y, sample.y, reference.y);
+      const auto z = component(current.z, sample.z, reference.z);
+      constexpr auto limit = std::numeric_limits<float>::max();
+
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || std::abs(x) > limit
+          || std::abs(y) > limit || std::abs(z) > limit) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Additive transform overflow");
+      }
+
+      return Math::Vec4{static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), 0};
     }
   }  // namespace
 
@@ -248,11 +297,16 @@ namespace Dot::Animation {
 
           for (const auto& layer : *overlay) {
             const auto key = std::pair{layer.channel.node, layer.channel.path};
-            auto value
-                = mixed(layer.channel.path, values.at(key), layer.channel.value, layer.weight);
+            auto value = layer.reference
+                             ? additive(layer.channel.path, values.at(key), layer.channel.value,
+                                        *layer.reference, layer.weight)
+                             : mixed(layer.channel.path, values.at(key), layer.channel.value,
+                                     layer.weight);
 
             if (!value) {
-              return std::unexpected(value.error());
+              return Core::fail(value.error().code, "Animation layer node "
+                                                        + std::to_string(layer.channel.node) + ": "
+                                                        + value.error().message);
             }
 
             values[key] = *value;

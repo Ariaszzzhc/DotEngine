@@ -388,7 +388,8 @@ namespace Dot::Animation {
 
             for (const auto& layer : properties.layers) {
               layers.push_back({layer.name, library[layer.clip], layer.mask, layer.weight,
-                                layer.speed, layer.looping, layer.playOnStart});
+                                layer.speed, layer.looping, layer.playOnStart, layer.mode,
+                                layer.referenceTime});
             }
 
             auto animator = take(SceneAnimator::bind(*scene, selected, bindings, layers));

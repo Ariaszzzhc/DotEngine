@@ -14911,3 +14911,121 @@ archive. No art/audio generation or new release archive. Desktop inspection stil
 reports a locked Mac; human mouse/keyboard/layout and subjective hearing remain
 unverified. Only macOS execution is claimed. Final character/environment/audio,
 full streaming and overall production maturity remain open.
+
+## 2026-10-18 — Native additive animation layers
+
+Animation layers now explicitly choose override or additive composition. Additive
+configuration captures the masked channels at a fixed referenceTime within the
+same clip, once, including stopped/zero-weight layers. Reference validation rejects
+nonfinite/out-of-duration times and invalid sampled channels before native binding
+publication. Only masked tracks are reference-sampled. Override requires reference
+zero. Immutable shared configuration owns clips/references; playback snapshots own
+their mode/reference time alongside the existing clocks/weights/fades.
+
+Base and cross-fade sampling still precede ordered layers. Additive translation
+adds the weighted local sample-reference difference; rotation post-multiplies the
+current local quaternion by the shortest weighted inverse-reference/sample delta;
+scale multiplies by the weighted componentwise sample/reference ratio. Signed scales
+remain supported. Double arithmetic rejects overflow before conversion to float.
+Final singular/nonfinite transforms reject in the same complete scene transaction,
+preserving every pose, base/transition/layer clock and weight. Valid final composition
+can still repair a singular intermediate scale through a later override. No output
+feedback, JS pose mixer, hidden clock, bind-matrix substitution or retarget assumption.
+
+The strict saved/native player schema requires mode/referenceTime on every layer;
+there is no old reader, fallback or format-version wrapper. The stopped Inspector's
+Animation layers form shares existing stage/apply/reset/undo/save operations, with
+blend-mode choice and an additive reference-time field. Choosing override resets
+its reference to zero. Preview/live controls expose the actual mode and reference
+with their independent clocks. SDK/native player state uses mode/referenceTimeSeconds;
+preview status follows its existing unqualified second fields. These are observed
+saved definitions, not new runtime definition mutations. File-independent form
+validation does not claim sampled reference readiness; preview/Play/export validate
+native bindings explicitly. Disabled players keep their existing no-resource behavior.
+
+Prism Relay's Inspection layer now uses additive mode at reference zero, retaining
+its existing three head/upper-arm rotation masks, locomotion controller and E/fade/
+pause/reload/checkpoint behavior. Feature Lab retains its override example with
+explicit zero reference. Existing character/animation/art resources remain unchanged.
+This adds fixed same-clip local reference blending, not IK, root motion, rig/retarget
+authoring, hierarchical controllers, final art polish or production-scale guarantees.
+
+Validation on arm64 macOS:
+
+- Six new durable cases in existing unit/compiler targets cover owned fixed/nonzero
+  references, mask-only sampling and invalid definitions; weighted local TRS with
+  noncommuting/antipodal rotations and signed scales; ordered override/additive
+  composition with interrupted cross-fades and unlayered origins; singular final
+  scale rejection/repair with every clock retained; translation/scale overflow
+  rejection before narrowing; and actual TypeScript/native snapshot, stop and base
+  preservation. Existing codec tests add strict field/type/enum/reference rejection;
+  Prism behavior cases verify the saved and running additive definition.
+- Initial focus has 34/35 passing, with the new SDK fixture rejected by TypeScript's
+  literal narrowing across a native mutation. Preserve diagnostics, explicitly read
+  the post-mutation number and retain identical expected values. All 35 then pass.
+  Review identifies float-conversion overflow, adds explicit rejection and its
+  behavioral case; all 36 focused cases pass in 17.53 seconds. No relaxed numeric
+  bound, budget, assertion or timeout.
+- Final full Debug: 1675/1675 in 267.18 seconds. Full Release/NDEBUG: 1675/1675 in
+  38.17 seconds. Each has 540 unit and 1135 integration cases, including 264 compiler,
+  39 audio-native and 186 durable offscreen cases. The final reference-time GUI
+  readout is followed by a Debug rebuild; full Release and native workflows include
+  it. Formatting/diff checks pass. Builds/tests/product processes run sequentially;
+  no new target/dependency, windowed automated test or release archive.
+
+Actual evidence stays in ignored build/additive-layer-review. Create an ordinary
+PrismAdditive project through the product creator, reuse the prior ordinary saved
+ServiceAnnex/native assets/external gate and existing tones, and author/save its
+343-entity main through normal editor operations. Use the complete Inspector form
+to switch additive to override, Undo/Redo that choice, then save additive with a
+nonzero 0.25-second reference. Open the action-only scene and reopen main; the saved
+mode/time persist. An unsaved reference of 3 seconds is structurally legal but its
+actual two-second clip rejects preview and export with the exact layer/duration
+error. No rejected-game destination is published and the saved source stays intact.
+Undo returns to the saved 0.25-second configuration.
+
+Ordinary controller preview correctly rejects a direct base-clip switch because the
+saved controller owns playback. The temporary helper initially assumes otherwise;
+retain that expected reply and the same live native process/handle, End preview,
+and use the existing clip editing/audition entry for Walk. Its isolated clone
+explicitly detaches the controller; there is no direct scene-memory mutation or
+restart. Pause/seek the base to 0.4 seconds. Play/seek Inspection to its 0.25-second
+reference: actual posed transforms exactly equal the base (zero error). Seek its
+0.8-second peak: only head/upper_arm.L/upper_arm.R change, base time remains 0.4 and
+layer time is 0.8. Repeating that seek has zero error; Stop restores the exact base.
+Inspect the actual 1480x692 preview pixels. End restores unchanged authoring scene
+and clip files, then run actual Play through the ordinary readiness gate.
+
+E/movement, paused native inspection/seek/stop and strict live animation snapshots
+retain additive/0.25 while changing only those three masked rotations and no base
+clock. Resume, load/unload the animated/collidable/spatial-audio room, and save/move/
+restore a grounded checkpoint with zero feet error at the unchanged 1e-5 bound.
+The checkpoint also stops a newly active transient inspection. Entity/renderer-input
+counts are 343/181, 354/185, 343/181 with ready/error-free views. The original audio
+voice remains paused at source frame 100; room load produces two assets/voices with
+one playing spatial mono voice, and last-use removal restores one asset/voice with
+no retired room voice. Inspect the actual 1480x574 loaded-game pixels with HUD.
+Stop restores the exact saved authoring scene, with saved bytes unchanged through
+preview/Play. Export and relocate the ordinary game.
+
+Hide only this owned authoring project and launch two fresh exported native games
+against one new save directory. Both repeat additive E/paused layer operations,
+movement, room load/unload and audio reclamation. Loaded snapshots have 354 entities,
+137/155 completed native frames, HUD rasterizations, failureCount zero and empty
+diagnostics. Native one's save/restore and native two's restore of native one's save
+both have zero feet error. Restore the authoring path. All three product handles
+have actual exit 0 before consuming close replies; all 129/88/70 replies are ACKed
+and their retired endpoint/archive explicitly cleared. No current abandoned endpoint.
+The previous interrupted-stage archive is preserved unchanged, not claimed recovered.
+
+All 2866 previous project/game/save guards remain unchanged. Retain 3168 guarded
+files including the ordinary 131-file project, 170-file relocated game and native
+save. Twenty selected current Debug/Release/kit/export Mach-O paths pass strict
+signing; kit/export game hashes match, and tones remain byte-identical to previous
+assets. Remove temporary orchestration/recovery/verification helpers only after
+native completion, preserving ordinary project/scripts/game/save and raw control,
+error, build/test, pose, timeline, capture and provenance evidence. No generated
+art/audio or release archive. Desktop inventory remains locked; physical mode-menu/
+reference-field interaction, dragging, narrow-layout and subjective hearing are
+unverified. Only macOS execution is claimed. Broader animation authoring, streaming,
+final character/environment quality and overall production maturity remain open.

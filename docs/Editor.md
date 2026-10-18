@@ -2530,14 +2530,19 @@ prepares; Stop, source changes and resource cache refresh retire obsolete result
 
 ## Animation layer authoring and live controls / 动画层制作与运行控制
 
-Select an animation player in the stopped scene's Inspector and expand Override
+Select an animation player in the stopped scene's Inspector and expand Animation
 layers. Add/remove/reorder up to eight named layers. Choose their library clip,
-weight/speed/loop/auto-play settings and explicit node/path/channel weights. The
-virtualized mask list uses the player's real binding map and scene names. Names
+weight/speed/loop/auto-play settings, override/additive blend mode, and explicit
+node/path/channel weights. Additive exposes Reference time (s) in the same clip;
+choosing override resets this field to its required zero value. The virtualized
+mask list uses the player's real binding map and scene names. Names
 are stable ASCII identifiers, 1..64 letters/digits/_/-, starting with a letter.
 Apply/reset/undo/save/reopen use the ordinary strict stage-inspector and component
 implementation. Apply validates shape/bindings/budgets without file IO; Preview,
-Play and export validate actual masked clip channels and native writer authority.
+Play and export validate actual masked clip/reference channels, duration/scale and
+native writer authority. Structural invalidity rejects the staged form; file-dependent
+reference errors remain explicit Preview/Play/export failures. Form validation does
+not claim resource readiness.
 A referencing layer prevents the GUI from removing its clip; removing an earlier
 unused slot adjusts layer indices to keep their assets, while scripts still need
 updated numeric indices. Transport/document/history byte budgets apply together
@@ -2545,8 +2550,11 @@ with element limits; maximum element counts do not promise a single transport fi
 
 Preview animation exposes the same layer rows as the running game's Animation
 panel: restart, resume, pause, stop, time, weight, speed/loop, and 0.15-second fade
-in/out-and-stop. Native independent clocks and weight fades are visible. Layer pause
-freezes its own clip and fade while holding contribution; player pause freezes all.
+in/out-and-stop. Native independent clocks, blend mode, reference time and weight
+fades are visible.
+Preview status uses mode/referenceTime; SDK/live Play state uses mode/
+referenceTimeSeconds. These are observed saved definitions, not mutable runtime
+mode controls. Layer pause freezes its own clip and fade while holding contribution; player pause freezes all.
 Layer controls do not dirty saved definitions. When editing a clip, native draft
 recreation restores the complete layer snapshot together with the base, preserving
 weights/fades/clocks and checking the resulting pose/skin before resource history.
@@ -2577,7 +2585,7 @@ entity IDs are canonical decimal strings. Unknown fields, wrong types, retired
 sessions/scopes, disabled/missing players and nonrunning Play fail. The read returns
 animation with the same units/shape as the SDK's AnimationState. workspace.playAnimation
 reports a current scoped UI selection or null. The complete strict layer control
-objects are specified in [animation layers](Animation.md#masked-override-layers--遮罩覆盖层).
+objects are specified in [animation layers](Animation.md#masked-animation-layers--遮罩动画层).
 Native player control exposes equivalent animation-state/animation-layer operations.
 A CPU pose commit is synchronous; actual presentation/capture still follows normal
 completed-frame provenance. Physical layer buttons/dragging, narrow layout and IME

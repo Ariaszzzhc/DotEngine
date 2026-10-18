@@ -7,6 +7,7 @@ module;
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -20,8 +21,20 @@ module;
 module Dot.Animation.Layers;
 
 import Dot.Core.Text;
+import Dot.Math;
 
 namespace Dot::Animation {
+  auto layerModeName(LayerMode mode) noexcept -> std::string_view {
+    switch (mode) {
+      case LayerMode::Override:
+        return "override";
+      case LayerMode::Additive:
+        return "additive";
+    }
+
+    return "unknown";
+  }
+
   auto decodeLayerControl(std::string_view source) -> Core::Result<LayerControl> {
     namespace Codec = Serialization::Detail;
 
@@ -104,11 +117,19 @@ namespace Dot::Animation {
   }
 
   struct Layers::Data {
+    struct Track {
+      std::size_t index;
+      double weight;
+      std::optional<Math::Vec4> reference;
+    };
+
     struct Entry {
       std::string name;
       Clip clip;
-      std::vector<std::pair<std::size_t, double>> tracks;
+      std::vector<Track> tracks;
       double duration;
+      LayerMode mode;
+      double referenceTime;
     };
 
     std::vector<Entry> entries;
@@ -161,7 +182,10 @@ namespace Dot::Animation {
         if (!validLayerName(definition.name) || !names.insert(definition.name).second
             || definition.mask.empty() || definition.mask.size() > 30000 - count
             || !std::isfinite(definition.weight) || definition.weight < 0 || definition.weight > 1
-            || !std::isfinite(definition.speed) || std::abs(definition.speed) > 16) {
+            || !std::isfinite(definition.speed) || std::abs(definition.speed) > 16
+            || (definition.mode != LayerMode::Override && definition.mode != LayerMode::Additive)
+            || !std::isfinite(definition.referenceTime) || definition.referenceTime < 0
+            || (definition.mode == LayerMode::Override && definition.referenceTime != 0)) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation layer definition");
         }
 
@@ -171,7 +195,16 @@ namespace Dot::Animation {
           return std::unexpected(description.error());
         }
 
-        Data::Entry entry{definition.name, definition.clip, {}, definition.clip.duration().value()};
+        Data::Entry entry{
+            definition.name, definition.clip,         {}, definition.clip.duration().value(),
+            definition.mode, definition.referenceTime};
+
+        if (definition.referenceTime > entry.duration) {
+          return Core::fail(
+              Core::ErrorCode::InvalidArgument,
+              "Animation layer " + definition.name + " reference exceeds clip duration");
+        }
+
         std::map<std::pair<std::uint32_t, Path>, std::size_t> tracks;
 
         for (std::size_t i = 0; i < (*description)->tracks.size(); ++i) {
@@ -193,7 +226,21 @@ namespace Dot::Animation {
                                   + " requires a unique existing channel and weight [0,1]");
           }
 
-          entry.tracks.emplace_back(track->second, channel.weight);
+          std::optional<Math::Vec4> reference;
+
+          if (definition.mode == LayerMode::Additive) {
+            auto sampled = definition.clip.sampleTrack(track->second, definition.referenceTime);
+
+            if (!sampled) {
+              return Core::fail(
+                  sampled.error().code,
+                  "Animation layer " + definition.name + " reference: " + sampled.error().message);
+            }
+
+            reference = sampled->value;
+          }
+
+          entry.tracks.push_back({track->second, channel.weight, reference});
           channels.emplace(key, 1);
         }
 
@@ -232,7 +279,9 @@ namespace Dot::Animation {
       std::vector<LayerSnapshot> result;
 
       for (std::size_t i = 0; i < m_states.size(); ++i) {
-        result.push_back({m_data->entries[i].name, m_data->entries[i].duration, m_states[i]});
+        const auto& entry = m_data->entries[i];
+        result.push_back(
+            {entry.name, entry.duration, m_states[i], entry.mode, entry.referenceTime});
       }
 
       return result;
@@ -265,7 +314,7 @@ namespace Dot::Animation {
       const auto& first = m_states[i];
       const auto& last = other.m_states[i];
       const bool weighted = std::ranges::any_of(m_data->entries[i].tracks,
-                                                [](const auto& track) { return track.second > 0; });
+                                                [](const auto& track) { return track.weight > 0; });
       const bool active = first.active && first.weight > 0 && weighted;
       const bool nextActive = last.active && last.weight > 0 && weighted;
 
@@ -514,21 +563,21 @@ namespace Dot::Animation {
 
         const auto& entry = m_data->entries[i];
 
-        for (const auto& [track, weight] : entry.tracks) {
-          const auto effective = state.weight * weight;
+        for (const auto& track : entry.tracks) {
+          const auto effective = state.weight * track.weight;
 
           if (effective == 0) {
             continue;
           }
 
-          auto value = entry.clip.sampleTrack(track, state.time);
+          auto value = entry.clip.sampleTrack(track.index, state.time);
 
           if (!value) {
             return Core::fail(value.error().code,
                               "Animation layer " + entry.name + ": " + value.error().message);
           }
 
-          result.push_back({*value, effective});
+          result.push_back({*value, effective, track.reference});
         }
       }
 

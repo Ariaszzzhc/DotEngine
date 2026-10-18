@@ -181,22 +181,26 @@ preferences, so choose the rate explicitly after opening a new editor process.
 
 
 The main scene now appends the saved inspection action at library slot 7 and defines
-one Inspection override layer. Its explicit mask contains only the real head and
-left/right upper-arm rotation channels (logical nodes 8/10/33); legs, root, local
+one Inspection additive layer with its same-clip reference at time zero. Its
+explicit mask contains only the real head and left/right upper-arm rotation channels (logical nodes 8/10/33); legs, root, local
 positions and scales remain driven by the selected locomotion clip. The seven
 locomotion assets/indices stay in place. E triggers a native 0.12-second weight fade
 while the native layer clock plays the action; a second E fades out and stops. At
 natural completion the script requests a 0.15-second fade-out/stop. Script code only
 chooses intent; clocks, quaternion/vector mixing, weights and atomic pose publication
-belong to the native engine. The checkpoint excludes animation state and explicitly
+belong to the native engine. The action offsets the current animated head/arms
+instead of replacing their locomotion pose; rotation offsets post-multiply in
+local joint space. The checkpoint excludes animation state and explicitly
 stops the transient layer on restore. Menu pause freezes base/layer/fade clocks.
 Source hot reload retains these native clocks while preserving script intent state.
 
-In the stopped Inspector, expand Override layers to edit the saved clip/mask. During
+In the stopped Inspector, expand Animation layers to edit the saved clip/mask. During
 Preview or Play, the Animation panel exposes actual independent clocks and strict
 layer controls. Pause the game to inspect/stop/seek a layer without moving the legs
-or advancing time. This is a masked override example, not additive/IK/state-machine
-animation or a finished art/animation-quality claim.
+or advancing time. This is a masked additive example, without IK/retargeting or a
+finished art/animation-quality claim. Blend mode and reference time are saved Inspector fields;
+preview/Play controls expose their actual values alongside independent clocks.
+Use override when the layer should replace the current pose instead.
 
 
 ## Saved locomotion state machine

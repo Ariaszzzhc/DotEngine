@@ -498,28 +498,51 @@ retains the transaction for correction. See the editor's tangent handle contract
 无变化共享原片段；不触及场景/文件/设备/历史，编辑器负责身份检查、姿态/蒙皮预检和一次发布。
 
 
-## Masked override layers / 遮罩覆盖层
+## Masked animation layers / 遮罩动画层
 
 `Dot.Animation.Layers` owns up to eight ordered layers and 30000 aggregate masked
 channels. A layer uses one library clip, a unique 1..64-character ASCII identifier
 (letters/digits/_/-, starting with a letter), a nonempty list of unique logical
-node/path/weight entries, weight [0,1], speed [-16,16], looping and playOnStart.
+node/path/weight entries, weight [0,1], speed [-16,16], looping, playOnStart,
+explicit mode (override/additive) and referenceTime in seconds.
 Each channel must actually exist in that clip; even stopped layers validate their
 masks and reserve their bound entity writers. Different layers may affect the same
 channel, composing in list order. Scene authoring checks structure/bindings/budgets
 without reading files; audition, Play and export validate actual clip channels and
 native authority. No fallback decoder or format-version layer is added; current
-saved player descriptions explicitly carry layers, including empty arrays.
+saved player descriptions explicitly carry layers, including empty arrays, and
+each layer carries mode/referenceTime. Missing/unknown fields reject; there is no
+old schema reader.
 
 ```json
-{"name":"Inspection","clip":7,"mask":[{"node":8,"path":"rotation","weight":1}],"weight":1,"speed":1,"looping":false,"playOnStart":false}
+{"name":"Inspection","clip":7,"mask":[{"node":8,"path":"rotation","weight":1}],"weight":1,"speed":1,"looping":false,"playOnStart":false,"mode":"additive","referenceTime":0}
 ```
 
 Native base/cross-fade samples compose first, then each active channel uses the
-product of layer/channel weights: local translation/scale interpolate linearly and
-rotation uses shortest-arc quaternion SLERP. A masked channel absent from the base
-starts at its captured bind value, not last frame's layered result. Unmasked fields
-remain owned by the base/current scene. Zero effective contributions and unmasked
+product of layer/channel weights. Override linearly interpolates local translation/
+scale and uses shortest-arc quaternion SLERP for rotation. Additive captures masked
+reference channels once at referenceTime in the same layer clip, then uses:
+
+- Translation: current + weight * (sample - reference).
+- Rotation: current * slerp(identity, inverse(reference) * sample, weight), using
+  normalized quaternions and the shortest arc. This is a local post-multiplied offset.
+- Scale: current * lerp(1, sample / reference, weight), componentwise; signed scales
+  are preserved, and a singular/nonfinite final pose rejects atomically. Offsets/
+  ratios use double arithmetic;
+  overflow rejects before conversion to float, preserving the previous pose/clocks.
+
+Additive referenceTime must be finite and inside [0,clip duration], including the
+terminal sample without wrapping. Override requires exactly zero. References must
+sample successfully even for stopped/zero-weight layers; zero/near-zero sampled
+scale components reject under the existing clip limits. Only masked tracks are
+reference-sampled, so unrelated tracks cannot invalidate a reference. Reference
+values share immutable configuration ownership and never follow the layer clock.
+At reference time an additive layer contributes identity, preserving the current
+base or preceding layer. No inverse bind matrices, world-space offsets or retarget
+assumptions are substituted.
+
+A masked channel absent from the base starts at its captured bind value, not last
+frame's layered result. Unmasked fields remain owned by the base/current scene. Zero effective contributions and unmasked
 layer tracks are not sampled; a missing mask channel is still a definition error.
 Intrinsic base sample failures are not hidden by an overriding layer. All layers
 and the base share one final scene-transform transaction. Invalid samples or a
@@ -528,9 +551,9 @@ and ownership. Cross-fade interruption captures an unlayered origin, so overlays
 are applied exactly once. Independent layer clocks survive base clip switches/fades.
 
 Native `Layers` functional candidates share immutable clips/masks and own small
-playback vectors. Snapshots own names, clock/weight/fade data and do not borrow the
-service. SceneAnimator applies and then publishes the prepared clocks without
-allocating after pose commit. Clock-only/unchanged/inactive controls do not prime
+playback vectors. Snapshots own names, mode/reference-time and clock/weight/fade
+data and do not borrow the service. SceneAnimator applies and then publishes the
+prepared clocks without allocating after pose commit. Clock-only/unchanged/inactive controls do not prime
 an unapplied base pose. ScenePlayers reserves every masked entity even at zero
 weight/while stopped, retaining the existing whole-entity writer exclusion and
 rigid-body/character-root authority checks. Earlier successful players are not
@@ -566,8 +589,8 @@ The strict shared control objects are:
 use the same native implementation. Native scheduling alone advances time; no JS
 pose mixing, manual animation update or hidden clock is introduced. Saved definitions
 are unchanged by controls. `animation.state`/`Entity.animationState` now include
-explicit player `paused` and owned `layers` with name/duration/time/weight/speed/
-looping/playing/active/paused/fade. playing describes the clip clock, active the
+explicit player `paused` and owned `layers` with name/mode/referenceTimeSeconds/
+duration/time/weight/speed/looping/playing/active/paused/fade. playing describes the clip clock, active the
 contribution, paused an explicit clock freeze; these are different states. The
 player's paused flag is separate from the scene's game-clock pause. Weight fade
 snapshots include from/to/elapsedSeconds/durationSeconds/stop, or null.
@@ -580,14 +603,18 @@ intermediate partial combination can therefore be avoided when the complete fina
 composition is valid. Controls and failed edits retain the preceding resource and
 preview. Existing initial-pose validation still applies during preview creation.
 
-遮罩层保存库片段及显式逻辑通道，按顺序覆盖本地 TRS；权重为层/通道乘积，旋转走最短
+遮罩层保存库片段及显式逻辑通道，按顺序混合本地 TRS；覆盖模式权重为层/通道乘积，旋转走最短
 SLERP。未被基础片段动画的遮罩字段从绑定值开始，不反馈累积。零贡献/未遮罩轨道不采样，
 但定义必须有效且始终保留实体写入权。一次原生事务提交基础和全部层，失败保留全部姿态/
 时钟/权重。基础自然结束不阻止层推进；总暂停、层暂停、片段结束及停止有不同语义。
 权重淡化由原生未缩放时钟推进，可在零权重退休；场景暂停冻结调度，显式调试控制仍可重构
 暂停姿态。编辑器、SDK、独立游戏共用控制与校验，草稿重建一次恢复完整层状态。
-Override layers do not implement additive/reference-pose blending, state machines,
-IK, root-motion extraction, rig/retarget authoring or production-scale guarantees.
+叠加层从同片段固定参考时刻捕获遮罩通道，以局部位移差、后乘最短旋转差及缩放比叠加
+当前候选；参考不随时钟改变，不从上次输出累积。覆盖层参考时刻须为零；叠加参考须处于
+片段时长内并能合法采样。所有层共用最终事务，奇异/非有限结果不发布、不推进任何时钟。
+
+Layers do not implement IK, root-motion extraction, rig/retarget authoring or
+production-scale guarantees. Saved base state machines are documented below.
 
 
 ## Saved state machines / 保存的动画状态机

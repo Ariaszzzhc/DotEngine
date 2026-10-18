@@ -917,6 +917,8 @@ export interface AnimationControllerState {
 
 export interface AnimationLayerState {
   name: string;
+  mode: 'override'|'additive';
+  referenceTimeSeconds: number;
   durationSeconds: number;
   timeSeconds: number;
   weight: number;
@@ -997,7 +999,7 @@ export const animation = Object.freeze({
   },
 
   /**
-   * Control one authored masked override layer, independently of the base clip.
+   * Control one authored masked override/additive layer, independently of the base clip.
    * Pause holds its contribution; stop removes it. Global player pause freezes all
    * clocks. Native sampling/mixing/pose publication is atomic; saved definitions
    * stay unchanged. Layer order and channel weights come from the editor scene.

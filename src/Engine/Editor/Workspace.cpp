@@ -1867,6 +1867,8 @@ namespace Dot::Editor {
       for (const auto& layer : player.layers) {
         layers.push_back(
             {{"name", layer.name},
+             {"mode", Animation::layerModeName(layer.mode)},
+             {"referenceTime", layer.referenceTime},
              {"duration", layer.duration},
              {"time", layer.playback.time},
              {"weight", layer.playback.weight},
@@ -8621,16 +8623,16 @@ namespace Dot::Editor {
      * 层编辑沿用普通组件草稿；Apply 与智能体共用严格原生播放器传输。遮罩列表虚拟化，
      * 有界大遮罩不要求每帧绘制全部通道。 */
     auto animationLayerFields(Json& player) -> void {
-      if (!ImGui::TreeNode("Override layers")) {
+      if (!ImGui::TreeNode("Animation layers")) {
         return;
       }
 
       auto& layers = player["layers"];
       ImGui::TextWrapped(
-          "Layers override only explicit logical channels, in list order. "
+          "Layers blend only explicit logical channels, in list order. "
+          "Additive layers offset the current pose relative to a fixed pose from their clip. "
           "Names use letters/digits/_/-, starting with a letter. "
-          "Apply validates structure; native preview/Play/export validates clip channels and "
-          "authority.");
+          "Preview the layer to check its clip channels and reference pose.");
       std::map<std::string, std::string> names;
 
       for (const auto& entity : m_snapshot["scene"]["entities"]) {
@@ -8646,10 +8648,39 @@ namespace Dot::Editor {
           auto settings = layer;
           settings.erase("clip");
           settings.erase("mask");
+          settings.erase("mode");
+          settings.erase("referenceTime");
           fields(settings);
 
           for (const auto& [key, value] : settings.items()) {
             layer[key] = value;
+          }
+
+          const auto mode = layer["mode"].get<std::string>();
+
+          if (PropertyRow row{"Blend mode"};
+              row.visible() && ImGui::BeginCombo("##value", mode.c_str())) {
+            for (const auto* choice : {"override", "additive"}) {
+              if (ImGui::Selectable(choice, mode == choice)) {
+                layer["mode"] = choice;
+
+                if (std::string_view(choice) == "override") {
+                  layer["referenceTime"] = 0.0;
+                }
+              }
+            }
+
+            ImGui::EndCombo();
+          }
+
+          if (layer["mode"] == "additive") {
+            if (PropertyRow row{"Reference time (s)"}; row.visible()) {
+              scalar(layer["referenceTime"]);
+            }
+
+            ImGui::TextWrapped(
+                "Reference pose comes from this layer's clip, including masked "
+                "channels only. Choose an invertible pose within the clip duration.");
           }
 
           const auto selected = layer["clip"].get<std::size_t>();
@@ -8790,7 +8821,7 @@ namespace Dot::Editor {
 
       ImGui::BeginDisabled(layers.size() >= 8);
 
-      if (ImGui::SmallButton("Add override layer")) {
+      if (ImGui::SmallButton("Add layer")) {
         std::size_t index{1};
 
         while (std::ranges::any_of(layers, [&](const Json& layer) {
@@ -8807,7 +8838,9 @@ namespace Dot::Editor {
                           {"weight", 1.0},
                           {"speed", 1.0},
                           {"looping", false},
-                          {"playOnStart", false}});
+                          {"playOnStart", false},
+                          {"mode", "override"},
+                          {"referenceTime", 0.0}});
       }
 
       ImGui::EndDisabled();
@@ -11334,11 +11367,15 @@ namespace Dot::Editor {
       for (const auto& layer : layers) {
         ImGui::PushID(layer.name.c_str());
         const auto command = [&](Json value) { return send(layer.name, std::move(value)); };
-        ImGui::Text("%s / %s", layer.name.c_str(),
+        ImGui::Text("%s / %s / %s", layer.name.c_str(), Animation::layerModeName(layer.mode).data(),
                     !layer.playback.active   ? "stopped"
                     : layer.playback.paused  ? "paused"
                     : layer.playback.playing ? "playing"
                                              : "held");
+
+        if (layer.mode == Animation::LayerMode::Additive) {
+          ImGui::Text("Reference pose: %.6g s", layer.referenceTime);
+        }
 
         if (ImGui::Button("Play / restart layer")) {
           command({{"action", "play"}, {"restart", true}});
@@ -11411,7 +11448,8 @@ namespace Dot::Editor {
       }
 
       ImGui::TextWrapped(
-          "Ordered masked overrides. Layer pause freezes its clip and fade; stop removes it. "
+          "Ordered masked override/additive layers. Layer pause freezes its clip and fade; stop "
+          "removes it. "
           "Player pause freezes every clock. Fade uses unscaled seconds.");
       ImGui::BeginDisabled(state.error.has_value() || clipGesture() || m_pendingClose
                            || m_captureDialog || (m_clipDocument && m_clipForm != m_clipOriginal));

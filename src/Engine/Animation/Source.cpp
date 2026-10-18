@@ -65,13 +65,19 @@ namespace Dot::Animation {
       std::size_t masks{};
 
       for (const auto& layer : root["layers"]) {
-        Codec::requireFields(layer,
-                             {"name", "clip", "mask", "weight", "speed", "looping", "playOnStart"});
+        Codec::requireFields(layer, {"name", "clip", "mask", "weight", "speed", "looping",
+                                     "playOnStart", "mode", "referenceTime"});
 
         if (!layer["clip"].is_number_unsigned() || layer["clip"] > 1023 || !layer["mask"].is_array()
             || layer["mask"].size() > 30000 - masks || !layer["weight"].is_number()
-            || !layer["speed"].is_number()) {
+            || !layer["speed"].is_number() || !layer["referenceTime"].is_number()) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation layer JSON");
+        }
+
+        const auto mode = layer["mode"].get<std::string>();
+
+        if (mode != "override" && mode != "additive") {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown animation layer mode");
         }
 
         LayerProperties value{layer["name"].get<std::string>(),
@@ -80,7 +86,9 @@ namespace Dot::Animation {
                               layer["weight"].get<double>(),
                               layer["speed"].get<double>(),
                               layer["looping"].get<bool>(),
-                              layer["playOnStart"].get<bool>()};
+                              layer["playOnStart"].get<bool>(),
+                              mode == "additive" ? LayerMode::Additive : LayerMode::Override,
+                              layer["referenceTime"].get<double>()};
 
         for (const auto& item : layer["mask"]) {
           Codec::requireFields(item, {"node", "path", "weight"});
@@ -143,7 +151,9 @@ namespace Dot::Animation {
                           {"weight", layer.weight},
                           {"speed", layer.speed},
                           {"looping", layer.looping},
-                          {"playOnStart", layer.playOnStart}});
+                          {"playOnStart", layer.playOnStart},
+                          {"mode", layerModeName(layer.mode)},
+                          {"referenceTime", layer.referenceTime}});
       }
 
       return Json{
@@ -215,7 +225,10 @@ namespace Dot::Animation {
       if (!validLayerName(layer.name) || !names.insert(layer.name).second
           || layer.clip >= properties.clips.size() || layer.mask.empty()
           || layer.mask.size() > 30000 - masks || !std::isfinite(layer.weight) || layer.weight < 0
-          || layer.weight > 1 || !std::isfinite(layer.speed) || std::abs(layer.speed) > 16) {
+          || layer.weight > 1 || !std::isfinite(layer.speed) || std::abs(layer.speed) > 16
+          || (layer.mode != LayerMode::Override && layer.mode != LayerMode::Additive)
+          || !std::isfinite(layer.referenceTime) || layer.referenceTime < 0
+          || (layer.mode == LayerMode::Override && layer.referenceTime != 0)) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation layer properties");
       }
 

@@ -18,10 +18,10 @@ export namespace Dot::Animation {
     auto operator==(const Target&) const -> bool = default;
   };
 
-  /** Ordered override layer using a library clip and explicit logical channels.
+  /** Ordered override/additive layer using a library clip and explicit logical channels.
    * Stable names address runtime controls; masked channels reserve writer authority
    * even while stopped/zero-weight. Definitions never borrow entity handles.
-   * 有序覆盖层，使用库内片段和显式逻辑通道；稳定名称用于运行时控制，停止/零权重仍保留
+   * 有序覆盖/叠加层，使用库内片段和显式逻辑通道；稳定名称用于运行时控制，停止/零权重仍保留
    * 遮罩通道写入权。定义不借用实体句柄。 */
   struct LayerProperties {
     std::string name;
@@ -31,6 +31,8 @@ export namespace Dot::Animation {
     double speed{1};
     bool looping{};
     bool playOnStart{};
+    LayerMode mode{LayerMode::Override};
+    double referenceTime{};
     auto operator==(const LayerProperties&) const -> bool = default;
   };
 

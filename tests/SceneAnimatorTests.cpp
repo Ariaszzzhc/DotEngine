@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -536,4 +537,193 @@ TEST_CASE(
   REQUIRE(animator.transitionAndAdvance(scene, {same, 0}, .5));
   CHECK(scene.transform(first)->position.x == 7);
   CHECK(scene.transform(first)->scale.x == 2.5F);
+}
+
+TEST_CASE("animation.additive_local_trs_uses_reference_weights_and_no_output_feedback") {
+  const auto vector = [](Math::Quat q) { return Math::Vec4{q.x, q.y, q.z, q.w}; };
+  const auto baseRotation = Math::rotationEulerDegrees({90, 0, 0}).value();
+  auto scene = World::Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  auto base
+      = Clip::create({"Base",
+                      {{0, Path::Translation, Interpolation::Step, {{0, {10, 2, -1, 0}}}},
+                       {0, Path::Scale, Interpolation::Step, {{0, {-2, 3, 4, 0}}}},
+                       {0, Path::Rotation, Interpolation::Step, {{0, vector(baseRotation)}}}}})
+            .value();
+  const auto first = Math::rotationEulerDegrees({0, 30, 0}).value();
+  const auto last = Math::rotationEulerDegrees({0, 90, 0}).value();
+  const auto action
+      = Clip::create(
+            {"Action",
+             {{0, Path::Translation, Interpolation::Linear, {{0, {4, 2, 1, 0}}, {1, {8, 0, 3, 0}}}},
+              {0, Path::Scale, Interpolation::Linear, {{0, {-2, 1, 2, 0}}, {1, {-4, 3, 1, 0}}}},
+              {0,
+               Path::Rotation,
+               Interpolation::Linear,
+               {{0, vector(first)}, {1, {-last.x, -last.y, -last.z, -last.w}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array definitions{
+      LayerDefinition{"Offset",
+                      action,
+                      {{0, Path::Translation, .5}, {0, Path::Rotation}, {0, Path::Scale}},
+                      .5,
+                      1,
+                      false,
+                      true,
+                      LayerMode::Additive}};
+  auto animator = SceneAnimator::bind(scene, base, bindings, definitions).value();
+  REQUIRE(animator.seek(scene, 0));
+  CHECK(scene.transform(entity)->position == Math::Vec3{10, 2, -1});
+  CHECK(scene.transform(entity)->scale == Math::Vec3{-2, 3, 4});
+  REQUIRE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+  const auto pose = scene.transform(entity).value();
+  CHECK(pose.position == Math::Vec3{11, 1.5F, -.5F});
+  CHECK(pose.scale == Math::Vec3{-3, 6, 3});
+  const auto expected
+      = Math::multiply(Math::compose({}, baseRotation).value(),
+                       Math::compose({}, Math::rotationEulerDegrees({0, 30, 0}).value()).value())
+            .value();
+  const auto actual = Math::compose({}, pose.rotation).value();
+
+  for (std::size_t i = 0; i < actual.data.size(); ++i) {
+    CHECK(actual.data[i] == doctest::Approx(expected.data[i]).epsilon(1e-5));
+  }
+
+  REQUIRE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+  CHECK(scene.transform(entity)->position == pose.position);
+  CHECK(scene.transform(entity)->scale == pose.scale);
+  REQUIRE(animator.controlLayer(scene, "Offset", PauseLayer{}));
+  REQUIRE(animator.advance(scene, .5));
+  CHECK(scene.transform(entity)->rotation == pose.rotation);
+  REQUIRE(animator.controlLayer(scene, "Offset", WeightLayer{0}));
+  CHECK(scene.transform(entity)->scale == Math::Vec3{-2, 3, 4});
+  REQUIRE(animator.controlLayer(scene, "Offset", WeightLayer{1}));
+  CHECK(scene.transform(entity)->position == Math::Vec3{12, 1, 0});
+  CHECK(scene.transform(entity)->scale == Math::Vec3{-4, 9, 2});
+  REQUIRE(animator.controlLayer(scene, "Offset", StopLayer{}));
+  CHECK(scene.transform(entity)->position == Math::Vec3{10, 2, -1});
+  CHECK(scene.transform(entity)->rotation == baseRotation);
+}
+
+TEST_CASE("animation.additive_order_and_crossfade_keep_unlayered_base_origins") {
+  auto scene = World::Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  const auto constant = [](float x) {
+    return Clip::create({"Constant",
+                         {{0,
+                           Path::Translation,
+                           Interpolation::Step,
+                           {{0, {x, 0, 0, 0}}, {2, {x, 0, 0, 0}}}}}})
+        .value();
+  };
+  auto offset = Clip::create({"Offset",
+                              {{0,
+                                Path::Translation,
+                                Interpolation::Linear,
+                                {{0, {1, 0, 0, 0}}, {1, {3, 0, 0, 0}}}}}})
+                    .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  std::array definitions{
+      LayerDefinition{
+          "Offset", offset, {{0, Path::Translation}}, 1, 0, false, true, LayerMode::Additive},
+      LayerDefinition{"Override", constant(20), {{0, Path::Translation}}, .5, 1, true, true}};
+  auto animator = SceneAnimator::bind(scene, constant(10), bindings, definitions).value();
+  REQUIRE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+  CHECK(scene.transform(entity)->position.x == 16);
+  REQUIRE(animator.crossFade(scene, constant(30), 1));
+  REQUIRE(animator.advance(scene, .5));
+  CHECK(scene.transform(entity)->position.x == 21);
+  REQUIRE(animator.crossFade(scene, constant(10), 1));
+  CHECK(scene.transform(entity)->position.x == 21);
+  REQUIRE(animator.controlLayer(scene, "Override", StopLayer{}));
+  CHECK(scene.transform(entity)->position.x == 22);
+  REQUIRE(animator.controlLayer(scene, "Offset", StopLayer{}));
+  CHECK(scene.transform(entity)->position.x == 20);
+  std::swap(definitions[0], definitions[1]);
+  auto reversed = SceneAnimator::bind(scene, constant(10), bindings, definitions).value();
+  REQUIRE(reversed.controlLayer(scene, "Offset", SeekLayer{1}));
+  CHECK(scene.transform(entity)->position.x == 17);
+}
+
+TEST_CASE("animation.additive_singular_final_scale_keeps_all_clocks_and_can_be_repaired") {
+  auto scene = World::Scene::create().value();
+  const auto entity = scene.createEntity().value();
+  const auto clip
+      = Clip::create(
+            {"Offset",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {1, {-1, 1, 1, 0}}}}}})
+            .value();
+  const auto repair
+      = Clip::create({"Repair", {{0, Path::Scale, Interpolation::Step, {{0, {2, 1, 1, 0}}}}}})
+            .value();
+  const std::array bindings{NodeBinding{0, entity}};
+  std::array definitions{
+      LayerDefinition{"Offset", clip, {{0, Path::Scale}}, .5, 1, false, true, LayerMode::Additive},
+      LayerDefinition{"Repair", repair, {{0, Path::Scale}}, 1, 0, false, false}};
+  auto animator = SceneAnimator::bind(scene, moving(), bindings, definitions).value();
+  REQUIRE(animator.seek(scene, 0));
+  const auto pose = scene.transform(entity).value();
+  const auto clocks = animator.layers().value();
+  CHECK_FALSE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+  CHECK(scene.transform(entity)->scale == pose.scale);
+  CHECK(scene.transform(entity)->position == pose.position);
+  CHECK(animator.layers().value() == clocks);
+  CHECK(animator.state()->time == 0);
+  REQUIRE(animator.controlLayer(scene, "Repair", PlayLayer{true}));
+  REQUIRE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+  CHECK(scene.transform(entity)->scale.x == 2);
+  const auto repaired = animator.layers().value();
+  CHECK_FALSE(animator.controlLayer(scene, "Repair", StopLayer{}));
+  CHECK(animator.layers().value() == repaired);
+  REQUIRE(animator.controlLayer(scene, "Offset", WeightLayer{0}));
+  REQUIRE(animator.controlLayer(scene, "Repair", StopLayer{}));
+  CHECK(scene.transform(entity)->scale.x == 1);
+}
+
+TEST_CASE("animation.additive_overflow_preserves_pose_and_all_clocks_before_float_conversion") {
+  constexpr float maximum = std::numeric_limits<float>::max();
+
+  for (const auto path : {Path::Translation, Path::Scale}) {
+    auto scene = World::Scene::create().value();
+    const auto entity = scene.createEntity().value();
+    REQUIRE(scene.setTransform(entity, {{maximum / 2, 0, 0}, {}, {2, 1, 1}}));
+    const auto base
+        = Clip::create({"Base",
+                        {{0,
+                          path == Path::Scale ? Path::Translation : Path::Scale,
+                          Interpolation::Step,
+                          {{0, path == Path::Scale ? Math::Vec4{} : Math::Vec4{1, 1, 1, 0}}}}}})
+              .value();
+    const auto action
+        = Clip::create({"Overflow",
+                        {{0,
+                          path,
+                          Interpolation::Linear,
+                          {{0, path == Path::Scale ? Math::Vec4{1, 1, 1, 0}
+                                                   : Math::Vec4{-maximum / 2, 0, 0, 0}},
+                           {1, path == Path::Scale ? Math::Vec4{maximum, 1, 1, 0}
+                                                   : Math::Vec4{maximum / 2, 0, 0, 0}}}}}})
+              .value();
+    const std::array bindings{NodeBinding{0, entity}};
+    const std::array definitions{
+        LayerDefinition{"Offset", action, {{0, path}}, 1, 1, false, true, LayerMode::Additive}};
+    auto animator = SceneAnimator::bind(scene, base, bindings, definitions).value();
+    REQUIRE(animator.seek(scene, 0));
+    const auto before = scene.transform(entity).value();
+    const auto clocks = animator.layers().value();
+    const auto failed = animator.controlLayer(scene, "Offset", SeekLayer{1});
+    REQUIRE_FALSE(failed);
+    CHECK(failed.error().message.find("Animation layer node 0: Additive transform overflow")
+          != std::string::npos);
+    CHECK(scene.transform(entity)->position == before.position);
+    CHECK(scene.transform(entity)->scale == before.scale);
+    CHECK(animator.layers().value() == clocks);
+    CHECK(animator.state()->time == 0);
+    REQUIRE(animator.controlLayer(scene, "Offset", WeightLayer{0}));
+    REQUIRE(animator.controlLayer(scene, "Offset", SeekLayer{1}));
+    CHECK_FALSE(animator.controlLayer(scene, "Offset", WeightLayer{1}));
+    CHECK(animator.layers()->front().playback.weight == 0);
+    CHECK(scene.transform(entity)->scale == before.scale);
+  }
 }

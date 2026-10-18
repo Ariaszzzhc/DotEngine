@@ -587,3 +587,52 @@ export class Actor extends ScriptComponent {
   CHECK(session.state(f.actor)->controller->playback.transitions == 0);
   good(scripts.stop());
 }
+
+TEST_CASE("animation_sdk_additive_reference_snapshot_and_stop_preserve_native_base") {
+  Fixture fixture;
+  fixture.player.layers = {{"Offset",
+                            1,
+                            {{0, Animation::Path::Scale}},
+                            1,
+                            1,
+                            false,
+                            false,
+                            Animation::LayerMode::Additive,
+                            1}};
+  REQUIRE(fixture.scene->setAnimationPlayer(fixture.actor, fixture.player));
+  auto compiled = fixture.compile(R"ts(
+import {animation, ScriptComponent, type AnimationLayerState} from 'dot:engine';
+export class Actor extends ScriptComponent {
+  onStart(): void {
+    this.self.playAnimation(0, true);
+    this.self.controlAnimationLayer('Offset', {action: 'play', restart: true});
+    if (this.self.transform.scale.x !== .5) throw Error('reference-relative initial scale');
+  }
+  onUpdate(): void {
+    const state: AnimationLayerState = this.self.animationState.layers[0]!;
+    if (state.mode !== 'additive' || state.referenceTimeSeconds !== 1 || state.timeSeconds !== .5
+        || this.self.transform.scale.x !== .75 || this.self.transform.position.x !== 1) {
+      throw Error('native additive reference snapshot');
+    }
+    state.mode = 'override';
+    state.referenceTimeSeconds = 0;
+    if (this.self.animationState.layers[0]!.mode !== 'additive') throw Error('borrowed snapshot');
+    animation.layer(this.self.id, 'Offset', {action: 'stop'});
+    if (Number(this.self.transform.scale.x) !== 1 || this.self.animationState.timeSeconds !== .5) {
+      throw Error('stop restored base without advancing time');
+    }
+  }
+}
+)ts");
+  REQUIRE_MESSAGE(compiled, (compiled ? "" : compiled.error().message));
+  auto native = Script::AnimationSession::create(fixture.scene, fixture.files).value();
+  auto scripts = fixture.scripts(*compiled, native);
+  good(scripts.start());
+  REQUIRE(native.advance(.5));
+  good(scripts.update(.5));
+  const auto state = native.state(fixture.actor).value();
+  CHECK(state.layers.front().mode == Animation::LayerMode::Additive);
+  CHECK(state.layers.front().referenceTime == 1);
+  CHECK_FALSE(state.layers.front().playback.active);
+  good(scripts.stop());
+}

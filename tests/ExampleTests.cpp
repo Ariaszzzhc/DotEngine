@@ -781,6 +781,8 @@ TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
   CHECK(entity(session, "Player").transform.position.z < start.z);
   const auto moving = session.animationState(model).value();
   REQUIRE(moving.layers.size() == 1);
+  CHECK(moving.layers[0].mode == Animation::LayerMode::Additive);
+  CHECK(moving.layers[0].referenceTime == 0);
   CHECK(moving.layers[0].playback.active);
   CHECK(moving.layers[0].playback.playing);
   CHECK(moving.layers[0].playback.time > .3);
@@ -1012,6 +1014,8 @@ TEST_CASE("prism.surveyor_retains_textured_armor_eight_slot_skinning_and_seven_r
   REQUIRE(model.animation->layers.size() == 1);
   CHECK(model.animation->layers.front().name == "Inspection");
   CHECK(model.animation->layers.front().clip == 7);
+  CHECK(model.animation->layers.front().mode == Animation::LayerMode::Additive);
+  CHECK(model.animation->layers.front().referenceTime == 0);
   CHECK(model.animation->layers.front().mask.size() == 3);
   CHECK_FALSE(model.animation->layers.front().looping);
   CHECK_FALSE(model.animation->layers.front().playOnStart);
