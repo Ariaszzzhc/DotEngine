@@ -9,6 +9,7 @@ module;
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -31,6 +32,7 @@ import Dot.Graphics.Image;
 import Dot.Graphics.Environment;
 import Dot.Graphics.Renderer;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 
 namespace Dot::Project {
@@ -385,6 +387,7 @@ namespace Dot::Project {
     std::filesystem::path root;
     std::string text;
     std::vector<Animation::ClipAsset> clips;
+    std::vector<Animation::ControllerAsset> controllers;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -447,9 +450,40 @@ namespace Dot::Project {
       return Core::fail(Core::ErrorCode::Unavailable, "Scene preparation cancelled");
     }
 
+    std::vector<Animation::ControllerAsset> controllers;
+    std::set<std::string> uniqueControllers;
+    auto players = scene->animationPlayers();
+
+    if (!players) {
+      return std::unexpected(players.error());
+    }
+
+    for (const auto& player : *players) {
+      if (!player.properties.enabled || !player.properties.controller
+          || !uniqueControllers.insert(*player.properties.controller).second) {
+        continue;
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Controller preparation cancelled");
+      }
+
+      const auto& controllerPath = *player.properties.controller;
+      auto loaded = Animation::loadController(
+          files,
+          std::filesystem::path{std::u8string(controllerPath.begin(), controllerPath.end())});
+
+      if (!loaded) {
+        return std::unexpected(loaded.error());
+      }
+
+      controllers.push_back({controllerPath, std::move(*loaded)});
+    }
+
     auto canonical = World::encodeScene(*scene);
     return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
-                           Data{files.root(), std::move(*canonical), std::move(*animations)})}}
+                           Data{files.root(), std::move(*canonical), std::move(*animations),
+                                std::move(controllers)})}}
                      : std::unexpected(canonical.error());
   }
 
@@ -468,6 +502,15 @@ namespace Dot::Project {
     }
 
     return std::span<const Animation::ClipAsset>{m_data->clips};
+  }
+
+  auto PreparedScene::animationControllers() const
+      -> Core::Result<std::span<const Animation::ControllerAsset>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    return std::span<const Animation::ControllerAsset>{m_data->controllers};
   }
 
   auto PreparedScene::accepts(const Core::FileSystem& files, const World::Scene& scene) const

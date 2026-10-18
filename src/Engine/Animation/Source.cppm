@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,6 +36,11 @@ export namespace Dot::Animation {
 
   /** Scene-local IDs, not borrowed handles; cloning/remapping must rewrite them.
    * Clips are portable assets .dotanimation paths. Authoring reads no files.
+   * Optional controller is a portable assets .dotcontroller path. When bound,
+   * its initial/state settings own base clip/speed/loop; manual settings are retained
+   * for explicit detach. Controller state resources never borrow entity handles.
+   * 控制器为可选 assets 下 .dotcontroller 路径；绑定时由状态定义拥有基础片段/速度/循环，
+   * 手动设置保留供显式解绑后使用；控制器资源不借用实体句柄。
    * Replacing a live description restarts its player; negative speed starts at
    * the selected clip end. Disabled players do not load assets or write poses.
    * 场景内 ID，不借用句柄，克隆/重映射时须改写。片段为 assets 内可移植路径，编辑不读文件。
@@ -48,6 +54,7 @@ export namespace Dot::Animation {
     bool playOnStart{true};
     bool enabled{true};
     std::vector<LayerProperties> layers{};
+    std::optional<std::string> controller{};
     auto operator==(const PlayerProperties&) const -> bool = default;
   };
 

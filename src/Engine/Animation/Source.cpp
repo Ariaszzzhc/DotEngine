@@ -28,7 +28,7 @@ namespace Dot::Animation {
     try {
       const auto root = Codec::parseJson(source);
       Codec::requireFields(root, {"clips", "targets", "clip", "speed", "looping", "playOnStart",
-                                  "enabled", "layers"});
+                                  "enabled", "layers", "controller"});
 
       if (!root["clips"].is_array() || root["clips"].size() > 1024 || !root["targets"].is_array()
           || root["targets"].size() > 10000 || !root["clip"].is_number_unsigned()
@@ -45,6 +45,10 @@ namespace Dot::Animation {
                               root["looping"].get<bool>(),
                               root["playOnStart"].get<bool>(),
                               root["enabled"].get<bool>()};
+
+      if (!root["controller"].is_null()) {
+        result.controller = root["controller"].get<std::string>();
+      }
 
       for (const auto& target : root["targets"]) {
         Codec::requireFields(target, {"node", "entity"});
@@ -142,10 +146,16 @@ namespace Dot::Animation {
                           {"playOnStart", layer.playOnStart}});
       }
 
-      return Json{{"clips", properties.clips},     {"targets", std::move(targets)},
-                  {"clip", properties.clip},       {"speed", properties.speed},
-                  {"looping", properties.looping}, {"playOnStart", properties.playOnStart},
-                  {"enabled", properties.enabled}, {"layers", std::move(layers)}}
+      return Json{
+          {"clips", properties.clips},
+          {"targets", std::move(targets)},
+          {"clip", properties.clip},
+          {"speed", properties.speed},
+          {"looping", properties.looping},
+          {"playOnStart", properties.playOnStart},
+          {"enabled", properties.enabled},
+          {"layers", std::move(layers)},
+          {"controller", properties.controller ? Json(*properties.controller) : Json(nullptr)}}
           .dump();
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -159,6 +169,16 @@ namespace Dot::Animation {
         || !std::isfinite(properties.speed) || std::abs(properties.speed) > 16) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Invalid animation player capacities/clock");
+    }
+
+    if (properties.controller
+        && (properties.controller->size() > 1024
+            || !Core::isPortableRelativePath(*properties.controller)
+            || !Core::isValidUtf8(*properties.controller)
+            || !properties.controller->starts_with("assets/")
+            || !properties.controller->ends_with(".dotcontroller"))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid animation controller asset path");
     }
 
     std::set<std::string> paths;

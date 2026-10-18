@@ -219,3 +219,11 @@ control, independent time/weight snapshots, pause, seek, speed/loop, weight, fad
 stop and failed control, retaining the per-hook host-call limit. Character/state
 checks continue on the following phase. The inventory records the two new SDK
 members rather than treating implementation-specific assertion totals as completion.
+
+
+The Glass material sample also binds `assets/glass.dotcontroller`: a Boolean Reverse
+parameter selects forward/reverse native turn states with a 0.2-second cross-fade.
+Inspect it through Preview animation / Edit animation controller or live Animation
+selection. A fourth bounded audit phase exercises typed parameter updates, reset,
+owned observations, failed types/names and controller ownership. The existing
+manual panel/layer examples remain available; no host-call budget was raised.

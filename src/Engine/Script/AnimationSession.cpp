@@ -10,12 +10,14 @@ module;
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "ComponentJson.hpp"
 
 module Dot.Script.AnimationSession;
 
 import Dot.Animation.ScenePlayers;
+import Dot.Animation.ControllerFiles;
 import Dot.Core.Text;
 
 namespace Dot::Script {
@@ -23,9 +25,11 @@ namespace Dot::Script {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
     using Reply = Core::Result<std::optional<std::string>>;
-    constexpr std::array methods{"animation.state",     "animation.play", "animation.pause",
-                                 "animation.stop",      "animation.seek", "animation.configure",
-                                 "animation.crossFade", "animation.layer"};
+    constexpr std::array methods{"animation.state",      "animation.play",
+                                 "animation.pause",      "animation.stop",
+                                 "animation.seek",       "animation.configure",
+                                 "animation.crossFade",  "animation.layer",
+                                 "animation.parameters", "animation.resetController"};
 
     auto written(Core::Result<void> value) -> Reply {
       return value ? Reply{std::optional<std::string>{}} : std::unexpected(value.error());
@@ -45,7 +49,7 @@ namespace Dot::Script {
         return std::unexpected(valid.error());
       }
 
-      if (arguments.empty() || arguments.size() > 4096 || !Core::isValidUtf8(arguments)
+      if (arguments.empty() || arguments.size() > 32 * 1024 || !Core::isValidUtf8(arguments)
           || arguments.find('\0') != std::string_view::npos) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Invalid animation host argument bytes");
@@ -56,8 +60,8 @@ namespace Dot::Script {
         const auto count = method == "animation.play" || method == "animation.configure"
                                    || method == "animation.crossFade" || method == "animation.layer"
                                ? 3U
-                           : method == "animation.seek" ? 2U
-                                                        : 1U;
+                           : method == "animation.seek" || method == "animation.parameters" ? 2U
+                                                                                            : 1U;
 
         if (!args.is_array() || args.size() != count) {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Incorrect animation arguments");
@@ -101,6 +105,27 @@ namespace Dot::Script {
                           {"durationSeconds", state->playback.transition->duration}};
           }
 
+          Json controller = nullptr;
+
+          if (state->controller) {
+            const auto& observed = *state->controller;
+            Json parameters = Json::object();
+
+            for (const auto& parameter : observed.playback.parameters) {
+              std::visit([&](auto value) { parameters[parameter.name] = value; }, parameter.value);
+            }
+
+            controller = {{"asset", observed.asset},
+                          {"name", observed.name},
+                          {"state", observed.playback.state},
+                          {"elapsedSeconds", observed.playback.elapsedSeconds},
+                          {"parameters", std::move(parameters)},
+                          {"lastTransition", observed.playback.lastTransition
+                                                 ? Json(*observed.playback.lastTransition)
+                                                 : Json(nullptr)},
+                          {"transitions", std::to_string(observed.playback.transitions)}};
+          }
+
           return std::optional{Json{{"clip", state->clip},
                                     {"asset", state->asset},
                                     {"name", state->name},
@@ -111,8 +136,19 @@ namespace Dot::Script {
                                     {"playing", state->playback.playing},
                                     {"paused", state->playback.paused},
                                     {"layers", std::move(layers)},
+                                    {"controller", std::move(controller)},
                                     {"transition", std::move(transition)}}
                                    .dump()};
+        }
+
+        if (method == "animation.parameters") {
+          auto parameters = Animation::decodeControllerParameters(args[1].dump());
+          return parameters ? written(m_players.parameters(owner, *parameters))
+                            : Reply{std::unexpected(parameters.error())};
+        }
+
+        if (method == "animation.resetController") {
+          return written(m_players.resetController(owner));
         }
 
         if (method == "animation.play") {
@@ -186,23 +222,25 @@ namespace Dot::Script {
 
   auto AnimationSession::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& files)
       -> Core::Result<AnimationSession> {
-    return createSession(std::move(scene), files, {}, false);
+    return createSession(std::move(scene), files, {}, {}, false);
   }
 
   auto AnimationSession::createPrepared(std::shared_ptr<World::Scene> scene,
                                         const Core::FileSystem& files,
-                                        std::span<const Animation::ClipAsset> decoded)
+                                        std::span<const Animation::ClipAsset> decoded,
+                                        std::span<const Animation::ControllerAsset> controllers)
       -> Core::Result<AnimationSession> {
-    return createSession(std::move(scene), files, decoded, true);
+    return createSession(std::move(scene), files, decoded, controllers, true);
   }
 
   auto AnimationSession::createSession(std::shared_ptr<World::Scene> scene,
                                        const Core::FileSystem& files,
-                                       std::span<const Animation::ClipAsset> decoded, bool prepared)
-      -> Core::Result<AnimationSession> {
-    auto players = prepared
-                       ? Animation::ScenePlayers::createPrepared(std::move(scene), files, decoded)
-                       : Animation::ScenePlayers::create(std::move(scene), files);
+                                       std::span<const Animation::ClipAsset> decoded,
+                                       std::span<const Animation::ControllerAsset> controllers,
+                                       bool prepared) -> Core::Result<AnimationSession> {
+    auto players = prepared ? Animation::ScenePlayers::createPrepared(std::move(scene), files,
+                                                                      decoded, controllers)
+                            : Animation::ScenePlayers::create(std::move(scene), files);
 
     if (!players) {
       return std::unexpected(players.error());
@@ -224,6 +262,18 @@ namespace Dot::Script {
   auto AnimationSession::state(World::EntityId owner) const
       -> Core::Result<Animation::ScenePlayerState> {
     return m_impl ? m_impl->m_players.state(owner)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
+  auto AnimationSession::parameters(World::EntityId owner,
+                                    std::span<const Animation::ControllerParameter> parameters)
+      -> Core::Result<void> {
+    return m_impl ? m_impl->m_players.parameters(owner, parameters)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
+  auto AnimationSession::resetController(World::EntityId owner) -> Core::Result<void> {
+    return m_impl ? m_impl->m_players.resetController(owner)
                   : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
   }
 

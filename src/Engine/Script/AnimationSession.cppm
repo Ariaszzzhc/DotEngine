@@ -25,13 +25,15 @@ export namespace Dot::Script {
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
                                      const Core::FileSystem& files)
         -> Core::Result<AnimationSession>;
-    /** Complete initial decoded libraries, with native validation and no initial
+    /** Complete initial decoded libraries/controllers, with native validation and no initial
      * disk fallback. Later description changes retain ordinary file-refresh rules.
-     * 完整初始解码库，保留原生校验且不回退首次磁盘加载；后续描述修改仍按通常规则重读文件。 */
+     * 完整初始解码片段/状态机，保留原生校验且不回退首次磁盘加载；后续描述修改仍按通常规则重读文件。
+     */
     [[nodiscard]] static auto createPrepared(std::shared_ptr<World::Scene> scene,
                                              const Core::FileSystem& files,
-                                             std::span<const Animation::ClipAsset> decoded)
-        -> Core::Result<AnimationSession>;
+                                             std::span<const Animation::ClipAsset> decoded,
+                                             std::span<const Animation::ControllerAsset> controllers
+                                             = {}) -> Core::Result<AnimationSession>;
     AnimationSession(const AnimationSession&) = delete;
     auto operator=(const AnimationSession&) -> AnimationSession& = delete;
     AnimationSession(AnimationSession&&) noexcept;
@@ -46,6 +48,10 @@ export namespace Dot::Script {
     [[nodiscard]] auto inspect(World::EntityId owner) const -> Core::Result<std::string>;
     [[nodiscard]] auto state(World::EntityId owner) const
         -> Core::Result<Animation::ScenePlayerState>;
+    [[nodiscard]] auto parameters(World::EntityId owner,
+                                  std::span<const Animation::ControllerParameter> parameters)
+        -> Core::Result<void>;
+    [[nodiscard]] auto resetController(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto controlLayer(World::EntityId owner, std::string_view name,
                                     const Animation::LayerControl& operation) -> Core::Result<void>;
 
@@ -53,6 +59,7 @@ export namespace Dot::Script {
     [[nodiscard]] static auto createSession(std::shared_ptr<World::Scene> scene,
                                             const Core::FileSystem& files,
                                             std::span<const Animation::ClipAsset> decoded,
+                                            std::span<const Animation::ControllerAsset> controllers,
                                             bool prepared) -> Core::Result<AnimationSession>;
     struct Impl;
     explicit AnimationSession(std::shared_ptr<Impl> impl);

@@ -446,3 +446,94 @@ TEST_CASE("animation.scene_clip_switch_restores_prior_fields_preserves_bind_pose
   worker.join();
   CHECK(rejected);
 }
+
+TEST_CASE("animation.atomic_state_transition_retains_outgoing_settings_and_advances_once") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  const std::array bindings{NodeBinding{0, entity}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings).value();
+  REQUIRE(player.seek(scene, .5));
+  REQUIRE(player.configure(2, true));
+  auto incoming = Clip::create({"Incoming",
+                                {{0,
+                                  Path::Translation,
+                                  Interpolation::Linear,
+                                  {{0, {10, 0, 0, 0}}, {2, {20, 0, 0, 0}}}}}})
+                      .value();
+  REQUIRE(player.transitionAndAdvance(scene, {incoming, 1, -1, false}, .25));
+  CHECK(player.state()->time == 1.75);
+  CHECK(player.state()->speed == -1);
+  CHECK_FALSE(player.state()->looping);
+  CHECK(player.state()->transition->elapsed == .25);
+  CHECK(scene.transform(entity)->position.x == doctest::Approx(2 * .75 + 18.75 * .25));
+  REQUIRE(player.configure(0, false));
+  const auto before = scene.transform(entity).value();
+  REQUIRE(player.advance(scene, .25));
+  CHECK(player.state()->time == 1.75);
+  CHECK(scene.transform(entity)->position.x
+        == doctest::Approx((before.position.x - 18.75 * .25) / .75 * .5 + 18.75 * .5));
+}
+
+TEST_CASE("animation.atomic_state_transition_failure_retains_clip_clocks_layers_and_pose") {
+  auto scene = World::Scene::create().value();
+  auto entity = scene.createEntity().value();
+  const std::array bindings{NodeBinding{0, entity}};
+  const std::array layers{
+      LayerDefinition{"Motion", moving(), {{0, Path::Translation}}, .25, 1, true, true}};
+  auto player = SceneAnimator::bind(scene, moving(), bindings, layers).value();
+  REQUIRE(player.advance(scene, .25));
+  const auto pose = scene.transform(entity).value();
+  const auto clock = player.state().value();
+  const auto oldLayers = player.layers().value();
+  const auto invalid
+      = Clip::create(
+            {"Singular",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {2, {-1, 1, 1, 0}}}}}})
+            .value();
+  CHECK_FALSE(player.transitionAndAdvance(scene, {invalid, 0, 1, false}, 1));
+  CHECK(player.state()->time == clock.time);
+  CHECK(player.state()->speed == clock.speed);
+  CHECK(player.state()->looping == clock.looping);
+  CHECK(player.state()->transition == clock.transition);
+  CHECK(player.layers().value() == oldLayers);
+  CHECK(scene.transform(entity)->position == pose.position);
+  CHECK(scene.transform(entity)->scale == pose.scale);
+  CHECK_FALSE(player.transitionAndAdvance(scene, {moving(), -1, 1, false}, .1));
+  CHECK_FALSE(player.transitionAndAdvance(scene, {moving(), 0, 17, false}, .1));
+  CHECK_FALSE(player.transitionAndAdvance(scene, {moving(), 0, 1, false}, -1));
+  REQUIRE(player.transitionAndAdvance(scene, {moving(), 0, -1, false, true}, 0));
+  CHECK(player.state()->paused);
+  CHECK(player.state()->time == 2);
+}
+
+TEST_CASE(
+    "animation.atomic_state_transition_restores_departed_channels_and_entities_before_advance") {
+  auto scene = World::Scene::create().value();
+  auto first = scene.createEntity().value();
+  auto second = scene.createEntity().value();
+  REQUIRE(scene.setTransform(first, {{7, 0, 0}}));
+  auto next
+      = Clip::create(
+            {"Scale",
+             {{1, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {2, {3, 1, 1, 0}}}}}})
+            .value();
+  auto animator = SceneAnimator::bind(scene, moving(),
+                                      std::array{NodeBinding{0, first}, NodeBinding{1, second}})
+                      .value();
+  REQUIRE(animator.seek(scene, .5));
+  CHECK(scene.transform(first)->position.x == 1);
+  REQUIRE(animator.transitionAndAdvance(scene, {next, 0}, .5));
+  CHECK(scene.transform(first)->position.x == 7);
+  CHECK(scene.transform(second)->scale.x == 1.5F);
+  REQUIRE(animator.transitionAndAdvance(scene, {moving(), 0}, .25));
+  CHECK(scene.transform(first)->position.x == .5F);
+  CHECK(scene.transform(second)->scale.x == 1);
+  auto same
+      = Clip::create(
+            {"Same entity",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {2, 1, 1, 0}}, {2, {4, 1, 1, 0}}}}}})
+            .value();
+  REQUIRE(animator.transitionAndAdvance(scene, {same, 0}, .5));
+  CHECK(scene.transform(first)->position.x == 7);
+  CHECK(scene.transform(first)->scale.x == 2.5F);
+}

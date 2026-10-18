@@ -49,7 +49,8 @@ export namespace Dot::Editor {
      * 初始采样处的启用蒙皮；后续播放姿态仍由实际渲染路径检查。 */
     [[nodiscard]] static auto create(const World::Scene& source, const Core::FileSystem& assets,
                                      std::uint64_t owner,
-                                     std::optional<Animation::ClipAsset> draft = {})
+                                     std::optional<Animation::ClipAsset> draft = {},
+                                     std::optional<Animation::ControllerAsset> controller = {})
         -> Core::Result<AnimationPreview>;
     AnimationPreview(const AnimationPreview&) = delete;
     auto operator=(const AnimationPreview&) -> AnimationPreview& = delete;
@@ -68,6 +69,9 @@ export namespace Dot::Editor {
     [[nodiscard]] auto configure(double speed, bool looping) -> Core::Result<void>;
     [[nodiscard]] auto controlLayer(std::string_view name, const Animation::LayerControl& operation)
         -> Core::Result<void>;
+    [[nodiscard]] auto parameters(std::span<const Animation::ControllerParameter> values)
+        -> Core::Result<void>;
+    [[nodiscard]] auto resetController() -> Core::Result<void>;
     [[nodiscard]] auto restorePlayback(Animation::PlaybackState state,
                                        std::span<const Animation::LayerPlayback> layers)
         -> Core::Result<void>;

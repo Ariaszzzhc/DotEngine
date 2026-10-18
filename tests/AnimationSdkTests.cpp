@@ -10,6 +10,7 @@
 
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -226,7 +227,11 @@ function inspect(self: ScriptComponent['self']): void {
                        () => self.controlAnimationLayer('Action', {action: 'stop'}),
                        () => animation.layer(self.id, 'Action', {action: 'play', restart: true}),
                        () => self.crossFadeAnimation(1, 1),
-                       () => animation.crossFade(self.id, 1, 1)]) {
+                       () => animation.crossFade(self.id, 1, 1),
+                       () => animation.parameters(self.id, {}),
+                       () => self.setAnimationParameters({}),
+                       () => animation.resetController(self.id),
+                       () => self.resetAnimationController()]) {
     let denied = false;
 
     try {
@@ -509,4 +514,76 @@ export class Actor extends ScriptComponent {
   good(scripts.update(.1));
   good(scripts.stop());
   CHECK(fixture.scene->entity(fixture.actor)->animation == fixture.player);
+}
+
+TEST_CASE("animation_sdk_controller_intent_is_atomic_typed_owned_and_retained_across_reload") {
+  Fixture f;
+  auto graph = Animation::Controller::create(
+                   {"Machine",
+                    "Move",
+                    {{"Scale", false}},
+                    {{"Move", "assets/move.dotanimation"}, {"Scale", "assets/scale.dotanimation"}},
+                    {{"ScaleRequested",
+                      "Move",
+                      "Scale",
+                      {{"Scale", Animation::ConditionOp::Equal, true}},
+                      .2}}})
+                   .value();
+  f.player.controller = "assets/motion.dotcontroller";
+  REQUIRE(Animation::saveController(f.files, *f.player.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.actor, f.player));
+  auto compiled = f.compile(R"ts(
+import {animation, ScriptComponent, type AnimationControllerState, type HostError, type ScriptContext, type JsonValue} from 'dot:engine';
+export class Actor extends ScriptComponent {
+  constructor(context: ScriptContext) {
+    super(context);
+    for (const action of [() => animation.parameters(this.self.id, {}), () => this.self.resetAnimationController()]) {
+      let denied = false;
+      try { action(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
+      if (!denied) { throw Error('controller preparation wrote native state'); }
+    }
+  }
+  onStart(): void {
+    const before: AnimationControllerState = this.self.animationState.controller!;
+    before.parameters.Scale = true;
+    if (animation.state(this.self.id).controller!.parameters.Scale !== false) { throw Error('borrowed controller observation'); }
+    animation.parameters(this.self.id, {Scale: true});
+    for (const action of [() => this.self.setAnimationParameters({Scale: 1}), () => animation.parameters(this.self.id, {Missing: false})]) {
+      let failed = false;
+      try { action(); } catch (error) { failed = (error as HostError).code === 'InvalidArgument'; }
+      if (!failed || animation.state(this.self.id).controller!.parameters.Scale !== true) { throw Error('typed atomic parameter rejection'); }
+    }
+    this.self.playAnimation();
+  }
+  onSaveState(): JsonValue { return this.self.animationState.controller as unknown as JsonValue; }
+  onLoadState(state: JsonValue): void {
+    if (JSON.stringify(state) !== JSON.stringify(this.self.animationState.controller)) { throw Error('native state restarted during reload'); }
+  }
+}
+)ts");
+  REQUIRE_MESSAGE(compiled, (compiled ? "" : compiled.error().message));
+  auto session = Script::AnimationSession::create(f.scene, f.files).value();
+  auto scripts = f.scripts(*compiled, session);
+  good(scripts.start());
+  REQUIRE(session.advance(.1));
+  const auto before = session.inspect(f.actor).value();
+  CHECK(Json::parse(before)["controller"]["state"] == "Scale");
+  CHECK(Json::parse(before)["controller"]["transitions"] == "1");
+  auto reloaded = scripts.reload(*compiled);
+  REQUIRE(reloaded);
+  CHECK(reloaded->migrated == 1);
+  CHECK(session.inspect(f.actor).value() == before);
+  REQUIRE(session.advance(.1));
+  CHECK(session.state(f.actor)->controller->playback.elapsedSeconds == .2);
+  auto bindings = session.bindings().value();
+  auto reset
+      = std::ranges::find(bindings, "animation.resetController", &Script::HostFunction::name);
+  REQUIRE(reset != bindings.end());
+  const auto arguments = Json::array({{{"scene", std::to_string(f.actor.scene)},
+                                       {"value", std::to_string(f.actor.value)}}})
+                             .dump();
+  REQUIRE(reset->callback(arguments));
+  CHECK(session.state(f.actor)->controller->playback.state == "Move");
+  CHECK(session.state(f.actor)->controller->playback.transitions == 0);
+  good(scripts.stop());
 }

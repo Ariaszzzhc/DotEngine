@@ -12711,3 +12711,149 @@ build/play-ui-review; verify all nineteen prior save hashes unchanged. Remove on
 owned helpers/cache/App/native copies after recording proof. Preserve build caches,
 reference material and saved projects; no distribution archive. Full UI authoring,
 final art, animation state machines and production-scale evidence remain open work.
+
+## 2026-10-18 — Editable native animation controllers
+
+Prism Relay's locomotion previously chose/configured clip indices in TypeScript.
+Replace that decision loop with a saved flat native state machine and complete
+resource authoring, preview, runtime intent, reload and native-export workflows.
+The script submits Speed/Grounded/Vertical intent; native code owns decisions,
+state age, independent outgoing/incoming clocks, fades and masked composition.
+The seven-state, thirty-edge locomotion asset was created/applied/saved through
+the actual editor, then its saved bytes and scene binding were adopted by the
+editable example. Inspection remains the existing independent action layer.
+Checkpoint restore explicitly resets entry/defaults and stops Inspection; native
+controller state is not automatically serialized into game checkpoints.
+
+Controller definitions support at most 64 typed parameters, 64 states, 512 ordered
+edges and eight AND conditions per edge. IDs are unique ASCII identifiers; numeric
+parameters are finite within +/-1000000. States name existing library asset paths,
+speed [-16,16] and looping. Fade/minimum times are [0,86400] seconds and optional
+exit progress is [0,1]. The first eligible outgoing edge wins, once per positive
+simulation tick. Minimum time checks age at tick entry; exit progress includes
+travel crossed during the tick so loop wrapping cannot skip end thresholds.
+The destination consumes the whole tick. Zero delta/player pause do not evaluate
+or age the machine. Finished nonlooping clips can still transition. Conditions
+have no expression VM or implicit input inference.
+
+The current player schema requires nullable controller; current scenes and imported
+model descriptions are updated without compatibility fallback. Bind/prepare require
+complete state-to-library references. Reserve the union of every state's entity
+writers and all layer masks for the controller's lifetime, including inactive
+states. Preserve character-root/ancestor, rigid-body and competing-player checks.
+A pure graph candidate commits only after one successful native pose transaction.
+Failed sampling retains graph state/age/count, clip clocks, fade, layers and pose;
+previously accepted typed parameter intent remains accepted. Review found that
+multiple staging passes could lose a departed channel/entity restore on a zero-
+fade switch; retain/merge those staged poses and add a durable regression.
+
+Controls reject manual clip/restart/crossFade/seek/stop/configure/playback restoration
+while the controller owns the base. Parameterless play resumes; pause freezes all
+clocks. Explicit reset restores defaults and directional entry pose, retaining
+player pause and layer clocks. Typed subset updates are atomic and observational
+snapshots own their values; transition counts cross JSON as decimal strings.
+Initial asynchronous preparation shares owned immutable decoded configurations
+without disk fallback on publication. Native binding/authority remains on the
+owner. Source reload preserves the scene-owned native service independently of VM
+migration. Editor, SDK and standalone controls use the same native implementation.
+
+The editor can create a resource after native preflight and stage its scene binding;
+Inspector Apply/Save remains separate. Typed forms edit defaults, states/library
+clips, ordered edges, AND conditions, delays, exit progress and fades. Structural
+staging permits incomplete references; Apply requires a complete valid graph and
+cloned native entry pose/skin/authority before one history publication. Apply/history
+explicitly restart a paused isolated audition; no-op Apply retains revision/history/
+preview identity. Resource history is bounded to 128 states/32 MiB with exact-source
+undo. Save reuses resource metadata/path/external-byte conflict checks and atomic
+replacement. Pending forms and unsaved resources participate in save/history/close/
+Play/export guards. Explicit discard and focused save/undo/redo share scoped commands.
+Individual clip audition detaches the controller only in its clone.
+
+Keep preview runtime parameters in the Animation panel, with compact state/play/
+reset controls above the viewport. This avoids duplicate reset IDs in one window
+and preserves image space. In the same actual 1280x800 logical window, the preview
+image height grows from 176 to 325 logical pixels; its final focused character PNG
+is 1480x650 physical pixels. This is layout evidence, not physical mouse/IME acceptance.
+The live Play panel has scoped native parameter/reset controls too. Feature Lab's
+Glass sample uses a saved forward/reverse turn controller; a fourth bounded audit
+phase covers all four new SDK/entity methods and expected failures without raising
+the host-call budget. The manual panel and its independent layer remain available.
+
+Durable regressions use existing CTest targets: ordered conditions, types, clocks,
+reverse/loop exit crossings, cycles, zero delta, capacities, copy/move/reset, owned
+snapshots, strict codecs, Unicode/rooted regular files and symlink failures; atomic
+sampling/departed fields/entities; future writer reservations; complete background
+preparation; history/no-ops/conflicts/budgets/thread lifetime; isolated controller and
+clip drafts; real TypeScript preparation denial, typed intent and reload retention.
+No new acceptance executable or automatic desktop-window test target is introduced.
+
+Actual arm64 macOS checks, inherited presets/toolchain, no sanitizers:
+
+- Initial full Debug 1522 had three failures: a template assertion still expected
+  one Lab player, reload coverage stopped before the new fourth audit phase, and
+  the new SDK test's repeated getter was narrowed by TypeScript across a native
+  write. Correct the expectations/phase coverage and use fresh observational calls.
+- Repair focus 7/7, 5.69 s; complete Debug 1524/1524, 252.41 s. After explicit UTF-8
+  test-path spelling, rebuild and relevant focus 5/5, 0.40 s.
+- Complete Release/NDEBUG 1524/1524, 39.41 s. After the final viewport-only layout
+  refinement, rebuild both products, final Debug controller/preview/step focus
+  20/20, 1.46 s, and final full Release 1524/1524, 36.58 s. Full Debug is not repeated
+  after this frontend-only refinement. Final labels: 488 unit, 1036 integration,
+  with overlapping 185 offscreen GPU/246 compiler/37 native audio/34 platform/
+  21 process cases. Units initialize no devices; automated tests open no desktop windows.
+- Formatting and whitespace checks pass. Inspect final arm64 executables/dependencies/
+  load commands; no dependency, compiler/linker environment or target-architecture
+  changes. No Windows/Linux execution claim.
+
+Actual Debug editor creates an ordinary Prism project, then creates/binds/edits/
+saves the graph, tests malformed/stale/incomplete/unbound drafts and no-op/history
+semantics, previews Idle/Jog/Jump/Air/Land, and reopens an individual clip without
+changing the source controller binding. Actual Play exercises input, paused native
+stepping and frozen source reload. The final Release editor additionally validates
+external save conflict/retry and byte-exact undo restoration, discard/stale preview
+rejection, live controls and native export. A first screenshot request during the
+post-save cache rebuild correctly reports no current completed frame; wait for
+actual viewport readiness and repeat. Retain the failed request and successful
+readbacks rather than claiming the first capture succeeded.
+
+Real Release D/E/Space input leaves Jump plus an active Inspection layer; no manual
+layer restart is needed in that run. Hide the game UI and capture the actual frozen
+pose, execute a native 1/60-second debugger step, and capture the changed pose at
+unchanged dimensions. Native state age and layer clocks advance exactly that
+quantum. Frozen source reload retains the full native snapshot. Resource/scene
+bytes remain unchanged by runtime controls. Inspect the real full-character PNGs.
+The final UI layout product again opens the saved graph, frames the character,
+changes preview intent into Jog, resets and exports. Its new export is byte-for-byte
+identical across all 161 regular files to the independently tested relocated package.
+Actual final Release Feature Lab Play reports 169 checked SDK members, thirteen
+caught expected errors, no script diagnostics and the native Glass Reverse state.
+Preparation inspection is polled before reading the published Play scene.
+
+Verify all 118 exported content files against the editable Prism project. Move the
+native game, hide only its owned authoring project and launch with a separate
+explicit Unicode data directory. Observe native movement (2.613 m in this run),
+save a grounded checkpoint, move away and restore it. Typed/unknown/stale parameter
+failures retain native state; reset and a paused debugger step succeed. A second
+fresh native process restores the same persisted non-startup checkpoint while the
+source remains hidden, within 0.000039 m of the saved observed pose. The slot hash
+is unchanged on restore. Both processes exit zero and retire their control roots;
+restore the source project. Retained native profiles each hold 120 error-free samples
+out of 47575/40046 sampled; no FPS/latency conclusion is inferred.
+
+Final editor SHA-256 is 8cba74386f997ddc3f62c78c2109bf39ce07de616ed049a15130201fd8af4a42;
+native game matches its final runtime kit SHA-256
+f588bc4ab91c312201ec6b8d7de99aaab76d30d7774d4e0d56fda2a0917a490c.
+Saved locomotion resource SHA-256 is
+d5e464c806442614b1888300371dc2749a8647ae04d099bec281ecdedd2c68ee.
+Computer use again reports locked Mac/automatic unlock failure: physical clicks,
+narrow-layout interaction and IME behavior remain unverified. Keep useful raw
+requests/responses, PNGs, profiles, manifests, isolated saves and both editable
+projects in ignored build/controller-review. Verify all nineteen prior persistent
+save hashes unchanged. Remove only owned helpers and redundant native verification
+copies; preserve caches, references, projects and saves. No distribution archive.
+
+This implements editable flat state machines and their complete small-project
+workflow. Blend trees, hierarchical machines, triggers/events, root motion, final
+character/environment art, broader authoring usability and production-scale evidence
+remain open. Passing these regressions and example workflows does not establish
+large-game production readiness.

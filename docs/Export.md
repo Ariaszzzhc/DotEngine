@@ -224,6 +224,8 @@ Commands use strict complete objects with no unknown fields:
 | clock | scope, value | Scene-local pause snapshot/set-paused and queued single step, shared with scripts/editor |
 | animation-state | scope, entity | Owned native base/layer clocks and weight-fade snapshot |
 | animation-layer | scope, entity, name, value | Shared native layer control; does not edit saved definitions or advance time |
+| animation-parameters | scope, entity, value | Atomic typed controller intent, without advancing time |
+| reset-animation-controller | scope, entity | Reset defaults/entry pose; retain global player pause and layer clocks |
 | request-scene | scope, path | Existing GameSession frame-boundary replacement request |
 | scene-status | request | Retained actual replacement result |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |

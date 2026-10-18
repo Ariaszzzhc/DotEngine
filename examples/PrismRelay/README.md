@@ -3,7 +3,7 @@
 A non-shooting over-the-shoulder character template in an industrial science-fiction
 bay. The native Jolt capsule handles movement, gravity, support, stairs and jumping;
 a textured maintenance character with 63 skinned joints uses the engine's animation
-player and cross-fades.
+player, saved native state machine and cross-fades.
 This replaces the earlier collection/timer prototype.
 
 - WASD or arrows: camera-relative movement, with normalized diagonals and acceleration.
@@ -186,3 +186,23 @@ Preview or Play, the Animation panel exposes actual independent clocks and stric
 layer controls. Pause the game to inspect/stop/seek a layer without moving the legs
 or advancing time. This is a masked override example, not additive/IK/state-machine
 animation or a finished art/animation-quality claim.
+
+
+## Saved locomotion state machine
+
+`assets/locomotion.dotcontroller` contains Idle/Walk/Jog/Sprint/Jump/Air/Land and
+30 ordered transitions. Inspector binds it to Surveyor; Edit animation controller
+opens typed parameter/state/transition forms and an isolated native preview.
+Applying validates the complete graph, clip library, writer authority and entry
+pose before committing one undoable edit; it restarts the paused audition.
+Save persists the resource; the scene binding has its own Inspector Apply/Save.
+Individual clip audition detaches the controller in its clone only.
+
+The external `player.ts` submits Speed, Grounded and Vertical intent. Native
+simulation evaluates one outgoing edge per positive tick, owns state age, sampling,
+fades and layer composition, and retains these across source reload. Inspection
+remains an independent masked action layer. Pause freezes graph decisions/age;
+a debugger step advances one simulation quantum. Restoring a grounded checkpoint
+resets controller defaults/entry and stops Inspection, rather than persisting a
+borrowed runtime state. This graph is a small locomotion controller, not blend trees,
+root motion, animation events or a final character/art quality claim.

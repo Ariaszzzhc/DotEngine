@@ -12479,6 +12479,7 @@
     },
     {
       "animation": {
+        "controller": null,
         "clip": 7,
         "clips": [
           "assets/surveyor/animations/0.dotanimation",

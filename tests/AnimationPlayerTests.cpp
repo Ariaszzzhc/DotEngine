@@ -157,3 +157,26 @@ TEST_CASE("animation.player_scene_ownership_clone_deletion_and_transactional_val
   CHECK_FALSE(scene.animationPlayers());
   CHECK(moved.entityCount().value() == 1);
 }
+
+TEST_CASE(
+    "animation.controller_reference_is_required_nullable_and_portable_in_current_scene_format") {
+  using namespace Dot::Animation;
+  using Json = nlohmann::json;
+  PlayerProperties properties{{"assets/move.dotanimation"}, {{0, 1}}};
+  auto encoded = Json::parse(encodePlayerProperties(properties).value());
+  CHECK(encoded["controller"].is_null());
+  encoded.erase("controller");
+  CHECK_FALSE(decodePlayerProperties(encoded.dump()));
+  properties.controller = "assets/人物.dotcontroller";
+  CHECK(decodePlayerProperties(encodePlayerProperties(properties).value()).value() == properties);
+
+  for (const auto& path : {"../bad.dotcontroller", "scripts/bad.dotcontroller", "assets/wrong.json",
+                           "assets/../graph.dotcontroller", "assets/alias\\bad.dotcontroller",
+                           "assets/CON.dotcontroller"}) {
+    properties.controller = path;
+    CHECK_FALSE(validatePlayerProperties(properties));
+  }
+
+  encoded["controller"] = false;
+  CHECK_FALSE(decodePlayerProperties(encoded.dump()));
+}

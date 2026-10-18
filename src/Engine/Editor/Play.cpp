@@ -665,6 +665,32 @@ namespace Dot::Editor {
     return m_impl->m_session->animationState(owner);
   }
 
+  auto PlaySession::animationParameters(World::EntityId owner,
+                                        std::span<const Animation::ControllerParameter> parameters)
+      -> Core::Result<void> {
+    auto live = scene();
+
+    if (!live || !m_impl->m_session || m_impl->m_stats.state != PlayState::Running
+        || (*live)->id() != owner.scene) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation control requires current running Play scope");
+    }
+
+    return m_impl->m_session->animationParameters(owner, parameters);
+  }
+
+  auto PlaySession::resetAnimationController(World::EntityId owner) -> Core::Result<void> {
+    auto live = scene();
+
+    if (!live || !m_impl->m_session || m_impl->m_stats.state != PlayState::Running
+        || (*live)->id() != owner.scene) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation control requires current running Play scope");
+    }
+
+    return m_impl->m_session->resetAnimationController(owner);
+  }
+
   auto PlaySession::controlAnimationLayer(World::EntityId owner, std::string_view name,
                                           const Animation::LayerControl& operation)
       -> Core::Result<void> {

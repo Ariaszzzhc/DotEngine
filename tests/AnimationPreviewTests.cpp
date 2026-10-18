@@ -11,6 +11,7 @@
 
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 import Dot.Animation.SkinFiles;
 import Dot.Math;
@@ -513,4 +514,48 @@ TEST_CASE("animation_preview.tangent_candidate_failure_retains_source_and_allows
   const auto target = repaired.scene().value()->findEntity(fixture.target.value).value();
   CHECK(repaired.scene().value()->transform(target)->scale.x == doctest::Approx(.5));
   CHECK(clip.description().value()->tracks[0].keys[0].outTangent.x == 0);
+}
+
+TEST_CASE(
+    "animation_preview.controller_drafts_are_isolated_and_clip_audition_explicitly_detaches") {
+  Fixture f;
+  auto graph = Animation::Controller::create(
+                   {"Graph",
+                    "Idle",
+                    {{"Go", false}},
+                    {{"Idle", f.properties.clips[0]}, {"Move", f.properties.clips[1]}},
+                    {{"Go", "Idle", "Move", {{"Go", Animation::ConditionOp::Equal, true}}, .2}}})
+                   .value();
+  f.properties.controller = "assets/motion.dotcontroller";
+  REQUIRE(f.source.setAnimationPlayer(f.owner, f.properties));
+  const auto before = World::encodeScene(f.source).value();
+  CHECK_FALSE(Editor::AnimationPreview::create(f.source, f.files, f.owner.value));
+  auto preview = Editor::AnimationPreview::create(
+      f.source, f.files, f.owner.value, {},
+      Animation::ControllerAsset{*f.properties.controller, graph});
+  REQUIRE(preview);
+  CHECK(preview->stats()->player.controller->playback.state == "Idle");
+  CHECK(preview->stats()->player.playback.paused);
+  REQUIRE(preview->parameters(std::array{Animation::ControllerParameter{"Go", true}}));
+  REQUIRE(preview->play(0, false));
+  REQUIRE(preview->advance(.1));
+  CHECK(preview->stats()->player.controller->playback.state == "Move");
+  CHECK(preview->stats()->player.playback.time == .1);
+  REQUIRE(preview->pause());
+  REQUIRE(preview->advance(.5));
+  CHECK(preview->stats()->player.controller->playback.elapsedSeconds == .1);
+  CHECK_FALSE(preview->seek(1));
+  CHECK_FALSE(preview->configure(1, false));
+  CHECK_FALSE(preview->bindPose());
+  REQUIRE(preview->resetController());
+  CHECK(preview->stats()->player.controller->playback.state == "Idle");
+  CHECK(World::encodeScene(f.source).value() == before);
+  auto clip = Animation::loadClip(f.files, f.properties.clips[1]).value();
+  auto audition = Editor::AnimationPreview::create(
+      f.source, f.files, f.owner.value, Animation::ClipAsset{f.properties.clips[1], clip});
+  REQUIRE(audition);
+  CHECK_FALSE(audition->stats()->player.controller);
+  REQUIRE(audition->seek(.5));
+  CHECK(f.x(*audition) == 20.5F);
+  CHECK(World::encodeScene(f.source).value() == before);
 }

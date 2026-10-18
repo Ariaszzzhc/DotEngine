@@ -969,6 +969,10 @@ may read `animation.state` but cannot issue controls. Foreign/stale/disabled/mis
 players and invalid values produce catchable DotHostError values; scripts cannot
 advance the native clock or create a second backend. See [Animation](Animation.md)
 for exact transaction, timing, stop/restoration and clip-selection semantics.
+Saved controllers additionally accept typed `animation.parameters` / Entity parameter
+updates and explicit reset. They own base selection/speed/loop; conflicting manual
+controls reject. Native controller snapshots, clocks and fades survive source reload;
+transition counts are decimal strings. See the saved-state-machine section there.
 
 GameSession establishes a zero-duration audio pose baseline after the first Start
 callbacks and animation sampling. Initial spawn/listener placement is not inferred

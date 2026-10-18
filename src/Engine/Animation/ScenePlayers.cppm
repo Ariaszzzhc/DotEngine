@@ -15,11 +15,23 @@ import Dot.Core.Files;
 import Dot.Animation.Clip;
 import Dot.World.Scene;
 export import Dot.Animation.SceneAnimator;
+export import Dot.Animation.Controller;
 
 export namespace Dot::Animation {
   struct ClipAsset {
     std::string asset;
     Clip value;
+  };
+
+  struct ControllerAsset {
+    std::string asset;
+    Controller value;
+  };
+
+  struct SceneControllerState {
+    std::string asset;
+    std::string name;
+    ControllerSnapshot playback;
   };
 
   struct ScenePlayerStats {
@@ -35,6 +47,7 @@ export namespace Dot::Animation {
     double duration;
     PlaybackState playback;
     std::vector<LayerSnapshot> layers;
+    std::optional<SceneControllerState> controller{};
   };
 
   /** Owns playback and a shared scene, no window/device/wall clock. Synchronizes
@@ -50,25 +63,29 @@ export namespace Dot::Animation {
   public:
     /** Optional immutable decoded assets replace disk loads by exact path for this
      * service lifetime. At most 1024 unique portable .dotanimation paths under assets;
-     * each must occur in an enabled player's initial library. Native binding,
+     * each must occur in an enabled player's initial library. Controller overrides
+     * must match enabled controller references and start from default/entry state. Native binding,
      * sampling, aggregate and writer-authority checks remain unchanged. No files
-     * are created or changed; the service owns copies of the shared clip handles.
+     * are created or changed; clips/configurations are shared immutable handles.
      * 可选不可变解码资源按精确路径替代本服务生命周期内的磁盘加载。至多 1024 个唯一
-     * 可移植 assets 下 .dotanimation，均须用于初始启用播放器库；保留原生绑定、采样、
+     * 可移植 assets 下
+     * .dotanimation，均须用于初始启用播放器库；状态机替代项须匹配启用引用并从默认/入口开始；保留原生绑定、采样、
      * 总量和写入权限校验，不创建/修改文件，服务拥有共享片段句柄的副本。 */
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
                                      const Core::FileSystem& assets,
-                                     std::span<const ClipAsset> decoded = {})
+                                     std::span<const ClipAsset> decoded = {},
+                                     std::span<const ControllerAsset> controllers = {})
         -> Core::Result<ScenePlayers>;
-    /** Require complete initial decoded libraries without disk fallback. Validate
+    /** Require complete initial decoded libraries/controllers without disk fallback. Validate
      * native bindings/authority normally, then release the preparation cache;
      * later description replacements load current files. Keep the existing scene
      * limits: 1024 clip references, 30000 channels and 1000000 keys.
-     * 要求完整初始解码库，不回退磁盘；保留原生绑定/权限校验，随后释放准备缓存，
+     * 要求完整初始解码片段/状态机，不回退磁盘；保留原生绑定/权限校验，随后释放准备缓存，
      * 后续描述替换重读当前文件；保留既有场景限制：1024 片段引用、30000 通道、1000000 键。 */
     [[nodiscard]] static auto createPrepared(std::shared_ptr<World::Scene> scene,
                                              const Core::FileSystem& assets,
-                                             std::span<const ClipAsset> decoded)
+                                             std::span<const ClipAsset> decoded,
+                                             std::span<const ControllerAsset> controllers = {})
         -> Core::Result<ScenePlayers>;
     ScenePlayers(const ScenePlayers&) = delete;
     auto operator=(const ScenePlayers&) -> ScenePlayers& = delete;
@@ -118,14 +135,24 @@ export namespace Dot::Animation {
      * 描述但不改写保存的层定义。 */
     [[nodiscard]] auto controlLayer(World::EntityId owner, std::string_view name,
                                     const LayerControl& operation) -> Core::Result<void>;
+    /** Typed parameter updates never advance time or publish a pose. Controllers
+     * own base selection/speed; manual seek/stop/clip controls reject. Reset restores
+     * defaults and entry pose atomically, retaining global pause and layer clocks.
+     * 类型参数更新不推进时间或发布姿态；状态机拥有基础片段/速度，拒绝手动 seek/stop/换片。
+     * 重置原子恢复默认参数及入口姿态，保留全局暂停和层时钟。 */
+    [[nodiscard]] auto parameters(World::EntityId owner,
+                                  std::span<const ControllerParameter> parameters)
+        -> Core::Result<void>;
+    [[nodiscard]] auto resetController(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto restorePlayback(World::EntityId owner, PlaybackState state,
                                        std::span<const LayerPlayback> layers) -> Core::Result<void>;
 
   private:
     [[nodiscard]] static auto createPlayers(std::shared_ptr<World::Scene> scene,
                                             const Core::FileSystem& assets,
-                                            std::span<const ClipAsset> decoded, bool prepared)
-        -> Core::Result<ScenePlayers>;
+                                            std::span<const ClipAsset> decoded,
+                                            std::span<const ControllerAsset> controllers,
+                                            bool prepared) -> Core::Result<ScenePlayers>;
     struct Impl;
     explicit ScenePlayers(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> m_impl;

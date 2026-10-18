@@ -2454,3 +2454,59 @@ acceptance remain unverified on the locked Mac.
 暂停游戏时仍可显式重构姿态供逐通道检查，时钟不会自行推进；Stop 恢复作者场景。
 完整草稿重建一次恢复全部层，避免分步重放导致暂时无效的混合。原生交互/窄布局/输入法
 验收仍待完成，不以 JSON 操作成功替代。
+
+
+## Animation controller authoring / 动画状态机制作
+
+For an enabled manual player, Inspector's Create controller publishes a new
+`.dotcontroller` resource after native preview validation and stages its binding.
+Apply/Save the Inspector separately. Choose an existing controller or Manual clips
+to bind/detach. A bound controller owns base clip/speed/loop; retained manual
+settings are used again after detach. Edit animation controller opens the typed
+Animation panel with parameters, states/library clips, ordered edges/AND conditions,
+exit progress and fade/minimum time. Rows support addition/removal and transition
+reordering. There is no embedded source editor or raw-JSON-only form.
+
+```json
+{"command":"create-controller","revision":"2","entity":"589","path":"assets/locomotion.dotcontroller","name":"Locomotion"}
+{"command":"open-controller","revision":"4","entity":"589"}
+{"command":"inspect-controller","buffer":"3","revision":"1"}
+{"command":"stage-controller","buffer":"3","revision":"1","value":{"name":"Locomotion","initial":"Idle","parameters":[],"states":[{"name":"Idle","clip":"assets/idle.dotanimation","speed":1,"looping":true}],"transitions":[]}}
+{"command":"apply-controller","buffer":"3","revision":"1"}
+{"command":"reset-controller-form","buffer":"3","revision":"2"}
+{"command":"undo-controller","buffer":"3","revision":"2"}
+{"command":"redo-controller","buffer":"3","revision":"3"}
+{"command":"save-controller","buffer":"3","revision":"4"}
+{"command":"close-controller","buffer":"3","revision":"5","discard":false}
+```
+
+Use actual inspected identities. Structural form staging allows incomplete references;
+Apply validates the full graph and cloned native bindings/authority/entry pose before
+publishing one resource history entry. Failures retain document, native audition and
+disk bytes. Apply and history explicitly restart a paused audition; no-op Apply
+retains history/revision/preview identity. History is bounded to 128 states/32 MiB;
+exact source bytes remain available for undo. Save uses resource metadata, path,
+external-byte conflict checks and atomic replacement. Pending forms block Save,
+history and runtime controls. Unsaved resources participate in close/Play/export
+checks. Ctrl-S/Z/Shift-Z target the open controller. Clip audition explicitly detaches
+the controller in its clone and leaves the authoring scene binding intact.
+
+The preview and running Play Animation panel show native state/age/last edge/count
+and editable typed parameters. These operations share SDK/native controls:
+
+```json
+{"command":"control-animation-preview","session":"6","action":"parameters","value":{"Speed":3}}
+{"command":"control-animation-preview","session":"6","action":"reset-controller"}
+{"command":"play-animation-parameters","session":"1","scope":"12","entity":"589","value":{"Speed":3}}
+{"command":"reset-play-animation-controller","session":"1","scope":"12","entity":"589"}
+```
+
+Standalone player control uses animation-parameters {scope,entity,value} and
+reset-animation-controller {scope,entity}; exact current running scope is required.
+Parameter changes do not advance time. Game scripts can replace intent on the next
+Update; pause first for deliberate inspection. Native pause/step scheduling remains
+unchanged. These operations do not rewrite saved controller definitions.
+
+状态机创建、绑定、表单、历史、保存、预览和运行参数均有共用产品实现的严格机器操作。
+表单可暂留不完整引用，应用须先通过完整原生预检；应用/撤销重做明确重启独立暂停预览。
+存盘检查外部冲突并原子替换；场景绑定与状态机资源分别应用/保存，不混入脚本源码编辑器。

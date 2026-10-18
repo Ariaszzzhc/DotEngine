@@ -264,13 +264,14 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   CHECK(std::ranges::any_of(samples, [](float value) { return std::abs(value) > 0.0001F; }));
   report(session.update(1.0 / 60));
   report(session.update(1.0 / 60));
+  report(session.update(1.0 / 60));
   report(session.close());
   snapshot = data(*scene);
   CHECK(snapshot["starts"] == 1);
   CHECK(snapshot["fixed"] == 1);
-  CHECK(snapshot["updates"] == 3);
+  CHECK(snapshot["updates"] == 4);
   CHECK(snapshot["stops"] == 1);
-  CHECK(snapshot["errors"] == 10);
+  CHECK(snapshot["errors"] == 13);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);
@@ -389,6 +390,7 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   CHECK(after["starts"] == before["starts"]);
   CHECK(after["fixed"] == before["fixed"]);
   CHECK(after["updates"] == before["updates"].get<int>() + 1);
+  report(session.update(0));
   report(session.update(0));
   report(session.close());
   complete(fixture.project, *session.scene().value());

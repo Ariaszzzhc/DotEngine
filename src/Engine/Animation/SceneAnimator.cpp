@@ -94,6 +94,8 @@ namespace Dot::Animation {
       std::optional<Clip> source;
       double sourceTime{};
       bool sourcePlaying{};
+      double sourceSpeed{1};
+      bool sourceLooping{true};
       Values origin;
     };
 
@@ -102,6 +104,9 @@ namespace Dot::Animation {
     Values m_baseValues;
     std::optional<Transition> m_transition;
     bool m_applied{};
+    bool m_staging{};
+    std::vector<World::TransformUpdate> m_stagedTransforms;
+    std::map<std::uint32_t, World::Transform> m_stagedPoses;
     std::uint64_t scope{};
     std::map<std::uint32_t, Target> targets;
     PlaybackState playback;
@@ -261,7 +266,10 @@ namespace Dot::Animation {
           auto [entry, inserted] = poses.try_emplace(node);
 
           if (inserted) {
-            entry->second = scene.transform(targets.at(node).entity).value();
+            const auto staged = m_stagedPoses.find(node);
+            entry->second = m_staging && staged != m_stagedPoses.end()
+                                ? staged->second
+                                : scene.transform(targets.at(node).entity).value();
           }
 
           auto& pose = entry->second;
@@ -275,6 +283,15 @@ namespace Dot::Animation {
           }
         }
 
+        /** Later staging passes retain prior departed-channel restores, including
+         * entities absent from the incoming clip. No intermediate scene writes.
+         * 后续暂存须保留先前退出通道的复位，含新片段未写的实体；不发布中间场景变更。 */
+        if (m_staging) {
+          for (const auto& [node, pose] : m_stagedPoses) {
+            poses.try_emplace(node, pose);
+          }
+        }
+
         std::vector<World::TransformUpdate> updates;
         updates.reserve(poses.size());
 
@@ -282,11 +299,16 @@ namespace Dot::Animation {
           updates.push_back({targets.at(node).entity, pose});
         }
 
-        auto result = scene.setTransforms(updates);
+        auto result = m_staging ? Core::Result<void>{} : scene.setTransforms(updates);
 
         if (result) {
           m_applied = true;
           m_baseValues = std::move(base);
+
+          if (m_staging) {
+            m_stagedTransforms = std::move(updates);
+            m_stagedPoses = std::move(poses);
+          }
         }
 
         return result;
@@ -477,6 +499,12 @@ namespace Dot::Animation {
 
     m_impl->playback.speed = speed;
     m_impl->playback.looping = looping;
+
+    if (m_impl->m_transition) {
+      m_impl->m_transition->sourceSpeed = speed;
+      m_impl->m_transition->sourceLooping = looping;
+    }
+
     return {};
   }
 
@@ -574,9 +602,9 @@ namespace Dot::Animation {
       weight = next.transition->elapsed / next.transition->duration;
 
       if (fade.source) {
-        const auto source
-            = clockAfter({fade.sourceTime, next.speed, next.looping, fade.sourcePlaying},
-                         fade.source->duration().value(), seconds);
+        const auto source = clockAfter(
+            {fade.sourceTime, fade.sourceSpeed, fade.sourceLooping, fade.sourcePlaying},
+            fade.source->duration().value(), seconds);
         sourceTime = source.time;
         sourcePlaying = source.playing;
       }
@@ -602,6 +630,69 @@ namespace Dot::Animation {
     }
 
     return applied;
+  }
+
+  auto SceneAnimator::transitionAndAdvance(World::Scene& scene, PlaybackTransition transition,
+                                           double seconds) -> Core::Result<void> {
+    auto current = state();
+
+    if (!current) {
+      return std::unexpected(current.error());
+    }
+
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 86400) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid animation transition elapsed time");
+    }
+
+    try {
+      SceneAnimator candidate(std::make_unique<Impl>(*m_impl));
+      candidate.m_impl->m_staging = true;
+      auto configured = candidate.configure(transition.speed, transition.looping);
+
+      if (!configured) {
+        return configured;
+      }
+
+      auto entered = candidate.crossFade(scene, std::move(transition.clip), transition.fadeSeconds);
+
+      if (!entered) {
+        return entered;
+      }
+
+      if (candidate.m_impl->m_transition) {
+        candidate.m_impl->m_transition->sourceSpeed = current->speed;
+        candidate.m_impl->m_transition->sourceLooping = current->looping;
+      }
+
+      auto advanced = candidate.advance(scene, seconds);
+
+      if (!advanced) {
+        return advanced;
+      }
+
+      if (transition.paused) {
+        auto paused = candidate.pause();
+
+        if (!paused) {
+          return paused;
+        }
+      }
+
+      auto published = scene.setTransforms(candidate.m_impl->m_stagedTransforms);
+
+      if (published) {
+        candidate.m_impl->m_staging = false;
+        candidate.m_impl->m_stagedTransforms.clear();
+        candidate.m_impl->m_stagedPoses.clear();
+        m_impl.swap(candidate.m_impl);
+      }
+
+      return published;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare animation transition: " + std::string(error.what()));
+    }
   }
 
   auto SceneAnimator::stop(World::Scene& scene) -> Core::Result<void> {
@@ -715,6 +806,8 @@ namespace Dot::Animation {
         fade.source = m_impl->clip;
         fade.sourceTime = current->time;
         fade.sourcePlaying = true;
+        fade.sourceSpeed = current->speed;
+        fade.sourceLooping = current->looping;
       }
 
       const auto time = current->speed < 0 ? clip.duration().value() : 0;

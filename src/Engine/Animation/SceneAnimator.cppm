@@ -39,6 +39,14 @@ export namespace Dot::Animation {
     bool paused{};
   };
 
+  struct PlaybackTransition {
+    Clip clip;
+    double fadeSeconds{};
+    double speed{1};
+    bool looping{true};
+    bool paused{};
+  };
+
   /** Owns immutable clip and node bindings, not a borrowed scene address. All
    * bindings must be unique/live in one scene scope and cover every clip target.
    * A scene move preserves scope; replacing/removing animated entities fails.
@@ -97,6 +105,14 @@ export namespace Dot::Animation {
      * No hidden wall clock. 有限经过秒数 [0,86400]；循环支持双向回绕，非循环基础片段
      * 结束后保持末姿态，独立层继续推进，无隐藏时钟。 */
     [[nodiscard]] auto advance(World::Scene& scene, double seconds) -> Core::Result<void>;
+    /** Prepare transition configuration and one advance without intermediate
+     * publication. Validate/publish only the final complete base/layer pose, then
+     * commit all playback together. Outgoing clips retain their previous speed/
+     * loop settings; unscaled fade and layer clocks keep their own semantics.
+     * 准备转换配置及一次推进，不发布中间姿态；仅验证/发布最终基础/全部层姿态，再共同
+     * 提交播放状态。源片段保留原速度/循环，非缩放淡化及独立层时钟语义不变。 */
+    [[nodiscard]] auto transitionAndAdvance(World::Scene& scene, PlaybackTransition transition,
+                                            double seconds) -> Core::Result<void>;
     /** Restore base/transition/masked fields to bind pose and stop all clocks atomically.
      * 原子恢复基础/过渡/遮罩字段的绑定姿态并停止所有时钟，失败保留此前状态。 */
     [[nodiscard]] auto stop(World::Scene& scene) -> Core::Result<void>;

@@ -18,6 +18,7 @@ module;
 module Dot.Animation.ScenePlayers;
 
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Animation.SceneAnimator;
 import Dot.Core.Paths;
 import Dot.Core.Text;
@@ -45,6 +46,7 @@ namespace Dot::Animation {
       double duration{};
       bool primed{};
       std::optional<std::vector<std::uint64_t>> m_destinationWriters{};
+      std::optional<Controller> m_controller{};
     };
 
     std::shared_ptr<World::Scene> scene;
@@ -53,6 +55,7 @@ namespace Dot::Animation {
     std::thread::id thread{std::this_thread::get_id()};
     std::map<std::uint64_t, std::shared_ptr<Player>> players;
     std::map<std::string, Clip> m_decoded;
+    std::map<std::string, Controller> m_controllers;
 
     Impl(std::shared_ptr<World::Scene> value, Core::FileSystem files)
         : scene(std::move(value)), assets(std::move(files)), scope(scene->id()) {
@@ -282,7 +285,46 @@ namespace Dot::Animation {
               library.push_back(std::move(clip));
             }
 
-            const auto& selected = library[properties.clip];
+            std::optional<Controller> controller;
+            auto selectedIndex = properties.clip;
+            double speed = properties.speed;
+            bool looping = properties.looping;
+            std::set<std::uint64_t> selectedWriters;
+
+            if (properties.controller) {
+              const auto& path = *properties.controller;
+              const auto decoded = m_controllers.find(path);
+              auto loaded = decoded != m_controllers.end()
+                                ? decoded->second
+                                : take(loadController(assets, std::filesystem::path(std::u8string(
+                                                                  path.begin(), path.end()))));
+              controller = take(loaded.reset());
+              const auto* definition = take(controller->description());
+
+              for (const auto& state : definition->states) {
+                const auto found = std::ranges::find(properties.clips, state.clip);
+
+                if (found == properties.clips.end()) {
+                  return Core::fail(Core::ErrorCode::InvalidArgument,
+                                    "Controller " + path + " state " + state.name
+                                        + " clip is absent from player library: " + state.clip);
+                }
+
+                const auto index = static_cast<std::size_t>(found - properties.clips.begin());
+
+                for (const auto& track : take(library[index].description())->tracks) {
+                  selectedWriters.insert(targets.at(track.node));
+                }
+              }
+
+              const auto* initial = take(controller->state());
+              selectedIndex = static_cast<std::uint32_t>(
+                  std::ranges::find(properties.clips, initial->clip) - properties.clips.begin());
+              speed = initial->speed;
+              looping = initial->looping;
+            }
+
+            const auto& selected = library[selectedIndex];
             const auto duration = take(selected.duration());
             std::vector<LayerDefinition> layers;
 
@@ -292,7 +334,7 @@ namespace Dot::Animation {
             }
 
             auto animator = take(SceneAnimator::bind(*scene, selected, bindings, layers));
-            auto configured = animator.configure(properties.speed, properties.looping);
+            auto configured = animator.configure(speed, looping);
 
             if (!configured) {
               return configured;
@@ -306,8 +348,6 @@ namespace Dot::Animation {
               }
             }
 
-            std::set<std::uint64_t> selectedWriters;
-
             for (const auto& track : take(selected.description())->tracks) {
               selectedWriters.insert(targets.at(track.node));
             }
@@ -319,9 +359,9 @@ namespace Dot::Animation {
             }
 
             player = std::make_shared<Player>(
-                properties, std::move(animator), std::move(library), properties.clip,
+                properties, std::move(animator), std::move(library), selectedIndex,
                 std::vector<std::uint64_t>(selectedWriters.begin(), selectedWriters.end()),
-                playerChannels, playerKeys, duration, false);
+                playerChannels, playerKeys, duration, false, std::nullopt, std::move(controller));
           }
 
           if (player->channels > 30000 - channels || player->keys > 1000000 - keys) {
@@ -384,26 +424,30 @@ namespace Dot::Animation {
   ScenePlayers::~ScenePlayers() = default;
 
   auto ScenePlayers::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& assets,
-                            std::span<const ClipAsset> decoded) -> Core::Result<ScenePlayers> {
-    return createPlayers(std::move(scene), assets, decoded, false);
+                            std::span<const ClipAsset> decoded,
+                            std::span<const ControllerAsset> controllers)
+      -> Core::Result<ScenePlayers> {
+    return createPlayers(std::move(scene), assets, decoded, controllers, false);
   }
 
   auto ScenePlayers::createPrepared(std::shared_ptr<World::Scene> scene,
                                     const Core::FileSystem& assets,
-                                    std::span<const ClipAsset> decoded)
+                                    std::span<const ClipAsset> decoded,
+                                    std::span<const ControllerAsset> controllers)
       -> Core::Result<ScenePlayers> {
-    return createPlayers(std::move(scene), assets, decoded, true);
+    return createPlayers(std::move(scene), assets, decoded, controllers, true);
   }
 
   auto ScenePlayers::createPlayers(std::shared_ptr<World::Scene> scene,
                                    const Core::FileSystem& assets,
-                                   std::span<const ClipAsset> decoded, bool prepared)
+                                   std::span<const ClipAsset> decoded,
+                                   std::span<const ControllerAsset> controllers, bool prepared)
       -> Core::Result<ScenePlayers> {
     if (!scene) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Animation players require a scene");
     }
 
-    if (decoded.size() > 1024) {
+    if (decoded.size() > 1024 || controllers.size() > 1024) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Decoded animation asset budget exceeded");
     }
@@ -417,6 +461,7 @@ namespace Dot::Animation {
 
       auto impl = std::make_unique<Impl>(std::move(scene), assets);
       std::set<std::string> used;
+      std::set<std::string> usedControllers;
       std::size_t references{};
 
       for (const auto& player : *descriptions) {
@@ -427,6 +472,10 @@ namespace Dot::Animation {
         if (player.properties.clips.size() > 1024 - references) {
           return Core::fail(Core::ErrorCode::Unavailable,
                             "Scene animation exceeds 1024 clip references");
+        }
+
+        if (player.properties.controller) {
+          usedControllers.insert(*player.properties.controller);
         }
 
         references += player.properties.clips.size();
@@ -444,7 +493,17 @@ namespace Dot::Animation {
         }
       }
 
-      if (prepared && impl->m_decoded.size() != used.size()) {
+      for (const auto& value : controllers) {
+        if (!usedControllers.contains(value.asset) || !value.value.description()
+            || !impl->m_controllers.emplace(value.asset, value.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid, duplicate or unused decoded controller asset");
+        }
+      }
+
+      if (prepared
+          && (impl->m_decoded.size() != used.size()
+              || impl->m_controllers.size() != usedControllers.size())) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Prepared animation assets do not cover enabled libraries");
       }
@@ -453,6 +512,7 @@ namespace Dot::Animation {
 
       if (ready && prepared) {
         impl->m_decoded.clear();
+        impl->m_controllers.clear();
       }
 
       return ready ? Core::Result<ScenePlayers>{ScenePlayers(std::move(impl))}
@@ -486,6 +546,47 @@ namespace Dot::Animation {
     }
 
     for (auto& [owner, player] : m_impl->players) {
+      if (player->m_controller) {
+        auto playback = player->animator.state().value();
+        const auto time = !player->primed && playback.speed < 0 ? player->duration : playback.time;
+        auto candidate
+            = player->m_controller->advanced(playback.paused ? 0 : seconds, time, player->duration);
+
+        if (!candidate) {
+          return std::unexpected(candidate.error());
+        }
+
+        const bool changed = candidate->transitionCount().value()
+                             != player->m_controller->transitionCount().value();
+        auto selected = player->clip;
+        Core::Result<void> advanced;
+
+        if (changed || (!player->primed && !playback.paused)) {
+          const auto* state = candidate->state().value();
+          selected
+              = static_cast<std::uint32_t>(std::ranges::find(player->properties.clips, state->clip)
+                                           - player->properties.clips.begin());
+          const auto fade = changed ? candidate->lastTransition().value()->fadeSeconds : 0;
+          advanced = player->animator.transitionAndAdvance(
+              *m_impl->scene, {player->library[selected], fade, state->speed, state->looping},
+              seconds);
+        } else {
+          advanced = player->animator.advance(*m_impl->scene, seconds);
+        }
+
+        if (!advanced) {
+          return Core::fail(advanced.error().code, "Animation controller player "
+                                                       + std::to_string(owner) + ": "
+                                                       + advanced.error().message);
+        }
+
+        player->m_controller = std::move(*candidate);
+        player->clip = selected;
+        player->duration = player->library[selected].duration().value();
+        player->primed = player->primed || !playback.paused;
+        continue;
+      }
+
       if (!player->primed && player->properties.playOnStart) {
         auto initial = player->animator.seek(
             *m_impl->scene, player->animator.state().value().speed < 0 ? player->duration : 0);
@@ -541,20 +642,39 @@ namespace Dot::Animation {
       return std::unexpected(result.error());
     }
 
-    const auto& player = **result;
-    auto playback = player.animator.state();
-    auto layers = player.animator.layers();
+    try {
+      const auto& player = **result;
+      auto playback = player.animator.state();
+      auto layers = player.animator.layers();
 
-    if (!playback || !layers) {
-      return std::unexpected(!playback ? playback.error() : layers.error());
+      if (!playback || !layers) {
+        return std::unexpected(!playback ? playback.error() : layers.error());
+      }
+
+      std::optional<SceneControllerState> controller;
+
+      if (player.m_controller) {
+        auto snapshot = player.m_controller->snapshot();
+
+        if (!snapshot) {
+          return std::unexpected(snapshot.error());
+        }
+
+        controller = {*player.properties.controller,
+                      player.m_controller->description().value()->name, std::move(*snapshot)};
+      }
+
+      return ScenePlayerState{player.clip,
+                              player.properties.clips[player.clip],
+                              player.library[player.clip].description().value()->name,
+                              player.duration,
+                              *playback,
+                              std::move(*layers),
+                              std::move(controller)};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Inspect animation player: " + std::string(error.what()));
     }
-
-    return ScenePlayerState{player.clip,
-                            player.properties.clips[player.clip],
-                            player.library[player.clip].description().value()->name,
-                            player.duration,
-                            *playback,
-                            std::move(*layers)};
   }
 
   auto ScenePlayers::play(World::EntityId owner, std::optional<std::uint32_t> clip, bool restart)
@@ -570,6 +690,27 @@ namespace Dot::Animation {
     }
 
     auto& player = **result;
+    if (player.m_controller) {
+      if (clip || restart) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Controller owns base clip; use resetController");
+      }
+
+      if (!player.primed) {
+        const auto* state = player.m_controller->state().value();
+        auto initial = player.animator.transitionAndAdvance(
+            *m_impl->scene, {player.library[player.clip], 0, state->speed, state->looping}, 0);
+
+        if (initial) {
+          player.primed = true;
+        }
+
+        return initial;
+      }
+
+      return player.animator.play();
+    }
+
     const auto selected = clip.value_or(player.clip);
 
     if (selected >= player.library.size()) {
@@ -646,6 +787,10 @@ namespace Dot::Animation {
 
     auto& player = **controlled;
 
+    if (player.m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Controller owns base clip transitions");
+    }
+
     if (clip >= player.library.size()) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Animation clip index exceeds library");
     }
@@ -700,7 +845,7 @@ namespace Dot::Animation {
 
     auto paused = (*player)->animator.pause();
 
-    if (paused) {
+    if (paused && !(*player)->m_controller) {
       (*player)->primed = true;
     }
 
@@ -716,6 +861,11 @@ namespace Dot::Animation {
 
     if (!player) {
       return std::unexpected(player.error());
+    }
+
+    if ((*player)->m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Controller owns base playback; use resetController");
     }
 
     auto stopped = (*player)->animator.stop(*m_impl->scene);
@@ -739,6 +889,11 @@ namespace Dot::Animation {
       return std::unexpected(player.error());
     }
 
+    if ((*player)->m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Controller owns base playback; use resetController");
+    }
+
     auto positioned = (*player)->animator.seek(*m_impl->scene, seconds, pause);
 
     if (positioned) {
@@ -756,7 +911,87 @@ namespace Dot::Animation {
     }
 
     auto player = m_impl->controlled(owner);
-    return player ? (*player)->animator.configure(speed, looping) : std::unexpected(player.error());
+    if (!player) {
+      return std::unexpected(player.error());
+    }
+
+    if ((*player)->m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Controller owns base speed and looping");
+    }
+
+    return (*player)->animator.configure(speed, looping);
+  }
+
+  auto ScenePlayers::parameters(World::EntityId owner,
+                                std::span<const ControllerParameter> parameters)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto result = m_impl->controlled(owner);
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    auto& player = **result;
+
+    if (!player.m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Player has no animation controller");
+    }
+
+    auto candidate = player.m_controller->withParameters(parameters);
+
+    if (!candidate) {
+      return std::unexpected(candidate.error());
+    }
+
+    player.m_controller = std::move(*candidate);
+    return {};
+  }
+
+  auto ScenePlayers::resetController(World::EntityId owner) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
+    }
+
+    auto result = m_impl->controlled(owner);
+
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+
+    auto& player = **result;
+
+    if (!player.m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Player has no animation controller");
+    }
+
+    auto candidate = player.m_controller->reset();
+
+    if (!candidate) {
+      return std::unexpected(candidate.error());
+    }
+
+    const auto* state = candidate->state().value();
+    const auto selected = static_cast<std::uint32_t>(
+        std::ranges::find(player.properties.clips, state->clip) - player.properties.clips.begin());
+    auto applied = player.animator.transitionAndAdvance(
+        *m_impl->scene,
+        {player.library[selected], 0, state->speed, state->looping,
+         player.animator.state().value().paused},
+        0);
+
+    if (!applied) {
+      return applied;
+    }
+
+    player.clip = selected;
+    player.duration = player.library[selected].duration().value();
+    player.m_controller = std::move(*candidate);
+    player.primed = true;
+    return {};
   }
 
   auto ScenePlayers::restorePlayback(World::EntityId owner, PlaybackState state,
@@ -769,6 +1004,11 @@ namespace Dot::Animation {
 
     if (!player) {
       return std::unexpected(player.error());
+    }
+
+    if ((*player)->m_controller) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Controller owns base playback; use resetController");
     }
 
     auto restored = (*player)->animator.restorePlayback(*m_impl->scene, state, layers);

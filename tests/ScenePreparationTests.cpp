@@ -17,6 +17,7 @@ import Dot.Project.ScenePreparation;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 import Dot.Math;
 
@@ -237,4 +238,55 @@ TEST_CASE("scene_preparation.initial_bytes_moves_owner_cancellation_and_quiescen
   std::thread release([owned = std::move(pending)]() mutable { owned.requestStop(); });
   release.join();
   CHECK_FALSE(pending.ready());
+}
+
+TEST_CASE("scene_preparation.controllers_are_owned_shared_and_required_without_disk_fallback") {
+  Fixture f;
+  auto target = f.scene.entities()->front().id;
+  auto owner = f.scene.createEntity("Player").value();
+  const auto clip = Animation::Clip::create({"Move",
+                                             {{0,
+                                               Animation::Path::Translation,
+                                               Animation::Interpolation::Linear,
+                                               {{0, {0, 0, 0, 0}}, {2, {2, 0, 0, 0}}}}}})
+                        .value();
+  REQUIRE(Animation::saveClip(f.files, "assets/move.dotanimation", clip));
+  World::AnimationPlayer properties{{"assets/move.dotanimation"}, {{0, target.value}}};
+  properties.controller = "assets/motion.dotcontroller";
+  REQUIRE(f.scene.setAnimationPlayer(owner, properties));
+  auto missing = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                                  World::encodeScene(f.scene).value())
+                     .value();
+  wait(missing);
+  CHECK_FALSE(missing.take());
+  auto graph = Animation::Controller::create(
+                   {"Graph", "Idle", {}, {{"Idle", properties.clips.front()}}, {}})
+                   .value();
+  REQUIRE(Animation::saveController(f.files, *properties.controller, graph));
+  auto other = f.scene.createEntity("Other").value();
+  properties.targets.front().entity = other.value;
+  REQUIRE(f.scene.setAnimationPlayer(other, properties));
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                              World::encodeScene(f.scene).value())
+                 .value();
+  wait(job);
+  auto prepared = job.take().value();
+  REQUIRE(prepared.animationControllers()->size() == 1);
+  CHECK(prepared.animationControllers()->front().asset == *properties.controller);
+  REQUIRE(std::filesystem::remove(f.files.root() / *properties.controller));
+  bool advanced{};
+  std::thread caller([&] {
+    auto scene = std::make_shared<World::Scene>(prepared.scene().value());
+    auto players = Animation::ScenePlayers::createPrepared(
+        scene, f.files, prepared.animationClips().value(), prepared.animationControllers().value());
+    advanced = players && players->advance(.5)
+               && players->state(scene->findEntity(owner.value).value())
+                          ->controller->playback.elapsedSeconds
+                      == .5;
+  });
+  caller.join();
+  CHECK(advanced);
+  auto moved = std::move(prepared);
+  CHECK_FALSE(prepared.animationControllers());
+  CHECK(moved.animationControllers()->front().value.description().value()->name == "Graph");
 }

@@ -23,6 +23,9 @@ import Dot.Core.Text;
 import Dot.Platform.AgentInput;
 import Dot.World.SceneFiles;
 
+import Dot.Animation.ControllerFiles;
+import Dot.World.Scene;
+
 namespace Dot::Project {
   namespace {
     namespace Codec = Serialization::Detail;
@@ -273,6 +276,10 @@ namespace Dot::Project {
         Codec::requireFields(value, {"command", "scope", "path"});
       } else if (command == "animation-state") {
         Codec::requireFields(value, {"command", "scope", "entity"});
+      } else if (command == "animation-parameters") {
+        Codec::requireFields(value, {"command", "scope", "entity", "value"});
+      } else if (command == "reset-animation-controller") {
+        Codec::requireFields(value, {"command", "scope", "entity"});
       } else if (command == "animation-layer") {
         Codec::requireFields(value, {"command", "scope", "entity", "name", "value"});
       } else {
@@ -292,6 +299,28 @@ namespace Dot::Project {
                                                        {"animation", Codec::parseJson(*result)}}
                                                       .dump()}
                       : std::unexpected(result.error());
+      }
+
+      if (command == "animation-parameters" || command == "reset-animation-controller") {
+        const World::EntityId owner{m_impl->m_scope, Codec::id(value["entity"])};
+        Core::Result<void> controlled;
+
+        if (command == "animation-parameters") {
+          auto parameters = Animation::decodeControllerParameters(value["value"].dump());
+
+          if (!parameters) {
+            return std::unexpected(parameters.error());
+          }
+
+          effects = true;
+          controlled = m_impl->m_session->animationParameters(owner, *parameters);
+        } else {
+          effects = true;
+          controlled = m_impl->m_session->resetAnimationController(owner);
+        }
+
+        return controlled ? Core::Result<std::string>{"{\"ok\":true}"}
+                          : std::unexpected(controlled.error());
       }
 
       if (command == "animation-layer") {

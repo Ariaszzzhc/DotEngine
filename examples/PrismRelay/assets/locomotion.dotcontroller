@@ -1,0 +1,689 @@
+{
+  "initial": "Idle",
+  "name": "Surveyor locomotion",
+  "parameters": [
+    {
+      "name": "Speed",
+      "value": 0.0
+    },
+    {
+      "name": "Grounded",
+      "value": true
+    },
+    {
+      "name": "Vertical",
+      "value": 0.0
+    }
+  ],
+  "states": [
+    {
+      "clip": "assets/surveyor/animations/0.dotanimation",
+      "looping": true,
+      "name": "Idle",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/1.dotanimation",
+      "looping": true,
+      "name": "Walk",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/2.dotanimation",
+      "looping": true,
+      "name": "Jog",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/3.dotanimation",
+      "looping": true,
+      "name": "Sprint",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/4.dotanimation",
+      "looping": false,
+      "name": "Jump",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/5.dotanimation",
+      "looping": true,
+      "name": "Air",
+      "speed": 1.0
+    },
+    {
+      "clip": "assets/surveyor/animations/6.dotanimation",
+      "looping": false,
+      "name": "Land",
+      "speed": 1.0
+    }
+  ],
+  "transitions": [
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "gt",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.06,
+      "from": "Idle",
+      "minimumSeconds": 0.0,
+      "name": "IdleToJump",
+      "to": "Jump"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Idle",
+      "minimumSeconds": 0.0,
+      "name": "IdleToAir",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 0.15
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 2.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Idle",
+      "minimumSeconds": 0.0,
+      "name": "IdleToWalk",
+      "to": "Walk"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 2.0
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Idle",
+      "minimumSeconds": 0.0,
+      "name": "IdleToJog",
+      "to": "Jog"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Idle",
+      "minimumSeconds": 0.0,
+      "name": "IdleToSprint",
+      "to": "Sprint"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "gt",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.06,
+      "from": "Walk",
+      "minimumSeconds": 0.0,
+      "name": "WalkToJump",
+      "to": "Jump"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Walk",
+      "minimumSeconds": 0.0,
+      "name": "WalkToAir",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 0.15
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Walk",
+      "minimumSeconds": 0.0,
+      "name": "WalkToIdle",
+      "to": "Idle"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 2.0
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Walk",
+      "minimumSeconds": 0.0,
+      "name": "WalkToJog",
+      "to": "Jog"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Walk",
+      "minimumSeconds": 0.0,
+      "name": "WalkToSprint",
+      "to": "Sprint"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "gt",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.06,
+      "from": "Jog",
+      "minimumSeconds": 0.0,
+      "name": "JogToJump",
+      "to": "Jump"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jog",
+      "minimumSeconds": 0.0,
+      "name": "JogToAir",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 0.15
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jog",
+      "minimumSeconds": 0.0,
+      "name": "JogToIdle",
+      "to": "Idle"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 0.15
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 2.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jog",
+      "minimumSeconds": 0.0,
+      "name": "JogToWalk",
+      "to": "Walk"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jog",
+      "minimumSeconds": 0.0,
+      "name": "JogToSprint",
+      "to": "Sprint"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "gt",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.06,
+      "from": "Sprint",
+      "minimumSeconds": 0.0,
+      "name": "SprintToJump",
+      "to": "Jump"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Sprint",
+      "minimumSeconds": 0.0,
+      "name": "SprintToAir",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 0.15
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Sprint",
+      "minimumSeconds": 0.0,
+      "name": "SprintToIdle",
+      "to": "Idle"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 0.15
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 2.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Sprint",
+      "minimumSeconds": 0.0,
+      "name": "SprintToWalk",
+      "to": "Walk"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 2.0
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Sprint",
+      "minimumSeconds": 0.0,
+      "name": "SprintToJog",
+      "to": "Jog"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "gt",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.06,
+      "from": "Land",
+      "minimumSeconds": 0.0,
+      "name": "LandToJump",
+      "to": "Jump"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Land",
+      "minimumSeconds": 0.0,
+      "name": "LandToAir",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 0.15
+        }
+      ],
+      "exitTime": 1.0,
+      "fadeSeconds": 0.12,
+      "from": "Land",
+      "minimumSeconds": 0.0,
+      "name": "LandToIdle",
+      "to": "Idle"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 0.15
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 2.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Land",
+      "minimumSeconds": 0.15,
+      "name": "LandToWalk",
+      "to": "Walk"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 2.0
+        },
+        {
+          "operation": "lt",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Land",
+      "minimumSeconds": 0.15,
+      "name": "LandToJog",
+      "to": "Jog"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        },
+        {
+          "operation": "ge",
+          "parameter": "Speed",
+          "value": 4.5
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Land",
+      "minimumSeconds": 0.15,
+      "name": "LandToSprint",
+      "to": "Sprint"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jump",
+      "minimumSeconds": 0.0,
+      "name": "Touchdown",
+      "to": "Land"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        },
+        {
+          "operation": "le",
+          "parameter": "Vertical",
+          "value": 0.0
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Jump",
+      "minimumSeconds": 0.0,
+      "name": "Apex",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": false
+        }
+      ],
+      "exitTime": 1.0,
+      "fadeSeconds": 0.12,
+      "from": "Jump",
+      "minimumSeconds": 0.0,
+      "name": "JumpEnded",
+      "to": "Air"
+    },
+    {
+      "conditions": [
+        {
+          "operation": "eq",
+          "parameter": "Grounded",
+          "value": true
+        }
+      ],
+      "exitTime": null,
+      "fadeSeconds": 0.12,
+      "from": "Air",
+      "minimumSeconds": 0.0,
+      "name": "Landed",
+      "to": "Land"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "name": "Glass direction",
+  "initial": "Forward",
+  "parameters": [
+    {
+      "name": "Reverse",
+      "value": false
+    }
+  ],
+  "states": [
+    {
+      "name": "Forward",
+      "clip": "assets/panel-turn.dotanimation",
+      "speed": 1.0,
+      "looping": true
+    },
+    {
+      "name": "Reverse",
+      "clip": "assets/panel-turn.dotanimation",
+      "speed": -1.0,
+      "looping": true
+    }
+  ],
+  "transitions": [
+    {
+      "name": "ReverseRequested",
+      "from": "Forward",
+      "to": "Reverse",
+      "conditions": [
+        {
+          "parameter": "Reverse",
+          "operation": "eq",
+          "value": true
+        }
+      ],
+      "fadeSeconds": 0.2,
+      "minimumSeconds": 0,
+      "exitTime": null
+    },
+    {
+      "name": "ForwardRequested",
+      "from": "Reverse",
+      "to": "Forward",
+      "conditions": [
+        {
+          "parameter": "Reverse",
+          "operation": "eq",
+          "value": false
+        }
+      ],
+      "fadeSeconds": 0.2,
+      "minimumSeconds": 0,
+      "exitTime": null
+    }
+  ]
+}

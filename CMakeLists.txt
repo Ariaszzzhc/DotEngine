@@ -97,6 +97,8 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/Files.cpp
     src/Engine/Animation/SceneAnimator.cpp
     src/Engine/Animation/Layers.cpp
+    src/Engine/Animation/Controller.cpp
+    src/Engine/Animation/ControllerFiles.cpp
     src/Engine/Core/Clock.cpp
     src/Engine/Core/Files.cpp
     src/Engine/Core/Paths.cpp
@@ -125,6 +127,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/AnimationPreview.cpp
     src/Engine/Editor/AnimationCreation.cpp
     src/Engine/Editor/AnimationDocument.cpp
+    src/Engine/Editor/ControllerDocument.cpp
     src/Engine/Editor/AnimationClipboard.cpp
     src/Engine/Editor/AnimationKeyMove.cpp
     src/Engine/Editor/AnimationTimeline.cpp
@@ -247,6 +250,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/Files.cppm
         src/Engine/Animation/SceneAnimator.cppm
         src/Engine/Animation/Layers.cppm
+        src/Engine/Animation/Controller.cppm
+        src/Engine/Animation/ControllerFiles.cppm
         src/Engine/Core/Clock.cppm
         src/Engine/Core/Memory.cppm
         src/Engine/Core/Process.cppm
@@ -278,6 +283,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/AnimationPreview.cppm
         src/Engine/Editor/AnimationCreation.cppm
         src/Engine/Editor/AnimationDocument.cppm
+        src/Engine/Editor/ControllerDocument.cppm
         src/Engine/Editor/AnimationClipboard.cppm
         src/Engine/Editor/AnimationKeyMove.cppm
         src/Engine/Editor/AnimationTimeline.cppm

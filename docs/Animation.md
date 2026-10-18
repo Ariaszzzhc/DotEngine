@@ -588,3 +588,57 @@ SLERP。未被基础片段动画的遮罩字段从绑定值开始，不反馈累
 暂停姿态。编辑器、SDK、独立游戏共用控制与校验，草稿重建一次恢复完整层状态。
 Override layers do not implement additive/reference-pose blending, state machines,
 IK, root-motion extraction, rig/retarget authoring or production-scale guarantees.
+
+
+## Saved state machines / 保存的动画状态机
+
+A player's required `controller` field is null for manual clips or a portable
+`assets/... .dotcontroller` path. The resource is strict JSON (at most 1 MiB/depth
+16) with exactly name, initial, parameters, states and transitions. Parameters have
+unique ASCII identifiers and Boolean or finite numeric defaults within ±1000000.
+Up to 64 parameters and 64 states are supported. Each state names a clip asset in
+the player's existing library, speed in [-16,16] and looping mode. Up to 512 named,
+ordered transitions have from/to, at most eight AND conditions, fadeSeconds,
+minimumSeconds and nullable exitTime. Comparison operations are eq/ne/lt/le/gt/ge;
+Booleans support only eq/ne. Fade/minimum seconds lie in [0,86400], exit progress
+in [0,1]. Missing/duplicate names, mismatched types and unknown fields fail.
+
+A positive native simulation update chooses the first eligible outgoing edge at
+most once, including cycles/self-edges. Minimum time checks the source state's age
+at tick entry. Exit progress includes directional travel crossed during this tick,
+so a looping clip's wrap cannot skip its end threshold. Zero-length clips have
+progress one. The selected destination consumes the whole tick; its age starts at
+the tick delta. Age and fades use simulation seconds independently of clip speed.
+Zero delta/global player pause do not evaluate edges or age. A finished nonlooping
+clip can still transition on later ticks. Speed zero freezes clip progress while
+state age continues. There is no expression VM or implicit input inference.
+
+The player reserves all entities written by every controller state, plus layer
+masks, for its lifetime. Native character roots/ancestors, rigid bodies and other
+players cannot acquire those writers. A transition prepares the complete pose,
+clocks and graph candidate before one scene commit; failure retains the prior
+state, age, fade, clocks, layers and pose. Previously accepted parameter intent
+remains accepted. Atomic switches restore departed channels/entities, even when
+incoming tracks write different fields. Outgoing/incoming clips retain their own
+speed/loop settings during a fade; interruption freezes the current base blend.
+
+`animation.parameters(entity, values)` / `Entity.setAnimationParameters(values)`
+atomically set a declared typed subset, without sampling or advancing. Snapshots
+include nullable controller {asset,name,state,elapsedSeconds,parameters,
+lastTransition,transitions}; transition counts are decimal strings. Constructors
+and reload migration may observe but cannot change the service. It belongs to the
+scene and survives source reload independently of VM state.
+
+While bound, explicit base clip/restart, crossFade, seek, stop, configure and manual
+playback restoration reject rather than fighting controller ownership. Parameterless
+play resumes; pause freezes all clocks. `animation.resetController(entity)` /
+`Entity.resetAnimationController()` atomically restore defaults and entry directional
+pose while retaining global pause and layer clocks. Saved manual clip/speed/loop
+settings return after explicit detach. Checkpoint persistence is a game policy,
+not automatic state-machine serialization. Blend trees, hierarchical machines,
+triggers, events and root motion remain future work.
+
+状态机是严格资源而非脚本选片逻辑；类型参数表达意图，原生模拟按出边顺序每步至多转换一次。
+零时长或播放器暂停不决策、不增龄；失败保留状态、双时钟、叠加层及姿态。绑定期间预留所有
+状态的实体写入权并拒绝手动争抢基础播放；显式重置恢复默认参数/入口且保留暂停和层时钟。
+源码重载保留原生服务，持久化检查点由游戏自己定义，不自动保存运行时状态。

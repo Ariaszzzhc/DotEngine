@@ -677,7 +677,24 @@
       }
     },
     {
-      "animation": null,
+      "animation": {
+        "clip": 0,
+        "clips": [
+          "assets/panel-turn.dotanimation"
+        ],
+        "controller": "assets/glass.dotcontroller",
+        "enabled": true,
+        "layers": [],
+        "looping": true,
+        "playOnStart": true,
+        "speed": 1.0,
+        "targets": [
+          {
+            "entity": "14",
+            "node": 0
+          }
+        ]
+      },
       "audioListener": null,
       "audioSource": null,
       "camera": null,
@@ -779,6 +796,7 @@
           "assets/panel-lift.dotanimation",
           "assets/panel-turn.dotanimation"
         ],
+        "controller": null,
         "enabled": true,
         "layers": [
           {

@@ -5,6 +5,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -118,6 +119,10 @@ export namespace Dot::Editor {
     [[nodiscard]] auto inspectAnimation(World::EntityId owner) const -> Core::Result<std::string>;
     [[nodiscard]] auto animationState(World::EntityId owner) const
         -> Core::Result<Animation::ScenePlayerState>;
+    [[nodiscard]] auto animationParameters(
+        World::EntityId owner, std::span<const Animation::ControllerParameter> parameters)
+        -> Core::Result<void>;
+    [[nodiscard]] auto resetAnimationController(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto controlAnimationLayer(World::EntityId owner, std::string_view name,
                                              const Animation::LayerControl& operation)
         -> Core::Result<void>;

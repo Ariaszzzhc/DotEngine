@@ -156,6 +156,10 @@ export namespace Dot::Project {
     /** Running scoped native control, including explicit pose changes while game
      * scheduling is paused. Never edits saved definitions or advances time.
      * 当前运行范围的原生控制，允许游戏调度暂停时显式改姿态；不改保存定义、不推进时间。 */
+    [[nodiscard]] auto animationParameters(
+        World::EntityId owner, std::span<const Animation::ControllerParameter> parameters)
+        -> Core::Result<void>;
+    [[nodiscard]] auto resetAnimationController(World::EntityId owner) -> Core::Result<void>;
     [[nodiscard]] auto controlAnimationLayer(World::EntityId owner, std::string_view name,
                                              const Animation::LayerControl& operation)
         -> Core::Result<void>;

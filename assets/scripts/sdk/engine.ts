@@ -828,6 +828,17 @@ export interface AnimationState {
   paused: boolean;
   layers: AnimationLayerState[];
   transition: AnimationTransition|null;
+  controller: AnimationControllerState|null;
+}
+
+export interface AnimationControllerState {
+  asset: string;
+  name: string;
+  state: string;
+  elapsedSeconds: number;
+  parameters: Record<string, boolean|number>;
+  lastTransition: string|null;
+  transitions: string;
 }
 
 export interface AnimationLayerState {
@@ -858,6 +869,23 @@ export type AnimationLayerControl =
  * 正/反向起点。停止恢复最初绑定姿态；查询反映最近同步状态，脚本不能推进原生时钟。
  */
 export const animation = Object.freeze({
+  /**
+   * Atomically assign a typed parameter subset. No sampling or time advance;
+   * native transitions run on simulation updates and survive script reloads.
+   * 原子更新类型参数子集，不采样或推进时间；原生转换随模拟更新，并跨脚本重载保留。
+   */
+  parameters(entity: EntityId, values: Record<string, boolean|number>): void {
+    invoke('animation.parameters', [entity, values]);
+  },
+
+  /**
+   * Restore controller defaults and entry pose, retaining player pause and layers.
+   * 恢复状态机默认参数及入口姿态，保留播放器暂停状态和叠加层。
+   */
+  resetController(entity: EntityId): void {
+    invoke('animation.resetController', [entity]);
+  },
+
   state(entity: EntityId): AnimationState {
     return invoke('animation.state', [entity]) as AnimationState;
   },
@@ -1053,6 +1081,14 @@ export class Entity {
 
   get animationState(): AnimationState {
     return animation.state(this.id);
+  }
+
+  setAnimationParameters(values: Record<string, boolean|number>): void {
+    animation.parameters(this.id, values);
+  }
+
+  resetAnimationController(): void {
+    animation.resetController(this.id);
   }
 
   playAnimation(clip: number|null = null, restart = false): void {

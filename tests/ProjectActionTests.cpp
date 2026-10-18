@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <expected>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -64,11 +65,18 @@ TEST_CASE("home.shared_project_actions_create_validated_blank_game_and_lab") {
     if (std::string_view(choice) == "lab") {
       const auto startup = result->loadStartup().value();
       const auto players = startup.animationPlayers().value();
-      REQUIRE(players.size() == 1);
-      CHECK(startup.entity(players[0].entity)->name == "Animated panel");
-      REQUIRE(players[0].properties.clips.size() == 2);
+      REQUIRE(players.size() == 2);
+      const auto panel = std::ranges::find_if(players, [&](const auto& player) {
+        return startup.entity(player.entity)->name == "Animated panel";
+      });
+      REQUIRE(panel != players.end());
+      REQUIRE(panel->properties.clips.size() == 2);
+      CHECK(
+          std::ranges::count_if(
+              players, [](const auto& player) { return player.properties.controller.has_value(); })
+          == 1);
 
-      for (const auto& path : players[0].properties.clips) {
+      for (const auto& path : panel->properties.clips) {
         auto clip = Animation::loadClip(result->files().value(), path);
         REQUIRE_MESSAGE(clip, (clip ? "" : clip.error().message));
         CHECK(clip->duration().value() == 2);

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <array>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -7,11 +8,14 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include "ScenePreparation.hpp"
 
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
@@ -672,4 +676,157 @@ TEST_CASE("animation.scene_cross_fade_cancellation_retires_only_outgoing_writers
   CHECK(fixture.scene->transform(fixture.target)->position.x == .25F);
   REQUIRE(players.stop(fixture.owner));
   CHECK(fixture.scene->transform(fixture.target)->position.x == .25F);
+}
+
+TEST_CASE("animation.controller_native_parameters_pause_resume_reset_and_authority_are_shared") {
+  using namespace Animation;
+  Fixture f;
+  auto spec = ControllerDescription{
+      "Locomotion",
+      "Idle",
+      {{"Speed", 0.0}, {"Grounded", true}},
+      {{"Idle", "assets/move.dotanimation", -1, false},
+       {"Walk", "assets/move.dotanimation", 2, false}},
+      {{"Move", "Idle", "Walk", {{"Speed", ConditionOp::Greater, .1}}, .5}}};
+  REQUIRE(saveController(f.files, "assets/motion.dotcontroller", Controller::create(spec).value()));
+  f.properties.controller = "assets/motion.dotcontroller";
+  f.properties.playOnStart = false;
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  auto players = ScenePlayers::create(f.scene, f.files).value();
+  REQUIRE(players.advance(.5));
+  CHECK(players.state(f.owner)->controller->playback.elapsedSeconds == 0);
+  REQUIRE(players.play(f.owner));
+  CHECK(players.state(f.owner)->playback.time == 2);
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Speed", 1.0}}));
+  REQUIRE(players.advance(0));
+  CHECK(players.state(f.owner)->controller->playback.state == "Idle");
+  REQUIRE(players.advance(.25));
+  auto walking = players.state(f.owner).value();
+  CHECK(walking.controller->playback.state == "Walk");
+  CHECK(walking.controller->playback.transitions == 1);
+  CHECK(walking.controller->playback.elapsedSeconds == .25);
+  CHECK(walking.playback.time == .5);
+  CHECK(walking.playback.speed == 2);
+  CHECK(walking.playback.transition->elapsed == .25);
+  REQUIRE(players.pause(f.owner));
+  REQUIRE(players.advance(1));
+  CHECK(players.state(f.owner)->controller->playback.elapsedSeconds == .25);
+  CHECK(players.state(f.owner)->playback.time == .5);
+  CHECK_FALSE(players.play(f.owner, 0));
+  CHECK_FALSE(players.play(f.owner, {}, true));
+  CHECK_FALSE(players.crossFade(f.owner, 0, 0));
+  CHECK_FALSE(players.configure(f.owner, 1, true));
+  CHECK_FALSE(players.seek(f.owner, 0));
+  CHECK_FALSE(players.stop(f.owner));
+  CHECK_FALSE(players.restorePlayback(f.owner, walking.playback, {}));
+  CHECK_FALSE(players.parameters(f.owner, std::array{ControllerParameter{"Speed", true}}));
+  CHECK_FALSE(players.parameters(f.owner, std::array{ControllerParameter{"Missing", 0.0}}));
+  REQUIRE(players.resetController(f.owner));
+  const auto reset = players.state(f.owner).value();
+  CHECK(reset.controller->playback.state == "Idle");
+  CHECK(reset.controller->playback.elapsedSeconds == 0);
+  CHECK(reset.controller->playback.transitions == 0);
+  CHECK(std::get<double>(reset.controller->playback.parameters.front().value) == 0);
+  CHECK(reset.playback.time == 2);
+  CHECK(reset.playback.paused);
+  CHECK_FALSE(reset.playback.transition);
+  CHECK(f.scene->entity(f.owner)->animation == f.properties);
+  REQUIRE(players.play(f.owner));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1.75);
+  CHECK(walking.controller->playback.state == "Walk");
+  auto moved = std::move(players);
+  CHECK_FALSE(players.parameters(f.owner, {}));
+  CHECK_FALSE(players.resetController(f.owner));
+  CHECK(moved.state(f.owner)->controller->playback.elapsedSeconds == .25);
+}
+
+TEST_CASE("animation.controller_failed_pose_retains_state_age_clocks_layers_and_parameter_intent") {
+  using namespace Animation;
+  Fixture f;
+  auto singular
+      = Clip::create(
+            {"Singular",
+             {{0, Path::Scale, Interpolation::Linear, {{0, {1, 1, 1, 0}}, {2, {-1, 1, 1, 0}}}}}})
+            .value();
+  REQUIRE(saveClip(f.files, "assets/bad.dotanimation", singular));
+  f.properties.clips.push_back("assets/bad.dotanimation");
+  f.properties.controller = "assets/motion.dotcontroller";
+  f.properties.layers = {{"Action", 0, {{0, Path::Translation}}, .5, 1, true, true}};
+  auto graph
+      = Controller::create(
+            {"Atomic",
+             "Idle",
+             {{"Go", false}},
+             {{"Idle", "assets/move.dotanimation"}, {"Bad", "assets/bad.dotanimation", 1, false}},
+             {{"GoBad", "Idle", "Bad", {{"Go", ConditionOp::Equal, true}}, 0}}})
+            .value();
+  REQUIRE(saveController(f.files, *f.properties.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  auto players = ScenePlayers::create(f.scene, f.files).value();
+  REQUIRE(players.advance(.25));
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Go", true}}));
+  const auto before = players.state(f.owner).value();
+  const auto pose = f.scene->transform(f.target).value();
+  CHECK_FALSE(players.advance(1));
+  const auto after = players.state(f.owner).value();
+  CHECK(after.clip == before.clip);
+  CHECK(after.playback.time == before.playback.time);
+  CHECK(after.layers.front().playback.time == before.layers.front().playback.time);
+  CHECK(after.controller->playback.state == "Idle");
+  CHECK(after.controller->playback.elapsedSeconds == before.controller->playback.elapsedSeconds);
+  CHECK(after.controller->playback.transitions == 0);
+  CHECK(std::get<bool>(after.controller->playback.parameters.front().value));
+  CHECK(f.scene->transform(f.target)->position.x == pose.position.x);
+  CHECK(f.scene->transform(f.target)->scale.x == pose.scale.x);
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->controller->playback.state == "Bad");
+}
+
+TEST_CASE("animation.controller_reserves_inactive_state_writers_and_prepared_definitions") {
+  using namespace Animation;
+  Fixture f;
+  auto other = f.scene->createEntity("Later target").value();
+  const auto later = Clip::create({"Later",
+                                   {{1,
+                                     Path::Translation,
+                                     Interpolation::Linear,
+                                     {{0, {0, 0, 0, 0}}, {2, {4, 0, 0, 0}}}}}})
+                         .value();
+  REQUIRE(saveClip(f.files, "assets/later.dotanimation", later));
+  f.properties.clips.push_back("assets/later.dotanimation");
+  f.properties.targets.push_back({1, other.value});
+  f.properties.controller = "assets/motion.dotcontroller";
+  auto graph = Controller::create(
+                   {"Ownership",
+                    "Idle",
+                    {},
+                    {{"Idle", "assets/move.dotanimation"}, {"Later", "assets/later.dotanimation"}},
+                    {}})
+                   .value();
+  REQUIRE(saveController(f.files, *f.properties.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  const auto clip = loadClip(f.files, "assets/move.dotanimation").value();
+  std::vector<ClipAsset> clips{{"assets/move.dotanimation", clip},
+                               {"assets/later.dotanimation", later}};
+  std::vector<ControllerAsset> controllers{{*f.properties.controller, graph}};
+  CHECK_FALSE(ScenePlayers::createPrepared(f.scene, f.files, clips));
+  CHECK_FALSE(ScenePlayers::createPrepared(f.scene, f.files, clips,
+                                           std::vector{controllers.front(), controllers.front()}));
+  REQUIRE(std::filesystem::remove(f.files.root() / *f.properties.controller));
+  auto players = ScenePlayers::createPrepared(f.scene, f.files, clips, controllers);
+  REQUIRE(players);
+  REQUIRE(players->advance(.25));
+  CHECK(players->state(f.owner)->controller->playback.state == "Idle");
+  auto competitor = f.scene->createEntity("Competitor").value();
+  World::AnimationPlayer competition{{"assets/later.dotanimation"}, {{1, other.value}}};
+  REQUIRE(f.scene->setAnimationPlayer(competitor, competition));
+  CHECK_FALSE(players->advance(.25));
+  CHECK(players->state(f.owner)->playback.time == .25);
+  REQUIRE(f.scene->setAnimationPlayer(competitor, {}));
+  REQUIRE(players->advance(.25));
+  auto body = World::RigidBody{};
+  REQUIRE(f.scene->setRigidBody(other, body));
+  CHECK_FALSE(players->advance(.25));
+  CHECK(players->state(f.owner)->playback.time == .5);
 }

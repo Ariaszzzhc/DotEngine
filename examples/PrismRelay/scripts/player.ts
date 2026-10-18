@@ -17,14 +17,14 @@ interface RuntimeState {
   progressFrame: string;
   uiSequence: string;
   jumpBuffer: number;
-  grounded: boolean;
-  clip: number;
 }
 
 /**
  * Camera-relative intent drives the native capsule; gravity, support and collision
- * remain in Jolt. The native animation player owns sampled poses and cross-fades.
- * 相机朝向的运动意图驱动原生胶囊；重力、支撑及碰撞仍由 Jolt 处理，原生动画播放器采样并混合姿态。
+ * remain in Jolt. Typed intent drives the saved native animation state machine;
+ * its state, clocks, fades and masked layers survive script reloads independently.
+ * 相机朝向意图驱动原生胶囊；Jolt 处理重力/支撑/碰撞，类型意图驱动保存的原生动画状态机；
+ * 状态、时钟、淡化及遮罩层独立保留，不由脚本重载重新创建。
  */
 export class RelayPlayer extends ScriptComponent<Settings> {
   #camera!: ShoulderCamera;
@@ -36,8 +36,6 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #progressFrame = '';
   #uiSequence = '0';
   #jumpBuffer = 0;
-  #grounded = true;
-  #clip = 0;
   #menuVisible = false;
   #controlsDirty = true;
 
@@ -49,6 +47,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
     if (!camera || !model || !listener || listener.parent !== null || !listener.audioListener
         || model.parent?.id.value !== this.self.id.value || !this.self.character
+        || !model.animationState.controller
         || !model.animationState.layers.some(layer => layer.name === 'Inspection')
         || !Number.isFinite(this.properties.walkSpeed) || this.properties.walkSpeed <= 0
         || !Number.isFinite(this.properties.runSpeed) || this.properties.runSpeed > 12
@@ -67,8 +66,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   onStart(): void {
     this.bind();
     input.capturePointer(true);
-    this.#model.configureAnimation(1, true);
-    this.#model.playAnimation(0, true);
+    this.#model.resetAnimationController();
     this.#camera.update(this.self.characterState.position, 0);
     this.listen();
     this.showControls();
@@ -129,31 +127,11 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
   private animate(): void {
     const state = this.self.characterState;
-    const grounded = state.ground === 'grounded';
-    const animation = this.#model.animationState;
-    const finished = animation.timeSeconds >= animation.durationSeconds - 0.02;
-    const speed = Math.hypot(state.velocity.x, state.velocity.z);
-    let clip: number;
-
-    if (!grounded) {
-      clip = this.#grounded && state.velocity.y > 0               ? 4
-          : this.#clip === 4 && !finished && state.velocity.y > 0 ? 4
-                                                                  : 5;
-    } else if (
-        !this.#grounded
-        || (this.#clip === 6 && !finished && (speed < 0.15 || animation.timeSeconds < 0.15))) {
-      clip = 6;
-    } else {
-      clip = speed < 0.15 ? 0 : speed < 2 ? 1 : speed < 4.5 ? 2 : 3;
-    }
-
-    if (clip !== this.#clip) {
-      this.#model.configureAnimation(1, clip < 4 || clip === 5);
-      this.#model.crossFadeAnimation(clip, clip === 4 ? 0.06 : 0.12);
-      this.#clip = clip;
-    }
-
-    this.#grounded = grounded;
+    this.#model.setAnimationParameters({
+      Speed: Math.hypot(state.velocity.x, state.velocity.z),
+      Grounded: state.ground === 'grounded',
+      Vertical: state.velocity.y,
+    });
 
     const inspection = this.#model.animationState.layers.find(layer => layer.name === 'Inspection')!;
 
@@ -187,10 +165,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         this.#camera.restore(saved.camera);
         this.#velocity = {x: 0, y: 0, z: 0};
         this.#jumpBuffer = 0;
-        this.#grounded = this.self.characterState.ground === 'grounded';
-        this.#clip = 0;
-        this.#model.configureAnimation(1, true);
-        this.#model.playAnimation(0, true);
+        this.#model.resetAnimationController();
         this.#model.controlAnimationLayer('Inspection', {action: 'stop'});
         this.#camera.update(this.self.characterState.position, 0);
         this.listen();
@@ -349,8 +324,6 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       progressFrame: this.#progressFrame,
       uiSequence: this.#uiSequence,
       jumpBuffer: this.#jumpBuffer,
-      grounded: this.#grounded,
-      clip: this.#clip,
     };
   }
 
@@ -358,8 +331,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     if (!state || !state.velocity || ![state.velocity.x, state.velocity.z].every(Number.isFinite)
         || state.velocity.y !== 0 || Math.hypot(state.velocity.x, state.velocity.z) > 12.01
         || !Number.isFinite(state.jumpBuffer) || state.jumpBuffer < 0 || state.jumpBuffer > 0.14
-        || typeof state.grounded !== 'boolean' || !Number.isInteger(state.clip) || state.clip < 0
-        || state.clip > 6 || typeof state.edgeFrame !== 'string'
+        || typeof state.edgeFrame !== 'string'
         || !/^[0-9]*$/.test(state.edgeFrame) || typeof state.lookFrame !== 'string'
         || !/^[0-9]*$/.test(state.lookFrame) || typeof state.progressFrame !== 'string'
         || !/^[0-9]*$/.test(state.progressFrame) || typeof state.uiSequence !== 'string'
@@ -377,13 +349,11 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#progressFrame = state.progressFrame;
     this.#uiSequence = state.uiSequence;
     this.#jumpBuffer = state.jumpBuffer;
-    this.#grounded = state.grounded;
-    this.#clip = state.clip;
   }
 
   onStop(): void {
     input.capturePointer(false);
     this.self.moveCharacter({x: 0, y: 0, z: 0});
-    this.#model.stopAnimation();
+    this.#model.pauseAnimation();
   }
 }

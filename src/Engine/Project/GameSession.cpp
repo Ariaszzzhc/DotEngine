@@ -670,8 +670,14 @@ namespace Dot::Project {
         }
 
         auto clips = preflight->animationClips();
-        return clips ? Script::AnimationSession::createPrepared(impl->m_scene, assets, *clips)
-                     : std::unexpected(clips.error());
+        auto controllers = preflight->animationControllers();
+
+        if (!clips || !controllers) {
+          return std::unexpected(!clips ? clips.error() : controllers.error());
+        }
+
+        return Script::AnimationSession::createPrepared(impl->m_scene, assets, *clips,
+                                                        *controllers);
       }();
 
       if (!animations) {
@@ -877,6 +883,46 @@ namespace Dot::Project {
     }
 
     return m_impl->m_animations->state(owner);
+  }
+
+  auto GameSession::animationParameters(World::EntityId owner,
+                                        std::span<const Animation::ControllerParameter> parameters)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_animations) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation control requires a running session");
+    }
+
+    return m_impl->m_animations->parameters(owner, parameters);
+  }
+
+  auto GameSession::resetAnimationController(World::EntityId owner) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_animations) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Animation control requires a running session");
+    }
+
+    return m_impl->m_animations->resetController(owner);
   }
 
   auto GameSession::controlAnimationLayer(World::EntityId owner, std::string_view name,

@@ -435,6 +435,25 @@ export class Audit extends ScriptComponent<{contract: string}> {
     panel.playAnimation(0, true);
   }
 
+  private controllerChecks(): void {
+    const glass = this.entity('Glass');
+    const before = glass.animationState.controller;
+    this.check('animation.controller.authored', before?.state === 'Forward');
+    animation.parameters(glass.id, {Reverse: true});
+    this.check('animation.parameters', glass.animationState.controller?.parameters.Reverse === true);
+    glass.setAnimationParameters({Reverse: false});
+    this.check('Entity.setAnimationParameters', glass.animationState.controller?.parameters.Reverse === false);
+    animation.resetController(glass.id);
+    this.check('animation.resetController', glass.animationState.controller?.transitions === '0');
+    glass.resetAnimationController();
+    this.check('Entity.resetAnimationController', glass.animationState.controller?.elapsedSeconds === 0);
+    this.expectedError(() => glass.setAnimationParameters({Reverse: 1}), 'InvalidArgument');
+    this.expectedError(() => animation.parameters(glass.id, {Missing: false}), 'InvalidArgument');
+    this.expectedError(() => glass.playAnimation(0, true), 'InvalidState');
+    this.check('animation.controller.failedControl', glass.animationState.controller?.parameters.Reverse === false);
+    glass.setAnimationParameters({Reverse: true});
+  }
+
   private publish(): void {
     const report = this.entity('Report');
     const description = report.script;
@@ -624,6 +643,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.layerChecks();
     } else if (!this.#checked.has('Entity.setCharacterYaw')) {
       this.characterChecks();
+    } else if (!this.#checked.has('animation.controller.failedControl')) {
+      this.controllerChecks();
     }
 
     if (this.#checked.has('Entity.setCharacterYaw') && !this.#checked.has('gameState.snapshot')) {

@@ -12499,6 +12499,7 @@
           "assets/surveyor/animations/6.dotanimation",
           "assets/actions/inspection.dotanimation"
         ],
+        "controller": "assets/locomotion.dotcontroller",
         "enabled": true,
         "layers": [
           {

@@ -2,6 +2,7 @@
   "entities": [
     {
       "animation": {
+        "controller": null,
         "clip": 0,
         "clips": [
           "assets/surveyor/animations/0.dotanimation",

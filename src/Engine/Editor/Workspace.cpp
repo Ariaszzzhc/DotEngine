@@ -40,6 +40,8 @@ import Dot.Platform.AgentInput;
 import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
+import Dot.Editor.ControllerDocument;
+import Dot.Animation.ControllerFiles;
 import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
@@ -586,6 +588,10 @@ namespace Dot::Editor {
     bool m_exportDataOnly{};
     std::optional<AnimationPreview> m_animationPreview;
     std::optional<AnimationDocument> m_clipDocument;
+    std::optional<ControllerDocument> m_controllerDocument;
+    Json m_controllerForm{nullptr}, m_controllerOriginal{nullptr};
+    std::string m_newControllerPath{"assets/locomotion.dotcontroller"};
+    std::string m_newControllerName{"Locomotion"};
     std::optional<AnimationTimeline> m_clipTimeline;
     std::uint64_t m_timelineBuffer{};
     std::uint64_t m_timelineRevision{};
@@ -997,6 +1003,10 @@ namespace Dot::Editor {
     }
 
     auto pendingText() const -> bool {
+      if (m_controllerDocument) {
+        return m_controllerDocument->snapshot()->dirty || m_controllerForm != m_controllerOriginal;
+      }
+
       if (m_clipDocument) {
         return m_clipDocument->snapshot()->dirty || m_clipForm != m_clipOriginal || clipGesture();
       }
@@ -1768,7 +1778,7 @@ namespace Dot::Editor {
 
     static auto animationRunning(const Animation::ScenePlayerState& player) -> bool {
       return !player.playback.paused
-             && (player.playback.playing
+             && (player.controller || player.playback.playing
                  || std::ranges::any_of(player.layers, [](const auto& layer) {
                       return layer.playback.active && !layer.playback.paused
                              && ((layer.playback.playing && layer.playback.speed != 0)
@@ -1822,6 +1832,7 @@ namespace Dot::Editor {
               {"playing", player.playback.playing},
               {"paused", player.playback.paused},
               {"layers", std::move(layers)},
+              {"controller", controllerRuntime(player.controller)},
               {"speed", player.playback.speed},
               {"looping", player.playback.looping},
               {"bindPose", state->bindPose},
@@ -2835,6 +2846,127 @@ namespace Dot::Editor {
 
     enum class ClipPublication { Edit, Undo, Redo };
 
+    static auto controllerRuntime(const std::optional<Animation::SceneControllerState>& state)
+        -> Json {
+      if (!state) {
+        return nullptr;
+      }
+
+      Json parameters = Json::object();
+
+      for (const auto& parameter : state->playback.parameters) {
+        std::visit([&](auto value) { parameters[parameter.name] = value; }, parameter.value);
+      }
+
+      return {
+          {"asset", state->asset},
+          {"name", state->name},
+          {"state", state->playback.state},
+          {"elapsedSeconds", state->playback.elapsedSeconds},
+          {"parameters", std::move(parameters)},
+          {"transitions", std::to_string(state->playback.transitions)},
+          {"lastTransition",
+           state->playback.lastTransition ? Json(*state->playback.lastTransition) : Json(nullptr)}};
+    }
+
+    auto controllerStatus() const -> Json {
+      if (!m_controllerDocument) {
+        return nullptr;
+      }
+
+      const auto state = m_controllerDocument->snapshot().value();
+      return {{"buffer", std::to_string(m_buffer)},
+              {"revision", std::to_string(state.revision)},
+              {"path", state.path},
+              {"dirty", state.dirty},
+              {"canUndo", state.canUndo},
+              {"canRedo", state.canRedo},
+              {"historyStates", state.historyStates},
+              {"historyBytes", state.historyBytes},
+              {"value", m_controllerOriginal},
+              {"form", m_controllerForm},
+              {"pendingForm", m_controllerForm != m_controllerOriginal}};
+    }
+
+    auto controllerAction(Json request) -> bool {
+      request["buffer"] = std::to_string(m_buffer);
+      request["revision"] = std::to_string(m_controllerDocument->snapshot()->revision);
+      return sessionAction(request);
+    }
+
+    auto saveControllerDocument() -> Core::Result<void> {
+      if (m_controllerForm != m_controllerOriginal) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Apply or reset the controller form before saving");
+      }
+
+      auto saved = m_controllerDocument->save(m_controllerDocument->snapshot()->revision);
+
+      if (!saved) {
+        return saved;
+      }
+
+      m_assetRefresh = true;
+      auto refreshed = catalog();
+      return refreshed
+                 ? Core::Result<void>{}
+                 : Core::fail(refreshed.error().code, "Controller saved; resource refresh failed: "
+                                                          + refreshed.error().message);
+    }
+
+    /** Validate the complete fresh entry pose and all writer reservations before
+     * publishing resource/history. Edits explicitly restart the isolated audition;
+     * live Play is never modified. Precompute forms before the document commit.
+     * 发布资源/历史前校验完整入口姿态及全部写入权；编辑明确重启独立试听，不修改 Play。
+     * 文档提交前预先准备表单存储。 */
+    auto publishController(const ControllerResourceSnapshot& state,
+                           const Animation::Controller& candidate, ClipPublication operation)
+        -> Core::Result<void> {
+      auto encoded = Animation::encodeController(candidate);
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      auto form = Codec::parseJson(*encoded);
+
+      if (form == m_controllerOriginal) {
+        m_controllerForm = std::move(form);
+        return {};
+      }
+
+      if (m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Animation session identity exhausted");
+      }
+
+      auto preview
+          = AnimationPreview::create(*m_document->scene().value(), m_project->files().value(),
+                                     m_animationPreview->stats()->owner, {},
+                                     Animation::ControllerAsset{state.path, candidate});
+
+      if (!preview) {
+        return std::unexpected(preview.error());
+      }
+
+      auto original = form;
+      auto changed = operation == ClipPublication::Undo ? m_controllerDocument->undo(state.revision)
+                     : operation == ClipPublication::Redo
+                         ? m_controllerDocument->redo(state.revision)
+                         : m_controllerDocument->replace(candidate, state.revision);
+
+      if (!changed) {
+        return changed;
+      }
+
+      m_controllerForm.swap(form);
+      m_controllerOriginal.swap(original);
+      m_animationPreview.emplace(std::move(*preview));
+      ++m_animationSession;
+      m_previewReady = false;
+      m_renderedView.reset();
+      return {};
+    }
+
     /** Publish one validated resource/history change only after native preview
      * preflight. No-ops retain revision, redo and preview identity. Both ordinary
      * edits and key-move transactions use this same publication boundary.
@@ -3176,6 +3308,227 @@ namespace Dot::Editor {
                     {"offset", offset},
                     {"keys", std::move(keys)}}
             .dump();
+      }
+
+      if (command == "create-controller") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "path", "name"});
+        const auto state = m_document->stats().value();
+        const auto owner = Codec::id(parsed["entity"]);
+
+        if (playing() || m_animationPreview || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || m_text || m_material || m_pendingClose
+            || m_captureDialog || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision
+            || !state.selected || state.selected->value != owner) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Controller creation requires selected authoring entity and current clean revision");
+        }
+
+        auto scene = m_document->scene().value();
+        auto entity = scene->entity(scene->findEntity(owner).value()).value();
+
+        if (!entity.animation || !entity.animation->enabled || entity.animation->controller) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Choose an enabled manual animation player");
+        }
+
+        auto path = parsed["path"].get<std::string>();
+        auto properties = *entity.animation;
+        properties.controller = path;
+        auto validProperties = Animation::validatePlayerProperties(properties);
+
+        if (!validProperties) {
+          return std::unexpected(validProperties.error());
+        }
+
+        auto graph = Animation::Controller::create(
+            {parsed["name"].get<std::string>(),
+             "Idle",
+             {},
+             {{"Idle", properties.clips[properties.clip], properties.speed, properties.looping}},
+             {}});
+        auto encoded = graph ? Animation::encodeController(*graph)
+                             : Core::Result<std::string>{std::unexpected(graph.error())};
+
+        if (!encoded) {
+          return std::unexpected(encoded.error());
+        }
+
+        auto clone = World::decodeScene(World::encodeScene(*scene).value()).value();
+        auto bound = clone.setAnimationPlayer(clone.findEntity(owner).value(), properties);
+
+        if (!bound) {
+          return std::unexpected(bound.error());
+        }
+
+        auto preview = AnimationPreview::create(clone, m_project->files().value(), owner, {},
+                                                Animation::ControllerAsset{path, *graph});
+
+        if (!preview) {
+          return std::unexpected(preview.error());
+        }
+
+        syncInspector();
+        auto candidate = m_edit;
+        candidate["animation"]
+            = Codec::parseJson(Animation::encodePlayerProperties(properties).value());
+        auto prepared = m_document->prepareEntityEdit(candidate.dump(), state.revision);
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        auto response = Json{{"ok", true},
+                             {"path", path},
+                             {"staged", true},
+                             {"revision", std::to_string(state.revision)}}
+                            .dump();
+        auto created = m_resources->createText(path, *encoded);
+
+        if (!created) {
+          return std::unexpected(created.error());
+        }
+
+        m_edit.swap(candidate);
+        m_selectedResource.swap(path);
+        auto refreshed = catalog();
+        return refreshed
+                   ? Core::Result<std::string>{std::move(response)}
+                   : Core::fail(refreshed.error().code,
+                                "Controller created and binding staged; catalog refresh failed: "
+                                    + refreshed.error().message);
+      }
+
+      if (command == "open-controller") {
+        Codec::requireFields(parsed, {"command", "revision", "entity"});
+
+        if (playing() || m_animationPreview || m_transform || pendingInspector() || pendingText()
+            || pendingEnvironment() || pendingOcclusion() || m_pendingClose || m_captureDialog
+            || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1
+            || m_buffer == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Open controller requires current clean authoring revision");
+        }
+
+        auto scene = m_document->scene().value();
+        auto owner = scene->findEntity(Codec::id(parsed["entity"]));
+        auto info = owner ? scene->entity(*owner)
+                          : Core::Result<World::EntityInfo>{std::unexpected(owner.error())};
+
+        if (!info || !info->animation || !info->animation->enabled
+            || !info->animation->controller) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Choose an enabled player with a controller");
+        }
+
+        auto document = ControllerDocument::open(*m_project, *info->animation->controller);
+
+        if (!document) {
+          return std::unexpected(document.error());
+        }
+
+        const auto draft = document->snapshot().value();
+        auto preview
+            = AnimationPreview::create(*scene, m_project->files().value(), owner->value, {},
+                                       Animation::ControllerAsset{draft.path, draft.value});
+
+        if (!preview) {
+          return std::unexpected(preview.error());
+        }
+
+        auto form = Codec::parseJson(Animation::encodeController(draft.value).value());
+        auto original = form;
+        m_text.reset();
+        m_material.reset();
+        m_controllerDocument.emplace(std::move(*document));
+        m_controllerForm.swap(form);
+        m_controllerOriginal.swap(original);
+        m_animationPreview.emplace(std::move(*preview));
+        ++m_animationSession;
+        ++m_buffer;
+        m_requestedPane = "animation";
+        m_previewReady = false;
+        return Json{{"ok", true},
+                    {"animationController", controllerStatus()},
+                    {"preview", animationStatus()}}
+            .dump();
+      }
+
+      if (command == "inspect-controller" || command == "stage-controller"
+          || command == "apply-controller" || command == "reset-controller-form"
+          || command == "undo-controller" || command == "redo-controller"
+          || command == "save-controller" || command == "close-controller") {
+        if (command == "stage-controller") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "value"});
+        } else if (command == "close-controller") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "discard"});
+        } else {
+          Codec::requireFields(parsed, {"command", "buffer", "revision"});
+        }
+
+        if (!m_controllerDocument || Codec::id(parsed["buffer"]) != m_buffer
+            || Codec::id(parsed["revision"]) != m_controllerDocument->snapshot()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Controller buffer/revision is stale");
+        }
+
+        if (command != "inspect-controller" && (m_pendingClose || m_captureDialog)) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Finish the current dialog first");
+        }
+
+        const auto state = m_controllerDocument->snapshot().value();
+        Core::Result<void> changed;
+
+        if (command == "stage-controller") {
+          auto validForm = Animation::decodeControllerForm(parsed["value"].dump());
+
+          if (!validForm) {
+            return std::unexpected(validForm.error());
+          }
+
+          m_controllerForm = parsed["value"];
+        } else if (command == "reset-controller-form") {
+          m_controllerForm = m_controllerOriginal;
+        } else if (command == "save-controller") {
+          changed = saveControllerDocument();
+        } else if (command == "close-controller") {
+          if (pendingText() && !parsed["discard"].get<bool>()) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Save or explicitly discard controller changes");
+          }
+
+          m_controllerDocument.reset();
+          m_controllerForm = m_controllerOriginal = nullptr;
+          m_animationPreview.reset();
+          m_previewReady = false;
+        } else if (command == "apply-controller" || command == "undo-controller"
+                   || command == "redo-controller") {
+          if (command != "apply-controller" && m_controllerForm != m_controllerOriginal) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Apply or reset the controller form before history");
+          }
+
+          auto candidate = command == "apply-controller"
+                               ? Animation::decodeController(m_controllerForm.dump())
+                               : m_controllerDocument->historyValue(command == "redo-controller",
+                                                                    state.revision);
+
+          if (!candidate) {
+            return std::unexpected(candidate.error());
+          }
+
+          changed = publishController(state, *candidate,
+                                      command == "undo-controller"   ? ClipPublication::Undo
+                                      : command == "redo-controller" ? ClipPublication::Redo
+                                                                     : ClipPublication::Edit);
+        }
+
+        return changed ? Core::Result<std::string>{Json{
+                             {"ok", true},
+                             {"animationController", controllerStatus()},
+                             {"preview",
+                              animationStatus()}}.dump()}
+                       : std::unexpected(changed.error());
       }
 
       if (command == "open-animation") {
@@ -4126,6 +4479,8 @@ namespace Dot::Editor {
                               "Save or explicitly discard animation changes before closing");
           }
 
+          m_controllerDocument.reset();
+          m_controllerForm = m_controllerOriginal = nullptr;
           m_clipDocument.reset();
           m_clipTimeline.reset();
           m_timelineBox.reset();
@@ -4462,7 +4817,10 @@ namespace Dot::Editor {
             Codec::requireFields(parsed, {"command", "session", "action", "seconds"});
           } else if (action == "configure") {
             Codec::requireFields(parsed, {"command", "session", "action", "speed", "looping"});
-          } else if (action == "pause" || action == "bind-pose" || action == "end") {
+          } else if (action == "parameters") {
+            Codec::requireFields(parsed, {"command", "session", "action", "value"});
+          } else if (action == "pause" || action == "bind-pose" || action == "end"
+                     || action == "reset-controller") {
             Codec::requireFields(parsed, {"command", "session", "action"});
           } else {
             return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown animation preview action");
@@ -4488,14 +4846,22 @@ namespace Dot::Editor {
         }
 
         const auto action = parsed.at("action").get<std::string>();
+
+        if (m_controllerDocument && action != "end" && m_controllerForm != m_controllerOriginal) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Apply or reset the controller form before runtime controls");
+        }
+
         Core::Result<void> applied;
 
         if (action == "end") {
-          if (m_clipDocument && pendingText()) {
+          if ((m_clipDocument || m_controllerDocument) && pendingText()) {
             return Core::fail(Core::ErrorCode::InvalidState,
                               "Save or explicitly discard animation changes before ending preview");
           }
 
+          m_controllerDocument.reset();
+          m_controllerForm = m_controllerOriginal = nullptr;
           m_clipDocument.reset();
           m_clipTimeline.reset();
           m_timelineBox.reset();
@@ -4518,6 +4884,16 @@ namespace Dot::Editor {
 
           applied = m_animationPreview->play(parsed["clip"].get<std::uint32_t>(),
                                              parsed["restart"].get<bool>());
+        } else if (action == "parameters") {
+          auto parameters = Animation::decodeControllerParameters(parsed["value"].dump());
+
+          if (!parameters) {
+            return std::unexpected(parameters.error());
+          }
+
+          applied = m_animationPreview->parameters(*parameters);
+        } else if (action == "reset-controller") {
+          applied = m_animationPreview->resetController();
         } else if (action == "pause") {
           applied = m_animationPreview->pause();
         } else if (action == "bind-pose") {
@@ -5412,6 +5788,14 @@ namespace Dot::Editor {
         }
 
         if (m_animationPreview) {
+          if (m_controllerDocument) {
+            auto saved = saveControllerDocument();
+
+            if (!saved) {
+              return std::unexpected(saved.error());
+            }
+          }
+
           if (m_clipDocument) {
             auto saved = saveClip();
 
@@ -5730,6 +6114,37 @@ namespace Dot::Editor {
               {"error", source->error ? errorJson(*source->error)["error"] : Json(nullptr)}}},
             {"play", playStatus()}}
             .dump();
+      }
+
+      if (command == "play-animation-parameters" || command == "reset-play-animation-controller") {
+        if (command == "play-animation-parameters") {
+          Codec::requireFields(parsed, {"command", "session", "scope", "entity", "value"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "scope", "entity"});
+        }
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession || m_pendingClose
+            || m_captureDialog) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Play session is stale or in a dialog");
+        }
+
+        const World::EntityId owner{Codec::id(parsed["scope"]), Codec::id(parsed["entity"])};
+        Core::Result<void> changed;
+
+        if (command == "play-animation-parameters") {
+          auto parameters = Animation::decodeControllerParameters(parsed["value"].dump());
+
+          if (!parameters) {
+            return std::unexpected(parameters.error());
+          }
+
+          changed = m_play->animationParameters(owner, *parameters);
+        } else {
+          changed = m_play->resetAnimationController(owner);
+        }
+
+        return changed ? Core::Result<std::string>{"{\"ok\":true}"}
+                       : std::unexpected(changed.error());
       }
 
       if (command == "inspect-play-animation" || command == "control-play-animation-layer"
@@ -6181,6 +6596,8 @@ namespace Dot::Editor {
         } else {
           m_pendingClose = false;
           m_animationPreview.reset();
+          m_controllerDocument.reset();
+          m_controllerForm = m_controllerOriginal = nullptr;
           m_clipDocument.reset();
           m_clipTimeline.reset();
           m_timelineBox.reset();
@@ -6311,6 +6728,8 @@ namespace Dot::Editor {
           m_play.reset();
           m_playError.reset();
           m_playDiagnostics.clear();
+          m_controllerDocument.reset();
+          m_controllerForm = m_controllerOriginal = nullptr;
           m_clipDocument.reset();
           m_clipTimeline.reset();
           m_timelineBox.reset();
@@ -6487,6 +6906,7 @@ namespace Dot::Editor {
           {"playAnimation", playAnimationSelection()},
           {"animationPreview", animationStatus()},
           {"animationClip", clipStatus()},
+          {"animationController", controllerStatus()},
           {"animationClipboard", clipboardStatus()},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
@@ -7751,7 +8171,8 @@ namespace Dot::Editor {
                      {"looping", true},
                      {"playOnStart", true},
                      {"enabled", true},
-                     {"layers", Json::array()}};
+                     {"layers", Json::array()},
+                     {"controller", nullptr}};
             } else {
               m_edit[component] = m_presets[component];
             }
@@ -7900,7 +8321,43 @@ namespace Dot::Editor {
             settings.erase("targets");
             settings.erase("clip");
             settings.erase("layers");
+            settings.erase("controller");
+            const bool controlled = !player["controller"].is_null();
+
+            if (controlled) {
+              settings.erase("speed");
+              settings.erase("looping");
+            }
+
             fields(settings);
+
+            if (PropertyRow row{"Controller"};
+                row.visible()
+                && ImGui::BeginCombo(
+                    "##value", controlled
+                                   ? player["controller"].get_ref<const std::string&>().c_str()
+                                   : "Manual clips")) {
+              if (ImGui::Selectable("Manual clips", !controlled)) {
+                player["controller"] = nullptr;
+              }
+
+              for (const auto& entry : m_catalog) {
+                const auto asset = entry["path"].get<std::string>();
+
+                if (asset.ends_with(".dotcontroller")
+                    && ImGui::Selectable(asset.c_str(), player["controller"] == asset)) {
+                  player["controller"] = asset;
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+
+            if (controlled) {
+              ImGui::TextWrapped(
+                  "The controller owns base clip, speed and loop mode. Detaching restores the "
+                  "manual settings.");
+            }
 
             for (const auto& [key, value] : settings.items()) {
               player[key] = value;
@@ -7910,6 +8367,8 @@ namespace Dot::Editor {
             const auto selected = player["clip"].get<std::size_t>();
             const auto current
                 = selected < clips.size() ? clips[selected].get<std::string>() : "Choose clip";
+
+            ImGui::BeginDisabled(controlled);
 
             if (PropertyRow row{"Clip"};
                 row.visible() && ImGui::BeginCombo("##value", current.c_str())) {
@@ -7922,6 +8381,8 @@ namespace Dot::Editor {
 
               ImGui::EndCombo();
             }
+
+            ImGui::EndDisabled();
 
             ImGui::TextDisabled("%zu node bindings", player["targets"].size());
             animationLayerFields(player);
@@ -9852,6 +10313,19 @@ namespace Dot::Editor {
           "These are live native clocks and overrides. Game pause freezes scheduling; "
           "explicit layer controls still recompose the current pose.");
       ImGui::BeginDisabled(m_pendingClose || m_captureDialog);
+      if (state->controller) {
+        controllerRuntimeRows(*state->controller, [&](Json value) {
+          const auto command = value["action"] == "parameters" ? "play-animation-parameters"
+                                                               : "reset-play-animation-controller";
+          value.erase("action");
+          value["command"] = command;
+          value["session"] = std::to_string(m_playSession);
+          value["scope"] = std::to_string(scope);
+          value["entity"] = std::to_string(m_playAnimationOwner->value);
+          return sessionAction(value);
+        });
+      }
+
       animationLayerRows(state->layers, [&](std::string_view layer, Json value) {
         return sessionAction({{"command", "control-play-animation-layer"},
                               {"session", std::to_string(m_playSession)},
@@ -9901,14 +10375,18 @@ namespace Dot::Editor {
         }
       }
 
-      if (nextButton("Bind pose")) {
-        command({{"action", "bind-pose"}});
+      if (nextButton(state->player.controller ? "Reset controller" : "Bind pose")) {
+        command({{"action", state->player.controller ? "reset-controller" : "bind-pose"}});
       }
 
       ImGui::EndDisabled();
 
-      if (nextButton(m_clipDocument ? "Close clip" : "End preview")) {
-        if (m_clipDocument) {
+      if (nextButton(m_controllerDocument ? "Close controller"
+                     : m_clipDocument     ? "Close clip"
+                                          : "End preview")) {
+        if (m_controllerDocument) {
+          controllerAction({{"command", "close-controller"}, {"discard", false}});
+        } else if (m_clipDocument) {
           clipAction({{"command", "close-animation"}, {"discard", false}});
         } else {
           command({{"action", "end"}});
@@ -9921,6 +10399,12 @@ namespace Dot::Editor {
       }
 
       animationLayerControls(*state);
+
+      if (state->player.controller) {
+        ImGui::Text("State: %s / %.3f s", state->player.controller->playback.state.c_str(),
+                    state->player.controller->playback.elapsedSeconds);
+        return;
+      }
 
       if (m_clipDocument) {
         return;
@@ -10520,6 +11004,11 @@ namespace Dot::Editor {
     }
 
     auto historyAvailable(bool redo) const -> bool {
+      if (m_controllerDocument) {
+        const auto state = m_controllerDocument->snapshot().value();
+        return m_controllerForm == m_controllerOriginal && (redo ? state.canRedo : state.canUndo);
+      }
+
       if (m_clipDocument) {
         auto state = m_clipDocument->snapshot();
         return state && !clipGesture() && m_clipForm == m_clipOriginal
@@ -10536,7 +11025,9 @@ namespace Dot::Editor {
     }
 
     auto focusedSave() -> void {
-      if (m_clipDocument) {
+      if (m_controllerDocument) {
+        controllerAction({{"command", "save-controller"}});
+      } else if (m_clipDocument) {
         clipAction({{"command", "save-animation-clip"}});
       } else if (m_material) {
         fileAction({{"command", "save-material"}});
@@ -10546,7 +11037,9 @@ namespace Dot::Editor {
     }
 
     auto focusedHistory(bool redo) -> void {
-      if (m_clipDocument) {
+      if (m_controllerDocument) {
+        controllerAction({{"command", redo ? "redo-controller" : "undo-controller"}});
+      } else if (m_clipDocument) {
         clipAction({{"command", redo ? "redo-animation-clip" : "undo-animation-clip"}});
       } else if (m_material) {
         fileAction({{"command", redo ? "redo-material" : "undo-material"}});
@@ -10573,11 +11066,13 @@ namespace Dot::Editor {
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem(m_clipDocument ? "Save animation"
-                            : m_material   ? "Save material"
-                                           : "Save scene",
-                            nullptr, false,
-                            !playing() && (!m_animationPreview || m_clipDocument))) {
+        if (ImGui::MenuItem(
+                m_controllerDocument ? "Save controller"
+                : m_clipDocument     ? "Save animation"
+                : m_material         ? "Save material"
+                                     : "Save scene",
+                nullptr, false,
+                !playing() && (!m_animationPreview || m_clipDocument || m_controllerDocument))) {
           focusedSave();
         }
 
@@ -10615,15 +11110,17 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem(
-                "Undo", nullptr, false,
-                !playing() && (!m_animationPreview || m_clipDocument) && historyAvailable(false))) {
+        if (ImGui::MenuItem("Undo", nullptr, false,
+                            !playing()
+                                && (!m_animationPreview || m_clipDocument || m_controllerDocument)
+                                && historyAvailable(false))) {
           focusedHistory(false);
         }
 
-        if (ImGui::MenuItem(
-                "Redo", nullptr, false,
-                !playing() && (!m_animationPreview || m_clipDocument) && historyAvailable(true))) {
+        if (ImGui::MenuItem("Redo", nullptr, false,
+                            !playing()
+                                && (!m_animationPreview || m_clipDocument || m_controllerDocument)
+                                && historyAvailable(true))) {
           focusedHistory(true);
         }
 
@@ -12043,9 +12540,395 @@ namespace Dot::Editor {
       ImGui::EndTable();
     }
 
+    template <class Control>
+    auto controllerRuntimeRows(const Animation::SceneControllerState& state, Control&& control)
+        -> void {
+      ImGui::Text("State: %s  /  %.3f s", state.playback.state.c_str(),
+                  state.playback.elapsedSeconds);
+      ImGui::Text("Transitions: %llu", static_cast<unsigned long long>(state.playback.transitions));
+
+      if (state.playback.lastTransition) {
+        ImGui::TextWrapped("Last: %s", state.playback.lastTransition->c_str());
+      }
+
+      for (const auto& parameter : state.playback.parameters) {
+        Json value = std::visit([](auto item) { return Json(item); }, parameter.value);
+        const auto before = value;
+
+        if (PropertyRow row{parameter.name.c_str()}; row.visible()) {
+          if (value.is_boolean()) {
+            auto current = value.get<bool>();
+
+            if (ImGui::Checkbox("##value", &current)) {
+              value = current;
+            }
+          } else {
+            scalar(value);
+          }
+        }
+
+        if (value != before) {
+          control(Json{{"action", "parameters"}, {"value", {{parameter.name, value}}}});
+        }
+      }
+
+      if (ImGui::Button("Reset controller")) {
+        control(Json{{"action", "reset-controller"}});
+      }
+    }
+
+    /** Keep parameter forms in the Animation panel rather than shrinking the
+     * scene image or duplicating reset IDs inside the viewport's controls.
+     * 参数表单置于动画面板，避免挤占场景图像或在视口控制内重复重置控件 ID。 */
+    auto previewControllerRows() -> void {
+      auto state = m_animationPreview->stats();
+
+      if (!state || !state->player.controller) {
+        return;
+      }
+
+      ImGui::BeginDisabled(state->error.has_value()
+                           || (m_controllerDocument && m_controllerForm != m_controllerOriginal));
+      controllerRuntimeRows(*state->player.controller, [&](Json value) {
+        value["command"] = "control-animation-preview";
+        value["session"] = std::to_string(m_animationSession);
+        return sessionAction(value);
+      });
+      ImGui::EndDisabled();
+    }
+
+    auto controllerPanel() -> void {
+      const auto state = m_controllerDocument->snapshot().value();
+      const bool pending = m_controllerForm != m_controllerOriginal;
+      ImGui::TextWrapped("%s%s", state.path.c_str(), state.dirty ? " *" : "");
+      ImGui::TextWrapped(
+          "First eligible outgoing transition wins. Conditions use AND. "
+          "Apply validates bindings and restarts this isolated preview.");
+
+      if (ImGui::Button("Apply / reset preview")) {
+        controllerAction({{"command", "apply-controller"}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Reset form")) {
+        controllerAction({{"command", "reset-controller-form"}});
+      }
+
+      ImGui::BeginDisabled(pending);
+
+      if (ImGui::Button("Save controller")) {
+        controllerAction({{"command", "save-controller"}});
+      }
+
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!state.canUndo);
+
+      if (ImGui::Button("Undo")) {
+        controllerAction({{"command", "undo-controller"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!state.canRedo);
+
+      if (ImGui::Button("Redo")) {
+        controllerAction({{"command", "redo-controller"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+
+      if (ImGui::Button("Close controller")) {
+        controllerAction({{"command", "close-controller"}, {"discard", false}});
+        return;
+      }
+
+      if ((pending || state.dirty) && ImGui::Button("Discard and close")) {
+        controllerAction({{"command", "close-controller"}, {"discard", true}});
+        return;
+      }
+
+      if (ImGui::CollapsingHeader("Preview runtime", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextWrapped(
+            "Preview parameter edits are transient; the form below defines saved defaults.");
+        previewControllerRows();
+      }
+
+      auto form = m_controllerForm;
+      auto top = Json{{"name", form["name"]}};
+      fields(top);
+      form["name"] = top["name"];
+      const auto chooseState = [&](const char* title, Json& value) {
+        if (PropertyRow row{title};
+            row.visible()
+            && ImGui::BeginCombo("##value", value.get_ref<const std::string&>().c_str())) {
+          for (const auto& item : form["states"]) {
+            const auto& name = item["name"].get_ref<const std::string&>();
+
+            if (ImGui::Selectable(name.c_str(), value == name)) {
+              value = name;
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+      };
+      const auto removeRow = [](Json& rows, std::size_t index, bool ordered) -> bool {
+        if (ordered) {
+          ImGui::BeginDisabled(index == 0);
+
+          if (ImGui::SmallButton("Move up")) {
+            std::swap(rows[index], rows[index - 1]);
+          }
+
+          ImGui::EndDisabled();
+          ImGui::SameLine();
+          ImGui::BeginDisabled(index + 1 == rows.size());
+
+          if (ImGui::SmallButton("Move down")) {
+            std::swap(rows[index], rows[index + 1]);
+          }
+
+          ImGui::EndDisabled();
+          ImGui::SameLine();
+        }
+
+        if (ImGui::SmallButton("Remove")) {
+          rows.erase(rows.begin() + static_cast<Json::difference_type>(index));
+          return true;
+        }
+
+        return false;
+      };
+      chooseState("Entry state", form["initial"]);
+
+      if (ImGui::CollapsingHeader("Typed parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& parameters = form["parameters"];
+
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+          ImGui::PushID(static_cast<int>(i));
+          fields(parameters[i]);
+          bool numeric = parameters[i]["value"].is_number();
+
+          if (ImGui::Checkbox("Numeric parameter", &numeric)) {
+            parameters[i]["value"] = numeric ? Json(0.0) : Json(false);
+          }
+
+          const bool removed = removeRow(parameters, i, false);
+          ImGui::PopID();
+
+          if (removed) {
+            break;
+          }
+        }
+
+        ImGui::BeginDisabled(parameters.size() >= 64);
+
+        if (ImGui::Button("Add parameter")) {
+          parameters.push_back(
+              {{"name", "Parameter" + std::to_string(parameters.size())}, {"value", false}});
+        }
+
+        ImGui::EndDisabled();
+      }
+
+      if (ImGui::CollapsingHeader("States", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& states = form["states"];
+        const auto library = m_animationPreview->stats()->clips;
+
+        for (std::size_t i = 0; i < states.size(); ++i) {
+          ImGui::PushID(static_cast<int>(i));
+          const auto title = states[i]["name"].get<std::string>() + "##state";
+
+          if (ImGui::TreeNode(title.c_str())) {
+            auto properties = states[i];
+            properties.erase("clip");
+            fields(properties);
+
+            for (const auto& [key, value] : properties.items()) {
+              states[i][key] = value;
+            }
+
+            if (PropertyRow row{"Clip"};
+                row.visible()
+                && ImGui::BeginCombo("##value",
+                                     states[i]["clip"].get_ref<const std::string&>().c_str())) {
+              for (const auto& asset : library) {
+                if (ImGui::Selectable(asset.c_str(), states[i]["clip"] == asset)) {
+                  states[i]["clip"] = asset;
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+
+            const bool removed = removeRow(states, i, false);
+            ImGui::TreePop();
+            ImGui::PopID();
+
+            if (removed) {
+              break;
+            }
+          } else {
+            ImGui::PopID();
+          }
+        }
+
+        ImGui::BeginDisabled(states.size() >= 64);
+
+        if (ImGui::Button("Add state")) {
+          states.push_back({{"name", "State" + std::to_string(states.size())},
+                            {"clip", library.front()},
+                            {"speed", 1.0},
+                            {"looping", true}});
+        }
+
+        ImGui::EndDisabled();
+      }
+
+      if (ImGui::CollapsingHeader("Ordered transitions", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& transitions = form["transitions"];
+
+        for (std::size_t i = 0; i < transitions.size(); ++i) {
+          ImGui::PushID(static_cast<int>(i));
+          auto& edge = transitions[i];
+          const auto title = std::to_string(i + 1) + ". " + edge["name"].get<std::string>();
+
+          if (ImGui::TreeNode(title.c_str())) {
+            auto properties = edge;
+            properties.erase("conditions");
+            properties.erase("from");
+            properties.erase("to");
+            properties.erase("exitTime");
+            fields(properties);
+
+            for (const auto& [key, value] : properties.items()) {
+              edge[key] = value;
+            }
+
+            chooseState("From", edge["from"]);
+            chooseState("To", edge["to"]);
+            bool exit = !edge["exitTime"].is_null();
+
+            if (ImGui::Checkbox("Require exit progress", &exit)) {
+              edge["exitTime"] = exit ? Json(1.0) : Json(nullptr);
+            }
+
+            if (exit) {
+              if (PropertyRow row{"Exit progress [0,1]"}; row.visible()) {
+                scalar(edge["exitTime"]);
+              }
+            }
+
+            auto& conditions = edge["conditions"];
+
+            for (std::size_t c = 0; c < conditions.size(); ++c) {
+              ImGui::PushID(static_cast<int>(c));
+              auto& condition = conditions[c];
+
+              if (PropertyRow row{"Parameter"};
+                  row.visible()
+                  && ImGui::BeginCombo(
+                      "##value", condition["parameter"].get_ref<const std::string&>().c_str())) {
+                for (const auto& parameter : form["parameters"]) {
+                  const auto& name = parameter["name"].get_ref<const std::string&>();
+
+                  if (ImGui::Selectable(name.c_str(), condition["parameter"] == name)) {
+                    condition["parameter"] = name;
+                    condition["value"] = parameter["value"];
+                    condition["operation"] = "eq";
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+
+              if (PropertyRow row{"Comparison"};
+                  row.visible()
+                  && ImGui::BeginCombo(
+                      "##value", condition["operation"].get_ref<const std::string&>().c_str())) {
+                for (const auto* op : {"eq", "ne", "lt", "le", "gt", "ge"}) {
+                  if (condition["value"].is_boolean() && std::string_view(op) != "eq"
+                      && std::string_view(op) != "ne") {
+                    continue;
+                  }
+
+                  if (ImGui::Selectable(op, condition["operation"] == op)) {
+                    condition["operation"] = op;
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+
+              auto value = Json{{"value", condition["value"]}};
+              fields(value);
+              condition["value"] = value["value"];
+              const bool removed = removeRow(conditions, c, false);
+              ImGui::PopID();
+
+              if (removed) {
+                break;
+              }
+            }
+
+            ImGui::BeginDisabled(conditions.size() >= 8 || form["parameters"].empty());
+
+            if (ImGui::SmallButton("Add AND condition")) {
+              const auto& parameter = form["parameters"].front();
+              conditions.push_back({{"parameter", parameter["name"]},
+                                    {"operation", "eq"},
+                                    {"value", parameter["value"]}});
+            }
+
+            ImGui::EndDisabled();
+            const bool removed = removeRow(transitions, i, true);
+            ImGui::TreePop();
+            ImGui::PopID();
+
+            if (removed) {
+              break;
+            }
+          } else {
+            ImGui::PopID();
+          }
+        }
+
+        ImGui::BeginDisabled(transitions.size() >= 512 || form["states"].empty());
+
+        if (ImGui::Button("Add transition")) {
+          const auto& name = form["states"].front()["name"];
+          transitions.push_back({{"name", "Transition" + std::to_string(transitions.size())},
+                                 {"from", name},
+                                 {"to", name},
+                                 {"conditions", Json::array()},
+                                 {"fadeSeconds", .12},
+                                 {"minimumSeconds", 0.0},
+                                 {"exitTime", nullptr}});
+        }
+
+        ImGui::EndDisabled();
+      }
+
+      if (form != m_controllerForm) {
+        controllerAction({{"command", "stage-controller"}, {"value", std::move(form)}});
+      }
+    }
+
     auto animationPanel() -> void {
       if (m_play && m_play->stats()->state == PlayState::Running) {
         playAnimationPanel();
+        return;
+      }
+
+      if (m_controllerDocument) {
+        controllerPanel();
+        return;
+      }
+
+      if (m_animationPreview && m_animationPreview->stats()->player.controller) {
+        previewControllerRows();
         return;
       }
 
@@ -12582,7 +13465,7 @@ namespace Dot::Editor {
                        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
       menuBar();
 
-      if (m_clipDocument) {
+      if (m_clipDocument || m_controllerDocument) {
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
           focusedSave();
         }
@@ -12934,7 +13817,11 @@ namespace Dot::Editor {
       ImGui::End();
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
-        if (m_clipDocument) {
+        if (m_controllerDocument) {
+          ImGui::TextWrapped(
+              "Editing %s. Use the Animation panel for typed parameters, states and transitions.",
+              m_controllerDocument->snapshot()->path.c_str());
+        } else if (m_clipDocument) {
           if (m_clipSelection.size() > 1) {
             animationKeyAdjustment();
           }
@@ -12965,6 +13852,22 @@ namespace Dot::Editor {
 
             if (ImGui::Button("Preview animation")) {
               action({{"command", "preview-animation"}, {"entity", std::to_string(*m_editEntity)}});
+            }
+
+            if (!m_edit["animation"]["controller"].is_null()) {
+              if (ImGui::Button("Edit animation controller")) {
+                action({{"command", "open-controller"}, {"entity", std::to_string(*m_editEntity)}});
+              }
+            } else {
+              ImGui::InputText("Controller asset", &m_newControllerPath);
+              ImGui::InputText("Controller name", &m_newControllerName);
+
+              if (ImGui::Button("Create controller")) {
+                action({{"command", "create-controller"},
+                        {"entity", std::to_string(*m_editEntity)},
+                        {"path", m_newControllerPath},
+                        {"name", m_newControllerName}});
+              }
             }
 
             if (ImGui::Button("Edit animation clip")) {
@@ -13168,7 +14071,8 @@ namespace Dot::Editor {
           ImGui::CloseCurrentPopup();
         }
 
-        ImGui::BeginDisabled(m_clipDocument && (m_clipForm != m_clipOriginal || clipGesture()));
+        ImGui::BeginDisabled((m_clipDocument && (m_clipForm != m_clipOriginal || clipGesture()))
+                             || (m_controllerDocument && m_controllerForm != m_controllerOriginal));
 
         if (ImGui::Button("Save and close")) {
           action({{"command", "save-close"}});

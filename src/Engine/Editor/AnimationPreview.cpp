@@ -88,8 +88,13 @@ namespace Dot::Editor {
   AnimationPreview::~AnimationPreview() = default;
 
   auto AnimationPreview::create(const World::Scene& source, const Core::FileSystem& assets,
-                                std::uint64_t owner, std::optional<Animation::ClipAsset> draft)
+                                std::uint64_t owner, std::optional<Animation::ClipAsset> draft,
+                                std::optional<Animation::ControllerAsset> controller)
       -> Core::Result<AnimationPreview> {
+    if (draft && controller) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Choose one clip or controller draft");
+    }
+
     auto entity = source.findEntity(owner);
 
     if (!entity) {
@@ -134,6 +139,9 @@ namespace Dot::Editor {
                               "Draft is not in the preview player's library");
           }
 
+          /** Clip audition is a separate manual player in the clone only.
+           * 单片段试听仅在克隆内显式解除状态机，不修改编辑源。 */
+          description.properties.controller.reset();
           description.properties.clip
               = static_cast<std::uint32_t>(selected - description.properties.clips.begin());
         }
@@ -147,7 +155,14 @@ namespace Dot::Editor {
 
       const std::vector<Animation::ClipAsset> decoded
           = draft ? std::vector{*draft} : std::vector<Animation::ClipAsset>{};
-      auto players = Animation::ScenePlayers::create(scene, assets, decoded);
+      if (controller && info->animation->controller != controller->asset) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Controller draft does not match the selected player");
+      }
+
+      const std::vector<Animation::ControllerAsset> controllers
+          = controller ? std::vector{*controller} : std::vector<Animation::ControllerAsset>{};
+      auto players = Animation::ScenePlayers::create(scene, assets, decoded, controllers);
 
       if (!players) {
         return std::unexpected(players.error());
@@ -160,7 +175,9 @@ namespace Dot::Editor {
         return std::unexpected(state.error());
       }
 
-      auto posed = players->seek(handle, state->playback.speed < 0 ? state->duration : 0);
+      auto posed = state->controller
+                       ? players->resetController(handle)
+                       : players->seek(handle, state->playback.speed < 0 ? state->duration : 0);
 
       if (!posed) {
         return std::unexpected(posed.error());
@@ -187,7 +204,21 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
     }
 
-    auto applied = m_impl->apply([&] {
+    auto applied = m_impl->apply([&]() -> Core::Result<void> {
+      auto state = m_impl->m_players.state(m_impl->m_owner);
+
+      if (!state) {
+        return Core::Result<void>{std::unexpected(state.error())};
+      }
+
+      if (state->controller) {
+        if (clip != state->clip || restart) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Controller preview owns base playback");
+        }
+
+        return m_impl->m_players.play(m_impl->m_owner);
+      }
+
       return m_impl->m_players.play(m_impl->m_owner, clip, restart || m_impl->m_bindPose);
     });
 
@@ -238,6 +269,19 @@ namespace Dot::Editor {
     }
 
     return result;
+  }
+
+  auto AnimationPreview::parameters(std::span<const Animation::ControllerParameter> values)
+      -> Core::Result<void> {
+    return m_impl ? m_impl->apply(
+                        [&] { return m_impl->m_players.parameters(m_impl->m_owner, values); })
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
+  }
+
+  auto AnimationPreview::resetController() -> Core::Result<void> {
+    return m_impl
+               ? m_impl->apply([&] { return m_impl->m_players.resetController(m_impl->m_owner); })
+               : Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
   }
 
   auto AnimationPreview::seek(double seconds, bool pause) -> Core::Result<void> {
@@ -304,7 +348,8 @@ namespace Dot::Editor {
              && ((layer.playback.playing && layer.playback.speed != 0) || layer.playback.fade);
     });
 
-    if (state->playback.paused || (!state->playback.playing && !layerPlaying) || seconds == 0) {
+    if (state->playback.paused || (!state->controller && !state->playback.playing && !layerPlaying)
+        || seconds == 0) {
       return {};
     }
 
