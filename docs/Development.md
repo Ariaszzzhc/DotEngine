@@ -15029,3 +15029,140 @@ art/audio or release archive. Desktop inventory remains locked; physical mode-me
 reference-field interaction, dragging, narrow-layout and subjective hearing are
 unverified. Only macOS execution is claimed. Broader animation authoring, streaming,
 final character/environment quality and overall production maturity remain open.
+
+
+## 2026-10-18 — Native animation retarget authoring
+
+Continue the actual character-action/Prism workflow with explicit saved-reference
+retargeting, rather than adding another stage executable or procedural asset tool.
+The static module library now has pure owned rig capture/validation and bounded
+reference-relative world-rotation baking. Match reference poses first, use checked
+one-to-one logical IDs/names and preserve mapped ancestry through helpers. Never map
+the owner anchor; its instance placement and outside subtrees remain untouched.
+Keep target local proportions/scales; emit complete bound subtrees of mapped roots,
+holding unmapped descendants at target reference. Optional mapped-root displacement
+uses an explicit world-unit scale. This is offline sampled transfer, without auto
+rest-pose alignment, contact/proportion correction, IK or physics root motion.
+
+Positive uniform references, finite invertible transforms, depth/cycle/binding
+checks and native clip bounds fail explicitly. Scale keys must match reference
+within the import tolerance; nonzero cubic scale tangents reject even between bake
+samples. Always include the exact float endpoint once. Bound samples/keys/evaluated
+nodes, check stop requests and never publish partial results. Shared normalized
+rotation composition/inversion replace the private additive quaternion helper;
+existing additive ownership/clock/overflow regressions remain relevant.
+
+Editor preparation owns a jthread with shared mutex-protected completion and plain
+owned inputs; worker scenes/handles never cross threads. Freeze authoring/project
+metadata, load saved references/source clip, validate source library and target
+binding topology/helpers, bake and run actual native preview/skin/writer preflight.
+Preparation writes no files or components. Reap cancellation/failure on the creator
+thread; destruction joins bounded work. Ready publication checks exact source,
+reference, clip and metadata bytes plus authoring baseline/revision/scope/selection.
+Create a new clip, then stage the existing player's appended library; normal
+Inspector Apply/Save remains separate and preserves flags/controller/layers.
+Native animation publication uses the existing 64 MiB codec budget separately from
+generic 1 MiB text. Profile codecs are strict portable bounded JSON; save uses the
+loaded exact disk baseline or creates a new file. Inspector reference/player/clip
+choices, virtualized mapping rows, name suggestions, rate/displacement, preparation,
+accept/cancel and saved profiles share strict product operations. Suggestions only
+normalize unique ASCII names; they do not infer humanoid semantics.
+
+Core regression cases cover reference rotations/proportions, untouched owner and
+outside nodes, displaced units/anchors, helper ancestry, malformed graphs/scales,
+unknown/duplicate/renamed channels, budgets, endpoint rounding, cancellation and
+owned capture. Editor cases cover strict profiles, target topology/helpers/writer
+conflicts, owned preflight without writes, changed input/project bytes, one-shot
+moves/owner threads/cancel/failure and native/generic size limits. The large-source
+case also checks a valid source above 7 MiB; review corrected an accidental smaller
+reader budget to the actual native 64 MiB bound. A later review added between-sample
+scale key/cubic tangent rejection rather than weakening the unsupported-scale
+contract. Existing targets only; no device/window unit tests or desktop integration.
+
+Actual Debug editor creates a fresh ordinary PrismRetarget project, opens the
+existing character-action study and imports the retained CC0 donor GLB through the
+background model-import publish/close workflow. Inspect both 67-binding references,
+review 51 explicit pairs, save/reload a profile, cancel/discard unpublished work,
+reject a wrong target name and bake a ready 41-frame/63-node/189-track clip. A Ready
+resource write rejects. Changing the source clip bytes after preparation rejects
+publication without a file; restoring the exact original bytes allows the retained
+proof to publish. Apply/Save/reopen the ordinary scene and profile. No helper writes
+animation keys or manufactures meshes.
+
+Actual native preview pixels expose mismatched reference arm poses: source arms
+down versus imported target arms out produces an unwanted arms-out walk. Save the
+existing Main character's aligned authoring pose as ordinary selected scene content
+through the product, update the saved profile and bake to a new path. Actual 0/.4
+second native preview snapshots and pixels now show the aligned arms-down walk.
+Do not call this automatic calibration or polished contacts. Actual Play runs the
+new slot 8 without diagnostics, Stop restores exact authoring, export and relocate
+an ordinary Study game. Restore Inspection/default slot 7 while retaining the new
+library slot; Main's eight clips/controller and seven adjusted locomotion files
+remain unchanged. Add only real imported/native product outputs to the editable
+example: donor bundle, aligned reference, saved profile and baked native clip.
+A durable example regression rebakes exactly identical bytes and checks native
+preview, leg motion, anchor placement and the unchanged Main library.
+
+The first native Study launch fails before creating a control endpoint because its
+explicit save directory did not exist; retain that actual nonzero exit/stderr,
+create the directory and launch normally. Hide only the owned authoring project
+path. The relocated native game plays the baked asset, advances its clock and
+presents actual completed frames/HUD without diagnostics/failures. A helper's
+wrong `time` field is corrected to the real `timeSeconds` snapshot while retaining
+the same live process. A rejected editor close omitted required `discard`; retain
+and ACK its strict error, then send the correct close. Observation timeout is not
+used as a restart signal. Debug editor and Study native process both have actual
+exit zero before consuming successful close replies, with 153/19 replies ACKed
+and both retired endpoints explicitly cleared. Retain the ordinary projects/games,
+saves, raw responses, screenshots and build/test/error/provenance evidence under
+`build/retarget-review`; temporary orchestration remains ignored and is removed
+only after all owned native work is terminal.
+
+Final configure/builds succeed in Debug and Release using the inherited toolchain.
+After the last scale validation change, full Debug passes 1689/1689 in 270.71 seconds
+and Release/NDEBUG passes 1689/1689 in 38.25 seconds: 547 unit, 1142 integration,
+including 265 compiler, 39 audio-native and 186 offscreen cases. Earlier full Debug
+also passed before that review correction; the final logs are
+`full-scale-debug.log`/`full-release.log`. Formatting and staged diff checks pass.
+Review covers ownership/jthread completion, helper ancestry, sampled rotations,
+scale/time/overflow bounds, input-byte conflicts, persistent resource versus scene
+history, contextual failures and target-platform assumptions. No new dependencies,
+installed header tree, acceptance executable, sanitizer or compiler override.
+
+Final Release editor creates a separate ordinary PrismRelease project, loads the
+saved example profile, prepares the same 41/63/189 result and discards it without a
+file. Audition the saved slot 8 at .4 seconds and inspect actual native pixels.
+Export/relocate that selected Study scene, restore its saved default slot 7, then
+open Main. Actual movement/jump, additive-layer inspection, pause/completed single
+step/resume and F6/move/F7 produce zero checkpoint feet error. Stop restores exact
+authoring; export/relocate Main. A helper initially submits an unsupported clock
+command; correct it to the existing strict set-paused/step schema while preserving
+the live process and original movement/jump evidence, without a product change.
+
+Hide only the owned authoring path and launch Release Study plus two fresh Main
+native processes against a new explicit save directory. Study advances the baked
+slot 8 clock. Main one moves/jumps and observes active additive Inspection while
+paused. Input render-frame counts are not simulation seconds: an attempted F6
+while airborne correctly reports Land before saving. Observe actual native
+Grounded intent before saving again; do not enlarge timing budgets or substitute
+success. Both same-process restore and Main two's restore of Main one's save have
+zero feet error at the unchanged 1e-5 bound. Actual completed native frames at final
+snapshots are 39/3491/50, with HUD rasterizations, failureCount zero and empty
+runtime diagnostics. These counters are workflow evidence, not a performance claim.
+Native stderr contains only the expected nine startup-preparation progress lines.
+
+All six successful current native editor/game handles have actual exit zero before
+successful close reply consumption. The earlier pre-endpoint missing-directory
+startup has its separate actual nonzero exit. ACK all 501 current replies, explicitly
+clear all six retired endpoints and restore both owned authoring paths. No current
+abandoned endpoint; the previous stage's interrupted archive remains unchanged.
+All 3168 earlier guarded files remain unchanged; retain 3998 guards including the
+new ordinary 143/142-file projects, 182/181/181-file relocated games and save.
+Thirty-four current Debug/Release/kit/export Mach-O paths pass strict signing; both
+Release exported game hashes match the current kit. Remove temporary orchestration,
+recovery, source fragments and requests only after native completion, preserving
+raw responses, captures, profiles, ordinary projects/games/save and provenance.
+Only arm64 macOS execution is claimed. Desktop remains locked, so human mapping
+controls, narrow layouts, dragging and subjective animation/contact quality are
+unverified. Automatic pose alignment/IK/contact correction, final art, streaming,
+large-game scale and overall production maturity remain unfinished.

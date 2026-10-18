@@ -84,18 +84,6 @@ namespace Dot::Animation {
                         static_cast<float>(std::lerp(double(first.z), double(last.z), weight)), 0};
     }
 
-    auto product(Math::Quat first, Math::Quat last) -> Core::Result<Math::Quat> {
-      return Math::normalized(
-          {static_cast<float>(double(first.w) * last.x + double(first.x) * last.w
-                              + double(first.y) * last.z - double(first.z) * last.y),
-           static_cast<float>(double(first.w) * last.y - double(first.x) * last.z
-                              + double(first.y) * last.w + double(first.z) * last.x),
-           static_cast<float>(double(first.w) * last.z + double(first.x) * last.y
-                              - double(first.y) * last.x + double(first.z) * last.w),
-           static_cast<float>(double(first.w) * last.w - double(first.x) * last.x
-                              - double(first.y) * last.y - double(first.z) * last.z)});
-    }
-
     /** Add local offsets to the current ordered pose, never to the last output.
      * Rotation is current * slerp(identity, inverse(reference) * sample, weight);
      * scale uses current * lerp(1, sample/reference, weight), preserving signs.
@@ -105,11 +93,13 @@ namespace Dot::Animation {
     auto additive(Path path, Math::Vec4 current, Math::Vec4 sample, Math::Vec4 reference,
                   double weight) -> Core::Result<Math::Vec4> {
       if (path == Path::Rotation) {
-        auto delta = product({-reference.x, -reference.y, -reference.z, reference.w},
-                             {sample.x, sample.y, sample.z, sample.w});
+        auto delta
+            = Math::multiplyRotations({-reference.x, -reference.y, -reference.z, reference.w},
+                                      {sample.x, sample.y, sample.z, sample.w});
         auto weighted = delta ? Math::slerp({}, *delta, weight)
                               : Core::Result<Math::Quat>{std::unexpected(delta.error())};
-        auto result = weighted ? product({current.x, current.y, current.z, current.w}, *weighted)
+        auto result = weighted ? Math::multiplyRotations(
+                                     {current.x, current.y, current.z, current.w}, *weighted)
                                : Core::Result<Math::Quat>{std::unexpected(weighted.error())};
         return result ? Core::Result<Math::Vec4>{{result->x, result->y, result->z, result->w}}
                       : std::unexpected(result.error());

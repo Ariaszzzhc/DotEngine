@@ -245,3 +245,31 @@ Placement stays local and additions retain their current entity values. Other
 placements refresh explicitly; source writes survive scene Undo. Conflicts, external
 references and proposed dependency cycles reject before publication. See
 [shared-source authoring](../../docs/SceneContent.md#applying-complete-instance-contents).
+
+
+## Editable retargeted motion
+
+The existing character-action study keeps Inspection as its default (slot 7) and
+adds Transferred walk at slot 8. Select Surveyor, audition that individual clip,
+pause/seek, then end audition to return to authoring. Main keeps its existing eight
+clips/controller and seven locomotion actions.
+
+Inspector → Retarget animation can load `assets/actions/walk.dotretarget`. Its
+51 explicit pairs transfer the retained CC0 donor's native Walk_Loop from
+`assets/motion-source/model.dotscene` to the saved aligned reference
+`assets/actions/surveyor-reference.dotscene`. The latter is ordinary scene content
+saved from Main's current character pose through the editor. Both references have
+67 bindings; the output bakes 41 samples at 30 Hz, 63 nodes and 189 TRS tracks.
+The original imported target reference has a different arm posture and must not be
+substituted without reviewing the pose. Matching names alone cannot align poses.
+
+Inspect references, review mappings/rate/root displacement, choose a **new** output
+path, Prepare, Accept, then Inspector Apply and scene Save. Save/load profiles and
+all operations share the strict [agent interface](../../docs/Editor.md#animation-retarget-authoring).
+The generated clip is an ordinary editable `.dotanimation`, so preview, Play and
+native export use the existing animation pipeline. The saved example includes the
+native donor bundle and original source/license evidence for reproducible baking.
+This is sampled offline transfer with explicit reference poses, without automatic
+proportion correction, foot locking, IK or physics root motion. It does not replace
+the existing proportion-adjusted locomotion library or establish final character
+animation quality.

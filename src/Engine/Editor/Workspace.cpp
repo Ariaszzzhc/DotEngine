@@ -46,6 +46,7 @@ import Dot.Editor.UiSession;
 import Dot.UI.Files;
 import Dot.Animation.ControllerFiles;
 import Dot.Editor.AnimationCreation;
+import Dot.Editor.AnimationRetarget;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
 import Dot.Editor.AnimationFrames;
@@ -547,6 +548,26 @@ namespace Dot::Editor {
     std::string m_selectedResource;
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
+    std::optional<AnimationRetarget> m_retargetJob;
+    std::optional<RetargetCreation> m_retargetReady;
+    std::optional<Core::Error> m_retargetError;
+    std::optional<TextDocument> m_retargetProfileDocument;
+    std::uint64_t m_retargetSession{}, m_retargetOwner{}, m_retargetRevision{}, m_retargetScope{};
+    bool m_retargetCancel{};
+    std::string m_retargetState{"idle"};
+    std::string m_retargetPath{"assets/retargeted.dotanimation"};
+    std::string m_retargetProfilePath{"assets/animation.dotretarget"};
+    std::string m_retargetBaseline;
+    Json m_retargetSource, m_retargetTarget, m_retargetSummary;
+    Json m_retargetForm{{"sourceScene", ""},
+                        {"sourceEntity", "1"},
+                        {"targetScene", ""},
+                        {"targetEntity", "1"},
+                        {"clip", ""},
+                        {"name", "Retargeted animation"},
+                        {"rate", {{"numerator", 30U}, {"denominator", 1U}}},
+                        {"mappings", Json::array()},
+                        {"translation", nullptr}};
     std::string m_animationPath{"assets/new.dotanimation"};
     std::string m_animationName{"New animation"};
     double m_animationDuration{1};
@@ -3197,6 +3218,453 @@ namespace Dot::Editor {
             {"buttons", consumed.buttons}}}};
     }
 
+    auto retargetBusy() const -> bool {
+      return m_retargetJob.has_value() || m_retargetReady.has_value();
+    }
+
+    auto pollRetarget() -> void {
+      if (!m_retargetJob) {
+        return;
+      }
+
+      auto ready = m_retargetJob->ready();
+
+      if (ready && !*ready) {
+        return;
+      }
+
+      auto value = ready ? m_retargetJob->take()
+                         : Core::Result<RetargetCreation>{std::unexpected(ready.error())};
+      m_retargetJob.reset();
+
+      if (m_retargetCancel
+          && (value
+              || (value.error().code == Core::ErrorCode::Unavailable
+                  && value.error().message == "Animation retarget cancelled"))) {
+        m_retargetState = "cancelled";
+        m_retargetBaseline.clear();
+        return;
+      }
+
+      if (!value) {
+        m_retargetState = "failed";
+        m_retargetError = value.error();
+        m_retargetBaseline.clear();
+        return;
+      }
+
+      m_retargetSummary = {{"frames", value->report.frames},
+                           {"nodes", value->report.emittedNodes},
+                           {"tracks", value->report.clip.description().value()->tracks.size()},
+                           {"unmappedSource", value->report.unmappedSource},
+                           {"unmappedTarget", value->report.unmappedTarget}};
+      m_retargetReady.emplace(std::move(*value));
+      m_retargetState = "ready";
+    }
+
+    auto retargetStatus() const -> Json {
+      return {{"session", std::to_string(m_retargetSession)},
+              {"state", m_retargetState},
+              {"entity", std::to_string(m_retargetOwner)},
+              {"revision", std::to_string(m_retargetRevision)},
+              {"path", m_retargetPath},
+              {"profilePath", m_retargetProfilePath},
+              {"profile", m_retargetForm},
+              {"source", m_retargetSource},
+              {"target", m_retargetTarget},
+              {"result", m_retargetSummary},
+              {"error", m_retargetError ? errorJson(*m_retargetError)["error"] : Json(nullptr)}};
+    }
+
+    auto referenceJson(const RetargetReference& value) const -> Json {
+      Json bindings = Json::array();
+
+      for (const auto& node : value.rig.nodes) {
+        if (!node.binding) {
+          continue;
+        }
+
+        auto parent = node.parent;
+
+        while (parent && !value.rig.nodes[*parent].binding) {
+          parent = value.rig.nodes[*parent].parent;
+        }
+
+        bindings.push_back(
+            {{"node", *node.binding},
+             {"name", node.name},
+             {"anchor", &node == &value.rig.nodes[value.rig.anchor]},
+             {"parent", parent ? Json(*value.rig.nodes[*parent].binding) : Json(nullptr)}});
+      }
+
+      return {{"entity", std::to_string(value.entity)},
+              {"name", value.name},
+              {"clips", value.clips},
+              {"bindings", std::move(bindings)}};
+    }
+
+    auto retargetRequest(const Json& parsed) -> Core::Result<std::string> {
+      const auto command = parsed.at("command").get<std::string>();
+      pollRetarget();
+
+      if (command == "animation-retarget-status") {
+        Codec::requireFields(parsed, {"command"});
+        return Json{{"ok", true}, {"retarget", retargetStatus()}}.dump();
+      }
+
+      if (command == "cancel-animation-retarget") {
+        Codec::requireFields(parsed, {"command", "session"});
+
+        if (Codec::id(parsed["session"]) != m_retargetSession || !retargetBusy()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "No current retarget preparation/result to cancel");
+        }
+
+        if (m_retargetJob) {
+          m_retargetCancel = true;
+          m_retargetState = "cancelling";
+          m_retargetJob->requestStop();
+        } else {
+          m_retargetReady.reset();
+          m_retargetBaseline.clear();
+          m_retargetState = "cancelled";
+        }
+
+        return Json{{"ok", true}, {"retarget", retargetStatus()}}.dump();
+      }
+
+      if (command == "publish-animation-retarget") {
+        Codec::requireFields(parsed, {"command", "session", "revision"});
+        const auto state = m_document->stats().value();
+
+        if (!m_retargetReady || Codec::id(parsed["session"]) != m_retargetSession
+            || Codec::id(parsed["revision"]) != m_retargetRevision
+            || state.revision != m_retargetRevision || state.scene != m_retargetScope
+            || !state.selected || state.selected->value != m_retargetOwner || playing()
+            || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || m_text || m_material || m_pendingClose || m_captureDialog
+            || m_sceneDialog) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Publish retarget result only with its unchanged selected authoring "
+                            "scene and no other mode/draft/dialog");
+        }
+
+        auto bytes = World::encodeScene(*m_document->scene().value());
+
+        if (!bytes || *bytes != m_retargetBaseline) {
+          return bytes ? Core::fail(Core::ErrorCode::InvalidState,
+                                    "Retarget authoring snapshot changed")
+                       : std::unexpected(bytes.error());
+        }
+
+        auto valid = validateRetargetInputs(m_project->files().value(), *m_retargetReady);
+
+        if (!valid) {
+          return std::unexpected(valid.error());
+        }
+
+        syncInspector();
+        auto candidate = m_edit;
+        candidate["animation"] = Codec::parseJson(
+            Animation::encodePlayerProperties(m_retargetReady->animation.player).value());
+        auto prepared = m_document->prepareEntityEdit(candidate.dump(), state.revision);
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        auto path = m_retargetPath;
+        auto response = Json{{"ok", true},
+                             {"path", path},
+                             {"staged", true},
+                             {"entity", std::to_string(m_retargetOwner)},
+                             {"revision", std::to_string(state.revision)}}
+                            .dump();
+        ResourceLimits nativeLimits;
+        nativeLimits.textBytes = 64 * 1024 * 1024;
+        auto nativeResources = ResourceStore::open(*m_project, nativeLimits);
+        auto published = nativeResources
+                             ? nativeResources->createText(path, m_retargetReady->animation.text)
+                             : Core::Result<void>{std::unexpected(nativeResources.error())};
+
+        if (!published) {
+          return std::unexpected(published.error());
+        }
+
+        m_edit.swap(candidate);
+        m_selectedResource.swap(path);
+        m_retargetReady.reset();
+        m_retargetBaseline.clear();
+        m_retargetState = "published";
+        try {
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(refreshed.error().code,
+                              "Retarget clip created and player staged; catalog refresh failed: "
+                                  + refreshed.error().message);
+          }
+        } catch (const std::exception& error) {
+          return Core::fail(Core::ErrorCode::External,
+                            "Retarget clip created and player staged; catalog refresh failed: "
+                                + std::string(error.what()));
+        }
+
+        return response;
+      }
+
+      if (retargetBusy()) {
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Finish or discard the current retarget result before changing its profile");
+      }
+
+      if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+          || pendingOcclusion() || m_text || m_material || m_pendingClose || m_captureDialog
+          || m_sceneDialog || m_sourceUpdate || m_modelImport || m_reimport || m_uiEditor) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Retarget profile operations require a stopped authoring workspace "
+                          "without drafts/jobs/dialogs");
+      }
+
+      if (command == "stage-retarget-profile") {
+        Codec::requireFields(parsed, {"command", "value"});
+        auto profile = decodeRetargetProfile(parsed["value"].dump());
+
+        if (!profile) {
+          return std::unexpected(profile.error());
+        }
+
+        m_retargetForm = Codec::parseJson(encodeRetargetProfile(*profile).value());
+        m_retargetSource = m_retargetTarget = nullptr;
+      } else if (command == "inspect-retarget-reference") {
+        Codec::requireFields(parsed, {"command", "role", "path"});
+        const auto role = parsed["role"].get<std::string>();
+
+        if (role != "source" && role != "target") {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Reference role must be source or target");
+        }
+
+        const auto path = parsed["path"].get<std::string>();
+        auto inspected = inspectRetargetReference(m_project->files().value(), path);
+
+        if (!inspected) {
+          return std::unexpected(inspected.error());
+        }
+
+        Json values = Json::array();
+
+        for (const auto& value : *inspected) {
+          values.push_back(referenceJson(value));
+        }
+
+        m_retargetForm[role + "Scene"] = path;
+        auto& selected = m_retargetForm[role + "Entity"];
+
+        if (!values.empty() && !std::ranges::any_of(values, [&](const Json& item) {
+              return item["entity"] == selected;
+            })) {
+          selected = values.front()["entity"];
+        }
+
+        if (role == "source") {
+          m_retargetSource = std::move(values);
+        } else {
+          m_retargetTarget = std::move(values);
+        }
+      } else if (command == "suggest-retarget-mappings") {
+        Codec::requireFields(parsed, {"command"});
+        const auto source = retargetReferenceChoice(true);
+        const auto target = retargetReferenceChoice(false);
+
+        if (!source || !target) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Inspect and select both reference players first");
+        }
+
+        const auto key = [](std::string_view name) {
+          std::string value;
+
+          for (const char c : name) {
+            if (c >= 'A' && c <= 'Z') {
+              value.push_back(static_cast<char>(c - 'A' + 'a'));
+            } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+              value.push_back(c);
+            } else if (c != '_' && c != '.' && c != '-') {
+              return std::string{};
+            }
+          }
+
+          return value;
+        };
+        std::map<std::string, std::vector<const Json*>> from, to;
+
+        for (const auto& binding : (*source)["bindings"]) {
+          if (!binding["anchor"].get<bool>()) {
+            from[key(binding["name"].get<std::string>())].push_back(&binding);
+          }
+        }
+
+        for (const auto& binding : (*target)["bindings"]) {
+          if (!binding["anchor"].get<bool>()) {
+            to[key(binding["name"].get<std::string>())].push_back(&binding);
+          }
+        }
+
+        Json mappings = Json::array();
+
+        for (const auto& [name, targets] : to) {
+          const auto sources = from.find(name);
+
+          if (!name.empty() && targets.size() == 1 && sources != from.end()
+              && sources->second.size() == 1) {
+            const auto& a = *sources->second.front();
+            const auto& b = *targets.front();
+            mappings.push_back({{"source", a["node"]},
+                                {"sourceName", a["name"]},
+                                {"target", b["node"]},
+                                {"targetName", b["name"]}});
+          }
+        }
+
+        m_retargetForm["mappings"] = std::move(mappings);
+        m_retargetForm["translation"] = nullptr;
+      } else if (command == "load-retarget-profile" || command == "save-retarget-profile") {
+        Codec::requireFields(parsed, {"command", "path"});
+        const auto path = parsed["path"].get<std::string>();
+
+        if (!path.starts_with("assets/") || !path.ends_with(".dotretarget")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Choose an assets .dotretarget profile");
+        }
+
+        if (command == "load-retarget-profile") {
+          auto document = m_resources->openText(path);
+          auto value = document ? document->snapshot()
+                                : Core::Result<TextSnapshot>{std::unexpected(document.error())};
+          auto profile = value ? decodeRetargetProfile(value->text)
+                               : Core::Result<RetargetProfile>{std::unexpected(value.error())};
+
+          if (!profile) {
+            return std::unexpected(profile.error());
+          }
+
+          m_retargetForm = Codec::parseJson(encodeRetargetProfile(*profile).value());
+          m_retargetProfileDocument.emplace(std::move(*document));
+          m_retargetProfilePath = path;
+          m_retargetSource = m_retargetTarget = nullptr;
+        } else {
+          auto profile = decodeRetargetProfile(m_retargetForm.dump());
+          auto text = profile ? encodeRetargetProfile(*profile)
+                              : Core::Result<std::string>{std::unexpected(profile.error())};
+
+          if (!text) {
+            return std::unexpected(text.error());
+          }
+
+          if (m_retargetProfileDocument && m_retargetProfileDocument->snapshot()->path == path) {
+            auto original = m_retargetProfileDocument->snapshot().value();
+            auto changed = m_retargetProfileDocument->replace(*text, original.revision);
+            auto saved = changed ? m_retargetProfileDocument->save(
+                                       m_retargetProfileDocument->snapshot()->revision)
+                                 : changed;
+
+            if (!saved) {
+              return std::unexpected(saved.error());
+            }
+          } else {
+            auto created = m_resources->createText(path, *text);
+
+            if (!created) {
+              return std::unexpected(created.error());
+            }
+
+            auto document = m_resources->openText(path);
+
+            if (!document) {
+              return Core::fail(document.error().code, "Retarget profile created; reopen failed: "
+                                                           + document.error().message);
+            }
+
+            m_retargetProfileDocument.emplace(std::move(*document));
+            m_retargetProfilePath = path;
+          }
+
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(
+                refreshed.error().code,
+                "Retarget profile saved; catalog refresh failed: " + refreshed.error().message);
+          }
+        }
+      } else if (command == "begin-animation-retarget") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "path", "value"});
+        const auto state = m_document->stats().value();
+        const auto owner = Codec::id(parsed["entity"]);
+
+        if (Codec::id(parsed["revision"]) != state.revision || !state.selected
+            || state.selected->value != owner || playing() || previewing() || m_transform
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || m_text
+            || m_material || m_pendingClose || m_captureDialog || m_sceneDialog || m_sourceUpdate
+            || m_modelImport || m_reimport
+            || m_retargetSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Retarget creation requires the current selected player and no other "
+                            "mode/draft/job/dialog");
+        }
+
+        auto profile = decodeRetargetProfile(parsed["value"].dump());
+
+        if (!profile) {
+          return std::unexpected(profile.error());
+        }
+
+        const auto path = parsed["path"].get<std::string>();
+        auto baseline = World::encodeScene(*m_document->scene().value());
+        auto job = baseline ? AnimationRetarget::begin(*m_project, *m_document->scene().value(),
+                                                       owner, path, *profile)
+                            : Core::Result<AnimationRetarget>{std::unexpected(baseline.error())};
+
+        if (!job) {
+          return std::unexpected(job.error());
+        }
+
+        m_retargetBaseline = std::move(*baseline);
+        m_retargetForm = parsed["value"];
+        m_retargetPath = path;
+        m_retargetOwner = owner;
+        m_retargetRevision = state.revision;
+        m_retargetScope = state.scene;
+        ++m_retargetSession;
+        m_retargetSummary = nullptr;
+        m_retargetError.reset();
+        m_retargetCancel = false;
+        m_retargetState = "preparing";
+        m_retargetJob.emplace(std::move(*job));
+      } else {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown animation retarget operation");
+      }
+
+      return Json{{"ok", true}, {"retarget", retargetStatus()}}.dump();
+    }
+
+    auto retargetReferenceChoice(bool source) const -> const Json* {
+      const auto& values = source ? m_retargetSource : m_retargetTarget;
+      const auto& selected = m_retargetForm[source ? "sourceEntity" : "targetEntity"];
+
+      if (values.is_array()) {
+        for (const auto& item : values) {
+          if (item["entity"] == selected) {
+            return &item;
+          }
+        }
+      }
+
+      return nullptr;
+    }
+
     auto execute(std::string_view request) -> Core::Result<std::string> {
       auto valid = validRequest(request);
 
@@ -3207,6 +3675,25 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "animation-retarget-status" || command == "cancel-animation-retarget"
+          || command == "publish-animation-retarget" || command == "stage-retarget-profile"
+          || command == "inspect-retarget-reference" || command == "suggest-retarget-mappings"
+          || command == "load-retarget-profile" || command == "save-retarget-profile"
+          || command == "begin-animation-retarget") {
+        return retargetRequest(parsed);
+      }
+
+      if (retargetBusy() && command != "inspect" && command != "close" && command != "cancel-close"
+          && command != "show-pane" && command != "set-theme" && command != "request-focus"
+          && command != "focus-view" && command != "navigate-view" && command != "resources"
+          && command != "inspect-profile" && command != "set-application-profiling"
+          && command != "set-profiling" && command != "capture-viewport"
+          && command != "save-capture") {
+        return Core::fail(
+            Core::ErrorCode::InvalidState,
+            "Finish or discard animation retargeting before document/resource operations");
+      }
 
       if (command == "begin-source-update") {
         Codec::requireFields(parsed, {"command", "revision", "operations"});
@@ -7563,6 +8050,7 @@ namespace Dot::Editor {
           {"uiEditor", uiStatus()},
           {"sourceUpdate", m_sourceUpdate ? sourceUpdateStatus().value() : Json(nullptr)},
           {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
+          {"animationRetarget", retargetStatus()},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
           {"capture", captureStatus()},
@@ -8847,6 +9335,292 @@ namespace Dot::Editor {
       ImGui::TreePop();
     }
 
+    auto animationRetargetFields() -> void {
+      if ((!m_edit["animation"].is_object() && !retargetBusy())
+          || !ImGui::TreeNode("Retarget animation")) {
+        return;
+      }
+
+      pollRetarget();
+      ImGui::TextWrapped(
+          "Transfer motion from matching saved reference poses. Align physical arm/leg postures "
+          "before mapping; names alone do not align rest poses. Review explicit joint pairs. "
+          "Covered but unmapped descendants keep the target reference pose; "
+          "character placement stays separate. No IK or foot planting is applied.");
+      ImGui::Text("State: %s", m_retargetState.c_str());
+
+      if (m_retargetError) {
+        ImGui::TextWrapped("%s", m_retargetError->message.c_str());
+      }
+
+      if (!m_retargetSummary.is_null()) {
+        ImGui::Text("%zu frames / %zu nodes / %zu tracks",
+                    m_retargetSummary["frames"].get<std::size_t>(),
+                    m_retargetSummary["nodes"].get<std::size_t>(),
+                    m_retargetSummary["tracks"].get<std::size_t>());
+        ImGui::Text("Unmapped source/target bindings: %zu / %zu",
+                    m_retargetSummary["unmappedSource"].size(),
+                    m_retargetSummary["unmappedTarget"].size());
+      }
+
+      if (retargetBusy()) {
+        ImGui::Text("Result for entity %llu", static_cast<unsigned long long>(m_retargetOwner));
+        ImGui::TextWrapped(
+            "Finish or discard this preparation before changing documents or resources.");
+
+        if (m_retargetReady && ImGui::Button("Create retarget clip and stage player")) {
+          sessionAction({{"command", "publish-animation-retarget"},
+                         {"session", std::to_string(m_retargetSession)},
+                         {"revision", std::to_string(m_retargetRevision)}});
+        }
+
+        if (ImGui::Button(m_retargetJob ? "Cancel retarget preparation"
+                                        : "Discard retarget result")) {
+          sessionAction({{"command", "cancel-animation-retarget"},
+                         {"session", std::to_string(m_retargetSession)}});
+        }
+      }
+
+      ImGui::BeginDisabled(retargetBusy() || playing() || previewing() || m_transform
+                           || pendingInspector() || pendingEnvironment() || pendingOcclusion()
+                           || m_text || m_material || m_pendingClose || m_captureDialog
+                           || m_sceneDialog || m_sourceUpdate || m_modelImport || m_reimport
+                           || m_uiEditor);
+      ImGui::InputText("Profile path", &m_retargetProfilePath);
+
+      if (ImGui::Button("Load retarget profile")) {
+        sessionAction({{"command", "load-retarget-profile"}, {"path", m_retargetProfilePath}});
+      }
+
+      ImGui::SameLine();
+
+      if (ImGui::Button("Save retarget profile")) {
+        sessionAction({{"command", "save-retarget-profile"}, {"path", m_retargetProfilePath}});
+      }
+
+      for (const auto* role : {"source", "target"}) {
+        ImGui::PushID(role);
+        const std::string key{role};
+        auto& name = m_retargetForm[key + "Scene"].get_ref<std::string&>();
+        if (ImGui::InputText(key == "source" ? "Source reference scene" : "Target reference scene",
+                             &name)) {
+          (key == "source" ? m_retargetSource : m_retargetTarget) = nullptr;
+        }
+
+        if (ImGui::BeginCombo("Choose reference scene",
+                              name.empty() ? "Choose saved model scene" : name.c_str())) {
+          for (const auto& entry : m_catalog) {
+            const auto file = entry["path"].get<std::string>();
+
+            if (file.starts_with("assets/") && file.ends_with(".dotscene")
+                && entry["type"] != "directory") {
+              if (ImGui::Selectable(file.c_str(), file == name)) {
+                sessionAction(
+                    {{"command", "inspect-retarget-reference"}, {"role", role}, {"path", file}});
+              }
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        if (ImGui::SmallButton("Inspect reference players")) {
+          sessionAction({{"command", "inspect-retarget-reference"},
+                         {"role", role},
+                         {"path", m_retargetForm[key + "Scene"]}});
+        }
+
+        const auto& choices = key == "source" ? m_retargetSource : m_retargetTarget;
+        auto& selected = m_retargetForm[key + "Entity"];
+        std::string label = selected.get<std::string>();
+
+        if (const auto current = retargetReferenceChoice(key == "source")) {
+          label += " / " + (*current)["name"].get<std::string>();
+        }
+
+        if (ImGui::BeginCombo("Reference player", label.c_str())) {
+          if (choices.is_array()) {
+            for (const auto& choice : choices) {
+              const auto title
+                  = choice["entity"].get<std::string>() + " / " + choice["name"].get<std::string>();
+
+              if (ImGui::Selectable(title.c_str(), choice["entity"] == selected)) {
+                selected = choice["entity"];
+              }
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        ImGui::PopID();
+      }
+
+      auto& clip = m_retargetForm["clip"].get_ref<std::string&>();
+      ImGui::InputText("Source clip", &clip);
+      const auto source = retargetReferenceChoice(true);
+      const auto target = retargetReferenceChoice(false);
+
+      if (source
+          && ImGui::BeginCombo("Choose source clip", clip.empty() ? "Choose clip" : clip.c_str())) {
+        for (const auto& value : (*source)["clips"]) {
+          const auto title = value.get<std::string>();
+
+          if (ImGui::Selectable(title.c_str(), title == clip)) {
+            clip = title;
+          }
+        }
+
+        ImGui::EndCombo();
+      }
+
+      ImGui::InputText("Output clip path", &m_retargetPath);
+      ImGui::InputText("Output clip name", &m_retargetForm["name"].get_ref<std::string&>());
+      auto numerator = m_retargetForm["rate"]["numerator"].get<std::uint32_t>();
+      auto denominator = m_retargetForm["rate"]["denominator"].get<std::uint32_t>();
+
+      if (ImGui::InputScalar("Rate numerator", ImGuiDataType_U32, &numerator)) {
+        m_retargetForm["rate"]["numerator"] = numerator;
+      }
+
+      if (ImGui::InputScalar("Rate denominator", ImGuiDataType_U32, &denominator)) {
+        m_retargetForm["rate"]["denominator"] = denominator;
+      }
+
+      ImGui::TextWrapped(
+          "Sample rate is numerator/denominator, from 1 to 240 Hz. "
+          "The bake is a sampled approximation, capped at 8192 frames and one million keys.");
+      ImGui::BeginDisabled(!source || !target);
+
+      if (ImGui::Button("Suggest matching names (review)")) {
+        sessionAction({{"command", "suggest-retarget-mappings"}});
+      }
+
+      ImGui::TextWrapped(
+          "Suggestions ignore ASCII case and . _ - separators only. "
+          "Ambiguous names are omitted; bone roles are not guessed.");
+      auto& mappings = m_retargetForm["mappings"];
+      ImGui::Text("%zu joint pairs", mappings.size());
+      ImGui::BeginChild("Retarget pairs", {0, 240}, ImGuiChildFlags_Borders);
+      ImGuiListClipper rows;
+      rows.Begin(static_cast<int>(mappings.size()));
+      std::optional<std::size_t> remove;
+
+      while (rows.Step()) {
+        for (int row = rows.DisplayStart; row < rows.DisplayEnd; ++row) {
+          auto& mapping = mappings[static_cast<std::size_t>(row)];
+          ImGui::PushID(row);
+
+          for (const bool from : {true, false}) {
+            const auto reference = from ? source : target;
+            const auto field = from ? "source" : "target";
+            const auto name = from ? "sourceName" : "targetName";
+            const auto label = std::to_string(mapping[field].get<std::uint32_t>()) + " / "
+                               + mapping[name].get<std::string>();
+
+            if (ImGui::BeginCombo(from ? "Source joint" : "Target joint", label.c_str())) {
+              if (reference) {
+                for (const auto& binding : (*reference)["bindings"]) {
+                  if (binding["anchor"].get<bool>()) {
+                    continue;
+                  }
+
+                  const auto title = std::to_string(binding["node"].get<std::uint32_t>()) + " / "
+                                     + binding["name"].get<std::string>();
+
+                  if (ImGui::Selectable(title.c_str(), binding["node"] == mapping[field])) {
+                    mapping[field] = binding["node"];
+                    mapping[name] = binding["name"];
+                  }
+                }
+              }
+
+              ImGui::EndCombo();
+            }
+          }
+
+          if (ImGui::SmallButton("Remove pair")) {
+            remove = static_cast<std::size_t>(row);
+          }
+
+          ImGui::Separator();
+          ImGui::PopID();
+        }
+      }
+
+      rows.End();
+      ImGui::EndChild();
+
+      if (remove) {
+        mappings.erase(mappings.begin() + static_cast<Json::difference_type>(*remove));
+      }
+
+      ImGui::BeginDisabled(mappings.size() >= 10000);
+
+      if (ImGui::Button("Add joint pair") && source && target) {
+        const auto a = std::ranges::find_if((*source)["bindings"], [](const Json& binding) {
+          return !binding["anchor"].get<bool>();
+        });
+        const auto b = std::ranges::find_if((*target)["bindings"], [](const Json& binding) {
+          return !binding["anchor"].get<bool>();
+        });
+
+        if (a != (*source)["bindings"].end() && b != (*target)["bindings"].end()) {
+          mappings.push_back({{"source", (*a)["node"]},
+                              {"sourceName", (*a)["name"]},
+                              {"target", (*b)["node"]},
+                              {"targetName", (*b)["name"]}});
+        }
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+      bool displacement = !m_retargetForm["translation"].is_null();
+
+      if (ImGui::Checkbox("Transfer mapped root displacement", &displacement)) {
+        m_retargetForm["translation"]
+            = displacement
+                  ? Json{{"target",
+                          mappings.empty() ? 0U : mappings.front()["target"].get<std::uint32_t>()},
+                         {"scale", 1.0}}
+                  : Json(nullptr);
+      }
+
+      if (displacement) {
+        auto root = m_retargetForm["translation"]["target"].get<std::uint32_t>();
+        auto scale = m_retargetForm["translation"]["scale"].get<double>();
+
+        if (ImGui::InputScalar("Displacement target node", ImGuiDataType_U32, &root)) {
+          m_retargetForm["translation"]["target"] = root;
+        }
+
+        if (ImGui::InputDouble("World displacement scale", &scale, .1, 1, "%.6g")) {
+          m_retargetForm["translation"]["scale"] = scale;
+        }
+
+        ImGui::TextWrapped(
+            "Choose a mapped root with no mapped ancestor. Only its bone displacement is copied; "
+            "the character controller still owns gameplay movement.");
+      }
+
+      ImGui::BeginDisabled(mappings.empty());
+
+      if (ImGui::Button("Prepare retargeted animation")) {
+        action({{"command", "begin-animation-retarget"},
+                {"entity", m_edit["id"]},
+                {"path", m_retargetPath},
+                {"value", m_retargetForm}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::TextWrapped(
+          "Preparation creates no files. On Ready, create the new clip and stage its player, "
+          "then Apply changes. Undo/Reset keeps the clip. Existing controllers remain bound; "
+          "use clip audition or explicitly detach the controller to play the new clip.");
+      ImGui::EndDisabled();
+      ImGui::TreePop();
+    }
+
     auto inspector() -> void {
       const auto stats = m_document->stats().value();
       refreshFieldOverrides();
@@ -9405,6 +10179,8 @@ namespace Dot::Editor {
         ImGui::EndDisabled();
         ImGui::TreePop();
       }
+
+      animationRetargetFields();
 
       ImGui::BeginDisabled(!pendingInspector());
 
@@ -15969,6 +16745,7 @@ namespace Dot::Editor {
         pollPlayPreparation();
         pollSourceUpdate();
         pollModelImport();
+        pollRetarget();
         auto processed = processRequests();
 
         if (!processed) {

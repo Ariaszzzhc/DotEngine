@@ -64,3 +64,10 @@ at most one mesh/controller residency publication per poll. Independent material
 drafts preserve progress, and cancellation/clear/source changes prevent late data.
 GPU uploads/binding, other asset services and broader streaming/pacing remain open.
 See [prepared geometry](Rendering.md#prepared-geometry-residency).
+
+Native offline motion retargeting now has explicit saved reference poses/name-checked
+mappings, bounded cancellable baking, Inspector/strict agent authoring and ordinary
+clip preview/Play/export. PrismRelay retains a reproducible 51-pair walk profile and
+aligned target scene alongside its unchanged main locomotion library. Automatic
+rest-pose alignment, contact/IK/proportion correction, root-motion physics and broader
+animation production tooling remain open. See [animation contracts](Animation.md).

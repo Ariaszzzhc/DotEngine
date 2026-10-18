@@ -613,8 +613,8 @@ SLERP。未被基础片段动画的遮罩字段从绑定值开始，不反馈累
 当前候选；参考不随时钟改变，不从上次输出累积。覆盖层参考时刻须为零；叠加参考须处于
 片段时长内并能合法采样。所有层共用最终事务，奇异/非有限结果不发布、不推进任何时钟。
 
-Layers do not implement IK, root-motion extraction, rig/retarget authoring or
-production-scale guarantees. Saved base state machines are documented below.
+Layers do not implement IK, root-motion extraction or production-scale guarantees.
+Saved state machines and explicit offline retarget authoring are documented below.
 
 
 ## Saved state machines / 保存的动画状态机
@@ -669,3 +669,60 @@ triggers, events and root motion remain future work.
 零时长或播放器暂停不决策、不增龄；失败保留状态、双时钟、叠加层及姿态。绑定期间预留所有
 状态的实体写入权并拒绝手动争抢基础播放；显式重置恢复默认参数/入口且保留暂停和层时钟。
 源码重载保留原生服务，持久化检查点由游戏自己定义，不自动保存运行时状态。
+
+
+## Saved motion retargeting / 保存的动作重定向
+
+`Dot.Animation.Retarget` bakes an owned native clip from two saved reference rigs,
+using explicit one-to-one logical binding IDs and checked names. Capture includes
+intervening helpers and omits the owner's external parent. Mapping an owner anchor
+is forbidden, so character placement stays outside the emitted animation. Nearest
+mapped ancestry must agree through helpers. Reference local scales must be positive
+and uniform; source scale keys must match the reference within the 1e-5 relative
+import tolerance, and cubic scale tangents must be zero. Unsupported changes reject
+even when they fall between bake samples.
+
+Choose corresponding reference poses before mapping: the same physical arm/leg
+posture, not merely matching names. The native algorithm transfers source world
+rotation changes relative to its reference in the fixed anchor orientation frame,
+then applies them to the target reference and derives local rotations. It does not
+automatically align rest poses or infer humanoid roles. Different reference arm
+postures produce different arm postures in the result. Unmapped descendants retain
+the target reference pose; the output covers complete bound subtrees of mapped
+roots, and leaves all outside nodes untouched. Target bone lengths/local scale stay
+at the saved target reference. Optional displacement transfers one mapped root's
+world-space offset with an explicit scale; it is bone motion, without physics root
+motion extraction, foot locking, IK or automatic proportion/contact correction.
+
+A rational rate between 1 and 240 Hz produces linear TRS keys, including the exact
+endpoint once when a rounded grid point reaches it. This is a sampled approximation,
+not exact preservation between samples. Limits are 8192 samples, one million keys
+and four million evaluated rig nodes. Input clips/rigs remain unchanged. Invalid
+references, hierarchy, mappings, unsupported scale or overflow yield contextual
+errors and no partial clip. Reference rigs have at most 10000 nodes/depth 256.
+
+`Dot.Editor.AnimationRetarget` prepares on an owned cancellable CPU worker. It
+freezes authoring scene/project metadata, reads the exact saved scenes/clip, validates
+target names/topology/helpers and the source library, then runs actual native
+preview/writer/skin preflight. No devices, script hooks, file writes or component
+publication occur during preparation. Ready owns a clip/proof; publication rechecks
+exact source/reference/clip/project bytes and authoring revision/scope/selection.
+Changing a file requires preparing again. Creation uses the native animation 64 MiB
+text limit separately from generic 1 MiB text documents. The scene component remains
+an Inspector draft until Apply. Existing controller, flags and layers are retained;
+a bound controller still owns the base, so audition an individual clip or explicitly
+change that binding before using the new clip as the base.
+
+`.dotretarget` is a portable strict JSON profile of at most 512 KiB with exactly
+sourceScene/sourceEntity/targetScene/targetEntity/clip/name/rate/mappings/translation.
+Scene references and source clips live under assets; entity values are canonical
+decimal strings, while mapping IDs and rate parts are unsigned numbers. Translation
+is null or {target,scale}. No imported-role guessing, format version or fallback.
+Profiles remain editable resources; exported runtime playback consumes the ordinary
+baked clip and needs no live retarget service. See the [editor workflow](Editor.md#animation-retarget-authoring)
+and PrismRelay's saved aligned reference/profile.
+
+先匹配源/目标的物理参考姿态，再显式映射名称和逻辑节点。原生烘焙传递相对参考的世界
+旋转差，保留目标骨长及实例放置；未映射后代保持目标参考。可选择一个映射根的显式比例
+位移，但不提供自动姿态对齐、脚部锁定、IK 或物理根运动。准备任务不写文件，发布前重验
+输入和编辑场景；创建资源与 Inspector Apply 是两个明确步骤。

@@ -65,7 +65,8 @@ namespace Dot::Editor {
              || extension == ".txt" || extension == ".obj" || extension == ".wgsl"
              || extension == ".dotmaterial" || extension == ".dotscene" || extension == ".gltf"
              || extension == ".dotmodel" || extension == ".dotanimation"
-             || extension == ".dotcontroller" || extension == ".dotui";
+             || extension == ".dotcontroller" || extension == ".dotretarget"
+             || extension == ".dotui";
     }
 
     auto validText(std::string_view text, std::size_t limit) -> Core::Result<void> {

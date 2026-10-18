@@ -442,3 +442,23 @@ TEST_CASE("Math spherical blends normalize endpoints and follow the shortest rot
   CHECK_FALSE(slerp(Quat{0, 0, 0, 0}, last, 0));
   CHECK_FALSE(slerp(first, Quat{infinity, 0, 0, 1}, 1));
 }
+
+TEST_CASE("math.rotation_products_and_inverse_normalize_and_match_matrix_composition") {
+  using namespace Dot;
+  const auto first = Math::rotationEulerDegrees({90, 0, 0}).value();
+  const auto last = Math::rotationEulerDegrees({0, 90, 0}).value();
+  const auto q = Math::multiplyRotations(first, last).value();
+  const auto actual = Math::compose({}, q).value();
+  const auto expected
+      = Math::multiply(Math::compose({}, first).value(), Math::compose({}, last).value()).value();
+
+  for (std::size_t i = 0; i < actual.data.size(); ++i) {
+    CHECK(actual.data[i] == doctest::Approx(expected.data[i]).epsilon(1e-5));
+  }
+
+  const auto identity = Math::multiplyRotations(q, Math::inverseRotation(q).value()).value();
+  CHECK(std::abs(identity.w) == doctest::Approx(1));
+  CHECK(identity.x == doctest::Approx(0).epsilon(1e-6));
+  CHECK_FALSE(Math::inverseRotation({0, 0, 0, 0}));
+  CHECK_FALSE(Math::multiplyRotations(first, {0, 0, 0, 0}));
+}

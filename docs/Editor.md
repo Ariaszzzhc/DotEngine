@@ -2793,3 +2793,54 @@ CPU 准备完成前不构造脚本/执行 Start，设备激活后才发布运行
 工具栏与严格状态操作显示同一真实阶段。源码捕获、场景克隆、原生绑定及脚本构造仍有
 所有者线程开销；同步便利工厂保留现有路径；独立游戏的真实准备/控制流程另见上述契约，绑定及包/设备
 建立开销仍待继续推进。
+
+
+## Animation retarget authoring
+
+Select an existing animation owner and expand Inspector → Retarget animation.
+Choose saved source/target reference scenes and their players, inspect bindings,
+then select the source native clip. Save matching reference poses as ordinary scene
+content first when the imported rest poses differ. Suggestions match unique names
+ignoring ASCII case and `._-`; they never infer humanoid roles or accept ambiguous
+names. Review/add explicit source/target rows, choose a rational rate and optionally
+one mapped root displacement/scale. Virtualized rows remain editable for larger rigs.
+
+Prepare motion runs the owned CPU bake and native preflight without creating output.
+Ready reports frame/node/track counts and unmapped bindings. Accept prepared clip
+creates a new native resource and stages the complete player in Inspector. Apply
+commits the player through normal scene history; Save persists the scene separately.
+Discard/cancel releases unpublished work. Other authoring/resource writes are blocked
+until preparation/result is finished or discarded. Status/read-only inspection and
+close remain available. Errors are retained; a failed/cancelled/published session
+may be followed by a new preparation. Cancellation cannot claim rollback of an
+already created clip. GUI buttons and the following strict commands share implementation:
+
+```json
+{"command":"inspect-retarget-reference","role":"source","path":"assets/motion-source/model.dotscene"}
+{"command":"inspect-retarget-reference","role":"target","path":"assets/actions/surveyor-reference.dotscene"}
+{"command":"suggest-retarget-mappings"}
+{"command":"stage-retarget-profile","value":{"sourceScene":"assets/motion-source/model.dotscene","sourceEntity":"1","targetScene":"assets/actions/surveyor-reference.dotscene","targetEntity":"2","clip":"assets/motion-source/animations/1.dotanimation","name":"Hip motion","rate":{"numerator":30,"denominator":1},"mappings":[{"source":3,"target":4,"sourceName":"pelvis","targetName":"hips"}],"translation":{"target":4,"scale":1}}}
+{"command":"save-retarget-profile","path":"assets/actions/hip.dotretarget"}
+{"command":"load-retarget-profile","path":"assets/actions/walk.dotretarget"}
+{"command":"begin-animation-retarget","revision":"12","entity":"589","path":"assets/actions/new-walk.dotanimation","value":{"sourceScene":"assets/motion-source/model.dotscene","sourceEntity":"1","targetScene":"assets/actions/surveyor-reference.dotscene","targetEntity":"2","clip":"assets/motion-source/animations/1.dotanimation","name":"Hip motion","rate":{"numerator":30,"denominator":1},"mappings":[{"source":3,"target":4,"sourceName":"pelvis","targetName":"hips"}],"translation":null}}
+{"command":"animation-retarget-status"}
+{"command":"cancel-animation-retarget","session":"1"}
+{"command":"publish-animation-retarget","session":"2","revision":"12"}
+```
+
+Each object is a separate operation. Use actual returned identities/revisions; the
+single-hip examples illustrate the schema, while the saved walk profile has 51 pairs.
+Status returns retarget with session/state/entity/revision/path/profilePath/profile,
+source/target inspected players, result and nullable error. States are idle,
+preparing/cancelling, ready, cancelled, failed and published. Source/target arrays
+include player entity/name/clips and bound nodes with name/logical ID/nearest bound
+parent/anchor. IDs identifying sessions/entities/revisions are decimal strings.
+Unknown fields/types, stale sessions, conflicting drafts/modes/jobs, renamed bindings
+and changed exact input bytes reject. Save profile replaces only its loaded exact
+baseline or creates a new resource; external baseline conflicts remain recoverable.
+Generic text limits remain separate from native clip publication.
+
+The result does not auto-detach an existing controller. Individual clip audition
+uses the ordinary clone; actual authoring flags/controller/layers survive creation.
+No automatic rest-pose alignment, feet/contact solver or real-time retarget playback
+is implied. See [retarget contracts](Animation.md#saved-motion-retargeting--保存的动作重定向).

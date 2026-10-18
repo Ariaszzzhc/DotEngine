@@ -148,6 +148,25 @@ namespace Dot::Math {
                            static_cast<float>(result.z), static_cast<float>(result.w)});
   }
 
+  auto multiplyRotations(Quat left, Quat right) -> Core::Result<Quat> {
+    auto first = normalized(left);
+    auto last = normalized(right);
+
+    if (!first || !last) {
+      return !first ? first : last;
+    }
+
+    const auto result = native(*first) * native(*last);
+    return normalized(Quat{static_cast<float>(result.x), static_cast<float>(result.y),
+                           static_cast<float>(result.z), static_cast<float>(result.w)});
+  }
+
+  auto inverseRotation(Quat rotation) -> Core::Result<Quat> {
+    auto value = normalized(rotation);
+    return value ? Core::Result<Quat>{{-value->x, -value->y, -value->z, value->w}}
+                 : std::unexpected(value.error());
+  }
+
   auto rotationEulerDegrees(Vec3 degrees) -> Core::Result<Quat> {
     if (!isFinite(degrees)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Rotation angles must be finite");

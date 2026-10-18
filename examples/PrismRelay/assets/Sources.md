@@ -135,3 +135,24 @@ replacement, mesh generator or external art is introduced. Required empty layer
 arrays were added to current imported/action scene player transports without a
 legacy decoder. The original GLB, textures, meshes/skins and locomotion files remain
 unchanged, with their existing licenses/hashes above.
+
+## Native retarget authoring resources
+
+`motion-source/` is the editor's native import of the retained CC0
+`models/locomotion-source.glb` (Quaternius Universal Animation Library Standard),
+with the same source/license already recorded above. No new download, generated
+art, mesh conversion script or external animation bake was used for this addition.
+The imported bundle retains seven source clips, two skinned meshes, two skins and
+67 scene bindings for explicit reference inspection. `actions/surveyor-reference.dotscene`
+was saved as selected scene content from the existing Surveyor's aligned authoring
+pose through the product; it is distinct from the imported target's rest pose.
+
+`actions/walk.dotretarget` records 51 reviewed logical/name pairs, both saved
+reference scenes, native source Walk_Loop, 30/1 Hz sampling and mapped hips
+world-displacement scale 1. `actions/retargeted-walk.dotanimation` was created by
+the native editor retarget worker/publication and ordinary Inspector Apply/Save.
+SHA-256: `7526d60b60ccf0525aeea90170dd830201906fb95dc10c6430bfd5fa126ae748`.
+It contains 41 samples × 63 joints × 3 TRS tracks, duration 1.333333373 seconds.
+The original GLBs and seven proportion-adjusted locomotion clips remain unchanged.
+Reference matching is explicit; this addition provides no automatic pose alignment,
+foot/contact correction, IK or final animation-quality claim.

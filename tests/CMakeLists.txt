@@ -46,6 +46,7 @@ add_executable(DotUnitTests
     AxisDragTests.cpp
     AnimationClipTests.cpp
     AnimationLayersTests.cpp
+    AnimationRetargetTests.cpp
     AnimationControllerTests.cpp
     AnimationEditTests.cpp
     AnimationKeyGroupTests.cpp
@@ -121,6 +122,7 @@ add_executable(DotTests
     ImageExportTests.cpp
     AnimationPreviewTests.cpp
     AnimationCreationTests.cpp
+    AnimationRetargetCreationTests.cpp
     AnimationDocumentTests.cpp
     UiResourceTests.cpp
     ControllerDocumentTests.cpp

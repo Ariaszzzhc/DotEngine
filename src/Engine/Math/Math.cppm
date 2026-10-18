@@ -66,6 +66,10 @@ export namespace Dot::Math {
    * both nonzero inputs and the result; endpoint signs are retained exactly.
    * 最短球面弧旋转混合，权重须为有限 [0,1]；非零输入及结果归一化，端点保留原符号。 */
   [[nodiscard]] auto slerp(Quat from, Quat to, double weight) -> Core::Result<Quat>;
+  /** Compose left * right rotations and invert rotations, normalizing nonzero finite inputs.
+   * 组合 left * right 旋转或求旋转逆；非零有限输入及输出归一化。 */
+  [[nodiscard]] auto multiplyRotations(Quat left, Quat right) -> Core::Result<Quat>;
+  [[nodiscard]] auto inverseRotation(Quat rotation) -> Core::Result<Quat>;
   /** Euler angles use degrees and the quaternion convention Rz * Ry * Rx.
    * 欧拉角单位为度，四元数旋转约定为 Rz * Ry * Rx。 */
   [[nodiscard]] auto rotationEulerDegrees(Vec3 degrees) -> Core::Result<Quat>;

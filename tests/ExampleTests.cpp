@@ -20,6 +20,7 @@
 import Dot.Animation.Files;
 import Dot.Animation.Layers;
 import Dot.Editor.AnimationPreview;
+import Dot.Editor.AnimationRetarget;
 import Dot.World.SceneFiles;
 import Dot.Animation.SkinFiles;
 import Dot.Assets.Image;
@@ -1621,4 +1622,68 @@ TEST_CASE("player_control.lifecycle_status_is_strict_observational_and_excludes_
   const auto closed = control(player, {{"command", "status"}});
   CHECK(closed["player"]["state"] == "closed");
   CHECK_FALSE(closed.contains("scene"));
+}
+
+TEST_CASE("prism.saved_retarget_profile_rebakes_native_walk_without_changing_gameplay") {
+  auto project = Dot::Project::Project::open(DOT_EXAMPLE_SOURCE).value();
+  auto files = project.files().value();
+  auto profile = Dot::Editor::decodeRetargetProfile(
+                     files.readText("assets/actions/walk.dotretarget", 512 * 1024).value())
+                     .value();
+  CHECK(profile.settings.mappings.size() == 51);
+  auto source = Dot::Editor::inspectRetargetReference(files, profile.sourceScene).value();
+  auto target = Dot::Editor::inspectRetargetReference(files, profile.targetScene).value();
+  REQUIRE(source.size() == 1);
+  REQUIRE(target.size() == 1);
+  CHECK(source.front().entity == profile.sourceEntity);
+  CHECK(target.front().entity == profile.targetEntity);
+  CHECK(source.front().rig.nodes.size() == 67);
+  CHECK(target.front().rig.nodes.size() == 67);
+  auto original = Dot::Animation::loadClip(files, profile.clip).value();
+  auto baked = Dot::Animation::retargetClip(source.front().rig, target.front().rig, original,
+                                            profile.settings);
+  REQUIRE_MESSAGE(baked, (baked ? "" : baked.error().message));
+  CHECK(baked->frames == 41);
+  CHECK(baked->emittedNodes == 63);
+  CHECK(baked->unmappedSource.size() == 16);
+  CHECK(baked->unmappedTarget.size() == 16);
+  CHECK(baked->clip.description().value()->tracks.size() == 189);
+  const auto path = "assets/actions/retargeted-walk.dotanimation";
+  CHECK(Dot::Animation::encodeClip(baked->clip).value()
+        == files.readText(path, 64 * 1024 * 1024).value());
+
+  for (const auto& track : baked->clip.description().value()->tracks) {
+    CHECK(track.node >= 4);
+    CHECK(track.node <= 66);
+  }
+
+  auto scene = Dot::World::loadScene(files, "scenes/character-action.dotscene").value();
+  auto player = scene.animationPlayers()->front();
+  REQUIRE(player.properties.clips.size() == 9);
+  CHECK(player.properties.clip == 7);
+  CHECK(player.properties.clips[8] == path);
+  CHECK(Dot::Editor::validateRetargetTarget(scene, player.entity.value, target.front().rig));
+  auto anchor = scene.transform(player.entity).value();
+  player.properties.clip = 8;
+  REQUIRE(scene.setAnimationPlayer(player.entity, player.properties));
+  auto preview = Dot::Editor::AnimationPreview::create(scene, files, player.entity.value);
+  REQUIRE_MESSAGE(preview, (preview ? "" : preview.error().message));
+  REQUIRE(preview->seek(0));
+  const auto transform = [](const Dot::World::Scene& value, std::string_view name) {
+    auto entries = value.entities().value();
+    return std::ranges::find(entries, name, &Dot::World::EntityInfo::name)->transform;
+  };
+  const auto leg = transform(*preview->scene().value(), "thigh.L");
+  REQUIRE(preview->seek(.4));
+  auto posed = preview->scene().value();
+  const auto posedAnchor = posed->transform(posed->findEntity(player.entity.value).value()).value();
+  CHECK(posedAnchor.position == anchor.position);
+  CHECK(posedAnchor.rotation == anchor.rotation);
+  CHECK(posedAnchor.scale == anchor.scale);
+  CHECK(transform(*posed, "thigh.L").rotation != leg.rotation);
+  CHECK(scene.transform(player.entity)->rotation == anchor.rotation);
+  CHECK(scene.transform(player.entity)->position == anchor.position);
+  auto main = project.loadStartup().value();
+  CHECK(main.animationPlayers()->front().properties.clips.size() == 8);
+  CHECK(main.animationPlayers()->front().properties.controller.has_value());
 }
