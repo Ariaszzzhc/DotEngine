@@ -5,6 +5,7 @@ module;
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -56,6 +57,7 @@ namespace Dot::Animation {
     std::map<std::uint64_t, std::shared_ptr<Player>> players;
     std::map<std::string, Clip> m_decoded;
     std::map<std::string, Controller> m_controllers;
+    std::optional<std::uint64_t> m_synchronizedRevision;
 
     Impl(std::shared_ptr<World::Scene> value, Core::FileSystem files)
         : scene(std::move(value)), assets(std::move(files)), scope(scene->id()) {
@@ -232,6 +234,19 @@ namespace Dot::Animation {
       try {
         if (decoded.size() > 1024 || controllers.size() > 1024) {
           return Core::fail(Core::ErrorCode::Unavailable, "Prepared animation budget exceeded");
+        }
+
+        const auto revision = take(scene->animationBindingRevision());
+
+        /** Only the scene's committed binding/authority inputs permit reuse. Runtime clip/fade
+         * controls validate their new writers separately; prepared inputs always receive full
+         * validation, including duplicate/unused assets, even for an unchanged scene.
+         * 仅场景已提交的绑定/写入权输入允许复用；运行期换片/淡化另行校验新增写入者。
+         * 准备输入始终完整校验，包括场景未变时的重复/无用资源。 */
+        if (!prepared && decoded.empty() && controllers.empty()
+            && revision != std::numeric_limits<std::uint64_t>::max()
+            && m_synchronizedRevision == revision) {
+          return {};
         }
 
         std::map<std::string, Clip> clips;
@@ -470,6 +485,7 @@ namespace Dot::Animation {
         }
 
         players.swap(candidate);
+        m_synchronizedRevision = revision;
         return {};
       } catch (const Core::Error& error) {
         return Core::fail(error.code, "Synchronize animation players: " + error.message);

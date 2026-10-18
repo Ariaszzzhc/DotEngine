@@ -215,6 +215,13 @@ namespace Dot::World {
     mutable std::unordered_map<std::uint64_t, WorldPose> worldCache;
     std::unordered_map<std::uint64_t, std::vector<std::uint64_t>> m_children;
     bool m_childrenReady{};
+    std::uint64_t m_animationBindingRevision{1};
+
+    auto invalidateAnimationBindings() noexcept -> void {
+      if (m_animationBindingRevision != std::numeric_limits<std::uint64_t>::max()) {
+        ++m_animationBindingRevision;
+      }
+    }
 
     auto invalidateWorld() -> void {
       worldCache.clear();
@@ -291,12 +298,20 @@ namespace Dot::World {
         registry.get<Transform>(change.native) = change.newTransform;
       }
 
-      return verifyMutation([&] {
+      auto verified = verifyMutation([&] {
         for (const auto& change : changes) {
           registry.get<Hierarchy>(change.native).parent = change.oldParent;
           registry.get<Transform>(change.native) = change.oldTransform;
         }
       });
+
+      if (verified && std::ranges::any_of(changes, [](const auto& change) {
+            return change.oldParent != change.newParent;
+          })) {
+        invalidateAnimationBindings();
+      }
+
+      return verified;
     }
 
     auto add(std::string_view label, std::optional<std::uint64_t> requested)
@@ -1112,6 +1127,16 @@ namespace Dot::World {
     return result;
   }
 
+  auto Scene::animationBindingRevision() const -> Core::Result<std::uint64_t> {
+    auto ready = entityCount();
+
+    if (!ready) {
+      return std::unexpected(ready.error());
+    }
+
+    return m_impl->m_animationBindingRevision;
+  }
+
   auto Scene::setAnimationPlayer(EntityId entity, std::optional<AnimationPlayer> player)
       -> Core::Result<void> {
     if (!m_impl) {
@@ -1125,7 +1150,10 @@ namespace Dot::World {
     }
 
     if (!player) {
-      m_impl->registry.remove<AnimationPlayer>(*native);
+      if (m_impl->registry.remove<AnimationPlayer>(*native)) {
+        m_impl->invalidateAnimationBindings();
+      }
+
       return {};
     }
 
@@ -1166,7 +1194,14 @@ namespace Dot::World {
       }
     }
 
+    const auto* previous = m_impl->registry.try_get<AnimationPlayer>(*native);
+    const bool changed = !previous || *previous != *player;
     m_impl->registry.emplace_or_replace<AnimationPlayer>(*native, std::move(*player));
+
+    if (changed) {
+      m_impl->invalidateAnimationBindings();
+    }
+
     return {};
   }
 
@@ -1853,6 +1888,7 @@ namespace Dot::World {
       }
 
       m_impl->invalidateWorld();
+      m_impl->invalidateAnimationBindings();
       return affected;
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -2007,6 +2043,7 @@ namespace Dot::World {
 
       m_impl->nextEntity = fragment.nextEntity;
       m_impl->m_childrenReady = false;
+      m_impl->invalidateAnimationBindings();
       pending.m_committed = true;
       return result;
     } catch (const std::exception& error) {
@@ -2081,6 +2118,7 @@ namespace Dot::World {
 
       std::erase_if(m_impl->links, [&](const auto& link) { return removed.contains(link.root); });
       m_impl->invalidateWorld();
+      m_impl->invalidateAnimationBindings();
       return {};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -2155,6 +2193,7 @@ namespace Dot::World {
 
     std::erase_if(scene.links, [&](const auto& link) { return removedIds.contains(link.root); });
     scene.invalidateWorld();
+    scene.invalidateAnimationBindings();
     return {};
   }
 
@@ -2371,7 +2410,10 @@ namespace Dot::World {
     }
 
     if (!body) {
-      m_impl->registry.remove<RigidBody>(*native);
+      if (m_impl->registry.remove<RigidBody>(*native)) {
+        m_impl->invalidateAnimationBindings();
+      }
+
       return {};
     }
 
@@ -2396,7 +2438,13 @@ namespace Dot::World {
                         "An entity cannot own both a rigid body and character controller");
     }
 
+    const bool existed = m_impl->registry.all_of<RigidBody>(*native);
     m_impl->registry.emplace_or_replace<RigidBody>(*native, *body);
+
+    if (!existed) {
+      m_impl->invalidateAnimationBindings();
+    }
+
     return {};
   }
 
@@ -2413,7 +2461,10 @@ namespace Dot::World {
     }
 
     if (!character) {
-      m_impl->registry.remove<CharacterController>(*native);
+      if (m_impl->registry.remove<CharacterController>(*native)) {
+        m_impl->invalidateAnimationBindings();
+      }
+
       return {};
     }
 
@@ -2428,7 +2479,13 @@ namespace Dot::World {
                         "An entity cannot own both a rigid body and character controller");
     }
 
+    const bool existed = m_impl->registry.all_of<CharacterController>(*native);
     m_impl->registry.emplace_or_replace<CharacterController>(*native, *character);
+
+    if (!existed) {
+      m_impl->invalidateAnimationBindings();
+    }
+
     return {};
   }
 

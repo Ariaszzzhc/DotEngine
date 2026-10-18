@@ -853,3 +853,107 @@ TEST_CASE("scene.cached_branches_follow_group_ungroup_and_thread_adoption") {
   REQUIRE(adopted.setTransform(adopted.findEntity(a.value).value(), {{9, 0, 0}}));
   CHECK(position(adopted, adopted.findEntity(child.value).value()).x == 9);
 }
+
+TEST_CASE("scene.animation_binding_stamp_tracks_only_committed_binding_inputs") {
+  auto scene = Scene::create().value();
+  const auto root = scene.createEntity().value();
+  const auto child = scene.createEntity().value();
+  auto revision = scene.animationBindingRevision().value();
+  const auto advanced = [&] {
+    const auto next = scene.animationBindingRevision().value();
+    CHECK(next > revision);
+    revision = next;
+  };
+  REQUIRE(scene.renameEntity(root, "Renamed"));
+  REQUIRE(scene.setTransform(root, {{1, 2, 3}}));
+  REQUIRE(scene.setCamera(child, Camera{}));
+  REQUIRE(scene.setMeshRenderer(child, MeshRenderer{}));
+  REQUIRE(scene.createEntity());
+  CHECK(scene.animationBindingRevision().value() == revision);
+  REQUIRE(scene.setParent(child, root));
+  advanced();
+  REQUIRE(scene.setParent(child, root));
+  CHECK_FALSE(scene.setParent(root, child));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  Dot::World::AnimationPlayer player{{"assets/move.dotanimation"}, {{0, child.value}}};
+  REQUIRE(scene.setAnimationPlayer(root, player));
+  advanced();
+  REQUIRE(scene.setAnimationPlayer(root, player));
+  auto invalid = player;
+  invalid.targets.front().entity = 999;
+  CHECK_FALSE(scene.setAnimationPlayer(root, invalid));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  player.speed = 2;
+  REQUIRE(scene.setAnimationPlayer(root, player));
+  advanced();
+  player.speed = -0.0;
+  REQUIRE(scene.setAnimationPlayer(root, player));
+  advanced();
+  CHECK(std::signbit(scene.entity(root)->animation->speed));
+  player.speed = 0;
+  REQUIRE(scene.setAnimationPlayer(root, player));
+  CHECK_FALSE(std::signbit(scene.entity(root)->animation->speed));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  REQUIRE(scene.setAnimationPlayer(root, {}));
+  advanced();
+  REQUIRE(scene.setAnimationPlayer(root, {}));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  REQUIRE(scene.setRigidBody(root, RigidBody{}));
+  advanced();
+  auto body = RigidBody{};
+  body.friction = .25F;
+  REQUIRE(scene.setRigidBody(root, body));
+  CHECK_FALSE(scene.setCharacterController(root, CharacterController{}));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  REQUIRE(scene.setRigidBody(root, {}));
+  advanced();
+  REQUIRE(scene.setCharacterController(root, CharacterController{}));
+  advanced();
+  REQUIRE(scene.setCharacterController(root, CharacterController{}));
+  CHECK_FALSE(scene.setRigidBody(root, RigidBody{}));
+  CHECK(scene.animationBindingRevision().value() == revision);
+  REQUIRE(scene.setCharacterController(root, {}));
+  advanced();
+}
+
+TEST_CASE("scene.animation_binding_stamp_covers_structural_publication_and_scope_lifetime") {
+  auto scene = Scene::create().value();
+  const auto a = scene.createEntity().value();
+  const auto b = scene.createEntity().value();
+  auto revision = scene.animationBindingRevision().value();
+  const std::array roots{a, b};
+  const auto group = scene.groupEntities(roots, "Group").value();
+  CHECK(scene.animationBindingRevision().value() > revision);
+  revision = scene.animationBindingRevision().value();
+  const std::array groups{group};
+  REQUIRE(scene.ungroupEntities(groups));
+  CHECK(scene.animationBindingRevision().value() > revision);
+  revision = scene.animationBindingRevision().value();
+  auto source = Scene::create().value();
+  const auto owner = source.createEntity().value();
+  REQUIRE(source.setCharacterController(owner, CharacterController{}));
+  const auto added = scene.appendContent(source).value();
+  CHECK(scene.animationBindingRevision().value() > revision);
+  revision = scene.animationBindingRevision().value();
+  REQUIRE(scene.removeContent(added.entities));
+  CHECK(scene.animationBindingRevision().value() > revision);
+  revision = scene.animationBindingRevision().value();
+  REQUIRE(scene.destroyEntity(a));
+  CHECK(scene.animationBindingRevision().value() > revision);
+  auto detached = scene.detach().value();
+  CHECK_FALSE(scene.animationBindingRevision());
+  auto worker = std::async(std::launch::async,
+                           [&scene, scope = b.scene, owned = std::move(detached)]() mutable {
+                             auto adopted = Scene::adopt(owned).value();
+                             CHECK(adopted.id() != scope);
+                             CHECK_FALSE(scene.animationBindingRevision());
+                             return adopted.detach().value();
+                           });
+  auto returned = worker.get();
+  auto adopted = Scene::adopt(returned).value();
+  bool rejected{};
+  std::thread foreign([&] { rejected = !adopted.animationBindingRevision(); });
+  foreign.join();
+  CHECK(rejected);
+  REQUIRE(adopted.animationBindingRevision());
+}

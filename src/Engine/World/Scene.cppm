@@ -319,6 +319,16 @@ export namespace Dot::World {
     /** Owned, ID-sorted animation descriptions without unrelated component copies.
      * 按 ID 排序的动画描述副本，不复制无关组件。 */
     [[nodiscard]] auto animationPlayers() const -> Core::Result<std::vector<AnimationPlayerInfo>>;
+    /** Scene-local synchronization stamp for animation descriptions, hierarchy and physical
+     * ownership. Successful changes to these inputs invalidate prior binding/authority checks;
+     * transforms, names and unrelated components do not. Animation equality follows the
+     * property value comparison, not serialized bytes. Compare only within the same scene
+     * scope. UINT64_MAX disables reuse permanently rather than wrapping to an old stamp.
+     * 动画描述、层级及物理所有权的场景内同步标记；这些输入成功改变后，旧绑定/写入权校验
+     * 失效，变换、名称及无关组件不影响标记。动画按属性值相等性而非序列化字节比较。
+     * 仅限同场景范围比较；达到 UINT64_MAX 后永久
+     * 禁止复用，避免回绕命中旧标记。 */
+    [[nodiscard]] auto animationBindingRevision() const -> Core::Result<std::uint64_t>;
     /** Sorted controller owners without copying unrelated component data.
      * 返回按 ID 排序的角色控制器所有者，不复制无关组件。 */
     [[nodiscard]] auto characterControllers() const -> Core::Result<std::vector<EntityId>>;

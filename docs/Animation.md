@@ -192,8 +192,15 @@ updates retain their script/physics order; variable update runs scripts, synchro
 and advances animation once, then audio observes final poses. Native animation
 failure faults the session until close, which releases playback while retaining the
 inspectable final scene. No hidden timer, renderer or window is created. Scene
-player synchronization still copies bounded authoring descriptions and checks node
-ancestors; populated-scene frame times/streaming are not established.
+player synchronization reuses a completed binding/authority check while the scene's
+scope-local `animationBindingRevision` matches. Animation property value changes,
+hierarchy edits, physical-owner addition/removal and structural publication invalidate
+it; transform/name/unrelated edits do not. Failed edits leave the stamp intact, and
+failed synchronization never publishes a cached success. Saturation disables reuse
+rather than wrapping. Runtime clip/fade controls validate new writers independently;
+each applied pose still validates final world transforms/camera inverses. Prepared
+asset updates always validate missing/duplicate/unused entries before publication,
+even when the scene stamp matches. Populated-game throughput/streaming remain open.
 
 ## Runtime clip controls
 

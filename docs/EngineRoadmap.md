@@ -37,7 +37,10 @@ components for physics/audio synchronization, while retaining full transform and
 resource validation. Transform-only batches now validate only changed descendants,
 retain unrelated committed world matrices and skip exact unchanged stored values;
 structural edits retain whole-scene validation. One/eight-binding native Prism
-workloads have matched-content Update CPU evidence. Animation sampling/synchronization,
+workloads have matched-content Update CPU evidence. Scene binding/authority stamps
+now reuse successful animation synchronization on unchanged frames, with physical/
+hierarchy/description publication invalidation and strict prepared-asset validation.
+Animation sampling, changed-configuration synchronization,
 structural mutation, resource streaming and larger populated-game costs remain.
 These measurements exclude process initialization/teardown and idle waits;
 they do not complete the remaining performance, streaming or background-work goals.

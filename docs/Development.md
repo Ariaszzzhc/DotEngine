@@ -15660,3 +15660,87 @@ and diff checks pass. No dependency/compiler/linker environment change, new rele
 archive or other-platform execution. Only macOS arm64 is validated. Remaining
 animation sampling/synchronization, structural validation, streaming/background work,
 independent character scale and final art/editor/game maturity remain open.
+
+## 2026-10-19 — Reuse validated animation bindings
+
+The preceding native eight-binding CPU stack still spends substantial Update work
+in ScenePlayers::synchronize, repeatedly copying animation descriptions and complete
+ancestor entity descriptions to recheck identical writer/physics ownership. Continue
+with a copy of the ordinary editable PrismEnsemble project, retaining its eight/one
+binding scenes and all original files rather than regenerating assets or adding an
+acceptance executable. This is an animation workload sharing one Player/capsule;
+it does not establish eight independent physics/AI characters.
+
+Scene now exposes an owner-thread, scope-local animationBindingRevision. Successful
+animation value changes, hierarchy changes, physical-owner addition/removal and
+structural publication invalidate binding/authority reuse. Transforms, names and
+unrelated components do not. Same-value animation assignment still stores supplied
+values, including signed-zero changes, without resetting equivalent playback.
+The counter saturates permanently rather than wrapping; consumers must not reuse a
+saturated stamp. ScenePlayers records a stamp only after full candidate validation
+and publication. Unchanged ordinary updates/controls reuse that validation; runtime
+clip/fade writer changes still check authority, and every pose retains native world/
+camera validation and rollback. Prepared updates always validate all supplied assets,
+including duplicate/unused entries when the scene is unchanged. No file refresh or
+asset format semantics change, and no borrowed cache ownership is introduced.
+
+Two new device/file-free unit cases cover relevant/no-op/rejected mutations,
+signed-zero assignment, physical presence versus property edits, grouping/ungrouping,
+append/removal/deletion, detach/adopt and foreign-thread/moved-source queries. Two
+integration cases warm playback before repeated hierarchy/character/competing-player
+failures, repair and continue the same clock, and check unchanged prepared inputs,
+missing incoming assets, atomic content binding, removal and explicit file refresh
+failure. Twelve focused binding/authority/transition regressions pass in both Debug
+and Release/NDEBUG. Final configure/build succeeds in both configurations.
+
+Actual Release editor reopens ensemble, assigns a rigid body to animation ancestor
+589 through Inspector and receives the explicit native authority failure. The
+orchestrator initially expected the string failed; the actual terminal state is
+faulted. Preserve that bounded observation timeout and continue the same live editor
+handle, without restart. Stop, undo the conflicting edit, move a clone, verify
+Undo/Redo, restore/save exact authoring and capture. Before/after static viewport
+PNGs are byte-identical within this stage. Export ensemble/solo: all 147 game files
+per old/new pair match byte-for-byte, including the ordinary native manifest.
+
+Main actual Play movement/jump reaches Grounded; Inspection, pause/completed
+single-step/resume and F6/move/F7 restore with error zero at the unchanged 1e-5 bound.
+Stop restores authoring exactly, then export/relocate Main. Hide only the owned
+project during native measurement and relocated Main sessions; restore it afterward.
+Same-process and fresh-process checkpoint errors are zero. Native Main completed
+frame counters are 262/46 with HUD rasterizations 6/4, failureCount zero and empty
+runtime diagnostics. These counters prove completed work, not FPS. No human
+pointer/keyboard acceptance is claimed.
+
+Three interleaved matched native Release runs per workload, Apple M4 Pro/Metal at
+2560x1600, retain 119 Update samples each. Median of run medians: eight bindings
+0.7675 → 0.3272 ms (57.4% lower), one binding 0.1675 → 0.1005 ms (40.0% lower).
+Initial full world/all-player observations precede warmup; no full scene polling
+occurs inside measurement windows. Preserve raw profiles and OS samples, content/
+player hashes, sample conventions and run ranges in Profiling.md and ignored
+build/animation-sync-review. These are CPU Update envelopes with freely running
+phases; no general FPS, GPU, cumulative cross-stage speedup or character-scale claim.
+
+All 16 owned native handles actually exit zero before consuming their close replies;
+644 replies are ACKed and all closed/fault-free/unblocked endpoints have no uncertain
+or unprocessed work, then are cleared. Both editor stderr streams are empty; all
+native games report only nine normal startup messages. Remove 650 temporary scripts/
+requests after completion, retaining raw replies, profiles, captures, ordinary
+projects/exports/save data. All 7779 prior guarded files remain unchanged; the new
+ordinary-content manifest covers 8851. Forty-eight current Debug/Release/kit/export
+Mach-O paths pass strict signing; new exports match the Release kit player, and the
+baseline player retains the exact prior stage hash. No new release archive.
+
+Review covers every hierarchy/component publication and rollback path, stamp scope/
+saturation policy, runtime writer reservations, prepared-input validation, allocation
+ordering, playback/resource lifetime and creator-thread guards. Formatting/diff checks
+pass. No dependency/compiler/linker environment change. Only macOS arm64 is executed.
+Animation sampling, changed-configuration synchronization, independent-character
+scale, streaming/background work and final art/editor/game maturity remain open.
+
+Final full Debug 1721/1721 passes in 269.50 seconds; full Release/NDEBUG 1721/1721
+passes in 38.22 seconds. Counts are 564 unit and 1157 integration, including 268
+compiler, 39 audio-native, 186 offscreen, 34 platform and 21 process cases (labels
+overlap). Tests open no desktop windows. Builds, focused/full CTest and actual native
+product sessions run sequentially. Final evidence includes comparison.json,
+workflow-result.json, authority-failure.json, verification.json, artifact-hashes.json,
+cleanup.json and complete configure/build/test logs under build/animation-sync-review.

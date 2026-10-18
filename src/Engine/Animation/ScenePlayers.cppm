@@ -54,10 +54,12 @@ export namespace Dot::Animation {
    * authoring additions/removals/replacements before variable updates; unchanged
    * players retain clocks/rest poses. New descriptions restart; assets refresh
    * on replacement. Conflicting writers and rigid bodies on animated nodes or
-   * ancestors fail explicitly. Each player's pose/clock commit is atomic; earlier
-   * players are not rolled back if a later player fails. Owner-thread API.
-   * 拥有播放及共享场景，不创建窗口/设备/时钟。变量帧前同步增删改，未变播放器保留时钟及
-   * 初始姿态，新描述重启并重读资产。拒绝冲突写入及动画节点/祖先刚体。每个播放器的姿态/
+   * ancestors fail explicitly. Unchanged scene binding/authority stamps reuse completed
+   * synchronization; transform edits still validate each applied pose. Each player's pose/clock
+   * commit is atomic; earlier players are not rolled back if a later player fails. Owner-thread
+   * API. 拥有播放及共享场景，不创建窗口/设备/时钟。变量帧前同步增删改，未变播放器保留时钟及
+   * 初始姿态，新描述重启并重读资产。拒绝冲突写入及动画节点/祖先刚体。场景绑定/写入权标记
+   * 未变时复用已完成同步，变换编辑仍逐次校验应用姿态。每个播放器的姿态/
    * 时钟原子提交，后者失败不回滚此前播放器。API 限创建线程。 */
   class ScenePlayers {
   public:

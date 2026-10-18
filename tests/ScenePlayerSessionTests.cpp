@@ -858,3 +858,82 @@ TEST_CASE("animation.additive_scene_publication_retains_existing_player_clock") 
   CHECK(session.animationState(owner)->playback.time == .75);
   REQUIRE(session.close());
 }
+
+TEST_CASE("animation.warm_synchronization_revalidates_hierarchy_and_authority_before_advancing") {
+  Fixture f;
+  auto players = Animation::ScenePlayers::create(f.scene, f.files).value();
+  REQUIRE(players.advance(.25));
+  const auto root = f.scene->createEntity("Root").value();
+  REQUIRE(f.scene->setRigidBody(root, World::RigidBody{}));
+  REQUIRE(players.advance(.25));
+  REQUIRE(f.scene->setParent(f.target, root));
+  const auto pose = f.scene->transform(f.target).value();
+
+  for (int i = 0; i < 2; ++i) {
+    CHECK_FALSE(players.advance(.25));
+    CHECK(players.state(f.owner)->playback.time == .5);
+    CHECK(f.scene->transform(f.target)->position == pose.position);
+  }
+
+  REQUIRE(f.scene->setRigidBody(root, {}));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == .75);
+  REQUIRE(f.scene->setParent(f.target, {}));
+  REQUIRE(f.scene->setCharacterController(root, World::CharacterController{}));
+  REQUIRE(f.scene->setParent(root, f.target));
+  CHECK_FALSE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == .75);
+  REQUIRE(f.scene->setParent(root, {}));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1);
+  const auto duplicate = f.scene->createEntity("Competing player").value();
+  REQUIRE(f.scene->setAnimationPlayer(duplicate, f.properties));
+  CHECK_FALSE(players.advance(.25));
+  CHECK_FALSE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1);
+  REQUIRE(f.scene->destroyEntity(duplicate));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1.25);
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, {}));
+  REQUIRE(players.advance(.25));
+  CHECK(players.stats()->players == 0);
+}
+
+TEST_CASE("animation.warm_prepared_sync_still_validates_assets_and_adopts_new_content_atomically") {
+  Fixture f;
+  const auto clip = Animation::loadClip(f.files, "assets/move.dotanimation").value();
+  const Animation::ClipAsset decoded{"assets/move.dotanimation", clip};
+  auto players = Animation::ScenePlayers::createPrepared(f.scene, f.files, {&decoded, 1}).value();
+  REQUIRE(players.advance(.25));
+  CHECK_FALSE(players.advancePrepared(.25, {&decoded, 1}));
+  const std::array duplicate{decoded, decoded};
+  CHECK_FALSE(players.advancePrepared(.25, duplicate));
+  CHECK(players.state(f.owner)->playback.time == .25);
+  REQUIRE(players.advancePrepared(.25, {}));
+  CHECK(players.state(f.owner)->playback.time == .5);
+  auto incoming = World::Scene::create().value();
+  const auto owner = incoming.createEntity("Incoming").value();
+  const auto target = incoming.createEntity("Incoming target").value();
+  auto properties = f.properties;
+  properties.targets.front().entity = target.value;
+  REQUIRE(incoming.setAnimationPlayer(owner, properties));
+  const auto added = f.scene->appendContent(incoming).value();
+  CHECK_FALSE(players.advancePrepared(.25, {}));
+  CHECK_FALSE(players.advancePrepared(.25, {}));
+  CHECK(players.state(f.owner)->playback.time == .5);
+  REQUIRE(players.advancePrepared(.25, {&decoded, 1}));
+  CHECK(players.stats()->players == 2);
+  CHECK(players.state(f.owner)->playback.time == .75);
+  REQUIRE(f.scene->removeContent(added.entities));
+  REQUIRE(players.advance(.25));
+  CHECK(players.stats()->players == 1);
+  CHECK(players.state(f.owner)->playback.time == 1);
+  REQUIRE(f.files.writeTextAtomic("assets/move.dotanimation", "invalid file replacement"));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1.25);
+  auto changed = f.properties;
+  changed.speed = 2;
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, changed));
+  CHECK_FALSE(players.advance(.25));
+  CHECK(f.scene->transform(f.target)->position.x == 1.25F);
+}

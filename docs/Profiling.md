@@ -267,3 +267,38 @@ Before/after static editor captures are byte-identical, SHA-256
 `e85af3c833d6f3820f4308c74a17b9742224ea5d49d66351c9d8fd7d74502773`.
 Raw profiles, stack reports, content fingerprints and comparison records remain in
 ignored build/world-pose-review, alongside the ordinary editable project/exports.
+
+## Reusing animation authority checks
+
+The next matched measurement retains the preceding player with incremental world
+poses and changes animation synchronization only. A scene-local binding stamp now
+invalidates on animation property value changes, hierarchy changes, physical-owner
+addition/removal and structural publication. Unchanged frames reuse completed
+binding/budget/authority validation; new runtime clip/fade writers and every applied
+pose still validate normally. Prepared asset updates always take full validation.
+
+Use a copy of the same ordinary PrismEnsemble project and all 147 identical exported
+game files per workload, including the manifest. Eight/one binding runs alternate
+old/new three times, each retaining 119 non-null Update samples. Native presentation
+is 2560x1600 on Apple M4 Pro/Metal, Release arm64 macOS. Full initial world and all
+player observations precede the one-second warmup; measurement windows use no full
+scene polling. First eight-binding old/new runs include a four-second OS CPU sample;
+other runs warm for one second then run two more seconds without that observer.
+
+| Native workload | Before Update median | After Update median | Reduction |
+| --- | ---: | ---: | ---: |
+| Eight animation bindings | 0.7675 ms | 0.3272 ms | 57.4% |
+| One animation binding | 0.1675 ms | 0.1005 ms | 40.0% |
+
+Values are medians of three run medians. Eight-binding run medians range
+0.6467..0.8831 → 0.2598..0.3279 ms; nearest-rank p95 ranges
+0.6760..0.9904 → 0.3045..0.4402 ms. One-binding run medians range
+0.1601..0.2633 → 0.1000..0.1022 ms. This stage's static editor captures match exactly,
+SHA-256 `de5dfb9d268ae0d7d261a9076d926ae6f5b11357cb65358f07e46b949e9751f0`.
+All final native profiles/runtime diagnostics remain
+error-free; these are free-running CPU envelopes with different retained wall-clock
+spans/phases, not GPU/FPS measurements or independent-character scalability proof.
+Do not combine separate stages' measurements into a controlled cumulative speedup.
+Preserve profiles, stack reports, startup/player/content hashes and ordinary editable
+content in ignored build/animation-sync-review. Animation sampling, per-pose validation,
+rendering/physics and broader populated-game/streaming costs remain separate work.
