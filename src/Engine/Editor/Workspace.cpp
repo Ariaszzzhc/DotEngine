@@ -498,6 +498,10 @@ namespace Dot::Editor {
     std::optional<Project::Project> m_project;
     WorkspaceConfig m_config;
     std::optional<ResourceStore> m_resources;
+    std::optional<SourceUpdate> m_sourceUpdate;
+    std::uint64_t m_sourceUpdateSession{};
+    std::uint64_t m_sourceUpdateNotified{};
+    std::optional<EditReport> m_sourceUpdateReport;
     std::optional<ModelImport> m_modelImport;
     std::uint64_t m_modelImportSession{};
     std::uint64_t m_modelImportNotified{};
@@ -3195,6 +3199,98 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "begin-source-update") {
+        Codec::requireFields(parsed, {"command", "revision", "operations"});
+
+        if (m_sourceUpdate || playing() || previewing() || m_transform || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+            || m_captureDialog || m_sceneDialog || m_uiEditor
+            || (m_modelImport && m_modelImport->status()->state == ModelImportState::Publishing)
+            || m_sourceUpdateSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Finish drafts/previews/dialogs and close the previous source update");
+        }
+
+        auto update = m_document->beginSourceUpdate(parsed["operations"].dump(),
+                                                    Codec::id(parsed["revision"]));
+
+        if (!update) {
+          return std::unexpected(update.error());
+        }
+
+        m_sourceUpdate.emplace(std::move(*update));
+        ++m_sourceUpdateSession;
+        m_sourceUpdateNotified = 0;
+        m_sourceUpdateReport.reset();
+        return Json{{"ok", true}, {"sourceUpdate", sourceUpdateStatus().value()}}.dump();
+      }
+
+      if (command == "inspect-source-update" || command == "apply-source-update"
+          || command == "cancel-source-update" || command == "close-source-update") {
+        if (command == "inspect-source-update") {
+          Codec::requireFields(parsed, {"command", "session"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "revision"});
+        }
+
+        if (!m_sourceUpdate || Codec::id(parsed["session"]) != m_sourceUpdateSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Source update session changed");
+        }
+
+        if (command != "inspect-source-update") {
+          const auto revision = Codec::id(parsed["revision"]);
+          Core::Result<void> changed;
+
+          if (command == "apply-source-update") {
+            if (playing() || previewing() || m_transform || pendingInspector()
+                || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+                || m_captureDialog || m_sceneDialog || m_uiEditor
+                || (m_modelImport
+                    && m_modelImport->status()->state == ModelImportState::Publishing)) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Finish drafts/previews/dialogs before applying source updates");
+            }
+
+            changed = m_sourceUpdate->requestApply(revision);
+          } else if (command == "cancel-source-update") {
+            changed = m_sourceUpdate->cancel(revision);
+          } else {
+            auto observed = m_sourceUpdate->status();
+
+            if (!observed || observed->revision != revision
+                || (observed->state != SourceUpdateState::Applied
+                    && observed->state != SourceUpdateState::Cancelled
+                    && observed->state != SourceUpdateState::Failed)) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Close the current finished/cancelled/failed source update");
+            }
+
+            m_sourceUpdate.reset();
+            m_sourceUpdateReport.reset();
+            return Json{{"ok", true}, {"sourceUpdate", nullptr}}.dump();
+          }
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        return Json{{"ok", true}, {"sourceUpdate", sourceUpdateStatus().value()}}.dump();
+      }
+
+      if (m_sourceUpdate) {
+        const auto state = m_sourceUpdate->status()->state;
+
+        if ((state == SourceUpdateState::Validating || state == SourceUpdateState::Validated)
+            && command != "inspect" && !command.starts_with("inspect-") && command != "close"
+            && command != "cancel-close" && command != "show-pane" && command != "set-theme"
+            && command != "request-focus") {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Wait for accepted source validation/publication before other operations");
+        }
+      }
 
       if (command == "inspect-model-import" || command == "publish-model-import"
           || command == "cancel-model-import" || command == "close-model-import") {
@@ -7414,6 +7510,7 @@ namespace Dot::Editor {
           {"animationController", controllerStatus()},
           {"animationClipboard", clipboardStatus()},
           {"uiEditor", uiStatus()},
+          {"sourceUpdate", m_sourceUpdate ? sourceUpdateStatus().value() : Json(nullptr)},
           {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
@@ -7531,6 +7628,8 @@ namespace Dot::Editor {
     }
 
     auto sceneOverrideInspector() -> void {
+      sourceUpdatePanel();
+
       if (!m_editEntity) {
         return;
       }
@@ -7749,9 +7848,14 @@ namespace Dot::Editor {
       if (requestedView) {
         sessionAction(*requestedView);
       } else if (requestedEdit) {
-        edit(Json::array({*requestedEdit}));
+        if ((*requestedEdit)["op"] == "unlink-scene-instance") {
+          edit(Json::array({*requestedEdit}));
+        } else {
+          action(
+              {{"command", "begin-source-update"}, {"operations", Json::array({*requestedEdit})}});
+        }
       } else if (requestedEdits) {
-        edit(*requestedEdits);
+        action({{"command", "begin-source-update"}, {"operations", *requestedEdits}});
       } else if (requestedSource) {
         openSceneAsset(*requestedSource);
       }
@@ -9986,6 +10090,131 @@ namespace Dot::Editor {
       }
     }
 
+    auto sourceUpdateStatus() const -> Core::Result<Json> {
+      auto observed = m_sourceUpdate->status();
+
+      if (!observed) {
+        return std::unexpected(observed.error());
+      }
+
+      constexpr std::array states{"preparing", "ready",      "validating", "validated",
+                                  "applied",   "cancelling", "cancelled",  "failed"};
+      constexpr std::array codes{"InvalidArgument", "NotFound",     "Io",
+                                 "Unavailable",     "InvalidState", "External"};
+      Json created = Json::array();
+
+      if (m_sourceUpdateReport) {
+        for (const auto value : m_sourceUpdateReport->created) {
+          created.push_back(std::to_string(value));
+        }
+      }
+
+      return Json{
+          {"session", std::to_string(m_sourceUpdateSession)},
+          {"revision", std::to_string(observed->revision)},
+          {"documentRevision", std::to_string(observed->documentRevision)},
+          {"state", states[static_cast<std::size_t>(observed->state)]},
+          {"result", m_sourceUpdateReport
+                         ? Json{{"revision", std::to_string(m_sourceUpdateReport->revision)},
+                                {"scope", std::to_string(m_sourceUpdateReport->scene)},
+                                {"changed", m_sourceUpdateReport->changed},
+                                {"created", std::move(created)}}
+                         : Json(nullptr)},
+          {"error", observed->error
+                        ? Json{{"code", codes[static_cast<std::size_t>(observed->error->code)]},
+                               {"message", observed->error->message}}
+                        : Json(nullptr)}};
+    }
+
+    /** Publish only on the owner, with no pending gestures/drafts and the exact captured document.
+     * 仅在拥有线程且无未提交手势/草稿时发布，严格检查捕获文档版本。 */
+    auto pollSourceUpdate() -> void {
+      if (!m_sourceUpdate) {
+        return;
+      }
+
+      auto observed = m_sourceUpdate->status();
+
+      if (!observed || observed->revision == m_sourceUpdateNotified) {
+        return;
+      }
+
+      m_sourceUpdateNotified = observed->revision;
+
+      if (observed->state == SourceUpdateState::Validated) {
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
+            || m_sceneDialog || m_uiEditor
+            || (m_modelImport && m_modelImport->status()->state == ModelImportState::Publishing)) {
+          static_cast<void>(m_sourceUpdate->cancel(observed->revision));
+          m_message = "Source update cancelled: finish current drafts/previews/dialogs";
+          return;
+        }
+
+        auto applied
+            = m_document->applySourceUpdate(*m_sourceUpdate, m_document->stats()->revision);
+
+        if (applied) {
+          m_sourceUpdateReport = *applied;
+          auto refreshed = refresh();
+          m_message = refreshed ? "Source update applied" : refreshed.error().message;
+          m_selectionAnchor = m_snapshot["selected"].is_null()
+                                  ? std::string{}
+                                  : m_snapshot["selected"].get<std::string>();
+        } else {
+          m_message = applied.error().message;
+        }
+      } else if (observed->state == SourceUpdateState::Failed) {
+        m_message = observed->error->message;
+      } else if (observed->state == SourceUpdateState::Ready) {
+        m_message = "Source update ready. Apply or cancel it in Assets.";
+      }
+    }
+
+    auto sourceUpdatePanel() -> void {
+      if (!m_sourceUpdate) {
+        return;
+      }
+
+      const auto observed = sourceUpdateStatus();
+
+      if (!observed) {
+        ImGui::TextWrapped("%s", observed.error().message.c_str());
+        return;
+      }
+
+      const auto& value = *observed;
+      const auto state = value["state"].get<std::string>();
+      ImGui::SeparatorText("Scene source update");
+      ImGui::TextWrapped("%s. Preparation keeps the scene unchanged.", state.c_str());
+
+      if (!value["error"].is_null()) {
+        ImGui::TextWrapped("%s", value["error"]["message"].get_ref<const std::string&>().c_str());
+      }
+
+      const auto act = [&](const char* command) {
+        auto result = safeExecute(Json{
+            {"command", command}, {"session", value["session"]}, {"revision", value["revision"]}}
+                                      .dump());
+        m_message = result ? "" : result.error().message;
+      };
+
+      if (state == "ready" && ImGui::Button("Apply source update")) {
+        act("apply-source-update");
+      }
+
+      if ((state == "preparing" || state == "ready" || state == "validating"
+           || state == "validated")
+          && ImGui::Button("Cancel source update")) {
+        act("cancel-source-update");
+      }
+
+      if ((state == "applied" || state == "cancelled" || state == "failed")
+          && ImGui::Button("Close source update")) {
+        act("close-source-update");
+      }
+    }
+
     auto modelImportStatus() const -> Core::Result<Json> {
       if (!m_modelImport) {
         return Core::fail(Core::ErrorCode::InvalidState, "No model import is open");
@@ -10285,6 +10514,7 @@ namespace Dot::Editor {
 
     auto resourcesPanel() -> void {
       ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+      sourceUpdatePanel();
       modelImportPanel();
       reimportPanel();
       searchField("##asset-search", "Search project assets", "resources", m_assetFilter);
@@ -15598,6 +15828,7 @@ namespace Dot::Editor {
       };
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
         pollPlayPreparation();
+        pollSourceUpdate();
         pollModelImport();
         auto processed = processRequests();
 

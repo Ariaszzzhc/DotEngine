@@ -475,3 +475,9 @@ This removes repeated full-target reconstruction inside a source update segment.
 Source resolution and final document publication still run on the owner thread;
 background dependency I/O, resource streaming and large-scene frame deadlines
 remain separate unfinished work.
+
+Source refresh/restore/retarget can also be prepared as one owned editor background
+job. It captures authored bytes and stable document identity without sharing a live
+Scene. Recursive file observations are bounded and rechecked on the worker when
+Apply is requested; final owner publication requires the exact captured revision
+and scene path. See [background update controls](Editor.md#background-scene-source-updates).

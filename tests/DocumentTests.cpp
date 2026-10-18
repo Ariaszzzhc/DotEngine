@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <limits>
@@ -2286,4 +2287,278 @@ TEST_CASE("document.source_batch_commits_only_after_final_cross_instance_referen
   CHECK(scene->entity({scene->id(), 7})->parent->value == 6);
   REQUIRE(document.undo(revision(document)));
   CHECK(state(document)["scene"] == before["scene"]);
+}
+
+namespace {
+  auto waitSource(SourceUpdate& update, SourceUpdateState desired) -> SourceUpdateStatus {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    auto observed = update.status().value();
+
+    while (observed.state != desired && observed.state != SourceUpdateState::Failed
+           && observed.state != SourceUpdateState::Cancelled
+           && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      observed = update.status().value();
+    }
+
+    REQUIRE_MESSAGE(observed.state == desired,
+                    (observed.error ? observed.error->message : "Source update state timeout"));
+    return observed;
+  }
+
+  auto sourceUpdate(Document& document, const Json& operations) -> SourceUpdate {
+    auto update = document.beginSourceUpdate(operations.dump(), revision(document));
+    REQUIRE_MESSAGE(update, (update ? "" : update.error().message));
+    return std::move(*update);
+  }
+
+  auto validateSource(SourceUpdate& update) -> void {
+    const auto ready = waitSource(update, SourceUpdateState::Ready);
+    REQUIRE(update.requestApply(ready.revision));
+    waitSource(update, SourceUpdateState::Validated);
+  }
+}  // namespace
+
+TEST_CASE("document.background_source_update_matches_atomic_edit_and_undo") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  REQUIRE(source.createEntity("Background addition"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  const auto before = state(document);
+  const auto operations = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}},
+                                       {{"op", "refresh-scene-instance"}, {"entity", "6"}}});
+  auto update = sourceUpdate(document, operations);
+  auto moved = std::move(update);
+  CHECK_FALSE(update.status());
+  waitSource(moved, SourceUpdateState::Ready);
+  CHECK(state(document) == before);
+  CHECK_FALSE(document.applySourceUpdate(moved, revision(document)));
+  validateSource(moved);
+  auto result = document.applySourceUpdate(moved, revision(document));
+  REQUIRE(result);
+  CHECK(result->changed);
+  CHECK(result->created == std::vector<std::uint64_t>{9, 10});
+  CHECK(moved.status()->state == SourceUpdateState::Applied);
+  CHECK_FALSE(document.applySourceUpdate(moved, revision(document)));
+  const auto after = state(document);
+  CHECK(after["historyEntries"].get<int>() == before["historyEntries"].get<int>() + 1);
+  REQUIRE(document.undo(revision(document)));
+  CHECK(authored(state(document)["scene"]) == authored(before["scene"]));
+  REQUIRE(document.redo(revision(document)));
+  CHECK(state(document)["scene"] == after["scene"]);
+  const auto restored = state(document);
+  auto noop = sourceUpdate(document, operations);
+  validateSource(noop);
+  auto unchanged = document.applySourceUpdate(noop, revision(document));
+  REQUIRE(unchanged);
+  CHECK_FALSE(unchanged->changed);
+  CHECK(state(document) == restored);
+}
+
+TEST_CASE("document.background_source_update_rejects_stale_documents_and_foreign_owners") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto operation = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}});
+  auto update = sourceUpdate(document, operation);
+  validateSource(update);
+  auto foreign = fixture.document();
+  CHECK_FALSE(foreign.applySourceUpdate(update, revision(foreign)));
+  CHECK(update.status()->state == SourceUpdateState::Validated);
+  edit(document, rename());
+  const auto changed = state(document);
+  CHECK_FALSE(document.applySourceUpdate(update, revision(document)));
+  CHECK(update.status()->state == SourceUpdateState::Failed);
+  CHECK(state(document) == changed);
+  auto selected = sourceUpdate(document, operation);
+  validateSource(selected);
+  REQUIRE(
+      document.select(Dot::World::EntityId{document.scene().value()->id(), 2}, revision(document)));
+  const auto selection = state(document);
+  CHECK_FALSE(document.applySourceUpdate(selected, revision(document)));
+  CHECK(state(document) == selection);
+}
+
+TEST_CASE("document.background_source_update_rechecks_ready_source_and_metadata") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto operations = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}});
+  const auto before = state(document);
+  auto update = sourceUpdate(document, operations);
+  const auto ready = waitSource(update, SourceUpdateState::Ready);
+  REQUIRE(source.createEntity("External edit after ready"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  REQUIRE(update.requestApply(ready.revision));
+  waitSource(update, SourceUpdateState::Failed);
+  CHECK(state(document) == before);
+  auto metadata = sourceUpdate(document, operations);
+  const auto prepared = waitSource(metadata, SourceUpdateState::Ready);
+  auto project = fixture.project();
+  auto description = project.description().value();
+  description.name = "External description";
+  REQUIRE(project.save(description));
+  REQUIRE(metadata.requestApply(prepared.revision));
+  waitSource(metadata, SourceUpdateState::Failed);
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.background_source_update_cancellation_and_teardown_preserve_state") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto operations = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}});
+  const auto before = state(document);
+
+  for (bool readyFirst : {false, true}) {
+    auto update = sourceUpdate(document, operations);
+
+    if (readyFirst) {
+      waitSource(update, SourceUpdateState::Ready);
+    }
+
+    const auto current = update.status().value();
+    auto cancelled = update.cancel(current.revision);
+
+    if (!cancelled) {
+      REQUIRE(update.cancel(update.status()->revision));
+    }
+
+    waitSource(update, SourceUpdateState::Cancelled);
+    CHECK_FALSE(document.applySourceUpdate(update, revision(document)));
+    CHECK(state(document) == before);
+  }
+
+  {
+    auto discarded = sourceUpdate(document, operations);
+    waitSource(discarded, SourceUpdateState::Ready);
+  }
+
+  auto validated = sourceUpdate(document, operations);
+  validateSource(validated);
+  REQUIRE(validated.cancel(validated.status()->revision));
+  CHECK(validated.status()->state == SourceUpdateState::Cancelled);
+  CHECK(state(document) == before);
+  auto surviving = sourceUpdate(document, operations);
+  document = fixture.document();
+  validateSource(surviving);
+  CHECK_FALSE(document.applySourceUpdate(surviving, revision(document)));
+}
+
+TEST_CASE("document.background_source_update_validates_boundaries_and_thread_ownership") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto operations = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}});
+
+  for (const auto& invalid : {Json(nullptr), Json::object(), Json::array(), rename(),
+                              Json::array({{{"op", "unlink-scene-instance"}, {"entity", "3"}}}),
+                              Json(std::vector<Json>(257, operations[0]))}) {
+    CHECK_FALSE(document.beginSourceUpdate(invalid.dump(), revision(document)));
+  }
+
+  CHECK_FALSE(document.beginSourceUpdate("[", revision(document)));
+  CHECK_FALSE(document.beginSourceUpdate(operations.dump(), revision(document) - 1));
+  auto invalid = sourceUpdate(
+      document,
+      Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}, {"extra", true}}}));
+  waitSource(invalid, SourceUpdateState::Failed);
+  auto update = sourceUpdate(document, operations);
+  const auto ready = waitSource(update, SourceUpdateState::Ready);
+  CHECK_FALSE(update.requestApply(ready.revision - 1));
+  std::jthread other([&] {
+    CHECK_FALSE(update.status());
+    CHECK_FALSE(update.cancel(ready.revision));
+    CHECK_FALSE(update.requestApply(ready.revision));
+    CHECK_FALSE(document.beginSourceUpdate(operations.dump(), ready.documentRevision));
+  });
+  other.join();
+  CHECK(update.status()->state == SourceUpdateState::Ready);
+  REQUIRE(update.cancel(ready.revision));
+  waitSource(update, SourceUpdateState::Cancelled);
+  auto maximum = sourceUpdate(document, Json(std::vector<Json>(256, operations[0])));
+  validateSource(maximum);
+  CHECK(document.applySourceUpdate(maximum, revision(document)));
+}
+
+TEST_CASE("document.background_source_update_failure_retains_document_and_history_budget") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  REQUIRE(document.save(revision(document)));
+  const auto bytes = fixture.document().stats()->historyBytes;
+  auto bounded = fixture.document({128, bytes});
+  REQUIRE(source.createEntity("Larger result"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  const auto before = state(bounded);
+  auto update
+      = sourceUpdate(bounded, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}}));
+  validateSource(update);
+  CHECK_FALSE(bounded.applySourceUpdate(update, revision(bounded)));
+  CHECK(update.status()->state == SourceUpdateState::Failed);
+  CHECK(state(bounded) == before);
+  auto missing = sourceUpdate(bounded, Json::array({{{"op", "retarget-scene-instance"},
+                                                     {"entity", "3"},
+                                                     {"path", "assets/missing.dotscene"}}}));
+  waitSource(missing, SourceUpdateState::Failed);
+  CHECK(state(bounded) == before);
+}
+
+TEST_CASE("document.background_source_update_rechecks_nested_sources_and_rejects_symlinks") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto wrapper = fixture.document();
+  edit(wrapper, Json::array({linkOperation()}));
+  REQUIRE(wrapper.saveAs("assets/wrapper.dotscene", revision(wrapper)));
+  auto document = fixture.document();
+  auto link = linkOperation();
+  link["path"] = "assets/wrapper.dotscene";
+  edit(document, Json::array({link}));
+  const auto operations = Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}});
+  const auto before = state(document);
+  auto nested = sourceUpdate(document, operations);
+  const auto ready = waitSource(nested, SourceUpdateState::Ready);
+  REQUIRE(source.createEntity("Changed transitive source"));
+  REQUIRE(
+      Dot::World::saveScene(fixture.project().files().value(), "assets/panels.dotscene", source));
+  REQUIRE(nested.requestApply(ready.revision));
+  waitSource(nested, SourceUpdateState::Failed);
+  CHECK(state(document) == before);
+  auto symlink = sourceUpdate(document, operations);
+  const auto prepared = waitSource(symlink, SourceUpdateState::Ready);
+  const auto path = fixture.root / "game/assets/panels.dotscene";
+  const auto moved = fixture.root / "game/assets/moved.dotscene";
+  std::filesystem::rename(path, moved);
+  std::filesystem::create_symlink(moved, path);
+  REQUIRE(symlink.requestApply(prepared.revision));
+  waitSource(symlink, SourceUpdateState::Failed);
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.background_source_update_uses_portable_utf8_paths") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  const auto path = std::filesystem::path(u8"assets/检修.dotscene");
+  REQUIRE(Dot::World::saveScene(fixture.project().files().value(), path, source));
+  auto update = sourceUpdate(document, Json::array({{{"op", "retarget-scene-instance"},
+                                                     {"entity", "3"},
+                                                     {"path", "assets/检修.dotscene"}}}));
+  validateSource(update);
+  auto moved = std::move(document);
+  auto applied = moved.applySourceUpdate(update, revision(moved));
+  REQUIRE(applied);
+  CHECK(applied->changed);
+  CHECK(moved.scene().value()->sceneLinks()->front().asset == "assets/检修.dotscene");
 }

@@ -19,6 +19,53 @@ byte totals, `scenePath` and the complete version-1 native scene. Responses also
 and an array of surviving newly created values. Owned snapshots may be freely edited
 without modifying the document.
 
+## Background scene source updates
+
+The linked-source Inspector prepares single/all-instance refresh, restore and relink
+in a document-owned background job. Its controls in Inspector and Assets use the
+same strict Workspace commands:
+
+```json
+{"command":"begin-source-update","revision":"12","operations":[{"op":"refresh-scene-instance","entity":"472"}]}
+{"command":"inspect-source-update","session":"1"}
+{"command":"apply-source-update","session":"1","revision":"2"}
+{"command":"cancel-source-update","session":"1","revision":"2"}
+{"command":"close-source-update","session":"1","revision":"5"}
+```
+
+Begin accepts only 1..256 refresh/revert/retarget operations (the existing `edit`
+operation schemas), at most 1 MiB. It captures an immutable authored snapshot,
+allocation floor, selection, document identity/revision and scene path without
+copying a live Scene to another thread. One job is open per Workspace. Preparing
+uses the same native source transaction as document edits. Other authoring remains
+available; any subsequent document/selection/file-path change invalidates publication.
+
+`workspace.sourceUpdate` and the dedicated status contain session, job revision,
+captured document revision, state, optional error and final edit result. Job and
+document revisions are distinct. States are preparing → ready → validating →
+validated → applied; cancellation uses cancelling/cancelled, and failures use failed.
+Ready changes nothing. Apply accepts intent at the current ready job revision;
+the worker rechecks exact bytes and safe resource paths for every observed source,
+including recursive dependencies and project metadata. Accepted validation reserves
+other Workspace mutations until publication/cancellation; inspection remains available.
+Workspace then publishes
+validated serialized content on the document owner, provided drafts, gestures,
+previews, dialogs and other publication are finished. Applied reports the document
+revision/scope, changed flag and surviving created values. Undo/redo/save use the
+ordinary document history. Failed/stale/cancelled jobs cannot replace the scene.
+Close requires the current applied/cancelled/failed job revision; cancel first for
+unfinished jobs. Session/revision/unknown-field errors have no effects.
+
+The observation set retains at most 4096 files/128 MiB, in addition to bounded
+source/candidate scene storage. Status, apply intent and cancel do no file I/O.
+Cancellation and shutdown join cooperatively around bounded file/codec/native calls;
+this does not promise a hard deadline. Writers must still be serialized: worker
+validation plus owner publication is not an operating-system snapshot or compare-
+and-swap against arbitrary external writers. Final owner decode/history/scene
+publication and workspace refresh remain synchronous. General resource streaming
+and asynchronous final publication remain unfinished. Mixed document `edit`
+transactions retain their existing atomic synchronous contract.
+
 ## Requests
 
 ```json

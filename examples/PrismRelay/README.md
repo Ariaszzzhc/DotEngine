@@ -224,3 +224,12 @@ Inspector/agent operations. Collision follows the saved geometry, including beve
 and nonuniform scale. The eight parent box approximations were removed; ventilation
 runs still use their existing box proxies. Play and native exports use the same
 geometry preparation and Jolt implementation.
+
+Linked ventilation sources support background refresh/restore/relink in the real
+Inspector. Prepare the single/all-instance operation, then Apply or Cancel from
+Inspector/Assets. Preparation leaves authoring unchanged; changing the scene or
+selection invalidates its captured revision. Ready sources are rechecked before
+application, and an applied batch is one undoable scene edit. Agents use the same
+`begin-source-update` / `inspect-source-update` / `apply-source-update` /
+`cancel-source-update` / `close-source-update` commands described in
+[editor controls](../../docs/Editor.md#background-scene-source-updates).

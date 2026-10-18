@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -9,9 +10,11 @@ module;
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -112,8 +115,47 @@ namespace Dot::Editor {
       }
     }
 
+    struct SourceReads {
+      std::map<std::string, std::string> files;
+      std::uint64_t bytes{};
+      std::stop_token stop;
+
+      auto check() const -> Core::Result<void> {
+        return stop.stop_requested() ? Core::Result<void>{Core::fail(Core::ErrorCode::Unavailable,
+                                                                     "Source update cancelled")}
+                                     : Core::Result<void>{};
+      }
+
+      auto observe(std::string_view path, const std::string& text) -> Core::Result<void> {
+        auto checked = check();
+
+        if (!checked) {
+          return checked;
+        }
+
+        const auto found = files.find(std::string(path));
+
+        if (found != files.end()) {
+          return found->second == text
+                     ? Core::Result<void>{}
+                     : Core::fail(Core::ErrorCode::InvalidState,
+                                  "Source changed during preparation: " + std::string(path));
+        }
+
+        if (files.size() == 4096 || text.size() > 128 * 1024 * 1024 - bytes) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Source update exceeds 4096 files/128 MiB observation budget");
+        }
+
+        files.emplace(path, text);
+        bytes += text.size();
+        return {};
+      }
+    };
+
     auto loadContent(const Project::Project& project, std::string_view path,
-                     std::string_view activePath = {}) -> Core::Result<World::SceneSourceSnapshot> {
+                     std::string_view activePath = {}, SourceReads* reads = nullptr)
+        -> Core::Result<World::SceneSourceSnapshot> {
       if (!sceneAssetPath(path) || path == activePath) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Linked content requires a distinct portable scene/assets path");
@@ -129,9 +171,27 @@ namespace Dot::Editor {
       auto resolved = World::resolveSceneSource(
           path,
           [&](std::string_view asset, std::size_t maximum) -> Core::Result<std::string> {
+            if (reads) {
+              auto checked = reads->check();
+
+              if (!checked) {
+                return std::unexpected(checked.error());
+              }
+            }
+
             auto readable = store->externalTextPath(asset);
-            return readable ? files->readText(sceneFile(asset), maximum)
-                            : Core::Result<std::string>{std::unexpected(readable.error())};
+            auto text = readable ? files->readText(sceneFile(asset), maximum)
+                                 : Core::Result<std::string>{std::unexpected(readable.error())};
+
+            if (text && reads) {
+              auto observed = reads->observe(asset, *text);
+
+              if (!observed) {
+                return std::unexpected(observed.error());
+              }
+            }
+
+            return text;
           },
           {}, activePath);
       return resolved ? Core::Result<World::SceneSourceSnapshot>{std::move(resolved->source)}
@@ -215,7 +275,8 @@ namespace Dot::Editor {
     auto sourceUpdates(Json& scene, std::span<const Json> commands, std::size_t& index,
                        std::uint64_t& next, std::vector<std::uint64_t>& created,
                        std::vector<std::uint64_t>& selection, const Project::Project& project,
-                       std::string_view activePath) -> Core::Result<void> {
+                       std::string_view activePath, SourceReads* reads = nullptr)
+        -> Core::Result<void> {
       auto target = decodeCandidate(scene, next);
 
       if (!target) {
@@ -234,6 +295,15 @@ namespace Dot::Editor {
 
       for (std::size_t offset = 0; offset < commands.size(); ++offset) {
         index = begin + offset;
+
+        if (reads) {
+          auto checked = reads->check();
+
+          if (!checked) {
+            return checked;
+          }
+        }
+
         const auto& command = commands[offset];
         const auto op = command["op"].get<std::string>();
         const bool retarget = op == "retarget-scene-instance";
@@ -254,7 +324,7 @@ namespace Dot::Editor {
 
         if (!current || currentPath != *path) {
           current.reset();
-          auto source = loadContent(project, *path, activePath);
+          auto source = loadContent(project, *path, activePath, reads);
 
           if (!source) {
             return std::unexpected(source.error());
@@ -837,6 +907,286 @@ namespace Dot::Editor {
     }
   }  // namespace
 
+  struct SourceUpdate::Impl {
+    struct Candidate {
+      std::string scene;
+      std::uint64_t next;
+      std::vector<std::uint64_t> created;
+      std::vector<std::uint64_t> selection;
+    };
+
+    std::thread::id m_owner{std::this_thread::get_id()};
+    Project::Project m_project;
+    std::shared_ptr<const std::uint8_t> m_identity;
+    std::uint64_t m_documentRevision;
+    std::string m_path;
+    mutable std::mutex m_mutex;
+    std::condition_variable m_changed;
+    SourceUpdateState m_state{SourceUpdateState::Preparing};
+    std::uint64_t m_revision{1};
+    std::optional<Core::Error> m_error;
+    std::optional<Candidate> m_candidate;
+    std::jthread m_worker;
+
+    Impl(Project::Project project, std::shared_ptr<const std::uint8_t> identity,
+         std::uint64_t revision, std::string path, std::shared_ptr<const std::string> text,
+         std::uint64_t next, std::vector<std::uint64_t> selection, Json commands)
+        : m_project(std::move(project)),
+          m_identity(std::move(identity)),
+          m_documentRevision(revision),
+          m_path(std::move(path)),
+          m_worker([this, text = std::move(text), next, selection = std::move(selection),
+                    commands = std::move(commands)](std::stop_token stop) mutable {
+            run(*text, next, std::move(selection), commands, stop);
+          }) {
+    }
+
+    ~Impl() {
+      {
+        std::lock_guard lock(m_mutex);
+        m_worker.request_stop();
+      }
+
+      m_changed.notify_one();
+
+      if (m_worker.joinable()) {
+        m_worker.join();
+      }
+    }
+
+    auto owner() const -> Core::Result<void> {
+      return m_owner == std::this_thread::get_id()
+                 ? Core::Result<void>{}
+                 : Core::fail(Core::ErrorCode::InvalidState,
+                              "Source update requires its owner thread");
+    }
+
+    auto complete(SourceUpdateState state, std::optional<Core::Error> error = {}) -> void {
+      std::lock_guard lock(m_mutex);
+      m_candidate.reset();
+      m_state = state;
+      m_error = std::move(error);
+      ++m_revision;
+    }
+
+    auto prepare(std::string_view text, std::uint64_t next, std::vector<std::uint64_t> selection,
+                 const Json& commands, SourceReads& reads) -> Core::Result<Candidate> {
+      auto files = m_project.files();
+      auto metadata = files ? files->readText("project.dotproject", 64 * 1024)
+                            : Core::Result<std::string>{std::unexpected(files.error())};
+
+      if (!metadata) {
+        return std::unexpected(metadata.error());
+      }
+
+      auto actual = Project::decodeDescription(*metadata);
+
+      if (!actual || *actual != m_project.description().value()) {
+        return actual ? Core::fail(Core::ErrorCode::InvalidState,
+                                   "Editor project metadata changed externally")
+                      : std::unexpected(actual.error());
+      }
+
+      auto observed = reads.observe("project.dotproject", *metadata);
+
+      if (!observed) {
+        return std::unexpected(observed.error());
+      }
+
+      auto candidate = Codec::parseJson(text);
+      std::size_t index = 0;
+      std::vector<std::uint64_t> created;
+      auto updated = sourceUpdates(candidate, commands.get_ref<const Json::array_t&>(), index, next,
+                                   created, selection, m_project, m_path, &reads);
+
+      if (!updated) {
+        return Core::fail(updated.error().code, "Edit operation " + std::to_string(index) + ": "
+                                                    + updated.error().message);
+      }
+
+      auto scene = decodeCandidate(candidate, next);
+      auto encoded = scene ? World::encodeScene(*scene)
+                           : Core::Result<std::string>{std::unexpected(scene.error())};
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      return Candidate{std::move(*encoded), next, std::move(created), std::move(selection)};
+    }
+
+    auto validate(const SourceReads& reads) -> Core::Result<void> {
+      auto files = m_project.files();
+      auto store = ResourceStore::open(m_project, {.textBytes = 64 * 1024 * 1024});
+
+      if (!files || !store) {
+        return std::unexpected(!files ? files.error() : store.error());
+      }
+
+      for (const auto& [path, observed] : reads.files) {
+        auto checked = reads.check();
+
+        if (!checked) {
+          return checked;
+        }
+
+        if (path != "project.dotproject") {
+          auto readable = store->externalTextPath(path);
+
+          if (!readable) {
+            return std::unexpected(readable.error());
+          }
+        }
+
+        auto text = files->readText(sceneFile(path), observed.size() + 1);
+
+        if (!text) {
+          return std::unexpected(text.error());
+        }
+
+        if (*text != observed) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Source changed before application: " + path);
+        }
+      }
+
+      return {};
+    }
+
+    auto run(std::string_view text, std::uint64_t next, std::vector<std::uint64_t> selection,
+             const Json& commands, std::stop_token stop) -> void {
+      try {
+        SourceReads reads{{}, 0, stop};
+        auto prepared = prepare(text, next, std::move(selection), commands, reads);
+
+        if (stop.stop_requested()) {
+          complete(SourceUpdateState::Cancelled);
+          return;
+        }
+
+        if (!prepared) {
+          complete(SourceUpdateState::Failed, prepared.error());
+          return;
+        }
+
+        std::unique_lock lock(m_mutex);
+
+        if (!stop.stop_requested()) {
+          m_state = SourceUpdateState::Ready;
+          ++m_revision;
+          m_changed.wait(lock, [&] {
+            return stop.stop_requested() || m_state == SourceUpdateState::Validating;
+          });
+        }
+
+        lock.unlock();
+        auto validated = reads.check();
+
+        if (validated) {
+          validated = validate(reads);
+        }
+
+        lock.lock();
+
+        if (stop.stop_requested()) {
+          m_state = SourceUpdateState::Cancelled;
+        } else if (!validated) {
+          m_state = SourceUpdateState::Failed;
+          m_error = validated.error();
+        } else {
+          m_candidate.emplace(std::move(*prepared));
+          m_state = SourceUpdateState::Validated;
+        }
+
+        ++m_revision;
+      } catch (const Json::exception& error) {
+        complete(SourceUpdateState::Failed,
+                 Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Source update JSON: " + std::string(error.what()))
+                     .error());
+      } catch (const std::invalid_argument& error) {
+        complete(SourceUpdateState::Failed,
+                 Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Source update command: " + std::string(error.what()))
+                     .error());
+      } catch (const std::exception& error) {
+        complete(SourceUpdateState::Failed,
+                 Core::fail(Core::ErrorCode::External,
+                            "Source update worker: " + std::string(error.what()))
+                     .error());
+      }
+    }
+  };
+
+  SourceUpdate::SourceUpdate(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {
+  }
+
+  SourceUpdate::SourceUpdate(SourceUpdate&&) noexcept = default;
+
+  auto SourceUpdate::operator=(SourceUpdate&&) noexcept -> SourceUpdate& = default;
+
+  SourceUpdate::~SourceUpdate() = default;
+
+  auto SourceUpdate::status() const -> Core::Result<SourceUpdateStatus> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Source update was moved");
+    }
+
+    auto owner = m_impl->owner();
+
+    if (!owner) {
+      return std::unexpected(owner.error());
+    }
+
+    std::lock_guard lock(m_impl->m_mutex);
+    return SourceUpdateStatus{m_impl->m_state, m_impl->m_revision, m_impl->m_documentRevision,
+                              m_impl->m_error};
+  }
+
+  auto SourceUpdate::requestApply(std::uint64_t revision) -> Core::Result<void> {
+    auto observed = status();
+
+    if (!observed) {
+      return std::unexpected(observed.error());
+    }
+
+    std::lock_guard lock(m_impl->m_mutex);
+
+    if (revision != m_impl->m_revision || m_impl->m_state != SourceUpdateState::Ready) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Apply the current ready source update");
+    }
+
+    m_impl->m_state = SourceUpdateState::Validating;
+    ++m_impl->m_revision;
+    m_impl->m_changed.notify_one();
+    return {};
+  }
+
+  auto SourceUpdate::cancel(std::uint64_t revision) -> Core::Result<void> {
+    auto observed = status();
+
+    if (!observed) {
+      return std::unexpected(observed.error());
+    }
+
+    std::lock_guard lock(m_impl->m_mutex);
+    const auto state = m_impl->m_state;
+
+    if (revision != m_impl->m_revision
+        || (state != SourceUpdateState::Preparing && state != SourceUpdateState::Ready
+            && state != SourceUpdateState::Validating && state != SourceUpdateState::Validated)) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Cancel a current unfinished source update");
+    }
+
+    m_impl->m_worker.request_stop();
+    m_impl->m_candidate.reset();
+    m_impl->m_state = state == SourceUpdateState::Validated ? SourceUpdateState::Cancelled
+                                                            : SourceUpdateState::Cancelling;
+    ++m_impl->m_revision;
+    m_impl->m_changed.notify_one();
+    return {};
+  }
+
   struct Document::Impl {
     struct Entry {
       std::shared_ptr<const std::string> text;
@@ -847,6 +1197,7 @@ namespace Dot::Editor {
       }
     };
 
+    std::shared_ptr<const std::uint8_t> m_identity{std::make_shared<const std::uint8_t>(0)};
     Project::Project m_project;
     std::string m_path;
     World::Scene m_scene;
@@ -1419,6 +1770,94 @@ namespace Dot::Editor {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare editor edit: " + std::string(error.what()));
     }
+  }
+
+  auto Document::beginSourceUpdate(std::string_view operations, std::uint64_t revision) const
+      -> Core::Result<SourceUpdate> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+    auto valid = input(operations);
+
+    if (!checked || !valid) {
+      return std::unexpected(!checked ? checked.error() : valid.error());
+    }
+
+    try {
+      auto commands = Codec::parseJson(operations);
+
+      if (!commands.is_array() || commands.empty() || commands.size() > 256
+          || !std::ranges::all_of(commands, sourceUpdate)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Source update requires 1..256 refresh/restore/retarget operations");
+      }
+
+      const auto& entry = m_impl->m_history[m_impl->m_cursor];
+      return SourceUpdate(std::make_unique<SourceUpdate::Impl>(
+          m_impl->m_project, m_impl->m_identity, revision, m_impl->m_path, entry.text,
+          m_impl->m_next, entry.selection, std::move(commands)));
+    } catch (const Json::exception& error) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Begin source update JSON: " + std::string(error.what()));
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Begin source update: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::applySourceUpdate(SourceUpdate& update, std::uint64_t revision)
+      -> Core::Result<EditReport> {
+    auto observed = update.status();
+
+    if (!observed) {
+      return std::unexpected(observed.error());
+    }
+
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    std::lock_guard lock(update.m_impl->m_mutex);
+    auto& job = *update.m_impl;
+
+    if (job.m_state != SourceUpdateState::Validated || !job.m_candidate) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Source update is not validated");
+    }
+
+    if (job.m_identity != m_impl->m_identity) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Source update belongs to another document");
+    }
+
+    Core::Result<EditReport> result
+        = Core::fail(Core::ErrorCode::InvalidState, "Source update document revision/path changed");
+
+    try {
+      if (job.m_documentRevision == revision && job.m_path == m_impl->m_path) {
+        auto& candidate = *job.m_candidate;
+        auto scene = World::decodeScene(candidate.scene);
+        result = scene
+                     ? m_impl->commit(std::move(*scene), candidate.next,
+                                      std::move(candidate.created), std::move(candidate.selection))
+                     : Core::Result<EditReport>{std::unexpected(scene.error())};
+      }
+    } catch (const std::exception& error) {
+      result = Core::fail(Core::ErrorCode::External,
+                          "Publish source update: " + std::string(error.what()));
+    }
+
+    job.m_candidate.reset();
+    job.m_state = result ? SourceUpdateState::Applied : SourceUpdateState::Failed;
+    job.m_error = result ? std::optional<Core::Error>{} : result.error();
+    ++job.m_revision;
+    return result;
   }
 
   auto Document::applySceneField(World::EntityId root, World::EntityId entity,

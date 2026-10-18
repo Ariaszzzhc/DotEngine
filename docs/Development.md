@@ -13956,3 +13956,99 @@ background dependency I/O, asynchronous final document publication, general scen
 streaming, hard frame deadlines, finished art and overall production readiness
 remain unproven or unfinished. The source transaction is groundwork for those
 remaining capabilities, not a claim that moving work off-thread is complete.
+
+## 2026-10-18 — Background scene source preparation
+
+Add owned source-update jobs to the native document/editor workflow. Inspector
+single/all-instance refresh, restore and relink now prepare outside the document
+owner, then expose explicit Apply/Cancel/Close in Inspector and Assets. Strict
+Workspace commands share these implementations and expose session/job revisions,
+captured document revision, state, final edit report and contextual errors.
+
+The worker captures immutable authored bytes, allocation floor and selection IDs;
+no live World/device handles cross threads. Preparation shares the existing native
+source batch transaction. It retains at most 4096 file observations/128 MiB of raw
+source text in addition to bounded scene data. Apply intent triggers worker-side
+exact byte/path revalidation of metadata and every transitive dependency. Accepted
+validation reserves other Workspace mutations until publication/cancellation.
+The owner rejects another document, changed revision/path, pending drafts/gestures/
+previews/dialogs and cancelled work. Successful publication is one ordinary undoable
+edit; no-op/failure preserves existing document semantics. Cancellation/destruction
+cooperatively stop/join around bounded calls; no hard deadline is claimed. Source
+writers still require serialization: validation/publication is not an OS snapshot.
+Use explicit UTF-8 native paths for both loading and revalidation.
+
+Verification on arm64 macOS, with builds/tests and native application runs serialized:
+
+- Full Debug: 1613/1613, 262.41 s. After adding the Workspace publication reservation,
+  rebuild Debug and pass the relevant 94 cases, 7.03 s. The final explicit UTF-8 path
+  correction and new regression pass 95 relevant Debug cases, 7.14 s; do not label
+  the earlier full Debug run as the final 1614-case binary.
+- Final full Release/NDEBUG: 1614/1614, 37.59 s (514 unit, 1100 integration;
+  offscreen GPU tests remain separate). Eight new file-integration cases cover
+  atomic update/undo/no-op/created values, foreign/stale/selected documents, exact
+  source and metadata changes, preparing/ready/validated cancellation and teardown,
+  strict shapes/counts/thread ownership, history failure, nested/symlinked sources,
+  and UTF-8 paths across document moves. Tests initialize no desktop windows.
+- Final formatting and diff checks pass. Review ownership, stop/condition-variable
+  ordering, stale result rejection, bounded observations, portable paths, shared
+  GUI/agent publication and error propagation. No compiler environment, dependency,
+  warning, assertion, timeout or native budget is relaxed.
+
+In the actual 342-entity/26-link Prism project, perform three warm samples per
+path using identical no-op operation arrays and saved content. Final Release native
+Application Prepare step envelopes (ms) are synchronous
+[64.397167, 63.983666, 64.777167], background begin/poll peaks
+[0.736583, 2.498375, 0.817500], and owner publication peaks
+[20.480667, 20.852000, 20.282708]. Medians are 64.397/0.818/20.481 ms.
+A separate bounded 256-operation alternating-source workload accepts real status
+and profiler queries while preparation is running. Preserve the raw frame records
+and observations, rather than treating this repeated-update workload as a typical
+production scene. These are CPU step envelopes, not worker-only elapsed times,
+round-trip latency, gameplay FPS, GPU improvements or a universal large-game result.
+Final decode/history/scene publication and workspace refresh still run synchronously.
+
+The native editor also preserves exact document state after cancellation, stale
+revision application and a saved source becoming unreadable after Ready. Author a
+local duct label, Save, change and Save its actual source tint, then background-
+refresh all twenty-six placements. Twelve instances adopt the source change while
+retaining the local label and placement; one undo/redo restores the whole batch.
+Save both main and character-action scenes, reopen main, use real Play movement and
+F6/F7 asynchronous checkpoints, capture the native viewport, Stop and export a
+normal test game. Restore the temporary edits through the same product operations.
+The no-change before/after 1480x574 PNGs are byte-identical, SHA-256
+b075e0fa07517fa861351167ec1226e5c944353f03d7a25aba336f749387f380.
+Play restore error is approximately 2.20e-7 world units; retain the measured value.
+
+An initial native verification helper incorrectly expected a read receipt to merge
+saved checkpoint fields into transient game data. Correct the check to compare the
+persisted slot with the actual restored position. Keep that raw failure and corrected
+proof, and repeat with two further fresh native processes. All four initial game
+processes exit 0, with native restored coordinates exactly matching the saved data.
+
+After the final UTF-8 correction, use real Save as to create a Chinese-named source,
+relink twelve placements in both scenes, refresh, Save, Play/checkpoint/capture and
+export again. Restore both original source associations through product operations,
+remove only the owned temporary source file and verify all original project hashes.
+Relocate this final 163-file native game and hide only its authoring tree. Two fresh
+processes resolve the twelve Unicode source associations, render actual frames/HUD,
+save/restore across processes and report zero script failures/diagnostics. Their
+restored coordinates exactly match the persisted slot; the standalone binary matches
+the final signed runtime kit. No authoring/compiler access is required. Restore the
+owned authoring tree after both processes exit.
+
+All ten owned editor/measurement/player processes are observed exiting 0 before
+consuming their persistent close responses and clearing their mailboxes. Preserve
+31 prior saves plus three new independent slots (34 total), 19 original source/art
+files, all 123 original editable-project files, the prior 162-file game and this
+stage's 162/163-file test games. Keep raw requests/results/acknowledgements, native
+profiles, intermediate descriptions, captures, saved data, projects, exported games
+and executable fingerprints in ignored build/source-update-review. Remove only
+this stage's temporary Python helpers/bytecode after review; no release archive is
+created.
+
+Computer use still reports the Mac locked and automatic unlock unsuccessful.
+Physical mouse/keyboard and final panel layout are not accepted by this evidence.
+Windows/Linux execution, asynchronous final publication, general scene streaming,
+finished sci-fi art and overall production readiness remain open. This stage removes
+source I/O/candidate preparation from the owner; it does not complete those goals.

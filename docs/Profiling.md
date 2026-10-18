@@ -181,3 +181,13 @@ throughput. Individual operations, source I/O and final document publication sti
 run synchronously; the remaining roughly 61 ms prepare step is not a frame-deadline
 guarantee. Raw profiles, requests, scene/view context, binary fingerprints and
 comparison records remain in ignored build/scene-work-review.
+
+Background source updates separate preparation from owner publication. In the
+342-entity/26-link Prism scene, three warm final Release samples give median native
+Application Prepare envelopes of 64.397 ms for the synchronous no-op edit request,
+0.818 ms peak across background begin/poll, and 20.481 ms for final owner publication.
+The preparation peaks range 0.737–2.498 ms; publication still decodes and commits the
+scene and refreshes Workspace synchronously. The operation arrays/content match.
+These CPU envelopes do not measure worker-only duration or imply a GPU/FPS gain.
+Raw profiles and bounded repeated-update responsiveness observations are retained
+in ignored build/source-update-review. See [source job contracts](Editor.md#background-scene-source-updates).
