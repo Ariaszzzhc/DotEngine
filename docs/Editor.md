@@ -965,28 +965,65 @@ linear input validation and bounds generation; they are not frame-time or FPS cl
 
 ## Model import and instantiation
 
-Assets Actions offers Import glTF / GLB model using the source file and a new
-project `assets/...` folder. After import, select its `model.dotscene` and use Add
-scene instance. Imported hierarchy, transforms, material references and editable
-native files use the actual engine; insertion can be undone/redone once and saved.
-The current scene's camera/environment/lighting remain authoritative.
+Assets Actions offers **Import glTF / GLB model** using an absolute source file and
+new project `assets/...` folder. The command starts one background preparation;
+it does not publish files or report successful persistence. The Model import section
+shows preparing, ready, publishing, published, cancelling, cancelled or failed, the
+proposed native paths/counts/warnings and contextual failures. **Publish imported
+model** accepts a ready bundle, and **Cancel model import** requests cooperative
+cleanup before publication. Only `published` proves completion. Close a terminal
+import before starting another import or reimport review.
 
 ```json
 {"command":"import-model","source":"/absolute/model.glb","path":"assets/robot"}
+{"command":"inspect-model-import","session":"1"}
+{"command":"publish-model-import","session":"1","revision":"2"}
+{"command":"inspect-model-import","session":"1"}
+{"command":"close-model-import","session":"1","revision":"4"}
 {"command":"edit","revision":"3","operations":[{"op":"instantiate-scene","path":"assets/robot/model.dotscene","parent":null,"transform":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}}]}
 ```
 
-Import optionally accepts an unsigned `scene` index 0..1023. It reports source scene,
-mesh/material/image/node and animation counts, generated scene and native model
-descriptor paths, and metadata warnings. TRS clips and node bindings survive import;
-Add scene instance retains the animation player and remaps its node targets under
-one selected placement container. Imported primary cameras/listeners are demoted.
-Inspector supports clip/clock/loop/auto-play settings; Play uses the same native
-GameSession as exported games. TypeScript playback controls use the same players.
-Isolated editor audition is available below; keyframe authoring remains unfinished.
-Import publishes reusable resources without dirtying the scene; instantiation needs the
-current authoring revision. A failed catalog refresh after publication explicitly
-reports that the bundle was committed. Existing destinations are never overwritten.
+Use returned session/revisions rather than these illustrative values. Inspect requires
+exact command/session; publish, cancel and close require command/session/revision.
+Cancel uses `cancel-model-import`. Unknown fields, stale identities/revisions and
+invalid states reject. Every response owns `import` with session, revision, state,
+path, proposed result (or null), structured error (or null) and catalogError. Status
+is also visible as `workspace.modelImport`, without opening the Assets panel.
+Result counts/paths can be present while ready or failed; state determines whether
+the files were published. `ok:true` for a publication request acknowledges intent;
+poll the actual terminal state. Publication/cancellation revisions advance on both
+acceptance and completion. Close accepts only published/cancelled/failed.
+
+Import optionally accepts an unsigned source `scene` 0..1023. The native result reports
+source scene, mesh/material/image/node, clip, skin and skinned-mesh counts, generated
+scene/model paths and warnings. Add scene instance retains imported animation players
+and remaps their targets under one placement container; it can be undone/redone and
+saved. Imported primary cameras/listeners are demoted. Current scene environment,
+camera and lighting remain authoritative. Inspector, Play and exports use the same
+native model resources and GameSession; imports do not dirty the authoring scene.
+
+Preparation opens its own resource store and writes native files under an owned
+project-root staging directory, outside resource roots and game packages. No World,
+script realm or device handle crosses the worker boundary. The existing bounded model
+parser and writer run cooperatively between calls; cancellation does not forcibly
+interrupt either. Ready cancellation cleans the private bundle on the worker. Destruction
+cancels unpublished work and joins, possibly waiting for the current bounded codec call.
+Accepted publication completes and cannot be cancelled or imply rollback. There is no
+background import concurrency within a workspace, percentage estimate or synchronous
+workspace fallback. Native ResourceStore::importModel remains a synchronous tool API
+using the same prepare/publish implementation.
+
+Publication rechecks exact project metadata bytes, current catalog capacity/depth,
+parent/path aliases and absent destination. Existing destinations are never overwritten.
+The same-filesystem exclusive rename exposes a complete bundle; cross-device failure
+is explicit. Callers must serialize external source/project writers; this is not hostile
+race isolation or crash recovery. The editor serializes other product operations during
+accepted publication. Ordinary editing/navigation may continue during preparation;
+publication requires stopped Play/previews and finished drafts/dialogs. Source reading,
+decode, native serialization and file writes run on the worker; the final asset-catalog
+refresh still scans on the owner, independent of panel visibility. A refresh error is
+reported separately from an already-published bundle and can be retried with Refresh files.
+
 Native `.gltf`, `.dotscene`, `.dotmodel` and `.dotanimation` text resources
 can open in the external editor; internal text transport remains only an automation buffer.
 Native `.dotmesh` assets use bounded binary geometry and remain available for mesh
@@ -1200,7 +1237,7 @@ pose a skinned mesh. Its mesh-owner world transform cancels through the skin pal
 moving only that mesh entity does not move the joint-driven world geometry.
 
 glTF/GLB import now creates these same native skin assets and scene components.
-`import-model` reports generated `skins` and `skinnedMeshes`; instantiate the returned
+The import job result reports generated `skins` and `skinnedMeshes`; after publication instantiate the returned
 scene to insert the complete joint hierarchy and animation bindings. Every copied
 joint receives a fresh entity ID. Asset import does not silently insert a character
 or enable different collision shapes. The [skin regressions](Skinning.md) check actual
@@ -2592,4 +2629,4 @@ accepts source `scene` 0..1023. Pages allow offset 0..8192 and limit 1..256. Fil
 return explicit text/truncated flags. Every mutation rejects stale identities/revisions;
 unknown fields and invalid choices are errors. One review per workspace bounds ownership.
 Limits are 8192 resource entries, 64 levels, 64 MiB/file and 512 MiB each for project
-snapshot and generated bundle. First import retains its existing synchronous implementation.
+snapshot and generated bundle. First import uses the background preparation/publication workflow above.

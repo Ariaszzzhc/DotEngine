@@ -4,8 +4,10 @@ module;
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 #include <memory>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -224,6 +226,47 @@ namespace Dot::Editor {
     }
   };
 
+  struct PreparedModelImport::Impl {
+    Core::StagedDirectory staging;
+    Fs::path root;
+    std::string destination;
+    std::string metadata;
+    ModelImportReport report;
+    std::size_t entries;
+    bool published{};
+  };
+
+  PreparedModelImport::PreparedModelImport(std::unique_ptr<Impl> impl) noexcept
+      : m_impl(std::move(impl)) {
+  }
+
+  PreparedModelImport::PreparedModelImport(PreparedModelImport&&) noexcept = default;
+
+  auto PreparedModelImport::operator=(PreparedModelImport&&) noexcept
+      -> PreparedModelImport& = default;
+
+  PreparedModelImport::~PreparedModelImport() = default;
+
+  auto PreparedModelImport::report() const -> Core::Result<ModelImportReport> {
+    return m_impl
+               ? Core::Result<ModelImportReport>{m_impl->report}
+               : Core::fail(Core::ErrorCode::InvalidState, "Prepared model was moved or discarded");
+  }
+
+  auto PreparedModelImport::discard() -> Core::Result<void> {
+    if (!m_impl) {
+      return {};
+    }
+
+    auto discarded = m_impl->staging.discard();
+
+    if (discarded) {
+      m_impl.reset();
+    }
+
+    return discarded;
+  }
+
   struct TextDocument::Impl {
     std::shared_ptr<ResourceStore::Impl> m_store;
     std::string m_path;
@@ -436,9 +479,9 @@ namespace Dot::Editor {
     }
   }
 
-  auto ResourceStore::importModel(const Fs::path& source, std::string_view destination,
-                                  std::optional<std::uint32_t> scene)
-      -> Core::Result<ModelImportReport> {
+  auto ResourceStore::prepareModel(const Fs::path& source, std::string_view destination,
+                                   std::optional<std::uint32_t> scene, std::stop_token stop)
+      -> Core::Result<PreparedModelImport> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Resource store was moved");
     }
@@ -453,6 +496,23 @@ namespace Dot::Editor {
       if (!destination.starts_with("assets/") || Fs::exists(*target)) {
         return Core::fail(Core::ErrorCode::InvalidArgument,
                           "Model destination must be a new assets directory");
+      }
+
+      const auto relative = path(destination);
+
+      if (static_cast<std::size_t>(std::distance(relative.begin(), relative.end()))
+          >= m_impl->m_limits.depth) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Generated model exceeds resource depth");
+      }
+
+      auto metadata = m_impl->m_files.readText("project.dotproject", 64 * 1024);
+
+      if (!metadata) {
+        return std::unexpected(metadata.error());
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Model import cancelled before reading");
       }
 
       const auto sourceText = utf(source);
@@ -501,13 +561,11 @@ namespace Dot::Editor {
                           "Model bundle exceeds resource catalog capacity");
       }
 
-      auto parent = Core::FileSystem::open(target->parent_path());
-
-      if (!parent) {
-        return std::unexpected(parent.error());
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Model import cancelled after decoding");
       }
 
-      auto staging = Core::StagedDirectory::create(*parent);
+      auto staging = Core::StagedDirectory::create(m_impl->m_files);
 
       if (!staging) {
         return std::unexpected(staging.error());
@@ -516,7 +574,14 @@ namespace Dot::Editor {
       auto prepared = Assets::writeModel(staging->files().value(), *model);
 
       if (!prepared) {
-        return std::unexpected(prepared.error());
+        auto error = prepared.error();
+        auto discarded = staging->discard();
+
+        if (!discarded) {
+          error.message += "; cleanup failed: " + discarded.error().message;
+        }
+
+        return std::unexpected(std::move(error));
       }
 
       ModelImportReport report{std::string(destination) + "/model.dotscene",
@@ -535,16 +600,94 @@ namespace Dot::Editor {
             node.parts, [](const Assets::ModelPart& part) { return part.skin.has_value(); }));
       }
 
-      auto published = staging->publish(target->filename());
+      if (stop.stop_requested()) {
+        auto discarded = staging->discard();
+
+        if (!discarded) {
+          return std::unexpected(discarded.error());
+        }
+
+        return Core::fail(Core::ErrorCode::Unavailable, "Model import cancelled after writing");
+      }
+
+      return PreparedModelImport(std::make_unique<PreparedModelImport::Impl>(
+          std::move(*staging), m_impl->m_files.root(), std::string(destination),
+          std::move(*metadata), std::move(report), added));
+    } catch (const std::exception& error) {
+      return external("Import model resource", error);
+    }
+  }
+
+  auto ResourceStore::publishModel(PreparedModelImport& prepared)
+      -> Core::Result<ModelImportReport> {
+    if (!m_impl || !prepared.m_impl || prepared.m_impl->published) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Model store/preparation was moved, discarded or published");
+    }
+
+    try {
+      auto& candidate = *prepared.m_impl;
+      auto target = m_impl->resolve(candidate.destination, true, true);
+
+      if (!target) {
+        return std::unexpected(target.error());
+      }
+
+      auto metadata = m_impl->m_files.readText("project.dotproject", 64 * 1024);
+
+      if (candidate.root != m_impl->m_files.root() || !metadata
+          || *metadata != candidate.metadata) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Prepared model project/metadata changed");
+      }
+
+      if (Fs::exists(*target)) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Model destination already exists");
+      }
+
+      auto entries = list();
+
+      if (!entries) {
+        return std::unexpected(entries.error());
+      }
+
+      if (candidate.entries > m_impl->m_limits.entries - entries->size()) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Model bundle exceeds current resource capacity");
+      }
+
+      const auto relative = path(candidate.destination);
+
+      if (static_cast<std::size_t>(std::distance(relative.begin(), relative.end()))
+          >= m_impl->m_limits.depth) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Generated model exceeds current resource depth");
+      }
+
+      auto parent = Core::FileSystem::open(target->parent_path());
+
+      if (!parent) {
+        return std::unexpected(parent.error());
+      }
+
+      auto report = candidate.report;
+      auto published = candidate.staging.publish(*parent, target->filename());
 
       if (!published) {
         return std::unexpected(published.error());
       }
 
+      candidate.published = true;
       return report;
     } catch (const std::exception& error) {
-      return external("Import model resource", error);
+      return external("Publish model resource", error);
     }
+  }
+
+  auto ResourceStore::importModel(const Fs::path& source, std::string_view destination,
+                                  std::optional<std::uint32_t> scene)
+      -> Core::Result<ModelImportReport> {
+    auto prepared = prepareModel(source, destination, scene);
+    return prepared ? publishModel(*prepared) : std::unexpected(prepared.error());
   }
 
   auto ResourceStore::importFile(const Fs::path& source, std::string_view destination)

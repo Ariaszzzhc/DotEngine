@@ -13471,3 +13471,134 @@ executable-relative native C++ linkage. Remove only the five owned request helpe
 their bytecode and the temporary development app; retain raw evidence and projects.
 Formatting/whitespace and the ownership, error, capacity and platform diff review
 pass; the configured remote has not advanced during this stage.
+
+
+## Background first model import (2026-10-18)
+
+The first glTF/GLB workspace import still called the synchronous resource importer
+inside a frame request, unlike reviewed reimport. Split ResourceStore's shared native
+operation into owned prepare/publish phases and add Dot.Editor.ModelImport. One owned
+worker opens its own thread-bound ResourceStore, reads/decodes/serializes the bounded
+model and writes an unpublished native bundle outside the live resource roots. No
+World, script realm, audio/GPU handle or ResourceStore crosses threads. The low-level
+synchronous importModel remains a native tool API built from those same phases.
+
+Expose a strict import session with memory-only status, revision-checked publish and
+cooperative cancel. Preparing and ready are not publication; ready includes proposed
+native paths/counts/warnings. Only a successful published terminal state establishes
+completion. Explicit publication runs metadata/path/capacity checks and the exclusive
+no-replace rename on the worker. New current catalog entries or exact metadata-byte
+changes can reject publication. Source/project writers remain caller-serialized; no
+hostile-race or crash-recovery guarantee is introduced. Same-filesystem destination
+parents use Core.StagedDirectory's shared publication path; cross-device errors remain
+explicit. Private staging does not appear in resource listings/game packages.
+
+Ready cancellation discards private files on the worker; preparing cancellation checks
+around bounded codec calls. Publishing cannot cancel or imply rollback. Destruction
+cancels unpublished work and joins, possibly waiting for the active codec call; an
+accepted publication finishes. No detached worker, new dependency or per-stage
+acceptance executable is added. Final catalog refresh remains an owner-thread scan,
+so this is not a hard frame-latency or fully asynchronous editor claim.
+
+Assets uses the same operations to show progress, proposed counts/warnings, publish,
+cancel and close. workspace.modelImport exposes the independent status, and completion
+polling/notification occurs before renderer readiness regardless of panel visibility.
+Ordinary authoring can continue during preparation. The product serializes other
+operations during publication; draft/Play/preview guards protect explicit publication.
+Cancellation/inspection/terminal dismissal remain available with other editor forms.
+Import/reimport share a one-job workspace ownership boundary; no synchronous workspace
+fallback or legacy result shape is retained.
+
+Focused permanent integration regressions cover private preparation/catalog visibility,
+explicit publication independent of the original source after readiness, wrong-project
+preparation, moved/consumed owners, immediate/ready cancellation, ready destruction,
+accepted-publication destruction, creator-thread checks, missing/invalid inputs,
+metadata/path conflicts and preserved external bytes, current catalog capacity and
+generated depth. A Core staged-directory regression checks another-parent publication,
+no replacement and retained retry ownership through the same implementation.
+
+Initial Debug build exposed a missing source-location field in the new structured
+error construction and unparenthesized conditional text in test assertion macros;
+correct both without weakening warnings. The rebuilt Debug product and targeted
+model/resource/staging checks pass 54/54 in 4.06 s, including existing offscreen cases.
+Further complete-build and actual editor/Prism validation results follow below.
+
+Verification on arm64 macOS, preserving the caller's compiler/CPPFLAGS/LDFLAGS:
+
+- Complete Debug build/CTest: 1574/1574 in 257.14 s before the final display/path
+  boundary refinements. The final Debug rebuild and 54 relevant resource/model/
+  staging checks pass in 4.09 s, including two durable offscreen cases.
+- Final Release build/full CTest with NDEBUG: 1574/1574 in 36.81 s, comprising
+  502 pure unit and 1072 integration cases (186 offscreen GPU, 247 compiler,
+  37 native audio, 34 platform and 21 process labels). Builds/tests run sequentially,
+  separately from actual native application runs. No automated test opens a desktop
+  window. Existing runtime-kit signature-invalidation warnings are followed by the
+  existing signing step; warnings/assertions/deadlines are not weakened.
+- Final review wraps proposed counts for narrow Assets panels and includes source
+  path encoding/conversion in the contextual begin error boundary. Final executable
+  verification below uses that rebuilt editor; its player exactly matches the
+  relocated kit's tested executable. Formatting, whitespace, ownership/thread,
+  failure/cleanup, capacity and platform review pass. Actual exported native C++
+  linkage remains executable-relative; no release archive is made.
+
+Create an ordinary Prism template project through project-action and run the real
+editor. A missing source becomes a failed job; cancel a real licensed utility-box
+preparation and verify no destination. Prepare that source again, retain its ready
+job in the original native process, edit a fixture and verify no staged/native bundle
+appears in the catalog before publication. Reject a stale publish revision, then
+publish eight native files (one mesh, two materials, three images and scene/model
+files). Starting a duplicate destination fails and preserves every bundle byte.
+
+Link the imported scene at an authored bay placement, rename its root, select the
+native mesh and stage/apply its static triangle collider through the shared Inspector
+operation. Undo/redo and Save preserve the description. Open the saved source scene,
+return to the main scene and compare the complete authoring scene with its saved
+snapshot. Start actual Play, observe the imported mesh/collider in the native runtime,
+move the character, save, move away and restore. A real viewport PNG shows the
+checkpoint caption and populated bay. Stop restores the saved authoring scene;
+export through the same product operation.
+
+One initial driver assumed a fixture name without its actual space, then expected
+workspace metadata in a document-only edit response. Both are driver assumptions,
+not product failures. Inspect the original live process, retain its same ready job,
+and continue from authoritative scene/protocol data without restarting the editor
+or reimporting the completed preparation. Preserve those raw failures. On its first
+close, the editor exits 0 and retires the control directory before a polling observer
+copies the ephemeral close response. Do not claim that response was consumed; the
+queued request and actual process completion independently establish the close.
+
+Relocate the game and hide only its owned authoring tree. Two fresh native game
+processes run without that tree/compiler, inspect the imported static mesh, render
+real text and show zero script failures. The first moves/saves/restores; the second
+restores the same persisted checkpoint. Both exit 0 with retired controls, and both
+observed restored positions differ from persisted coordinates by about 8.20e-8 m.
+All 170 game-file hashes remain unchanged. Restore the authoring tree, preserve all
+26 prior guarded saves and add the isolated native checkpoint for 27 guarded files.
+Existing source model/art bytes remain unchanged.
+
+The final rebuilt editor reopens the exact saved scene. Extra fields/wrong scene
+index types, premature import close and wrong sessions reject. Start an alternate
+preparation; the actual job is still preparing after ordinary authoring succeeds.
+Undo restores the complete saved scene, then cancel the ready bundle and dismiss
+its terminal receipt with no destination. Queue normal close and observe exit 0.
+Computer use cannot inspect the new panel: the Mac is locked and automatic unlock
+fails. No physical mouse/keyboard or final frontend visual acceptance is claimed
+for this stage; the viewport image is actual game rendering, not panel acceptance.
+
+Retain raw requests/responses, timeout/failure observations, editable project, native
+kit, viewport, profiles, source/save/game/binary fingerprints in ignored
+build/model-import-review. Remove only owned temporary request helpers/bytecode and
+the development app container after verification. Preserve source art, caches and
+all checkpoints. Windows/Linux, hard frame deadlines, asynchronous retirement,
+resource streaming, complete character/environment art and overall production
+readiness remain unproven or unfinished.
+
+The final lifetime regression also destroys a newly started import immediately,
+covering cancellation before readiness as well as destruction of ready/publishing
+owners. After it, final relevant Debug checks pass 54/54 in 4.09 s and complete
+Release checks pass 1574/1574 in 36.81 s. Final fingerprints confirm all 27 guarded
+saves, 19 original model/source-art files and 170 exported files unchanged, no owned
+staging/control residue, and restored authoring. Six Debug/Release binary hashes
+are recorded; the development app matched the final editor before its removal.
+Remove six owned helpers and their bytecode; keep raw evidence and normal editable
+project/native-game artifacts. Remote main has not advanced during this stage.

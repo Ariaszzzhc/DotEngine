@@ -231,3 +231,23 @@ TEST_CASE("staged_directory.failed_publication_restores_original_name_and_retain
         == 2);
 }
 #endif
+
+TEST_CASE("staged_directory_publication_to_another_parent_preserves_existing_destinations") {
+  Parent parent;
+  REQUIRE(parent.files().createDirectories("private"));
+  REQUIRE(parent.files().createDirectories("assets"));
+  const auto privateFiles = Dot::Core::FileSystem::open(parent.root / "private").value();
+  const auto assets = Dot::Core::FileSystem::open(parent.root / "assets").value();
+  auto stage = Dot::Core::StagedDirectory::create(privateFiles).value();
+  REQUIRE(stage.files()->writeTextAtomic("owned.txt", "native bytes"));
+  REQUIRE(assets.createDirectories("existing"));
+  CHECK_FALSE(stage.publish(assets, "existing"));
+  CHECK_FALSE(stage.publish(assets, "../escape"));
+  CHECK(stage.files()->readText("owned.txt").value() == "native bytes");
+  CHECK(std::filesystem::is_empty(assets.root() / "existing"));
+  auto published = stage.publish(assets, "model");
+  REQUIRE(published);
+  CHECK(published->readText("owned.txt").value() == "native bytes");
+  CHECK(std::filesystem::is_empty(privateFiles.root()));
+  CHECK_FALSE(stage.publish(assets, "twice"));
+}

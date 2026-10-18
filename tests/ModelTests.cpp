@@ -15,6 +15,7 @@ import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.Resources;
 import Dot.Editor.ModelReimport;
+import Dot.Editor.ModelImport;
 import Dot.Editor.Document;
 import Dot.Project;
 import Dot.World.Scene;
@@ -519,4 +520,230 @@ TEST_CASE("model.reimport_added_files_require_source_and_accepting_keeps_publish
         == before);
   CHECK(project.files()->readText("assets/model/materials/2.dotmaterial"));
   CHECK(store.list());
+}
+
+TEST_CASE("model.prepared_first_import_stays_private_and_rechecks_project_identity") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+  auto store = Editor::ResourceStore::open(project).value();
+  const auto original = store.list().value();
+  auto prepared = store.prepareModel(f.source().root() / "surface.glb", "assets/new-model").value();
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/new-model"));
+  CHECK(store.list()->size() == original.size());
+  CHECK(prepared.report()->nodes == 2);
+  auto other = Project::Project::create(f.files, "other", {}).value();
+  auto otherStore = Editor::ResourceStore::open(other).value();
+  CHECK_FALSE(otherStore.publishModel(prepared));
+  auto moved = std::move(prepared);
+  CHECK_FALSE(prepared.report());
+  auto published = store.publishModel(moved);
+  REQUIRE_MESSAGE(published, (published ? "" : published.error().message));
+  CHECK(published->scene == "assets/new-model/model.dotscene");
+  CHECK(World::loadScene(project.files().value(), published->scene)->entities()->size() == 3);
+  CHECK_FALSE(store.publishModel(moved));
+  REQUIRE(moved.discard());
+  REQUIRE(moved.discard());
+  CHECK(std::filesystem::exists(project.files()->root() / published->scene));
+}
+
+namespace {
+  auto wait(Editor::ModelImport& job) -> Editor::ModelImportStatus {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+
+    for (;;) {
+      auto observed = job.status().value();
+
+      if (observed.state != Editor::ModelImportState::Preparing
+          && observed.state != Editor::ModelImportState::Publishing
+          && observed.state != Editor::ModelImportState::Cancelling) {
+        return observed;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  auto noImportStaging(const Project::Project& project) -> void {
+    for (const auto& file : std::filesystem::directory_iterator(project.files()->root())) {
+      CHECK_FALSE(file.path().filename().string().starts_with(".dot-stage-"));
+    }
+  }
+}  // namespace
+
+TEST_CASE("model.background_first_import_requires_explicit_publication_of_owned_native_files") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+  auto job
+      = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/imported")
+            .value();
+  auto observed = wait(job);
+  REQUIRE_MESSAGE(observed.state == Editor::ModelImportState::Ready,
+                  (observed.error ? observed.error->message : "Unexpected import state"));
+  REQUIRE(observed.result);
+  CHECK(observed.result->meshes == 1);
+  CHECK(observed.result->materials == 2);
+  CHECK(observed.result->images == 3);
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/imported"));
+  auto resources = Editor::ResourceStore::open(project).value();
+  CHECK(std::ranges::none_of(resources.list().value(), [](const auto& entry) {
+    return entry.path.find(".dot-stage-") != std::string::npos;
+  }));
+  CHECK_FALSE(job.publish(observed.revision - 1));
+  std::filesystem::remove_all(f.source().root());
+  REQUIRE(job.publish(observed.revision));
+  CHECK_FALSE(job.cancel(observed.revision));
+  observed = wait(job);
+  CHECK(observed.state == Editor::ModelImportState::Published);
+  CHECK_FALSE(observed.error);
+  CHECK(World::loadScene(project.files().value(), observed.result->scene)->entities()->size() == 3);
+  CHECK_FALSE(job.publish(observed.revision));
+  noImportStaging(project);
+}
+
+TEST_CASE("model.background_cancel_and_destruction_never_publish_unaccepted_work") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+
+  {
+    auto retiring = Editor::ModelImport::begin(project, f.source().root() / "surface.glb",
+                                               "assets/incomplete")
+                        .value();
+  }
+
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/incomplete"));
+  noImportStaging(project);
+
+  for (const bool ready : {false, true}) {
+    auto job
+        = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/cancelled")
+              .value();
+    auto observed = ready ? wait(job) : job.status().value();
+    auto cancelled = job.cancel(observed.revision);
+
+    if (!cancelled) {
+      observed = job.status().value();
+      REQUIRE(observed.state == Editor::ModelImportState::Ready);
+      cancelled = job.cancel(observed.revision);
+    }
+
+    REQUIRE(cancelled);
+    observed = wait(job);
+    CHECK(observed.state == Editor::ModelImportState::Cancelled);
+    CHECK_FALSE(observed.error);
+    CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/cancelled"));
+    noImportStaging(project);
+  }
+
+  {
+    auto job
+        = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/retired")
+              .value();
+    REQUIRE(wait(job).state == Editor::ModelImportState::Ready);
+  }
+
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/retired"));
+  noImportStaging(project);
+}
+
+TEST_CASE("model.background_publication_conflicts_preserve_external_files_and_exact_metadata") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+  auto resources = Editor::ResourceStore::open(project).value();
+  auto job
+      = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/conflict")
+            .value();
+  auto observed = wait(job);
+  REQUIRE(observed.state == Editor::ModelImportState::Ready);
+  REQUIRE(resources.createDirectory("assets/conflict"));
+  REQUIRE(resources.createText("assets/conflict/marker.txt", "external"));
+  REQUIRE(job.publish(observed.revision));
+  observed = wait(job);
+  CHECK(observed.state == Editor::ModelImportState::Failed);
+  REQUIRE(observed.error);
+  CHECK(project.files()->readText("assets/conflict/marker.txt").value() == "external");
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/conflict/model.dotscene"));
+  noImportStaging(project);
+
+  auto metadata = project.files()->readText("project.dotproject").value();
+  auto stale
+      = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/stale")
+            .value();
+  observed = wait(stale);
+  REQUIRE(observed.state == Editor::ModelImportState::Ready);
+  REQUIRE(project.files()->writeTextAtomic("project.dotproject", metadata + "\n"));
+  REQUIRE(stale.publish(observed.revision));
+  observed = wait(stale);
+  CHECK(observed.state == Editor::ModelImportState::Failed);
+  REQUIRE(observed.error);
+  CHECK(observed.error->message.find("metadata") != std::string::npos);
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/stale"));
+  REQUIRE(project.files()->writeTextAtomic("project.dotproject", metadata));
+  noImportStaging(project);
+}
+
+TEST_CASE("model.background_publication_rechecks_current_capacity_and_preparation_depth") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+  auto resources = Editor::ResourceStore::open(project).value();
+  Editor::ResourceLimits limits;
+  limits.entries = resources.list()->size() + 15;
+  auto job = Editor::ModelImport::begin(project, f.source().root() / "surface.glb",
+                                        "assets/capacity", {}, limits)
+                 .value();
+  auto observed = wait(job);
+  REQUIRE(observed.state == Editor::ModelImportState::Ready);
+
+  for (int i = 0; i < 16; ++i) {
+    REQUIRE(resources.createText("assets/fill-" + std::to_string(i) + ".txt", "owned"));
+  }
+
+  REQUIRE(job.publish(observed.revision));
+  observed = wait(job);
+  CHECK(observed.state == Editor::ModelImportState::Failed);
+  REQUIRE(observed.error);
+  CHECK_FALSE(std::filesystem::exists(project.files()->root() / "assets/capacity"));
+  noImportStaging(project);
+  limits = {};
+  limits.depth = 2;
+  auto shallow = Editor::ResourceStore::open(project, limits).value();
+  CHECK_FALSE(shallow.prepareModel(f.source().root() / "surface.glb", "assets/shallow"));
+  noImportStaging(project);
+}
+
+TEST_CASE("model.background_owner_move_failure_and_accepted_publication_lifetimes") {
+  Fixture f;
+  auto project = Project::Project::create(f.files, "project", {}).value();
+  CHECK_FALSE(Editor::ModelImport::begin(project, "relative.glb", "assets/model"));
+  CHECK_FALSE(Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "../outside"));
+  CHECK_FALSE(
+      Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/model", 1024));
+  auto missing
+      = Editor::ModelImport::begin(project, f.source().root() / "absent.glb", "assets/missing")
+            .value();
+  auto failed = wait(missing);
+  CHECK(failed.state == Editor::ModelImportState::Failed);
+  CHECK(failed.error.has_value());
+  noImportStaging(project);
+
+  {
+    auto first
+        = Editor::ModelImport::begin(project, f.source().root() / "surface.glb", "assets/accepted")
+              .value();
+    auto moved = std::move(first);
+    CHECK_FALSE(first.status());
+    auto observed = wait(moved);
+    REQUIRE(observed.state == Editor::ModelImportState::Ready);
+    bool refused{};
+    std::thread other([&] {
+      refused = !moved.status() && !moved.publish(observed.revision)
+                && !moved.cancel(observed.revision);
+    });
+    other.join();
+    CHECK(refused);
+    REQUIRE(moved.publish(observed.revision));
+  }
+
+  CHECK(World::loadScene(project.files().value(), "assets/accepted/model.dotscene"));
+  noImportStaging(project);
 }

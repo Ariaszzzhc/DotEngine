@@ -36,6 +36,11 @@ export namespace Dot::Core {
      * 目标为同父目录内单个相对名称，发布错误保留暂存可重试；重命名后的打开失败明确
      * 报告已发布，不删除目标。 */
     [[nodiscard]] auto publish(const std::filesystem::path& name) -> Result<FileSystem>;
+    /** Publish to another existing parent on the same filesystem, without replacement.
+     * Keeps private preparation outside a live catalog; cross-device renames fail explicitly.
+     * 在同文件系统的另一现存父目录不替换发布，使私有准备不进入实时目录；跨设备改名明确失败。 */
+    [[nodiscard]] auto publish(const FileSystem& destinationParent,
+                               const std::filesystem::path& name) -> Result<FileSystem>;
     /** Replace an existing regular directory and return ownership of its complete
      * previous tree as sibling staging. The caller serializes readers/writers.
      * Prepare the backup before mutation; publication failure restores the old

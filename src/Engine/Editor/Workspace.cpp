@@ -62,6 +62,7 @@ import Dot.Platform.Dialog;
 import Dot.Graphics.View;
 import Dot.Editor.Resources;
 import Dot.Editor.ModelReimport;
+import Dot.Editor.ModelImport;
 import Dot.Editor.MaterialDocument;
 import Dot.Editor.AssetPreview;
 import Dot.Editor.PreviewWorker;
@@ -497,6 +498,10 @@ namespace Dot::Editor {
     std::optional<Project::Project> m_project;
     WorkspaceConfig m_config;
     std::optional<ResourceStore> m_resources;
+    std::optional<ModelImport> m_modelImport;
+    std::uint64_t m_modelImportSession{};
+    std::uint64_t m_modelImportNotified{};
+    std::string m_modelImportCatalogError;
     std::optional<ModelReimport> m_reimport;
     std::uint64_t m_reimportSession{};
     std::size_t m_reimportOffset{};
@@ -3177,6 +3182,66 @@ namespace Dot::Editor {
 
       const auto command = parsed.value("command", std::string{});
 
+      if (command == "inspect-model-import" || command == "publish-model-import"
+          || command == "cancel-model-import" || command == "close-model-import") {
+        if (command == "inspect-model-import") {
+          Codec::requireFields(parsed, {"command", "session"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "revision"});
+        }
+
+        if (!m_modelImport || Codec::id(parsed["session"]) != m_modelImportSession) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Model import session changed");
+        }
+
+        if (command != "inspect-model-import") {
+          const auto revision = Codec::id(parsed["revision"]);
+          Core::Result<void> changed;
+
+          if (command == "publish-model-import") {
+            if (playing() || previewing() || m_transform || pendingInspector()
+                || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
+                || m_captureDialog || m_sceneDialog) {
+              return Core::fail(
+                  Core::ErrorCode::InvalidState,
+                  "Publish model after stopping previews/Play and finishing drafts/dialogs");
+            }
+
+            changed = m_modelImport->publish(revision);
+          } else if (command == "cancel-model-import") {
+            changed = m_modelImport->cancel(revision);
+          } else {
+            auto observed = m_modelImport->status();
+
+            if (!observed || observed->revision != revision
+                || (observed->state != ModelImportState::Published
+                    && observed->state != ModelImportState::Cancelled
+                    && observed->state != ModelImportState::Failed)) {
+              return Core::fail(
+                  Core::ErrorCode::InvalidState,
+                  "Cancel or finish model import before closing its current terminal revision");
+            }
+
+            pollModelImport();
+            m_modelImport.reset();
+            return Json{{"ok", true}, {"import", nullptr}}.dump();
+          }
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+
+        return Json{{"ok", true}, {"import", modelImportStatus().value()}}.dump();
+      }
+
+      if (m_modelImport && m_modelImport->status()->state == ModelImportState::Publishing
+          && command != "inspect" && command != "close" && command != "cancel-close"
+          && command != "show-pane" && command != "set-theme" && command != "request-focus") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Wait for the accepted model publication before other operations");
+      }
+
       const bool sceneOperation
           = command == "open-scene" || command == "create-scene" || command == "save-scene-as";
 
@@ -5759,9 +5824,9 @@ namespace Dot::Editor {
       if (command == "prepare-model-reimport") {
         Codec::requireFields(parsed, {"command", "path", "source", "revision"}, {"scene"});
 
-        if (m_reimport || playing() || previewing() || m_transform || pendingInspector()
-            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
-            || m_captureDialog || m_document->stats()->dirty || m_clipDocument
+        if (m_reimport || m_modelImport || playing() || previewing() || m_transform
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()
+            || m_pendingClose || m_captureDialog || m_document->stats()->dirty || m_clipDocument
             || m_controllerDocument || m_uiEditor
             || Codec::id(parsed["revision"]) != m_document->stats()->revision
             || m_reimportSession == std::numeric_limits<std::uint64_t>::max()) {
@@ -5929,8 +5994,16 @@ namespace Dot::Editor {
 
       if (command == "import-model") {
         Codec::requireFields(parsed, {"command", "path", "source"}, {"scene"});
-        const auto name = parsed["path"].get<std::string>();
-        const auto source = parsed["source"].get<std::string>();
+
+        if (m_modelImport || m_reimport || playing() || previewing() || m_transform
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()
+            || m_pendingClose || m_captureDialog || m_sceneDialog
+            || m_modelImportSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Start a model import from stopped authoring without drafts, dialogs "
+                            "or another import/review");
+        }
+
         std::optional<std::uint32_t> scene;
 
         if (parsed.contains("scene")) {
@@ -5943,36 +6016,20 @@ namespace Dot::Editor {
           scene = parsed["scene"].get<std::uint32_t>();
         }
 
-        auto result = m_resources->importModel(
-            std::filesystem::path(std::u8string(source.begin(), source.end())), name, scene);
+        const auto source = parsed["source"].get<std::string>();
+        auto imported = ModelImport::begin(
+            *m_project, std::filesystem::path(std::u8string(source.begin(), source.end())),
+            parsed["path"].get<std::string>(), scene);
 
-        if (!result) {
-          return std::unexpected(result.error());
+        if (!imported) {
+          return std::unexpected(imported.error());
         }
 
-        m_assetRefresh = true;
-        auto refreshed = catalog();
-
-        if (!refreshed) {
-          return Core::fail(
-              refreshed.error().code,
-              "Model bundle committed; catalog refresh failed: " + refreshed.error().message);
-        }
-
-        m_selectedResource = result->scene;
-        return Json{{"ok", true},
-                    {"scene", result->scene},
-                    {"model", result->model},
-                    {"animations", result->animations},
-                    {"skins", result->skins},
-                    {"skinnedMeshes", result->skinnedMeshes},
-                    {"meshes", result->meshes},
-                    {"materials", result->materials},
-                    {"images", result->images},
-                    {"nodes", result->nodes},
-                    {"sourceScene", result->sourceScene},
-                    {"warnings", result->warnings}}
-            .dump();
+        m_modelImport.emplace(std::move(*imported));
+        ++m_modelImportSession;
+        m_modelImportNotified = 0;
+        m_modelImportCatalogError.clear();
+        return Json{{"ok", true}, {"import", modelImportStatus().value()}}.dump();
       }
 
       if (command == "create-directory" || command == "create-text" || command == "import-resource"
@@ -7343,6 +7400,7 @@ namespace Dot::Editor {
           {"animationController", controllerStatus()},
           {"animationClipboard", clipboardStatus()},
           {"uiEditor", uiStatus()},
+          {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
           {"capture", captureStatus()},
@@ -9857,6 +9915,143 @@ namespace Dot::Editor {
       }
     }
 
+    auto modelImportStatus() const -> Core::Result<Json> {
+      if (!m_modelImport) {
+        return Core::fail(Core::ErrorCode::InvalidState, "No model import is open");
+      }
+
+      auto observed = m_modelImport->status();
+
+      if (!observed) {
+        return std::unexpected(observed.error());
+      }
+
+      constexpr std::array states{"preparing",  "ready",     "publishing", "published",
+                                  "cancelling", "cancelled", "failed"};
+      constexpr std::array codes{"InvalidArgument", "NotFound",     "Io",
+                                 "Unavailable",     "InvalidState", "External"};
+      Json result = nullptr;
+
+      if (observed->result) {
+        const auto& report = *observed->result;
+        result = {{"scene", report.scene},
+                  {"model", report.model},
+                  {"meshes", report.meshes},
+                  {"materials", report.materials},
+                  {"images", report.images},
+                  {"nodes", report.nodes},
+                  {"sourceScene", report.sourceScene},
+                  {"warnings", report.warnings},
+                  {"animations", report.animations},
+                  {"skins", report.skins},
+                  {"skinnedMeshes", report.skinnedMeshes}};
+      }
+
+      return Json{
+          {"session", std::to_string(m_modelImportSession)},
+          {"revision", std::to_string(observed->revision)},
+          {"state", states[static_cast<std::size_t>(observed->state)]},
+          {"path", observed->path},
+          {"result", std::move(result)},
+          {"catalogError", m_modelImportCatalogError},
+          {"error", observed->error
+                        ? Json{{"code", codes[static_cast<std::size_t>(observed->error->code)]},
+                               {"message", observed->error->message}}
+                        : Json(nullptr)}};
+    }
+
+    /** Observe publication and refresh catalog once, independent of pane visibility/readiness.
+     * 观察发布并仅刷新一次目录，不依赖面板可见性或渲染就绪。 */
+    auto pollModelImport() -> void {
+      if (!m_modelImport) {
+        return;
+      }
+
+      auto observed = m_modelImport->status();
+
+      if (!observed || observed->revision == m_modelImportNotified) {
+        return;
+      }
+
+      m_modelImportNotified = observed->revision;
+
+      if (observed->state == ModelImportState::Published) {
+        m_assetRefresh = true;
+        m_selectedResource = observed->result->scene;
+        auto refreshed = catalog();
+        m_modelImportCatalogError = refreshed ? "" : refreshed.error().message;
+        m_message = refreshed ? "Model bundle published"
+                              : "Model bundle published; catalog refresh failed: "
+                                    + m_modelImportCatalogError;
+      } else if (observed->state == ModelImportState::Failed) {
+        m_message = observed->error->message;
+      } else if (observed->state == ModelImportState::Ready) {
+        m_message = "Model import ready. Publish it from Assets.";
+      }
+    }
+
+    auto modelImportPanel() -> void {
+      if (!m_modelImport
+          || !ImGui::CollapsingHeader("Model import", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+      }
+
+      const auto observed = modelImportStatus();
+
+      if (!observed) {
+        ImGui::TextWrapped("%s", observed.error().message.c_str());
+        return;
+      }
+
+      const auto& value = *observed;
+      const auto state = value["state"].get<std::string>();
+      const auto act = [&](const char* command) {
+        auto result = safeExecute(Json{
+            {"command", command}, {"session", value["session"]}, {"revision", value["revision"]}}
+                                      .dump());
+        m_message = result ? "" : result.error().message;
+      };
+      ImGui::TextWrapped("%s: %s", value["path"].get_ref<const std::string&>().c_str(),
+                         state.c_str());
+      ImGui::TextWrapped(
+          "Preparation leaves project assets unchanged. Publish the ready bundle to use it.");
+
+      if (!value["error"].is_null()) {
+        ImGui::TextWrapped("%s", value["error"]["message"].get_ref<const std::string&>().c_str());
+      }
+
+      if (!value["catalogError"].get_ref<const std::string&>().empty()) {
+        ImGui::TextWrapped("Published; refresh files: %s",
+                           value["catalogError"].get_ref<const std::string&>().c_str());
+      }
+
+      if (!value["result"].is_null()) {
+        const auto& report = value["result"];
+        ImGui::TextWrapped("%zu nodes, %zu meshes, %zu materials, %zu images, %zu clips",
+                           report["nodes"].get<std::size_t>(), report["meshes"].get<std::size_t>(),
+                           report["materials"].get<std::size_t>(),
+                           report["images"].get<std::size_t>(),
+                           report["animations"].get<std::size_t>());
+
+        for (const auto& warning : report["warnings"]) {
+          ImGui::TextWrapped("%s", warning.get_ref<const std::string&>().c_str());
+        }
+      }
+
+      if (state == "ready" && ImGui::Button("Publish imported model")) {
+        act("publish-model-import");
+      }
+
+      if ((state == "preparing" || state == "ready") && ImGui::Button("Cancel model import")) {
+        act("cancel-model-import");
+      }
+
+      if ((state == "published" || state == "cancelled" || state == "failed")
+          && ImGui::Button("Close model import")) {
+        act("close-model-import");
+      }
+    }
+
     auto reimportStatus(std::size_t offset = 0, std::size_t limit = 64) -> Core::Result<Json> {
       if (!m_reimport) {
         return Core::fail(Core::ErrorCode::InvalidState, "No model reimport review is open");
@@ -10019,6 +10214,7 @@ namespace Dot::Editor {
 
     auto resourcesPanel() -> void {
       ImGui::SetNextItemWidth(std::max(100.F, ImGui::GetContentRegionAvail().x - 100));
+      modelImportPanel();
       reimportPanel();
       searchField("##asset-search", "Search project assets", "resources", m_assetFilter);
       ImGui::SameLine();
@@ -15331,6 +15527,7 @@ namespace Dot::Editor {
       };
       callbacks.prepareFrame = [&](const Platform::InputState& input) -> Core::Result<void> {
         pollPlayPreparation();
+        pollModelImport();
         auto processed = processRequests();
 
         if (!processed) {

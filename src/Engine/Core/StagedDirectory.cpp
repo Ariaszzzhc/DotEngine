@@ -167,7 +167,12 @@ namespace Dot::Core {
   }
 
   auto StagedDirectory::publish(const std::filesystem::path& name) -> Result<FileSystem> {
-    if (m_staging.empty()) {
+    return publish(m_parent, name);
+  }
+
+  auto StagedDirectory::publish(const FileSystem& destinationParent,
+                                const std::filesystem::path& name) -> Result<FileSystem> {
+    if (m_staging.empty() || destinationParent.root().empty()) {
       return fail(ErrorCode::InvalidState, "Staging directory was moved or published");
     }
 
@@ -182,7 +187,7 @@ namespace Dot::Core {
                     "Published directory name must be one UTF-8 relative component");
       }
 
-      const auto destination = m_parent.root() / name;
+      const auto destination = destinationParent.root() / name;
       auto result = renameExclusive(m_staging, destination);
 
       if (!result) {

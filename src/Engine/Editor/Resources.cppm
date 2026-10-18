@@ -5,6 +5,7 @@ module;
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,6 +56,7 @@ export namespace Dot::Editor {
   };
 
   class TextDocument;
+  class PreparedModelImport;
 
   /** Project-root resource authoring for assets, scenes and the configured script tree.
    * SDK files are read-only. Rejects symlinks/special files, non-portable paths
@@ -93,6 +95,18 @@ export namespace Dot::Editor {
                                    std::string_view destination,
                                    std::optional<std::uint32_t> scene = {})
         -> Core::Result<ModelImportReport>;
+    /** Prepare the same native import in private project-root staging, without publication.
+     * Stop is cooperative around bounded decoding/writing, not an interruption of parser calls.
+     * 在项目根私有暂存准备同一原生导入，不发布；取消在有界解码/写入之间协作，不中断解析调用。 */
+    [[nodiscard]] auto prepareModel(const std::filesystem::path& source,
+                                    std::string_view destination,
+                                    std::optional<std::uint32_t> scene = {},
+                                    std::stop_token stop = {}) -> Core::Result<PreparedModelImport>;
+    /** Recheck exact metadata, path and current catalog capacity before no-replace publication.
+     * Preparation must belong to this project. Failure retains it for inspection/discard.
+     * 不替换发布前复核完整项目描述字节、路径与当前目录容量；准备须属本项目，失败保留以供丢弃。 */
+    [[nodiscard]] auto publishModel(PreparedModelImport& prepared)
+        -> Core::Result<ModelImportReport>;
     [[nodiscard]] auto openText(std::string_view path) const -> Core::Result<TextDocument>;
     /** Resolve an existing editable text resource for external opening without
      * loading its content. Reuses metadata/path/readonly checks; malformed source
@@ -107,6 +121,27 @@ export namespace Dot::Editor {
     explicit ResourceStore(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;
     friend class TextDocument;
+  };
+
+  /** Owns unpublished native files only, never scene/device handles. Movable across threads;
+   * destruction discards unpublished files, while explicit discard reports cleanup errors.
+   * 仅拥有未发布原生文件，不含场景/设备句柄；可跨线程移动，销毁清理未发布内容，显式丢弃报告错误。
+   */
+  class PreparedModelImport {
+  public:
+    PreparedModelImport(const PreparedModelImport&) = delete;
+    auto operator=(const PreparedModelImport&) -> PreparedModelImport& = delete;
+    PreparedModelImport(PreparedModelImport&&) noexcept;
+    auto operator=(PreparedModelImport&&) noexcept -> PreparedModelImport&;
+    ~PreparedModelImport();
+    [[nodiscard]] auto report() const -> Core::Result<ModelImportReport>;
+    [[nodiscard]] auto discard() -> Core::Result<void>;
+
+  private:
+    struct Impl;
+    explicit PreparedModelImport(std::unique_ptr<Impl> impl) noexcept;
+    std::unique_ptr<Impl> m_impl;
+    friend class ResourceStore;
   };
 
   /** Owned UTF-8 draft and exact disk baseline. Revisions are local/nonzero;
