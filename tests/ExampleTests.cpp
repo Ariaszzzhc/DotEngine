@@ -674,6 +674,29 @@ TEST_CASE("prism.diagonal_intent_has_the_same_speed_and_native_sprint_is_faster"
   CHECK(displacement(false, true) > straight * 1.7F);
 }
 
+TEST_CASE("prism.sustained_sprint_stops_at_authored_wall_without_faulting") {
+  Fixture fixture;
+  auto session = fixture.session();
+  report(session.start());
+  Driver driver(session);
+  float maximumSpeed{};
+
+  for (int frame = 0; frame < 240; ++frame) {
+    const auto position = entity(session, "Player").transform.position;
+    INFO(frame, ": ", position.x, ",", position.y, ",", position.z);
+    driver.frame({Platform::Key::W, Platform::Key::LeftShift});
+    const auto model = entity(session, "Surveyor");
+    const auto observed = Json::parse(session.inspectAnimation(model.id).value());
+    maximumSpeed
+        = std::max(maximumSpeed, observed["controller"]["parameters"]["Speed"].get<float>());
+  }
+
+  CHECK(maximumSpeed > 5.9F);
+  CHECK(entity(session, "Player").transform.position.z > -7.2F);
+  driver.frame();
+  report(session.close());
+}
+
 TEST_CASE("prism.jump_edge_is_consumed_once_and_native_rig_plays_jump_air_land") {
   Fixture fixture;
   observe(fixture);
@@ -1851,6 +1874,8 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
   REQUIRE(worker->size() == 1);
   bool detoured{};
   std::map<std::uint64_t, double> maximumTravel;
+  std::map<std::uint64_t, Json> previousMotion;
+  std::set<std::uint64_t> blendedModels;
 
   for (int frame = 0; frame < 720; ++frame) {
     driver.frame();
@@ -1861,6 +1886,40 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
       maximumTravel[actor.value]
           = std::max(maximumTravel[actor.value],
                      std::hypot(double(current.x) - first.x, double(current.z) - first.z));
+    }
+
+    for (const auto model : models) {
+      const auto observed = Json::parse(session.inspectAnimation(model).value());
+      const auto& controller = observed["controller"];
+
+      if (controller["state"] == "Locomotion") {
+        const auto& blend = controller["blend"];
+        REQUIRE(blend.is_object());
+        CHECK(blend["applied"] == true);
+        CHECK(blend["value"] == controller["parameters"]["Speed"]);
+        double sum{};
+
+        for (const auto& sample : blend["samples"]) {
+          sum += sample["weight"].get<double>();
+        }
+
+        CHECK(sum == doctest::Approx(1));
+
+        if (blend["samples"].size() == 2) {
+          blendedModels.insert(model.value);
+        }
+
+        const auto found = previousMotion.find(model.value);
+
+        if (found != previousMotion.end() && found->second["controller"]["state"] == "Locomotion") {
+          const auto phase = found->second["controller"]["blend"]["phase"].get<double>();
+          const auto duration = observed["durationSeconds"].get<double>();
+          const auto expected = std::fmod(phase + (1.0 / 60) / duration, 1.0);
+          CHECK(blend["phase"].get<double>() == doctest::Approx(expected).epsilon(1e-8));
+        }
+      }
+
+      previousMotion[model.value] = observed;
     }
 
     const auto feet = scene->transform(worker->front())->position;
@@ -1890,6 +1949,7 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
   }
 
   CHECK(crewCount == 7);
+  CHECK(blendedModels.size() == 7);
   auto clock = session.gameClock().value();
   REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
   report(session.update(0));

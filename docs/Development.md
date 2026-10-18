@@ -16076,3 +16076,109 @@ Only macOS arm64 is executed; no engine release archive is created.
 到达依据实际着地脚底；受阻、过期和容量失败明确报告。实际制作/运行、自动检查与签名资源
 核对分别保留证据。最终角色/环境美术、接触/足部 IK、全局群体规划、动态导航与流送、
 大型游戏和编辑器成熟度仍未完成，不能用本阶段检查数量或八角色流程替代。
+
+## 2026-10-19 — Synchronized 1D motion / 同步一维动作
+
+Add immutable CPU-owned Motion definitions for one clip or 2..16 strictly ordered
+1D points. Only adjacent positive weights contribute; values clamp outside the
+axis, and effective cycle duration is their weighted clip duration. Retuning keeps
+normalized phase before native advancement. Each point uses that common phase plus
+an explicit normalized offset, wrapping loops and clamping nonloops. Reverse and
+zero-duration clips remain supported. Missing channels use exact owned bind values,
+never previous output; zero-weight points still reserve writers. Native base motion,
+state fades and ordered layers publish together. A failed sample/scene transaction
+retains actual motion, clocks, layers, graph age and pose, while accepted parameter
+intent stays accepted. No scene/device/hidden clock belongs to immutable Motion.
+
+Controller states now contain tagged clip/blend1d motion, without the old state-level
+clip field or format fallback. Validate numeric declared axes, finite bounded values,
+point order/capacity, phase offsets and every library reference at boundaries. Cache
+immutable bound state motions, including inactive points. The editor adds numeric-axis,
+ordered point/clip/offset forms through the same stage/apply/history/save implementation
+as strict JSON. SDK, Play and audition observations distinguish pending parameters
+from actual applied value/phase, incoming sample weights/times and state-fade
+contribution. Dominant incoming clip metadata uses lower-point tie breaking; duration
+and time describe the effective cycle. Before priming, applied is false.
+
+The actual Debug editor samples 48 completed skeleton previews across Walk/Jog/Sprint,
+confirming their left/right stance half-cycle before retaining zero authored offsets.
+It authors, applies, undoes/redoes, saves and reopens PrismRelay's four-state,
+ten-transition graph. Locomotion blends Idle/Walk/Jog/Sprint at 0/1.2/3.2/6.2 m/s;
+Jump/Air/Land retain explicit transitions. Scripts still submit actual native measured
+speed and movement intent, rather than evaluating poses. Invalid duplicate thresholds
+fail without replacing the preview/resource. Paused parameter intent leaves actual
+weights/time unchanged until resumed. FeatureLab's saved Glass motion demonstrates
+two panel-turn samples at offsets 0 and 0.25 with both forward/reverse states.
+
+Add twelve enduring cases: six Motion units, two controller units, three scene-player
+integration cases and sustained PrismRelay collision. Extend prepared/inactive writer,
+phase/pause, interruption, reverse, failure rollback, source reload and example checks.
+Review catches and fixes stale reported duration when parameters change before first
+explicit play. The first full check catches FeatureLab's premature assumption that a
+zero-time callback applies pending motion. Its audit now waits for actual native
+sampling; the retained reload regression proves pending value survives zero-time
+migration and applies on subsequent positive updates. Final Debug: 1771/1771,
+300.27 seconds. Final Release/NDEBUG: 1771/1771, 40.87 seconds. Counts are 593 unit
+and 1178 integration; overlapping labels include 277 compiler, 186 offscreen,
+39 audio-native, 34 platform and 21 process. Formatting passes for 17 C++ files.
+Builds, CTest and native product processes run sequentially; earlier failed/focused
+runs remain intermediate evidence rather than substitutes for final checks.
+
+The first relocated native sprint uncovers a separate real example configuration
+failure: character contact collection reaches its 256-candidate budget near the
+6268-triangle cabinet collider. The same failure reproduces at frame 71 in the
+existing headless PrismRelay target. A 1024 budget still fails near frame 73; 4096
+passes sustained four-second fixed-step sprint/collision. Use the actual Inspector
+to author/save all nine capsule definitions across the two playable scenes at 4096,
+then copy those ordinary saved resources back. Native save also canonicalizes null
+navigation fields/key ordering; no other scene behavior or geometry changes. Preserve
+the engine's explicit capacity failure and its low-budget regression. Add character
+identity, budget, position, measured and native velocity context to update errors.
+This is an explicit project budget for detailed geometry, not automatic collision
+simplification, a relaxed failure guard or populated-scene performance evidence.
+
+Retain and wait on that failed native process: actual exit 1, closed transport, one
+unprocessed read-only status request, no uncertain work. Archive its provenance before
+clearing the closed endpoint; never replay the request or restart on the observation
+timeout. The initial failure, both budget investigations and the later successful
+runs remain distinct evidence. Across this stage, eleven owned native processes are
+actually consumed: ten exit zero and that original failure exits one. Every normal
+close waits for actual exit before reading/ACKing its reply, verifies closed/fault-free/
+unblocked/empty uncertain and unprocessed status, then clears through the product.
+Archive/ACK 1233 actual raw replies, including one expected invalid-graph guard reply.
+
+With final binaries/resources, a fresh Release editor runs seven workers through two
+arrivals, preserves all eight poses/clocks/game data/native navigation through three
+source reloads, restores source bytes through a fourth reload, and advances exactly
+one paused fixed step with predicted normalized phases. Save/restore both playable
+levels and export each through the real editor. FeatureLab's actual Release editor
+run records 202 checks, including four blend checks and 23 expected SDK errors, then
+stops and exits normally. No human pointer acceptance is claimed: computer use again
+reports the Mac locked. Completed native viewport PNGs are visually inspected.
+
+Hide the owned authoring project and launch the relocated final Main game. Held
+600-frame sprint input reaches measured 5.999993801116943 m/s without the original
+fault. Actual C input enters crew; all seven workers reach two arrivals with no route
+failures and independently applied mixed poses. A fresh Crew executable restores the
+same explicit save root while all seven worker visit counts remain zero. Four actual
+checkpoint position comparisons have zero error at the unchanged 1e-5 bound. Both
+native games exit zero before restoring the source folder. Observed completed render
+counts are 1210/61 and HUD rasterizations 23/9; these prove completed work, not FPS.
+Twelve editor and thirteen standalone observation batches contain 96/104 actual
+motion states. Their intrinsic weight sums, effective durations and shared sample
+phases agree at 1e-12; sparse observations are not continuous timing/foot-contact proof.
+
+Review 32 current product/kit/export Mach-O paths with strict signature, linked-library
+and portable rpath checks. Both final exports match all 40 current Release kit files
+and all 141 authored asset/scene files byte-for-byte. All 145 source asset/scene/script
+files remain exact; four compiled ESM modules match across exports and consume 29825
+source bytes. Preserve all 11233 prior guarded files and extend the guard to 12662
+ordinary project/export/save/image files. Remove 1266 owned temporary helpers/requests
+only after all actual native processes and the orchestration session exit; retain raw
+replies, failure evidence, logs, ordinary projects, exports, saves and images under
+ignored build/blend-review. Only macOS arm64 is executed; no engine release archive.
+
+同步一维动作已贯通原生采样、状态机、编辑器制作、脚本观测、巡检和独立导出；参数意图与
+实际姿态严格区分，速度变化保留步态相位，失败保留旧姿态与时钟。真实长冲刺发现的高密度
+碰撞预算不足已由编辑器显式配置并用回归和最终原生流程验证，失败保护仍保留。自动碰撞简化、
+接触/足部 IK、根运动、多维混合、最终角色/环境美术及大型游戏和编辑器成熟度仍未完成。

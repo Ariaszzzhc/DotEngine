@@ -2605,7 +2605,7 @@ For an enabled manual player, Inspector's Create controller publishes a new
 Apply/Save the Inspector separately. Choose an existing controller or Manual clips
 to bind/detach. A bound controller owns base clip/speed/loop; retained manual
 settings are used again after detach. Edit animation controller opens the typed
-Animation panel with parameters, states/library clips, ordered edges/AND conditions,
+Animation panel with parameters, states/library clips or synchronized 1D points, ordered edges/AND conditions,
 exit progress and fade/minimum time. Rows support addition/removal and transition
 reordering. There is no embedded source editor or raw-JSON-only form.
 
@@ -2613,7 +2613,7 @@ reordering. There is no embedded source editor or raw-JSON-only form.
 {"command":"create-controller","revision":"2","entity":"589","path":"assets/locomotion.dotcontroller","name":"Locomotion"}
 {"command":"open-controller","revision":"4","entity":"589"}
 {"command":"inspect-controller","buffer":"3","revision":"1"}
-{"command":"stage-controller","buffer":"3","revision":"1","value":{"name":"Locomotion","initial":"Idle","parameters":[],"states":[{"name":"Idle","clip":"assets/idle.dotanimation","speed":1,"looping":true}],"transitions":[]}}
+{"command":"stage-controller","buffer":"3","revision":"1","value":{"name":"Locomotion","initial":"Idle","parameters":[],"states":[{"name":"Idle","motion":{"kind":"clip","clip":"assets/idle.dotanimation"},"speed":1,"looping":true}],"transitions":[]}}
 {"command":"apply-controller","buffer":"3","revision":"1"}
 {"command":"reset-controller-form","buffer":"3","revision":"2"}
 {"command":"undo-controller","buffer":"3","revision":"2"}
@@ -2714,6 +2714,19 @@ return explicit text/truncated flags. Every mutation rejects stale identities/re
 unknown fields and invalid choices are errors. One review per workspace bounds ownership.
 Limits are 8192 resource entries, 64 levels, 64 MiB/file and 512 MiB each for project
 snapshot and generated bundle. First import uses the background preparation/publication workflow above.
+
+
+
+The controller state form can select **Synchronized 1D motion**, a numeric axis and
+2..16 ordered points with threshold, library clip and normalized phase offset.
+Add/remove/reorder changes the staged form; Apply uses the same strict native graph
+validation and history publication as `stage-controller`/`apply-controller`. Duplicate
+or unordered thresholds fail without replacing the resource or preview. The runtime
+rows and JSON show the applied axis value/phase, positive sample weights/times,
+incoming cross-fade contribution and whether a pose has been applied. Parameter intent
+is shown separately. See [motion semantics](Animation.md#saved-state-machines--保存的动画状态机).
+状态表单可选一维同步动作、数值轴、有序点及相位偏移；GUI 与严格 JSON 共用验证、
+撤销重做和保存路径。观测区分参数意图与实际采样权重，相位由原生播放器维护。
 
 
 ## Additive content during Play

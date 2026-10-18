@@ -797,12 +797,14 @@ TEST_CASE("animation.controller_reserves_inactive_state_writers_and_prepared_def
   f.properties.clips.push_back("assets/later.dotanimation");
   f.properties.targets.push_back({1, other.value});
   f.properties.controller = "assets/motion.dotcontroller";
-  auto graph = Controller::create(
-                   {"Ownership",
-                    "Idle",
-                    {},
-                    {{"Idle", "assets/move.dotanimation"}, {"Later", "assets/later.dotanimation"}},
-                    {}})
+  auto graph = Controller::create({"Ownership",
+                                   "Idle",
+                                   {{"Blend", 0.0}},
+                                   {{"Idle", ControllerBlend1D{"Blend",
+                                                               {{0, "assets/move.dotanimation"},
+                                                                {1, "assets/later.dotanimation"}}}},
+                                    {"Later", "assets/later.dotanimation"}},
+                                   {}})
                    .value();
   REQUIRE(saveController(f.files, *f.properties.controller, graph));
   REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
@@ -818,6 +820,10 @@ TEST_CASE("animation.controller_reserves_inactive_state_writers_and_prepared_def
   REQUIRE(players);
   REQUIRE(players->advance(.25));
   CHECK(players->state(f.owner)->controller->playback.state == "Idle");
+  REQUIRE(players->state(f.owner)->controller->blend);
+  CHECK(players->state(f.owner)->controller->blend->samples.size() == 1);
+  CHECK(players->state(f.owner)->controller->blend->samples.front().clip == 0);
+  CHECK(f.scene->transform(other)->position.x == 0);
   auto competitor = f.scene->createEntity("Competitor").value();
   World::AnimationPlayer competition{{"assets/later.dotanimation"}, {{1, other.value}}};
   REQUIRE(f.scene->setAnimationPlayer(competitor, competition));
@@ -936,4 +942,156 @@ TEST_CASE("animation.warm_prepared_sync_still_validates_assets_and_adopts_new_co
   REQUIRE(f.scene->setAnimationPlayer(f.owner, changed));
   CHECK_FALSE(players.advance(.25));
   CHECK(f.scene->transform(f.target)->position.x == 1.25F);
+}
+
+TEST_CASE("animation.controller_blend_retains_phase_pause_and_actual_applied_weights") {
+  using namespace Animation;
+  Fixture f;
+  const auto fast = Clip::create({"Fast",
+                                  {{0,
+                                    Path::Translation,
+                                    Interpolation::Linear,
+                                    {{0, {10, 0, 0, 0}}, {4, {14, 0, 0, 0}}}}}})
+                        .value();
+  REQUIRE(saveClip(f.files, "assets/fast.dotanimation", fast));
+  f.properties.clips.push_back("assets/fast.dotanimation");
+  f.properties.controller = "assets/blend.dotcontroller";
+  const auto graph
+      = Controller::create({"Locomotion",
+                            "Motion",
+                            {{"Speed", .5}},
+                            {{"Motion", ControllerBlend1D{"Speed",
+                                                          {{0, "assets/move.dotanimation"},
+                                                           {2, "assets/fast.dotanimation"}}}}},
+                            {}})
+            .value();
+  REQUIRE(saveController(f.files, *f.properties.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  auto players = ScenePlayers::create(f.scene, f.files).value();
+  CHECK_FALSE(players.state(f.owner)->controller->blend->applied);
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Speed", 1.5}}));
+  REQUIRE(players.play(f.owner));
+  CHECK(players.state(f.owner)->duration == 3.5);
+  CHECK(players.state(f.owner)->controller->blend->value == 1.5);
+  CHECK(players.state(f.owner)->controller->blend->applied);
+  REQUIRE(players.resetController(f.owner));
+  CHECK(players.state(f.owner)->duration == 2.5);
+  REQUIRE(players.advance(.5));
+  auto first = players.state(f.owner).value();
+  REQUIRE(first.controller->blend);
+  CHECK(first.duration == 2.5);
+  CHECK(first.controller->blend->applied);
+  CHECK(first.controller->blend->contribution == 1);
+  CHECK(first.controller->blend->phase == .2);
+  CHECK(first.controller->blend->samples.front().weight == .75);
+  CHECK(f.scene->transform(f.target)->position.x == doctest::Approx(3));
+  REQUIRE(players.pause(f.owner));
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Speed", 1.5}}));
+  REQUIRE(players.advance(.5));
+  auto paused = players.state(f.owner).value();
+  CHECK(paused.controller->blend->value == .5);
+  CHECK(std::get<double>(paused.controller->playback.parameters.front().value) == 1.5);
+  CHECK(paused.playback.time == first.playback.time);
+  CHECK(f.scene->transform(f.target)->position.x == doctest::Approx(3));
+  REQUIRE(players.play(f.owner));
+  REQUIRE(players.advance(.25));
+  const auto next = players.state(f.owner).value();
+  CHECK(next.controller->blend->value == 1.5);
+  CHECK(next.controller->blend->phase == doctest::Approx(.2 + .25 / 3.5));
+  CHECK(next.playback.time == doctest::Approx(.95));
+  CHECK(next.clip == 1);
+  CHECK(next.controller->blend->samples.back().weight == .75);
+  CHECK(f.scene->transform(f.target)->position.x == doctest::Approx(8.45));
+  CHECK(first.controller->blend->value == .5);
+}
+
+TEST_CASE(
+    "animation.controller_blend_failed_channels_keep_actual_motion_layers_and_parameter_intent") {
+  using namespace Animation;
+  Fixture f;
+  const auto positive
+      = Clip::create({"Positive", {{0, Path::Scale, Interpolation::Step, {{0, {1, 1, 1, 0}}}}}})
+            .value();
+  const auto negative
+      = Clip::create({"Negative", {{0, Path::Scale, Interpolation::Step, {{0, {-1, 1, 1, 0}}}}}})
+            .value();
+  REQUIRE(saveClip(f.files, "assets/positive.dotanimation", positive));
+  REQUIRE(saveClip(f.files, "assets/negative.dotanimation", negative));
+  f.properties.clips.insert(f.properties.clips.end(),
+                            {"assets/positive.dotanimation", "assets/negative.dotanimation"});
+  f.properties.layers = {{"Action", 0, {{0, Path::Translation}}, .5, 1, true, true}};
+  f.properties.controller = "assets/blend.dotcontroller";
+  const auto graph
+      = Controller::create({"Atomic",
+                            "Motion",
+                            {{"Axis", 0.0}},
+                            {{"Motion", ControllerBlend1D{"Axis",
+                                                          {{0, "assets/positive.dotanimation"},
+                                                           {1, "assets/negative.dotanimation"}}}}},
+                            {}})
+            .value();
+  REQUIRE(saveController(f.files, *f.properties.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  auto players = ScenePlayers::create(f.scene, f.files).value();
+  REQUIRE(players.advance(.25));
+  const auto before = players.state(f.owner).value();
+  const auto position = f.scene->transform(f.target)->position;
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Axis", .5}}));
+  CHECK_FALSE(players.advance(.25));
+  const auto failed = players.state(f.owner).value();
+  CHECK(failed.controller->blend->value == 0);
+  CHECK(failed.playback.time == before.playback.time);
+  CHECK(failed.layers.front().playback.time == before.layers.front().playback.time);
+  CHECK(failed.controller->playback.elapsedSeconds == before.controller->playback.elapsedSeconds);
+  CHECK(std::get<double>(failed.controller->playback.parameters.front().value) == .5);
+  CHECK(f.scene->transform(f.target)->position == position);
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Axis", 1.0}}));
+  REQUIRE(players.advance(.25));
+  CHECK(f.scene->transform(f.target)->scale.x == -1);
+  CHECK(players.state(f.owner)->controller->blend->value == 1);
+}
+
+TEST_CASE(
+    "animation.controller_blend_crossfades_reverse_clips_and_interruption_freezes_one_origin") {
+  using namespace Animation;
+  Fixture f;
+  const auto fast = Clip::create({"Fast",
+                                  {{0,
+                                    Path::Translation,
+                                    Interpolation::Linear,
+                                    {{0, {10, 0, 0, 0}}, {4, {14, 0, 0, 0}}}}}})
+                        .value();
+  REQUIRE(saveClip(f.files, "assets/fast.dotanimation", fast));
+  f.properties.clips.push_back("assets/fast.dotanimation");
+  f.properties.controller = "assets/blend.dotcontroller";
+  const auto graph
+      = Controller::create(
+            {"Transitions",
+             "Motion",
+             {{"Speed", 1.0}, {"Go", false}},
+             {{"Motion",
+               ControllerBlend1D{
+                   "Speed", {{0, "assets/move.dotanimation"}, {2, "assets/fast.dotanimation"}}}},
+              {"Reverse", "assets/move.dotanimation", -1, false}},
+             {{"Leave", "Motion", "Reverse", {{"Go", ConditionOp::Equal, true}}, 1},
+              {"Return", "Reverse", "Motion", {{"Go", ConditionOp::Equal, false}}, 1}}})
+            .value();
+  REQUIRE(saveController(f.files, *f.properties.controller, graph));
+  REQUIRE(f.scene->setAnimationPlayer(f.owner, f.properties));
+  auto players = ScenePlayers::create(f.scene, f.files).value();
+  REQUIRE(players.advance(.25));
+  REQUIRE(players.parameters(f.owner, std::array{ControllerParameter{"Go", true}}));
+  REQUIRE(players.advance(.25));
+  CHECK(players.state(f.owner)->playback.time == 1.75);
+  CHECK_FALSE(players.state(f.owner)->controller->blend);
+  CHECK(f.scene->transform(f.target)->position.x == doctest::Approx(4.5625));
+  REQUIRE(players.parameters(
+      f.owner, std::array{ControllerParameter{"Go", false}, ControllerParameter{"Speed", 1.5}}));
+  REQUIRE(players.advance(.25));
+  const auto returned = players.state(f.owner).value();
+  CHECK(returned.playback.transition->elapsed == .25);
+  REQUIRE(returned.controller->blend);
+  CHECK(returned.controller->blend->value == 1.5);
+  CHECK(returned.controller->blend->contribution == .25);
+  CHECK(f.scene->transform(f.target)->position.x == doctest::Approx(5.359375));
 }

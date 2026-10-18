@@ -28,10 +28,34 @@ export namespace Dot::Animation {
     Controller value;
   };
 
+  struct SceneBlendSample {
+    std::uint32_t clip;
+    std::string asset;
+    double weight;
+    double time;
+    double duration;
+    double phaseOffset;
+  };
+
+  /** Applied incoming motion, distinct from pending parameter intent. Sample weights
+   * sum to one internally; contribution is the state cross-fade factor. Before
+   * priming, weights describe the configured motion but applied is false.
+   * 已应用的输入动作，区分待处理参数意图；内部采样权重和为一，contribution 为状态淡入因子。
+   * 首次采样前权重描述配置动作，但 applied 为 false。 */
+  struct SceneBlendState {
+    std::string parameter;
+    double value;
+    double phase;
+    double contribution;
+    bool applied;
+    std::vector<SceneBlendSample> samples;
+  };
+
   struct SceneControllerState {
     std::string asset;
     std::string name;
     ControllerSnapshot playback;
+    std::optional<SceneBlendState> blend{};
   };
 
   struct ScenePlayerStats {

@@ -52,6 +52,7 @@ add_executable(DotUnitTests
     AnimationLayersTests.cpp
     AnimationRetargetTests.cpp
     AnimationControllerTests.cpp
+    AnimationMotionTests.cpp
     AnimationEditTests.cpp
     AnimationKeyGroupTests.cpp
     AnimationClipboardTests.cpp

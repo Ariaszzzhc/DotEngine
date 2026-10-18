@@ -103,6 +103,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/SkinSource.cpp
     src/Engine/Graphics/Skinning.cpp
     src/Engine/Animation/Clip.cpp
+    src/Engine/Animation/Motion.cpp
     src/Engine/Animation/Source.cpp
     src/Engine/Animation/ScenePlayers.cpp
     src/Engine/Animation/Files.cpp
@@ -278,6 +279,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/SkinSource.cppm
         src/Engine/Graphics/Skinning.cppm
         src/Engine/Animation/Clip.cppm
+        src/Engine/Animation/Motion.cppm
         src/Engine/Animation/Source.cppm
         src/Engine/Animation/ScenePlayers.cppm
         src/Engine/Animation/Files.cppm

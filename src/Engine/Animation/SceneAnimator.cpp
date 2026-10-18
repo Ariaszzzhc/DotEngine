@@ -130,7 +130,7 @@ namespace Dot::Animation {
     };
 
     struct Transition {
-      std::optional<Clip> source;
+      std::optional<Motion> source;
       double sourceTime{};
       bool sourcePlaying{};
       double sourceSpeed{1};
@@ -138,7 +138,7 @@ namespace Dot::Animation {
       Values origin;
     };
 
-    Clip clip;
+    Motion motion;
     Layers m_layers;
     Values m_baseValues;
     std::optional<Transition> m_transition;
@@ -184,7 +184,7 @@ namespace Dot::Animation {
     auto restValues() const -> Values {
       Values values;
 
-      for (const auto& track : clip.description().value()->tracks) {
+      for (const auto& track : motion.channels().value()) {
         values[{track.node, track.path}] = channelValue(targets.at(track.node).rest, track.path);
       }
 
@@ -202,8 +202,25 @@ namespace Dot::Animation {
       return values;
     }
 
+    auto sample(const Motion& input, double time, bool looping) const
+        -> Core::Result<std::vector<ChannelSample>> {
+      if (!input.blended().value()) {
+        return input.sample(time, looping);
+      }
+
+      std::vector<ChannelSample> rest;
+      rest.reserve(input.channels()->size());
+
+      for (const auto& channel : input.channels().value()) {
+        rest.push_back({channel.node, channel.path,
+                        channelValue(targets.at(channel.node).rest, channel.path)});
+      }
+
+      return input.sample(time, looping, rest);
+    }
+
     auto apply(World::Scene& scene, double time, bool restore = false,
-               const Clip* replacement = nullptr, const Transition* fade = nullptr,
+               const Motion* replacement = nullptr, const Transition* fade = nullptr,
                double sourceTime = 0, double weight = 0, const Layers* layerCandidate = nullptr)
         -> Core::Result<void> {
       auto checked = checkScene(scene);
@@ -213,7 +230,7 @@ namespace Dot::Animation {
       }
 
       try {
-        const auto& next = replacement ? *replacement : clip;
+        const auto& next = replacement ? *replacement : motion;
         Values values;
 
         if (restore || replacement || (m_transition && !fade)) {
@@ -226,7 +243,7 @@ namespace Dot::Animation {
         }
 
         if (!restore) {
-          auto sampled = next.sample(time);
+          auto sampled = sample(next, time, playback.looping);
 
           if (!sampled) {
             return std::unexpected(sampled.error());
@@ -241,7 +258,7 @@ namespace Dot::Animation {
             }
 
             if (fade->source && weight > 0 && weight < 1) {
-              auto outgoing = fade->source->sample(sourceTime);
+              auto outgoing = sample(*fade->source, sourceTime, fade->sourceLooping);
 
               if (!outgoing) {
                 return std::unexpected(outgoing.error());
@@ -374,7 +391,16 @@ namespace Dot::Animation {
                            std::span<const NodeBinding> bindings,
                            std::span<const LayerDefinition> definitions)
       -> Core::Result<SceneAnimator> {
-    auto description = clip.description();
+    auto motion = Motion::single(std::move(clip));
+    return motion ? bindMotion(scene, std::move(*motion), bindings, definitions)
+                  : std::unexpected(motion.error());
+  }
+
+  auto SceneAnimator::bindMotion(const World::Scene& scene, Motion motion,
+                                 std::span<const NodeBinding> bindings,
+                                 std::span<const LayerDefinition> definitions)
+      -> Core::Result<SceneAnimator> {
+    auto description = motion.channels();
 
     if (!description) {
       return std::unexpected(description.error());
@@ -407,7 +433,7 @@ namespace Dot::Animation {
         nodes.emplace(binding.node, Impl::Target{binding.entity, *transform});
       }
 
-      for (const auto& track : (*description)->tracks) {
+      for (const auto& track : *description) {
         auto node = nodes.find(track.node);
 
         if (node == nodes.end()) {
@@ -430,7 +456,7 @@ namespace Dot::Animation {
 
       impl->m_layers = std::move(*layers);
       impl->targets = std::move(nodes);
-      impl->clip = std::move(clip);
+      impl->motion = std::move(motion);
       return SceneAnimator(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -506,7 +532,7 @@ namespace Dot::Animation {
     }
 
     if (!std::isfinite(playback.time) || playback.time < 0
-        || playback.time > m_impl->clip.duration().value() || !std::isfinite(playback.speed)
+        || playback.time > m_impl->motion.duration().value() || !std::isfinite(playback.speed)
         || std::abs(playback.speed) > 16 || playback.transition
         || (playback.paused && playback.playing)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid animation playback snapshot");
@@ -589,7 +615,7 @@ namespace Dot::Animation {
       return std::unexpected(checked.error());
     }
 
-    if (!std::isfinite(time) || time < 0 || time > m_impl->clip.duration().value()) {
+    if (!std::isfinite(time) || time < 0 || time > m_impl->motion.duration().value()) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Animation seek exceeds clip duration");
     }
 
@@ -634,7 +660,7 @@ namespace Dot::Animation {
       return std::unexpected(layers.error());
     }
 
-    auto next = clockAfter(*checked, m_impl->clip.duration().value(), seconds);
+    auto next = clockAfter(*checked, m_impl->motion.duration().value(), seconds);
     double sourceTime{};
     bool sourcePlaying{};
     double weight{};
@@ -676,8 +702,65 @@ namespace Dot::Animation {
     return applied;
   }
 
+  auto SceneAnimator::motion() const -> Core::Result<Motion> {
+    auto current = state();
+    return current ? Core::Result<Motion>{m_impl->motion} : std::unexpected(current.error());
+  }
+
+  auto SceneAnimator::retuneAndAdvance(World::Scene& scene, Motion motion, double seconds)
+      -> Core::Result<void> {
+    auto current = state();
+
+    if (!current) {
+      return std::unexpected(current.error());
+    }
+
+    if (!m_impl->motion.sameDefinition(motion)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Motion retuning requires the same definition");
+    }
+
+    if (current->paused) {
+      return advance(scene, seconds);
+    }
+
+    const auto before = m_impl->motion;
+    const auto duration = before.duration().value();
+    const auto nextDuration = motion.duration().value();
+    m_impl->motion = std::move(motion);
+    m_impl->playback.time
+        = duration > 0 ? std::clamp(current->time / duration, 0.0, 1.0) * nextDuration : 0;
+
+    try {
+      auto advanced = advance(scene, seconds);
+
+      if (!advanced) {
+        m_impl->motion = before;
+        m_impl->playback = *current;
+      }
+
+      return advanced;
+    } catch (const std::exception& error) {
+      m_impl->motion = before;
+      m_impl->playback = *current;
+      return Core::fail(Core::ErrorCode::External,
+                        "Retune animation motion: " + std::string(error.what()));
+    }
+  }
+
   auto SceneAnimator::transitionAndAdvance(World::Scene& scene, PlaybackTransition transition,
                                            double seconds) -> Core::Result<void> {
+    auto motion = Motion::single(std::move(transition.clip));
+    return motion ? transitionMotionAndAdvance(
+                        scene,
+                        {std::move(*motion), transition.fadeSeconds, transition.speed,
+                         transition.looping, transition.paused},
+                        seconds)
+                  : std::unexpected(motion.error());
+  }
+
+  auto SceneAnimator::transitionMotionAndAdvance(World::Scene& scene, MotionTransition transition,
+                                                 double seconds) -> Core::Result<void> {
     auto current = state();
 
     if (!current) {
@@ -698,7 +781,8 @@ namespace Dot::Animation {
         return configured;
       }
 
-      auto entered = candidate.crossFade(scene, std::move(transition.clip), transition.fadeSeconds);
+      auto entered
+          = candidate.crossFadeMotion(scene, std::move(transition.motion), transition.fadeSeconds);
 
       if (!entered) {
         return entered;
@@ -767,30 +851,35 @@ namespace Dot::Animation {
   }
 
   auto SceneAnimator::setClip(World::Scene& scene, Clip clip) -> Core::Result<void> {
+    auto motion = Motion::single(std::move(clip));
+    return motion ? setMotion(scene, std::move(*motion)) : std::unexpected(motion.error());
+  }
+
+  auto SceneAnimator::setMotion(World::Scene& scene, Motion motion) -> Core::Result<void> {
     auto current = state();
 
     if (!current) {
       return std::unexpected(current.error());
     }
 
-    auto description = clip.description();
+    auto description = motion.channels();
 
     if (!description) {
       return std::unexpected(description.error());
     }
 
-    for (const auto& track : (*description)->tracks) {
+    for (const auto& track : *description) {
       if (!m_impl->targets.contains(track.node)) {
         return Core::fail(Core::ErrorCode::NotFound, "Animation replacement target is not bound: "
                                                          + std::to_string(track.node));
       }
     }
 
-    const auto time = current->speed < 0 ? clip.duration().value() : 0;
-    auto applied = m_impl->apply(scene, time, false, &clip);
+    const auto time = current->speed < 0 ? motion.duration().value() : 0;
+    auto applied = m_impl->apply(scene, time, false, &motion);
 
     if (applied) {
-      m_impl->clip = std::move(clip);
+      m_impl->motion = std::move(motion);
       m_impl->playback.time = time;
       m_impl->playback.playing = true;
       m_impl->playback.paused = false;
@@ -802,6 +891,13 @@ namespace Dot::Animation {
   }
 
   auto SceneAnimator::crossFade(World::Scene& scene, Clip clip, double seconds)
+      -> Core::Result<void> {
+    auto motion = Motion::single(std::move(clip));
+    return motion ? crossFadeMotion(scene, std::move(*motion), seconds)
+                  : std::unexpected(motion.error());
+  }
+
+  auto SceneAnimator::crossFadeMotion(World::Scene& scene, Motion motion, double seconds)
       -> Core::Result<void> {
     auto current = state();
 
@@ -815,10 +911,10 @@ namespace Dot::Animation {
     }
 
     if (seconds == 0) {
-      return setClip(scene, std::move(clip));
+      return setMotion(scene, std::move(motion));
     }
 
-    auto description = clip.description();
+    auto description = motion.channels();
     auto live = m_impl->checkScene(scene);
 
     if (!description || !live) {
@@ -829,7 +925,7 @@ namespace Dot::Animation {
       Impl::Transition fade;
       fade.origin = m_impl->restValues();
 
-      for (const auto& track : (*description)->tracks) {
+      for (const auto& track : *description) {
         if (!m_impl->targets.contains(track.node)) {
           return Core::fail(Core::ErrorCode::NotFound, "Animation fade target is not bound");
         }
@@ -847,18 +943,18 @@ namespace Dot::Animation {
       }
 
       if (!m_impl->m_transition && m_impl->m_applied && current->playing) {
-        fade.source = m_impl->clip;
+        fade.source = m_impl->motion;
         fade.sourceTime = current->time;
         fade.sourcePlaying = true;
         fade.sourceSpeed = current->speed;
         fade.sourceLooping = current->looping;
       }
 
-      const auto time = current->speed < 0 ? clip.duration().value() : 0;
-      auto result = m_impl->apply(scene, time, false, &clip, &fade, fade.sourceTime, 0);
+      const auto time = current->speed < 0 ? motion.duration().value() : 0;
+      auto result = m_impl->apply(scene, time, false, &motion, &fade, fade.sourceTime, 0);
 
       if (result) {
-        m_impl->clip = std::move(clip);
+        m_impl->motion = std::move(motion);
         m_impl->m_transition = std::move(fade);
         m_impl->playback.time = time;
         m_impl->playback.playing = true;

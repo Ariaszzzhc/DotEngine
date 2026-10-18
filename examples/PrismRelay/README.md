@@ -250,8 +250,11 @@ Use override when the layer should replace the current pose instead.
 
 ## Saved locomotion state machine
 
-`assets/locomotion.dotcontroller` contains Idle/Walk/Jog/Sprint/Jump/Air/Land and
-30 ordered transitions. Inspector binds it to Surveyor; Edit animation controller
+`assets/locomotion.dotcontroller` contains Locomotion/Jump/Air/Land and
+10 ordered transitions. Locomotion blends Idle/Walk/Jog/Sprint at speeds
+0/1.2/3.2/6.2 m/s with a shared normalized phase; the saved points use zero offsets.
+The existing clips share the left/right stance half-cycle, checked in the native
+paused skeleton preview. This does not provide foot locking or automatic contact correction. Inspector binds it to Surveyor; Edit animation controller
 opens typed parameter/state/transition forms and an isolated native preview.
 Applying validates the complete graph, clip library, writer authority and entry
 pose before committing one undoable edit; it restarts the paused audition.
@@ -264,7 +267,9 @@ fades and layer composition, and retains these across source reload. Inspection
 remains an independent masked action layer. Pause freezes graph decisions/age;
 a debugger step advances one simulation quantum. Restoring a grounded checkpoint
 resets controller defaults/entry and stops Inspection, rather than persisting a
-borrowed runtime state. This graph is a small locomotion controller, not blend trees,
+borrowed runtime state. The speed axis uses actual native measured velocity, so
+avoidance and arrival deceleration change weights continuously without resetting
+the gait cycle. This graph is a small 1D locomotion controller, not multidimensional trees,
 root motion, animation events or a final character/art quality claim.
 
 The floor, four boundary walls, eight imported cabinets, relay column and four
@@ -272,7 +277,13 @@ traversal steps now use native static triangle colliders authored through the re
 Inspector/agent operations. Collision follows the saved geometry, including bevels
 and nonuniform scale. The eight parent box approximations were removed; ventilation
 runs still use their existing box proxies. Play and native exports use the same
-geometry preparation and Jolt implementation.
+geometry preparation and Jolt implementation. The playable scenes explicitly
+budget 4096 native contact candidates per character for the 6268-triangle imported
+cabinet collider. Sustained sprinting into its detailed surface exceeded budgets
+256 and 1024; the current authored setting passes the retained collision regression.
+This preserves the geometry and the engine's explicit failure when a configured
+contact budget is exceeded. Collision simplification and large-scene cost remain
+separate work.
 
 Linked ventilation sources support background refresh/restore/relink in the real
 Inspector. Prepare the single/all-instance operation, then Apply or Cancel from

@@ -266,3 +266,8 @@ The navigation SDK inventory also exercises `navigation.stats()` returning null 
 this unbound scene, null movement state, an empty agent list, idempotent stop, and
 `navigation.route()`/`navigation.move()` producing explicit unavailable errors.
 Successful static-obstacle routes are demonstrated by PrismRelay's saved crew bay.
+
+Glass's native controller now demonstrates synchronized 1D motion on the numeric
+Phase axis: two panel-turn samples at offsets 0 and 0.25. The audit submits Phase
+0.5, checks pending intent separately, then verifies two applied half-weight samples
+in the reverse state. Sampling, phase and state transitions remain native.

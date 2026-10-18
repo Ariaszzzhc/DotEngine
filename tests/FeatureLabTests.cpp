@@ -302,6 +302,10 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   CHECK(snapshot["updates"] == 5 + extraUpdates);
   CHECK(snapshot["stops"] == 1);
   CHECK(snapshot["errors"] == 23);
+  const auto checked = snapshot["checked"].get<std::vector<std::string>>();
+  CHECK(std::ranges::contains(checked, "animation.blend.applied"));
+  CHECK(std::ranges::contains(checked, "animation.blend.weights"));
+  CHECK(std::ranges::contains(checked, "animation.blend.offset"));
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);
@@ -424,6 +428,12 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   report(session.update(0));
   report(session.update(0));
   awaitSaveAudit(session);
+  const auto glass = session.scene().value()->findEntities("Glass")->front();
+  CHECK(Json::parse(session.inspectAnimation(glass).value())["controller"]["blend"]["value"] == 0);
+  report(session.update(1.0 / 60));
+  report(session.update(1.0 / 60));
+  const auto checked = data(*session.scene().value())["checked"].get<std::vector<std::string>>();
+  CHECK(std::ranges::contains(checked, "animation.blend.applied"));
   report(session.close());
   complete(fixture.project, *session.scene().value());
 }

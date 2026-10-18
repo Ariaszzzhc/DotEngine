@@ -1,56 +1,90 @@
 {
-  "name": "Glass direction",
   "initial": "Forward",
+  "name": "Glass direction",
   "parameters": [
     {
       "name": "Reverse",
       "value": false
+    },
+    {
+      "name": "Phase",
+      "value": 0.0
     }
   ],
   "states": [
     {
+      "looping": true,
+      "motion": {
+        "kind": "blend1d",
+        "parameter": "Phase",
+        "points": [
+          {
+            "clip": "assets/panel-turn.dotanimation",
+            "phaseOffset": 0.0,
+            "threshold": 0.0
+          },
+          {
+            "clip": "assets/panel-turn.dotanimation",
+            "phaseOffset": 0.25,
+            "threshold": 1.0
+          }
+        ]
+      },
       "name": "Forward",
-      "clip": "assets/panel-turn.dotanimation",
-      "speed": 1.0,
-      "looping": true
+      "speed": 1.0
     },
     {
+      "looping": true,
+      "motion": {
+        "kind": "blend1d",
+        "parameter": "Phase",
+        "points": [
+          {
+            "clip": "assets/panel-turn.dotanimation",
+            "phaseOffset": 0.0,
+            "threshold": 0.0
+          },
+          {
+            "clip": "assets/panel-turn.dotanimation",
+            "phaseOffset": 0.25,
+            "threshold": 1.0
+          }
+        ]
+      },
       "name": "Reverse",
-      "clip": "assets/panel-turn.dotanimation",
-      "speed": -1.0,
-      "looping": true
+      "speed": -1.0
     }
   ],
   "transitions": [
     {
-      "name": "ReverseRequested",
-      "from": "Forward",
-      "to": "Reverse",
       "conditions": [
         {
-          "parameter": "Reverse",
           "operation": "eq",
+          "parameter": "Reverse",
           "value": true
         }
       ],
+      "exitTime": null,
       "fadeSeconds": 0.2,
-      "minimumSeconds": 0,
-      "exitTime": null
+      "from": "Forward",
+      "minimumSeconds": 0.0,
+      "name": "ReverseRequested",
+      "to": "Reverse"
     },
     {
-      "name": "ForwardRequested",
-      "from": "Reverse",
-      "to": "Forward",
       "conditions": [
         {
-          "parameter": "Reverse",
           "operation": "eq",
+          "parameter": "Reverse",
           "value": false
         }
       ],
+      "exitTime": null,
       "fadeSeconds": 0.2,
-      "minimumSeconds": 0,
-      "exitTime": null
+      "from": "Reverse",
+      "minimumSeconds": 0.0,
+      "name": "ForwardRequested",
+      "to": "Forward"
     }
   ]
 }

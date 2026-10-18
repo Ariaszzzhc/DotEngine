@@ -916,6 +916,21 @@ export interface AnimationControllerState {
   parameters: Record<string, boolean|number>;
   lastTransition: string|null;
   transitions: string;
+  /** Applied weights/phase; parameter edits remain pending until simulation advances.
+   * 已应用的权重/相位，参数编辑在模拟推进前仍是待求值意图。 */
+  blend: AnimationBlendState|null;
+}
+
+export interface AnimationBlendState {
+  parameter: string;
+  value: number;
+  phase: number;
+  /** Incoming state fade factor; sample weights sum to one inside that motion.
+   * 输入状态的淡入因子，采样权重在动作内部合计为一。 */
+  contribution: number;
+  applied: boolean;
+  samples: Array<{clip: number; asset: string; weight: number; timeSeconds: number;
+                 durationSeconds: number; phaseOffset: number}>;
 }
 
 export interface AnimationLayerState {

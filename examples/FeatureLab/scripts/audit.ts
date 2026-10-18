@@ -478,7 +478,17 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.expectedError(() => animation.parameters(glass.id, {Missing: false}), 'InvalidArgument');
     this.expectedError(() => glass.playAnimation(0, true), 'InvalidState');
     this.check('animation.controller.failedControl', glass.animationState.controller?.parameters.Reverse === false);
-    glass.setAnimationParameters({Reverse: true});
+    glass.setAnimationParameters({Reverse: true, Phase: .5});
+    this.check('animation.blend.pending', glass.animationState.controller?.blend?.value === 0);
+  }
+
+  private blendChecks(): void {
+    const controller = this.entity('Glass').animationState.controller;
+    const blend = controller?.blend;
+    this.check('animation.blend.applied', controller?.state === 'Reverse' && blend?.applied === true);
+    this.check('animation.blend.weights', blend?.value === .5 && blend.samples.length === 2
+      && blend.samples.every(sample => sample.weight === .5));
+    this.check('animation.blend.offset', blend?.samples[1]?.phaseOffset === .25);
   }
 
   private publish(): void {
@@ -784,6 +794,14 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.controllerChecks();
     } else if (!this.#checked.has('ui.reset')) {
       this.uiChecks();
+    }
+
+    const glassMotion = this.entity('Glass').animationState.controller;
+
+    if (this.#checked.has('animation.controller.failedControl')
+        && !this.#checked.has('animation.blend.applied')
+        && glassMotion?.state === 'Reverse' && glassMotion.blend?.value === .5) {
+      this.blendChecks();
     }
 
     if (this.#checked.has('Entity.setCharacterYaw') && !this.#checked.has('gameState.snapshot')) {

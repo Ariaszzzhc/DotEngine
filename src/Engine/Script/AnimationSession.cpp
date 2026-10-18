@@ -117,8 +117,31 @@ namespace Dot::Script {
               std::visit([&](auto value) { parameters[parameter.name] = value; }, parameter.value);
             }
 
+            Json blend = nullptr;
+
+            if (observed.blend) {
+              Json samples = Json::array();
+
+              for (const auto& sample : observed.blend->samples) {
+                samples.push_back({{"clip", sample.clip},
+                                   {"asset", sample.asset},
+                                   {"weight", sample.weight},
+                                   {"timeSeconds", sample.time},
+                                   {"durationSeconds", sample.duration},
+                                   {"phaseOffset", sample.phaseOffset}});
+              }
+
+              blend = {{"parameter", observed.blend->parameter},
+                       {"value", observed.blend->value},
+                       {"phase", observed.blend->phase},
+                       {"contribution", observed.blend->contribution},
+                       {"applied", observed.blend->applied},
+                       {"samples", std::move(samples)}};
+            }
+
             controller = {{"asset", observed.asset},
                           {"name", observed.name},
+                          {"blend", std::move(blend)},
                           {"state", observed.playback.state},
                           {"elapsedSeconds", observed.playback.elapsedSeconds},
                           {"parameters", std::move(parameters)},

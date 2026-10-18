@@ -104,3 +104,12 @@ verification before one resource-history commit, and ordinary save/audition/expo
 Prism Relay's editable reach retains two authored intermediate control points. This
 does not persist a world constraint during interpolation or gameplay; runtime
 contact/foot IK and broader motion production remain open. See [keyed posing](Animation.md#keying-an-ik-pose--以-ik-姿态写键).
+
+
+Native controller states now author a single clip or synchronized one-dimensional
+motion, with bounded ordered points, explicit phase offsets, bind-pose fallback,
+phase-preserving axis changes and atomic cross-fade/layer composition. The editor
+and strict agent routes share resource forms/history/save and report actual applied
+weights separately from pending intent. Prism Relay uses measured movement speed
+for continuous Idle/Walk/Jog/Sprint weights. Multidimensional trees, automatic contact
+alignment, foot locking, root motion and final character/art quality remain open.

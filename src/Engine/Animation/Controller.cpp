@@ -27,6 +27,11 @@ namespace Dot::Animation {
       return !number || (std::isfinite(*number) && std::abs(*number) <= 1000000);
     }
 
+    auto validClip(const std::string& clip) -> bool {
+      return clip.size() <= 1024 && Core::isPortableRelativePath(clip)
+             && clip.starts_with("assets/") && clip.ends_with(".dotanimation");
+    }
+
     auto matches(const ParameterValue& actual, ConditionOp operation,
                  const ParameterValue& expected) -> bool {
       if (operation == ConditionOp::Equal) {
@@ -142,11 +147,41 @@ namespace Dot::Animation {
 
       for (const auto& state : description.states) {
         if (!validLayerName(state.name) || !states.emplace(state.name, states.size()).second
-            || state.clip.size() > 1024 || !Core::isPortableRelativePath(state.clip)
-            || !state.clip.starts_with("assets/") || !state.clip.ends_with(".dotanimation")
             || !std::isfinite(state.speed) || std::abs(state.speed) > 16) {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Invalid/duplicate controller state: " + state.name);
+        }
+      }
+
+      for (const auto& state : description.states) {
+        if (const auto* clip = std::get_if<std::string>(&state.motion)) {
+          if (!validClip(*clip)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid controller clip: " + state.name);
+          }
+        } else {
+          const auto& blend = std::get<ControllerBlend1D>(state.motion);
+          const auto parameter = data->parameters.find(blend.parameter);
+
+          if (parameter == data->parameters.end()
+              || !std::holds_alternative<double>(values[parameter->second])
+              || blend.points.size() < 2 || blend.points.size() > 16) {
+            return Core::fail(
+                Core::ErrorCode::InvalidArgument,
+                "1D controller motion requires numeric parameter and 2..16 points: " + state.name);
+          }
+
+          for (std::size_t i = 0; i < blend.points.size(); ++i) {
+            const auto& point = blend.points[i];
+
+            if (!validClip(point.clip) || !std::isfinite(point.threshold)
+                || std::abs(point.threshold) > 1000000 || !std::isfinite(point.phaseOffset)
+                || std::abs(point.phaseOffset) > 1
+                || (i && blend.points[i - 1].threshold >= point.threshold)) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Invalid ordered controller blend point: " + state.name);
+            }
+          }
         }
       }
 
@@ -218,6 +253,18 @@ namespace Dot::Animation {
     return m_data ? Core::Result<const ControllerState*>{&m_data->description.states[m_state]}
                   : Core::fail(Core::ErrorCode::InvalidState,
                                "Animation controller is empty or moved");
+  }
+
+  auto Controller::parameter(std::string_view name) const -> Core::Result<ParameterValue> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation controller is empty or moved");
+    }
+
+    const auto found = m_data->parameters.find(name);
+    return found != m_data->parameters.end()
+               ? Core::Result<ParameterValue>{(*m_values)[found->second]}
+               : Core::fail(Core::ErrorCode::NotFound,
+                            "Controller parameter is missing: " + std::string(name));
   }
 
   auto Controller::snapshot() const -> Core::Result<ControllerSnapshot> {

@@ -14,6 +14,7 @@ module;
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module Dot.Animation.ScenePlayers;
@@ -48,6 +49,7 @@ namespace Dot::Animation {
       bool primed{};
       std::optional<std::vector<std::uint64_t>> m_destinationWriters{};
       std::optional<Controller> m_controller{};
+      std::map<std::string, Motion> m_motions{};
     };
 
     std::shared_ptr<World::Scene> scene;
@@ -61,6 +63,25 @@ namespace Dot::Animation {
 
     Impl(std::shared_ptr<World::Scene> value, Core::FileSystem files)
         : scene(std::move(value)), assets(std::move(files)), scope(scene->id()) {
+    }
+
+    auto motionFor(const Player& player, const Controller& controller) const
+        -> Core::Result<Motion> {
+      const auto* state = controller.state().value();
+      const auto found = player.m_motions.find(state->name);
+
+      if (found == player.m_motions.end()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Controller motion was not bound: " + state->name);
+      }
+
+      if (const auto* blend = std::get_if<ControllerBlend1D>(&state->motion)) {
+        auto parameter = controller.parameter(blend->parameter);
+        return parameter ? found->second.withValue(std::get<double>(*parameter))
+                         : Core::Result<Motion>{std::unexpected(parameter.error())};
+      }
+
+      return found->second;
     }
 
     auto check() const -> Core::Result<void> {
@@ -352,6 +373,7 @@ namespace Dot::Animation {
             double speed = properties.speed;
             bool looping = properties.looping;
             std::set<std::uint64_t> selectedWriters;
+            std::map<std::string, Motion> motions;
 
             if (properties.controller) {
               const auto& path = *properties.controller;
@@ -375,30 +397,56 @@ namespace Dot::Animation {
               const auto* definition = take(controller->description());
 
               for (const auto& state : definition->states) {
-                const auto found = std::ranges::find(properties.clips, state.clip);
+                const auto resolve = [&](const std::string& asset) -> std::size_t {
+                  const auto found = std::ranges::find(properties.clips, asset);
 
-                if (found == properties.clips.end()) {
-                  return Core::fail(Core::ErrorCode::InvalidArgument,
-                                    "Controller " + path + " state " + state.name
-                                        + " clip is absent from player library: " + state.clip);
-                }
+                  if (found == properties.clips.end()) {
+                    throw Core::fail(Core::ErrorCode::InvalidArgument,
+                                     "Controller " + path + " state " + state.name
+                                         + " clip is absent from player library: " + asset)
+                        .error();
+                  }
 
-                const auto index = static_cast<std::size_t>(found - properties.clips.begin());
+                  const auto index = static_cast<std::size_t>(found - properties.clips.begin());
 
-                for (const auto& track : take(library[index].description())->tracks) {
-                  selectedWriters.insert(targets.at(track.node));
+                  for (const auto& track : take(library[index].description())->tracks) {
+                    selectedWriters.insert(targets.at(track.node));
+                  }
+
+                  return index;
+                };
+
+                if (const auto* clip = std::get_if<std::string>(&state.motion)) {
+                  motions.emplace(state.name, take(Motion::single(library[resolve(*clip)])));
+                } else {
+                  const auto& blend = std::get<ControllerBlend1D>(state.motion);
+                  std::vector<MotionPoint> points;
+
+                  for (const auto& point : blend.points) {
+                    points.push_back(
+                        {point.threshold, library[resolve(point.clip)], point.phaseOffset});
+                  }
+
+                  const auto value = std::get<double>(take(controller->parameter(blend.parameter)));
+                  motions.emplace(state.name, take(Motion::blend1D(std::move(points), value)));
                 }
               }
 
               const auto* initial = take(controller->state());
+              const auto& firstClip
+                  = std::holds_alternative<std::string>(initial->motion)
+                        ? std::get<std::string>(initial->motion)
+                        : std::get<ControllerBlend1D>(initial->motion).points.front().clip;
               selectedIndex = static_cast<std::uint32_t>(
-                  std::ranges::find(properties.clips, initial->clip) - properties.clips.begin());
+                  std::ranges::find(properties.clips, firstClip) - properties.clips.begin());
               speed = initial->speed;
               looping = initial->looping;
             }
 
             const auto& selected = library[selectedIndex];
-            const auto duration = take(selected.duration());
+            auto selectedMotion = controller ? motions.at(controller->state().value()->name)
+                                             : take(Motion::single(selected));
+            const auto duration = take(selectedMotion.duration());
             std::vector<LayerDefinition> layers;
 
             for (const auto& layer : properties.layers) {
@@ -407,7 +455,8 @@ namespace Dot::Animation {
                                 layer.referenceTime});
             }
 
-            auto animator = take(SceneAnimator::bind(*scene, selected, bindings, layers));
+            auto animator
+                = take(SceneAnimator::bindMotion(*scene, selectedMotion, bindings, layers));
             auto configured = animator.configure(speed, looping);
 
             if (!configured) {
@@ -435,7 +484,8 @@ namespace Dot::Animation {
             player = std::make_shared<Player>(
                 properties, std::move(animator), std::move(library), selectedIndex,
                 std::vector<std::uint64_t>(selectedWriters.begin(), selectedWriters.end()),
-                playerChannels, playerKeys, duration, false, std::nullopt, std::move(controller));
+                playerChannels, playerKeys, duration, false, std::nullopt, std::move(controller),
+                std::move(motions));
           }
 
           if (player->channels > 30000 - channels || player->keys > 1000000 - keys) {
@@ -640,9 +690,19 @@ namespace Dot::Animation {
     for (auto& [owner, player] : m_impl->players) {
       if (player->m_controller) {
         auto playback = player->animator.state().value();
-        const auto time = !player->primed && playback.speed < 0 ? player->duration : playback.time;
+        auto currentMotion = m_impl->motionFor(*player, *player->m_controller);
+
+        if (!currentMotion) {
+          return std::unexpected(currentMotion.error());
+        }
+
+        const auto actualDuration = player->animator.motion()->duration().value();
+        const auto nextDuration = currentMotion->duration().value();
+        const auto time = !player->primed && playback.speed < 0 ? nextDuration
+                          : actualDuration > 0 ? playback.time / actualDuration * nextDuration
+                                               : 0;
         auto candidate
-            = player->m_controller->advanced(playback.paused ? 0 : seconds, time, player->duration);
+            = player->m_controller->advanced(playback.paused ? 0 : seconds, time, nextDuration);
 
         if (!candidate) {
           return std::unexpected(candidate.error());
@@ -650,18 +710,23 @@ namespace Dot::Animation {
 
         const bool changed = candidate->transitionCount().value()
                              != player->m_controller->transitionCount().value();
-        auto selected = player->clip;
         Core::Result<void> advanced;
 
         if (changed || (!player->primed && !playback.paused)) {
           const auto* state = candidate->state().value();
-          selected
-              = static_cast<std::uint32_t>(std::ranges::find(player->properties.clips, state->clip)
-                                           - player->properties.clips.begin());
+          auto selectedMotion = m_impl->motionFor(*player, *candidate);
+
+          if (!selectedMotion) {
+            return std::unexpected(selectedMotion.error());
+          }
+
           const auto fade = changed ? candidate->lastTransition().value()->fadeSeconds : 0;
-          advanced = player->animator.transitionAndAdvance(
-              *m_impl->scene, {player->library[selected], fade, state->speed, state->looping},
+          advanced = player->animator.transitionMotionAndAdvance(
+              *m_impl->scene, {std::move(*selectedMotion), fade, state->speed, state->looping},
               seconds);
+        } else if (!playback.paused && seconds > 0) {
+          advanced = player->animator.retuneAndAdvance(*m_impl->scene, std::move(*currentMotion),
+                                                       seconds);
         } else {
           advanced = player->animator.advance(*m_impl->scene, seconds);
         }
@@ -673,8 +738,7 @@ namespace Dot::Animation {
         }
 
         player->m_controller = std::move(*candidate);
-        player->clip = selected;
-        player->duration = player->library[selected].duration().value();
+        player->duration = player->animator.motion()->duration().value();
         player->primed = player->primed || !playback.paused;
         continue;
       }
@@ -744,6 +808,7 @@ namespace Dot::Animation {
       }
 
       std::optional<SceneControllerState> controller;
+      auto selectedIndex = player.clip;
 
       if (player.m_controller) {
         auto snapshot = player.m_controller->snapshot();
@@ -754,11 +819,48 @@ namespace Dot::Animation {
 
         controller = {*player.properties.controller,
                       player.m_controller->description().value()->name, std::move(*snapshot)};
+        const auto actual = player.animator.motion().value();
+        const auto* state = player.m_controller->state().value();
+
+        if (const auto* blend = std::get_if<ControllerBlend1D>(&state->motion)) {
+          const auto duration = actual.duration().value();
+          SceneBlendState observed{
+              blend->parameter,
+              actual.value().value(),
+              duration > 0 ? playback->time / duration : 0,
+              playback->transition ? playback->transition->elapsed / playback->transition->duration
+                                   : 1,
+              player.primed,
+              {}};
+          const auto samples = actual.samples(playback->time, playback->looping).value();
+          double dominant = -1;
+
+          for (const auto& sample : samples) {
+            const auto& point = blend->points[sample.point];
+            const auto index
+                = static_cast<std::uint32_t>(std::ranges::find(player.properties.clips, point.clip)
+                                             - player.properties.clips.begin());
+            observed.samples.push_back({index, point.clip, sample.weight, sample.time,
+                                        player.library[index].duration().value(),
+                                        point.phaseOffset});
+
+            if (sample.weight > dominant) {
+              dominant = sample.weight;
+              selectedIndex = index;
+            }
+          }
+
+          controller->blend = std::move(observed);
+        } else {
+          selectedIndex = static_cast<std::uint32_t>(
+              std::ranges::find(player.properties.clips, std::get<std::string>(state->motion))
+              - player.properties.clips.begin());
+        }
       }
 
-      return ScenePlayerState{player.clip,
-                              player.properties.clips[player.clip],
-                              player.library[player.clip].description().value()->name,
+      return ScenePlayerState{selectedIndex,
+                              player.properties.clips[selectedIndex],
+                              player.library[selectedIndex].description().value()->name,
                               player.duration,
                               *playback,
                               std::move(*layers),
@@ -790,10 +892,17 @@ namespace Dot::Animation {
 
       if (!player.primed) {
         const auto* state = player.m_controller->state().value();
-        auto initial = player.animator.transitionAndAdvance(
-            *m_impl->scene, {player.library[player.clip], 0, state->speed, state->looping}, 0);
+        auto selectedMotion = m_impl->motionFor(player, *player.m_controller);
+
+        if (!selectedMotion) {
+          return std::unexpected(selectedMotion.error());
+        }
+
+        auto initial = player.animator.transitionMotionAndAdvance(
+            *m_impl->scene, {std::move(*selectedMotion), 0, state->speed, state->looping}, 0);
 
         if (initial) {
+          player.duration = player.animator.motion()->duration().value();
           player.primed = true;
         }
 
@@ -1067,11 +1176,15 @@ namespace Dot::Animation {
     }
 
     const auto* state = candidate->state().value();
-    const auto selected = static_cast<std::uint32_t>(
-        std::ranges::find(player.properties.clips, state->clip) - player.properties.clips.begin());
-    auto applied = player.animator.transitionAndAdvance(
+    auto selectedMotion = m_impl->motionFor(player, *candidate);
+
+    if (!selectedMotion) {
+      return std::unexpected(selectedMotion.error());
+    }
+
+    auto applied = player.animator.transitionMotionAndAdvance(
         *m_impl->scene,
-        {player.library[selected], 0, state->speed, state->looping,
+        {std::move(*selectedMotion), 0, state->speed, state->looping,
          player.animator.state().value().paused},
         0);
 
@@ -1079,8 +1192,7 @@ namespace Dot::Animation {
       return applied;
     }
 
-    player.clip = selected;
-    player.duration = player.library[selected].duration().value();
+    player.duration = player.animator.motion()->duration().value();
     player.m_controller = std::move(*candidate);
     player.primed = true;
     return {};

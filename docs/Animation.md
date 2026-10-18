@@ -630,8 +630,13 @@ A player's required `controller` field is null for manual clips or a portable
 `assets/... .dotcontroller` path. The resource is strict JSON (at most 1 MiB/depth
 16) with exactly name, initial, parameters, states and transitions. Parameters have
 unique ASCII identifiers and Boolean or finite numeric defaults within ±1000000.
-Up to 64 parameters and 64 states are supported. Each state names a clip asset in
-the player's existing library, speed in [-16,16] and looping mode. Up to 512 named,
+Up to 64 parameters and 64 states are supported. Each state has a tagged `motion`,
+speed in [-16,16] and looping mode. A single motion is
+`{"kind":"clip","clip":"assets/idle.dotanimation"}`. A synchronized one-dimensional
+motion is `{"kind":"blend1d","parameter":"Speed","points":[{"threshold":0,"clip":"assets/idle.dotanimation","phaseOffset":0},{"threshold":3,"clip":"assets/run.dotanimation","phaseOffset":0}]}`.
+All clips belong to the player's existing library. Blend axes must name a declared
+numeric parameter; 2..16 finite, strictly increasing thresholds lie within ±1000000.
+Normalized phase offsets lie in [-1,1]. There is no legacy state-level clip field. Up to 512 named,
 ordered transitions have from/to, at most eight AND conditions, fadeSeconds,
 minimumSeconds and nullable exitTime. Comparison operations are eq/ne/lt/le/gt/ge;
 Booleans support only eq/ne. Fade/minimum seconds lie in [0,86400], exit progress
@@ -669,8 +674,37 @@ play resumes; pause freezes all clocks. `animation.resetController(entity)` /
 `Entity.resetAnimationController()` atomically restore defaults and entry directional
 pose while retaining global pause and layer clocks. Saved manual clip/speed/loop
 settings return after explicit detach. Checkpoint persistence is a game policy,
-not automatic state-machine serialization. Blend trees, hierarchical machines,
+not automatic state-machine serialization. Multidimensional blend trees, hierarchical machines,
 triggers, events and root motion remain future work.
+
+
+A 1D motion clamps outside its axis and linearly weights the adjacent two points.
+The effective cycle duration is their weighted clip duration. Changing the axis on
+a positive unpaused tick preserves normalized phase, then advances by the actual
+simulation delta. Each clip samples this common phase plus its offset: looping
+wraps, nonlooping clamps, reverse starts at the directional end. Zero-duration
+clips remain constant. Vec3 channels interpolate linearly; rotations use shortest
+quaternion SLERP. Missing channels use the owned bind pose, never the previous
+output; zero-weight points still reserve their writers. The complete motion,
+transition and layers publish in one transaction; a singular/nonfinite pose retains
+all prior applied motion values and clocks, while accepted parameter intent remains.
+
+Controller observations include nullable `blend` with parameter, applied value,
+normalized phase, incoming-motion contribution, applied flag and positive-weight
+samples {clip,asset,weight,timeSeconds,durationSeconds,phaseOffset}. Sample weights describe the
+incoming motion internally; `contribution` is its cross-fade factor (one without a
+transition). `applied` is false before the first sample. Pending `parameters` can
+differ while paused or after a failed tick; changing intent does not publish a pose.
+The top-level clip/asset/name identifies the dominant incoming sample (lower point
+wins ties), while duration/time refer to the effective cycle. A state transition
+can still reset the incoming phase; retuning within a state does not. These are
+explicit authored offsets, not automatic foot contact alignment or root motion.
+
+一维动作按相邻阈值插值权重与周期时长；改变数值保留归一相位，再按实际模拟步进。
+各片段使用共同相位加显式偏移；循环回绕，非循环钳制。缺失通道取绑定姿态，零权重
+通道仍预留写入权。姿态、过渡和层一次发布，失败保留已应用动作与时钟。
+观测区分待处理参数与已采样值；权重属于输入动作内部，contribution 是状态间淡入比例。
+暂停不应用待处理参数，默认重置可显式采样。未实现自动接触对齐、足部锁定或根运动。
 
 状态机是严格资源而非脚本选片逻辑；类型参数表达意图，原生模拟按出边顺序每步至多转换一次。
 零时长或播放器暂停不决策、不增龄；失败保留状态、双时钟、叠加层及姿态。绑定期间预留所有

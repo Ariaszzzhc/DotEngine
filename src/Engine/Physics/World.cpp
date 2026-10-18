@@ -1035,9 +1035,16 @@ namespace Dot::Physics {
         if (!Math::isFinite(entry.measuredVelocity) || character.GetMaxHitsExceeded()
             || !Math::isFinite(vector(character.GetPosition()))
             || !Math::isFinite(vector(character.GetLinearVelocity()))) {
+          const auto position = vector(character.GetPosition());
           return Core::fail(
               Core::ErrorCode::External,
-              "Character update exceeded contact capacity or produced invalid motion");
+              std::format(
+                  "Character {} update: contact capacity exceeded={}, limit={}, "
+                  "position=({},{},{}), measured=({},{},{}), velocity=({},{},{})",
+                  id, character.GetMaxHitsExceeded(), entry.properties.maxContacts, position.x,
+                  position.y, position.z, entry.measuredVelocity.x, entry.measuredVelocity.y,
+                  entry.measuredVelocity.z, character.GetLinearVelocity().GetX(),
+                  character.GetLinearVelocity().GetY(), character.GetLinearVelocity().GetZ()));
         }
       }
 

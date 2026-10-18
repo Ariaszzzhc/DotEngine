@@ -6,6 +6,7 @@ module;
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -22,9 +23,26 @@ export namespace Dot::Animation {
     auto operator==(const ControllerParameter&) const -> bool = default;
   };
 
+  struct ControllerBlendPoint {
+    double threshold;
+    std::string clip;
+    double phaseOffset{};
+    auto operator==(const ControllerBlendPoint&) const -> bool = default;
+  };
+
+  struct ControllerBlend1D {
+    std::string parameter;
+    std::vector<ControllerBlendPoint> points;
+    auto operator==(const ControllerBlend1D&) const -> bool = default;
+  };
+
+  /** Motion is one clip path or a numeric-parameter-driven synchronized blend.
+   * 动作为单片段路径，或由数值参数驱动的同步一维混合。 */
+  using ControllerMotion = std::variant<std::string, ControllerBlend1D>;
+
   struct ControllerState {
     std::string name;
-    std::string clip;
+    ControllerMotion motion;
     double speed{1};
     bool looping{true};
     auto operator==(const ControllerState&) const -> bool = default;
@@ -94,6 +112,7 @@ export namespace Dot::Animation {
     /** Borrowed while this immutable configuration lives. 借用有效期同不可变配置。 */
     [[nodiscard]] auto description() const -> Core::Result<const ControllerDescription*>;
     [[nodiscard]] auto state() const -> Core::Result<const ControllerState*>;
+    [[nodiscard]] auto parameter(std::string_view name) const -> Core::Result<ParameterValue>;
     [[nodiscard]] auto snapshot() const -> Core::Result<ControllerSnapshot>;
     [[nodiscard]] auto transitionCount() const -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto lastTransition() const -> Core::Result<const ControllerTransition*>;

@@ -117,7 +117,7 @@ TEST_CASE("animation_controller.validation_rejects_ill_typed_graphs_and_capacity
   spec.parameters.push_back(spec.parameters.front());
   CHECK_FALSE(Controller::create(spec));
   spec = original;
-  spec.states.front().clip = "../clip.dotanimation";
+  spec.states.front().motion = "../clip.dotanimation";
   CHECK_FALSE(Controller::create(spec));
   spec = original;
   spec.states.front().speed = 17;
@@ -270,4 +270,59 @@ TEST_CASE("animation_controller.exit_thresholds_include_loop_wrap_and_reverse_cr
   CHECK(model.advanced(.05, .2, 1)->state().value()->name == "Idle");
   CHECK(model.advanced(.1, .2, 1)->state().value()->name == "Walk");
   CHECK(model.advanced(0, 0, 1)->state().value()->name == "Idle");
+}
+
+TEST_CASE("animation_controller.blend_motion_is_typed_immutable_and_round_trips_strict_forms") {
+  auto spec = description();
+  spec.states.front().motion = ControllerBlend1D{
+      "Speed", {{0, "assets/idle.dotanimation"}, {2, "assets/walk.dotanimation", .5}}};
+  const auto graph = Controller::create(spec).value();
+  CHECK(std::get<double>(graph.parameter("Speed").value()) == 0);
+  CHECK_FALSE(graph.parameter("Unknown"));
+  const auto text = encodeController(graph).value();
+  CHECK(decodeController(text)->description().value()->states == spec.states);
+  const auto changed = graph.withParameters(std::array{ControllerParameter{"Speed", 1.0}}).value();
+  CHECK(std::get<double>(changed.parameter("Speed").value()) == 1);
+  CHECK(std::get<double>(graph.parameter("Speed").value()) == 0);
+  auto form = nlohmann::json::parse(text);
+  form["states"][0]["motion"]["points"][0]["extra"] = true;
+  CHECK_FALSE(decodeController(form.dump()));
+  form = nlohmann::json::parse(text);
+  form["states"][0]["motion"]["points"][0]["phaseOffset"] = true;
+  CHECK_FALSE(decodeController(form.dump()));
+  form = nlohmann::json::parse(text);
+  form["states"][0]["motion"]["kind"] = "unknown";
+  CHECK_FALSE(decodeController(form.dump()));
+  form = nlohmann::json::parse(text);
+  form["states"][0]["clip"] = "assets/idle.dotanimation";
+  CHECK_FALSE(decodeController(form.dump()));
+}
+
+TEST_CASE("animation_controller.blend_axes_points_and_asset_boundaries_fail_before_creation") {
+  auto spec = description();
+  const ControllerBlend1D original{
+      "Speed", {{0, "assets/idle.dotanimation"}, {2, "assets/walk.dotanimation"}}};
+  auto invalid = original;
+  invalid.parameter = "Grounded";
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
+  invalid.parameter = "Unknown";
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
+  invalid = original;
+  invalid.points[1].threshold = 0;
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
+  invalid = original;
+  invalid.points[1].phaseOffset = 1.1;
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
+  invalid = original;
+  invalid.points[1].clip = "../missing.dotanimation";
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
+  invalid = original;
+  invalid.points.resize(17, invalid.points.back());
+  spec.states[0].motion = invalid;
+  CHECK_FALSE(Controller::create(spec));
 }

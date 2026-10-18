@@ -11,6 +11,7 @@ export module Dot.Animation.SceneAnimator;
 
 import Dot.Animation.Clip;
 export import Dot.Animation.Layers;
+export import Dot.Animation.Motion;
 import Dot.Core.Result;
 import Dot.World.Scene;
 
@@ -47,6 +48,14 @@ export namespace Dot::Animation {
     bool paused{};
   };
 
+  struct MotionTransition {
+    Motion motion;
+    double fadeSeconds{};
+    double speed{1};
+    bool looping{true};
+    bool paused{};
+  };
+
   /** Owns immutable clip and node bindings, not a borrowed scene address. All
    * bindings must be unique/live in one scene scope and cover every clip target.
    * A scene move preserves scope; replacing/removing animated entities fails.
@@ -60,6 +69,23 @@ export namespace Dot::Animation {
                                    std::span<const NodeBinding> bindings,
                                    std::span<const LayerDefinition> layers = {})
         -> Core::Result<SceneAnimator>;
+    [[nodiscard]] static auto bindMotion(const World::Scene& scene, Motion motion,
+                                         std::span<const NodeBinding> bindings,
+                                         std::span<const LayerDefinition> layers = {})
+        -> Core::Result<SceneAnimator>;
+    /** Bound/current immutable motion/value, not pending controller parameters.
+     * 已绑定/当前不可变动作与轴值，不是待求值状态机参数。 */
+    [[nodiscard]] auto motion() const -> Core::Result<Motion>;
+    /** Same-definition value retuning preserves normalized phase and all layer/fade clocks;
+     * sample/publication failure retains the prior motion, clocks and scene pose.
+     * 同定义轴值调整保留归一相位及全部层/淡化时钟；采样或发布失败保留旧动作、时钟与姿态。 */
+    [[nodiscard]] auto retuneAndAdvance(World::Scene& scene, Motion motion, double seconds)
+        -> Core::Result<void>;
+    [[nodiscard]] auto transitionMotionAndAdvance(World::Scene& scene, MotionTransition transition,
+                                                  double seconds) -> Core::Result<void>;
+    [[nodiscard]] auto setMotion(World::Scene& scene, Motion motion) -> Core::Result<void>;
+    [[nodiscard]] auto crossFadeMotion(World::Scene& scene, Motion motion, double seconds)
+        -> Core::Result<void>;
     SceneAnimator(const SceneAnimator&) = delete;
     auto operator=(const SceneAnimator&) -> SceneAnimator& = delete;
     SceneAnimator(SceneAnimator&&) noexcept;

@@ -2983,9 +2983,30 @@ namespace Dot::Editor {
         std::visit([&](auto value) { parameters[parameter.name] = value; }, parameter.value);
       }
 
+      Json blend = nullptr;
+
+      if (state->blend) {
+        Json samples = Json::array();
+
+        for (const auto& sample : state->blend->samples) {
+          samples.push_back({{"clip", sample.clip},
+                             {"asset", sample.asset},
+                             {"weight", sample.weight},
+                             {"timeSeconds", sample.time},
+                             {"durationSeconds", sample.duration},
+                             {"phaseOffset", sample.phaseOffset}});
+        }
+
+        blend
+            = {{"parameter", state->blend->parameter}, {"value", state->blend->value},
+               {"phase", state->blend->phase},         {"contribution", state->blend->contribution},
+               {"applied", state->blend->applied},     {"samples", std::move(samples)}};
+      }
+
       return {
           {"asset", state->asset},
           {"name", state->name},
+          {"blend", std::move(blend)},
           {"state", state->playback.state},
           {"elapsedSeconds", state->playback.elapsedSeconds},
           {"parameters", std::move(parameters)},
@@ -15435,6 +15456,18 @@ namespace Dot::Editor {
     template <class Control>
     auto controllerRuntimeRows(const Animation::SceneControllerState& state, Control&& control)
         -> void {
+      if (state.blend) {
+        ImGui::Text("Motion: %s = %.3f, phase %.3f", state.blend->parameter.c_str(),
+                    state.blend->value, state.blend->phase);
+        ImGui::Text("Contribution %.3f%s", state.blend->contribution,
+                    state.blend->applied ? "" : " (not applied)");
+
+        for (const auto& sample : state.blend->samples) {
+          ImGui::TextWrapped("%s: weight %.3f, time %.3f / %.3f", sample.asset.c_str(),
+                             sample.weight, sample.time, sample.duration);
+        }
+      }
+
       ImGui::Text("State: %s  /  %.3f s", state.playback.state.c_str(),
                   state.playback.elapsedSeconds);
       ImGui::Text("Transitions: %llu", static_cast<unsigned long long>(state.playback.transitions));
@@ -15635,24 +15668,105 @@ namespace Dot::Editor {
 
           if (ImGui::TreeNode(title.c_str())) {
             auto properties = states[i];
-            properties.erase("clip");
+            properties.erase("motion");
             fields(properties);
 
             for (const auto& [key, value] : properties.items()) {
               states[i][key] = value;
             }
 
-            if (PropertyRow row{"Clip"};
-                row.visible()
-                && ImGui::BeginCombo("##value",
-                                     states[i]["clip"].get_ref<const std::string&>().c_str())) {
-              for (const auto& asset : library) {
-                if (ImGui::Selectable(asset.c_str(), states[i]["clip"] == asset)) {
-                  states[i]["clip"] = asset;
+            auto& motion = states[i]["motion"];
+            const auto chooseClip = [&](const char* title, Json& selected) {
+              if (PropertyRow row{title};
+                  row.visible()
+                  && ImGui::BeginCombo("##value", selected.get_ref<const std::string&>().c_str())) {
+                for (const auto& asset : library) {
+                  if (ImGui::Selectable(asset.c_str(), selected == asset)) {
+                    selected = asset;
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+            };
+            const bool blend = motion["kind"] == "blend1d";
+            bool selectedBlend = blend;
+
+            if (ImGui::Checkbox("Synchronized 1D motion", &selectedBlend)) {
+              if (selectedBlend) {
+                std::string parameter;
+
+                for (const auto& item : form["parameters"]) {
+                  if (item["value"].is_number()) {
+                    parameter = item["name"].get<std::string>();
+                    break;
+                  }
+                }
+
+                motion = {
+                    {"kind", "blend1d"},
+                    {"parameter", parameter},
+                    {"points",
+                     Json::array(
+                         {{{"threshold", 0.0}, {"clip", library.front()}, {"phaseOffset", 0.0}},
+                          {{"threshold", 1.0}, {"clip", library.back()}, {"phaseOffset", 0.0}}})}};
+              } else {
+                motion = {{"kind", "clip"}, {"clip", library.front()}};
+              }
+            }
+
+            if (motion["kind"] == "clip") {
+              chooseClip("Clip", motion["clip"]);
+            } else {
+              if (PropertyRow row{"Numeric axis"};
+                  row.visible()
+                  && ImGui::BeginCombo("##value",
+                                       motion["parameter"].get_ref<const std::string&>().c_str())) {
+                for (const auto& item : form["parameters"]) {
+                  if (item["value"].is_number()) {
+                    const auto& name = item["name"].get_ref<const std::string&>();
+
+                    if (ImGui::Selectable(name.c_str(), motion["parameter"] == name)) {
+                      motion["parameter"] = name;
+                    }
+                  }
+                }
+
+                ImGui::EndCombo();
+              }
+
+              ImGui::TextWrapped(
+                  "Points must increase along the axis. Clips share normalized phase; cycle "
+                  "offsets align contacts.");
+              auto& points = motion["points"];
+
+              for (std::size_t point = 0; point < points.size(); ++point) {
+                ImGui::PushID(static_cast<int>(point));
+                auto pointFields = Json{{"threshold", points[point]["threshold"]},
+                                        {"phaseOffset", points[point]["phaseOffset"]}};
+                fields(pointFields);
+                points[point]["threshold"] = pointFields["threshold"];
+                points[point]["phaseOffset"] = pointFields["phaseOffset"];
+                chooseClip("Motion clip", points[point]["clip"]);
+                const bool removed = removeRow(points, point, true);
+                ImGui::PopID();
+
+                if (removed) {
+                  break;
                 }
               }
 
-              ImGui::EndCombo();
+              ImGui::BeginDisabled(points.size() >= 16);
+
+              if (ImGui::SmallButton("Add motion point")) {
+                points.push_back(
+                    {{"threshold",
+                      points.empty() ? 0.0 : points.back()["threshold"].get<double>() + 1},
+                     {"clip", library.front()},
+                     {"phaseOffset", 0.0}});
+              }
+
+              ImGui::EndDisabled();
             }
 
             const bool removed = removeRow(states, i, false);
@@ -15671,7 +15785,7 @@ namespace Dot::Editor {
 
         if (ImGui::Button("Add state")) {
           states.push_back({{"name", "State" + std::to_string(states.size())},
-                            {"clip", library.front()},
+                            {"motion", {{"kind", "clip"}, {"clip", library.front()}}},
                             {"speed", 1.0},
                             {"looping", true}});
         }

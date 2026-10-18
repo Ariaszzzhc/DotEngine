@@ -112,15 +112,47 @@ namespace Dot::Animation {
       }
 
       for (const auto& item : root["states"]) {
-        Codec::requireFields(item, {"name", "clip", "speed", "looping"});
+        Codec::requireFields(item, {"name", "motion", "speed", "looping"});
 
         if (!item["speed"].is_number()) {
           throw std::invalid_argument("Controller state speed requires a number");
         }
 
-        description.states.push_back({item["name"].get<std::string>(),
-                                      item["clip"].get<std::string>(), item["speed"].get<double>(),
-                                      item["looping"].get<bool>()});
+        const auto& motion = item["motion"];
+        const auto kind = motion.at("kind").get<std::string>();
+        ControllerMotion selected;
+
+        if (kind == "clip") {
+          Codec::requireFields(motion, {"kind", "clip"});
+          selected = motion["clip"].get<std::string>();
+        } else if (kind == "blend1d") {
+          Codec::requireFields(motion, {"kind", "parameter", "points"});
+
+          if (!motion["points"].is_array() || motion["points"].size() > 16) {
+            throw std::invalid_argument("1D controller motion requires <=16 points");
+          }
+
+          ControllerBlend1D blend{motion["parameter"].get<std::string>(), {}};
+
+          for (const auto& point : motion["points"]) {
+            Codec::requireFields(point, {"threshold", "clip", "phaseOffset"});
+
+            if (!point["threshold"].is_number() || !point["phaseOffset"].is_number()) {
+              throw std::invalid_argument("1D motion threshold/phase offset require numbers");
+            }
+
+            blend.points.push_back({point["threshold"].get<double>(),
+                                    point["clip"].get<std::string>(),
+                                    point["phaseOffset"].get<double>()});
+          }
+
+          selected = std::move(blend);
+        } else {
+          throw std::invalid_argument("Unknown controller motion kind");
+        }
+
+        description.states.push_back({item["name"].get<std::string>(), std::move(selected),
+                                      item["speed"].get<double>(), item["looping"].get<bool>()});
       }
 
       for (const auto& item : root["transitions"]) {
@@ -189,8 +221,26 @@ namespace Dot::Animation {
       }
 
       for (const auto& state : (*spec)->states) {
+        Json motion;
+
+        if (const auto* clip = std::get_if<std::string>(&state.motion)) {
+          motion = {{"kind", "clip"}, {"clip", *clip}};
+        } else {
+          const auto& blend = std::get<ControllerBlend1D>(state.motion);
+          Json points = Json::array();
+
+          for (const auto& point : blend.points) {
+            points.push_back({{"threshold", point.threshold},
+                              {"clip", point.clip},
+                              {"phaseOffset", point.phaseOffset}});
+          }
+
+          motion = {
+              {"kind", "blend1d"}, {"parameter", blend.parameter}, {"points", std::move(points)}};
+        }
+
         states.push_back({{"name", state.name},
-                          {"clip", state.clip},
+                          {"motion", std::move(motion)},
                           {"speed", state.speed},
                           {"looping", state.looping}});
       }
