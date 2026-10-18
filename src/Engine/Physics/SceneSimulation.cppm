@@ -10,6 +10,7 @@ export module Dot.Physics.SceneSimulation;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Physics.Mesh;
+import Dot.Physics.Character;
 import Dot.Math;
 import Dot.World.Scene;
 import Dot.Physics.World;
@@ -115,6 +116,12 @@ export namespace Dot::Physics {
      */
     [[nodiscard]] auto character(Dot::World::EntityId entity) const
         -> Core::Result<SceneCharacterState>;
+    /** Current native feet and simulation-scaled capsule configuration. Reject pending
+     * character/ancestor edits and faulted physics instead of mixing authored/native state.
+     * 当前原生脚底及仿真缩放后的胶囊配置；拒绝未同步角色/祖先修改及故障物理，不混用状态。 */
+    [[nodiscard]] auto characterConfig(const Dot::World::Scene& scene,
+                                       Dot::World::EntityId entity) const
+        -> Core::Result<CharacterConfig>;
     [[nodiscard]] auto setCharacterInput(Dot::World::EntityId entity, const CharacterInput& input)
         -> Core::Result<void>;
     [[nodiscard]] auto setCharacterYaw(Dot::World::EntityId entity, float yawDegrees)

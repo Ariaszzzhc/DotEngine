@@ -23,6 +23,8 @@ module Dot.Project.ScenePreparation;
 import Dot.UI.Files;
 import Dot.Audio.SceneAudio;
 import Dot.Physics.MeshFiles;
+import Dot.Navigation.Files;
+import Dot.Navigation.Geometry;
 
 import Dot.Core.Paths;
 import Dot.Core.Text;
@@ -410,6 +412,7 @@ namespace Dot::Project {
     std::vector<Physics::MeshAsset> meshes;
     std::vector<Audio::ClipAsset> audio;
     Audio::SceneAudioLimits audioLimits;
+    std::optional<Navigation::Surface> navigation;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -467,12 +470,14 @@ namespace Dot::Project {
         auto occlusion = scene->setOcclusion(std::nullopt);
         auto ui = scene->setUi(std::nullopt);
         auto links = scene->setSceneLinks({});
+        auto navigation = scene->setNavigation(std::nullopt);
 
-        if (!environment || !occlusion || !ui || !links) {
+        if (!environment || !occlusion || !ui || !links || !navigation) {
           return std::unexpected(!environment ? environment.error()
                                  : !occlusion ? occlusion.error()
                                  : !ui        ? ui.error()
-                                              : links.error());
+                                 : !links     ? links.error()
+                                              : navigation.error());
         }
       }
 
@@ -560,6 +565,35 @@ namespace Dot::Project {
         return Core::fail(Core::ErrorCode::Unavailable, "Collision mesh preparation cancelled");
       }
 
+      std::optional<Navigation::Surface> navigation;
+      auto navigationPath = scene->navigation();
+
+      if (!navigationPath) {
+        return std::unexpected(navigationPath.error());
+      }
+
+      if (*navigationPath) {
+        auto loaded = Navigation::loadSurface(files, **navigationPath);
+
+        if (!loaded) {
+          return std::unexpected(loaded.error());
+        }
+
+        const auto description = loaded->description().value();
+        auto geometry = Navigation::sceneGeometry(*scene, description->settings, *meshes, stop);
+        auto identity = geometry ? Navigation::geometryIdentity(*geometry)
+                                 : Core::Result<std::string>{std::unexpected(geometry.error())};
+
+        if (!identity || *identity != description->source) {
+          return identity
+                     ? Core::fail(Core::ErrorCode::InvalidState,
+                                  "Prepared navigation is stale; rebake static collision geometry")
+                     : std::unexpected(identity.error());
+        }
+
+        navigation = std::move(*loaded);
+      }
+
       auto audio = Audio::loadSceneClips(files, *scene, audioLimits, stop);
 
       if (!audio) {
@@ -570,7 +604,7 @@ namespace Dot::Project {
       return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
                              Data{files.root(), std::move(*canonical), std::move(*animations),
                                   std::move(controllers), std::move(ui), std::move(*meshes),
-                                  std::move(*audio), audioLimits})}}
+                                  std::move(*audio), audioLimits, std::move(navigation)})}}
                        : std::unexpected(canonical.error());
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Prepare scene: " + std::string(error.what()));
@@ -631,6 +665,14 @@ namespace Dot::Project {
     }
 
     return m_data->ui;
+  }
+
+  auto PreparedScene::navigation() const -> Core::Result<std::optional<Navigation::Surface>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    return m_data->navigation;
   }
 
   auto PreparedScene::accepts(const Core::FileSystem& files, const World::Scene& scene) const

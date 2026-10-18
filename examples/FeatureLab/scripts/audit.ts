@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, ui, input, type JsonValue, type SaveTicket, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, ui, input, type JsonValue, type SaveTicket, keys, mouseButtons, navigation, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -281,6 +281,9 @@ export class Audit extends ScriptComponent<{contract: string}> {
         initial.motion === 'dynamic' && initial.collisionDetection === 'continuous'
             && !initial.sensor);
     this.check('Entity.physicsBody.get', equal(dynamic.physicsBody, initial));
+    this.check('navigation.stats', navigation.stats() === null);
+    this.expectedError(() => navigation.route(dynamic.id, {x: 0, y: 0, z: 0}), 'Unavailable');
+    this.check('navigation.route', true);
     this.check('physics.stats', physics.stats().bodies === 8 && !physics.stats().faulted);
     this.check('physics.contacts.get', Array.isArray(physics.contacts.events));
     const duct = this.entity('Mesh duct');

@@ -1011,6 +1011,47 @@ export const animation = Object.freeze({
   },
 });
 
+export interface NavigationStats {
+  readonly path: string;
+  readonly source: string;
+  readonly tiles: number;
+  readonly polygons: number;
+  readonly agentHeight: number;
+  readonly agentRadius: number;
+  readonly maxClimb: number;
+  readonly maxSlopeDegrees: number;
+}
+
+export interface NavigationRoute {
+  readonly start: Vec3;
+  readonly goal: Vec3;
+  readonly points: ReadonlyArray<Vec3>;
+}
+
+export const navigation = Object.freeze({
+  /**
+   * Return the current baked static surface, or null when unbound. Stale geometry fails.
+   * 返回当前静态导航烘焙表面，未绑定时为空；几何过期则失败。
+   */
+  stats(): NavigationStats|null {
+    return invoke('navigation.stats', []) as NavigationStats|null;
+  },
+
+  /**
+   * Complete native route from the character's actual feet. Bounded projection exposes
+   * snapped endpoints. Agent mismatch, stale static geometry, disconnected targets and
+   * exhausted capacity fail explicitly. Follow corners with native character intent;
+   * dynamic collision can block progress. No crowd avoidance or jump connections.
+   * 从角色实际脚底计算完整原生路线；有界投影返回吸附端点。体型不符、静态几何过期、
+   * 目标不连通或容量不足明确失败。以原生角色意图跟随拐点，动态碰撞仍可阻挡行进；
+   * 不提供群体避让或跳跃连接。
+   */
+  route(entity: EntityId, goal: Vec3, searchExtent: Vec3 = {x: .5, y: .5, z: .5},
+        maxPoints = 256): NavigationRoute {
+    return invoke('navigation.route', [entity, goal, searchExtent, maxPoints]) as NavigationRoute;
+  },
+});
+
 export interface EntityInfo {
   readonly id: EntityId;
   name: string;

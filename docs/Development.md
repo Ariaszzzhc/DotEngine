@@ -15846,3 +15846,131 @@ history and actual process completion. Formatting and diff checks pass. No depen
 compiler/linker environment or platform-target changes. Only macOS arm64 is executed.
 Navigation/crowd planning, larger independent-character scale, contact/foot IK,
 streaming/background work and final character/environment/editor maturity remain open.
+
+## 2026-10-19 — Native static navigation / 原生静态导航
+
+Continue the populated PrismRelay production workflow with native static-obstacle
+planning. Pin RecastNavigation 1.6.0#1 and xxHash 0.8.4 in the existing vcpkg manifest;
+link Recast/Detour/xxHash statically. Keep compiler/linker environment and platform
+targets unchanged. Runtime kits/exports contain the dependency copyright notices;
+no new dynamic navigation library or release archive is introduced.
+
+Dot.Navigation.Surface owns immutable tiled polygons and private per-query Detour
+scratch. Cook bounded actual solid static collision geometry; omit moving actors,
+sensors and render-only meshes. Share simulation's body scaling policy. Preserve
+actual mesh triangles and reflected front faces; round primitives use conservative,
+precision-bounded production cooking. Validate finite inputs, topology, clearance,
+capacities and complete corridors; reject disconnected/partial/exhausted queries.
+The engine-owned little-endian DotNav format never dumps vendor structs. Canonical
+XXH3-128 geometry identity is non-cryptographic; authoring also checks exact bytes.
+
+Scene navigation is an optional global assets binding with ordinary persistence and
+history. Content preparation/extraction excludes it and retains the destination's
+global. Complete CPU scene preparation owns a decoded surface proven against static
+collision geometry; initial consumers never reread its file. Read-only script queries
+use actual feet and the simulation-scaled capsule through an owned native physics
+reader. Pending character/ancestor edits and faulted physics reject the query. Step/
+stick distances remain world metres under character scale, and native yaw is observed
+rather than inferred from an unsynchronized authored pose.
+
+The first Prism crew checks expose excessive repeated triangle cooking inside each
+Start callback: Debug hits the existing script time limit. Keep that limit. Prove
+triangle identity once, then compare exact static shape/resource descriptions and
+world matrices against immutable scope collision assets. Friction/inactive shape
+fields and moving characters do not invalidate the proof; real static geometry edits
+do. The resulting actual crew Start/route/reload workflows pass in Debug and Release.
+
+Environment's Navigation controls and strict JSON use the same product operations:
+background begin/status/cancel, real polygon/route preview, guarded exclusive binary
+publication, and separate bind/detach scene history. Freeze canonical scene text and
+exact static mesh bytes on the worker, with cancellation and owned join/take lifetime.
+Publication checks revision/content/project metadata/inputs. Existing assets and case
+aliases are preserved; stale results cannot publish. Preview labels its captured
+revision and combines heights in XZ; drawing explicitly caps at 4096 polygons while
+queries retain the full surface. Publishing a resource does not change scene history;
+binding does, and undo does not remove the resource.
+
+Bake the actual saved crew bay in the real Debug editor, after changing worker 7's
+stations/initial feet through Inspector to [-2,0,0] and [2,0,0]. Its path must detour
+around the central obstruction. Native baking produces four tiles, 382 polygons,
+533 coarse vertices, 553 detail triangles and 28636 bytes, using a 1.83 m capsule
+height, 0.45 m planning radius, 0.3 m climb, 50 degree slope, 0.1/0.05 m cells and
+128-cell tiles. The planning radius leaves margin around the 0.35 m physical capsule.
+Real six-corner projection/detour, cancelled result, unavailable goal, revision conflict,
+exclusive repeat rejection, binding undo/redo and Save complete through product control.
+Copy only those saved ordinary scene/resource outputs back to the editable example.
+
+Crew scripts request native corners and submit native character intent. Physics
+still determines progress; arrival requires measured grounded feet near the authored
+station. Failed planning stops/reports an unavailable route instead of inventing an
+arrival. Reload preserves owned corners/corner index/source identity and private duty
+state without writes during migration. Extend the enduring crew test to two real
+arrivals and observed obstruction clearance. Compare maximum measured trajectory
+travel, since a completed round trip can legitimately end near its starting station.
+No script collision/pathfinding solver, crowd avoidance or jump-link implementation.
+FeatureLab's independent SDK inventory/audit includes the two navigation methods,
+including unbound stats and catchable unavailable routing.
+
+Nineteen new enduring cases cover routes/seams/islands/stacked floors/clearance,
+malformed geometry and portable data, round bounds/reflections, static state changes,
+query ownership/concurrency, native profile/feet/scaling, exact frozen mesh input,
+cancellation/moves/thread ownership/recovery, exclusive resources and scene history/
+preparation/content boundaries. Native Jolt host cases belong to integration, not
+pure unit. Initial compiler/header/ImGui overload issues and a degenerate duplicated
+capsule equator are corrected. One focused run accidentally overlaps final build links;
+discard it and rerun after the build actually exits. The accepted focused run is
+32/32; all subsequent build/test/product sessions run sequentially. Full Debug is
+1746/1746 in 287.26 seconds; full Release/NDEBUG is 1746/1746 in 39.97 seconds. Counts
+are 576 unit and 1170 integration, including overlapping labels 272 compiler,
+186 offscreen, 39 audio-native, 34 platform and 21 process. A final mechanical member/
+spacing cleanup is rebuilt in both configurations; the 19 navigation cases pass again
+in Debug before the full Release run. Formatting/diff checks pass.
+
+The real Release editor creates a fresh project, reopens/binds the saved navigation,
+rebakes/publishes a separate resource and restores the original binding. Debug/Release
+bakes are byte-identical, and saved authoring content matches the source example.
+Observe seven workers completing two additional arrivals; 43 actual pose observations
+include four central crossing samples outside the obstruction. Pause, three real
+source migrations and one single step retain all eight poses/animation clocks/game
+data, then advance exactly one fixed update. Walk/jump/F6/move/F7 restore the player
+with zero error at the unchanged 1e-5 bound. Stop restores authoring; export both
+current levels through the same editor. Resource preparation initially rejects a
+premature Play; wait and continue the same owned handle. Two harness Play-status
+schema/scope errors are corrected without restarting. Six guarded control errors
+remain in raw evidence; final runtime diagnostics/failure counts are zero.
+
+Hide only the owned authoring project and launch the relocated Main export. Actual C
+input enters crew, workers complete two more arrivals with measured detours, and
+player checkpoint restore has zero error. C returns to Main, removes crew keys and
+rejects the crew save with zero pose change; C revisits crew and restores with zero
+error. A fresh independent Crew process restores against the same explicit save root,
+while all seven new duty counters remain zero instead of loading old worker metadata.
+Native completed render frames are 4016/27 and HUD rasterizations 16/4; these prove
+work/presentation, not FPS or a controlled performance comparison. Restore the owned
+source project after both games actually exit.
+
+All four native handles exit zero before consuming their close replies. Archive and
+ACK 477 replies; endpoints are closed, fault-free, unblocked and without uncertain/
+unprocessed work, then cleared through the product. Editor stderr is empty; game
+stderr contains normal preparation messages only. Source scene/resource/script bytes
+and current Release runtime-kit bytes match the exports. All 67 inspected current
+Debug/Release/kit/export Mach-O paths pass strict signing; inspect linked libraries
+and load commands, with no new dynamic navigation dependency. Actual product images
+are retained. Computer use cannot access native apps because the Mac is locked;
+there is no human pointer/keyboard or Navigation-panel visual acceptance claim.
+
+Final audit finds the standalone `--profile` argument was a relative output filename,
+not a save-profile name. Both runs used the same filename, so only the fresh game's
+application timing output remains; move that generated JSON from the repository root
+into ignored evidence. The Main game's raw render/status/trajectory records remain.
+No application timing comparison is claimed; saves use the separate explicit data root.
+
+Evidence is retained under ignored build/navigation-review: build/test logs, actual
+bake/duty/reload/step/save/transition records, raw replies, images, ordinary projects,
+relocated exports and save data. The 9885 prior guarded files remain unchanged.
+Remove temporary orchestration/request files only after actual native completion,
+retaining ordinary results and updated hashes. Only macOS arm64 was executed.
+
+静态导航已贯通真实碰撞几何、后台编辑烘焙、资源/场景存储、角色查询和 PrismRelay 往返。
+构建、检查、实际产品验证分别记录，不以测试数量冒充制作成熟度。群体避让、动态重建、
+区域代价、跳跃连接、流送、接触/足部 IK、最终角色/环境美术及大型游戏/编辑器成熟度仍开放。

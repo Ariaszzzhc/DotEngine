@@ -5,6 +5,7 @@ module;
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -80,6 +81,10 @@ export namespace Dot::Editor {
     [[nodiscard]] auto list() const -> Core::Result<std::vector<ResourceEntry>>;
     [[nodiscard]] auto createDirectory(std::string_view path) -> Core::Result<void>;
     [[nodiscard]] auto createText(std::string_view path, std::string_view text)
+        -> Core::Result<void>;
+    /** Create bounded binary assets without replacing existing paths; no text/SDK targets.
+     * 创建有界二进制资产，不替换已有路径，不接受文本或 SDK 目标。 */
+    [[nodiscard]] auto createBinary(std::string_view path, std::span<const std::byte> bytes)
         -> Core::Result<void>;
     /** Copy bounded bytes from an explicit regular source, preserving it. Text
      * destinations also validate UTF-8/no NUL; parent must already exist.

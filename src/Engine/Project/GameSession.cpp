@@ -19,6 +19,9 @@ module;
 module Dot.Project.GameSession;
 
 import Dot.Physics.Mesh;
+import Dot.Physics.MeshFiles;
+import Dot.Navigation.Files;
+import Dot.Script.NavigationSource;
 
 import Dot.UI.Files;
 
@@ -117,6 +120,7 @@ namespace Dot::Project {
     std::shared_ptr<const Origin> m_origin;
     std::optional<Script::InputSource> m_input;
     std::optional<Script::PhysicsSource> m_physics;
+    std::optional<Script::NavigationSource> m_navigation;
     std::optional<Script::AudioSession> m_audio;
     std::optional<Script::AnimationSession> m_animations;
     /** Script callbacks retain services; destroy the realm before its dependencies.
@@ -274,6 +278,7 @@ namespace Dot::Project {
         m_retiredAudio.reset();
       }
 
+      m_navigation.reset();
       m_physics.reset();
       m_input.reset();
       m_program.reset();
@@ -1060,14 +1065,64 @@ namespace Dot::Project {
         collisionMeshes.emplace(prepared->begin(), prepared->end());
       }
 
-      auto physics = Script::PhysicsSource::create(impl->m_scene, config.physics, assets,
-                                                   std::move(collisionMeshes));
+      auto physics
+          = Script::PhysicsSource::create(impl->m_scene, config.physics, assets, collisionMeshes);
 
       if (!physics) {
         return std::unexpected(physics.error());
       }
 
       impl->m_physics.emplace(std::move(*physics));
+      auto navigation = [&]() -> Core::Result<Script::NavigationSource> {
+        auto surface = [&]() -> Core::Result<std::optional<Navigation::Surface>> {
+          if (preflight) {
+            return preflight->navigation();
+          }
+
+          auto binding = impl->m_scene->navigation();
+
+          if (!binding) {
+            return std::unexpected(binding.error());
+          }
+
+          if (!*binding) {
+            return std::optional<Navigation::Surface>{};
+          }
+
+          auto loaded = Navigation::loadSurface(assets, **binding);
+          return loaded ? Core::Result<std::optional<Navigation::Surface>>{std::move(*loaded)}
+                        : std::unexpected(loaded.error());
+        }();
+
+        if (!surface) {
+          return std::unexpected(surface.error());
+        }
+
+        std::vector<Physics::MeshAsset> meshes;
+
+        if (*surface) {
+          if (collisionMeshes) {
+            meshes = *collisionMeshes;
+          } else {
+            auto loaded = Physics::loadSceneCollisionMeshes(assets, *impl->m_scene);
+
+            if (!loaded) {
+              return std::unexpected(loaded.error());
+            }
+
+            meshes = std::move(*loaded);
+          }
+        }
+
+        return Script::NavigationSource::create(impl->m_scene, *impl->m_physics,
+                                                std::move(*surface), std::move(meshes));
+      }();
+
+      if (!navigation) {
+        return std::unexpected(navigation.error());
+      }
+
+      impl->m_navigation.emplace(std::move(*navigation));
       std::optional<std::span<const Audio::ClipAsset>> audioClips;
 
       if (preflight) {
@@ -1118,9 +1173,10 @@ namespace Dot::Project {
       auto scriptsConfig = config.scripts;
 
       for (auto bindings :
-           {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_audio->bindings(),
-            impl->m_animations->bindings(), impl->m_progress->bindings(), impl->m_hud->bindings(),
-            impl->m_clock->bindings(), impl->m_flow->bindings(impl->m_identity, scenePath)}) {
+           {impl->m_input->bindings(), impl->m_physics->bindings(), impl->m_navigation->bindings(),
+            impl->m_audio->bindings(), impl->m_animations->bindings(), impl->m_progress->bindings(),
+            impl->m_hud->bindings(), impl->m_clock->bindings(),
+            impl->m_flow->bindings(impl->m_identity, scenePath)}) {
         if (!bindings) {
           return std::unexpected(bindings.error());
         }

@@ -266,6 +266,10 @@ export namespace Dot::World {
      * 可选原生 UI 资源，仅验证 assets/ 下可移植 .dotui 路径；消费者发布场景前验证资源。 */
     [[nodiscard]] auto setUi(std::optional<std::string> asset) -> Core::Result<void>;
     [[nodiscard]] auto ui() const -> Core::Result<std::optional<std::string>>;
+    /** Optional baked static navigation resource; binding does not imply current geometry proof.
+     * 可选静态导航烘焙资源，绑定本身不证明其匹配当前几何，消费方须校验。 */
+    [[nodiscard]] auto setNavigation(std::optional<std::string> asset) -> Core::Result<void>;
+    [[nodiscard]] auto navigation() const -> Core::Result<std::optional<std::string>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
     [[nodiscard]] auto sceneLinks() const -> Core::Result<std::vector<SceneLink>>;
     /** Atomically replace validated authoring links. Roots must be live; mapping

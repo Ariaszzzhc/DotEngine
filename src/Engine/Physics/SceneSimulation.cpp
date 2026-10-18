@@ -74,41 +74,6 @@ namespace Dot::Physics {
       return {};
     }
 
-    auto configuration(const BodyProperties& description, const Math::TransformParts& pose,
-                       TriangleMesh mesh = {}) -> Core::Result<BodyConfig> {
-      BodyConfig result;
-      static_cast<BodyProperties&>(result) = description;
-      result.position = pose.position;
-      result.rotation = pose.rotation;
-      const Math::Vec3 scale{std::abs(pose.scale.x), std::abs(pose.scale.y),
-                             std::abs(pose.scale.z)};
-
-      if (description.shape == Shape::Mesh) {
-        result.mesh = std::move(mesh);
-        result.meshScale = pose.scale;
-      } else if (description.shape == Shape::Box) {
-        result.halfExtents
-            = {description.halfExtents.x * scale.x, description.halfExtents.y * scale.y,
-               description.halfExtents.z * scale.z};
-      } else {
-        const float maximum = std::max({scale.x, scale.y, scale.z});
-
-        if (std::abs(scale.x - scale.y) > 1e-5F * maximum
-            || std::abs(scale.x - scale.z) > 1e-5F * maximum) {
-          return Core::fail(Core::ErrorCode::InvalidArgument,
-                            "Sphere/capsule physics requires uniform world scale");
-        }
-
-        result.radius *= scale.x;
-
-        if (description.shape == Shape::Capsule) {
-          result.halfHeight *= scale.x;
-        }
-      }
-
-      return validatedBodyConfig(result);
-    }
-
     auto configuration(const CharacterProperties& description, const Math::TransformParts& pose)
         -> Core::Result<CharacterConfig> {
       const auto scale = pose.scale;
@@ -502,7 +467,7 @@ namespace Dot::Physics {
           mesh = found->value;
         }
 
-        auto config = configuration(*entity.rigidBody, *parts, std::move(mesh));
+        auto config = scaledBodyConfig(*entity.rigidBody, *parts, std::move(mesh));
 
         if (!config) {
           return context(entity.id, config.error());
@@ -875,6 +840,59 @@ namespace Dot::Physics {
     return SceneCharacterState{state->position, state->rotation,     state->velocity,
                                state->ground,   state->groundNormal, state->groundVelocity,
                                support};
+  }
+
+  auto SceneSimulation::characterConfig(const Scene& scene, EntityId entity) const
+      -> Core::Result<CharacterConfig> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
+    }
+
+    auto id = m_impl->resolveCharacter(entity, true);
+
+    if (!id) {
+      return std::unexpected(id.error());
+    }
+
+    if (scene.id() != m_impl->m_scene) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Character query has a foreign scene");
+    }
+
+    auto owner = scene.entity(entity);
+    auto matrix = scene.worldTransform(entity);
+
+    if (!owner || !matrix) {
+      return std::unexpected(!owner ? owner.error() : matrix.error());
+    }
+
+    const auto& entry = m_impl->m_characters.at(entity.value);
+
+    if (owner->character != entry.description || *matrix != entry.source) {
+      return Core::fail(
+          Core::ErrorCode::InvalidState,
+          "Synchronize character and ancestor edits before querying its configuration");
+    }
+
+    auto pose = Math::decomposeTrs(entry.source);
+    auto config = pose ? configuration(entry.description, *pose)
+                       : Core::Result<CharacterConfig>{std::unexpected(pose.error())};
+    auto state = m_impl->m_world.character(*id);
+
+    if (!config || !state) {
+      return std::unexpected(!config ? config.error() : state.error());
+    }
+
+    auto rotation = Math::compose({}, state->rotation);
+
+    if (!rotation) {
+      return std::unexpected(rotation.error());
+    }
+
+    config->position = state->position;
+    config->yawDegrees
+        = std::atan2(rotation->data[8], rotation->data[10]) * 180 / std::numbers::pi_v<float>;
+    config->userTag = entity.value;
+    return config;
   }
 
   auto SceneSimulation::setCharacterInput(EntityId entity, const CharacterInput& input)

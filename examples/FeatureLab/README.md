@@ -260,3 +260,8 @@ scope; source globals/UI are excluded. See [runtime composition](../../docs/Scri
 for ownership and publication failure semantics. These audit checks cover the error
 boundary; the successful production loop is validated through an authored project,
 actual Play and relocated native exports.
+
+
+The navigation SDK inventory also exercises `navigation.stats()` returning null for
+this unbound scene and `navigation.route()` producing the explicit unavailable error.
+Successful static-obstacle routes are demonstrated by PrismRelay's saved crew bay.

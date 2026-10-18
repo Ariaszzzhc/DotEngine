@@ -123,6 +123,8 @@
     "invoke",
     "keys",
     "mouseButtons",
+    "navigation.route",
+    "navigation.stats",
     "physics.addImpulse",
     "physics.body",
     "physics.character",

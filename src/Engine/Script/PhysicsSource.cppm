@@ -1,6 +1,7 @@
 module;
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -12,10 +13,13 @@ export import Dot.Script.Host;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Physics.Mesh;
+import Dot.Physics.Character;
 import Dot.World.Scene;
 import Dot.Physics.World;
 
 export namespace Dot::Script {
+  using CharacterReader = std::function<Core::Result<Physics::CharacterConfig>(World::EntityId)>;
+
   struct PhysicsSourceConfig {
     Physics::WorldConfig simulation;
     std::size_t contactJsonBytes{1024 * 1024};
@@ -70,6 +74,10 @@ export namespace Dot::Script {
      * 查询描述最近同步状态；实体调用立即拒绝缺失/跨场景所有者，射线命中已删所有者时
      * 须原生同步。脚本准备期间允许读，控制方法标记 ReadWrite。 */
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
+    /** Owned read-only native reader; preserves this source across moves/destruction.
+     * Reject unsynchronized authoring and faulted physics. 拥有的只读原生读取器，跨源移动/
+     * 销毁保留所有权，拒绝未同步编辑及故障物理。 */
+    [[nodiscard]] auto characterReader() const -> Core::Result<CharacterReader>;
 
   private:
     [[nodiscard]] auto synchronizeSource(

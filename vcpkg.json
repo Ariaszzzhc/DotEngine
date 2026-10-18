@@ -13,6 +13,8 @@
     "miniaudio",
     "dot-editor-font",
     "freetype",
+    "recastnavigation",
+    "xxhash",
     {
       "name": "imgui",
       "default-features": false,
@@ -67,6 +69,8 @@
   ],
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "overrides": [
+    { "name": "recastnavigation", "version": "1.6.0", "port-version": 1 },
+    { "name": "xxhash", "version": "0.8.4" },
     { "name": "dot-editor-font", "version-string": "1.0.42" },
     {
       "name": "imgui",

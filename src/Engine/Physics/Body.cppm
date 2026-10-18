@@ -75,4 +75,11 @@ export namespace Dot::Physics {
    * 编辑、存储及仿真边界共用的纯 CPU 校验。 */
   [[nodiscard]] auto validateBodyProperties(const BodyProperties& properties) -> Core::Result<void>;
   [[nodiscard]] auto validatedBodyConfig(const BodyConfig& config) -> Core::Result<BodyConfig>;
+  /** Apply the simulation's world-scale policy: absolute box dimensions, uniform
+   * sphere/capsule scale, signed mesh scale. Validate the complete resulting body.
+   * 应用仿真的世界缩放规则：盒体绝对尺寸、球体/胶囊等比缩放、网格带符号缩放，
+   * 并校验完整结果。 */
+  [[nodiscard]] auto scaledBodyConfig(const BodyProperties& properties,
+                                      const Math::TransformParts& pose, TriangleMesh mesh = {})
+      -> Core::Result<BodyConfig>;
 }  // namespace Dot::Physics

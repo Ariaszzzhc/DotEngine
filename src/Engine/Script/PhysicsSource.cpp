@@ -5,6 +5,7 @@ module;
 #include <cstdint>
 #include <exception>
 #include <expected>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -668,6 +669,30 @@ namespace Dot::Script {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Reset physics source: " + std::string(error.what()));
+    }
+  }
+
+  auto PhysicsSource::characterReader() const -> Core::Result<CharacterReader> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics source was moved");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      return CharacterReader{
+          [impl = m_impl](World::EntityId entity) -> Core::Result<Physics::CharacterConfig> {
+            auto current = impl->check(true);
+            return current ? impl->m_simulation.characterConfig(*impl->m_scene, entity)
+                           : std::unexpected(current.error());
+          }};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Bind native character reader: " + std::string(error.what()));
     }
   }
 

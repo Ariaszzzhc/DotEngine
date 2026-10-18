@@ -1,4 +1,4 @@
-import {Entity, gameState, ScriptComponent, type Vec3} from 'dot:engine';
+import {Entity, gameState, navigation, ScriptComponent, type Vec3} from 'dot:engine';
 
 interface Settings {
   stationA: Vec3;
@@ -11,21 +11,30 @@ interface PatrolState {
   target: 0|1;
   remaining: number;
   visits: number;
+  points: Vec3[];
+  corner: number;
+  source: string;
+  failure: string|null;
 }
 
 const stopped: Vec3 = {x: 0, y: 0, z: 0};
 
 /**
  * Authored station intent uses native capsule collision and measured native velocity for gait.
- * A blocked route cannot report arrival; this is a two-station duty, not navigation/pathfinding.
- * 制作的站点意图使用原生胶囊碰撞及实际原生速度驱动步态；路径受阻不能宣告到达。
- * 这是两站巡回工作，不实现导航或寻路。
+ * Native navigation supplies corners around static obstacles; native physics decides movement.
+ * Blocked or unavailable routes cannot report arrival. No script collision/pathfinding solver.
+ * 原生导航提供绕开静态障碍的拐点，原生物理决定实际移动；受阻或不可用路线不能宣告到达，
+ * 脚本不实现碰撞或寻路求解器。
  */
 export class CrewPatrol extends ScriptComponent<Settings> {
   #model!: Entity;
   #target: 0|1 = 1;
   #remaining = 0;
   #visits = 0;
+  #points: Vec3[] = [];
+  #corner = 0;
+  #source = '';
+  #failure: string|null = null;
 
   private bind(): void {
     const points = [this.properties.stationA, this.properties.stationB];
@@ -45,24 +54,58 @@ export class CrewPatrol extends ScriptComponent<Settings> {
       throw Error('Maintenance crew requires its own capsule, animated child and valid stations');
     }
 
+    const surface = navigation.stats();
+
+    if (!surface) {
+      throw Error('Maintenance crew requires baked static navigation');
+    }
+
+    this.#source = surface.source;
     this.#model = model;
   }
 
   private report(): void {
     gameState.set('crew:' + this.self.id.value, {
-      phase: this.#remaining > 0 ? 'working' : 'walking',
+      phase: this.#failure ? 'unavailable' : this.#remaining > 0 ? 'working' : 'walking',
       target: this.#target,
       visits: this.#visits,
+      routeFailure: this.#failure,
     });
+  }
+
+  private plan(): void {
+    const target = this.#target === 0 ? this.properties.stationA : this.properties.stationB;
+    this.#corner = 0;
+    this.#points = [];
+    this.#failure = null;
+
+    try {
+      const route = navigation.route(this.self.id, target);
+
+      if (Math.hypot(route.goal.x - target.x, route.goal.z - target.z) > .1
+          || Math.abs(route.goal.y - target.y) > .35) {
+        throw Error('Station is outside the baked walkable surface');
+      }
+
+      this.#points = route.points.map(point => ({...point}));
+    } catch (error) {
+      this.#failure = String(error).slice(0, 1024);
+    }
   }
 
   onStart(): void {
     this.bind();
     this.#model.resetAnimationController();
+    this.plan();
     this.report();
   }
 
   onFixedUpdate(seconds: number): void {
+    if (this.#failure) {
+      this.self.moveCharacter(stopped);
+      return;
+    }
+
     if (this.#remaining > 0) {
       this.self.moveCharacter(stopped);
       this.#remaining = Math.max(0, this.#remaining - seconds);
@@ -70,6 +113,7 @@ export class CrewPatrol extends ScriptComponent<Settings> {
       if (this.#remaining === 0) {
         this.#target = this.#target === 0 ? 1 : 0;
         this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 0, seconds: .15, stop: true});
+        this.plan();
         this.report();
       }
 
@@ -78,15 +122,15 @@ export class CrewPatrol extends ScriptComponent<Settings> {
 
     const target = this.#target === 0 ? this.properties.stationA : this.properties.stationB;
     const state = this.self.characterState;
-    const x = target.x - state.position.x;
-    const z = target.z - state.position.z;
-    const distance = Math.hypot(x, z);
+    const distance = Math.hypot(target.x - state.position.x, target.z - state.position.z);
 
     if (distance <= .12 && Math.abs(target.y - state.position.y) <= .35
         && state.ground === 'grounded') {
       this.self.moveCharacter(stopped);
       this.#remaining = this.properties.workSeconds;
       this.#visits++;
+      this.#points = [];
+      this.#corner = 0;
       this.#model.controlAnimationLayer('Inspection', {action: 'weight', weight: 0});
       this.#model.controlAnimationLayer('Inspection', {action: 'play', restart: true});
       this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 1, seconds: .12, stop: false});
@@ -94,10 +138,34 @@ export class CrewPatrol extends ScriptComponent<Settings> {
       return;
     }
 
-    const speed = distance > 0 ? Math.min(this.properties.speed, distance / Math.max(seconds, 1e-6)) / distance : 0;
+    while (this.#corner < this.#points.length) {
+      const point = this.#points[this.#corner];
+
+      if (Math.hypot(point.x - state.position.x, point.z - state.position.z) > .06
+          || Math.abs(point.y - state.position.y) > .35) {
+        break;
+      }
+
+      ++this.#corner;
+    }
+
+    const point = this.#points[this.#corner];
+
+    if (!point) {
+      this.self.moveCharacter(stopped);
+      this.#failure = 'Native route ended outside station arrival tolerance';
+      this.report();
+      return;
+    }
+
+    const x = point.x - state.position.x;
+    const z = point.z - state.position.z;
+    const cornerDistance = Math.hypot(x, z);
+    const speed = cornerDistance > 0
+        ? Math.min(this.properties.speed, cornerDistance / Math.max(seconds, 1e-6)) / cornerDistance : 0;
     this.self.moveCharacter({x: x * speed, y: 0, z: z * speed});
 
-    if (distance > .12) {
+    if (cornerDistance > .01) {
       this.self.setCharacterYaw(Math.atan2(-x, -z) * 180 / Math.PI);
     }
   }
@@ -112,7 +180,9 @@ export class CrewPatrol extends ScriptComponent<Settings> {
   }
 
   onSaveState(): PatrolState {
-    return {target: this.#target, remaining: this.#remaining, visits: this.#visits};
+    return {target: this.#target, remaining: this.#remaining, visits: this.#visits,
+      points: this.#points.map(point => ({...point})), corner: this.#corner,
+      source: this.#source, failure: this.#failure};
   }
 
   onLoadState(state: PatrolState): void {
@@ -121,13 +191,22 @@ export class CrewPatrol extends ScriptComponent<Settings> {
     if (!state || (state.target !== 0 && state.target !== 1)
         || !Number.isFinite(state.remaining) || state.remaining < 0
         || state.remaining > this.properties.workSeconds || !Number.isSafeInteger(state.visits)
-        || state.visits < 0) {
+        || state.visits < 0 || state.source !== this.#source || !Array.isArray(state.points)
+        || state.points.length > 256 || !Number.isSafeInteger(state.corner) || state.corner < 0
+        || state.corner > state.points.length || (state.failure !== null
+            && (typeof state.failure !== 'string' || !state.failure.length || state.failure.length > 1024))
+        || state.points.some(point => !point || ![point.x, point.y, point.z].every(
+            value => Number.isFinite(value) && Math.abs(value) <= 1000000))
+        || (state.remaining === 0 && state.failure === null && state.corner === state.points.length)) {
       throw Error('Invalid maintenance crew reload state');
     }
 
     this.#target = state.target;
     this.#remaining = state.remaining;
     this.#visits = state.visits;
+    this.#points = state.points.map(point => ({...point}));
+    this.#corner = state.corner;
+    this.#failure = state.failure;
   }
 
   onStop(): void {

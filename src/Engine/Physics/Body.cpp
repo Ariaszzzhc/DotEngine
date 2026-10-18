@@ -1,8 +1,10 @@
 module;
 
+#include <algorithm>
 #include <cmath>
 #include <expected>
 #include <numbers>
+#include <utility>
 
 module Dot.Physics.Body;
 
@@ -110,5 +112,50 @@ namespace Dot::Physics {
     auto normalized = config;
     normalized.rotation = *rotation;
     return normalized;
+  }
+
+  auto scaledBodyConfig(const BodyProperties& description, const Math::TransformParts& pose,
+                        TriangleMesh mesh) -> Core::Result<BodyConfig> {
+    auto properties = validateBodyProperties(description);
+
+    if (!properties) {
+      return std::unexpected(properties.error());
+    }
+
+    if (!Math::isFinite(pose.scale) || pose.scale.x == 0 || pose.scale.y == 0
+        || pose.scale.z == 0) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid physics world scale");
+    }
+
+    BodyConfig result;
+    static_cast<BodyProperties&>(result) = description;
+    result.position = pose.position;
+    result.rotation = pose.rotation;
+    const Math::Vec3 scale{std::abs(pose.scale.x), std::abs(pose.scale.y), std::abs(pose.scale.z)};
+
+    if (description.shape == Shape::Mesh) {
+      result.mesh = std::move(mesh);
+      result.meshScale = pose.scale;
+    } else if (description.shape == Shape::Box) {
+      result.halfExtents
+          = {description.halfExtents.x * scale.x, description.halfExtents.y * scale.y,
+             description.halfExtents.z * scale.z};
+    } else {
+      const float maximum = std::max({scale.x, scale.y, scale.z});
+
+      if (std::abs(scale.x - scale.y) > 1e-5F * maximum
+          || std::abs(scale.x - scale.z) > 1e-5F * maximum) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Sphere/capsule physics requires uniform world scale");
+      }
+
+      result.radius *= scale.x;
+
+      if (description.shape == Shape::Capsule) {
+        result.halfHeight *= scale.x;
+      }
+    }
+
+    return validatedBodyConfig(result);
   }
 }  // namespace Dot::Physics

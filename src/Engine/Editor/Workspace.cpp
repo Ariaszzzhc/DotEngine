@@ -48,6 +48,9 @@ import Dot.Animation.ControllerFiles;
 import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationPosing;
 import Dot.Editor.AnimationRetarget;
+import Dot.Editor.NavigationBake;
+import Dot.Navigation.Files;
+import Dot.Navigation.Geometry;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
 import Dot.Editor.AnimationFrames;
@@ -549,6 +552,19 @@ namespace Dot::Editor {
     std::string m_selectedResource;
     std::vector<ScriptDiagnostic> m_scriptDiagnostics;
     std::string m_newPath;
+    std::optional<NavigationBake> m_navigationJob;
+    std::optional<NavigationCreation> m_navigationReady;
+    std::optional<Core::Error> m_navigationError;
+    Navigation::BuildSettings m_navigationSettings, m_navigationForm;
+    std::uint64_t m_navigationSession{}, m_navigationRevision{}, m_navigationScope{};
+    bool m_navigationCancel{};
+    std::string m_navigationState{"idle"};
+    std::string m_navigationPath;
+    std::string m_navigationOutput{"assets/walkable.dotnav"};
+    std::string m_navigationBaseline, m_navigationMetadata;
+    Json m_navigationRoute;
+    std::array<float, 3> m_navigationStart{-2, 0, 0}, m_navigationGoal{2, 0, 0};
+
     std::optional<AnimationRetarget> m_retargetJob;
     std::optional<RetargetCreation> m_retargetReady;
     std::optional<Core::Error> m_retargetError;
@@ -3255,6 +3271,298 @@ namespace Dot::Editor {
             {"buttons", consumed.buttons}}}};
     }
 
+    auto pollNavigation() -> void {
+      if (!m_navigationJob) {
+        return;
+      }
+
+      auto ready = m_navigationJob->ready();
+
+      if (ready && !*ready) {
+        return;
+      }
+
+      auto value = ready ? m_navigationJob->take()
+                         : Core::Result<NavigationCreation>{std::unexpected(ready.error())};
+      m_navigationJob.reset();
+
+      if (m_navigationCancel) {
+        m_navigationState = "cancelled";
+        m_navigationBaseline.clear();
+      } else if (!value) {
+        m_navigationState = "failed";
+        m_navigationError = value.error();
+        m_navigationBaseline.clear();
+      } else {
+        m_navigationReady.emplace(std::move(*value));
+        m_navigationState = "ready";
+      }
+    }
+
+    auto navigationStatus() const -> Json {
+      Json result = nullptr;
+
+      if (m_navigationReady) {
+        const auto stats = m_navigationReady->surface.stats().value();
+        result = {{"tiles", stats.tiles},
+                  {"polygons", stats.polygons},
+                  {"vertices", stats.vertices},
+                  {"detailTriangles", stats.detailTriangles},
+                  {"bytes", m_navigationReady->bytes.size()},
+                  {"source", m_navigationReady->surface.description().value()->source}};
+      }
+
+      return {
+          {"session", std::to_string(m_navigationSession)},
+          {"state", m_navigationState},
+          {"revision", std::to_string(m_navigationRevision)},
+          {"path", m_navigationPath},
+          {"settings", Codec::parseJson(encodeNavigationSettings(m_navigationSettings).value())},
+          {"result", std::move(result)},
+          {"route", m_navigationRoute},
+          {"error", m_navigationError ? errorJson(*m_navigationError)["error"] : Json(nullptr)}};
+    }
+
+    auto navigationCurrent() const -> Core::Result<void> {
+      const auto state = m_document->stats().value();
+
+      if (!m_navigationReady || state.revision != m_navigationRevision
+          || state.scene != m_navigationScope) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Navigation result requires unchanged authoring revision");
+      }
+
+      auto bytes = World::encodeScene(*m_document->scene().value());
+
+      if (!bytes || *bytes != m_navigationBaseline) {
+        return bytes
+                   ? Core::fail(Core::ErrorCode::InvalidState, "Navigation authoring scene changed")
+                   : std::unexpected(bytes.error());
+      }
+
+      auto files = m_project->files().value();
+      auto metadata = files.readText("project.dotproject", 1024 * 1024);
+
+      if (!metadata || *metadata != m_navigationMetadata) {
+        return metadata ? Core::fail(Core::ErrorCode::InvalidState,
+                                     "Navigation project metadata changed")
+                        : std::unexpected(metadata.error());
+      }
+
+      return validateNavigationInputs(files, *m_navigationReady);
+    }
+
+    auto navigationRequest(const Json& parsed) -> Core::Result<std::string> {
+      pollNavigation();
+      const auto command = parsed.at("command").get<std::string>();
+
+      if (command == "navigation-status") {
+        Codec::requireFields(parsed, {"command"});
+      } else if (command == "cancel-navigation") {
+        Codec::requireFields(parsed, {"command", "session"});
+
+        if (Codec::id(parsed["session"]) != m_navigationSession
+            || (!m_navigationJob && m_navigationState != "ready")) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "No current navigation bake/result to cancel");
+        }
+
+        if (m_navigationJob) {
+          m_navigationCancel = true;
+          m_navigationState = "cancelling";
+          m_navigationJob->requestStop();
+        } else {
+          m_navigationReady.reset();
+          m_navigationBaseline.clear();
+          m_navigationRoute = nullptr;
+          m_navigationState = "cancelled";
+        }
+      } else if (command == "begin-navigation") {
+        Codec::requireFields(parsed, {"command", "revision", "value"});
+        const auto state = m_document->stats().value();
+
+        if (Codec::id(parsed["revision"]) != state.revision || m_navigationJob
+            || m_navigationState == "ready" || playing() || previewing() || m_transform
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || m_text
+            || m_material || m_uiEditor || m_pendingClose || m_captureDialog || m_sceneDialog
+            || m_sourceUpdate || m_modelImport || m_reimport || retargetBusy()
+            || m_navigationSession == std::numeric_limits<std::uint64_t>::max()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Navigation bake requires current stopped authoring without another "
+                            "draft/job/dialog");
+        }
+
+        auto settings = decodeNavigationSettings(parsed["value"].dump());
+
+        if (!settings) {
+          return std::unexpected(settings.error());
+        }
+
+        auto baseline = World::encodeScene(*m_document->scene().value());
+        auto metadata = m_project->files()->readText("project.dotproject", 1024 * 1024);
+
+        if (!baseline || !metadata) {
+          return std::unexpected(!baseline ? baseline.error() : metadata.error());
+        }
+
+        auto job = NavigationBake::begin(m_project->files().value(), *m_document->scene().value(),
+                                         *settings);
+
+        if (!job) {
+          return std::unexpected(job.error());
+        }
+
+        m_navigationBaseline = std::move(*baseline);
+        m_navigationMetadata = std::move(*metadata);
+        m_navigationSettings = *settings;
+        m_navigationForm = *settings;
+        m_navigationRevision = state.revision;
+        m_navigationScope = state.scene;
+        ++m_navigationSession;
+        m_navigationCancel = false;
+        m_navigationRoute = nullptr;
+        m_navigationError.reset();
+        m_navigationReady.reset();
+        m_navigationState = "preparing";
+        m_navigationJob.emplace(std::move(*job));
+      } else if (command == "query-navigation" || command == "publish-navigation") {
+        if (command == "query-navigation") {
+          Codec::requireFields(parsed, {"command", "session", "value"});
+        } else {
+          Codec::requireFields(parsed, {"command", "session", "revision", "path"});
+        }
+
+        if (Codec::id(parsed["session"]) != m_navigationSession || !m_navigationReady || playing()
+            || previewing()) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Navigation requires its current stopped prepared result");
+        }
+
+        auto valid = navigationCurrent();
+
+        if (!valid) {
+          return std::unexpected(valid.error());
+        }
+
+        if (command == "query-navigation") {
+          const auto& value = parsed["value"];
+          Codec::requireFields(value, {"start", "goal", "searchExtent", "maxPoints"});
+
+          if (!value["maxPoints"].is_number_integer() || value["maxPoints"] < 2
+              || value["maxPoints"] > 512) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Navigation corner capacity requires 2..512");
+          }
+
+          const auto from = Codec::numbers<3>(value["start"]),
+                     to = Codec::numbers<3>(value["goal"]),
+                     extent = Codec::numbers<3>(value["searchExtent"]);
+          auto route = m_navigationReady->surface.route({{from[0], from[1], from[2]},
+                                                         {to[0], to[1], to[2]},
+                                                         {extent[0], extent[1], extent[2]},
+                                                         value["maxPoints"].get<std::uint32_t>()});
+
+          if (!route) {
+            m_navigationRoute = nullptr;
+            return std::unexpected(route.error());
+          }
+
+          Json points = Json::array();
+
+          for (const auto point : route->points) {
+            points.push_back({point.x, point.y, point.z});
+          }
+
+          m_navigationStart = from;
+          m_navigationGoal = to;
+          m_navigationRoute = {{"start", {route->start.x, route->start.y, route->start.z}},
+                               {"goal", {route->goal.x, route->goal.y, route->goal.z}},
+                               {"points", std::move(points)}};
+        } else {
+          const auto path = parsed["path"].get<std::string>();
+
+          if (m_navigationState != "ready" || Codec::id(parsed["revision"]) != m_navigationRevision
+              || !Core::isPortableRelativePath(path) || path.size() > 1024
+              || !path.starts_with("assets/") || !path.ends_with(".dotnav") || m_transform
+              || pendingInspector() || pendingEnvironment() || pendingOcclusion() || m_text
+              || m_material || m_uiEditor || m_pendingClose || m_captureDialog || m_sceneDialog
+              || m_sourceUpdate || m_modelImport || m_reimport || retargetBusy()) {
+            return Core::fail(
+                Core::ErrorCode::InvalidState,
+                "Publish a new assets/ .dotnav for the unchanged scene without drafts/dialogs");
+          }
+
+          auto published = m_resources->createBinary(path, m_navigationReady->bytes);
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+
+          m_navigationPath = path;
+          m_navigationOutput = path;
+          m_navigationState = "published";
+          auto listed = catalog();
+
+          if (!listed) {
+            return Core::fail(
+                listed.error().code,
+                "Navigation resource published; catalog refresh failed: " + listed.error().message);
+          }
+        }
+      } else if (command == "set-navigation") {
+        Codec::requireFields(parsed, {"command", "revision", "asset"});
+
+        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || playing()
+            || previewing() || m_transform || pendingInspector() || pendingText()
+            || pendingEnvironment() || pendingOcclusion() || m_uiEditor || m_pendingClose
+            || m_captureDialog || m_sceneDialog || m_navigationJob || retargetBusy()) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Navigation binding requires current stopped authoring without drafts/dialogs");
+        }
+
+        if (!parsed["asset"].is_null()) {
+          auto files = m_project->files().value();
+          auto surface = Navigation::loadSurface(files, parsed["asset"].get<std::string>());
+
+          if (!surface) {
+            return std::unexpected(surface.error());
+          }
+
+          const auto description = surface->description().value();
+          auto meshes = Physics::loadSceneCollisionMeshes(files, *m_document->scene().value());
+          auto geometry
+              = meshes ? Navigation::sceneGeometry(*m_document->scene().value(),
+                                                   description->settings, *meshes)
+                       : Core::Result<Navigation::InputGeometry>{std::unexpected(meshes.error())};
+          auto identity = geometry ? Navigation::geometryIdentity(*geometry)
+                                   : Core::Result<std::string>{std::unexpected(geometry.error())};
+
+          if (!identity || *identity != description->source) {
+            return identity ? Core::fail(Core::ErrorCode::InvalidState,
+                                         "Navigation geometry is stale; bake again")
+                            : std::unexpected(identity.error());
+          }
+        }
+
+        auto changed = m_document->apply(
+            Json::array({{{"op", "navigation"}, {"value", parsed["asset"]}}}).dump(),
+            m_document->stats()->revision);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        auto refreshed = refresh();
+        m_previewReady = false;
+        return refreshed ? execute(R"({"command":"inspect"})") : std::unexpected(refreshed.error());
+      } else {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown navigation operation");
+      }
+
+      return Json{{"ok", true}, {"navigation", navigationStatus()}}.dump();
+    }
+
     auto retargetBusy() const -> bool {
       return m_retargetJob.has_value() || m_retargetReady.has_value();
     }
@@ -3712,6 +4020,12 @@ namespace Dot::Editor {
       auto parsed = Codec::parseJson(request);
 
       const auto command = parsed.value("command", std::string{});
+
+      if (command == "navigation-status" || command == "begin-navigation"
+          || command == "cancel-navigation" || command == "query-navigation"
+          || command == "publish-navigation" || command == "set-navigation") {
+        return navigationRequest(parsed);
+      }
 
       if (command == "animation-retarget-status" || command == "cancel-animation-retarget"
           || command == "publish-animation-retarget" || command == "stage-retarget-profile"
@@ -8245,6 +8559,7 @@ namespace Dot::Editor {
           {"sourceUpdate", m_sourceUpdate ? sourceUpdateStatus().value() : Json(nullptr)},
           {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
           {"animationRetarget", retargetStatus()},
+          {"navigation", navigationStatus()},
           {"animationPose", m_poseCapture},
           {"twoBonePose", m_twoBoneResult},
           {"skeleton", skeletonStatus()},
@@ -16006,6 +16321,171 @@ namespace Dot::Editor {
       ImGui::EndTable();
     }
 
+    auto navigationPanel() -> void {
+      if (!ImGui::CollapsingHeader("Navigation")) {
+        return;
+      }
+
+      pollNavigation();
+      ImGui::TextWrapped(
+          "Bake walkable static collision geometry for one capsule profile. Moving obstacles still "
+          "use physics.");
+      ImGui::Text("Bake: %s", m_navigationState.c_str());
+      auto& form = m_navigationForm;
+      ImGui::BeginDisabled(m_navigationJob.has_value() || m_navigationState == "ready");
+      ImGui::InputFloat("Cell size##nav", &form.cellSize, .01F);
+      ImGui::InputFloat("Cell height##nav", &form.cellHeight, .01F);
+      ImGui::InputFloat("Agent height##nav", &form.agentHeight, .05F);
+      ImGui::InputFloat("Agent radius##nav", &form.agentRadius, .05F);
+      ImGui::InputFloat("Max climb##nav", &form.maxClimb, .05F);
+      ImGui::InputFloat("Max slope##nav", &form.maxSlopeDegrees, 1);
+      int cells = static_cast<int>(form.tileCells);
+
+      if (ImGui::InputInt("Tile cells##nav", &cells, 32)) {
+        form.tileCells = static_cast<std::uint32_t>(std::max(cells, 0));
+      }
+
+      if (ImGui::Button("Bake navigation")) {
+        action({{"command", "begin-navigation"},
+                {"value",
+                 {{"cellSize", form.cellSize},
+                  {"cellHeight", form.cellHeight},
+                  {"agentHeight", form.agentHeight},
+                  {"agentRadius", form.agentRadius},
+                  {"maxClimb", form.maxClimb},
+                  {"maxSlopeDegrees", form.maxSlopeDegrees},
+                  {"tileCells", form.tileCells}}}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (m_navigationJob || m_navigationState == "ready") {
+        if (ImGui::Button("Cancel navigation")) {
+          sessionAction(
+              {{"command", "cancel-navigation"}, {"session", std::to_string(m_navigationSession)}});
+        }
+      }
+
+      if (m_navigationError) {
+        ImGui::TextWrapped("%s", m_navigationError->message.c_str());
+      }
+
+      ImGui::InputText("Navigation asset", &m_navigationOutput);
+      ImGui::BeginDisabled(m_navigationState != "ready");
+
+      if (ImGui::Button("Publish new navigation asset")) {
+        action({{"command", "publish-navigation"},
+                {"session", std::to_string(m_navigationSession)},
+                {"path", m_navigationOutput}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (ImGui::Button("Bind saved navigation")) {
+        action({{"command", "set-navigation"}, {"asset", m_navigationOutput}});
+      }
+
+      const auto binding = m_snapshot["scene"]["navigation"];
+
+      if (!binding.is_null()) {
+        ImGui::TextWrapped("Bound: %s", binding.get_ref<const std::string&>().c_str());
+
+        if (ImGui::Button("Detach navigation")) {
+          action({{"command", "set-navigation"}, {"asset", nullptr}});
+        }
+      }
+
+      if (!m_navigationReady) {
+        return;
+      }
+
+      const auto stats = m_navigationReady->surface.stats().value();
+      ImGui::Text("%zu tiles, %zu polygons, %zu bytes", stats.tiles, stats.polygons,
+                  m_navigationReady->bytes.size());
+      ImGui::TextWrapped(
+          "Preview is the captured bake at revision %s; XZ top view combines all heights.",
+          std::to_string(m_navigationRevision).c_str());
+      ImGui::InputFloat3("Route start", m_navigationStart.data());
+      ImGui::InputFloat3("Route goal", m_navigationGoal.data());
+
+      if (ImGui::Button("Preview route")) {
+        sessionAction({{"command", "query-navigation"},
+                       {"session", std::to_string(m_navigationSession)},
+                       {"value",
+                        {{"start", m_navigationStart},
+                         {"goal", m_navigationGoal},
+                         {"searchExtent", {.5F, .5F, .5F}},
+                         {"maxPoints", 256}}}});
+      }
+
+      if (stats.polygons > 4096) {
+        ImGui::TextWrapped(
+            "Drawing first 4096 polygons; the saved surface and route query retain all polygons.");
+      }
+
+      const auto description = m_navigationReady->surface.description().value();
+      const auto size = ImVec2{std::max(ImGui::GetContentRegionAvail().x, 32.F), 240};
+      const auto top = ImGui::GetCursorScreenPos();
+      ImGui::InvisibleButton("##navigation-preview", size);
+      auto draw = ImGui::GetWindowDrawList();
+      draw->AddRectFilled(top, {top.x + size.x, top.y + size.y}, IM_COL32(20, 26, 32, 255));
+      float lowX = std::numeric_limits<float>::max(), lowZ = lowX;
+      float highX = -lowX, highZ = -lowX;
+
+      for (const auto& tile : description->tiles) {
+        lowX = std::min(lowX, tile.minimum.x);
+        lowZ = std::min(lowZ, tile.minimum.z);
+        highX = std::max(highX, tile.maximum.x);
+        highZ = std::max(highZ, tile.maximum.z);
+      }
+
+      const auto scale = std::min((size.x - 16) / std::max(highX - lowX, .01F),
+                                  (size.y - 16) / std::max(highZ - lowZ, .01F));
+      const auto project = [&](float x, float z) -> ImVec2 {
+        return {top.x + 8 + (x - lowX) * scale, top.y + 8 + (z - lowZ) * scale};
+      };
+      draw->PushClipRect(top, {top.x + size.x, top.y + size.y}, true);
+      std::size_t count{};
+
+      for (const auto& tile : description->tiles) {
+        for (const auto& polygon : tile.polygons) {
+          if (++count > 4096) {
+            break;
+          }
+
+          std::array<ImVec2, 6> points;
+
+          for (std::size_t index = 0; index < polygon.vertices.size(); ++index) {
+            const auto vertex = tile.vertices[polygon.vertices[index]];
+            points[index] = project(tile.minimum.x + vertex[0] * description->settings.cellSize,
+                                    tile.minimum.z + vertex[2] * description->settings.cellSize);
+          }
+
+          draw->AddConvexPolyFilled(points.data(), static_cast<int>(polygon.vertices.size()),
+                                    IM_COL32(50, 135, 120, 160));
+          draw->AddPolyline(points.data(), static_cast<int>(polygon.vertices.size()),
+                            IM_COL32(100, 200, 165, 255), 1.F, ImDrawFlags_Closed);
+        }
+      }
+
+      if (m_navigationRoute.is_object()) {
+        std::optional<ImVec2> previous;
+
+        for (const auto& point : m_navigationRoute["points"]) {
+          const auto position = project(point[0].get<float>(), point[2].get<float>());
+
+          if (previous) {
+            draw->AddLine(*previous, position, IM_COL32(255, 210, 70, 255), 2);
+          }
+
+          draw->AddCircleFilled(position, 3, IM_COL32(255, 230, 120, 255));
+          previous = position;
+        }
+      }
+
+      draw->PopClipRect();
+    }
+
     auto uiPanel() -> void {
       const auto nextButton = [](const char* label) -> bool {
         const auto width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
@@ -16869,6 +17349,7 @@ namespace Dot::Editor {
 
       if (beginPanel("Environment", "environment", "environment")) {
         environmentPanel();
+        navigationPanel();
       }
 
       ImGui::End();
@@ -17128,6 +17609,7 @@ namespace Dot::Editor {
         pollSourceUpdate();
         pollModelImport();
         pollRetarget();
+        pollNavigation();
         auto processed = processRequests();
 
         if (!processed) {

@@ -1846,9 +1846,32 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
 
   Driver driver(session);
 
-  for (int frame = 0; frame < 360; ++frame) {
+  const auto worker = scene->findEntities("Crew 7");
+  REQUIRE(worker);
+  REQUIRE(worker->size() == 1);
+  bool detoured{};
+  std::map<std::uint64_t, double> maximumTravel;
+
+  for (int frame = 0; frame < 720; ++frame) {
     driver.frame();
+
+    for (const auto actor : actors) {
+      const auto current = scene->transform(actor)->position;
+      const auto first = starts.at(actor.value);
+      maximumTravel[actor.value]
+          = std::max(maximumTravel[actor.value],
+                     std::hypot(double(current.x) - first.x, double(current.z) - first.z));
+    }
+
+    const auto feet = scene->transform(worker->front())->position;
+
+    if (std::abs(feet.x) < .5F) {
+      CHECK(std::abs(feet.z) > .85F);
+      detoured = true;
+    }
   }
+
+  CHECK(detoured);
 
   const auto data = crewData(session);
   std::size_t crewCount{};
@@ -1860,10 +1883,10 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
 
     ++crewCount;
     const auto pose = scene->transform(actor)->position;
-    const auto first = starts.at(actor.value);
-    CHECK(std::hypot(pose.x - first.x, pose.z - first.z) > .3F);
+    INFO(actor.value);
+    CHECK(maximumTravel.at(actor.value) > .3);
     CHECK(pose.y > -.05F);
-    CHECK(data.at("crew:" + std::to_string(actor.value))["visits"].get<unsigned>() >= 1);
+    CHECK(data.at("crew:" + std::to_string(actor.value))["visits"].get<unsigned>() >= 2);
   }
 
   CHECK(crewCount == 7);

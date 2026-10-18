@@ -201,6 +201,7 @@ namespace Dot::World {
     entt::registry registry;
     std::optional<Environment> environment;
     std::optional<std::string> ui;
+    std::optional<std::string> m_navigation;
     std::optional<Graphics::OcclusionSettings> occlusion;
     std::vector<SceneLink> links;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
@@ -782,6 +783,38 @@ namespace Dot::World {
 
     auto checked = m_impl->check();
     return checked ? Core::Result<std::optional<std::string>>(m_impl->ui)
+                   : std::unexpected(checked.error());
+  }
+
+  auto Scene::setNavigation(std::optional<std::string> asset) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return checked;
+    }
+
+    if (asset
+        && (asset->size() > 1024 || !Core::isPortableRelativePath(*asset)
+            || !asset->starts_with("assets/") || !asset->ends_with(".dotnav"))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Scene navigation requires a portable assets/*.dotnav path");
+    }
+
+    m_impl->m_navigation = std::move(asset);
+    return {};
+  }
+
+  auto Scene::navigation() const -> Core::Result<std::optional<std::string>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto checked = m_impl->check();
+    return checked ? Core::Result<std::optional<std::string>>(m_impl->m_navigation)
                    : std::unexpected(checked.error());
   }
 

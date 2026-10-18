@@ -40,6 +40,8 @@ find_package(Stb REQUIRED)
 find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
+find_package(recastnavigation CONFIG REQUIRED)
+find_package(xxHash CONFIG REQUIRED)
 find_package(qjs CONFIG REQUIRED)
 set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_TARGET_TRIPLET}")
 if(VCPKG_HOST_TRIPLET)
@@ -78,6 +80,11 @@ add_library(DotEngine STATIC)
 target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
+    src/Engine/Navigation/Surface.cpp
+    src/Engine/Navigation/Geometry.cpp
+    src/Engine/Navigation/Files.cpp
+    src/Engine/Editor/NavigationBake.cpp
+    src/Engine/Script/NavigationSource.cpp
     src/Engine/Graphics/Text.cpp
     src/Engine/Graphics/TextRenderer.cpp
     src/Engine/Script/Hud.cpp
@@ -231,6 +238,8 @@ target_link_libraries(DotEngine PRIVATE imgui::imgui Freetype::Freetype)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
+target_link_libraries(DotEngine PRIVATE RecastNavigation::Recast RecastNavigation::Detour)
+target_link_libraries(DotEngine PRIVATE xxHash::xxhash)
 target_link_libraries(DotEngine PRIVATE DotAudioBackend DotImageBackend DotModelBackend)
 target_include_directories(DotEngine SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 target_link_libraries(DotEngine PRIVATE qjs)
@@ -240,6 +249,11 @@ target_include_directories(DotEngine SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
 target_compile_options(DotEngine PUBLIC "$<TARGET_PROPERTY:Jolt::Jolt,INTERFACE_COMPILE_OPTIONS>")
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
+        src/Engine/Navigation/Surface.cppm
+        src/Engine/Navigation/Geometry.cppm
+        src/Engine/Navigation/Files.cppm
+        src/Engine/Editor/NavigationBake.cppm
+        src/Engine/Script/NavigationSource.cppm
         src/Engine/Core/Types.cppm
         src/Engine/Graphics/Text.cppm
         src/Engine/Graphics/TextRenderer.cppm

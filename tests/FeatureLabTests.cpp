@@ -147,8 +147,8 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
                           std::regex::multiline);
 
   for (const auto* name :
-       {"input", "components", "physics", "audio", "animation", "scene", "scenes", "gameState",
-        "saves", "hud", "ui", "gameClock", "Entity", "ScriptComponent"}) {
+       {"input", "components", "physics", "navigation", "audio", "animation", "scene", "scenes",
+        "gameState", "saves", "hud", "ui", "gameClock", "Entity", "ScriptComponent"}) {
     const bool isClass
         = std::string_view(name) == "Entity" || std::string_view(name) == "ScriptComponent";
     const auto prefix = std::string(isClass ? "export class " : "export const ") + name;
@@ -184,9 +184,9 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
   }
 
   const std::regex constant(R"(^export const ([A-Za-z][A-Za-z0-9_]*))", std::regex::multiline);
-  const std::set<std::string> namespaces{"input",     "components", "physics", "audio",
-                                         "animation", "scene",      "scenes",  "gameState",
-                                         "saves",     "hud",        "ui",      "gameClock"};
+  const std::set<std::string> namespaces{"navigation", "input", "components", "physics",   "audio",
+                                         "animation",  "scene", "scenes",     "gameState", "saves",
+                                         "hud",        "ui",    "gameClock"};
 
   for (auto match = std::sregex_iterator(sdk.begin(), sdk.end(), constant);
        match != std::sregex_iterator{}; ++match) {
@@ -301,7 +301,7 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   CHECK(snapshot["fixed"] == 1);
   CHECK(snapshot["updates"] == 5 + extraUpdates);
   CHECK(snapshot["stops"] == 1);
-  CHECK(snapshot["errors"] == 21);
+  CHECK(snapshot["errors"] == 22);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);

@@ -693,6 +693,30 @@ namespace Dot::Editor {
     }
   }
 
+  auto ResourceStore::createBinary(std::string_view name, std::span<const std::byte> bytes)
+      -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Resource store was moved");
+    }
+
+    try {
+      if (!name.starts_with("assets/") || textPath(name) || bytes.empty()
+          || bytes.size() > m_impl->m_limits.binaryBytes) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid binary asset path/size");
+      }
+
+      auto target = m_impl->resolve(name, true, true);
+
+      if (!target) {
+        return std::unexpected(target.error());
+      }
+
+      return m_impl->m_files.createAtomic(path(name), bytes);
+    } catch (const std::exception& error) {
+      return external("Create binary asset", error);
+    }
+  }
+
   auto ResourceStore::importModel(const Fs::path& source, std::string_view destination,
                                   std::optional<std::uint32_t> scene)
       -> Core::Result<ModelImportReport> {

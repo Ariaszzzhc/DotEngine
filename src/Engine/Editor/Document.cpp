@@ -822,9 +822,9 @@ namespace Dot::Editor {
         return {};
       }
 
-      if (op == "ui") {
+      if (op == "ui" || op == "navigation") {
         Codec::requireFields(command, {"op", "value"});
-        scene["ui"] = command["value"];
+        scene[op] = command["value"];
         return {};
       }
 

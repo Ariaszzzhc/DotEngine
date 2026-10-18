@@ -30,6 +30,8 @@ add_executable(DotUnitTests
     ViewportCaptureTests.cpp
     MathTests.cpp
     GeometryTests.cpp
+    NavigationSurfaceTests.cpp
+    NavigationGeometryTests.cpp
     MeshCodecTests.cpp
     PostProcessTests.cpp
     LightingTests.cpp
@@ -118,6 +120,7 @@ add_executable(DotTests
     InputHostTests.cpp
     TextRasterTests.cpp
     PhysicsHostTests.cpp
+    NavigationHostTests.cpp
     AudioHostTests.cpp
     AssetTests.cpp
     ImageTests.cpp
@@ -125,6 +128,7 @@ add_executable(DotTests
     AnimationPreviewTests.cpp
     AnimationCreationTests.cpp
     AnimationRetargetCreationTests.cpp
+    NavigationBakeTests.cpp
     AnimationDocumentTests.cpp
     UiResourceTests.cpp
     ControllerDocumentTests.cpp

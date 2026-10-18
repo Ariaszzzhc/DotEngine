@@ -1180,3 +1180,14 @@ an otherwise unrelated serialization of the active world on every append.
 运行时追加只准备新内容，拥有线程在私有注册表中暂存组件并校验挂接世界变换/相机逆矩阵，
 成功后才推进公共 ID。失败回收新实体及其缓存，已有描述/全局数据不重建；容器容量仍由
 场景拥有并在销毁时释放。这一步不执行脚本、设备或文件写入，仍保留 10000 实体上限。
+
+
+## Native static navigation / 原生静态导航
+
+`navigation.stats()` reports the current baked surface or null; `navigation.route`
+requests a complete route from a native character's measured feet to a goal. It
+checks capsule compatibility, bounded projection and static geometry state, and
+returns owned projected endpoints/corners. Scripts follow corners with existing
+native character intent; physics determines progress and arrival. See
+[navigation contracts](Navigation.md). PrismRelay's crew demonstrates success; the
+FeatureLab audit exercises the unbound query and catchable unavailable error.

@@ -15,6 +15,7 @@ import Dot.Animation.ScenePlayers;
 import Dot.UI.Layout;
 import Dot.Audio.SceneAudio;
 import Dot.Physics.Mesh;
+import Dot.Navigation.Surface;
 
 export namespace Dot::Project {
   class ScenePreparation;
@@ -66,6 +67,9 @@ export namespace Dot::Project {
     /** Owned immutable UI defaults, or no binding. No file fallback after preparation.
      * 拥有的不可变 UI 默认值或无绑定；准备完成后不回退读文件。 */
     [[nodiscard]] auto ui() const -> Core::Result<std::optional<UI::Asset>>;
+    /** Owned surface proven against static collision geometry; no owner file fallback.
+     * 拥有已核对静态碰撞几何的导航表面，拥有线程不回退读文件。 */
+    [[nodiscard]] auto navigation() const -> Core::Result<std::optional<Navigation::Surface>>;
     [[nodiscard]] auto accepts(const Core::FileSystem& files, const World::Scene& scene) const
         -> Core::Result<bool>;
 

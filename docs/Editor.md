@@ -2961,3 +2961,12 @@ See [key/tangent and native resample contracts](Animation.md#keying-an-ik-pose--
 机器操作共用真实求解、重采样和单次历史提交，保留源场景。混合层若改变所求姿态会在
 历史修改前拒绝；清理冲突后继续。报告包含实际预览残差及资源身份，保存和导出沿用
 普通动画资源流程，不新增运行时 IK 约束或私有片段格式。
+
+
+## Static navigation / 静态导航
+
+Environment → Navigation bakes actual static collision geometry on a cancellable CPU
+worker, previews polygons/routes, publishes a new `.dotnav`, and binds it through
+normal scene history. The GUI and strict `begin-navigation`, `navigation-status`,
+`query-navigation`, `cancel-navigation`, `publish-navigation` and `set-navigation`
+requests share product implementations. See [contracts and complete requests](Navigation.md).

@@ -6,6 +6,7 @@ module;
 #include <filesystem>
 #include <numeric>
 #include <set>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <utility>
@@ -19,8 +20,8 @@ import Dot.Physics.Body;
 import Dot.Assets.Mesh;
 
 namespace Dot::Physics {
-  auto loadCollisionMesh(const Core::FileSystem& files, std::string_view source)
-      -> Core::Result<TriangleMesh> {
+  auto readCollisionMeshBytes(const Core::FileSystem& files, std::string_view source)
+      -> Core::Result<std::vector<std::byte>> {
     if (source.size() > 1024 || !Core::isPortableRelativePath(source)
         || !source.starts_with("assets/") || !source.ends_with(".dotmesh")) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -82,17 +83,24 @@ namespace Dot::Physics {
         }
       }
 
-      auto loaded = Assets::loadMesh(files, path);
+      return files.readBytes(path);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Load collision mesh '" + std::string(source) + "': " + error.what());
+    }
+  }
+
+  auto decodeCollisionMesh(std::span<const std::byte> bytes) -> Core::Result<TriangleMesh> {
+    try {
+      auto loaded = Assets::decodeMesh(bytes, Assets::MeshFormat::DotMesh);
 
       if (!loaded) {
-        return Core::fail(loaded.error().code, "Collision mesh '" + std::string(source)
-                                                   + "': " + loaded.error().message);
+        return Core::fail(loaded.error().code, "Decode collision mesh: " + loaded.error().message);
       }
 
       if (loaded->data.vertices.size() > 262144 || loaded->data.indices.size() > 262144 * 3) {
-        return Core::fail(
-            Core::ErrorCode::Unavailable,
-            "Collision mesh exceeds vertex/triangle capacity: " + std::string(source));
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Collision mesh exceeds vertex/triangle capacity");
       }
 
       MeshDescription description;
@@ -111,12 +119,25 @@ namespace Dot::Physics {
 
       auto mesh = TriangleMesh::create(std::move(description));
       return mesh ? std::move(mesh)
-                  : Core::fail(mesh.error().code, "Collision mesh '" + std::string(source)
-                                                      + "': " + mesh.error().message);
+                  : Core::fail(mesh.error().code, "Decode collision mesh: " + mesh.error().message);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
-                        "Load collision mesh '" + std::string(source) + "': " + error.what());
+                        "Decode collision mesh: " + std::string(error.what()));
     }
+  }
+
+  auto loadCollisionMesh(const Core::FileSystem& files, std::string_view source)
+      -> Core::Result<TriangleMesh> {
+    auto bytes = readCollisionMeshBytes(files, source);
+
+    if (!bytes) {
+      return std::unexpected(bytes.error());
+    }
+
+    auto mesh = decodeCollisionMesh(*bytes);
+    return mesh ? std::move(mesh)
+                : Core::fail(mesh.error().code, "Collision mesh '" + std::string(source)
+                                                    + "': " + mesh.error().message);
   }
 
   auto loadSceneCollisionMeshes(const Core::FileSystem& files, const Dot::World::Scene& scene,

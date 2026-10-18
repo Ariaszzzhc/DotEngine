@@ -58,17 +58,29 @@ single direct model child, so copied names and remapped native joint IDs remain
 independent. Walk to a station, perform the native masked inspection gesture, wait,
 then return. Arrival requires actual native feet near the station and grounded
 support; a player blocking the path cannot make the worker claim completion. Let
-the player move aside and normal capsule movement resumes. This is authored two-point
-duty, without navigation mesh planning or crowd avoidance. Choose clear routes.
+the player move aside and normal capsule movement resumes. Native navigation supplies
+static-obstacle corners for each trip; worker 7 crosses between [-2,0,0] and [2,0,0]
+by walking around the central obstruction. No crowd avoidance or jump-link planning.
+An unavailable route stops that worker and reports `routeFailure`; it never fabricates
+an arrival.
 
 Movement, collision, support and animation mixing remain native engine services.
 Script reload retains each worker's private duty state and native animation clocks;
-state migration only reads services and reconstructs private intent. Pausing freezes
+state migration only reads services and reconstructs private intent, including owned
+route corners, current corner and baked geometry identity. Pausing freezes
 all characters, and one simulation step advances them together. The game-state keys
-`crew:<entity value>` expose phase/target/actual arrival counts and are removed when
+`crew:<entity value>` expose phase/target/actual arrival counts and route failures and are removed when
 that level retires. They do not replace native pose/contact observations or persist
 an entire simulation. The crew level is a populated workflow example, not large-game
 scale evidence or final character/animation art.
+
+The crew scene binds `assets/maintenance.dotnav`, baked in the actual editor from its
+solid static collision geometry with a 0.1 m cell, 0.05 m height cell, 1.83 m agent
+height, 0.45 m planning radius, 0.3 m climb and 50 degree slope limit. Its four tiles
+contain 382 polygons. The planning radius deliberately leaves margin around the
+0.35 m native capsule. Edit stationary collision geometry, then rebake to a new
+asset path and bind/save it; stale resources reject Play. Moving characters and
+sensors are excluded from baking. See [navigation authoring](../../docs/Navigation.md).
 
 The four authored steps exercise traversal; the final taller rise requires jumping.
 Industrial utility cabinets and maintenance grilles are environmental props, without pickups,
