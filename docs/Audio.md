@@ -382,8 +382,8 @@ continues to reread all resources. Queued PCM retains its existing content.
 
 PreparedScene retains immutable PCM and the exact decoding limits. Its audio getter
 rejects consumers with different limits, preserving encoded-source budget semantics.
-GameSession's append/replacement worker uses that session's configured limits and
-first native binding adopts its proof. The second synchronization after Start uses
+GameSession's append/replacement worker and initial asynchronous editor Play use
+that session's configured limits, and first native binding adopts their proof. The second synchronization after Start uses
 ordinary refresh rules for script-authored changes. Synchronous initial session
 creation without a proof, later dynamic file reads, backend batches/activation and
 retirement still have their existing costs. This is bounded resource preparation,

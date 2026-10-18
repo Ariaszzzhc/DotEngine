@@ -452,8 +452,8 @@ namespace Dot::Project {
                                     const World::Scene& scene, const GameSessionConfig& config,
                                     std::optional<std::string> scenePath,
                                     Audio::Playback* preparedPlayback,
-                                    const Script::CompiledProgram* preparedProgram)
-      -> Core::Result<GameSession> {
+                                    const Script::CompiledProgram* preparedProgram,
+                                    const PreparedScene* preflight) -> Core::Result<GameSession> {
     auto valid = validate(config);
 
     if (!valid) {
@@ -473,7 +473,7 @@ namespace Dot::Project {
 
     auto cloned = World::decodeScene(*encoded);
     return cloned ? prepare(project, compiler, std::move(*cloned), config, std::move(scenePath),
-                            std::move(*encoded), preparedPlayback, preparedProgram)
+                            std::move(*encoded), preparedPlayback, preparedProgram, preflight)
                   : std::unexpected(cloned.error());
   }
 
@@ -482,8 +482,8 @@ namespace Dot::Project {
                             std::optional<std::string> scenePath,
                             std::optional<std::string> originBytes,
                             Audio::Playback* preparedPlayback,
-                            const Script::CompiledProgram* preparedProgram)
-      -> Core::Result<GameSession> {
+                            const Script::CompiledProgram* preparedProgram,
+                            const PreparedScene* preflight) -> Core::Result<GameSession> {
     try {
       auto description = project.description();
       auto files = project.files();
@@ -518,7 +518,7 @@ namespace Dot::Project {
 
       return prepareSession(*files, std::move(*description), std::move(scene), config, &compiler,
                             preparedProgram, std::move(scenePath), nullptr, std::move(origin),
-                            nullptr, preparedPlayback);
+                            nullptr, preparedPlayback, preflight);
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Prepare project session: " + std::string(error.what()));

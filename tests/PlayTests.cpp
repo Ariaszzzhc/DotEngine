@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "EnvironmentFixture.hpp"
 #include "SceneAudioFixture.hpp"
@@ -628,4 +629,105 @@ TEST_CASE("play.cancel_pending_compiler_reaps_process_without_game_hooks") {
   CHECK(Dot::Script::compilerGenerations() == generations);
   CHECK(Dot::Core::processResources().children == resources.children);
   CHECK(Dot::Core::processResources().handles == resources.handles);
+}
+
+TEST_CASE("play.initial_resources_use_unsaved_snapshot_and_native_assets_before_start") {
+  Fixture fixture;
+  auto files = fixture.project.files().value();
+  REQUIRE(files.writeTextAtomic("scripts/mover.ts",
+                                "import {audio,gameState,ScriptComponent} from 'dot:engine';"
+                                "export class Mover extends ScriptComponent {onStart(){"
+                                "gameState.set('initialAssets',audio.stats().assets);"
+                                "gameState.set('initialVoices',audio.stats().voices);}}"));
+  auto authoring = fixture.project.loadStartup().value();
+  const auto owner = authoring.entities()->at(1).id;
+  Dot::World::AudioSource source;
+  source.asset = "assets/unsaved.wav";
+  source.voice.looping = true;
+  REQUIRE(authoring.setAudioSource(owner, source));
+  DotTest::Audio::writeWave(files, source.asset, std::vector<float>(1024, .25F));
+  const auto before = Dot::World::encodeScene(authoring).value();
+  CHECK(fixture.project.loadStartup()->audioSources()->empty());
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config(),
+                                 "scenes/main.dotscene")
+                  .value();
+  REQUIRE(awaitPreparation(play, PlayState::Running));
+  CHECK(play.stats()->frames == 0);
+  CHECK(play.stats()->preparationCompileAttempts == 1);
+  auto data = play.gameData().value();
+  auto snapshot = nlohmann::json::parse(data.perform(R"({"command":"snapshot"})").value());
+  CHECK(snapshot["data"]["initialAssets"] == 1);
+  CHECK(snapshot["data"]["initialVoices"] == 1);
+  CHECK(Dot::World::encodeScene(authoring).value() == before);
+  REQUIRE(play.stop());
+  CHECK(fixture.project.loadStartup()->audioSources()->empty());
+  CHECK(Dot::World::encodeScene(authoring).value() == before);
+}
+
+TEST_CASE("play.initial_resource_failure_never_starts_and_keeps_cause_for_repaired_retry") {
+  Fixture fixture;
+  fixture.controller();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto owner = authoring.entities()->at(1).id;
+  Dot::World::AudioSource source;
+  source.asset = "assets/missing.wav";
+  REQUIRE(authoring.setAudioSource(owner, source));
+  const auto baseline = Dot::World::encodeScene(authoring).value();
+  auto play = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                  .value();
+  auto failed = awaitPreparation(play, PlayState::Running);
+  REQUIRE_FALSE(failed);
+  CHECK(failed.error().message.find("missing.wav") != std::string::npos);
+  CHECK_FALSE(play.stats()->started);
+  CHECK_FALSE(play.scene());
+  CHECK(play.lastFrame()->reports.empty());
+  REQUIRE(awaitPreparation(play, PlayState::Faulted));
+  CHECK(play.stats()->preparationError->message.find("missing.wav") != std::string::npos);
+  REQUIRE(play.stop());
+  DotTest::Audio::writeWave(fixture.project.files().value(), source.asset,
+                            std::vector<float>(1024, .25F));
+  auto retry = PlaySession::begin(fixture.project, fixture.compiler(), authoring, fixture.config())
+                   .value();
+  REQUIRE(awaitPreparation(retry, PlayState::Running));
+  CHECK(retry.stats()->started);
+  CHECK(retry.stats()->frames == 0);
+  REQUIRE(retry.stop());
+  CHECK(Dot::World::encodeScene(authoring).value() == baseline);
+}
+
+TEST_CASE("play.cancel_initial_resource_and_compiler_jobs_after_move_reaps_owned_work") {
+  Fixture fixture;
+  fixture.controller();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto owner = authoring.entities()->at(1).id;
+  Dot::World::AudioSource source;
+  source.asset = "assets/cancel.wav";
+  REQUIRE(authoring.setAudioSource(owner, source));
+  DotTest::Audio::writeWave(fixture.project.files().value(), source.asset,
+                            std::vector<float>(262144, .25F));
+  const auto baseline = Dot::World::encodeScene(authoring).value();
+  auto config = fixture.config();
+  config.temporarySavesParent = fixture.directory.files();
+  const auto entries = [&] {
+    return std::distance(std::filesystem::directory_iterator{fixture.directory.files().root()},
+                         std::filesystem::directory_iterator{});
+  };
+  const auto count = entries();
+  const auto generations = Dot::Script::compilerGenerations();
+  const auto resources = Dot::Core::processResources();
+  auto pending = PlaySession::begin(fixture.project, fixture.compiler(), authoring, config).value();
+  REQUIRE(pending.pollPreparation());
+  auto play = std::move(pending);
+  CHECK_FALSE(pending.pollPreparation());
+  REQUIRE(play.stop());
+  CHECK(play.stats()->state == PlayState::Cancelling);
+  REQUIRE(awaitPreparation(play, PlayState::Stopped));
+  CHECK_FALSE(play.stats()->started);
+  CHECK_FALSE(play.scene());
+  CHECK(play.lastFrame()->reports.empty());
+  CHECK(entries() == count);
+  CHECK(Dot::Script::compilerGenerations() == generations);
+  CHECK(Dot::Core::processResources().children == resources.children);
+  CHECK(Dot::Core::processResources().handles == resources.handles);
+  CHECK(Dot::World::encodeScene(authoring).value() == baseline);
 }

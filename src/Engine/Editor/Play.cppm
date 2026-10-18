@@ -25,7 +25,7 @@ import Dot.Script.LiveScripts;
 
 export namespace Dot::Editor {
   enum class PlayState { Running, Faulted, Stopped, Preparing, Cancelling };
-  enum class PlayPreparation { Audio, Scene, Activation, Teardown, Scripts };
+  enum class PlayPreparation { Audio, Scene, Activation, Teardown, Scripts, Resources };
 
   struct PlayConfig {
     PlayConfig() noexcept;
@@ -85,12 +85,19 @@ export namespace Dot::Editor {
      * only completed activation publishes Running. Stop cancels unpublished work
      * without hooks; keep polling until teardown finishes. Initial compilation
      * shares the owned snapshot worker with hot reload; changed captures retire
-     * obsolete work before owner-thread scene/script construction. Source capture
-     * and scene service setup still execute on the owner.
+     * obsolete work before owner-thread scene/script construction. CPU resource
+     * preflight/decoding runs on an independent owned worker using the frozen scene
+     * and exact audio limits. Cancellation reaps both CPU jobs before terminal state;
+     * native construction/Start wait for their completed proofs. Runtime scene access
+     * waits for activation. Source capture, cloning and native service setup still
+     * execute on the owner.
      * 冻结编辑内容并开始真实端点准备；轮询在所有者线程建立场景/脚本并检查原生激活，
      * 实际完成后才发布 Running。Stop 无钩子取消未发布工作，须持续轮询至清理结束。
      * 初次编译与热重载共用拥有的快照工作线程，改变的捕获使旧任务退休，再在所有者
-     * 线程构造场景/脚本；源码捕获和场景服务建立仍在所有者线程执行。 */
+     * 线程构造场景/脚本；独立拥有的资源工作线程以冻结场景及精确音频预算预检/解码。
+     * 取消须回收两个 CPU 任务才终止；原生构造/Start 等待准备完成，运行场景访问等待激活。
+     * 源码捕获、克隆及原生服务建立仍在所有者线程执行。
+     */
     [[nodiscard]] static auto begin(const Project::Project& project,
                                     const Script::TypeScriptCompiler& compiler,
                                     const World::Scene& authoring, const PlayConfig& config = {},

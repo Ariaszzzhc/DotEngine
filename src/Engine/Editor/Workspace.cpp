@@ -1623,7 +1623,8 @@ namespace Dot::Editor {
         status["started"] = stats.started;
 
         if (stats.preparation) {
-          constexpr std::array stages{"audio", "scene", "activation", "teardown", "scripts"};
+          constexpr std::array stages{"audio",    "scene",   "activation",
+                                      "teardown", "scripts", "resources"};
           status["preparation"] = stages.at(static_cast<std::size_t>(*stats.preparation));
         }
 
@@ -11838,8 +11839,10 @@ namespace Dot::Editor {
           ImGui::TextWrapped(stats.state == PlayState::Preparing
                                  ? (stats.preparation == PlayPreparation::Scripts
                                         ? "Preparing scripts; Stop cancels preparation."
+                                    : stats.preparation == PlayPreparation::Resources
+                                        ? "Preparing scene resources; Stop cancels preparation."
                                         : "Preparing Play; Stop cancels preparation.")
-                                 : "Cancelling Play; waiting for native services to close.");
+                                 : "Cancelling Play; waiting for preparation to finish.");
         }
 
         ImGui::BeginDisabled(stats.state != PlayState::Running || m_pendingClose);

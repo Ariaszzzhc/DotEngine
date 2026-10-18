@@ -374,7 +374,7 @@ while real audio initialization and initial source compilation run in owned work
 Only exact current source can seed the initial runtime; obsolete compilation is
 cancelled and replaced with the latest capture. Source capture, scene service setup
 and script construction still run on the owner, so this is not fully asynchronous
-scene loading. `preparation` reports scripts/audio/scene/activation/teardown while pending.
+scene loading. `preparation` reports scripts/resources/audio/scene/activation/teardown while pending.
 `preparationCompileAttempts` and `discardedScriptCompilations` count initial source
 jobs and obsolete results; running hot-reload attempts remain in `source`.
 `started` becomes true only after actual activation. Preparing locks
@@ -2752,3 +2752,33 @@ of a held input. Input/cancel acceptance is status, not completed gameplay.
 
 轻量状态查询与 Play 面板共用原生状态，不序列化编辑文档/运行世界，不推进时间或提交任务。
 使用当前会话标识轮询输入/生命周期；完整场景与画面仍通过 inspect-play 单独检查。
+
+
+Initial Play now starts an independent CPU scene-resource preparation job from the
+frozen authored bytes, alongside its existing compilation and deferred audio tasks.
+It validates graphics/skins and owns decoded animation/controller/collision/PCM/UI
+resources under the same limits used by scene transitions. The owner consumes that
+proof before native service/script construction; startup does not reread those
+initial binding resources. The initial snapshot can contain unsaved edits and does
+not save or borrow the live document. Source captures continue to invalidate obsolete
+script compilations while the frozen resource job remains owned by this Play request.
+Asset edits must be serialized through publication, as for scene transitions.
+
+Preparing exposes no runtime scene/game-data/animation/input controls. Stop and
+failure request cancellation of both CPU jobs and native teardown, then remain
+Cancelling until every owned task is reaped. Only real backend activation publishes
+Running. Resource failure retains its contextual cause and permits a fresh Play after
+cleanup; no component hooks run before initial native bindings succeed. The toolbar
+and strict play-status operation use the same actual preparation phase, including
+resources when resource work remains after compilation.
+
+Source capture, scene snapshot/cloning, native binding, script construction/Start,
+GPU residency and some teardown still have owner-thread costs. Synchronous PlaySession
+creation and standalone game startup retain their existing paths; this does not
+complete all startup, cancellation or streaming goals for every application entry.
+
+初次 Play 以冻结的未保存场景字节启动独立 CPU 资源任务，与编译及延后音频端点并行。
+CPU 准备完成前不构造脚本/执行 Start，设备激活后才发布运行场景；Stop/错误须回收全部
+拥有任务及原生清理才终止。
+工具栏与严格状态操作显示同一真实阶段。源码捕获、场景克隆、原生绑定及脚本构造仍有
+所有者线程开销；同步便利工厂和独立游戏启动路径仍待继续推进。

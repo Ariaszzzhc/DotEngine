@@ -14677,3 +14677,119 @@ logs/profiles/PNG, ordinary project/game and save. No release archive or generat
 art/audio is produced. Native desktop inspection still reports the locked Mac;
 mouse/keyboard/layout and subjective hearing acceptance remain unverified. Only
 macOS execution is claimed. Final art/audio and overall production goals remain open.
+
+## 2026-10-18 — Initial Play resource preparation
+
+Asynchronous editor Play now starts an owned ScenePreparation job from its frozen
+scene bytes, alongside existing source compilation and deferred endpoint preparation.
+It uses the exact session audio limits and retains a completed immutable proof while
+source changes invalidate/restart only obsolete compilations. The owner still checks
+current source provenance, then constructs native services/scripts using that proof.
+Initial animation/controllers, collision geometry, PCM and UI bindings do not reread
+files. Graphics/skin CPU checks run on the worker; GPU residency remains separate.
+The authoring snapshot can be unsaved and is never borrowed or saved by Play.
+
+GameSession::createFromScene accepts the same optional resource proof used by the
+existing transition path. Exact candidate/root and audio-limit validation remain
+mandatory. The convenience factory still clones the source into a fresh scope and
+keeps owned origin bytes for returns; no public entity identity, file format, script
+host inventory or SDK operation changes. Synchronous callers retain their existing
+path when no proof is supplied.
+
+Explicit Stop and preparation failure request cancellation of both owned CPU jobs
+and native teardown. Poll Cancelling until both workers are reaped and the endpoint
+is actually closed, then release proof/program/temp-save ownership and publish a
+terminal state. Move retains the original owner-thread contract. Native construction
+and Start wait for CPU proofs; Start still precedes audio activation, and runtime
+scene access waits for completed activation. Do not interpret Preparing as a promise
+that Start cannot already have run during its later activation phase. Resource/CPU
+failure before construction runs no component hooks.
+
+The shared toolbar/status producer exposes the real resources phase when compilation
+is ready but resource work remains. The toolbar describes resource preparation and
+cancellation without exposing internal worker details. Source capture, snapshot/
+cloning, native service setup and script construction/Start still have owner costs.
+Standalone game startup currently constructs its session before its main loop and
+needs coordinated startup-state/control work; it has not gained background initial
+resource preparation from this editor change.
+
+Validation on arm64 macOS:
+
+- Four new durable integration/compiler cases cover unsaved snapshot resource use
+  before Start, no publication/Start on missing audio with contextual failure and a
+  repaired fresh retry, cancellation after moving an active preparation with exact
+  temp-directory/compiler-generation/process-resource cleanup, and a native initial
+  proof owning animation/controller/collision/PCM after source corruption. The latter
+  checks actual PCM, controller state, scene/budget mismatch rejection, source
+  preservation and resource lifetime after the proof is released.
+- All twenty focused Play/initial-proof cases pass in 1.41 seconds, including the
+  existing source-change discard/recompile, native service ownership and failure
+  cases without weakened expectations. Strict compilation caught an ambiguous
+  Project name in the new fixture; qualify its namespace and rebuild.
+- Full Debug: 1663/1663 in 265.91 seconds. Full Release/NDEBUG: 1663/1663 in 37.88
+  seconds. Each has 535 unit and 1128 integration cases, including 258 compiler,
+  38 audio-native and 186 durable offscreen cases. Builds/tests/native workflows
+  run sequentially. No new target/dependency/windowed automated test, changed timeout,
+  increased budget or relaxed assertion/render threshold. Final review clarifies
+  the CPU-ready/Start/activation documentation without changing execution.
+
+Actual production evidence stays in ignored build/play-resource-review. Create a
+new ordinary PrismStartup project through the product creator and reuse the prior
+ordinary project's saved animated/collidable/spatial-audio ServiceAnnex and native
+assets. Edit/add the external gate and paused main voice through normal product
+operations, then save the 343-entity main. Its opt-in F10 diagnostics now explicitly
+clear retired room-voice fields and report presence, preserving accurate current
+observations after unload. Existing example tones remain byte-identical; no generated
+art/audio and no source-example edits.
+
+Queue real Play/Stop controls and poll to actual Stopped: started remains false,
+scope stays zero, no frames advance and one compile attempt confirms preparation
+began. Then edit the main audio component to an absent startup-tone path without
+saving. Play reaches actual Faulted with NotFound and the exact asset path, no runtime
+scene/scope publication and zero frames; inspect-play explicitly rejects. Preserve
+that expected failure and its raw diagnostic. Stop the retained failure, copy the
+existing tone to the missing path, and retry the same unsaved authoring snapshot.
+
+The successful retry's raw status timeline observes resources three times while
+started is false, then actual Running. Its native paused voice starts at source
+frame 100 and the gate starts once. Original scene-file bytes remain unchanged
+through cancellation, failure, repaired Play and Stop. The successful runtime uses
+the unsaved resource path, while Stop restores the exact unsaved authoring scene.
+Only a later explicit Save writes that authoring change.
+
+Actual D/F8/F9 gameplay keeps player value 7/scope 356, moves X from -3 to -2.573363,
+and changes entity/renderer-input counts 343/181 to 354/185 to 343/181. Native room
+animation, collision and spatial audio remain active with ready views/no errors;
+original paused audio stays at frame 100 and last-use removal restores one asset/
+voice with no room voice present. Capture and inspect actual 1480x574 pixels with
+the loaded-room HUD. F6/save, movement and F7/restore produce an 8.195639e-8 feet
+error at the unchanged 1e-5 bound.
+
+Save/export/relocate the ordinary game and hide only its owned authoring project
+through two fresh native processes. Both load/unload the room with real keys, native
+render/HUD completion and audio endpoint counters; native two restores native one's
+checkpoint with zero feet error, matching native one's own zero restore error.
+Loaded snapshots have 354 entities, 68/91 completed native frames, failureCount 0 and
+empty diagnostics. These exported games retain their existing synchronous initial
+startup path; this is gameplay/export regression evidence, not proof of responsive
+standalone startup. Restore the authoring path. All three owned product processes
+have actual exit 0 before close replies are consumed, every reply is ACKed and all
+closed endpoints/archives are explicitly cleared.
+
+Preserve initial-startup application profiling using lightweight status polling and
+full world reads afterward. Peak Prepare is 38.599833 ms, its same-frame total is
+39.582417 ms and peak Update is 1.553709 ms. This measures the whole editor's initial
+startup work and still exposes an owner-thread hitch; no controlled comparison with
+prior append timings, isolated decoder/constructor attribution, cold-cache, 60 Hz or
+completed startup-performance claim is made. Native binding/cloning and standalone
+startup state/control remain concrete next work.
+
+Verify all 2092 prior project/game/save guards unchanged and retain 2394 guarded
+files including this new 131-file project, 170-file game and save. Twenty current
+Debug/Release/kit/export Mach-O paths pass strict signing with exact kit/export game
+hashes. Remove owned temporary helpers after native completion, retaining raw control
+records, build/CTest logs, profile/timeline/error evidence, PNG and ordinary project/
+game/save. No release archive is produced. Desktop inventory still reports a locked
+Mac, so physical mouse/keyboard/layout and subjective hearing remain unverified.
+Only macOS execution is claimed; full streaming, final art/audio and overall production
+maturity remain open.

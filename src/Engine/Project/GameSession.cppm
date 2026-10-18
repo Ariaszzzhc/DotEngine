@@ -106,18 +106,21 @@ export namespace Dot::Project {
      * validation and must belong to this thread.
      * An optional compiled source generation skips compilation only after exact
      * provenance/current-source validation; source-watching sessions retain hot reload.
+     * Optional resource proof must match the exact frozen scene/root and audio limits;
+     * native bindings consume owned immutable assets without initial file fallback.
      * 克隆已校验的编辑场景到新范围，不保存也不借用源场景；资源/脚本仍以项目为根。
      * 提供来源路径时保留初始快照，返回该路径重建初始内容，与未保存内容的导出一致；
      * 可选端点须为本线程已就绪且未启动的延后播放，精确核对配置后转移所有权；
-     * 可选源码编译代须精确核对来源及当前源码才跳过编译，源码监听会话仍保留热重载。 */
-    [[nodiscard]] static auto createFromScene(const Project& project,
-                                              const Script::TypeScriptCompiler& compiler,
-                                              const World::Scene& scene,
-                                              const GameSessionConfig& config = {},
-                                              std::optional<std::string> scenePath = std::nullopt,
-                                              Audio::Playback* preparedPlayback = nullptr,
-                                              const Script::CompiledProgram* preparedProgram
-                                              = nullptr) -> Core::Result<GameSession>;
+     * 可选源码编译代须精确核对来源及当前源码才跳过编译，源码监听会话仍保留热重载；
+     * 可选资源证明须匹配精确冻结场景/根目录及音频预算，原生绑定拥有不可变资源且不回退首次读文件。
+     */
+    [[nodiscard]] static auto createFromScene(
+        const Project& project, const Script::TypeScriptCompiler& compiler,
+        const World::Scene& scene, const GameSessionConfig& config = {},
+        std::optional<std::string> scenePath = std::nullopt,
+        Audio::Playback* preparedPlayback = nullptr,
+        const Script::CompiledProgram* preparedProgram = nullptr,
+        const PreparedScene* preflight = nullptr) -> Core::Result<GameSession>;
     /** Start-ready session from an owned compiled generation, without reading
      * TypeScript or invoking a compiler. Description must disable hot reload;
      * authoring is cloned, and asset-root files must outlive the session.
@@ -252,7 +255,8 @@ export namespace Dot::Project {
                                       std::optional<std::string> scenePath,
                                       std::optional<std::string> originBytes = std::nullopt,
                                       Audio::Playback* preparedPlayback = nullptr,
-                                      const Script::CompiledProgram* preparedProgram = nullptr)
+                                      const Script::CompiledProgram* preparedProgram = nullptr,
+                                      const PreparedScene* preflight = nullptr)
         -> Core::Result<GameSession>;
     [[nodiscard]] static auto prepareSession(
         const Core::FileSystem& assets, Description description, World::Scene scene,

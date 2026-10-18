@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <expected>
 #include <filesystem>
 #include <limits>
@@ -32,6 +33,10 @@ import Dot.Game.Saves;
 import Dot.Physics.Body;
 import Dot.Animation.Clip;
 import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
+import Dot.Project.ScenePreparation;
+import Dot.Assets.Mesh;
+import Dot.Graphics.Geometry;
 
 namespace {
   using namespace Dot::Project;
@@ -989,5 +994,85 @@ TEST_CASE("game_session_prepared_live_generation_does_not_pin_old_scene_transiti
   CHECK_MESSAGE(result.state == Dot::Script::SceneRequestState::Succeeded,
                 (result.error ? result.error->message : "Scene replacement did not complete"));
   CHECK(session.scene().value()->id() != oldScope);
+  good(session.close());
+}
+
+TEST_CASE("game_session_initial_resource_proof_owns_native_data_and_rejects_mismatched_inputs") {
+  using namespace Dot;
+  Fixture fixture;
+  fixture.controller();
+  auto files = fixture.project.files().value();
+  auto authoring = fixture.project.loadStartup().value();
+  const auto entities = authoring.entities().value();
+  const auto cube = std::ranges::find(entities, "Cube", &World::EntityInfo::name);
+  REQUIRE(cube != entities.end());
+  REQUIRE(files.createDirectories("assets"));
+  REQUIRE(Assets::saveMesh(files, "assets/initial.dotmesh", Graphics::cube().value()));
+  auto body = *cube->rigidBody;
+  body.shape = Physics::Shape::Mesh;
+  body.motion = Physics::Motion::Static;
+  body.meshAsset = "assets/initial.dotmesh";
+  REQUIRE(authoring.setRigidBody(cube->id, body));
+  const auto owner = authoring.createEntity("Initial animation").value();
+  const auto target = authoring.createEntity("Initial target").value();
+  auto clip = Animation::Clip::create({"Initial",
+                                       {{0,
+                                         Animation::Path::Translation,
+                                         Animation::Interpolation::Linear,
+                                         {{0, {10, 0, 0, 0}}, {1, {12, 0, 0, 0}}}}}})
+                  .value();
+  const std::string path = "assets/initial.dotanimation";
+  const std::string graphPath = "assets/initial.dotcontroller";
+  REQUIRE(Animation::saveClip(files, path, clip));
+  auto graph = Animation::Controller::create({"Initial", "Idle", {}, {{"Idle", path}}, {}}).value();
+  REQUIRE(Animation::saveController(files, graphPath, graph));
+  World::AnimationPlayer properties{{path}, {{0, target.value}}};
+  properties.controller = graphPath;
+  REQUIRE(authoring.setAnimationPlayer(owner, properties));
+  const auto baseline = World::encodeScene(authoring).value();
+  auto job = Dot::Project::ScenePreparation::begin(files, "scenes/main.dotscene", baseline).value();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+
+  while (!job.ready().value()) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  std::optional<Dot::Project::PreparedScene> proof{job.take().value()};
+  auto tool = fixture.compiler();
+  auto program = tool.compileProject(files).value();
+
+  for (const auto& resource :
+       {path, graphPath, std::string("assets/initial.dotmesh"), std::string("assets/tone.wav")}) {
+    REQUIRE(files.writeTextAtomic(resource, "unavailable after background preparation"));
+  }
+
+  CHECK_FALSE(GameSession::createFromScene(fixture.project, tool, authoring, {}, std::nullopt,
+                                           nullptr, &program));
+  auto result = GameSession::createFromScene(fixture.project, tool, authoring, {},
+                                             "scenes/main.dotscene", nullptr, &program, &*proof);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  auto session = std::move(*result);
+  good(session.start());
+  std::vector<float> output(32);
+  REQUIRE(session.renderAudio(output));
+  CHECK(std::ranges::all_of(output, [](float sample) { return std::abs(sample - .125F) < 1e-5F; }));
+  CHECK(session.animationState(session.scene().value()->findEntity(owner.value).value())
+            ->controller->playback.state
+        == "Idle");
+  REQUIRE(authoring.renameEntity(target, "Changed after proof"));
+  auto stale = GameSession::createFromScene(fixture.project, tool, authoring, {}, std::nullopt,
+                                            nullptr, &program, &*proof);
+  REQUIRE_FALSE(stale);
+  CHECK(stale.error().code == Core::ErrorCode::InvalidArgument);
+  REQUIRE(authoring.renameEntity(target, "Initial target"));
+  auto config = GameSessionConfig{};
+  --config.audioLimits.clip.sourceBytes;
+  CHECK_FALSE(GameSession::createFromScene(fixture.project, tool, authoring, config, std::nullopt,
+                                           nullptr, &program, &*proof));
+  proof.reset();
+  REQUIRE(session.renderAudio(output));
+  CHECK(std::ranges::all_of(output, [](float sample) { return std::abs(sample - .125F) < 1e-5F; }));
+  CHECK(World::encodeScene(authoring).value() == baseline);
   good(session.close());
 }

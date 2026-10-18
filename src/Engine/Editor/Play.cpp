@@ -19,6 +19,7 @@ import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Files;
 import Dot.Project.GameSession;
+import Dot.Project.ScenePreparation;
 import Dot.Script.SceneScripts;
 import Dot.Script.Compilation;
 import Dot.World.SceneFiles;
@@ -65,6 +66,9 @@ namespace Dot::Editor {
       std::optional<Script::CompilationJob> compilation{};
       std::optional<Script::CompiledProgram> program{};
       bool obsolete{};
+      std::optional<std::string> sceneBytes{};
+      std::optional<Project::ScenePreparation> resources{};
+      std::optional<Project::PreparedScene> preflight{};
     };
 
     std::unique_ptr<Preparation> m_preparation;
@@ -259,6 +263,7 @@ namespace Dot::Editor {
       impl->m_preparation = std::make_unique<Impl::Preparation>(
           project, compiler, std::move(*cloned), std::move(ownedConfig), std::move(scenePath),
           std::nullopt);
+      impl->m_preparation->sceneBytes = std::move(*encoded);
       impl->m_frame.reports.reserve(config.maxUpdates + 1);
 
       if (config.session.audioMode == Project::SessionAudio::Playback) {
@@ -315,6 +320,10 @@ namespace Dot::Editor {
         pending.compilation->requestStop();
       }
 
+      if (pending.resources) {
+        pending.resources->requestStop();
+      }
+
       auto closing = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
                      : pending.playback ? pending.playback->requestClose()
                                         : Core::Result<void>{};
@@ -342,6 +351,21 @@ namespace Dot::Editor {
           pending.compilation.reset();
         }
 
+        if (pending.resources) {
+          auto ready = pending.resources->ready();
+
+          if (!ready) {
+            return fail(ready.error());
+          }
+
+          if (!*ready) {
+            return state;
+          }
+
+          pending.resources.reset();
+        }
+
+        pending.preflight.reset();
         pending.program.reset();
         auto closed = m_impl->m_session  ? m_impl->m_session->pollPreparationClosed()
                       : pending.playback ? pending.playback->pollClosed()
@@ -392,6 +416,38 @@ namespace Dot::Editor {
 
         if (!description || !files) {
           return fail(!description ? description.error() : files.error());
+        }
+
+        if (!pending.resources && !pending.preflight) {
+          auto job = Project::ScenePreparation::begin(
+              *files, pending.scenePath.value_or(description->startScene),
+              std::move(pending.sceneBytes), Project::ScenePreparationKind::Complete,
+              pending.config.session.audioLimits);
+
+          if (!job) {
+            return fail(job.error());
+          }
+
+          pending.resources.emplace(std::move(*job));
+        }
+
+        if (pending.resources) {
+          auto ready = pending.resources->ready();
+
+          if (!ready) {
+            return fail(ready.error());
+          }
+
+          if (*ready) {
+            auto proof = pending.resources->take();
+            pending.resources.reset();
+
+            if (!proof) {
+              return fail(proof.error());
+            }
+
+            pending.preflight.emplace(std::move(*proof));
+          }
         }
 
         auto captured = pending.compiler.captureProject(*files, description->scriptsDirectory);
@@ -457,6 +513,11 @@ namespace Dot::Editor {
           return state;
         }
 
+        if (!pending.preflight) {
+          m_impl->m_stats.preparation = PlayPreparation::Resources;
+          return state;
+        }
+
         if (pending.playback) {
           auto ready = pending.playback->pollReady();
 
@@ -473,9 +534,11 @@ namespace Dot::Editor {
         m_impl->m_stats.preparation = PlayPreparation::Scene;
         auto session = Project::GameSession::createFromScene(
             pending.project, pending.compiler, pending.scene, pending.config.session,
-            pending.scenePath, pending.playback ? &*pending.playback : nullptr, &*pending.program);
+            pending.scenePath, pending.playback ? &*pending.playback : nullptr, &*pending.program,
+            &*pending.preflight);
         pending.playback.reset();
         pending.program.reset();
+        pending.preflight.reset();
 
         if (!session) {
           return fail(session.error());
@@ -597,6 +660,10 @@ namespace Dot::Editor {
 
       if (pending.compilation) {
         pending.compilation->requestStop();
+      }
+
+      if (pending.resources) {
+        pending.resources->requestStop();
       }
 
       auto requested = m_impl->m_session  ? m_impl->m_session->requestPreparationClose()
