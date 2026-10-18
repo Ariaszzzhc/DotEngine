@@ -9,6 +9,7 @@ module;
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <span>
 #include <thread>
 #include <unordered_map>
@@ -37,6 +38,40 @@ namespace Dot::Physics {
       auto result = error;
       result.message = std::format("Physics entity {}: {}", entity.value, error.message);
       return std::unexpected(std::move(result));
+    }
+
+    auto validatePreparedMeshes(std::span<const MeshAsset> prepared) -> Core::Result<void> {
+      if (prepared.size() > 64) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Prepared collision meshes exceed 64 assets");
+      }
+
+      std::size_t bytes{};
+      std::set<std::string> paths;
+
+      for (const auto& asset : prepared) {
+        if (!Core::isPortableRelativePath(asset.path) || !asset.path.starts_with("assets/")
+            || !asset.path.ends_with(".dotmesh") || asset.path.size() > 1024
+            || !paths.insert(asset.path).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Invalid/duplicate prepared collision mesh path");
+        }
+
+        auto valid = asset.value.view();
+
+        if (!valid) {
+          return std::unexpected(valid.error());
+        }
+
+        if (asset.value.bytes() > 64 * 1024 * 1024 - bytes) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Prepared collision mesh capacity exceeded");
+        }
+
+        bytes += asset.value.bytes();
+      }
+
+      return {};
     }
 
     auto configuration(const BodyProperties& description, const Math::TransformParts& pose,
@@ -317,35 +352,10 @@ namespace Dot::Physics {
       result.m_impl->m_initialPrepared = prepared.has_value();
 
       if (prepared) {
-        if (prepared->size() > 64) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Prepared collision meshes exceed 64 assets");
-        }
+        auto valid = validatePreparedMeshes(*prepared);
 
-        std::size_t bytes{};
-        std::vector<std::string> paths;
-
-        for (const auto& asset : *prepared) {
-          if (!Core::isPortableRelativePath(asset.path) || !asset.path.starts_with("assets/")
-              || !asset.path.ends_with(".dotmesh") || asset.path.size() > 1024
-              || std::ranges::find(paths, asset.path) != paths.end()) {
-            return Core::fail(Core::ErrorCode::InvalidArgument,
-                              "Invalid/duplicate prepared collision mesh path");
-          }
-
-          auto valid = asset.value.view();
-
-          if (!valid) {
-            return std::unexpected(valid.error());
-          }
-
-          paths.push_back(asset.path);
-          bytes += asset.value.bytes();
-        }
-
-        if (paths.size() > 64 || bytes > 64 * 1024 * 1024) {
-          return Core::fail(Core::ErrorCode::Unavailable,
-                            "Prepared collision mesh capacity exceeded");
+        if (!valid) {
+          return std::unexpected(valid.error());
         }
 
         result.m_impl->m_meshes = std::move(*prepared);
@@ -366,6 +376,17 @@ namespace Dot::Physics {
   }
 
   auto SceneSimulation::synchronize(const Scene& scene) -> Core::Result<void> {
+    return synchronizeScene(scene, {});
+  }
+
+  auto SceneSimulation::synchronizePrepared(const Scene& scene, std::span<const MeshAsset> prepared)
+      -> Core::Result<void> {
+    return synchronizeScene(scene, prepared);
+  }
+
+  auto SceneSimulation::synchronizeScene(const Scene& scene,
+                                         std::optional<std::span<const MeshAsset>> prepared)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene simulation has been moved");
     }
@@ -389,6 +410,15 @@ namespace Dot::Physics {
         return std::unexpected(entities.error());
       }
 
+      if (prepared) {
+        auto valid = validatePreparedMeshes(*prepared);
+
+        if (!valid) {
+          return valid;
+        }
+      }
+
+      std::set<std::string> referencedMeshes;
       auto meshes = m_impl->m_meshes;
       std::unordered_map<std::uint64_t, Impl::Entry> desired;
       std::vector<BodyChange> changes;
@@ -400,6 +430,10 @@ namespace Dot::Physics {
       for (const auto& entity : *entities) {
         if (!entity.rigidBody) {
           continue;
+        }
+
+        if (prepared && entity.rigidBody->shape == Shape::Mesh) {
+          referencedMeshes.insert(*entity.rigidBody->meshAsset);
         }
 
         auto matrix = scene.worldTransform(entity.id);
@@ -429,12 +463,22 @@ namespace Dot::Physics {
           auto found = std::ranges::find(meshes, path, &MeshAsset::path);
 
           if (found == meshes.end()) {
-            if (m_impl->m_initialPrepared || !m_impl->m_files) {
-              return Core::fail(Core::ErrorCode::NotFound,
-                                "Collision mesh is not prepared: " + path);
-            }
+            auto loaded = [&]() -> Core::Result<TriangleMesh> {
+              if (prepared) {
+                const auto asset = std::ranges::find(*prepared, path, &MeshAsset::path);
 
-            auto loaded = loadCollisionMesh(*m_impl->m_files, path);
+                if (asset != prepared->end()) {
+                  return asset->value;
+                }
+              }
+
+              if (prepared || m_impl->m_initialPrepared || !m_impl->m_files) {
+                return Core::fail(Core::ErrorCode::NotFound,
+                                  "Collision mesh is not prepared: " + path);
+              }
+
+              return loadCollisionMesh(*m_impl->m_files, path);
+            }();
 
             if (!loaded) {
               return context(entity.id, loaded.error());
@@ -563,6 +607,15 @@ namespace Dot::Physics {
         if (!desiredCharacters.contains(key)) {
           characterChanges.push_back({entry.character, std::nullopt});
           characterKeys.push_back(key);
+        }
+      }
+
+      if (prepared) {
+        for (const auto& asset : *prepared) {
+          if (!referencedMeshes.contains(asset.path)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Unused prepared collision mesh: " + asset.path);
+          }
         }
       }
 

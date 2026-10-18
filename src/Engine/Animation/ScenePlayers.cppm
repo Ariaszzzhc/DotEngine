@@ -96,6 +96,14 @@ export namespace Dot::Animation {
      * starts at end); paused players leave authored pose untouched.
      * 有限秒数 [0,1]；首次推进应用自动播放起始姿态，反向从末尾开始，暂停保留编辑姿态。 */
     [[nodiscard]] auto advance(double seconds) -> Core::Result<void>;
+    /** Use complete decoded assets for newly bound/replaced enabled players in this
+     * update only; missing, duplicate or unused entries fail before binding commit.
+     * Unchanged players retain clocks and poses. Later changes refresh files normally.
+     * 本次更新中新建/替换的启用播放器须使用完整解码资源；缺项、重复或无用项在绑定提交前失败。
+     * 未变播放器保留时钟及姿态；后续变更仍按通常规则重读文件。 */
+    [[nodiscard]] auto advancePrepared(double seconds, std::span<const ClipAsset> decoded,
+                                       std::span<const ControllerAsset> controllers = {})
+        -> Core::Result<void>;
     [[nodiscard]] auto stats() const -> Core::Result<ScenePlayerStats>;
     /** Observational snapshot of the last synchronized player. Missing/disabled,
      * changed descriptions, foreign handles and retired scene scopes fail.
@@ -153,6 +161,9 @@ export namespace Dot::Animation {
                                             std::span<const ClipAsset> decoded,
                                             std::span<const ControllerAsset> controllers,
                                             bool prepared) -> Core::Result<ScenePlayers>;
+    [[nodiscard]] auto advancePlayers(double seconds, std::span<const ClipAsset> decoded,
+                                      std::span<const ControllerAsset> controllers, bool prepared)
+        -> Core::Result<void>;
     struct Impl;
     explicit ScenePlayers(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> m_impl;

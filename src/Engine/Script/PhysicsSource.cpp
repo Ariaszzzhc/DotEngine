@@ -8,6 +8,7 @@ module;
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -510,6 +511,16 @@ namespace Dot::Script {
   }
 
   auto PhysicsSource::synchronize() -> Core::Result<void> {
+    return synchronizeSource({});
+  }
+
+  auto PhysicsSource::synchronizePrepared(std::span<const Physics::MeshAsset> prepared)
+      -> Core::Result<void> {
+    return synchronizeSource(prepared);
+  }
+
+  auto PhysicsSource::synchronizeSource(std::optional<std::span<const Physics::MeshAsset>> prepared)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Physics source was moved");
     }
@@ -526,7 +537,8 @@ namespace Dot::Script {
       return capacity;
     }
 
-    auto result = m_impl->m_simulation.synchronize(*m_impl->m_scene);
+    auto result = prepared ? m_impl->m_simulation.synchronizePrepared(*m_impl->m_scene, *prepared)
+                           : m_impl->m_simulation.synchronize(*m_impl->m_scene);
     return result ? m_impl->publish() : result;
   }
 

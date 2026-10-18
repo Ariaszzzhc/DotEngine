@@ -2,6 +2,7 @@ module;
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 export module Dot.Physics.SceneSimulation;
@@ -86,6 +87,14 @@ export namespace Dot::Physics {
      * 校验目标绑定后批量修改；盒尺寸采用世界缩放绝对值，球/胶囊要求在 1e-5 相对容差内
      * 等比缩放，错切和不可表示的物理尺寸失败；位姿编辑表示传送，初始速度未改则保留当前运动。 */
     [[nodiscard]] auto synchronize(const Dot::World::Scene& scene) -> Core::Result<void>;
+    /** One synchronization supplies uncached collision geometry without disk fallback.
+     * Existing logical paths retain cached immutable geometry until reset. Supplied
+     * paths must be unique and referenced; the combined cache retains its 64/64 MiB bound.
+     * 单次同步提供未缓存碰撞几何且不回退磁盘；已有逻辑路径保留不可变缓存直至重置。
+     * 提供路径须唯一且被引用，合并缓存仍受 64 项/64 MiB 限制。 */
+    [[nodiscard]] auto synchronizePrepared(const Dot::World::Scene& scene,
+                                           std::span<const MeshAsset> prepared)
+        -> Core::Result<void>;
     /** Synchronize, advance, then atomically write world poses back as local TRS.
      * Parents are processed before children, preserving reflected scale signs.
      * Post-advance failures fault the service; reset is required to resume.
@@ -144,6 +153,9 @@ export namespace Dot::Physics {
         -> Core::Result<std::optional<SceneSphereHit>>;
 
   private:
+    [[nodiscard]] auto synchronizeScene(const Dot::World::Scene& scene,
+                                        std::optional<std::span<const MeshAsset>> prepared)
+        -> Core::Result<void>;
     struct Impl;
     explicit SceneSimulation(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

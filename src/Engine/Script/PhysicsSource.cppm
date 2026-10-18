@@ -3,6 +3,7 @@ module;
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 export module Dot.Script.PhysicsSource;
@@ -48,6 +49,10 @@ export namespace Dot::Script {
      * 修改后的捕获/序列化失败使源故障，须重置后继续，并拒绝旧接触批次。JSON 容量为
      * 1 字节..16 MiB，须适配消费 Runtime 的传输预算。 */
     [[nodiscard]] auto synchronize() -> Core::Result<void>;
+    /** One native synchronization consumes uncached geometry without disk fallback.
+     * 单次原生同步消费未缓存几何，不回退读文件。 */
+    [[nodiscard]] auto synchronizePrepared(std::span<const Physics::MeshAsset> prepared)
+        -> Core::Result<void>;
     [[nodiscard]] auto step(double seconds) -> Core::Result<void>;
     /** Advance 1 microsecond..1 second in equal slices <=250 ms, publishing one
      * batch containing every slice's contacts in order. Invalid duration has no
@@ -67,6 +72,8 @@ export namespace Dot::Script {
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
 
   private:
+    [[nodiscard]] auto synchronizeSource(
+        std::optional<std::span<const Physics::MeshAsset>> prepared) -> Core::Result<void>;
     struct Impl;
     explicit PhysicsSource(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;

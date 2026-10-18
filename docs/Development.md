@@ -14468,3 +14468,103 @@ so physical mouse/keyboard and panel-layout acceptance remain unverified. No
 Windows/Linux execution is claimed. Full background resource preparation/residency,
 remaining pacing, finished sci-fi art and overall engine/editor/game production
 maturity remain open; this stage does not complete the broader goal.
+
+## 2026-10-18 — Adopt prepared content resources
+
+Additive content now carries the worker-owned decoded animation clips/controllers
+and collision geometry through its first native service synchronization. Animation
+binds every newly enabled/replaced player's complete library and optional controller
+from that one update's supplied immutable handles, without file fallback. It checks
+portable paths, live handles, duplicates, unused entries and the aggregate reference
+bound before publishing candidate bindings. Unchanged players retain the same native
+animators, clocks and rest poses. Supplied handles do not become lifetime overrides;
+later description changes retain ordinary current-file refresh behavior.
+
+Physics consumes supplied geometry for uncached logical paths, retaining the existing
+immutable-per-path cache policy until reset/destruction. Supplying a cached path does
+not replace its geometry, recreate its body or reset motion. Validate unique portable
+paths/live geometry and reject unused resources before the native batch mutation;
+combined cached/new resources retain the 64-asset/64 MiB bound. Failed preparation
+retains native bindings/cache. These native-only scheduling operations preserve the
+script SDK and existing owner-thread/scope/contact publication rules.
+
+GameSession borrows the proof before World publication and copies immutable handles
+into its existing services during that first synchronization. The ordinary second
+synchronization after component Start handles script-authored changes using existing
+refresh behavior. Removal uses normal synchronization. Prepublication failures keep
+playing; failures after World publication remain committed session faults. Native
+binding, fragment grafting, audio decoding, GPU uploads and later dynamic resource
+reads still have owner-thread work. This does not complete streaming or whole-game
+performance goals and does not promise a filesystem snapshot.
+
+Validation on arm64 macOS:
+
+- Six enduring cases in existing integration/compiler targets cover prepared update
+  ownership after input handles clear and source files become unavailable, complete
+  controller coverage, clocks/poses, later file refresh, duplicate/unused/invalid
+  entries, writer/rigid-body authority, cached geometry identity by ray queries,
+  preserved velocity, failed reset, combined cache capacity, and real GameSession
+  append/animation/controller/mesh-collision/removal with both normal and live scripts.
+  Extend the existing exact 1024-reference case to retain boundary rejection and
+  verify an unchanged prepared update continues normally.
+- Full Debug CTest: 1653/1653 in 265.68 seconds. Full Release/NDEBUG: 1653/1653 in
+  37.49 seconds. Each has 535 unit and 1118 integration cases, including 186 durable
+  offscreen cases. No new target/dependency/device/window, timeout, budget or relaxed
+  assertion/render threshold. Builds, tests and actual applications run sequentially.
+- Strict compilation caught shadowed local names and missing explicit Core.Result
+  imports in tests; fix those. One initial boundary fixture expected service-level
+  rejection after adding a 1025th reference, but World already rejects that edit;
+  preserve the earlier boundary and test its rejection instead. The first focused
+  run passes ten of eleven cases before that fixture correction; final full runs
+  above include the corrected boundary and all six new cases.
+
+Actual production evidence is in ignored build/prepared-content-review. Create a new
+ordinary PrismPrepared project through the product creator. In the real editor,
+link two existing imported duct sources into a ten-entity ServiceAnnex, remove their
+box colliders, and attach a native mesh collider to an imported primitive using a
+separate logical path containing identical licensed source geometry. Create a native
+clip from the other duct root's authoring pose, add its middle translation key with
+the real animation editor, save/close the clip, create/apply its native controller,
+and save the source scene. No generated art or source-example changes. Add the
+normal external AnnexGate script and save the 343-entity main scene.
+
+The first product attempt authors all resources successfully but its helper sends
+an extra session field to command-only inspect-play. The strict interface rejects
+it; preserve that raw error and the first editor's actual exit 0. Fix only the
+caller and reopen the saved project for the complete run. Native desktop inventory
+again reports the Mac locked/automatic unlock unavailable. Human mouse/keyboard and
+layout acceptance remain unverified; normal product control and actual rendering
+remain usable.
+
+Actual Play retains player value 7/scope 83 and moves X from -2.854861 to -2.413401
+through D/F8. Entity counts go 343 to 354 to 343; renderer inputs go 181 to 185 to
+181, with ready views/no errors. The newly appended Service actuator's native Idle
+controller remains playing while its clip clock progresses from 0.608239 to 1.132792
+seconds. Its runtime translation differs from the saved pose. Capture and inspect
+actual 1480x574 pixels with the loaded-room HUD; unload through F9. F6/save, movement
+and F7/restore produce a 2.235174e-7 feet error at the existing 1e-5 bound. Stop restores
+the exact authoring scene.
+
+Export and relocate the ordinary game, hide only its owned authoring project, then
+run two fresh native processes against the same new save directory. Both load/unload
+the animated/collidable room via actual keys; native two restores native one's saved
+checkpoint. Native save/restore and fresh-process restore errors are 1.601875e-7.
+Loaded snapshots have 354 entities, actuator Y values 1.046643/1.030183, 26/50 actual
+completed native frames, HUD rasterizations, failureCount 0 and empty diagnostics.
+Restore the project path. All four owned product processes have actual exit 0 before
+close replies are read/ACKed; every reply is consumed and every endpoint is retired
+and cleared.
+
+Lightweight polling keeps full world observations outside the measured append
+interval. Preserve raw application profiling: peak Prepare 0.724875 ms, its same
+frame total 7.223125 ms, peak Update 2.073834 ms. These are this whole-editor run's
+observations, not isolated binding timings or a controlled comparison with earlier
+rooms; no cold-cache, 60 Hz or general throughput claim follows.
+
+Verify all 1496 prior guarded project/game/save files unchanged; retain 1792 guarded
+files including this new 128-file project, 167-file game and save. Verify twenty
+current Debug/Release/kit/export Mach-O paths with strict code signing, including
+exact kit/export DotGame hashes. Temporary orchestration helpers are removed only
+after native completion; raw requests/replies/ACKs, logs, profiles, PNG, ordinary
+project/game and save remain. No release archive is produced. Windows/Linux execution,
+final art, large-game maturity and remaining roadmap work are still open.

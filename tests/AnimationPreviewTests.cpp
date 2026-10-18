@@ -15,6 +15,7 @@ import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 import Dot.Animation.SkinFiles;
 import Dot.Math;
+import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AnimationPreview;
@@ -418,6 +419,13 @@ TEST_CASE("scene_players.prepared_library_accepts_the_full_scene_reference_bound
   REQUIRE(players->advance(.5));
   CHECK(scene->transform(target)->position.x == .5F);
   CHECK(players->stats()->channels == 1024);
+  const auto extraOwner = scene->createEntity("Over reference capacity").value();
+  const auto extraTarget = scene->createEntity("Independent target").value();
+  CHECK_FALSE(scene->setAnimationPlayer(
+      extraOwner, World::AnimationPlayer{{properties.clips[0]}, {{0, extraTarget.value}}}));
+  CHECK(players->state(owner)->playback.time == .5);
+  REQUIRE(players->advancePrepared(.25, {}));
+  CHECK(players->state(owner)->playback.time == .75);
   clips.push_back({"assets/extra.dotanimation", clip});
   CHECK_FALSE(Animation::ScenePlayers::createPrepared(scene, f.files, clips));
 }
@@ -558,4 +566,83 @@ TEST_CASE(
   REQUIRE(audition->seek(.5));
   CHECK(f.x(*audition) == 20.5F);
   CHECK(World::encodeScene(f.source).value() == before);
+}
+
+TEST_CASE("scene_players.prepared_updates_preserve_old_clocks_and_do_not_pin_new_resources") {
+  Fixture f;
+  auto scene = std::make_shared<World::Scene>(std::move(f.source));
+  auto players = Animation::ScenePlayers::create(scene, f.files).value();
+  REQUIRE(players.advance(.5));
+  const auto added = scene->createEntity("Added player").value();
+  const auto target = scene->createEntity("Added target").value();
+  auto properties = f.properties;
+  properties.targets = {{0, target.value}};
+  properties.controller = "assets/new.dotcontroller";
+  auto graph
+      = Animation::Controller::create({"Added", "Entry", {}, {{"Entry", properties.clips[0]}}, {}})
+            .value();
+  std::vector<Animation::ClipAsset> clips;
+
+  for (const auto& path : properties.clips) {
+    clips.push_back({path, Animation::loadClip(f.files, path).value()});
+    REQUIRE(f.files.writeTextAtomic(path, "unavailable after worker preparation"));
+  }
+
+  REQUIRE(scene->setAnimationPlayer(added, properties));
+  std::vector<Animation::ControllerAsset> graphs{{*properties.controller, graph}};
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  CHECK(players.stats()->players == 1);
+  CHECK(players.state(f.owner)->playback.time == .5);
+  CHECK(scene->transform(target)->position.x == 0);
+  REQUIRE(players.advancePrepared(.25, clips, graphs));
+  clips.clear();
+  graphs.clear();
+  CHECK(players.state(f.owner)->playback.time == .75);
+  CHECK(players.state(added)->playback.time == .25);
+  CHECK(players.state(added)->controller->playback.state == "Entry");
+  CHECK(scene->transform(target)->position.x == .25F);
+  REQUIRE(players.advancePrepared(.25, {}));
+  CHECK(players.state(f.owner)->playback.time == 1);
+  CHECK(players.state(added)->playback.time == .5);
+  properties.speed = 2;
+  REQUIRE(scene->setAnimationPlayer(added, properties));
+  const auto pose = World::encodeScene(*scene).value();
+  CHECK_FALSE(players.advance(0));
+  CHECK(World::encodeScene(*scene).value() == pose);
+  CHECK(players.state(f.owner)->playback.time == 1);
+}
+
+TEST_CASE("scene_players.prepared_update_rejections_preserve_binding_and_writer_ownership") {
+  Fixture f;
+  auto clip = Animation::loadClip(f.files, f.properties.clips[0]).value();
+  auto scene = std::make_shared<World::Scene>(std::move(f.source));
+  auto players = Animation::ScenePlayers::create(scene, f.files).value();
+  REQUIRE(players.advance(.5));
+  const auto owner = scene->createEntity("New player").value();
+  const auto target = scene->createEntity("New target").value();
+  World::AnimationPlayer properties{{"assets/new.dotanimation"}, {{0, target.value}}};
+  REQUIRE(scene->setAnimationPlayer(owner, properties));
+  std::vector<Animation::ClipAsset> clips{{properties.clips[0], clip}};
+  clips.push_back(clips.front());
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  clips.back().asset = "assets/unused.dotanimation";
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  clips.back().asset = "../assets/invalid.dotanimation";
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  clips.pop_back();
+  REQUIRE(scene->setRigidBody(target, World::RigidBody{}));
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  REQUIRE(scene->setRigidBody(target, std::nullopt));
+  properties.targets[0].entity = f.target.value;
+  REQUIRE(scene->setAnimationPlayer(owner, properties));
+  CHECK_FALSE(players.advancePrepared(.25, clips));
+  CHECK(players.stats()->players == 1);
+  CHECK(players.state(f.owner)->playback.time == .5);
+  CHECK(scene->transform(f.target)->position.x == .5F);
+  properties.targets[0].entity = target.value;
+  REQUIRE(scene->setAnimationPlayer(owner, properties));
+  REQUIRE(players.advancePrepared(.25, clips));
+  CHECK(players.stats()->players == 2);
+  CHECK(players.state(f.owner)->playback.time == .75);
+  CHECK(scene->transform(target)->position.x == .25F);
 }

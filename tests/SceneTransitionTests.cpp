@@ -14,6 +14,9 @@
 #include "ScenePreparation.hpp"
 #include "ScriptCompilation.hpp"
 
+import Dot.Animation.Clip;
+import Dot.Animation.Files;
+import Dot.Animation.ControllerFiles;
 import Dot.Core.Result;
 import Dot.Project;
 import Dot.Project.GameSession;
@@ -723,4 +726,60 @@ TEST_CASE("scene_transition.additive_publication_retains_dynamic_body_velocity")
                .epsilon(1e-6));
   good(session.close());
   good(reference.close());
+}
+
+TEST_CASE("scene_transition.additive_resources_bind_prepared_animation_controller_and_collision") {
+  for (const bool live : {false, true}) {
+    Fixture fixture(live);
+    auto files = fixture.project.files().value();
+    auto content = fixture.scene("Animated equipment");
+    auto collider = content.entities()->front().id;
+    auto body = *content.entity(collider)->rigidBody;
+    body.shape = Physics::Shape::Mesh;
+    body.motion = Physics::Motion::Static;
+    body.meshAsset = "assets/equipment.dotmesh";
+    REQUIRE(content.setRigidBody(collider, body));
+    REQUIRE(content.setTransform(collider, {{100, 0, 0}}));
+    REQUIRE(Assets::saveMesh(files, *body.meshAsset, Graphics::cube().value()));
+    const auto owner = content.createEntity("Machine").value();
+    const auto target = content.createEntity("Indicator").value();
+    auto clip = Animation::Clip::create({"Equipment cycle",
+                                         {{0,
+                                           Animation::Path::Translation,
+                                           Animation::Interpolation::Linear,
+                                           {{0, {10, 0, 0, 0}}, {1, {12, 0, 0, 0}}}}}})
+                    .value();
+    const std::string path = "assets/equipment.dotanimation";
+    const std::string graphPath = "assets/equipment.dotcontroller";
+    REQUIRE(Animation::saveClip(files, path, clip));
+    auto graph
+        = Animation::Controller::create({"Equipment", "Cycle", {}, {{"Cycle", path}}, {}}).value();
+    REQUIRE(Animation::saveController(files, graphPath, graph));
+    World::AnimationPlayer properties{{path}, {{0, target.value}}};
+    properties.controller = graphPath;
+    REQUIRE(content.setAnimationPlayer(owner, properties));
+    REQUIRE(World::saveScene(files, "scenes/equipment.dotscene", content));
+    auto session = fixture.session();
+    good(session.start());
+    const auto scope = session.scene().value()->id();
+    const auto request = session.appendScene("scenes/equipment.dotscene").value();
+    good(session.update(0));
+    good(Dot::Tests::awaitScene(session, request));
+    REQUIRE(session.sceneRequest(request)->committed);
+    auto scene = session.scene().value();
+    CHECK(scene->id() == scope);
+    auto nodes = scene->entities().value();
+    const auto indicator = std::ranges::find(nodes, "Indicator", &World::EntityInfo::name);
+    REQUIRE(indicator != nodes.end());
+    const auto x = scene->transform(indicator->id)->position.x;
+    CHECK(x >= 10);
+    good(session.update(.25));
+    CHECK(scene->transform(indicator->id)->position.x > x);
+    CHECK(fixture.observations.back()["bodies"] == 2);
+    const auto removed = session.removeScene(*session.sceneRequest(request)->root).value();
+    good(session.update(0));
+    CHECK(session.sceneRequest(removed)->committed);
+    CHECK(scene->entityCount().value() == 2);
+    good(session.close());
+  }
 }

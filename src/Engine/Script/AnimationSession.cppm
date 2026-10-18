@@ -42,6 +42,12 @@ export namespace Dot::Script {
     /** Native scheduling only; scripts cannot advance or recreate their players.
      * 仅原生调度，脚本不能推进或重建自己的播放器。 */
     [[nodiscard]] auto advance(double seconds) -> Core::Result<void>;
+    /** One native update consumes complete newly bound resources without disk fallback.
+     * 单次原生更新消费完整新绑定资源，不回退读文件。 */
+    [[nodiscard]] auto advancePrepared(double seconds,
+                                       std::span<const Animation::ClipAsset> decoded,
+                                       std::span<const Animation::ControllerAsset> controllers = {})
+        -> Core::Result<void>;
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
     /** The same observational native state transport used by the script SDK.
      * 与脚本 SDK 共用的只读原生状态传输。 */

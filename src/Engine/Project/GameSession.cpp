@@ -1111,8 +1111,23 @@ namespace Dot::Project {
     try {
       ActiveScope active{m_impl->m_active};
       std::optional<World::SceneAttachment> attachment;
+      std::span<const Animation::ClipAsset> clips;
+      std::span<const Animation::ControllerAsset> controllers;
+      std::span<const Physics::MeshAsset> meshes;
+      bool prepared = request.kind == Script::SceneRequestKind::Append;
 
       if (request.kind == Script::SceneRequestKind::Append) {
+        auto decoded = preflight->animationClips();
+        auto graphs = preflight->animationControllers();
+        auto geometry = preflight->collisionMeshes();
+
+        if (!decoded || !graphs || !geometry) {
+          return failed(!decoded ? decoded.error() : !graphs ? graphs.error() : geometry.error());
+        }
+
+        clips = *decoded;
+        controllers = *graphs;
+        meshes = *geometry;
         auto content = preflight->scene();
 
         if (!content) {
@@ -1148,13 +1163,15 @@ namespace Dot::Project {
       }
 
       const auto synchronize = [&]() -> Core::Result<void> {
-        auto physics = m_impl->m_physics->synchronize();
+        auto physics = prepared ? m_impl->m_physics->synchronizePrepared(meshes)
+                                : m_impl->m_physics->synchronize();
 
         if (!physics) {
           return std::unexpected(physics.error());
         }
 
-        auto animation = m_impl->m_animations->advance(0);
+        auto animation = prepared ? m_impl->m_animations->advancePrepared(0, clips, controllers)
+                                  : m_impl->m_animations->advance(0);
 
         if (!animation) {
           return std::unexpected(animation.error());
@@ -1163,6 +1180,7 @@ namespace Dot::Project {
         return m_impl->m_audio->synchronize();
       };
       auto ready = synchronize();
+      prepared = false;
 
       if (!ready) {
         return failed(ready.error());

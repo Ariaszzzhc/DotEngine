@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Physics.Mesh;
@@ -255,4 +256,97 @@ TEST_CASE("collision_mesh.native_resource_faces_paths_and_cancellation_are_stric
   REQUIRE(f.scene.setRigidBody(f.owner, body));
   REQUIRE(f.scene.setTransform(f.owner, {{}, {}, {.00001F, 1, 1}}));
   CHECK_FALSE(Physics::loadSceneCollisionMeshes(f.files, f.scene));
+}
+
+TEST_CASE("collision_mesh.prepared_updates_own_new_geometry_and_preserve_cached_paths_and_motion") {
+  MeshFixture f;
+  auto simulation = Physics::SceneSimulation::create(f.scene, {}, f.files).value();
+  auto moving = f.scene.createEntity("Moving body").value();
+  REQUIRE(f.scene.setTransform(moving, {{-10, 4, 0}}));
+  REQUIRE(f.scene.setRigidBody(moving, World::RigidBody{}));
+  REQUIRE(simulation.synchronize(f.scene));
+  REQUIRE(simulation.setVelocity(moving, {2, 3, 4}));
+  const auto motion = simulation.body(moving).value();
+  auto added = f.scene.createEntity("New collision resource").value();
+  auto body = *f.scene.entity(f.owner)->rigidBody;
+  body.meshAsset = "assets/new.dotmesh";
+  REQUIRE(f.scene.setRigidBody(added, body));
+  REQUIRE(f.scene.setTransform(added, {{10, 0, 0}}));
+  std::vector<Physics::MeshAsset> meshes{{*body.meshAsset, splitFloor()},
+                                         {"assets/solid.dotmesh", splitFloor()}};
+  REQUIRE(f.files.writeTextAtomic("assets/solid.dotmesh", "unavailable after preparation"));
+  REQUIRE(simulation.synchronizePrepared(f.scene, meshes));
+  meshes.clear();
+  CHECK(simulation.body(moving)->position == motion.position);
+  CHECK(simulation.body(moving)->velocity == motion.velocity);
+  REQUIRE(simulation.rayCast({0, 2, 0}, {0, -4, 0}).value());
+  CHECK_FALSE(simulation.rayCast({10, 2, 0}, {0, -4, 0}).value());
+  REQUIRE(simulation.rayCast({12, 2, 0}, {0, -4, 0}).value());
+  REQUIRE(simulation.synchronizePrepared(f.scene, {}));
+  REQUIRE(f.scene.setTransform(added, {{20, 0, 0}}));
+  REQUIRE(simulation.synchronize(f.scene));
+  REQUIRE(simulation.rayCast({22, 2, 0}, {0, -4, 0}).value());
+  CHECK_FALSE(simulation.reset(f.scene));
+  CHECK(simulation.body(moving)->velocity == motion.velocity);
+}
+
+TEST_CASE("collision_mesh.prepared_update_failures_do_not_mutate_native_bindings_or_cache") {
+  MeshFixture f;
+  auto simulation = Physics::SceneSimulation::create(f.scene, {}, f.files).value();
+  const auto added = f.scene.createEntity("New mesh").value();
+  auto body = *f.scene.entity(f.owner)->rigidBody;
+  body.meshAsset = "assets/new.dotmesh";
+  REQUIRE(f.scene.setRigidBody(added, body));
+  REQUIRE(f.scene.setTransform(added, {{10, 0, 0}}));
+  auto geometry = splitFloor();
+  std::vector<Physics::MeshAsset> meshes{{*body.meshAsset, geometry}};
+  CHECK_FALSE(simulation.synchronizePrepared(f.scene, {}));
+  meshes.push_back(meshes.front());
+  CHECK_FALSE(simulation.synchronizePrepared(f.scene, meshes));
+  meshes.back().path = "assets/unused.dotmesh";
+  CHECK_FALSE(simulation.synchronizePrepared(f.scene, meshes));
+  meshes.back().path = "../assets/invalid.dotmesh";
+  CHECK_FALSE(simulation.synchronizePrepared(f.scene, meshes));
+  meshes.pop_back();
+  meshes.front().value = {};
+  CHECK_FALSE(simulation.synchronizePrepared(f.scene, meshes));
+  CHECK(simulation.stats()->bodies == 1);
+  CHECK_FALSE(simulation.stats()->faulted);
+  REQUIRE(simulation.rayCast({0, 2, 0}, {0, -4, 0}).value());
+  CHECK_FALSE(simulation.body(added));
+  meshes.front().value = geometry;
+  REQUIRE(simulation.synchronizePrepared(f.scene, meshes));
+  CHECK(simulation.stats()->bodies == 2);
+  REQUIRE(simulation.rayCast({12, 2, 0}, {0, -4, 0}).value());
+}
+
+TEST_CASE("collision_mesh.prepared_update_enforces_combined_cache_capacity_before_mutation") {
+  MeshFixture f;
+  auto simulation = Physics::SceneSimulation::create(f.scene, {}, f.files).value();
+  auto body = *f.scene.entity(f.owner)->rigidBody;
+  std::vector<Physics::MeshAsset> meshes;
+  const auto geometry = splitFloor();
+
+  for (int index = 0; index < 63; ++index) {
+    auto owner = f.scene.createEntity("Prepared mesh").value();
+    body.meshAsset = "assets/extra" + std::to_string(index) + ".dotmesh";
+    REQUIRE(f.scene.setRigidBody(owner, body));
+    REQUIRE(f.scene.setTransform(owner, {{static_cast<float>(index * 10 + 10), 0, 0}}));
+    meshes.push_back({*body.meshAsset, geometry});
+  }
+
+  REQUIRE(simulation.synchronizePrepared(f.scene, meshes));
+  CHECK(simulation.stats()->bodies == 64);
+  auto overflow = f.scene.createEntity("Capacity overflow").value();
+  body.meshAsset = "assets/overflow.dotmesh";
+  REQUIRE(f.scene.setRigidBody(overflow, body));
+  const std::vector<Physics::MeshAsset> extra{{*body.meshAsset, geometry}};
+  auto rejected = simulation.synchronizePrepared(f.scene, extra);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Core::ErrorCode::Unavailable);
+  CHECK(simulation.stats()->bodies == 64);
+  CHECK_FALSE(simulation.stats()->faulted);
+  CHECK_FALSE(simulation.body(overflow));
+  REQUIRE(f.scene.setRigidBody(overflow, std::nullopt));
+  REQUIRE(simulation.synchronizePrepared(f.scene, {}));
 }

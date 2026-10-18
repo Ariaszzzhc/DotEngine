@@ -1136,9 +1136,18 @@ native synchronization or component construction/Start/Stop failure reports
 `committed:true` and faults the session; completed callbacks cannot be rolled back.
 Successful composition synchronizes existing services without replacing the realm
 or rebuilding physics. This is functional additive composition, not asynchronous
-GPU residency: fragment preparation, native binding, audio and dynamic asset
-synchronization still run on the owner and may reread resource files. Asset edits
-must be serialized through publication, as for scene replacement.
+GPU residency. The content worker owns decoded animation clips/controllers and
+collision geometry; the first native synchronization consumes these without file
+fallback for new bindings. Unchanged animation players retain clocks/rest poses;
+existing collision paths retain immutable cached geometry until reset. New paths
+share the 64-asset/64 MiB collision cache bound. Missing/duplicate/unused prepared
+resources fail explicitly. Preparation handles live only through this publication;
+later description replacements use ordinary refresh rules. A second synchronization
+after Start handles script-authored changes normally.
+
+Fragment grafting, native binding, audio decoding and dynamic asset synchronization
+still run on the owner; GPU uploads remain independent work. Asset edits must be
+serialized through publication, as for scene replacement.
 
 追加/卸载共享帧边界队列，接受请求不代表完成。实例保留精确成员所有权，来源全局设置与
 编辑链接不导入；已有玩家、脚本、物理及动画继续运行。发布前失败保留游戏，发布后同步或

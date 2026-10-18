@@ -226,13 +226,43 @@ namespace Dot::Animation {
       return ready ? player(owner) : std::unexpected(ready.error());
     }
 
-    auto synchronize() -> Core::Result<void> {
+    auto synchronize(std::span<const ClipAsset> decoded = {},
+                     std::span<const ControllerAsset> controllers = {}, bool prepared = false)
+        -> Core::Result<void> {
       try {
+        if (decoded.size() > 1024 || controllers.size() > 1024) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Prepared animation budget exceeded");
+        }
+
+        std::map<std::string, Clip> clips;
+        std::map<std::string, Controller> graphs;
+        std::set<std::string> usedClips, usedControllers;
+
+        for (const auto& asset : decoded) {
+          if (asset.asset.size() > 1024 || !asset.asset.starts_with("assets/")
+              || !asset.asset.ends_with(".dotanimation")
+              || !Core::isPortableRelativePath(asset.asset) || !Core::isValidUtf8(asset.asset)
+              || !asset.value.description() || !clips.emplace(asset.asset, asset.value).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid/duplicate prepared animation clip");
+          }
+        }
+
+        for (const auto& asset : controllers) {
+          if (asset.asset.size() > 1024 || !asset.asset.starts_with("assets/")
+              || !asset.asset.ends_with(".dotcontroller")
+              || !Core::isPortableRelativePath(asset.asset) || !Core::isValidUtf8(asset.asset)
+              || !asset.value.description() || !graphs.emplace(asset.asset, asset.value).second) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid/duplicate prepared animation controller");
+          }
+        }
+
         const auto descriptions = take(scene->animationPlayers());
         const auto protectedTransforms = take(characterAuthority());
         std::map<std::uint64_t, std::shared_ptr<Player>> candidate;
         std::set<std::uint64_t> writers;
-        std::size_t channels{}, keys{};
+        std::size_t channels{}, keys{}, references{};
 
         for (const auto& description : descriptions) {
           const auto& properties = description.properties;
@@ -241,6 +271,12 @@ namespace Dot::Animation {
             continue;
           }
 
+          if (properties.clips.size() > 1024 - references) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Scene animation exceeds 1024 clip references");
+          }
+
+          references += properties.clips.size();
           std::shared_ptr<Player> player;
           const auto previous = players.find(description.entity.value);
 
@@ -260,9 +296,20 @@ namespace Dot::Animation {
 
             for (std::size_t i = 0; i < properties.clips.size(); ++i) {
               const auto& path = properties.clips[i];
-              const auto decoded = m_decoded.find(path);
-              auto clip = decoded != m_decoded.end()
-                              ? decoded->second
+              const auto& available = prepared ? clips : m_decoded;
+              const auto assetFound = available.find(path);
+
+              if (prepared && assetFound == available.end()) {
+                return Core::fail(Core::ErrorCode::NotFound,
+                                  "Animation clip is not prepared: " + path);
+              }
+
+              if (prepared) {
+                usedClips.insert(path);
+              }
+
+              auto clip = assetFound != available.end()
+                              ? assetFound->second
                               : take(loadClip(assets, std::filesystem::path(std::u8string(
                                                           path.begin(), path.end()))));
               const auto& tracks = take(clip.description())->tracks;
@@ -293,9 +340,20 @@ namespace Dot::Animation {
 
             if (properties.controller) {
               const auto& path = *properties.controller;
-              const auto decoded = m_controllers.find(path);
-              auto loaded = decoded != m_controllers.end()
-                                ? decoded->second
+              const auto& available = prepared ? graphs : m_controllers;
+              const auto assetFound = available.find(path);
+
+              if (prepared && assetFound == available.end()) {
+                return Core::fail(Core::ErrorCode::NotFound,
+                                  "Animation controller is not prepared: " + path);
+              }
+
+              if (prepared) {
+                usedControllers.insert(path);
+              }
+
+              auto loaded = assetFound != available.end()
+                                ? assetFound->second
                                 : take(loadController(assets, std::filesystem::path(std::u8string(
                                                                   path.begin(), path.end()))));
               controller = take(loaded.reset());
@@ -403,6 +461,11 @@ namespace Dot::Animation {
           }
 
           candidate.emplace(description.entity.value, std::move(player));
+        }
+
+        if (prepared
+            && (clips.size() != usedClips.size() || graphs.size() != usedControllers.size())) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "Unused prepared animation assets");
         }
 
         players.swap(candidate);
@@ -524,6 +587,18 @@ namespace Dot::Animation {
   }
 
   auto ScenePlayers::advance(double seconds) -> Core::Result<void> {
+    return advancePlayers(seconds, {}, {}, false);
+  }
+
+  auto ScenePlayers::advancePrepared(double seconds, std::span<const ClipAsset> decoded,
+                                     std::span<const ControllerAsset> controllers)
+      -> Core::Result<void> {
+    return advancePlayers(seconds, decoded, controllers, true);
+  }
+
+  auto ScenePlayers::advancePlayers(double seconds, std::span<const ClipAsset> decoded,
+                                    std::span<const ControllerAsset> controllers, bool prepared)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Animation players were moved");
     }
@@ -539,7 +614,7 @@ namespace Dot::Animation {
                         "Animation delta must be finite seconds [0,1]");
     }
 
-    auto ready = m_impl->synchronize();
+    auto ready = m_impl->synchronize(decoded, controllers, prepared);
 
     if (!ready) {
       return ready;

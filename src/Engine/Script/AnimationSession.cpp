@@ -259,6 +259,14 @@ namespace Dot::Script {
                   : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
   }
 
+  auto AnimationSession::advancePrepared(double seconds,
+                                         std::span<const Animation::ClipAsset> decoded,
+                                         std::span<const Animation::ControllerAsset> controllers)
+      -> Core::Result<void> {
+    return m_impl ? m_impl->m_players.advancePrepared(seconds, decoded, controllers)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Animation session was moved");
+  }
+
   auto AnimationSession::state(World::EntityId owner) const
       -> Core::Result<Animation::ScenePlayerState> {
     return m_impl ? m_impl->m_players.state(owner)
