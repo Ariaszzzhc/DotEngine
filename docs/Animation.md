@@ -726,3 +726,52 @@ and PrismRelay's saved aligned reference/profile.
 旋转差，保留目标骨长及实例放置；未映射后代保持目标参考。可选择一个映射根的显式比例
 位移，但不提供自动姿态对齐、脚部锁定、IK 或物理根运动。准备任务不写文件，发布前重验
 输入和编辑场景；创建资源与 Inspector Apply 是两个明确步骤。
+
+
+## Capturing reference poses / 捕获参考姿态
+
+Pause isolated audition at the desired composed pose, then **Save pose as scene**
+in the animation controls. This creates ordinary editable `.dotscene` content under
+assets, using the selected preview player's complete subtree. The pose includes the
+base/controller, current cross-fade and ordered layers already sampled by native
+playback. Source scene, clip resources, clocks and preview generation stay unchanged.
+Saving requires exact authoring revision, preview session and generation, a healthy
+explicitly paused preview (or binding pose), and clean resource forms without another
+job/gesture/dialog. A naturally ended base alone is insufficient when the preview
+has not been explicitly paused.
+
+The native capture uses scene-content extraction, with a fresh identity container,
+compact entity values, internal skin/animation reference remapping and the selected
+owner's world origin removed from placement. Unlike generic subtree extraction,
+pose references retain the source environment for usable standalone PBR inspection;
+insertion still preserves the destination environment through ordinary content rules.
+Direct lights/AO/cameras outside the subtree are not invented or copied. Native
+references outside its subtree
+and sheared root flattening reject. It validates actual current CPU skin assets at
+the captured pose before publication; stale cached preflight is insufficient.
+Every copied animation player is disabled with autoplay off so loading animation
+services preserves this saved pose. The current preview scene's library/controller/layer descriptions and other
+components remain available for inspection/editing; live clocks are not serialized.
+Individual clip audition retains its explicitly detached controller in this copy. This freezes animation components;
+other behavior remains ordinary saved component data. Meshes, inverse bind matrices,
+skins, scripts and clip assets are referenced, not duplicated or rebound.
+
+The result is reusable posed content and a retarget reference, not a new skeleton
+bind, automatic rest-pose alignment or an animation clip edit. Open it through the
+normal scene tools to adjust bones, undo/redo and Save, then choose its reported
+player value in retarget reference inspection. Corresponding source/target physical
+postures still need review. Play or insert a captured rig with animation disabled
+to keep the saved pose; explicitly enabling a player starts its normal native library
+and controller semantics again.
+
+`AnimationPreview::capturePose` returns owned content, mapped owner and generation;
+retiring the preview leaves it valid. `Document::saveContentAs` shares native scene
+resource publication with selected-content saving: check authoring revision/project
+metadata, use the native 64 MiB scene budget, refuse existing files/aliases and
+preserve document history, dirty state, selection and allocator. Publication is an
+external resource write; scene Undo does not remove it.
+
+在暂停的实际合成姿态上保存普通场景参考；副本拥有自身身份，原文档、片段、时钟和代次
+不变。复制的动画组件关闭播放，保留其描述及其他组件；网格/蒙皮资源不复制、不重绑。
+先校验实际蒙皮，原生引用须在所有者子树内闭合。可用普通场景工具编辑骨骼、撤销和保存，
+再作为重定向参考；这不提供自动参考姿态对齐。

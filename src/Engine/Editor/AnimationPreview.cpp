@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
 #include <expected>
@@ -18,6 +19,7 @@ import Dot.Animation.ScenePlayers;
 import Dot.Assets.SceneSkins;
 import Dot.Core.Result;
 import Dot.World.SceneFiles;
+import Dot.World.SceneContent;
 
 namespace Dot::Editor {
   struct AnimationPreview::Impl {
@@ -360,6 +362,82 @@ namespace Dot::Editor {
     }
 
     return result;
+  }
+
+  auto AnimationPreview::capturePose(const Core::FileSystem& assets, std::string_view name,
+                                     std::uint64_t generation) const
+      -> Core::Result<AnimationPose> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Animation preview was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    auto state = m_impl->m_players.state(m_impl->m_owner);
+
+    if (!state) {
+      return std::unexpected(state.error());
+    }
+
+    if (m_impl->m_error || generation != m_impl->m_generation
+        || (!m_impl->m_bindPose && !state->playback.paused)) {
+      return Core::fail(Core::ErrorCode::InvalidState,
+                        "Capture requires the current generation of a paused, healthy preview");
+    }
+
+    try {
+      const std::array selected{m_impl->m_owner};
+      auto captured = World::extractSceneContent(*m_impl->m_scene, selected, name);
+
+      if (!captured) {
+        return Core::fail(captured.error().code,
+                          "Capture animation pose: " + captured.error().message);
+      }
+
+      const auto owner = std::ranges::find(captured->entities, m_impl->m_owner,
+                                           &World::ContentEntityMapping::source);
+
+      if (owner == captured->entities.end()) {
+        return Core::fail(Core::ErrorCode::InvalidState, "Captured animation owner is missing");
+      }
+
+      const auto value = owner->target.value;
+      auto environment = m_impl->m_scene->environment();
+      auto retained = environment ? captured->scene.setEnvironment(*environment)
+                                  : Core::Result<void>{std::unexpected(environment.error())};
+
+      if (!retained) {
+        return std::unexpected(retained.error());
+      }
+
+      auto players = captured->scene.animationPlayers().value();
+
+      for (auto& player : players) {
+        player.properties.enabled = false;
+        player.properties.playOnStart = false;
+        auto frozen = captured->scene.setAnimationPlayer(player.entity, player.properties);
+
+        if (!frozen) {
+          return std::unexpected(frozen.error());
+        }
+      }
+
+      auto valid = Assets::validateSceneSkins(assets, captured->scene);
+
+      if (!valid) {
+        return Core::fail(valid.error().code,
+                          "Captured pose skin validation: " + valid.error().message);
+      }
+
+      return AnimationPose{std::move(captured->scene), value, generation};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Capture animation pose: " + std::string(error.what()));
+    }
   }
 
   auto AnimationPreview::stats() const -> Core::Result<AnimationPreviewStats> {

@@ -2449,8 +2449,8 @@ namespace Dot::Editor {
     }
   }
 
-  auto Document::saveSelectionAs(std::string_view path, std::string_view name,
-                                 std::uint64_t revision) -> Core::Result<void> {
+  auto Document::saveContentAs(const World::Scene& content, std::string_view path,
+                               std::uint64_t revision) -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
     }
@@ -2473,6 +2473,28 @@ namespace Dot::Editor {
     }
 
     try {
+      auto encoded = World::encodeScene(content);
+      return encoded ? m_impl->publishScene(path, *encoded)
+                     : Core::Result<void>{std::unexpected(encoded.error())};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Publish scene content: " + std::string(error.what()));
+    }
+  }
+
+  auto Document::saveSelectionAs(std::string_view path, std::string_view name,
+                                 std::uint64_t revision) -> Core::Result<void> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
+    }
+
+    auto checked = m_impl->check(revision);
+
+    if (!checked) {
+      return checked;
+    }
+
+    try {
       std::vector<World::EntityId> selected;
 
       for (const auto id : m_impl->m_history[m_impl->m_cursor].selection) {
@@ -2480,14 +2502,8 @@ namespace Dot::Editor {
       }
 
       auto content = World::extractSceneContent(m_impl->m_scene, selected, name);
-
-      if (!content) {
-        return std::unexpected(content.error());
-      }
-
-      auto encoded = World::encodeScene(content->scene);
-      return encoded ? m_impl->publishScene(path, *encoded)
-                     : Core::Result<void>{std::unexpected(encoded.error())};
+      return content ? saveContentAs(content->scene, path, revision)
+                     : Core::Result<void>{std::unexpected(content.error())};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Save scene content: " + std::string(error.what()));

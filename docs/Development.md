@@ -15166,3 +15166,129 @@ Only arm64 macOS execution is claimed. Desktop remains locked, so human mapping
 controls, narrow layouts, dragging and subjective animation/contact quality are
 unverified. Automatic pose alignment/IK/contact correction, final art, streaming,
 large-game scale and overall production maturity remain unfinished.
+
+
+## 2026-10-18 — Editable references from sampled poses
+
+Continue the retarget authoring workflow from its concrete missing step: isolated
+native playback could show a composed pose, but saving selected scene content was
+correctly blocked in audition and could not save that sampled result. Add owned
+`AnimationPreview::capturePose`, shared `Document::saveContentAs` publication and
+animation controls' Save pose as scene with strict save-animation-pose.
+No new pose format, clip-key generator, rebind service or acceptance executable.
+
+Capture an explicitly paused/healthy or binding pose at its exact generation.
+Extract the selected preview owner's complete subtree with compact identities and
+internal skin/animation remapping; references outside it and sheared flattening
+reject. Disable animation/autoplay on every copied player; preserve current preview
+component descriptions, shared asset paths and other component settings. Live clocks
+are not serialized. Validate actual current CPU skin assets, not a cached creation
+proof. The returned scene owns its pose after preview/source retirement; capture
+never changes source, preview clock, layers, generation or files. Publication checks
+current document revision/project metadata, uses the existing native scene 64 MiB
+limit and refuses existing files/aliases. It preserves source history, selection,
+dirty state and entity allocator. Last successful pose metadata is separate from
+a failed later write; post-publication catalog errors explicitly say it was saved.
+
+The animation controls share the strict product operation for clip/controller and
+standalone audition. Pending forms/resources, running previews, stale session/
+generation/revision, conflicting jobs/gestures/dialogs and unsupported paths reject.
+Copied controller/library/layer descriptions reflect the preview scene; individual
+clip audition retains its deliberate detached controller. This is posed content,
+not an inverse-bind edit, automatic posture alignment or a change to clip keys.
+Other non-animation behavior remains ordinary component data rather than silently
+being stripped or claimed frozen.
+
+Focused regressions exercise composed layers and nested players, source/preview
+retirement, frozen native service replay, exact clocks/generation/source preservation,
+playing/stale/foreign-reference/thread/move/binding/fault cases, current skin removal
+and recovery, independently owned content publication without history/allocation
+changes, metadata/path/alias/baseline failures and a scene above generic 1 MiB text.
+All use existing CPU integration targets with no desktop windows/devices. Initial
+26 related cases and initial full Debug 1694/1694 pass. During actual inspection,
+standalone PBR content is nearly black because generic extraction omits environment.
+Keep the source environment specifically for pose-reference inspection; generic
+insertion still preserves destination environment, and no cameras/direct lights/AO
+are invented. Add environment-preservation coverage; 20 related cases pass after
+that correction. The final full results are recorded below.
+
+Actual Debug editor creates an ordinary PrismPose project and auditions Main Idle.
+Reject unknown fields, live capture, an old generation, existing paths and wrong
+resource roots. Save a paused Idle reference, then weight/play/seek Inspection and
+capture the actual layered result, and capture the authoring binding pose. Source
+scene/revision and paused preview pose/generation remain unchanged. Removing a real
+skin rejects without output; restoring exact bytes recovers. End audition, reopen
+captured scene, select/edit a real head joint, undo/redo/undo and save. A helper first
+omits selecting the joint and then loses its local variable during recovery; preserve
+the same live process, derive current state and correct those orchestration requests.
+No product bypass or timeout-based restart.
+
+The saved reference feeds the existing 51-pair native bake and returns 41 frames,
+63 nodes and 189 tracks. Publish/apply/save, audition actual new clip at .4 seconds,
+Play/Stop with exact authoring restoration, and export/relocate an ordinary Study
+game. Restore the study's default and close via actual owned process wait before
+ACK/retirement. Inspect actual standalone pixels rather than equating the valid
+bake to usable reference authoring: this reveals the environment omission above.
+
+After the environment correction, another actual Debug editor session rejects a
+changed project description without creating output, restores its exact bytes and
+captures a fresh Idle reference with the source HDR environment. Open/focus/capture
+its actual native pixels: the material and body shape are visible rather than the
+earlier black silhouette. Feed this reference through the same native 51-pair bake,
+publish/apply/save and retain genuine product outputs. Curate that scene and clip
+at the existing example reference/clip paths; no helper manufactures scene poses or
+keys. Native Idle sampling changes one stored rotation's normalization slightly;
+the re-baked SHA is recorded in Sources. Main, the original seven locomotion clips,
+GLBs and their licenses remain unchanged. The durable example regression validates
+frozen service replay and exact re-baking from the captured reference.
+
+A temporary macOS application wrapper contains a byte-identical current product
+binary solely to let computer use identify the running editor, not another engine
+executable/target. Desktop inventory is briefly available, but selecting the app
+returns macOS locked. Do not claim physical button acceptance. Complete the shared
+machine route in that same owned native app, verify unchanged document and preview
+generation, open/render the captured reference, then wait for actual exit/ACK/clear
+and remove the temporary wrapper. Three Debug native editor sessions have actual
+exit zero before close reply consumption. Final Debug 1694/1694 passes in 269.61
+seconds after the environment/example correction; formatting/diff checks and all
+3998 previous project/game/save guards pass. Final Release/product results follow.
+
+Release configure/build succeeds and full Release/NDEBUG passes 1694/1694 in
+38.61 seconds. Final totals are 547 unit and 1147 integration, including 265 compiler,
+39 audio-native and 186 durable offscreen cases. The five new CPU integration cases
+and extended example/fault cases use the existing test targets. Review covers owner
+thread/move/fault behavior, complete subtree ownership, generation/revision guards,
+frozen service replay, current skin preflight, native publication limits/errors,
+post-write catalog reporting, source environment policy and platform assumptions.
+
+Actual Release editor creates another ordinary project, captures paused Idle without
+changing authoring/preview generation, opens/focuses the standalone reference and
+inspects actual lit native pixels. The saved canonical reference prepares the same
+41/63/189 bake; discard Ready without creating a clip. Audition the re-baked saved
+slot 8, run real Study Play and Stop with exact authoring restoration, then export/
+relocate it. Restore Study default 7. Open Main, perform movement/jump, observe
+Grounded before checkpoint submission, inspect additive action while paused,
+complete one simulation step, resume and F6/move/F7. Restore feet error is zero;
+Stop restores exact authoring before exporting/relocating Main.
+
+Hide only the owned authoring path. Three sequential fresh native processes play
+the exported Study and exercise Main movement/jump/action/pause/step/checkpoint,
+then restore Main one's actual save in Main two. All three report completed native
+frames/HUD rasterizations, failureCount zero and empty diagnostics. Final completed
+frame counters are 23/274/33; these are workflow evidence, not timing/FPS claims.
+Editor, same-process native and cross-process feet errors are all zero at the
+unchanged 1e-5 bound. Restore the authoring path. Seven current owned native handles
+have actual exit zero, all 415 replies are ACKed and all seven retired endpoints
+are explicitly cleared. No current abandoned endpoint or timeout-based restart.
+
+All 3998 previous guards remain unchanged. Retain 4984 guarded ordinary project/
+game/save files, actual PNGs, raw replies, error/build/test logs and provenance under
+`build/pose-reference-review`. Thirty-four current Debug/Release/kit/export Mach-O
+paths pass strict signing; both Release game hashes match the current kit. Remove
+temporary orchestration/recovery/requests after native completion, retaining normal
+project scripts and outputs. No generated art/mesh tool, release archive or new
+acceptance target. Only macOS arm64 execution is verified. Physical save-button,
+text-field and narrow-layout acceptance remains unverified due macOS lock; the GUI
+uses the same compiled operation as the actual machine route. Automatic reference
+alignment, skeleton rebinding/IK/contact correction, final art, streaming and overall
+large-game production maturity remain unfinished.

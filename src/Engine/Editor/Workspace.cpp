@@ -631,6 +631,9 @@ namespace Dot::Editor {
     bool m_exportDialog{};
     bool m_exportDataOnly{};
     std::optional<AnimationPreview> m_animationPreview;
+    std::string m_posePath{"assets/pose-reference.dotscene"};
+    std::string m_poseName{"Animation pose reference"};
+    Json m_poseCapture{nullptr};
     std::optional<AnimationDocument> m_clipDocument;
     std::optional<ControllerDocument> m_controllerDocument;
     std::optional<UiSession> m_uiEditor;
@@ -5648,6 +5651,78 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "save-animation-pose") {
+        Codec::requireFields(parsed,
+                             {"command", "revision", "session", "generation", "path", "name"});
+        const auto document = m_document->stats().value();
+
+        if (!m_animationPreview || Codec::id(parsed["session"]) != m_animationSession
+            || Codec::id(parsed["revision"]) != document.revision || playing() || m_transform
+            || pendingInspector() || pendingEnvironment() || pendingOcclusion() || pendingText()
+            || m_pendingClose || m_captureDialog || m_sceneDialog || m_sourceUpdate || m_modelImport
+            || m_reimport || m_uiEditor) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Save pose requires the current clean preview and authoring revision, "
+                            "without another job/gesture/draft/dialog");
+        }
+
+        const auto preview = m_animationPreview->stats().value();
+        const auto path = parsed["path"].get<std::string>();
+        const auto name = parsed["name"].get<std::string>();
+
+        if (preview.source != document.scene || !Core::isPortableRelativePath(path)
+            || !path.starts_with("assets/") || !path.ends_with(".dotscene")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Save pose requires its source scene and a new assets .dotscene path");
+        }
+
+        auto captured = m_animationPreview->capturePose(m_project->files().value(), name,
+                                                        Codec::id(parsed["generation"]));
+
+        if (!captured) {
+          return std::unexpected(captured.error());
+        }
+
+        auto pose = Json{{"path", path},
+                         {"name", name},
+                         {"session", std::to_string(m_animationSession)},
+                         {"generation", std::to_string(captured->generation)},
+                         {"source", std::to_string(preview.source)},
+                         {"sourceOwner", std::to_string(preview.owner)},
+                         {"owner", std::to_string(captured->owner)},
+                         {"entities", captured->content.entities()->size()},
+                         {"clip", preview.player.clip},
+                         {"asset", preview.player.asset},
+                         {"time", preview.player.playback.time},
+                         {"bindPose", preview.bindPose}};
+        auto response = Json{{"ok", true}, {"pose", pose}}.dump();
+        auto selected = path;
+        auto published = m_document->saveContentAs(captured->content, path, document.revision);
+
+        if (!published) {
+          return std::unexpected(published.error());
+        }
+
+        m_poseCapture.swap(pose);
+        m_selectedResource.swap(selected);
+
+        try {
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(
+                refreshed.error().code,
+                "Animation pose saved; catalog refresh failed: " + refreshed.error().message);
+          }
+        } catch (const std::exception& error) {
+          return Core::fail(
+              Core::ErrorCode::External,
+              "Animation pose saved; catalog refresh failed: " + std::string(error.what()));
+        }
+
+        return response;
+      }
+
       if (command == "control-animation-preview-layer") {
         Codec::requireFields(parsed, {"command", "session", "name", "value"});
 
@@ -8051,6 +8126,7 @@ namespace Dot::Editor {
           {"sourceUpdate", m_sourceUpdate ? sourceUpdateStatus().value() : Json(nullptr)},
           {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
           {"animationRetarget", retargetStatus()},
+          {"animationPose", m_poseCapture},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
           {"capture", captureStatus()},
@@ -12422,6 +12498,37 @@ namespace Dot::Editor {
 
       if (nextButton("Frame model")) {
         action({{"command", "focus-view"}, {"entity", std::to_string(state->owner)}});
+      }
+
+      if (ImGui::TreeNode("Save pose as scene")) {
+        ImGui::TextWrapped(
+            "Save this paused pose as editable reference content with its source environment. "
+            "The copy freezes animation; "
+            "mesh/skin assets stay shared and other component settings are retained. "
+            "Source scene/clips stay unchanged. "
+            "This captures a pose, without rebinding a mesh or aligning reference poses.");
+        ImGui::InputText("Pose scene path", &m_posePath);
+        ImGui::InputText("Pose scene name", &m_poseName);
+        ImGui::BeginDisabled(state->error || (!state->bindPose && !state->player.playback.paused)
+                             || pendingText() || m_transform || m_pendingClose || m_captureDialog
+                             || m_sceneDialog || m_sourceUpdate || m_modelImport || m_reimport);
+
+        if (ImGui::Button("Save animation pose")) {
+          action({{"command", "save-animation-pose"},
+                  {"session", std::to_string(m_animationSession)},
+                  {"generation", std::to_string(state->generation)},
+                  {"path", m_posePath},
+                  {"name", m_poseName}});
+        }
+
+        ImGui::EndDisabled();
+
+        if (!m_poseCapture.is_null()) {
+          ImGui::TextWrapped("Last saved pose: %s",
+                             m_poseCapture["path"].get_ref<const std::string&>().c_str());
+        }
+
+        ImGui::TreePop();
       }
 
       animationLayerControls(*state);

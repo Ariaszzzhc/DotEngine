@@ -7,6 +7,7 @@
 #include <expected>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
@@ -18,6 +19,7 @@
 #include "ScriptCompilation.hpp"
 
 import Dot.Animation.Files;
+import Dot.Animation.ScenePlayers;
 import Dot.Animation.Layers;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationRetarget;
@@ -1639,6 +1641,16 @@ TEST_CASE("prism.saved_retarget_profile_rebakes_native_walk_without_changing_gam
   CHECK(target.front().entity == profile.targetEntity);
   CHECK(source.front().rig.nodes.size() == 67);
   CHECK(target.front().rig.nodes.size() == 67);
+  auto reference = Dot::World::loadScene(files, profile.targetScene).value();
+  const auto definitions = reference.animationPlayers().value();
+  REQUIRE(definitions.size() == 1);
+  CHECK_FALSE(definitions.front().properties.enabled);
+  CHECK_FALSE(definitions.front().properties.playOnStart);
+  const auto referenceBytes = Dot::World::encodeScene(reference).value();
+  auto referenceScene = std::make_shared<Dot::World::Scene>(std::move(reference));
+  auto staticPlayers = Dot::Animation::ScenePlayers::create(referenceScene, files).value();
+  REQUIRE(staticPlayers.advance(1));
+  CHECK(Dot::World::encodeScene(*referenceScene).value() == referenceBytes);
   auto original = Dot::Animation::loadClip(files, profile.clip).value();
   auto baked = Dot::Animation::retargetClip(source.front().rig, target.front().rig, original,
                                             profile.settings);

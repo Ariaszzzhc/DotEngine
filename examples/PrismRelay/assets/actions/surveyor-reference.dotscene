@@ -47,8 +47,8 @@
           "assets/surveyor/animations/6.dotanimation",
           "assets/actions/inspection.dotanimation"
         ],
-        "controller": "assets/locomotion.dotcontroller",
-        "enabled": true,
+        "controller": null,
+        "enabled": false,
         "layers": [
           {
             "clip": 7,
@@ -79,7 +79,7 @@
           }
         ],
         "looping": true,
-        "playOnStart": true,
+        "playOnStart": false,
         "speed": 1.0,
         "targets": [
           {
@@ -1128,9 +1128,9 @@
           5.6226352462829254e-09
         ],
         "rotation": [
-          0.0942542776465416,
+          0.094254270195961,
           0.7153381705284119,
-          0.05489235371351242,
+          0.054892346262931824,
           0.690213143825531
         ],
         "scale": [
@@ -2977,7 +2977,17 @@
       }
     }
   ],
-  "environment": null,
+  "environment": {
+    "asset": "assets/studio_small_09_1k.hdr",
+    "background": false,
+    "brdfSize": 128,
+    "diffuseSize": 32,
+    "intensity": 0.44999998807907104,
+    "radianceSize": 128,
+    "rotationDegrees": 30.0,
+    "samples": 512,
+    "specularSize": 128
+  },
   "name": "Surveyor locomotion reference",
   "nextEntity": "72",
   "occlusion": null,

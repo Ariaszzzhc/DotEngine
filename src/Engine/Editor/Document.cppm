@@ -218,12 +218,13 @@ export namespace Dot::Editor {
         -> Core::Result<void>;
     [[nodiscard]] auto undo(std::uint64_t revision) -> Core::Result<void>;
     [[nodiscard]] auto redo(std::uint64_t revision) -> Core::Result<void>;
-    /** Check project metadata and saved scene baseline before atomic replacement;
-     * external changes fail as conflicts. Callers must still serialize filesystem
-     * edits, since checking and replacement are not an OS compare-and-swap.
-     * Failed saves retain dirty/revision/history. 原子替换前检查项目描述与已保存场景
-     * 基线，外部修改作为冲突失败；检查及替换不是 OS 比较交换，仍须串行文件编辑。
-     * 保存失败保留未保存状态、版本与历史。 */
+    /** Publish independently prepared scene content under a new assets path, checking the
+     * current document revision/project metadata. No document, history, selection or allocator
+     * mutation; never replace an existing file. Content/native references use its own scope.
+     * 将独立准备的场景内容发布至新 assets 路径，核对文档版本及项目描述；不修改文档、
+     * 历史、选择或分配器，不覆盖已有文件；内容及原生引用使用自身范围。 */
+    [[nodiscard]] auto saveContentAs(const World::Scene& content, std::string_view path,
+                                     std::uint64_t revision) -> Core::Result<void>;
     /** Save selected subtree content to a new assets scene without changing the
      * active document, allocator, selection, revision or undo history. Existing
      * files/aliases are never replaced; native references must remain internal.
@@ -231,6 +232,12 @@ export namespace Dot::Editor {
      * 不替换已有文件/别名，原生引用须留在内容内部。 */
     [[nodiscard]] auto saveSelectionAs(std::string_view path, std::string_view name,
                                        std::uint64_t revision) -> Core::Result<void>;
+    /** Check project metadata and saved scene baseline before atomic replacement;
+     * external changes fail as conflicts. Callers must still serialize filesystem
+     * edits, since checking and replacement are not an OS compare-and-swap.
+     * Failed saves retain dirty/revision/history. 原子替换前检查项目描述与已保存场景
+     * 基线，外部修改作为冲突失败；检查及替换不是 OS 比较交换，仍须串行文件编辑。
+     * 保存失败保留未保存状态、版本与历史。 */
     [[nodiscard]] auto save(std::uint64_t revision) -> Core::Result<void>;
     /** Shared automation/UI protocol: inspect, edit, select/select-many,
      * duplicate-selection/delete-selection, group-selection/ungroup-selection,

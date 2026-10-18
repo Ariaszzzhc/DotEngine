@@ -2703,3 +2703,60 @@ TEST_CASE(
             ->total
         == 0);
 }
+
+TEST_CASE("document.prepared_scene_content_publishes_without_authoring_or_allocator_changes") {
+  Fixture f;
+  auto document = f.document();
+  edit(document, rename());
+  request(document, {{"command", "select"}, {"entity", "2"}});
+  const auto before = state(document);
+  auto content = Dot::World::Scene::create("Prepared reference").value();
+  const auto root = content.createEntity("Pose owner").value();
+  const auto joint = content.createEntity("Pose joint").value();
+  REQUIRE(content.setParent(joint, root));
+  REQUIRE(content.setTransform(joint, {{1, 2, 3}}));
+  const auto pose = Dot::World::encodeScene(content).value();
+  const auto current = revision(document);
+  REQUIRE(document.saveContentAs(content, "assets/Reference.dotscene", current));
+  const auto files = f.project().files().value();
+  CHECK(files.readText("assets/Reference.dotscene").value() == pose);
+  CHECK(state(document) == before);
+  CHECK_FALSE(document.saveContentAs(content, "assets/Reference.dotscene", current));
+  CHECK_FALSE(document.saveContentAs(content, "assets/reference.dotscene", current));
+  CHECK_FALSE(document.saveContentAs(content, "scenes/other.dotscene", current));
+  CHECK_FALSE(document.saveContentAs(content, "assets/../other.dotscene", current));
+  CHECK_FALSE(document.saveContentAs(content, "assets/missing/other.dotscene", current));
+  CHECK_FALSE(document.saveContentAs(content, "assets/stale.dotscene", current - 1));
+  bool rejected{};
+  std::thread worker(
+      [&] { rejected = !document.saveContentAs(content, "assets/thread.dotscene", current); });
+  worker.join();
+  CHECK(rejected);
+  auto retained = std::move(content);
+  CHECK_FALSE(document.saveContentAs(content, "assets/moved.dotscene", current));
+  auto metadata = f.project().description().value();
+  metadata.name = "Changed externally";
+  REQUIRE(files.writeTextAtomic("project.dotproject",
+                                Dot::Project::encodeDescription(metadata).value()));
+  CHECK_FALSE(document.saveContentAs(retained, "assets/conflicted.dotscene", current));
+  CHECK_FALSE(std::filesystem::exists(files.root() / "assets/conflicted.dotscene"));
+  CHECK(state(document) == before);
+}
+
+TEST_CASE("document.prepared_scene_content_uses_native_scene_size_limits") {
+  Fixture f;
+  auto document = f.document();
+  const auto before = state(document);
+  auto content = Dot::World::Scene::create("Large reference").value();
+
+  for (std::size_t i = 0; i < 2000; ++i) {
+    REQUIRE(content.createEntity("Reference node " + std::to_string(i)));
+  }
+
+  const auto bytes = Dot::World::encodeScene(content).value();
+  REQUIRE(bytes.size() > 1024 * 1024);
+  REQUIRE(document.saveContentAs(content, "assets/large-reference.dotscene", revision(document)));
+  CHECK(f.project().files()->readText("assets/large-reference.dotscene", 64 * 1024 * 1024).value()
+        == bytes);
+  CHECK(state(document) == before);
+}

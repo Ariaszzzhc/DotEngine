@@ -258,7 +258,8 @@ Inspector → Retarget animation can load `assets/actions/walk.dotretarget`. Its
 51 explicit pairs transfer the retained CC0 donor's native Walk_Loop from
 `assets/motion-source/model.dotscene` to the saved aligned reference
 `assets/actions/surveyor-reference.dotscene`. The latter is ordinary scene content
-saved from Main's current character pose through the editor. Both references have
+captured from Main's paused native Idle pose through the editor. Its animation is
+disabled/autoplay off so the saved reference remains static. Both references have
 67 bindings; the output bakes 41 samples at 30 Hz, 63 nodes and 189 TRS tracks.
 The original imported target reference has a different arm posture and must not be
 substituted without reviewing the pose. Matching names alone cannot align poses.
@@ -273,3 +274,18 @@ This is sampled offline transfer with explicit reference poses, without automati
 proportion correction, foot locking, IK or physics root motion. It does not replace
 the existing proportion-adjusted locomotion library or establish final character
 animation quality.
+
+To make a new reference from actual playback, open an individual Surveyor clip,
+pause/seek the desired pose and expand **Save pose as scene**. Choose a new
+`assets/...dotscene` path and save; the result includes the already composed layers.
+It freezes copied animation players and preserves shared mesh/skin references.
+End audition, open the saved scene, adjust bones with ordinary Inspector/undo/redo
+and Save, then select that scene/player as the retarget reference. Names alone do
+not match physical postures. The supplied `surveyor-reference.dotscene` now comes
+from paused native Idle sampling and remains static with animation disabled.
+
+This creates editable posed content; it does not alter inverse bind matrices, edit
+clip keys or provide automatic calibration. The captured file owns compact entity
+values, so use returned/inspected player values rather than Main's 589. Existing
+files and stale/playing previews reject; the authoring scene and clip files remain
+unchanged. See [pose capture controls](../../docs/Editor.md#saving-an-animation-pose-as-scene-content).

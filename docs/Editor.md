@@ -2844,3 +2844,34 @@ The result does not auto-detach an existing controller. Individual clip audition
 uses the ordinary clone; actual authoring flags/controller/layers survive creation.
 No automatic rest-pose alignment, feet/contact solver or real-time retarget playback
 is implied. See [retarget contracts](Animation.md#saved-motion-retargeting--保存的动作重定向).
+
+
+## Saving an animation pose as scene content
+
+In isolated animation controls (including an open clip or controller), pause at a
+reviewed pose, expand **Save pose as scene**, enter a new assets scene path/name
+and choose **Save animation pose**. Save/apply pending clip/controller edits first.
+The same strict product operation is:
+
+```json
+{"command":"save-animation-pose","revision":"12","session":"3","generation":"7","path":"assets/actions/idle-reference.dotscene","name":"Idle reference"}
+```
+
+Use current authoring revision and preview session/generation from inspect. Unknown
+fields/types, stale identities/generation, playing/faulted previews, other drafts,
+gestures/jobs/dialogs, invalid paths and existing files/aliases reject. The selected
+preview owner is authoritative; hierarchy selection does not change which player
+is captured. Capture preserves its current composed pose, native skin mappings and
+shared asset paths and source environment while disabling all copied animation/autoplay. Saved values are
+compact and may differ from the authoring scene; use the returned `pose.owner` for
+reference inspection or ordinary hierarchy selection after Open scene.
+
+Success returns pose with path/name/session/generation/source/sourceOwner/owner,
+entity count, clip/asset/time and bindPose. IDs and generations use decimal strings;
+clip/count/time use numbers. `workspace.animationPose` retains the last successfully
+saved result, rather than implying a later failed write succeeded. The operation
+never advances the preview generation, changes authoring history or writes keys.
+It creates a regular scene resource; end audition, Open scene to edit it, then use
+it in retargeting or insert it as ordinary scene content. A catalog failure after
+publication explicitly reports that the scene was saved. No new pose file format,
+mesh rebinding or automatic calibration is introduced.

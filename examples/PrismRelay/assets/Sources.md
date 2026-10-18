@@ -144,14 +144,15 @@ with the same source/license already recorded above. No new download, generated
 art, mesh conversion script or external animation bake was used for this addition.
 The imported bundle retains seven source clips, two skinned meshes, two skins and
 67 scene bindings for explicit reference inspection. `actions/surveyor-reference.dotscene`
-was saved as selected scene content from the existing Surveyor's aligned authoring
-pose through the product; it is distinct from the imported target's rest pose.
+was captured from the existing Surveyor's paused native Idle pose through the
+product, with animation disabled and autoplay off; it is distinct from the imported
+target's rest pose.
 
 `actions/walk.dotretarget` records 51 reviewed logical/name pairs, both saved
 reference scenes, native source Walk_Loop, 30/1 Hz sampling and mapped hips
 world-displacement scale 1. `actions/retargeted-walk.dotanimation` was created by
 the native editor retarget worker/publication and ordinary Inspector Apply/Save.
-SHA-256: `7526d60b60ccf0525aeea90170dd830201906fb95dc10c6430bfd5fa126ae748`.
+SHA-256: `b6e46f8e5fe2c6642435b8d7d912cb71f03588f10c8ac13d128c7767f119ece8`.
 It contains 41 samples × 63 joints × 3 TRS tracks, duration 1.333333373 seconds.
 The original GLBs and seven proportion-adjusted locomotion clips remain unchanged.
 Reference matching is explicit; this addition provides no automatic pose alignment,

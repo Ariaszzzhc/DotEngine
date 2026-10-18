@@ -27,6 +27,12 @@ export namespace Dot::Editor {
     std::optional<std::string> draft{};
   };
 
+  struct AnimationPose {
+    World::Scene content;
+    std::uint64_t owner;
+    std::uint64_t generation;
+  };
+
   /** Isolated animation audition using the same native players as game sessions.
    * Clone the complete scene, disable auto-play in the clone and pause every other
    * player. Their writer reservations and physics authority remain validated.
@@ -81,6 +87,20 @@ export namespace Dot::Editor {
      * 显式经过秒数 [0,1]，无隐藏时钟。原生采样失败保留有效姿态并使预览故障直至重建；
      * 无效控制保留姿态/状态，代数用于拒绝过期读回。 */
     [[nodiscard]] auto advance(double seconds) -> Core::Result<void>;
+    /** Capture the current explicitly paused/bind pose as owned reusable scene content.
+     * Require the exact preview generation; remap the selected owner's complete subtree and
+     * keep native references internal. Retain source environment for standalone viewing.
+     * Disable animation/autoplay in the copy so its sampled
+     * pose stays a reference. Preserve other components/assets, validate actual CPU skins and
+     * never mutate clocks, source, generation or files. Caller publishes separately. This is
+     * posing, not mesh rebinding or automatic rest-pose alignment; scene owner-thread rules apply.
+     * 将显式暂停/绑定姿态捕获为独立可复用场景内容；要求精确预览代次，重映射所有者完整
+     * 子树且原生引用须内部闭合，保留来源环境以供独立查看。副本关闭动画及自动播放，
+     * 保留其他组件/资产并以 CPU 校验
+     * 实际蒙皮。不修改时钟、来源、代次或文件，调用方单独发布；这是姿态捕获，不重绑网格
+     * 或自动对齐参考姿态，遵守场景所有者线程规则。 */
+    [[nodiscard]] auto capturePose(const Core::FileSystem& assets, std::string_view name,
+                                   std::uint64_t generation) const -> Core::Result<AnimationPose>;
     [[nodiscard]] auto stats() const -> Core::Result<AnimationPreviewStats>;
     [[nodiscard]] auto scene() const -> Core::Result<const World::Scene*>;
 

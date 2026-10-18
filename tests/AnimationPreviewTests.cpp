@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <limits>
@@ -183,6 +184,7 @@ TEST_CASE("animation_preview.invalid_controls_do_not_change_pose_clock_or_genera
   CHECK_FALSE(preview.bindPose());
   CHECK_FALSE(preview.configure(1, true));
   CHECK_FALSE(preview.advance(.1));
+  CHECK_FALSE(preview.capturePose(fixture.files, "Faulted", preview.stats()->generation));
   CHECK(moved.scene().value() == stable);
   REQUIRE(moved.play(0, true));
 }
@@ -645,4 +647,110 @@ TEST_CASE("scene_players.prepared_update_rejections_preserve_binding_and_writer_
   CHECK(players.stats()->players == 2);
   CHECK(players.state(f.owner)->playback.time == .75);
   CHECK(scene->transform(target)->position.x == .25F);
+}
+
+TEST_CASE("animation_preview.capture_pose_owns_composed_subtree_and_freezes_all_copied_players") {
+  Fixture f;
+  REQUIRE(f.source.setParent(f.target, f.owner));
+  REQUIRE(f.source.setTransform(f.owner, {{5, 0, 0}}));
+  REQUIRE(f.source.setEnvironment(World::Environment{"assets/reference.hdr", 2, 45, false}));
+  f.properties.layers = {{"Action", 1, {{0, Animation::Path::Translation}}, .5, 1, true, true}};
+  REQUIRE(f.source.setAnimationPlayer(f.owner, f.properties));
+  const auto nested = f.source.createEntity("Nested player").value();
+  const auto joint = f.source.createEntity("Nested joint").value();
+  REQUIRE(f.source.setParent(nested, f.owner));
+  REQUIRE(f.source.setParent(joint, nested));
+  REQUIRE(f.source.setAnimationPlayer(
+      nested, World::AnimationPlayer{{f.properties.clips[0]}, {{0, joint.value}}}));
+  const auto source = World::encodeScene(f.source).value();
+  auto preview = f.create();
+  REQUIRE(preview.seek(.5));
+  REQUIRE(preview.controlLayer("Action", Animation::SeekLayer{.5}));
+  const auto before = World::encodeScene(*preview.scene().value()).value();
+  const auto state = preview.stats().value();
+  CHECK(f.x(preview) == 10.5F);
+  auto captured = preview.capturePose(f.files, "姿态 reference", state.generation);
+  REQUIRE_MESSAGE(captured, (captured ? "" : captured.error().message));
+  CHECK(captured->generation == state.generation);
+  CHECK(captured->content.environment().value() == f.source.environment().value());
+  CHECK(captured->content.name().value() == "姿态 reference");
+  CHECK(captured->content.entityCount().value() == 5);
+  CHECK(
+      captured->content.transform(captured->content.findEntity(captured->owner).value())->position.x
+      == 0);
+  auto players = captured->content.animationPlayers().value();
+  REQUIRE(players.size() == 2);
+
+  for (const auto& player : players) {
+    CHECK_FALSE(player.properties.enabled);
+    CHECK_FALSE(player.properties.playOnStart);
+    CHECK(captured->content.findEntity(player.properties.targets.front().entity));
+  }
+
+  CHECK(preview.stats()->generation == state.generation);
+  CHECK(preview.stats()->player.playback.time == state.player.playback.time);
+  CHECK(preview.stats()->player.layers == state.player.layers);
+  CHECK(World::encodeScene(*preview.scene().value()).value() == before);
+  CHECK(World::encodeScene(f.source).value() == source);
+  preview = f.create();
+  f.source = World::Scene::create().value();
+  auto scene = std::make_shared<World::Scene>(std::move(captured->content));
+  auto runtime = Animation::ScenePlayers::create(scene, f.files).value();
+  CHECK(runtime.stats()->players == 0);
+  REQUIRE(runtime.advance(1));
+  const auto entities = scene->entities().value();
+  const auto target = std::ranges::find(entities, std::string{"Target"}, &World::EntityInfo::name);
+  REQUIRE(target != entities.end());
+  CHECK(target->transform.position.x == 10.5F);
+}
+
+TEST_CASE("animation_preview.capture_pose_rejects_live_stale_external_and_wrong_thread_sources") {
+  Fixture f;
+  auto external = f.create();
+  CHECK_FALSE(external.capturePose(f.files, "External", external.stats()->generation));
+  REQUIRE(f.source.setParent(f.target, f.owner));
+  auto preview = f.create();
+  const auto paused = preview.stats()->generation;
+  REQUIRE(preview.play(0, true));
+  CHECK_FALSE(preview.capturePose(f.files, "Playing", preview.stats()->generation));
+  REQUIRE(preview.pause());
+  CHECK_FALSE(preview.capturePose(f.files, "Stale", paused));
+  CHECK_FALSE(preview.capturePose(f.files, "", preview.stats()->generation));
+  bool rejected{};
+  const auto generation = preview.stats()->generation;
+  std::thread worker([&] { rejected = !preview.capturePose(f.files, "Wrong thread", generation); });
+  worker.join();
+  CHECK(rejected);
+  auto moved = std::move(preview);
+  CHECK_FALSE(preview.capturePose(f.files, "Moved", generation));
+  REQUIRE(moved.bindPose());
+  CHECK(moved.capturePose(f.files, "Bind pose", moved.stats()->generation));
+}
+
+TEST_CASE(
+    "animation_preview.capture_pose_revalidates_real_skin_and_retains_preview_after_failure") {
+  Fixture f;
+  REQUIRE(f.source.setParent(f.target, f.owner));
+  const auto mesh = f.source.createEntity("Skinned quad").value();
+  REQUIRE(f.source.setParent(mesh, f.owner));
+  REQUIRE(f.source.setMeshRenderer(mesh, World::MeshRenderer{World::MeshKind::Quad, {}}));
+  REQUIRE(f.source.setSkin(mesh, World::SkinBinding{"assets/quad.dotskin", {f.target.value}}));
+  auto skin = Animation::Skin::create(
+                  {std::vector<Math::Mat4>(1), std::vector<Animation::SkinInfluence>(4)})
+                  .value();
+  REQUIRE(Animation::saveSkin(f.files, "assets/quad.dotskin", skin));
+  auto preview = f.create();
+  REQUIRE(preview.seek(.5));
+  const auto state = preview.stats().value();
+  const auto before = World::encodeScene(*preview.scene().value()).value();
+  REQUIRE(preview.capturePose(f.files, "Valid skin", state.generation));
+  REQUIRE(std::filesystem::remove(f.files.root() / "assets/quad.dotskin"));
+  auto invalid = preview.capturePose(f.files, "Missing skin", state.generation);
+  REQUIRE_FALSE(invalid);
+  CHECK(invalid.error().message.find("skin validation") != std::string::npos);
+  CHECK(World::encodeScene(*preview.scene().value()).value() == before);
+  CHECK(preview.stats()->generation == state.generation);
+  CHECK_FALSE(preview.stats()->error);
+  REQUIRE(Animation::saveSkin(f.files, "assets/quad.dotskin", skin));
+  CHECK(preview.capturePose(f.files, "Recovered skin", state.generation));
 }
