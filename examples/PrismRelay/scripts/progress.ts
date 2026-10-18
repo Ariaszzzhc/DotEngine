@@ -1,4 +1,4 @@
-import {gameState, ui, type JsonValue, saves, scenes, type Vec3} from 'dot:engine';
+import {gameState, ui, type JsonValue, type SaveTicket, saves, scenes, type Vec3} from 'dot:engine';
 
 import {type CameraState, validateCameraState} from './camera';
 
@@ -54,26 +54,23 @@ export function checkpoint(value: JsonValue|undefined): RelayCheckpoint {
   };
 }
 
-export function saveCheckpoint(value: RelayCheckpoint): void {
+export function saveCheckpoint(value: RelayCheckpoint): SaveTicket<'write'> {
   const validated = checkpoint(value as unknown as JsonValue);
-  const previous = gameState.get(key);
-  gameState.set(key, validated as unknown as JsonValue);
-
-  try {
-    saves.write(slot, true);
-  } catch (error) {
-    if (previous === undefined) {
-      gameState.remove(key);
-    } else {
-      gameState.set(key, previous);
-    }
-
-    throw error;
-  }
+  const snapshot = gameState.snapshot();
+  snapshot.data[key] = validated as unknown as JsonValue;
+  return saves.write(slot, true, snapshot);
 }
 
-export function readCheckpoint(): RelayCheckpoint {
-  return checkpoint(saves.read(slot).data[key]);
+export function readCheckpoint(): SaveTicket<'read'> {
+  return saves.read(slot);
+}
+
+export function savedCheckpoint(value: RelayCheckpoint): void {
+  gameState.set(key, checkpoint(value as unknown as JsonValue) as unknown as JsonValue);
+}
+
+export function loadedCheckpoint(data: {[key: string]: JsonValue}): RelayCheckpoint {
+  return checkpoint(data[key]);
 }
 
 export function progressStatus(message: string): void {

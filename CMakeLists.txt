@@ -112,6 +112,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/PlayerControl.cpp
     src/Engine/Game/State.cpp
     src/Engine/Game/Saves.cpp
+    src/Engine/Game/SaveQueue.cpp
     src/Engine/Script/SceneFlow.cpp
     src/Engine/Script/GameData.cpp
     src/Engine/Project/GamePackage.cpp
@@ -275,6 +276,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/PlayerControl.cppm
         src/Engine/Game/State.cppm
         src/Engine/Game/Saves.cppm
+        src/Engine/Game/SaveQueue.cppm
         src/Engine/Script/SceneFlow.cppm
         src/Engine/Script/GameData.cppm
         src/Engine/Project/GamePackage.cppm

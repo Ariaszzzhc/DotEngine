@@ -13321,3 +13321,153 @@ external edit/restoration during preparation from changing which layout was revi
 After that refinement the relevant Debug checks and full Release suite pass again.
 The final editor completes another reviewed source-pose update to x=0.24, preserves
 the project material, applies and reverts to x=0.18 with complete bundle hashes.
+
+## Background save jobs (2026-10-18)
+
+Move gameplay save-slot reads, listings, writes and deletion off the game thread.
+Previously the script host and editor game-data controls directly scanned/read/
+flushed files during their frame callback. Add Dot.Game.SaveQueue with one owned
+FIFO worker, owned immutable request snapshots, process-unique nonreused IDs,
+retained terminal receipts, bounded outstanding count/payload reservations and
+explicit cancellation of pending work. Started mutations finish; cancellation never
+pretends they were rolled back. Worker-local Saves owns all disk access. A failed
+initial root opening can retry on a later request, without creating a fallback root.
+No State, World, script realm, audio or GPU handle crosses that worker boundary.
+The low-level synchronous Saves codec remains available to native tools/backends;
+it is no longer the gameplay host path.
+
+Replace the unpublished script disk API's immediate results with typed tickets and
+status/jobs/take/cancel. There is no synchronous compatibility fallback or unresolved
+Promise integration. Writes capture the submission state, or an explicitly supplied
+owned snapshot, with saved revision remaining provenance. A load validates its
+expected live revision on submission, reads in the worker, reports ready, and only
+publishes during a terminal take after checking that revision again. An intervening
+edit fails instead of being overwritten. Take consumes terminal receipts once and
+releases capacity. Read results do not implicitly mutate game state or scenes.
+Missing roots, corrupt files, capacity exhaustion and wrong/consumed ticket kinds
+remain explicit contextual errors, not empty data or fake success.
+
+GameData retirement rejects new work and drains/joins accepted operations before
+returning; explicit GameSession close reports unconsumed mutation failures. Retained
+service copies remain retired and cannot publish a late load. Quiescent retirement
+can run off the creator thread so destroying an owner still invalidates retained
+handles and completes accepted writes before root cleanup. Other service operations
+retain their creator-thread checks. Shutdown can wait for disk completion; asynchronous
+retirement, crash durability/recovery and external-process locking are not claimed.
+Normal gameplay no longer performs these filesystem operations in frame hooks;
+owner-thread snapshot serialization/normalization and load publication still cost CPU.
+
+Prism Relay constructs save payloads in an independent snapshot. Its live accepted
+checkpoint key changes only after write success; failures retain the previous key
+and slot. Unscaled frame polling keeps paused menus operational. Saving/loading
+captions remain pending until receipt completion, and duplicate menu buttons are
+disabled while busy. Pending ticket/schema data survives source migration; a permanent
+regression migrates an unobserved write and read receipt, verifies the same single
+job identity, then completes it in the new script instance without duplicate work.
+Native character/camera/animation restoration retains the previous game contract.
+
+Feature Lab camera checkpoints also use background jobs with explicit status and
+revision-checked application. Its SDK auditor sequences disk work across frames,
+preserves pending audit state across reloads, covers the new operations and avoids
+overwriting intervening live data during its load check. Update the editable coverage
+inventory and its extraction of generic SDK methods. Existing lifecycle/count checks
+observe actual additional frames and migrated components rather than assuming disk
+completion within the submitting frame.
+
+Editor Game state controls use the same strict game-data protocol. GUI-owned tickets
+are polled from frame preparation independently of panel visibility and renderer
+readiness, so switching tabs cannot strand a ready load. Scripts/agents retain their
+own tickets. Refresh slot metadata in the worker after completed GUI mutations;
+status display and cancellation observe memory. Failures reach both the panel and
+the ordinary editor message, including when the panel is hidden. No per-frame disk
+scan or separate UI storage implementation is introduced.
+
+Permanent filesystem/service regressions cover FIFO order, snapshot independence,
+normal read/write/list/remove, explicit overwrite failure and preserved old bytes,
+consumed/foreign identities, reservation recovery, malformed inputs/capacity bounds,
+queued cancellation versus already-started work, failed-root retry, destructor drain,
+quiescent foreign retirement, explicit snapshot writes without live-state mutation,
+and stale load rejection at publication. Pure protocol cases still create no files
+or devices; filesystem/compiler/example cases remain in existing integration targets.
+No automated test opens a desktop window. No dependency, compiler/linker override,
+installed public-header tree, detached worker or acceptance executable is added.
+
+Verification on arm64 macOS, retaining the caller's compiler/CPPFLAGS/LDFLAGS:
+
+- Debug full build/CTest before final retirement, migration and GUI refinements:
+  1565/1565 in 257.79 s. The final relevant Debug checks pass 17/17 in 2.87 s;
+  earlier expanded example/preparation checks also cover the migrated workflows.
+- Final Release full build/CTest with NDEBUG: 1567/1567 in 37.22 s; 502 pure unit /
+  1065 integration, including 186 offscreen GPU, 247 compiler, 37 native audio,
+  34 platform and 21 process cases. Builds and tests run sequentially. Known
+  runtime-kit install-name signature warnings are followed by the existing signing
+  step; no diagnostics, deadlines or assertions are disabled to obtain success.
+- Formatting, whitespace, module direction, thread/ownership, error publication,
+  capacities and platform review pass. Inspect actual relocated native linkage;
+  pinned C++ libraries remain executable-relative. No archive or release is made.
+
+Use new editable Prism and Feature Lab projects created through project-action.
+An ignored development app container holds the unchanged product editor executable
+and ordinary resources for macOS computer-use discovery; it adds no acceptance
+program or test hook. The actual editor is now discoverable by computer use. F5
+starts/stops Play; Tab, clipboard paste and Enter in the real Game state panel save
+`ui-checkpoint` (139 bytes) and load it after an intervening data edit, producing
+revision 4 with that edit removed. All GUI-owned receipts are consumed. Observe
+native and GUI pointer diagnostics: the virtual screenshot pointer request and
+SDL's retained coordinates differ, so the failed mouse click does not establish
+physical mouse behavior. Keyboard navigation provides independent actual evidence.
+
+With genuine game capture acknowledged and SDL text input inactive, hold native W
+through computer use for 500 ms: character position moves about 1.599974 m, with zero
+agent-input publications. Native F6 saves; native D moves about 0.959965 m away; native
+F7 restores exactly the retained checkpoint in the observation. Escape releases
+capture and F5 stops. No system input method is changed. This verifies the native
+keyboard path under these conditions, not every IME composition or mouse gesture.
+
+Through the real editor protocol, rename a linked fixture, undo/redo and save.
+Start fresh Play, move with structured input, save/move away/restore, and observe
+actual success captions only after job completion. Retain an agent write receipt
+across two real source-watcher edit/restoration generations and then take it.
+An intervening state edit defeats a ready load, preserving the edit; duplicate-slot
+write failure is explicit. Both receipts are consumed, no script diagnostics remain,
+and a real game-view PNG shows the restored checkpoint. Stop and export the saved
+project. The final editor also completes direct background write/load with score
+7 → 9 → 7 and exports the final native kit. The final visibility-independent polling/
+notification refinement has code, product and test evidence; the later computer-use
+retry reports the Mac locked, so its graphical recheck remains unverified.
+
+Relocate the final game, hide only its owned authoring tree, and run two new native
+processes against isolated persistent storage. In the first, save a moved character,
+then actually rename the owned save directory away. A new F6 request reports the
+real unavailable-root error; prior slot bytes and accepted live checkpoint stay
+unchanged. Restore the directory, move away and F7 restore. A second new process
+independently restores the same checkpoint. Both recorded restored feet exactly
+match persisted coordinates, both processes exit 0, native text rasterizes, no script
+failures remain, and all 162 exported file hashes stay unchanged. Restore authoring.
+Preserve all 25 prior guarded saves plus the new native slot, for 26 guarded files.
+
+Run the actual Feature Lab editor Play and inspect its live report: 163 declared
+runtime SDK members and 189 observed checks, including the four new save operations
+and 19 intentional expected errors. Its disk audit completes without outstanding
+receipts. Observe onStop after stopping the same live session, obtaining one stop
+and complete declared coverage in its retained scene. An initial driver waited for
+that shutdown-only check while still running; retain the timeout evidence, confirm
+the original native process/session remains live, and continue it rather than
+restarting. Actual Stop/close succeeds and temporary Play storage retires.
+
+Keep raw requests/responses, live/retired observations, image, editable projects,
+exports, profiles, binary/file fingerprints and checkpoints in ignored
+build/save-jobs-review. Remove owned request helpers/bytecode and the temporary
+app container after verification; preserve caches, reference assets and source art.
+Only source scripts/docs/coverage are intentionally updated in the example trees.
+Windows/Linux remain unvalidated. Resource streaming, remaining owner CPU/startup
+costs, asynchronous retirement, crash recovery and the broader engine/art/editor
+production goal remain open.
+
+Final pre-commit verification confirms all 26 guarded save hashes and all 162
+relocated game-file hashes unchanged, restored authoring/storage directories and no
+owned staging residue. Record all six Debug/Release product binary hashes and
+executable-relative native C++ linkage. Remove only the five owned request helpers,
+their bytecode and the temporary development app; retain raw evidence and projects.
+Formatting/whitespace and the ownership, error, capacity and platform diff review
+pass; the configured remote has not advanced during this stage.

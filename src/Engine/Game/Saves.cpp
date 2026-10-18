@@ -31,12 +31,6 @@ namespace Dot::Game {
     namespace Fs = std::filesystem;
     using Json = Serialization::Detail::Json;
 
-    auto slotValid(std::string_view slot) -> bool {
-      return !slot.empty() && slot.size() <= 64 && std::ranges::all_of(slot, [](unsigned char c) {
-        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-      }) && Core::isPortableRelativePath(std::string(slot) + ".dotsave");
-    }
-
     auto utf(const Fs::path& path) -> std::string {
       const auto text = path.generic_u8string();
       return {text.begin(), text.end()};
@@ -88,6 +82,12 @@ namespace Dot::Game {
     }
   }  // namespace
 
+  auto validateSaveSlot(std::string_view slot) -> bool {
+    return !slot.empty() && slot.size() <= 64 && std::ranges::all_of(slot, [](unsigned char c) {
+      return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    }) && Core::isPortableRelativePath(std::string(slot) + ".dotsave");
+  }
+
   struct Saves::Impl {
     Core::FileSystem m_root;
     SaveLimits m_limits;
@@ -136,7 +136,7 @@ namespace Dot::Game {
 
         const auto slot = name.substr(0, name.size() - 8);
 
-        if (!slotValid(slot) || name != slot + ".dotsave") {
+        if (!validateSaveSlot(slot) || name != slot + ".dotsave") {
           return Core::fail(Core::ErrorCode::InvalidArgument,
                             "Noncanonical save filename: " + name);
         }
@@ -203,7 +203,7 @@ namespace Dot::Game {
     }
 
     try {
-      if (!slotValid(slot)) {
+      if (!validateSaveSlot(slot)) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid lowercase save slot name");
       }
 
@@ -257,7 +257,7 @@ namespace Dot::Game {
     }
 
     try {
-      if (!slotValid(slot) || snapshot.revision == 0
+      if (!validateSaveSlot(slot) || snapshot.revision == 0
           || snapshot.revision == std::numeric_limits<std::uint64_t>::max()) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid save slot/snapshot revision");
       }
@@ -310,7 +310,7 @@ namespace Dot::Game {
     }
 
     try {
-      if (!slotValid(slot)) {
+      if (!validateSaveSlot(slot)) {
         return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid lowercase save slot name");
       }
 

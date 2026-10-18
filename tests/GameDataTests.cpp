@@ -64,7 +64,7 @@ TEST_CASE("game_data.shared_moves_threads_and_retirement_keep_only_owned_observa
   });
   CHECK(foreign.get());
   auto bindings = shared.bindings().value();
-  moved.retire();
+  REQUIRE(moved.retire());
   CHECK(perform(shared, {{"command", "snapshot"}})["data"]["count"] == 2);
   CHECK_FALSE(shared.perform(R"({"command":"set","key":"count","value":3})"));
   CHECK_FALSE(shared.perform(R"({"command":"list-saves"})"));
@@ -77,12 +77,13 @@ TEST_CASE("game_data.shared_moves_threads_and_retirement_keep_only_owned_observa
 TEST_CASE("game_data.host_transport_and_preparation_access_are_explicit") {
   auto data = GameData::create().value();
   auto bindings = data.bindings().value();
-  REQUIRE(bindings.size() == 10);
+  REQUIRE(bindings.size() == 14);
 
   for (auto& binding : bindings) {
     CHECK_FALSE(binding.callback("{}"));
     CHECK_FALSE(binding.callback("[true,true,true]"));
-    const bool read = binding.name == "gameState.get" || binding.name == "gameState.snapshot";
+    const bool read = binding.name == "gameState.get" || binding.name == "gameState.snapshot"
+                      || binding.name == "saves.jobs" || binding.name == "saves.status";
     CHECK((binding.access == Dot::Script::HostAccess::ReadOnly) == read);
   }
 
@@ -94,10 +95,10 @@ TEST_CASE("game_data.host_transport_and_preparation_access_are_explicit") {
   auto response = reader->callback(R"(["value"])").value().value();
   CHECK(Json::parse(response)["value"]["x"] == Json::array({1, true, nullptr}));
   Dot::Script::GameDataConfig limits;
-  limits.limits.state.bytes = 2;
+  limits.limits.saves.state.bytes = 2;
   auto bounded = GameData::create(limits).value();
   CHECK_FALSE(bounded.perform(R"({"command":"set","key":"x","value":1})"));
   CHECK(perform(bounded, {{"command", "snapshot"}})["revision"] == "1");
-  limits.limits.slots = 0;
+  limits.limits.saves.slots = 0;
   CHECK_FALSE(GameData::create(limits));
 }

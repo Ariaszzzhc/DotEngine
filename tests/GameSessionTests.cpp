@@ -771,15 +771,12 @@ export class Mover extends ScriptComponent {
 TEST_CASE("game_data.builtin_sdk_persists_across_scene_changes_close_and_compiled_restart") {
   Fixture fixture(false);
   REQUIRE(fixture.project.files()->writeTextAtomic("scripts/mover.ts", R"ts(
-import {gameState, saves, ScriptComponent} from 'dot:engine';
+import {gameState, saves, type SaveTicket, ScriptComponent} from 'dot:engine';
 export class Mover extends ScriptComponent {
   prepared = gameState.snapshot();
+  #pending: SaveTicket|null = null;
 
-  onStart(): void {
-    if (gameState.get('visits') === undefined && saves.list().some(s => s.name === 'checkpoint')) {
-      saves.load('checkpoint', gameState.snapshot().revision);
-    }
-
+  private visit(): void {
     const visits = gameState.get('visits') ?? 0;
 
     if (typeof visits !== 'number') {
@@ -788,6 +785,38 @@ export class Mover extends ScriptComponent {
 
     gameState.set('visits', visits + 1);
     this.self.name = 'visit-' + (visits + 1);
+    this.#pending = null;
+  }
+
+  onStart(): void {
+    if (gameState.get('visits') === undefined) {
+      this.#pending = saves.list();
+    } else {
+      this.visit();
+    }
+  }
+
+  onUpdate(): void {
+    if (this.#pending === null) {
+      return;
+    }
+
+    const ticket = this.#pending;
+    const receipt = saves.take(ticket);
+
+    if (receipt.state === 'pending' || receipt.state === 'running') {
+      return;
+    }
+
+    if (receipt.state !== 'succeeded') {
+      throw Error(receipt.error?.message ?? 'Save job cancelled');
+    }
+
+    if (ticket.operation === 'list' && (receipt.result as {name: string}[]).some(slot => slot.name === 'checkpoint')) {
+      this.#pending = saves.load('checkpoint', gameState.snapshot().revision);
+    } else {
+      this.visit();
+    }
   }
 
   onStop(): void {
@@ -802,6 +831,16 @@ export class Mover extends ScriptComponent {
   config.progress.saves = fixture.directory.files();
   auto session = fixture.session(config);
   good(session.start());
+  const auto awaitVisit = [&](auto& current, const std::string& name) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    while (actor(current).name != name) {
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      good(current.update(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  };
+  awaitVisit(session, "visit-1");
   auto handle = session.gameData().value();
   CHECK(actor(session).name == "visit-1");
   auto request = session.requestScene("scenes/next.dotscene").value();
@@ -822,6 +861,7 @@ export class Mover extends ScriptComponent {
                                                program, config)
                        .value();
   good(restarted.start());
+  awaitVisit(restarted, "visit-3");
   CHECK(actor(restarted).name == "visit-3");
   good(restarted.close());
 }

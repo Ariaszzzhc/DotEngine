@@ -1435,31 +1435,77 @@ export const gameState = Object.freeze({
   }
 });
 
+export interface SaveResults {
+  list: SaveSlot[];
+  read: GameStateSnapshot;
+  write: SaveSlot;
+  load: {revision: string};
+  remove: null;
+}
+
+export type SaveOperation = keyof SaveResults;
+
+export interface SaveTicket<K extends SaveOperation = SaveOperation> {
+  readonly id: string;
+  readonly operation: K;
+}
+
+export interface SaveStatus<K extends SaveOperation = SaveOperation> extends SaveTicket<K> {
+  state: 'pending'|'running'|'ready'|'succeeded'|'failed'|'cancelled';
+  error: {code: string; message: string}|null;
+}
+
+export type SaveReceipt<K extends SaveOperation> = SaveTicket<K>&(
+    {state: 'pending'|'running'; error: null}|
+    {state: 'failed'; error: {code: string; message: string}}|
+    {state: 'cancelled'; error: null}|
+    {state: 'succeeded'; error: null; result: SaveResults[K]});
+
 /**
- * Explicit save operations; construction/migration cannot access disk. No auto-load
- * or auto-save. The player uses its stable application ID's user directory; editor
- * Play uses disposable isolated storage. Loading replaces only game state, not a scene.
- * 显式存档操作，构造/迁移期间不可访问磁盘；不自动读写。独立游戏使用稳定应用身份的用户
- * 目录，编辑器 Play 使用独立临时存储。加载仅替换游戏状态，不切换场景。
+ * Background FIFO save operations capture data at submission. Poll/take during later frames;
+ * only a successful terminal take applies a load, checking its submission revision again.
+ * Take consumes terminal receipts once. Status/jobs only observe memory and omit results.
+ * Cancel only queued work; running disk writes finish. Constructors/migration cannot submit,
+ * take or cancel. Accepted work drains at shutdown, which may wait for disk. No auto-load/save.
+ * 后台 FIFO 存档作业在提交时捕获数据，后续帧查询/提取；仅成功终态提取会应用加载，并再次
+ * 核对提交时修订。终态回执仅提取一次；状态/列表仅观察内存且不含结果。只取消未开始作业，
+ * 已开始磁盘写入会结束。构造/迁移不能提交、提取或取消；退出排空已接受作业，可能等待磁盘。
+ * 不自动存读档。
  */
 export const saves = Object.freeze({
-  list(): SaveSlot[] {
-    return invoke('saves.list', []) as SaveSlot[];
+  list(): SaveTicket<'list'> {
+    return invoke('saves.list', []) as SaveTicket<'list'>;
   },
 
-  read(slot: string): GameStateSnapshot {
-    return invoke('saves.read', [slot]) as GameStateSnapshot;
+  read(slot: string): SaveTicket<'read'> {
+    return invoke('saves.read', [slot]) as SaveTicket<'read'>;
   },
 
-  write(slot: string, overwrite: boolean): SaveSlot {
-    return invoke('saves.write', [slot, overwrite]) as SaveSlot;
+  write(slot: string, overwrite: boolean, snapshot?: GameStateSnapshot): SaveTicket<'write'> {
+    return invoke('saves.write', snapshot === undefined ? [slot, overwrite] : [slot, overwrite, snapshot]) as SaveTicket<'write'>;
   },
 
-  load(slot: string, revision: string): string {
-    return (invoke('saves.load', [slot, revision]) as {revision: string}).revision;
+  load(slot: string, revision: string): SaveTicket<'load'> {
+    return invoke('saves.load', [slot, revision]) as SaveTicket<'load'>;
   },
 
-  remove(slot: string): void {
-    invoke('saves.remove', [slot]);
+  remove(slot: string): SaveTicket<'remove'> {
+    return invoke('saves.remove', [slot]) as SaveTicket<'remove'>;
+  },
+
+  jobs(): SaveStatus[] {
+    return invoke('saves.jobs', []) as SaveStatus[];
+  },
+
+  status<K extends SaveOperation>(ticket: SaveTicket<K>): SaveStatus<K> {
+    return invoke('saves.status', [ticket.id, ticket.operation]) as SaveStatus<K>;
+  },
+
+  take<K extends SaveOperation>(ticket: SaveTicket<K>): SaveReceipt<K> {
+    return invoke('saves.take', [ticket.id, ticket.operation]) as SaveReceipt<K>;
+  },
+
+  cancel(ticket: SaveTicket): void {
+    invoke('saves.cancel', [ticket.id, ticket.operation]);
   }
 });

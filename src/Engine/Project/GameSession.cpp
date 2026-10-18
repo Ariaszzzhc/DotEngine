@@ -128,7 +128,7 @@ namespace Dot::Project {
       }
 
       if (m_progress) {
-        m_progress->retire();
+        static_cast<void>(m_progress->retire());
       }
 
       if (m_hud) {
@@ -1623,7 +1623,14 @@ namespace Dot::Project {
     ActiveScope active{m_impl->m_active};
     m_impl->m_flow->retire();
     auto stopped = m_impl->shutdown();
-    m_impl->m_progress->retire();
+    auto drained = m_impl->m_progress->retire();
+
+    if (!drained) {
+      return Core::fail(drained.error().code,
+                        (stopped ? std::string{} : stopped.error().message + "; ")
+                            + "Save shutdown: " + drained.error().message);
+    }
+
     return stopped;
   }
 }  // namespace Dot::Project

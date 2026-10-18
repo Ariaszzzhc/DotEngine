@@ -1,12 +1,19 @@
-import {gameState, input, type JsonValue, saves, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {gameState, input, type JsonValue, type SaveTicket, saves, scenes, ScriptComponent, type Transform} from 'dot:engine';
 
 /**
  * M requests native relative mouse look. The frontend owns focus and Escape;
  * only acknowledged frames rotate the camera, independently of fixed-step count.
  * M 请求原生相对鼠标观察；前端负责焦点与 Escape，仅实际确认的帧更新镜头，独立于固定步数。
  */
+interface CameraSave {
+  ticket: SaveTicket<'read'|'write'>;
+  pose: {path: string; pose: Transform}|null;
+  revision: string;
+}
+
 export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
   #request: string|null = null;
+  #save: CameraSave|null = null;
 
   private checkpoint(value: JsonValue|undefined): {path: string; pose: Transform} {
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -37,6 +44,58 @@ export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
     gameState.set('cameraCheckpointStatus', error instanceof Error ? error.message : String(error));
   }
 
+  private pollSave(): void {
+    const pending = this.#save;
+
+    if (pending === null) {
+      return;
+    }
+
+    try {
+      if (pending.ticket.operation === 'write') {
+        const receipt = saves.take({id: pending.ticket.id, operation: 'write'});
+
+        if (receipt.state === 'pending' || receipt.state === 'running') {
+          return;
+        }
+
+        this.#save = null;
+
+        if (receipt.state !== 'succeeded') {
+          throw Error(receipt.error?.message ?? 'Camera save cancelled');
+        }
+
+        gameState.set('cameraCheckpoint', pending.pose as unknown as JsonValue);
+        gameState.set('cameraCheckpointStatus', 'Camera checkpoint saved');
+      } else {
+        const receipt = saves.take({id: pending.ticket.id, operation: 'read'});
+
+        if (receipt.state === 'pending' || receipt.state === 'running') {
+          return;
+        }
+
+        this.#save = null;
+
+        if (receipt.state !== 'succeeded') {
+          throw Error(receipt.error?.message ?? 'Camera load cancelled');
+        }
+
+        const checkpoint = this.checkpoint(receipt.result.data.cameraCheckpoint);
+        gameState.replace(receipt.result.data, pending.revision);
+
+        if (checkpoint.path === scenes.current().path) {
+          this.restoreCamera();
+        } else {
+          gameState.set('restoreCamera', true);
+          this.#request = scenes.request(checkpoint.path);
+        }
+      }
+    } catch (error) {
+      this.#save = null;
+      this.failure(error);
+    }
+  }
+
   onStart(): void {
     if (gameState.get('restoreCamera') === true) {
       try {
@@ -48,6 +107,8 @@ export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
   }
 
   onUpdate(): void {
+    this.pollSave();
+
     if (this.#request !== null) {
       const result = scenes.status(this.#request);
 
@@ -66,7 +127,7 @@ export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
       return;
     }
 
-    if (input.key('F6').pressed) {
+    if (this.#save === null && input.key('F6').pressed) {
       try {
         const path = scenes.current().path;
 
@@ -74,28 +135,20 @@ export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
           throw new Error('A camera checkpoint requires a saved scene path');
         }
 
-        gameState.set(
-            'cameraCheckpoint', {path, pose: this.self.transform as unknown as JsonValue});
-        saves.write('camera-checkpoint', true);
-        gameState.set('cameraCheckpointStatus', 'Camera checkpoint saved');
+        const pose = {path, pose: this.self.transform};
+        const snapshot = gameState.snapshot();
+        snapshot.data.cameraCheckpoint = pose as unknown as JsonValue;
+        this.#save = {ticket: saves.write('camera-checkpoint', true, snapshot), pose, revision: snapshot.revision};
+        gameState.set('cameraCheckpointStatus', 'Saving camera checkpoint...');
       } catch (error) {
         this.failure(error);
       }
     }
 
-    if (input.key('F7').pressed && this.#request === null) {
+    if (this.#save === null && input.key('F7').pressed && this.#request === null) {
       try {
-        const revision = gameState.snapshot().revision;
-        const checkpoint = this.checkpoint(saves.read('camera-checkpoint').data.cameraCheckpoint);
-        saves.load('camera-checkpoint', revision);
-
-        if (checkpoint.path === scenes.current().path) {
-          this.restoreCamera();
-        } else {
-          gameState.set('restoreCamera', true);
-          this.#request = scenes.request(checkpoint.path);
-          return;
-        }
+        gameState.set('cameraCheckpointStatus', 'Loading camera checkpoint...');
+        this.#save = {ticket: saves.read('camera-checkpoint'), pose: null, revision: gameState.snapshot().revision};
       } catch (error) {
         this.failure(error);
       }
@@ -130,5 +183,31 @@ export class CameraDemo extends ScriptComponent<{targetScene?: string}> {
 
   onStop(): void {
     input.capturePointer(false);
+  }
+
+  onSaveState(): {request: string|null; save: CameraSave|null} {
+    return {request: this.#request, save: this.#save};
+  }
+
+  onLoadState(state: {request: string|null; save: CameraSave|null}): void {
+    if (!state || (state.request !== null && typeof state.request !== 'string')) {
+      throw Error('Invalid camera demo state');
+    }
+
+    if (state.save !== null) {
+      if (!state.save || !state.save.ticket || !/^[1-9][0-9]*$/.test(state.save.revision)
+          || (state.save.ticket.operation !== 'read' && state.save.ticket.operation !== 'write')) {
+        throw Error('Invalid camera save operation');
+      }
+
+      saves.status(state.save.ticket);
+
+      if (state.save.ticket.operation === 'write') {
+        this.checkpoint(state.save.pose as unknown as JsonValue);
+      }
+    }
+
+    this.#request = state.request;
+    this.#save = state.save;
   }
 }

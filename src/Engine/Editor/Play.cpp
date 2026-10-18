@@ -103,7 +103,7 @@ namespace Dot::Editor {
       auto data = m_session->gameData();
 
       if (data) {
-        data->retire();
+        static_cast<void>(data->retire());
       }
 
       auto hud = m_session->hud();

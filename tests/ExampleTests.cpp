@@ -35,6 +35,7 @@ import Dot.Project;
 import Dot.Project.GameSession;
 import Dot.Project.PlayerControl;
 import Dot.Script.Compiler;
+import Dot.Script.GameData;
 import Dot.Script.Runtime;
 import Dot.Platform.Input;
 import Dot.Platform.Events;
@@ -157,6 +158,42 @@ namespace {
     Project::GameSession& m_session;
     Platform::InputState m_input;
   };
+
+  auto awaitCheckpoint(Project::GameSession& session, Driver& driver) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    for (;;) {
+      auto snapshot = Json::parse(session.gameData()->perform(R"({"command":"snapshot"})").value());
+      const auto text = snapshot["data"].value("relayProgressStatus", std::string{});
+
+      if (text != "Saving checkpoint..." && text != "Loading checkpoint...") {
+        return;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      driver.publish();
+      report(session.update(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  auto awaitSave(Script::GameData& data, const Json& ticket) -> Json {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto request = ticket;
+    request["command"] = "take-save";
+
+    for (;;) {
+      auto value = Json::parse(data.perform(request.dump()).value());
+
+      if (value["state"] != "pending" && value["state"] != "running") {
+        REQUIRE_MESSAGE(value["state"] == "succeeded", value.dump());
+        return value["result"];
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
 
   auto observation(Project::GameSession& session) -> Json {
     const auto entities = session.scene().value()->entities().value();
@@ -370,9 +407,11 @@ export class PauseObserver extends ScriptComponent {
 
   driver.frame({Platform::Key::M});
   driver.frame({Platform::Key::F6});
+  awaitCheckpoint(session, driver);
   auto stored = session.gameData()->perform(R"({"command":"read-save","slot":"relay-checkpoint"})");
   REQUIRE_MESSAGE(stored, (stored ? "" : stored.error().message));
-  const auto saved = Json::parse(*stored)["data"]["relayCheckpoint"]["feet"];
+  auto progress = session.gameData().value();
+  const auto saved = awaitSave(progress, Json::parse(*stored))["data"]["relayCheckpoint"]["feet"];
   auto control = Project::PlayerControl::create(session).value();
   const auto scope = session.stats()->location.scope;
   CHECK_FALSE(control.perform(Json{{"command", "clock"},
@@ -391,6 +430,7 @@ export class PauseObserver extends ScriptComponent {
   driver.frame({Platform::Key::M});
   const auto paused = session.stats().value();
   driver.frame({Platform::Key::F7});
+  awaitCheckpoint(session, driver);
   CHECK(clock.snapshot()->paused);
   const auto restored = entity(session, "Player").transform.position;
   CHECK(restored.x == doctest::Approx(saved["x"].get<float>()).epsilon(.001));
@@ -463,6 +503,7 @@ TEST_CASE("prism.checkpoint_restores_native_player_camera_and_survives_a_fresh_g
   const auto camera = entity(session, "Camera").transform;
   driver.publish({Platform::Key::F6});
   report(session.update(0));
+  awaitCheckpoint(session, driver);
   auto data = session.gameData().value();
   auto snapshot = Json::parse(data.perform(R"({"command":"snapshot"})").value());
   CHECK(snapshot["data"]["relayProgressStatus"] == "Checkpoint saved");
@@ -477,6 +518,7 @@ TEST_CASE("prism.checkpoint_restores_native_player_camera_and_survives_a_fresh_g
   CHECK(entity(session, "Player").transform.position != feet);
   driver.publish({Platform::Key::F7});
   report(session.update(.000001));
+  awaitCheckpoint(session, driver);
   CHECK(entity(session, "Player").transform.position == feet);
   const auto restored = entity(session, "Camera").transform;
   CHECK(restored.position.x == doctest::Approx(camera.position.x));
@@ -497,6 +539,7 @@ TEST_CASE("prism.checkpoint_restores_native_player_camera_and_survives_a_fresh_g
   Driver resumed(fresh);
   resumed.publish({Platform::Key::F7});
   report(fresh.update(0));
+  awaitCheckpoint(fresh, resumed);
   CHECK(entity(fresh, "Player").transform.position == feet);
   resumed.frame();
   CHECK(entity(fresh, "Player").transform.position.z == doctest::Approx(feet.z));
@@ -518,6 +561,7 @@ TEST_CASE("prism.checkpoint_failures_keep_pose_slot_and_previous_checkpoint_data
     report(session.update(0));
     driver.publish({key});
     report(session.update(0));
+    awaitCheckpoint(session, driver);
   };
   auto status
       = [&] { return Json::parse(data.perform(R"({"command":"snapshot"})").value())["data"]; };
@@ -551,7 +595,10 @@ TEST_CASE("prism.checkpoint_failures_keep_pose_slot_and_previous_checkpoint_data
   for (const auto& invalid : invalids) {
     REQUIRE(data.perform(
         Json{{"command", "set"}, {"key", "relayCheckpoint"}, {"value", invalid}}.dump()));
-    REQUIRE(data.perform(R"({"command":"save","slot":"relay-checkpoint","overwrite":true})"));
+    awaitSave(
+        data,
+        Json::parse(data.perform(R"({"command":"save","slot":"relay-checkpoint","overwrite":true})")
+                        .value()));
     press(Platform::Key::F7);
     CHECK(samePose(entity(session, "Player").transform, pose));
     CHECK(samePose(entity(session, "Camera").transform, camera));
@@ -1199,6 +1246,23 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
     report(session->start());
     return std::move(*session);
   };
+  const auto completed = [&](Project::PlayerControl& player, Json response, bool success = true) {
+    auto request = response["result"];
+    request["command"] = "take-save";
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    for (;;) {
+      auto value = control(player, {{"command", "game-data"}, {"value", request}})["result"];
+
+      if (value["state"] != "pending" && value["state"] != "running") {
+        CHECK((value["state"] == "succeeded") == success);
+        return success ? Json{{"result", value["result"]}} : value;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  };
   Json initialData;
 
   {
@@ -1212,12 +1276,18 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
               {{"command", "set"},
                {"key", "checkpoint"},
                {"value", {{"position", {-3, 0, -1}}, {"scene", "scenes/main.dotscene"}}}}}});
-    const auto saved = control(
-        player, {{"command", "game-data"},
-                 {"value", {{"command", "save"}, {"slot", "checkpoint"}, {"overwrite", false}}}});
+    const auto saved = completed(
+        player,
+        control(player,
+                {{"command", "game-data"},
+                 {"value", {{"command", "save"}, {"slot", "checkpoint"}, {"overwrite", false}}}}));
     CHECK(saved["result"]["name"] == "checkpoint");
-    CHECK_FALSE(player.perform(
-        R"({"command":"game-data","value":{"command":"save","slot":"checkpoint","overwrite":false}})"));
+    const auto duplicate = Json::parse(
+        player
+            .perform(
+                R"({"command":"game-data","value":{"command":"save","slot":"checkpoint","overwrite":false}})")
+            .value());
+    CHECK(completed(player, duplicate, false)["state"] == "failed");
     report(session.close());
   }
 
@@ -1226,20 +1296,20 @@ TEST_CASE("player_control.game_data_survives_real_session_restart_with_explicit_
   const auto fresh
       = control(player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}});
   CHECK(fresh["result"]["data"] == initialData);
-  const auto saved = control(
-      player,
-      {{"command", "game-data"}, {"value", {{"command", "read-save"}, {"slot", "checkpoint"}}}});
+  const auto saved = completed(
+      player, control(player, {{"command", "game-data"},
+                               {"value", {{"command", "read-save"}, {"slot", "checkpoint"}}}}));
   CHECK(saved["result"]["data"]["checkpoint"]["position"] == Json::array({-3, 0, -1}));
   const auto changed
       = control(player, {{"command", "game-data"},
                          {"value", {{"command", "set"}, {"key", "scratch"}, {"value", 1}}}});
   CHECK_FALSE(player.perform(
       R"({"command":"game-data","value":{"command":"load","slot":"checkpoint","revision":"1"}})"));
-  control(player, {{"command", "game-data"},
-                   {"value",
-                    {{"command", "load"},
-                     {"slot", "checkpoint"},
-                     {"revision", changed["result"]["revision"]}}}});
+  completed(player, control(player, {{"command", "game-data"},
+                                     {"value",
+                                      {{"command", "load"},
+                                       {"slot", "checkpoint"},
+                                       {"revision", changed["result"]["revision"]}}}}));
   const auto loaded
       = control(player, {{"command", "game-data"}, {"value", {{"command", "snapshot"}}}});
   CHECK(loaded["result"]["data"] == saved["result"]["data"]);
@@ -1288,6 +1358,25 @@ export class TextRequest extends ScriptComponent {
     report(session.fixedUpdate());
     report(session.update(1.0 / 60));
   };
+  const auto awaitCheckpoint = [&] {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    for (;;) {
+      const auto value
+          = Json::parse(session.gameData()->perform(R"({"command":"snapshot"})").value());
+      const auto status = value["data"].value("relayProgressStatus", std::string{});
+
+      if (status != "Saving checkpoint..." && status != "Loading checkpoint...") {
+        return;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      native.beginFrame();
+      REQUIRE(session.publish(native, false, Project::GameInputArea{{1000, 500}, true}));
+      report(session.update(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  };
   const auto point = [&](std::string_view key) -> Platform::Point {
     const auto state = ui.snapshot().value();
     const auto found = std::ranges::find(state.buttons, key, &Script::HudButtonLayer::key);
@@ -1310,6 +1399,7 @@ export class TextRequest extends ScriptComponent {
   CHECK(ui.snapshot()->focused == "menu-1-save");
   step({Platform::Key::Enter});
   CHECK(ui.snapshot()->sequence == 1);
+  awaitCheckpoint();
   CHECK(Json::parse(session.gameData()
                         ->perform(R"({"command":"snapshot"})")
                         .value())["data"]["relayProgressStatus"]
@@ -1331,6 +1421,7 @@ export class TextRequest extends ScriptComponent {
   step({}, true, restore);
   step({}, false, restore);
   CHECK(ui.snapshot()->sequence == 2);
+  awaitCheckpoint();
   CHECK(Json::parse(session.gameData()
                         ->perform(R"({"command":"snapshot"})")
                         .value())["data"]["relayProgressStatus"]
@@ -1448,4 +1539,47 @@ TEST_CASE("prism.authored_action_scene_keeps_gameplay_separate_and_animates_real
     const auto end = posed->transform(posed->findEntity(target->id.value).value()).value();
     CHECK(start.rotation == end.rotation);
   }
+}
+
+TEST_CASE("prism.pending_checkpoint_receipts_survive_source_migration_without_duplicate_jobs") {
+  Fixture f;
+  REQUIRE(f.storage.files()->createDirectories("saves"));
+  const auto root = Core::FileSystem::open(f.storage.files()->root() / "saves").value();
+  auto session = f.session(true, root);
+  report(session.start());
+  Driver driver(session);
+  driver.frame();
+  auto data = session.gameData().value();
+  const auto original = f.project.files()->readText("scripts/camera.ts").value();
+
+  for (const bool load : {false, true}) {
+    driver.publish({load ? Platform::Key::F7 : Platform::Key::F6});
+    report(session.update(0));
+    const auto pending = Json::parse(data.perform(R"({"command":"snapshot"})").value());
+    CHECK(pending["data"]["relayProgressStatus"]
+          == (load ? "Loading checkpoint..." : "Saving checkpoint..."));
+    const auto jobs = Json::parse(data.perform(R"({"command":"save-jobs"})").value());
+    REQUIRE(jobs.size() == 1);
+    CHECK(jobs[0]["operation"] == (load ? "read" : "write"));
+    const auto id = jobs[0]["id"];
+    REQUIRE(f.project.files()->writeTextAtomic(
+        "scripts/camera.ts",
+        original + (load ? "\n// pending read migration\n" : "\n// pending write migration\n")));
+    auto migrated = Tests::awaitCompilation([&] { return session.pollScripts(); });
+    REQUIRE_MESSAGE(migrated, (migrated ? "" : migrated.error().message));
+    REQUIRE(migrated->committed);
+    const auto retained = Json::parse(data.perform(R"({"command":"save-jobs"})").value());
+    REQUIRE(retained.size() == 1);
+    CHECK(retained[0]["id"] == id);
+    driver.publish();
+    report(session.update(0));
+    awaitCheckpoint(session, driver);
+    const auto completed = Json::parse(data.perform(R"({"command":"snapshot"})").value());
+    CHECK(completed["data"]["relayProgressStatus"]
+          == (load ? "Checkpoint restored" : "Checkpoint saved"));
+    CHECK(Json::parse(data.perform(R"({"command":"save-jobs"})").value()).empty());
+    CHECK(root.readText("relay-checkpoint.dotsave"));
+  }
+
+  report(session.close());
 }

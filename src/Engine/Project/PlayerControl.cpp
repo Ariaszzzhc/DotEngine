@@ -244,7 +244,7 @@ namespace Dot::Project {
         const auto inner = value["value"].at("command").get<std::string>();
 
         if ((m_impl->m_closing || stats->state != SessionState::Running) && inner != "snapshot"
-            && inner != "get") {
+            && inner != "get" && inner != "save-status" && inner != "save-jobs") {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Game data mutations/disk require running player");
         }

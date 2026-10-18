@@ -1,11 +1,16 @@
-import {audio, Entity, gameClock, hud, ui, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, gameClock, hud, ui, input, type InputFrame, type JsonValue, type SaveTicket, saves, scene, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
-import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from './progress';
+import {checkpoint, loadedCheckpoint, type RelayCheckpoint, progressFailure, progressStatus, readCheckpoint, savedCheckpoint, saveCheckpoint} from './progress';
 
 interface Settings {
   walkSpeed: number;
   runSpeed: number;
+}
+
+interface PendingCheckpoint {
+  ticket: SaveTicket<'read'|'write'>;
+  saved: RelayCheckpoint|null;
 }
 
 interface RuntimeState {
@@ -16,6 +21,7 @@ interface RuntimeState {
   progressFrame: string;
   uiSequence: string;
   jumpBuffer: number;
+  checkpoint: PendingCheckpoint|null;
 }
 
 /**
@@ -36,6 +42,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #uiSequence = '0';
   #jumpBuffer = 0;
   #menuVisible = false;
+  #checkpoint: PendingCheckpoint|null = null;
 
   private bind(): void {
     const camera = scene.primaryCamera;
@@ -140,11 +147,77 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   }
 
   private checkpoint(load: boolean): void {
-    let progressMessage: string|null = null;
+    if (this.#checkpoint !== null) {
+      return;
+    }
 
     try {
       if (load) {
-        const saved = readCheckpoint();
+        this.#checkpoint = {ticket: readCheckpoint(), saved: null};
+        progressStatus('Loading checkpoint...');
+      } else {
+        const state = this.self.characterState;
+
+        if (state.ground !== 'grounded') {
+          throw Error('Land before saving a checkpoint');
+        }
+
+        const saved: RelayCheckpoint = {
+          format: 'prism-relay-checkpoint',
+          path: 'scenes/main.dotscene',
+          feet: {...state.position},
+          yawDegrees: Math.atan2(2 * state.rotation.w * state.rotation.y,
+                                 1 - 2 * state.rotation.y * state.rotation.y) * 180 / Math.PI,
+          camera: this.#camera.state,
+        };
+        this.#checkpoint = {ticket: saveCheckpoint(saved), saved};
+        progressStatus('Saving checkpoint...');
+      }
+
+      ui.enabled('menu-1-save', false);
+      ui.enabled('menu-2-restore', false);
+    } catch (error) {
+      progressFailure(error);
+    }
+  }
+
+  private pollCheckpoint(): void {
+    const pending = this.#checkpoint;
+
+    if (pending === null) {
+      return;
+    }
+
+    try {
+      if (pending.ticket.operation === 'write') {
+        const result = saves.take({id: pending.ticket.id, operation: 'write'});
+
+        if (result.state === 'pending' || result.state === 'running') {
+          return;
+        }
+
+        this.#checkpoint = null;
+
+        if (result.state !== 'succeeded') {
+          throw Error(result.error?.message ?? 'Checkpoint save cancelled');
+        }
+
+        savedCheckpoint(pending.saved!);
+        progressStatus('Checkpoint saved');
+      } else {
+        const result = saves.take({id: pending.ticket.id, operation: 'read'});
+
+        if (result.state === 'pending' || result.state === 'running') {
+          return;
+        }
+
+        this.#checkpoint = null;
+
+        if (result.state !== 'succeeded') {
+          throw Error(result.error?.message ?? 'Checkpoint load cancelled');
+        }
+
+        const saved = loadedCheckpoint(result.result.data);
         this.self.teleportCharacter(saved.feet, saved.yawDegrees);
         audio.resetMotion();
         this.#camera.restore(saved.camera);
@@ -154,32 +227,16 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         this.#model.controlAnimationLayer('Inspection', {action: 'stop'});
         this.#camera.update(this.self.characterState.position, 0);
         this.listen();
-        progressMessage = 'Checkpoint restored';
-      } else {
-        const state = this.self.characterState;
-
-        if (state.ground !== 'grounded') {
-          throw Error('Land before saving a checkpoint');
-        }
-
-        saveCheckpoint({
-          format: 'prism-relay-checkpoint',
-          path: 'scenes/main.dotscene',
-          feet: {...state.position},
-          yawDegrees: Math.atan2(
-                          2 * state.rotation.w * state.rotation.y,
-                          1 - 2 * state.rotation.y * state.rotation.y)
-              * 180 / Math.PI,
-          camera: this.#camera.state,
-        });
-        progressMessage = 'Checkpoint saved';
+        progressStatus('Checkpoint restored');
       }
     } catch (error) {
+      this.#checkpoint = null;
       progressFailure(error);
     }
 
-    if (progressMessage !== null) {
-      progressStatus(progressMessage);
+    if (this.#checkpoint === null) {
+      ui.enabled('menu-1-save', true);
+      ui.enabled('menu-2-restore', true);
     }
   }
 
@@ -188,6 +245,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
     if (frame.index !== this.#progressFrame) {
       this.#progressFrame = frame.index;
+      this.pollCheckpoint();
 
       if (frame.keys.M.pressed) {
         gameClock.setPaused(!gameClock.snapshot().paused);
@@ -214,8 +272,8 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       this.#uiSequence = actions.sequence;
       progressFailure(Error('Menu action history expired'));
     } else {
-      /** Bound synchronous checkpoint work per frame; acknowledgements queue intent.
-       * 每帧限制同步检查点工作量；确认仅表示意图入队。 */
+      /** Bound checkpoint submissions per frame; disk completion is observed on later frames.
+       * 每帧限制检查点提交数量，在后续帧观察磁盘结果。 */
       for (const action of actions.events.slice(0, 8)) {
         this.#uiSequence = action.sequence;
 
@@ -284,6 +342,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       progressFrame: this.#progressFrame,
       uiSequence: this.#uiSequence,
       jumpBuffer: this.#jumpBuffer,
+      checkpoint: this.#checkpoint,
     };
   }
 
@@ -299,7 +358,24 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       throw Error('Invalid Prism Relay character checkpoint');
     }
 
+    const pending = state.checkpoint;
+
+    if (pending !== null) {
+      if (!pending || !pending.ticket || typeof pending.ticket.id !== 'string'
+          || (pending.ticket.operation !== 'write' && pending.ticket.operation !== 'read')
+          || (pending.ticket.operation === 'read' && pending.saved !== null)) {
+        throw Error('Invalid pending checkpoint operation');
+      }
+
+      if (pending.ticket.operation === 'write') {
+        checkpoint(pending.saved as unknown as JsonValue);
+      }
+
+      saves.status(pending.ticket);
+    }
+
     this.bind();
+    this.#checkpoint = pending;
     ui.events(state.uiSequence);
     this.#menuVisible = gameClock.snapshot().paused;
     this.#camera.restore(state.camera);

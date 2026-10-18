@@ -1,18 +1,22 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <future>
 #include <iterator>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Result;
 import Dot.Game.State;
 import Dot.Game.Saves;
+import Dot.Game.SaveQueue;
 import Dot.Script.GameData;
 
 namespace {
@@ -29,6 +33,40 @@ namespace {
       return storage.files().value();
     }
   };
+
+  auto await(Game::SaveQueue& queue, std::uint64_t id) -> Game::SaveJob {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    for (;;) {
+      auto value = queue.take(id).value();
+
+      if (value.state != Game::SaveJobState::Pending
+          && value.state != Game::SaveJobState::Running) {
+        return value;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  auto await(Script::GameData& data, const Json& ticket) -> Json {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto request = ticket;
+    request["command"] = "take-save";
+
+    for (;;) {
+      auto value = Json::parse(data.perform(request.dump()).value());
+
+      if (value["state"] != "pending" && value["state"] != "running") {
+        return value;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
 }  // namespace
 
 TEST_CASE("saves.atomic_round_trip_explicit_overwrite_and_load_revision_provenance") {
@@ -298,7 +336,15 @@ TEST_CASE("game_data.disk_load_is_explicit_and_conflicts_or_corruption_never_pub
   const auto call = [&](const Json& request) {
     auto result = data.perform(request.dump());
     REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
-    return Json::parse(*result);
+    auto value = Json::parse(*result);
+
+    if (value.is_object() && value.contains("id")) {
+      value = await(data, value);
+      REQUIRE_MESSAGE(value["state"] == "succeeded", value.dump());
+      return value["result"];
+    }
+
+    return value;
   };
   call({{"command", "set"}, {"key", "score"}, {"value", 7}});
   const auto saved = call({{"command", "save"}, {"slot", "checkpoint"}, {"overwrite", false}});
@@ -316,11 +362,215 @@ TEST_CASE("game_data.disk_load_is_explicit_and_conflicts_or_corruption_never_pub
   snapshot = call({{"command", "snapshot"}});
   CHECK(snapshot["data"]["score"] == 7);
   REQUIRE(files.writeTextAtomic("checkpoint.dotsave", "damaged"));
-  CHECK_FALSE(data.perform(
-      Json{{"command", "load"}, {"slot", "checkpoint"}, {"revision", snapshot["revision"]}}
-          .dump()));
+  const auto corrupt = Json::parse(
+      data.perform(
+              Json{{"command", "load"}, {"slot", "checkpoint"}, {"revision", snapshot["revision"]}}
+                  .dump())
+          .value());
+  CHECK(await(data, corrupt)["state"] == "failed");
   CHECK(call({{"command", "snapshot"}}) == snapshot);
   CHECK(call({{"command", "list-saves"}}).size() == 1);
   call({{"command", "delete-save"}, {"slot", "checkpoint"}});
   CHECK(call({{"command", "list-saves"}}).empty());
+}
+
+TEST_CASE("save_queue.fifo_owned_snapshots_terminal_receipts_and_cross_thread_boundaries") {
+  Fixture f;
+  auto queue = Game::SaveQueue::create(f.files()).value();
+  auto state = Game::State::create(R"({"score":7})").value();
+  const auto initial = state.snapshot().value();
+  auto write = queue.submit({Game::SaveOperation::Write, "checkpoint", initial, false}).value();
+  REQUIRE(state.set("score", "99"));
+  auto read = queue.submit({Game::SaveOperation::Read, "checkpoint", {}, false}).value();
+  auto list = queue.submit({Game::SaveOperation::List, "", {}, false}).value();
+  auto completed = await(queue, write);
+  REQUIRE(completed.state == Game::SaveJobState::Succeeded);
+  CHECK(std::get<Game::SaveSlot>(completed.output).name == "checkpoint");
+  CHECK_FALSE(queue.take(write));
+  CHECK(std::get<Game::StateSnapshot>(await(queue, read).output).data == initial.data);
+  CHECK(std::get<std::vector<Game::SaveSlot>>(await(queue, list).output).size() == 1);
+  auto removed = queue.submit({Game::SaveOperation::Remove, "checkpoint", {}, false}).value();
+  CHECK(await(queue, removed).state == Game::SaveJobState::Succeeded);
+  CHECK(queue.jobs()->empty());
+  auto foreign
+      = std::async(std::launch::async, [&] { return !queue.jobs() && !queue.status(removed); });
+  CHECK(foreign.get());
+  auto moved = std::move(queue);
+  CHECK_FALSE(queue.jobs());
+  REQUIRE(moved.finish());
+  CHECK_FALSE(moved.submit({Game::SaveOperation::List, "", {}, false}));
+}
+
+TEST_CASE(
+    "save_queue.failed_mutations_preserve_old_bytes_and_shutdown_reports_unconsumed_failure") {
+  Fixture f;
+  auto store = Game::Saves::open(f.files()).value();
+  auto data = Game::State::create(R"({"health":80})").value();
+  const auto snapshot = data.snapshot().value();
+  REQUIRE(store.write("checkpoint", snapshot, false));
+  const auto before = f.files().readText("checkpoint.dotsave").value();
+  auto queue = Game::SaveQueue::create(f.files()).value();
+  const auto refused
+      = queue.submit({Game::SaveOperation::Write, "checkpoint", snapshot, false}).value();
+  CHECK_FALSE(queue.finish());
+  const auto failure = queue.status(refused).value();
+  CHECK(failure.state == Game::SaveJobState::Failed);
+  REQUIRE(failure.error);
+  CHECK(failure.error->message.find("checkpoint") != std::string::npos);
+  CHECK(f.files().readText("checkpoint.dotsave").value() == before);
+  CHECK(await(queue, refused).state == Game::SaveJobState::Failed);
+  CHECK(queue.finish());
+}
+
+TEST_CASE("save_queue.reservations_include_completed_jobs_and_invalid_inputs_never_enqueue") {
+  Fixture f;
+  Game::SaveQueueLimits limits;
+  limits.jobs = 1;
+  auto queue = Game::SaveQueue::create(f.files(), limits).value();
+  auto id = queue.submit({Game::SaveOperation::List, "", {}, false}).value();
+  CHECK_FALSE(queue.submit({Game::SaveOperation::List, "", {}, false}));
+  CHECK(queue.jobs()->size() == 1);
+  CHECK(await(queue, id).state == Game::SaveJobState::Succeeded);
+  CHECK(queue.jobs()->empty());
+  CHECK_FALSE(queue.status(id));
+
+  for (const auto& request : std::vector<Game::SaveRequest>{
+           {Game::SaveOperation::Read, "../escape", {}, false},
+           {Game::SaveOperation::Read, "UPPER", {}, false},
+           {Game::SaveOperation::List, "unexpected", {}, false},
+           {Game::SaveOperation::Write, "slot", {}, false},
+           {Game::SaveOperation::Write, "slot", Game::StateSnapshot{0, "{}"}, false},
+           {Game::SaveOperation::Write, "slot", Game::StateSnapshot{1, "{broken}"}, false},
+           {Game::SaveOperation::Read, "slot", {}, true}}) {
+    CHECK_FALSE(queue.submit(request));
+    CHECK(queue.jobs()->empty());
+  }
+
+  limits.bytes = 1024;
+  auto bounded = Game::SaveQueue::create(f.files(), limits).value();
+  CHECK_FALSE(bounded.submit({Game::SaveOperation::Read, "slot", {}, false}));
+  limits.jobs = 0;
+  CHECK_FALSE(Game::SaveQueue::create(f.files(), limits));
+  limits.jobs = 257;
+  CHECK_FALSE(Game::SaveQueue::create(f.files(), limits));
+}
+
+TEST_CASE("save_queue.queued_cancellation_does_not_erase_running_or_completed_mutations") {
+  Fixture f;
+  auto queue = Game::SaveQueue::create(f.files()).value();
+  const auto snapshot = Game::State::create(R"({"value":1})")->snapshot().value();
+  std::vector<std::uint64_t> ids;
+
+  for (int i = 0; i < 16; ++i) {
+    ids.push_back(
+        queue.submit({Game::SaveOperation::Write, "slot-" + std::to_string(i), snapshot, false})
+            .value());
+  }
+
+  std::vector<bool> cancelled;
+
+  for (const auto id : ids) {
+    cancelled.push_back(queue.cancel(id).has_value());
+  }
+
+  REQUIRE(queue.finish());
+
+  for (std::size_t i = 0; i < ids.size(); ++i) {
+    const auto result = await(queue, ids[i]);
+    CHECK((result.state == Game::SaveJobState::Cancelled) == cancelled[i]);
+    CHECK(std::filesystem::exists(f.files().root() / ("slot-" + std::to_string(i) + ".dotsave"))
+          == !cancelled[i]);
+  }
+
+  CHECK(queue.jobs()->empty());
+}
+
+TEST_CASE(
+    "game_data.background_load_publication_rechecks_revision_and_explicit_snapshot_is_owned") {
+  Fixture f;
+  Script::GameDataConfig config;
+  config.saves = f.files();
+  auto data = Script::GameData::create(config).value();
+  const auto call
+      = [&](const Json& request) { return Json::parse(data.perform(request.dump()).value()); };
+  call({{"command", "set"}, {"key", "score"}, {"value", 1}});
+  const auto before = call({{"command", "snapshot"}});
+  const auto write
+      = call({{"command", "save"},
+              {"slot", "checkpoint"},
+              {"overwrite", false},
+              {"snapshot", {{"revision", before["revision"]}, {"data", {{"score", 7}}}}}});
+  CHECK(call({{"command", "snapshot"}}) == before);
+  CHECK(await(data, write)["state"] == "succeeded");
+  const auto load
+      = call({{"command", "load"}, {"slot", "checkpoint"}, {"revision", before["revision"]}});
+  call({{"command", "set"}, {"key", "score"}, {"value", 99}});
+  const auto failed = await(data, load);
+  CHECK(failed["state"] == "failed");
+  CHECK(failed["error"]["code"] == "InvalidState");
+  CHECK(call({{"command", "snapshot"}})["data"]["score"] == 99);
+  CHECK_FALSE(data.perform(
+      Json{{"command", "take-save"}, {"id", load["id"]}, {"operation", "load"}}.dump()));
+  auto other = Script::GameData::create(config).value();
+  CHECK_FALSE(other.perform(
+      Json{{"command", "take-save"}, {"id", write["id"]}, {"operation", "write"}}.dump()));
+  REQUIRE(data.retire());
+  CHECK_FALSE(data.perform(R"({"command":"save","slot":"late","overwrite":true})"));
+  CHECK(call({{"command", "save-jobs"}}).empty());
+}
+
+TEST_CASE("save_queue.initial_disk_failure_can_retry_and_destruction_drains_owned_work") {
+  Fixture f;
+  REQUIRE(f.files().createDirectories("saves"));
+  const auto root = Core::FileSystem::open(f.files().root() / "saves").value();
+  std::filesystem::rename(root.root(), f.files().root() / "hidden");
+
+  struct Restore {
+    std::filesystem::path from;
+    std::filesystem::path to;
+
+    ~Restore() {
+      std::error_code error;
+
+      if (std::filesystem::exists(from, error)) {
+        std::filesystem::rename(from, to, error);
+      }
+    }
+  } restore{f.files().root() / "hidden", root.root()};
+
+  const auto snapshot = Game::State::create(R"({"value":1})")->snapshot().value();
+
+  {
+    auto queue = Game::SaveQueue::create(root).value();
+    const auto failed
+        = queue.submit({Game::SaveOperation::Write, "checkpoint", snapshot, false}).value();
+    CHECK(await(queue, failed).state == Game::SaveJobState::Failed);
+    CHECK_FALSE(std::filesystem::exists(root.root()));
+    std::filesystem::rename(restore.from, restore.to);
+    const auto retry
+        = queue.submit({Game::SaveOperation::Write, "checkpoint", snapshot, false}).value();
+    CHECK(await(queue, retry).state == Game::SaveJobState::Succeeded);
+    REQUIRE(queue.submit({Game::SaveOperation::Write, "drained", snapshot, false}));
+  }
+
+  const auto store = Game::Saves::open(root).value();
+  CHECK(store.read("checkpoint")->data == snapshot.data);
+  CHECK(store.read("drained")->data == snapshot.data);
+}
+
+TEST_CASE("game_data.quiescent_foreign_retirement_drains_writes_and_invalidates_retained_handles") {
+  Fixture f;
+  Script::GameDataConfig config;
+  config.saves = f.files();
+  config.initial = R"({"score":7})";
+  auto data = Script::GameData::create(config).value();
+  auto retained = data;
+  auto ticket = Json::parse(
+      data.perform(R"({"command":"save","slot":"checkpoint","overwrite":false})").value());
+  auto retirement = std::async(std::launch::async, [&] { return data.retire(); });
+  REQUIRE(retirement.get());
+  CHECK(Game::Saves::open(f.files())->read("checkpoint")->data == config.initial);
+  CHECK_FALSE(retained.perform(R"({"command":"set","key":"score","value":0})"));
+  CHECK(await(retained, ticket)["state"] == "succeeded");
+  CHECK(Json::parse(retained.perform(R"({"command":"snapshot"})").value())["data"]["score"] == 7);
 }

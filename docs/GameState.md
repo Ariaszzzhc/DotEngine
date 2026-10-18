@@ -89,33 +89,84 @@ retain ownership for retry; restarting Play retries cleanup before creating anot
 store. Destruction/failed initial preparation perform best-effort RAII cleanup. A configured temporary parent still receives an owned
 child, never direct writes. Passing a player save root to Play fails. Project and
 installation files and real player progress remain separate. A retained game-data
-handle permits in-memory snapshot/get after retirement; writes and all disk access
-fail after close, fault or destruction.
+handle permits in-memory snapshot/get after retirement; new work and live-state writes
+fail after close, fault or destruction; retained receipts remain memory observations.
 
-## Script API
+## Background jobs and script API
+
+The native `Saves` file codec remains a synchronous tool/backend interface.
+`Dot.Game.SaveQueue` owns one FIFO worker and is the game service's disk path.
+Creating it, submitting a snapshot, status, take and cancellation perform no
+owner-thread filesystem operations. There is no synchronous script fallback.
+Accepted snapshots own their bytes independently of later game-state changes.
+The worker creates its own thread-bound save store and serializes disk operations.
+Failed initial root access can retry on a later job; no root is recreated implicitly.
 
 ```ts
-import {gameState, saves} from 'dot:engine';
+import {gameState, saves, type SaveTicket} from 'dot:engine';
 
-gameState.set('checkpoint', {level: 'scenes/main.dotscene', score: 7});
-saves.write('checkpoint', false); // Existing slots require explicit true to replace.
-const stored = saves.read('checkpoint'); // Owned snapshot; live state is unchanged.
-saves.load('checkpoint', gameState.snapshot().revision);
+let pending: SaveTicket<'write'>|null = null;
+
+function requestCheckpoint(): void {
+  pending = saves.write('checkpoint', false);
+}
+
+function pollCheckpoint(): void {
+  if (pending === null) return;
+  const receipt = saves.take(pending);
+  if (receipt.state === 'pending' || receipt.state === 'running') return;
+  pending = null;
+  if (receipt.state === 'failed') throw Error(receipt.error.message);
+  if (receipt.state === 'cancelled') return;
+  // This terminal receipt, rather than submission, proves successful persistence.
+  const storedName = receipt.result.name;
+}
 ```
 
-`gameState.snapshot/get/set/remove/replace` operate on owned finite JSON values.
-Missing `get` returns undefined; an actual null value remains null. Revisions are
-canonical decimal strings. `replace(data, revision)` and `saves.load(slot, revision)`
-reject stale current-state revisions; a saved revision is not an assignment token.
-`saves.list/read/write/load/remove` are explicit filesystem operations. Loading
-replaces game data, not the scene or entity transforms: game code applies its own
-checkpoint schema and requests a scene if appropriate.
+`list/read/write/load/remove` return typed `{id, operation}` tickets. Poll/take them
+from later frames; unresolved promises are not introduced into the existing bounded
+script-hook scheduler. `status(ticket)` and `jobs()` observe memory without results.
+`take(ticket)` returns a pending/running observation, or consumes a terminal receipt
+exactly once. Successful terminal receipts include the operation's typed `result`;
+failed ones include code/message, cancelled ones explicitly state cancellation.
+Unknown/consumed IDs and mismatched operation kinds fail. IDs are unique in a process,
+including across stores, and are never reused. Retain tickets in component migration
+state when work must survive script reload; the game-wide queue survives scene changes.
 
-Only in-memory snapshot/get are read-only preparation services. Constructors and
-migration cannot mutate state or access save files, including disk reads. Once the
-scene starts, Stop hooks can save before normal retirement. A failed candidate
-constructor cannot publish into the active game's shared state. Script non-JSON
-values are rejected by the existing runtime transport before service dispatch.
+A write captures the current game state unless an explicit owned `GameStateSnapshot`
+is provided as its third argument. This allows a game to construct a checkpoint in
+an independent snapshot and update its live checkpoint key only after persistence,
+without temporarily changing/rolling back unrelated live state. Saved revision is
+provenance. A read returns an owned snapshot without applying it. A load requires
+the current revision on submission, reads in the worker, then reports `ready` until
+its terminal take. Only that take applies data, checking the original expected
+revision again; intervening edits fail without publishing stale state. Loading
+still replaces data, not a scene, character pose, physics world or animation clocks.
+
+Cancel only pending work; a worker that has already started a disk operation must
+finish, and cancellation fails rather than implying rollback. Default limits are
+32 outstanding jobs (including terminal receipts) and 4 MiB of payload reservations;
+configurable ranges are 1..256 and 1 KiB..64 MiB. Reads reserve the configured state
+limit, listings reserve 4096 bounded slot names. Typed bookkeeping and bounded codec
+scratch are separate from payload accounting. Take completed receipts to recover
+capacity; queues never grow unbounded or silently evict results.
+
+Only in-memory snapshot/get and job status/list are read-only preparation services.
+Constructors and migration cannot submit disk work, take results, mutate state or
+cancel operations. Once started, Stop hooks can enqueue a final save. Normal shutdown
+stops submissions, drains accepted operations and joins before Play deletes its
+owned save directory. It may wait for the disk; asynchronous retirement and crash
+recovery are not claimed. Unconsumed failed writes/deletions make explicit close
+fail with context. Quiescent retirement may run on another thread; ordinary operations remain on the
+creator. After retirement, native retained service handles permit final memory observations and receipt collection; taking a load cannot apply retired data.
+
+Prism Relay polls on its unscaled frame hook, so paused menus remain responsive.
+It displays saving/loading until a terminal result, disables duplicate menu requests,
+retains its previously accepted checkpoint on failure, and preserves pending ticket/
+checkpoint data across source migration. Feature Lab also polls camera checkpoints;
+its SDK auditor sequences real file jobs over frames, handles legitimate revision
+conflicts, and deletes its own demonstration slot without overwriting intervening
+live data.
 
 ## Product protocol and editor
 
@@ -142,7 +193,7 @@ See the [template controls and limits](../examples/PrismRelay/README.md).
 
 Every outer request requires exactly command/session/value and a current Play
 session ID. Its response contains `ok` and the parsed `result`. Pending close and
-non-running Play allow only snapshot/get. The inner operation fields are exact:
+non-running Play allow only memory observations. The inner operation fields are exact:
 
 | Command | Required fields besides command | Result |
 | --- | --- | --- |
@@ -151,11 +202,28 @@ non-running Play allow only snapshot/get. The inner operation fields are exact:
 | set | key/value | revision object |
 | remove | key | revision object |
 | replace | data/revision | revision object |
-| list-saves | none | name/bytes array |
-| read-save | slot | saved revision/data object |
-| save | slot/overwrite boolean | name/bytes object |
-| load | slot/revision | current revision object |
-| delete-save | slot | null |
+| list-saves | none | list ticket |
+| read-save | slot | read ticket |
+| save | slot/overwrite boolean; optional snapshot | write ticket |
+| load | slot/revision | load ticket |
+| delete-save | slot | remove ticket |
+| save-jobs | none | statuses without result payloads |
+| save-status | id/operation | status without result payload |
+| take-save | id/operation | observation or consumed terminal receipt |
+| cancel-save | id/operation | null; only pending work can cancel |
+
+A ticket is acceptance, not a successful disk result. After the mailbox response,
+use returned IDs/kinds with `save-status` or `take-save`, for example:
+
+```json
+{"command":"game-data","session":"1","value":{"command":"take-save","id":"42","operation":"write"}}
+```
+
+The ID is illustrative. Keep polling pending/running receipts; only terminal
+`succeeded` with `result` proves completion. A ready load still requires take and
+may fail if live state changed. GUI controls use the same operations and poll their own tickets during frame
+preparation even when the panel is hidden, leaving agent/script receipts for their
+respective owners. Failures also reach the ordinary editor message.
 
 File byte sizes also use decimal strings. Unknown/missing/duplicate fields, wrong
 types and malformed revisions fail. The service bounds request bytes/depth; the
@@ -171,9 +239,10 @@ replacement, source-free compiled restart and removal of isolated temporary save
 FeatureLab audits the real SDK and supplies F6/F7 camera checkpoints across scenes.
 Tests do not open desktop windows; actual editor checks use its product agent API.
 
-Save I/O is synchronous and can stall a frame. Background scheduling, directory
-crash recovery, authentication/cloud sync, broader game-specific schemas, richer menus
-and finished gameplay remain separate work. Prism Relay now displays controls and
+Storage I/O runs in the owned worker during gameplay. Snapshot serialization,
+validation/publication on the owner, shutdown draining, directory crash recovery,
+authentication/cloud sync, broader game-specific schemas and finished gameplay remain
+separate performance/capability boundaries. Prism Relay now displays controls and
 checkpoint success/failure through [native game text](GameUi.md); full diagnostics
 remain in relayProgressStatus. Its keyboard checkpoint menu uses the
 [native game clock](GameClock.md), so save/restore remains available during simulation pause. These contracts do not establish overall

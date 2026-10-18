@@ -710,6 +710,8 @@ namespace Dot::Editor {
     bool m_saveOverwrite{};
     bool m_saveSlotsKnown{};
     Json m_saveSlots = Json::array();
+    Json m_saveRequests = Json::array();
+    std::string m_saveMessage;
     Platform::AgentInput m_agentInput;
     std::string m_inputSource{"none"};
     Platform::InputState m_gameInput;
@@ -1514,6 +1516,8 @@ namespace Dot::Editor {
       m_gameUiRevision = 0;
       m_saveSlotsKnown = false;
       m_saveSlots = Json::array();
+      m_saveRequests = Json::array();
+      m_saveMessage.clear();
       m_agentInput.reset();
       m_inputSource = "none";
 
@@ -6333,7 +6337,8 @@ namespace Dot::Editor {
         const auto operation = parsed["value"].at("command").get<std::string>();
 
         if ((m_pendingClose || m_play->stats()->state != PlayState::Running)
-            && operation != "snapshot" && operation != "get") {
+            && operation != "snapshot" && operation != "get" && operation != "save-status"
+            && operation != "save-jobs") {
           return Core::fail(Core::ErrorCode::InvalidState, "Game data is closing");
         }
 
@@ -6347,11 +6352,13 @@ namespace Dot::Editor {
 
         auto value = Codec::parseJson(*result, 36);
 
-        if (operation == "list-saves") {
-          m_saveSlots = value;
-          m_saveSlotsKnown = true;
-        } else if (operation == "save" || operation == "delete-save") {
-          m_saveSlotsKnown = false;
+        if (operation == "take-save" && value["state"] == "succeeded") {
+          if (value["operation"] == "list") {
+            m_saveSlots = value["result"];
+            m_saveSlotsKnown = true;
+          } else if (value["operation"] == "write" || value["operation"] == "remove") {
+            m_saveSlotsKnown = false;
+          }
         }
 
         return Json{{"ok", true}, {"result", std::move(value)}}.dump();
@@ -11102,6 +11109,53 @@ namespace Dot::Editor {
       }
     }
 
+    auto gameDataRequest(Json value) -> Core::Result<Json> {
+      auto response = safeExecute(Json{
+          {"command", "game-data"},
+          {"session", std::to_string(m_playSession)},
+          {"value", std::move(value)}}.dump());
+
+      if (!response) {
+        m_saveMessage = response.error().message;
+        m_message = m_saveMessage;
+        return std::unexpected(response.error());
+      }
+
+      return Codec::parseJson(*response)["result"];
+    }
+
+    /** GUI-owned receipts progress independently of panel visibility and rendering readiness.
+     * Agent/script tickets remain with their submitters; publication still uses the product route.
+     * GUI 回执不依赖面板可见性或绘制就绪状态；智能体/脚本票据仍由提交方提取，发布复用产品操作。 */
+    auto pollSaveRequests() -> void {
+      if (!m_play || m_play->stats()->state != PlayState::Running || m_pendingClose) {
+        return;
+      }
+
+      for (auto iterator = m_saveRequests.begin(); iterator != m_saveRequests.end();) {
+        auto operation = *iterator;
+        operation["command"] = "take-save";
+        auto result = gameDataRequest(std::move(operation));
+
+        if (!result || ((*result)["state"] != "pending" && (*result)["state"] != "running")) {
+          if (result) {
+            m_saveMessage = (*result)["state"] == "succeeded" ? "Save operation completed"
+                            : (*result)["error"].is_null()
+                                ? "Save operation cancelled"
+                                : (*result)["error"]["message"].get<std::string>();
+
+            if ((*result)["state"] == "failed") {
+              m_message = m_saveMessage;
+            }
+          }
+
+          iterator = m_saveRequests.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+    }
+
     auto gameDataPanel() -> void {
       if (!m_play) {
         ImGui::TextWrapped("Start Play to inspect game state and try isolated saves.");
@@ -11120,41 +11174,70 @@ namespace Dot::Editor {
       auto state = Codec::parseJson(*snapshot, 36);
       ImGui::Text("Revision %s", state["revision"].get_ref<const std::string&>().c_str());
       ImGui::TextWrapped("Play saves are temporary and are removed when Play stops.");
-      const auto request = [&](Json value) {
-        return sessionAction({{"command", "game-data"},
-                              {"session", std::to_string(m_playSession)},
-                              {"value", std::move(value)}});
+      const auto submit = [&](Json value) {
+        auto result = gameDataRequest(std::move(value));
+
+        if (result) {
+          m_saveRequests.push_back(*result);
+          m_saveMessage = "Save operation queued";
+        }
       };
       const bool running = m_play->stats()->state == PlayState::Running && !m_pendingClose;
-      ImGui::BeginDisabled(!running);
 
-      if (running && !m_saveSlotsKnown) {
-        m_saveSlotsKnown = true;
-        request({{"command", "list-saves"}});
+      if (running) {
+        for (const auto& ticket : m_saveRequests) {
+          auto operation = ticket;
+          operation["command"] = "save-status";
+          auto result = gameDataRequest(std::move(operation));
+
+          if (result) {
+            ImGui::PushID(ticket["id"].get_ref<const std::string&>().c_str());
+            ImGui::TextWrapped("%s: %s",
+                               (*result)["operation"].get_ref<const std::string&>().c_str(),
+                               (*result)["state"].get_ref<const std::string&>().c_str());
+
+            if ((*result)["state"] == "pending" && ImGui::Button("Cancel queued save operation")) {
+              auto cancel = ticket;
+              cancel["command"] = "cancel-save";
+              static_cast<void>(gameDataRequest(std::move(cancel)));
+            }
+
+            ImGui::PopID();
+          }
+        }
       }
+
+      if (running && !m_saveSlotsKnown && m_saveRequests.empty()) {
+        m_saveSlotsKnown = true;
+        submit({{"command", "list-saves"}});
+      }
+
+      ImGui::TextWrapped("Disk work runs in the background. Close waits for accepted operations.");
+      ImGui::TextWrapped("%s", m_saveMessage.c_str());
+      ImGui::BeginDisabled(!running || !m_saveRequests.empty());
 
       ImGui::SetNextItemWidth(-1);
       ImGui::InputText("##save-slot", &m_saveSlot);
       ImGui::Checkbox("Replace an existing slot", &m_saveOverwrite);
 
       if (ImGui::Button("Save state")) {
-        request({{"command", "save"}, {"slot", m_saveSlot}, {"overwrite", m_saveOverwrite}});
+        submit({{"command", "save"}, {"slot", m_saveSlot}, {"overwrite", m_saveOverwrite}});
       }
 
       ImGui::SameLine();
 
       if (ImGui::Button("Load state")) {
-        request({{"command", "load"}, {"slot", m_saveSlot}, {"revision", state["revision"]}});
+        submit({{"command", "load"}, {"slot", m_saveSlot}, {"revision", state["revision"]}});
       }
 
       if (ImGui::Button("Delete slot")) {
-        request({{"command", "delete-save"}, {"slot", m_saveSlot}});
+        submit({{"command", "delete-save"}, {"slot", m_saveSlot}});
       }
 
       ImGui::SameLine();
 
       if (ImGui::Button("Refresh slots")) {
-        request({{"command", "list-saves"}});
+        submit({{"command", "list-saves"}});
       }
 
       for (const auto& slot : m_saveSlots) {
@@ -15257,6 +15340,8 @@ namespace Dot::Editor {
         if (!m_application->running()) {
           return {};
         }
+
+        pollSaveRequests();
 
         auto materialPreview = synchronizeMaterialPreview();
         auto scene = displayedScene();

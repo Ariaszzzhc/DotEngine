@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, ui, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, ui, input, type JsonValue, type SaveTicket, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -506,25 +506,91 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('scenes.status', scenes.current().scope === this.self.id.scene);
   }
 
+  #saveTicket: SaveTicket|null = null;
+  #saveStep = 0;
+  #saveRevision = '1';
+
   private gameDataChecks(): void {
     const initial = gameState.snapshot();
     this.check('gameState.snapshot', typeof initial.revision === 'string');
     gameState.set('featureAudit', {visits: 1});
     this.check('gameState.set', typeof gameState.snapshot().revision === 'string');
     this.check('gameState.get', equal(gameState.get('featureAudit'), {visits: 1}));
-    const slot = saves.write('feature-lab-audit', true);
-    this.check('saves.write', slot.name === 'feature-lab-audit' && Number(slot.bytes) > 0);
-    this.check('saves.list', saves.list().some(s => s.name === slot.name));
-    gameState.set('featureAudit', {visits: 2});
-    this.check('saves.read', equal(saves.read(slot.name).data.featureAudit, {visits: 1}));
-    saves.load(slot.name, gameState.snapshot().revision);
-    this.check('saves.load', equal(gameState.get('featureAudit'), {visits: 1}));
     gameState.remove('featureAudit');
     this.check('gameState.remove', gameState.get('featureAudit') === undefined);
     gameState.replace(initial.data, gameState.snapshot().revision);
     this.check('gameState.replace', equal(gameState.snapshot().data, initial.data));
-    saves.remove(slot.name);
-    this.check('saves.remove', !saves.list().some(s => s.name === slot.name));
+    const snapshot = gameState.snapshot();
+    snapshot.data.featureAudit = {visits: 1};
+    this.#saveTicket = saves.write('feature-lab-audit', true, snapshot);
+  }
+
+  private pollSaveAudit(): void {
+    const ticket = this.#saveTicket;
+
+    if (ticket === null) {
+      return;
+    }
+
+    this.check('saves.jobs', saves.jobs().some(job => job.id === ticket.id));
+    this.check('saves.status', saves.status(ticket).operation === ticket.operation);
+    const receipt = saves.take(ticket);
+    this.check('saves.take', receipt.id === ticket.id);
+
+    if (receipt.state === 'pending' || receipt.state === 'running') {
+      return;
+    }
+
+    if (receipt.state !== 'succeeded') {
+      if (this.#saveStep === 4 && receipt.error?.code === 'InvalidState') {
+        this.check('saves.load', true);
+        this.#saveTicket = saves.remove('feature-lab-audit');
+        this.#saveStep = 5;
+        return;
+      }
+
+      throw Error(receipt.error?.message ?? 'Feature Lab save audit cancelled');
+    }
+
+    if (this.#saveStep === 0) {
+      const slot = receipt.result as {name: string; bytes: string};
+      this.check('saves.write', slot.name === 'feature-lab-audit' && Number(slot.bytes) > 0);
+      this.#saveTicket = saves.list();
+    } else if (this.#saveStep === 1) {
+      this.check('saves.list', (receipt.result as {name: string}[]).some(slot => slot.name === 'feature-lab-audit'));
+      this.#saveTicket = saves.read('feature-lab-audit');
+    } else if (this.#saveStep === 2) {
+      this.check('saves.read', equal((receipt.result as {data: {[key: string]: JsonValue}}).data.featureAudit, {visits: 1}));
+      const current = gameState.snapshot();
+      this.#saveRevision = current.revision;
+      this.#saveTicket = saves.write('feature-lab-audit', true, current);
+    } else if (this.#saveStep === 3) {
+      try {
+        this.#saveTicket = saves.load('feature-lab-audit', this.#saveRevision);
+      } catch (error) {
+        if ((error as HostError).code !== 'InvalidState') {
+          throw error;
+        }
+
+        this.check('saves.load', true);
+        this.#saveTicket = saves.remove('feature-lab-audit');
+        this.#saveStep = 5;
+        return;
+      }
+    } else if (this.#saveStep === 4) {
+      this.check('saves.load', typeof (receipt.result as {revision: string}).revision === 'string');
+      this.#saveTicket = saves.remove('feature-lab-audit');
+    } else if (this.#saveStep === 5) {
+      this.check('saves.remove', receipt.result === null);
+      this.#saveTicket = saves.list();
+    } else {
+      this.check('saves.list', !(receipt.result as {name: string}[]).some(slot => slot.name === 'feature-lab-audit'));
+      this.expectedError(() => saves.cancel({id: '0', operation: 'list'}), 'InvalidArgument');
+      this.check('saves.cancel', true);
+      this.#saveTicket = null;
+    }
+
+    ++this.#saveStep;
   }
 
   onStart(): void {
@@ -581,6 +647,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
   #buttonActions = 0;
 
   onFrame(seconds: number): void {
+    this.pollSaveAudit();
     this.check('ScriptComponent.onFrame', super.onFrame(seconds) === undefined);
 
     if (!this.#checked.has('input.requestTextInput')) {
@@ -742,7 +809,7 @@ export class Audit extends ScriptComponent<{contract: string}> {
   }
 
   onSaveState():
-      {checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number} {
+      {checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number; saveTicket: SaveTicket|null; saveStep: number; saveRevision: string} {
     return {
       checked: [...this.#checked],
       starts: this.#starts,
@@ -750,12 +817,15 @@ export class Audit extends ScriptComponent<{contract: string}> {
       updates: this.#updates,
       errors: this.#errors,
       uiSequence: this.#uiSequence,
-      buttonActions: this.#buttonActions
+      buttonActions: this.#buttonActions,
+      saveTicket: this.#saveTicket,
+      saveStep: this.#saveStep,
+      saveRevision: this.#saveRevision
     };
   }
 
   onLoadState(state: {
-    checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number
+    checked: string[]; starts: number; fixed: number; updates: number; errors: number; uiSequence: string; buttonActions: number; saveTicket: SaveTicket|null; saveStep: number; saveRevision: string
   }): void {
     if (!state || !Array.isArray(state.checked)
         || state.checked.some(key => typeof key !== 'string') ||
@@ -765,6 +835,18 @@ export class Audit extends ScriptComponent<{contract: string}> {
       throw new Error('Invalid feature lab checkpoint');
     }
 
+    if (!Number.isInteger(state.saveStep) || state.saveStep < 0 || state.saveStep > 7
+        || typeof state.saveRevision !== 'string' || !/^[1-9][0-9]*$/.test(state.saveRevision)) {
+      throw Error('Invalid save audit state');
+    }
+
+    if (state.saveTicket !== null) {
+      saves.status(state.saveTicket);
+    }
+
+    this.#saveTicket = state.saveTicket;
+    this.#saveStep = state.saveStep;
+    this.#saveRevision = state.saveRevision;
     hud.events(state.uiSequence);
     this.#uiSequence = state.uiSequence;
     this.#buttonActions = state.buttonActions;

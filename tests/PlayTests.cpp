@@ -18,6 +18,7 @@ import Dot.Core.Files;
 import Dot.Core.Process;
 import Dot.Core.Result;
 import Dot.Editor.Play;
+import Dot.Script.GameData;
 import Dot.Platform.AgentInput;
 import Dot.Project;
 import Dot.Project.GameSession;
@@ -30,6 +31,24 @@ import Dot.Platform.Events;
 namespace {
   using namespace Dot::Editor;
   using namespace std::chrono_literals;
+
+  auto awaitSave(Dot::Script::GameData& data, const std::string& submitted) -> nlohmann::json {
+    auto request = nlohmann::json::parse(submitted);
+    request["command"] = "take-save";
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+
+    for (;;) {
+      auto result = nlohmann::json::parse(data.perform(request.dump()).value());
+
+      if (result["state"] != "pending" && result["state"] != "running") {
+        REQUIRE_MESSAGE(result["state"] == "succeeded", result.dump());
+        return result["result"];
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      std::this_thread::sleep_for(1ms);
+    }
+  }
 
   struct Fixture {
     DotTest::Audio::Directory directory;
@@ -439,9 +458,10 @@ TEST_CASE("play.game_data_and_save_files_are_isolated_and_removed_after_stop") {
       = PlaySession::create(fixture.project, fixture.compiler(), authoring, config).value();
   auto fresh = restarted.gameData().value();
   CHECK(nlohmann::json::parse(fresh.perform(R"({"command":"snapshot"})").value())["data"].empty());
-  CHECK(nlohmann::json::parse(fresh.perform(R"({"command":"list-saves"})").value()).empty());
+  CHECK(awaitSave(fresh, fresh.perform(R"({"command":"list-saves"})").value()).empty());
 #if !defined(_WIN32)
-  REQUIRE(fresh.perform(R"({"command":"save","slot":"blocked","overwrite":false})"));
+  awaitSave(fresh,
+            fresh.perform(R"({"command":"save","slot":"blocked","overwrite":false})").value());
   const auto owned = std::filesystem::directory_iterator(root.root())->path();
   const auto permissions = std::filesystem::status(owned).permissions();
 

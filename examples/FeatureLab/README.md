@@ -185,13 +185,14 @@ F7 reads/restores it, requesting the saved scene when necessary; a restored came
 applies the saved pose. Window → Game state exposes owned state/operation status and
 slot controls through the same editor/agent implementation. Missing or invalid
 checkpoints report their error in `cameraCheckpointStatus` without disabling camera
-input. Enable Game input in editor Play before using these keys.
+input. Disk work runs in the native background queue; status reports completion
+only after a later-frame receipt. Enable Game input in editor Play before using these keys.
 
 Play saves are disposable and disappear on Stop. Standalone games retain them in
 SDL's per-user directory under the stable application ID, independently of project
 name/location. Loading is a deliberate game action; engine storage does not itself
 move cameras or switch scenes. The SDK auditor exercises state and filesystem APIs,
-restores its initial state and deletes its own `feature-lab-audit` demonstration slot.
+uses revision-checked loads without overwriting intervening changes and deletes its own `feature-lab-audit` demonstration slot.
 The demo's stored identity is `dotengine-feature-lab`; template instances receive new IDs.
 
 

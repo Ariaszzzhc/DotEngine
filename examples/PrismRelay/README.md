@@ -66,7 +66,9 @@ checkpoint without replacing unrelated live game-state keys. It does not resume
 physics velocity, animation clocks, other actors or a previous running simulation.
 Changed level geometry can obstruct a formerly valid point; normal native physics
 resolves overlap on the next step. Native failures after pose mutation are reported,
-without a rollback guarantee. Saving is synchronous and may stall a frame.
+without a rollback guarantee. Saving/loading use native background jobs. The status remains pending until a disk
+receipt arrives; duplicate menu requests are disabled while busy. Pending tickets
+survive source reload. Normal exit drains accepted writes and may wait for disk.
 
 Editor Play saves are temporary and removed on Stop; they never overwrite standalone
 progress. Exported games use their application ID's user directory, or an explicit

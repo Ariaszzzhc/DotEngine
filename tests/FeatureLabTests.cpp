@@ -95,6 +95,21 @@ namespace {
     return Json::parse(found->script->properties);
   }
 
+  auto awaitSaveAudit(Project::GameSession& session) -> void {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    Platform::InputState input;
+
+    while (!std::ranges::contains(
+        data(*session.scene().value())["checked"].get<std::vector<std::string>>(),
+        "saves.cancel")) {
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      input.beginFrame();
+      REQUIRE(session.publish(input));
+      report(session.update(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
   auto declared(const Project::Project& project) -> std::set<std::string> {
     auto manifest = Json::parse(project.files()->readText("coverage.json").value());
     REQUIRE(manifest["version"] == 1);
@@ -128,7 +143,8 @@ TEST_CASE("feature_lab.inventory_matches_the_current_runtime_sdk") {
                                  "Entity.id",
                                  "ScriptComponent.self",
                                  "ScriptComponent.properties"};
-  const std::regex member(R"(^  (?:(get|set) )?([A-Za-z][A-Za-z0-9_]*)\()", std::regex::multiline);
+  const std::regex member(R"(^  (?:(get|set) )?([A-Za-z][A-Za-z0-9_]*)(?:<[^\n]+>)?\()",
+                          std::regex::multiline);
 
   for (const auto* name :
        {"input", "components", "physics", "audio", "animation", "scene", "scenes", "gameState",
@@ -266,13 +282,26 @@ TEST_CASE("feature_lab.full_sdk_executes_against_real_scene_input_physics_audio"
   report(session.update(1.0 / 60));
   report(session.update(1.0 / 60));
   report(session.update(1.0 / 60));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  std::size_t extraUpdates{};
+
+  while (!std::ranges::contains(data(*scene)["checked"].get<std::vector<std::string>>(),
+                                "saves.cancel")) {
+    REQUIRE(std::chrono::steady_clock::now() < deadline);
+    input.beginFrame();
+    REQUIRE(session.publish(input));
+    report(session.update(0));
+    ++extraUpdates;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
   report(session.close());
   snapshot = data(*scene);
   CHECK(snapshot["starts"] == 1);
   CHECK(snapshot["fixed"] == 1);
-  CHECK(snapshot["updates"] == 5);
+  CHECK(snapshot["updates"] == 5 + extraUpdates);
   CHECK(snapshot["stops"] == 1);
-  CHECK(snapshot["errors"] == 18);
+  CHECK(snapshot["errors"] == 19);
   complete(fixture.project, *scene);
   CHECK(Script::compilerGenerations() == generations);
   CHECK(Script::Runtime::backendMemory().bytes == vm);
@@ -386,7 +415,7 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   report(reloaded);
   CHECK(completed->committed);
   REQUIRE(completed->reload.has_value());
-  CHECK(completed->reload->migrated == 2);
+  CHECK(completed->reload->migrated == 3);
   auto after = data(*session.scene().value());
   CHECK(after["starts"] == before["starts"]);
   CHECK(after["fixed"] == before["fixed"]);
@@ -394,6 +423,7 @@ TEST_CASE("feature_lab.hot_reload_preserves_verified_checks_and_hook_counts") {
   report(session.update(0));
   report(session.update(0));
   report(session.update(0));
+  awaitSaveAudit(session);
   report(session.close());
   complete(fixture.project, *session.scene().value());
 }
@@ -634,6 +664,26 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   checkpoint.position.x += 3;
   REQUIRE(main->setTransform(camera, checkpoint));
   press(Platform::Key::F6);
+  awaitSaveAudit(session);
+  const auto awaitCamera = [&] {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+
+    for (;;) {
+      auto snapshot = Json::parse(session.gameData()->perform(R"({"command":"snapshot"})").value());
+      const auto status = snapshot["data"].value("cameraCheckpointStatus", std::string{});
+
+      if (status != "Saving camera checkpoint..." && status != "Loading camera checkpoint...") {
+        return;
+      }
+
+      REQUIRE(std::chrono::steady_clock::now() < deadline);
+      input.beginFrame();
+      REQUIRE(session.publish(input));
+      report(session.update(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  };
+  awaitCamera();
   auto state = session.gameData().value();
   auto snapshot = Json::parse(state.perform(R"({"command":"snapshot"})").value());
   CHECK(snapshot["data"]["cameraCheckpointStatus"] == "Camera checkpoint saved");
@@ -646,6 +696,7 @@ TEST_CASE("feature_lab.compiled_studio_game_travels_main_and_back_without_changi
   complete(fixture.project, *main);
   CHECK(data(*main)["stops"] == 1);
   press(Platform::Key::F7);
+  awaitCamera();
   report(Dot::Tests::awaitScene(session, session.stats()->transition->id));
   CHECK(session.stats()->location.path == "scenes/main.dotscene");
   auto restored = session.scene().value();

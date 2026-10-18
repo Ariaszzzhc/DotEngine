@@ -14,6 +14,10 @@ import Dot.Core.Result;
 import Dot.Core.Files;
 
 export namespace Dot::Game {
+  /** Pure portable slot-name validation; performs no filesystem access.
+   * 纯可移植槽名校验，不访问文件系统。 */
+  [[nodiscard]] auto validateSaveSlot(std::string_view slot) -> bool;
+
   struct SaveLimits {
     StateLimits state;
     std::size_t slots{256};
