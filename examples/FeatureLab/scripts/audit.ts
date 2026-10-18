@@ -140,6 +140,9 @@ export class Audit extends ScriptComponent<{contract: string}> {
     view.parent = parent;
     this.check('Entity.parent.set', view.parent?.id.value === parent.id.value);
     this.check('Entity.parent.get', view.info().parent?.value === parent.id.value);
+    const children = parent.children;
+    this.check('Entity.children.get', children.length === 1 && children[0].id.value === view.id.value
+        && children[0].parent?.id.value === parent.id.value);
     this.check(
         'Entity.worldMatrix', view.worldMatrix().length === 16 && view.worldMatrix()[12] === 3);
     view.parent = null;

@@ -18,7 +18,9 @@ native dynamic body. The scene name/window title shows the completed check count
 
 `audit.ts` throws on failed behavior checks. Only successful assertions enter the
 native Report entity's disabled script metadata. `coverage.json` lists the
-current runtime SDK members, including getter/setter distinctions. The inventory
+current runtime SDK members, including getter/setter distinctions. Direct child
+enumeration uses owned, creation-ordered scene-scoped wrappers, permitting copied
+actors to bind their own rig without a global unique-name dependency. The inventory
 check reads the actual SDK independently, and execution tests compare it with the
 report only after explicit stop. Additional checks exercise component removal,
 failed-write/control preservation, owned snapshots, collider queries and exact

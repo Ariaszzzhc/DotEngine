@@ -42,6 +42,7 @@ namespace Dot::Script {
       RenameScene,
       List,
       FindNamed,
+      Children,
       Create,
       Get,
       Destroy,
@@ -64,6 +65,7 @@ namespace Dot::Script {
                                  std::pair{"scene.rename", Operation::RenameScene},
                                  std::pair{"entity.list", Operation::List},
                                  std::pair{"entity.findNamed", Operation::FindNamed},
+                                 std::pair{"entity.children", Operation::Children},
                                  std::pair{"entity.create", Operation::Create},
                                  std::pair{"entity.get", Operation::Get},
                                  std::pair{"entity.destroy", Operation::Destroy},
@@ -684,6 +686,22 @@ namespace Dot::Script {
         return std::optional<std::string>{value ? "true" : "false"};
       }
 
+      if (operation == Operation::Children) {
+        auto children = scene.children(*entity);
+
+        if (!children) {
+          return std::unexpected(children.error());
+        }
+
+        auto result = Json::array();
+
+        for (const auto child : *children) {
+          result.push_back(idJson(child));
+        }
+
+        return std::optional{result.dump()};
+      }
+
       if (operation == Operation::GetComponent || operation == Operation::SetComponent) {
         if (!args[1].is_string()) {
           return Core::fail(ErrorCode::InvalidArgument, "Component name must be a string");
@@ -836,10 +854,10 @@ namespace Dot::Script {
              }
            },
            operation == Operation::Info || operation == Operation::List
-                   || operation == Operation::FindNamed || operation == Operation::Get
-                   || operation == Operation::GetTransform || operation == Operation::WorldTransform
-                   || operation == Operation::GetComponent || operation == Operation::Exists
-                   || operation == Operation::PrimaryCamera
+                   || operation == Operation::FindNamed || operation == Operation::Children
+                   || operation == Operation::Get || operation == Operation::GetTransform
+                   || operation == Operation::WorldTransform || operation == Operation::GetComponent
+                   || operation == Operation::Exists || operation == Operation::PrimaryCamera
                    || operation == Operation::PrimaryListener
                ? HostAccess::ReadOnly
                : HostAccess::ReadWrite});

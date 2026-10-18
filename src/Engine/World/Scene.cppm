@@ -315,6 +315,11 @@ export namespace Dot::World {
      * 不复制无关组件。 */
     [[nodiscard]] auto findEntities(std::string_view name) const
         -> Core::Result<std::vector<EntityId>>;
+    /** Owned creation-ID-sorted direct children, without copying unrelated descriptions.
+     * Empty for a live leaf; foreign, deleted and wrong-thread parents fail explicitly.
+     * 按创建 ID 排序的直接子项拥有列表，不复制无关描述；存活叶节点返回空列表，跨场景、
+     * 已删除或错误线程的父项明确失败。 */
+    [[nodiscard]] auto children(EntityId parent) const -> Core::Result<std::vector<EntityId>>;
     [[nodiscard]] auto entity(EntityId entity) const -> Core::Result<EntityInfo>;
     /** Owned, ID-sorted animation descriptions without unrelated component copies.
      * 按 ID 排序的动画描述副本，不复制无关组件。 */

@@ -565,3 +565,32 @@ TEST_CASE("scene_host.named_lookup_is_read_only_exact_and_strict") {
   CHECK(Json::parse(**invoke(services, "entity.findNamed", Json::array({"目标"})))
         == Json::array({id(last)}));
 }
+
+TEST_CASE("scene_host.direct_children_are_read_only_strict_and_keep_scoped_identity") {
+  auto native = scene();
+  const auto root = native->createEntity("Root").value();
+  const auto a = native->createEntity("Duplicate").value();
+  const auto b = native->createEntity("Duplicate").value();
+  REQUIRE(native->setParent(b, root));
+  REQUIRE(native->setParent(a, root));
+  auto services = bindings(native);
+  const auto method = std::ranges::find(services, "entity.children", &HostFunction::name);
+  REQUIRE(method != services.end());
+  CHECK(method->access == HostAccess::ReadOnly);
+  const auto result = invoke(services, "entity.children", Json::array({id(root)}));
+  REQUIRE((result && *result));
+  CHECK(Json::parse(**result) == Json::array({id(a), id(b)}));
+
+  for (const auto& args : {Json::array(), Json::array({id(root), 1}), Json::array({42}),
+                           Json::array({nullptr}), Json::array({{{"scene", "1"}}})}) {
+    CHECK_FALSE(invoke(services, "entity.children", args));
+  }
+
+  CHECK_FALSE(invoke(services, "entity.children", Json::array({id({root.scene + 1, root.value})})));
+  REQUIRE(native->destroyEntity(a));
+  CHECK(Json::parse(**invoke(services, "entity.children", Json::array({id(root)})))
+        == Json::array({id(b)}));
+  CHECK(Json::parse(**result) == Json::array({id(a), id(b)}));
+  REQUIRE(native->destroyEntity(root));
+  CHECK_FALSE(invoke(services, "entity.children", Json::array({id(root)})));
+}

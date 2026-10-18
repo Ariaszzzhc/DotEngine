@@ -10,6 +10,7 @@ This replaces the earlier collection/timer prototype.
 - Shift: sprint.
 - Space: jump; short input buffering retains presses between fixed steps.
 - E: trigger/cancel the masked inspection gesture while moving; native fades blend it in/out.
+- C, while unpaused: switch between the solo bay and the maintenance crew bay.
 - M: pause/resume the checkpoint menu. While paused, N advances one native simulation
   step at fixedHz, including the airborne capsule, gameplay and animation layers;
   holding N does not repeat presses. Audio/frame UI remain unscaled.
@@ -38,6 +39,37 @@ are bounded. Initial overlap uses native separation normals; impossible geometry
 reports an error instead of silently publishing an intersecting camera pose.
 A listener follows the avatar head with camera orientation, so orbiting does not
 create artificial listener speed or Doppler.
+
+## Maintenance crew
+
+`scenes/maintenance-crew.dotscene` is an ordinary editable level with the player and
+seven additional maintenance workers: eight separate native character capsules,
+eight independently bound rigs/controllers, and the same saved industrial props.
+Press C in either level to visit the other. Native background scene preparation
+keeps the current level live until publication; failures preserve it and display a
+retry message. Save/restore submissions and scene changes cannot overlap. Checkpoints
+belong to the current playable level and restore only the player/camera; a checkpoint
+from the other bay is rejected, and workers restart their duties on a fresh visit.
+
+Each worker's `CrewPatrol` properties contain `stationA`, `stationB`, `speed` and
+`workSeconds`. Duplicate the whole character subtree, place the capsule at station A,
+then edit its two world-space stations through Inspector. Every character binds its
+single direct model child, so copied names and remapped native joint IDs remain
+independent. Walk to a station, perform the native masked inspection gesture, wait,
+then return. Arrival requires actual native feet near the station and grounded
+support; a player blocking the path cannot make the worker claim completion. Let
+the player move aside and normal capsule movement resumes. This is authored two-point
+duty, without navigation mesh planning or crowd avoidance. Choose clear routes.
+
+Movement, collision, support and animation mixing remain native engine services.
+Script reload retains each worker's private duty state and native animation clocks;
+state migration only reads services and reconstructs private intent. Pausing freezes
+all characters, and one simulation step advances them together. The game-state keys
+`crew:<entity value>` expose phase/target/actual arrival counts and are removed when
+that level retires. They do not replace native pose/contact observations or persist
+an entire simulation. The crew level is a populated workflow example, not large-game
+scale evidence or final character/animation art.
+
 The four authored steps exercise traversal; the final taller rise requires jumping.
 Industrial utility cabinets and maintenance grilles are environmental props, without pickups,
 health, rounds, timers or shooting logic.
@@ -60,7 +92,7 @@ migration. This migration state is separate from the explicit persistent checkpo
 The exported game can be operated through the optional [native product mailbox](../../docs/Export.md#opt-in-native-player-control),
 including real movement/jump input and persistent game-data slots. A Prism-specific
 checkpoint uses the `relay-checkpoint` slot and a strict `prism-relay-checkpoint`
-schema for the saved main scene. It validates every field before moving the player;
+schema for the saved playable scene. It validates every field before moving the player;
 missing, damaged or mismatched saves leave the current pose intact. F7 reads its
 checkpoint without replacing unrelated live game-state keys. It does not resume
 physics velocity, animation clocks, other actors or a previous running simulation.

@@ -1,7 +1,7 @@
-import {audio, Entity, gameClock, hud, ui, input, type InputFrame, type JsonValue, type SaveTicket, saves, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, gameClock, hud, ui, input, type InputFrame, type JsonValue, type SaveTicket, saves, scene, scenes, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
-import {checkpoint, loadedCheckpoint, type RelayCheckpoint, progressFailure, progressStatus, readCheckpoint, savedCheckpoint, saveCheckpoint} from './progress';
+import {checkpoint, currentRelayScene, loadedCheckpoint, type RelayCheckpoint, progressFailure, progressStatus, readCheckpoint, savedCheckpoint, saveCheckpoint} from './progress';
 
 interface Settings {
   walkSpeed: number;
@@ -22,6 +22,7 @@ interface RuntimeState {
   uiSequence: string;
   jumpBuffer: number;
   checkpoint: PendingCheckpoint|null;
+  sceneRequest: string|null;
 }
 
 /**
@@ -43,11 +44,12 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #jumpBuffer = 0;
   #menuVisible = false;
   #checkpoint: PendingCheckpoint|null = null;
+  #sceneRequest: string|null = null;
 
   private bind(): void {
     const camera = scene.primaryCamera;
     const listener = scene.primaryListener;
-    const models = scene.findEntities('Surveyor');
+    const models = this.self.children;
     const model = models.length === 1 ? models[0] : undefined;
 
     if (!camera || !model || !listener || listener.parent !== null || !listener.audioListener
@@ -147,7 +149,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   }
 
   private checkpoint(load: boolean): void {
-    if (this.#checkpoint !== null) {
+    if (this.#checkpoint !== null || this.#sceneRequest !== null) {
       return;
     }
 
@@ -164,7 +166,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
         const saved: RelayCheckpoint = {
           format: 'prism-relay-checkpoint',
-          path: 'scenes/main.dotscene',
+          path: currentRelayScene(),
           feet: {...state.position},
           yawDegrees: Math.atan2(2 * state.rotation.w * state.rotation.y,
                                  1 - 2 * state.rotation.y * state.rotation.y) * 180 / Math.PI,
@@ -240,12 +242,51 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     }
   }
 
+  /** Keep the current level live until native preparation commits; retries follow real results.
+   * 原生准备提交前保持当前关卡运行，重试遵循真实请求结果。 */
+  private changeBay(): void {
+    if (this.#checkpoint !== null || this.#sceneRequest !== null) {
+      return;
+    }
+
+    const target = currentRelayScene() === 'scenes/main.dotscene'
+        ? 'scenes/maintenance-crew.dotscene' : 'scenes/main.dotscene';
+    this.#sceneRequest = scenes.request(target);
+    progressStatus(target === 'scenes/main.dotscene' ? 'Returning to solo bay...' : 'Loading maintenance crew...');
+    ui.enabled('menu-1-save', false);
+    ui.enabled('menu-2-restore', false);
+  }
+
+  private pollBay(): void {
+    if (this.#sceneRequest === null) {
+      return;
+    }
+
+    const result = scenes.status(this.#sceneRequest);
+
+    if (result.state === 'failed' || result.state === 'cancelled') {
+      this.#sceneRequest = null;
+      progressStatus('Level unavailable: ' + (result.error?.message ?? 'Scene change cancelled'));
+      ui.enabled('menu-1-save', true);
+      ui.enabled('menu-2-restore', true);
+    }
+  }
+
   onFrame(_seconds: number): void {
     const frame = input.snapshot();
 
     if (frame.index !== this.#progressFrame) {
       this.#progressFrame = frame.index;
       this.pollCheckpoint();
+      this.pollBay();
+
+      if (frame.keys.C.pressed && !gameClock.snapshot().paused && !hud.inputState().keyboard) {
+        try {
+          this.changeBay();
+        } catch (error) {
+          progressStatus('Level unavailable: ' + (error instanceof Error ? error.message : String(error)));
+        }
+      }
 
       if (frame.keys.M.pressed) {
         gameClock.setPaused(!gameClock.snapshot().paused);
@@ -343,6 +384,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       uiSequence: this.#uiSequence,
       jumpBuffer: this.#jumpBuffer,
       checkpoint: this.#checkpoint,
+      sceneRequest: this.#sceneRequest,
     };
   }
 
@@ -360,6 +402,14 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
     const pending = state.checkpoint;
 
+    if (state.sceneRequest !== null) {
+      if (typeof state.sceneRequest !== 'string' || !/^[1-9][0-9]*$/.test(state.sceneRequest)) {
+        throw Error('Invalid pending Prism Relay scene request');
+      }
+
+      scenes.status(state.sceneRequest);
+    }
+
     if (pending !== null) {
       if (!pending || !pending.ticket || typeof pending.ticket.id !== 'string'
           || (pending.ticket.operation !== 'write' && pending.ticket.operation !== 'read')
@@ -376,6 +426,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
 
     this.bind();
     this.#checkpoint = pending;
+    this.#sceneRequest = state.sceneRequest;
     ui.events(state.uiSequence);
     this.#menuVisible = gameClock.snapshot().paused;
     this.#camera.restore(state.camera);

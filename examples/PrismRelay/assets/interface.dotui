@@ -26,7 +26,7 @@
           "x": 0.9599999785423279,
           "y": 0.14000000059604645
         },
-        "text": "PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu | N step paused",
+        "text": "PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu | N step paused | C crew/solo",
         "visible": true
       },
       "enabled": true,

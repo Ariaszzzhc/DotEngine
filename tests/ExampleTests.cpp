@@ -1802,3 +1802,270 @@ TEST_CASE("prism.saved_two_bone_reach_matches_reference_and_keeps_instance_place
   CHECK(main.animationPlayers()->front().properties.clips.size() == 8);
   CHECK(main.animationPlayers()->front().properties.controller.has_value());
 }
+
+namespace {
+  constexpr auto crewScene = "scenes/maintenance-crew.dotscene";
+
+  auto selectCrew(Fixture& fixture) -> void {
+    auto description = fixture.project.description().value();
+    description.startScene = crewScene;
+    REQUIRE(fixture.project.save(description));
+  }
+
+  auto crewData(Project::GameSession& session) -> Json {
+    return Json::parse(session.gameData()->perform(R"({"command":"snapshot"})").value())["data"];
+  }
+}  // namespace
+
+TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_and_clocks") {
+  Fixture f;
+  selectCrew(f);
+  const auto authored = f.project.files()->readText(crewScene).value();
+  auto session = f.session(true);
+  report(session.start());
+  auto scene = session.scene().value();
+  const auto actors = scene->characterControllers().value();
+  REQUIRE(actors.size() == 8);
+  REQUIRE(scene->animationPlayers()->size() == 8);
+  std::vector<World::EntityId> models;
+  std::map<std::uint64_t, Math::Vec3> starts;
+  std::set<std::uint64_t> targets;
+
+  for (const auto actor : actors) {
+    const auto children = scene->children(actor).value();
+    REQUIRE(children.size() == 1);
+    models.push_back(children.front());
+    starts.emplace(actor.value, scene->transform(actor)->position);
+    const auto animation = scene->entity(children.front())->animation.value();
+    REQUIRE(animation.controller == "assets/locomotion.dotcontroller");
+
+    for (const auto& target : animation.targets) {
+      CHECK(targets.insert(target.entity).second);
+    }
+  }
+
+  Driver driver(session);
+
+  for (int frame = 0; frame < 360; ++frame) {
+    driver.frame();
+  }
+
+  const auto data = crewData(session);
+  std::size_t crewCount{};
+
+  for (const auto actor : actors) {
+    if (scene->entity(actor)->name == "Player") {
+      continue;
+    }
+
+    ++crewCount;
+    const auto pose = scene->transform(actor)->position;
+    const auto first = starts.at(actor.value);
+    CHECK(std::hypot(pose.x - first.x, pose.z - first.z) > .3F);
+    CHECK(pose.y > -.05F);
+    CHECK(data.at("crew:" + std::to_string(actor.value))["visits"].get<unsigned>() >= 1);
+  }
+
+  CHECK(crewCount == 7);
+  auto clock = session.gameClock().value();
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
+  report(session.update(0));
+  const auto frozen = World::encodeScene(*scene).value();
+  std::vector<std::string> states;
+
+  for (const auto model : models) {
+    states.push_back(session.inspectAnimation(model).value());
+  }
+
+  const auto files = f.project.files().value();
+  const auto source = files.readText("scripts/crew.ts").value();
+  REQUIRE(files.writeTextAtomic("scripts/crew.ts", source + "\n"));
+  const auto completed = Tests::awaitCompilation([&] { return session.pollScripts(); });
+  report(session.update(0));
+  REQUIRE(completed->committed);
+  REQUIRE(completed->reload);
+  CHECK(completed->reload->migrated == 8);
+  CHECK(World::encodeScene(*scene).value() == frozen);
+  CHECK(crewData(session) == data);
+
+  for (std::size_t i = 0; i < models.size(); ++i) {
+    CHECK(session.inspectAnimation(models[i]).value() == states[i]);
+  }
+
+  const auto steps = session.stats()->simulatedFixedSteps;
+  REQUIRE(clock.perform(R"({"command":"step"})"));
+  report(session.update(0));
+  CHECK(session.stats()->simulatedFixedSteps == steps + 1);
+  CHECK(World::encodeScene(*scene).value() != frozen);
+  REQUIRE(clock.perform(R"({"command":"set-paused","paused":false})"));
+  driver.frame();
+  report(session.close());
+  CHECK(f.project.files()->readText(crewScene).value() == authored);
+}
+
+TEST_CASE("prism.peer_blocked_crew_cannot_claim_arrival_and_resumes_when_player_clears") {
+  Fixture f;
+  selectCrew(f);
+  auto authored = f.project.loadStartup().value();
+  const auto player = authored.findEntities("Player")->front();
+  REQUIRE(authored.setTransform(player, {{-4, 0, -2.6F}}));
+  const auto observer = authored.createEntity("Crew contact observer").value();
+  REQUIRE(authored.setScript(observer, World::ScriptComponent{"crew-contact.ts", "CrewContact"}));
+  REQUIRE(f.project.saveStartup(authored));
+  REQUIRE(f.project.files()->writeTextAtomic("scripts/crew-contact.ts", R"ts(
+import {gameState, physics, scene, ScriptComponent} from 'dot:engine';
+export class CrewContact extends ScriptComponent {
+  #player = scene.findEntities('Player')[0]!.id.value;
+  #crew = scene.findEntities('Crew 1')[0]!.id.value;
+  #seen = false;
+  onFixedUpdate(): void {
+    if (!this.#seen && physics.contacts.events.some(event => event.geometry?.kind === 'character'
+        && event.phase !== 'end'
+        && ((event.first.value === this.#player && event.second.value === this.#crew)
+            || (event.second.value === this.#player && event.first.value === this.#crew)))) {
+      this.#seen = true;
+      gameState.set('crewPeerContact', true);
+    }
+  }
+}
+)ts"));
+  auto session = f.session();
+  report(session.start());
+  Driver driver(session);
+
+  for (int frame = 0; frame < 480; ++frame) {
+    driver.frame();
+  }
+
+  const auto crew = entity(session, "Crew 1");
+  const auto hero = entity(session, "Player");
+  auto data = crewData(session);
+  CHECK(data.at("crewPeerContact") == true);
+  CHECK(data.at("crew:" + std::to_string(crew.id.value))["visits"] == 0);
+  CHECK(crew.transform.position.z < -3.1F);
+  CHECK(std::hypot(crew.transform.position.x - hero.transform.position.x,
+                   crew.transform.position.z - hero.transform.position.z)
+        > .65F);
+
+  for (int frame = 0; frame < 60; ++frame) {
+    driver.frame({Platform::Key::D});
+  }
+
+  for (int frame = 0; frame < 240; ++frame) {
+    driver.frame();
+  }
+
+  CHECK(crewData(session).at("crew:" + std::to_string(crew.id.value))["visits"].get<unsigned>()
+        >= 1);
+  report(session.close());
+}
+
+TEST_CASE("prism.crew_checkpoint_is_scene_scoped_and_survives_a_fresh_native_session") {
+  Fixture f;
+  selectCrew(f);
+  REQUIRE(f.storage.files()->createDirectories("crew-saves"));
+  const auto saves = Core::FileSystem::open(f.storage.files()->root() / "crew-saves").value();
+  auto session = f.session(false, saves);
+  report(session.start());
+  Driver driver(session);
+
+  for (int frame = 0; frame < 25; ++frame) {
+    driver.frame({Platform::Key::W});
+  }
+
+  driver.frame();
+  const auto feet = entity(session, "Player").transform.position;
+  driver.publish({Platform::Key::F6});
+  report(session.update(0));
+  awaitCheckpoint(session, driver);
+  REQUIRE(crewData(session)["relayCheckpoint"]["path"] == crewScene);
+  const auto bytes = saves.readText("relay-checkpoint.dotsave").value();
+  driver.publish({Platform::Key::C});
+  report(session.update(0));
+  REQUIRE(session.stats()->transition);
+  REQUIRE(Tests::awaitScene(session, session.stats()->transition->id));
+  driver.frame();
+  const auto before = entity(session, "Player").transform.position;
+  driver.publish({Platform::Key::F7});
+  report(session.update(0));
+  awaitCheckpoint(session, driver);
+  CHECK(crewData(session)["relayProgressStatus"].get<std::string>().starts_with(
+      "Checkpoint unavailable:"));
+  CHECK(entity(session, "Player").transform.position == before);
+  const auto mainData = crewData(session);
+
+  for (const auto& [key, value] : mainData.items()) {
+    CHECK_FALSE(key.starts_with("crew:"));
+  }
+  CHECK(saves.readText("relay-checkpoint.dotsave").value() == bytes);
+  report(session.close());
+  auto fresh = f.session(false, saves);
+  report(fresh.start());
+  Driver resumed(fresh);
+  resumed.publish({Platform::Key::F7});
+  report(fresh.update(0));
+  awaitCheckpoint(fresh, resumed);
+  CHECK(crewData(fresh)["relayProgressStatus"] == "Checkpoint restored");
+  CHECK(entity(fresh, "Player").transform.position == feet);
+  CHECK(fresh.scene().value()->characterControllers()->size() == 8);
+  report(fresh.close());
+}
+
+TEST_CASE("prism.bay_input_keeps_old_level_on_failure_and_retries_saved_content") {
+  Fixture f;
+  const auto files = f.project.files().value();
+  const auto saved = files.readText(crewScene).value();
+  auto session = f.session(true);
+  report(session.start());
+  const auto scope = session.scene().value()->id();
+  Driver driver(session);
+  REQUIRE(files.writeTextAtomic(crewScene, "damaged scene"));
+  driver.publish({Platform::Key::C});
+  report(session.update(0));
+  REQUIRE(session.stats()->transition);
+  const auto failed = session.stats()->transition->id;
+  const auto completion = Tests::awaitScene(session, failed);
+
+  if (!completion) {
+    CHECK(completion.error().code == Core::ErrorCode::InvalidArgument);
+  }
+
+  REQUIRE(session.sceneRequest(failed)->state == Script::SceneRequestState::Failed);
+  CHECK(session.stats()->state == Project::SessionState::Running);
+  CHECK(session.scene().value()->id() == scope);
+  driver.publish();
+  report(session.update(0));
+  CHECK(crewData(session)["relayProgressStatus"].get<std::string>().starts_with(
+      "Level unavailable:"));
+  REQUIRE(files.writeTextAtomic(crewScene, saved));
+  driver.publish({Platform::Key::C});
+  report(session.update(0));
+  const auto retry = session.stats()->transition->id;
+  REQUIRE(retry != failed);
+  const auto source = files.readText("scripts/player.ts").value();
+  REQUIRE(files.writeTextAtomic("scripts/player.ts", source + "\n"));
+  const auto reloaded = Tests::awaitCompilation([&] { return session.pollScripts(); });
+  REQUIRE(reloaded->committed);
+  REQUIRE(reloaded->reload);
+  CHECK(reloaded->reload->migrated == 1);
+  CHECK(session.scene().value()->id() == scope);
+  CHECK(session.stats()->transition->id == retry);
+  REQUIRE(Tests::awaitScene(session, retry));
+  REQUIRE(session.stats()->location.path == crewScene);
+  CHECK(session.scene().value()->characterControllers()->size() == 8);
+  const auto crewScope = session.scene().value()->id();
+  driver.publish({Platform::Key::C});
+  report(session.update(0));
+  CHECK(session.scene().value()->id() == crewScope);
+  CHECK(session.stats()->transition->id == retry);
+  driver.publish();
+  report(session.update(0));
+  driver.publish({Platform::Key::C});
+  report(session.update(0));
+  const auto back = session.stats()->transition->id;
+  REQUIRE(back != retry);
+  REQUIRE(Tests::awaitScene(session, back));
+  CHECK(session.stats()->location.path == "scenes/main.dotscene");
+  CHECK(session.scene().value()->characterControllers()->size() == 1);
+  report(session.close());
+}

@@ -957,3 +957,32 @@ TEST_CASE("scene.animation_binding_stamp_covers_structural_publication_and_scope
   CHECK(rejected);
   REQUIRE(adopted.animationBindingRevision());
 }
+
+TEST_CASE("scene.direct_children_are_owned_sorted_scoped_and_follow_hierarchy_changes") {
+  auto scene = Scene::create().value();
+  const auto root = scene.createEntity().value();
+  const auto a = scene.createEntity().value();
+  const auto b = scene.createEntity().value();
+  const auto leaf = scene.createEntity().value();
+  REQUIRE(scene.setParent(b, root));
+  REQUIRE(scene.setParent(a, root));
+  REQUIRE(scene.setParent(leaf, a));
+  const auto retained = scene.children(root).value();
+  CHECK(retained == std::vector<EntityId>{a, b});
+  CHECK(scene.children(b)->empty());
+  REQUIRE(scene.setParent(b, a));
+  CHECK(scene.children(root).value() == std::vector<EntityId>{a});
+  CHECK(scene.children(a).value() == std::vector<EntityId>{b, leaf});
+  CHECK_FALSE(scene.children({root.scene + 1, root.value}));
+  bool rejected{};
+  std::thread foreign([&] { rejected = !scene.children(root); });
+  foreign.join();
+  CHECK(rejected);
+  REQUIRE(scene.destroyEntity(a));
+  CHECK(scene.children(root)->empty());
+  CHECK_FALSE(scene.children(a));
+  CHECK(retained == std::vector<EntityId>{a, b});
+  auto moved = std::move(scene);
+  CHECK_FALSE(scene.children(root));
+  REQUIRE(moved.children(root));
+}

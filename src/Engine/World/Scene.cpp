@@ -1205,6 +1205,35 @@ namespace Dot::World {
     return {};
   }
 
+  auto Scene::children(EntityId parent) const -> Core::Result<std::vector<EntityId>> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");
+    }
+
+    auto native = m_impl->resolve(parent);
+
+    if (!native) {
+      return std::unexpected(native.error());
+    }
+
+    try {
+      std::vector<EntityId> result;
+      const auto view = m_impl->registry.view<const Hierarchy, const Identity>();
+
+      for (const auto child : view) {
+        if (view.get<const Hierarchy>(child).parent == parent.value) {
+          result.push_back({m_impl->identity, view.get<const Identity>(child).value});
+        }
+      }
+
+      std::ranges::sort(result, {}, &EntityId::value);
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Read scene children: " + std::string(error.what()));
+    }
+  }
+
   auto Scene::findEntities(std::string_view name) const -> Core::Result<std::vector<EntityId>> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Scene has been moved from");

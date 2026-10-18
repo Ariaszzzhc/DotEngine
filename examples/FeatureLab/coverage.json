@@ -13,6 +13,7 @@
     "Entity.character.get",
     "Entity.character.set",
     "Entity.characterState.get",
+    "Entity.children.get",
     "Entity.configureAnimation",
     "Entity.constructor",
     "Entity.controlAnimationLayer",

@@ -15744,3 +15744,105 @@ overlap). Tests open no desktop windows. Builds, focused/full CTest and actual n
 product sessions run sequentially. Final evidence includes comparison.json,
 workflow-result.json, authority-failure.json, verification.json, artifact-hashes.json,
 cleanup.json and complete configure/build/test logs under build/animation-sync-review.
+
+## 2026-10-19 — Playable independent maintenance crew
+
+Move from eight skins sharing one capsule to an actual populated Prism workflow.
+A real Release editor creates a writable Prism project, saves Main as the new
+maintenance-crew scene, duplicates the entire Player subtree seven times and edits
+capsule positions/script properties through Inspector. Save/reopen preserves the
+839-entity result. The original 342 entities and environment/links/AO/UI remain
+semantically identical; source Main remains byte-identical. Each added subtree has
+71 entities with local animation targets/skin joints, its own native capsule and
+independent controller. Existing licensed models/materials/props are reused. No new
+art/mesh generator, stage acceptance executable or release archive.
+
+Add World::Scene::children and the strict read-only entity.children/Entity.children
+route. Native hierarchy/identity reads return owned creation-ID-sorted direct IDs,
+without cloning unrelated components. Leaf/foreign/deleted/thread/move behavior is
+explicit. Wrappers retain normal scoped identity. Hero and worker scripts bind their
+own single model child rather than relying on a global unique name. Feature Lab's
+real audit and declared SDK inventory include the new getter.
+
+CrewPatrol expresses two authored world stations, speed and work duration. Native
+feet/ground support determine arrival; native velocity drives the existing saved
+locomotion controller. A native masked Inspection gesture and fixed-step dwell mark
+station work, then travel returns to the other station. Collision/gravity/support,
+clocks, transitions and mixing stay in the engine. No pathfinding/crowd avoidance
+or scripted collision/gravity solver is substituted. Per-worker game-state keys are
+intent/arrival observations and are removed on level retirement, not persisted as
+an entire simulation.
+
+C switches between Main and the crew bay in ordinary gameplay, through native
+background scene preparation. Saved checkpoints and cuts cannot overlap; failed cuts
+preserve the current level, show a retry state and allow another edge. Pending cut
+IDs survive read-only source migration; held C does not bounce between levels.
+Checkpoints validate either known playable path against the actual current scene.
+Cross-level restore fails before pose mutation. NPC duty starts fresh on a new
+visit/fresh process, while the player/camera resume point can restore independently.
+The actual UI resource editor stages the C controls text, applies, Undo/Redo and
+saves it; only that existing label text changes. Source editing remains external.
+
+New CPU unit/host cases cover nested direct-child membership, deterministic order,
+owned historical results, reparent/delete, foreign/wrong-thread/moved parents and
+strict read-only JSON. Four durable example cases cover eight disjoint native rigs/
+capsules actually moving and arriving, exact paused poses/clocks across eight-script
+migration and single-step, real character/character contact with blocked arrival
+then resumed duty when the player walks away, level-scoped save/fresh restore, and
+failed scene preparation/retry/held input with source reload while the cut is pending.
+Eight final focused checks pass in Debug and Release/NDEBUG. Initial typecheck tried
+an unavailable Entity.animation getter and an early generated inventory copy was
+unsorted; correct the binding to the actual single-child contract and refresh the
+ordinary packaged examples. No unrelated component getter or compatibility path.
+
+The first actual editor run also exposes an onLoadState bug: it tried to publish
+worker game data during read-only migration. The engine rejects that candidate and
+retains the paused old generation/poses. Remove the mutation, retain the failure
+and bounded observation timeout, then continue the same owned editor handle. Two
+successful reloads preserve all eight poses/clocks and worker progress; one completed
+native step advances one fixed quantum. Final fresh editor validation is error-free.
+There is no timeout-based restart or manual mailbox edit.
+
+Final real project creation includes the saved crew level and updated controls.
+Actual C input enters crew, every worker arrives, pause/two reloads/single-step/resume
+complete, and movement/jump/Inspection/F6/move/F7 restore the player with zero error
+at the unchanged 1e-5 bound. C returns to Main, removes old worker keys and refuses
+the crew checkpoint with zero pose change. Stop restores Main authoring exactly.
+Export/relocate both levels through the editor. Hide only the owned source project;
+the exported Main enters crew using C, all seven workers complete at least two real
+arrivals, player save/restore succeeds, C returns to Main and rejects the other
+level's save, then C revisits crew and restores the player. A fresh exported Crew
+process restores against the same explicit save root. All restore/cross-level pose
+errors are zero. Fresh/returned worker arrival counters remain zero rather than
+loading their older game-data entries from the save. Actual final native completed
+frame counters 1044/44 and HUD rasterizations 16/4 prove work/presentation, not FPS.
+No human pointer/keyboard acceptance or large-game scalability claim.
+
+All eight owned native handles actually exit zero before consuming close replies;
+876 raw replies are ACKed and all endpoints are closed/fault-free/unblocked with no
+uncertain/unprocessed work, then cleared. Three editor stderr streams are empty;
+five standalone games print only nine normal startup messages and have no runtime/
+profile-frame errors. Remove 888 temporary orchestration/request files after actual
+completion, keeping replies, captures, profiles, both ordinary project generations,
+exports and save data. All 8851 prior guarded files stay unchanged; retain 9885
+ordinary guarded files. Forty-one current Debug/Release/kit/export Mach-O paths pass
+strict signing, and final exports match the Release kit. Final project scripts/UI
+and exported crew content match the committed source assets.
+
+Final Debug configure/build and full 1727/1727 pass in 282.15 seconds; Release
+configure/build and full Release/NDEBUG 1727/1727 pass in 39.76 seconds. Counts are
+565 unit and 1162 integration, including 272 compiler, 39 audio-native, 186 offscreen,
+34 platform and 21 process cases (labels overlap). Automated tests open no desktop
+windows. Build/CTest/native product sessions run sequentially. Evidence remains in
+ignored build/crew-review: final-editor/native results, C transition/reload/step/
+restore records, actual images, raw replies, verification, cleanup, artifact hashes
+and complete build/test logs. One verification used an incorrect package subpath;
+correct it to the actual game/content layout and verify exported bytes there.
+
+Review covers scoped membership/ownership, read-only preparation and migration,
+exact clone references, engine-owned motion/animation, native collision evidence,
+scene/checkpoint concurrency and failure semantics, source/example scope, resource
+history and actual process completion. Formatting and diff checks pass. No dependency,
+compiler/linker environment or platform-target changes. Only macOS arm64 is executed.
+Navigation/crowd planning, larger independent-character scale, contact/foot IK,
+streaming/background work and final character/environment/editor maturity remain open.

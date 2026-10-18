@@ -1079,6 +1079,12 @@ export class Entity {
     return invoke('entity.exists', [this.id]) as boolean;
   }
 
+  /** Direct children in creation order, with owned wrappers and scene-scoped IDs.
+   * 按创建顺序返回直接子项的独立包装器，保留场景范围 ID。 */
+  get children(): Entity[] {
+    return (invoke('entity.children', [this.id]) as EntityId[]).map(id => new Entity(id));
+  }
+
   get camera(): Camera|null {
     return invoke('component.get', [this.id, 'camera']) as Camera | null;
   }

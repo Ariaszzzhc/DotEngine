@@ -2,9 +2,11 @@ import {gameState, ui, type JsonValue, type SaveTicket, saves, scenes, type Vec3
 
 import {type CameraState, validateCameraState} from './camera';
 
+type RelayScene = 'scenes/main.dotscene'|'scenes/maintenance-crew.dotscene';
+
 export interface RelayCheckpoint {
   format: 'prism-relay-checkpoint';
-  path: 'scenes/main.dotscene';
+  path: RelayScene;
   feet: Vec3;
   yawDegrees: number;
   camera: CameraState;
@@ -12,6 +14,18 @@ export interface RelayCheckpoint {
 
 const slot = 'relay-checkpoint';
 const key = 'relayCheckpoint';
+
+/** Checkpoints belong to the running authored level; a different level cannot consume them.
+ * 检查点属于当前运行的制作关卡，其他关卡不能消费。 */
+export function currentRelayScene(): RelayScene {
+  const path = scenes.current().path;
+
+  if (path !== 'scenes/main.dotscene' && path !== 'scenes/maintenance-crew.dotscene') {
+    throw Error('Checkpoint requires a playable Prism Relay scene');
+  }
+
+  return path;
+}
 
 function object(value: JsonValue|undefined, fields: string[]): Record<string, JsonValue> {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -33,8 +47,9 @@ export function checkpoint(value: JsonValue|undefined): RelayCheckpoint {
   const feet = object(data.feet, ['x', 'y', 'z']);
   const camera = object(data.camera, ['yaw', 'pitch', 'distance', 'boom']);
 
-  if (data.format !== 'prism-relay-checkpoint' || data.path !== 'scenes/main.dotscene'
-      || data.path !== scenes.current().path ||
+  if (data.format !== 'prism-relay-checkpoint'
+      || (data.path !== 'scenes/main.dotscene' && data.path !== 'scenes/maintenance-crew.dotscene')
+      || data.path !== currentRelayScene() ||
       [feet.x, feet.y, feet.z].some(
           value => typeof value !== 'number' || !Number.isFinite(value)
               || Math.abs(value) > 1000000)
@@ -75,8 +90,10 @@ export function loadedCheckpoint(data: {[key: string]: JsonValue}): RelayCheckpo
 
 export function progressStatus(message: string): void {
   gameState.set('relayProgressStatus', message);
-  const failed = message.startsWith('Checkpoint unavailable:');
-  const text = failed ? (message.includes('Land before saving')
+  const levelFailed = message.startsWith('Level unavailable:');
+  const failed = levelFailed || message.startsWith('Checkpoint unavailable:');
+  const text = levelFailed ? 'Scene change unavailable. C retries when ready.'
+                          : failed ? (message.includes('Land before saving')
                              ? 'Checkpoint unavailable: land before saving.'
                              : 'Checkpoint unavailable. F6 saves a grounded point.')
                       : message;

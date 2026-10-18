@@ -232,6 +232,16 @@ names fail. It is read-only, including during script preparation. This avoids
 spending one host call per unrelated entity on `.entities().find(e => e.name === name)`;
 the shared per-invocation host-call/time/memory limits are unchanged.
 
+`Entity.children` reads only native hierarchy/identity storage and returns fresh
+wrappers for direct children in creation-ID order. A live leaf returns an empty
+array; missing/foreign/wrong-thread parents fail. It is read-only during preparation.
+Array membership is owned, while wrappers retain their usual live, scene-scoped
+identity: reparenting/deletion can make retained members no longer children or no
+longer live. Mutating the returned array never changes native hierarchy. Prism
+characters bind their own single model child instead of a global unique model name,
+so whole-subtree copies retain independent remapped rigs. The strict host method is
+`entity.children` with exactly one canonical scoped entity ID.
+
 | Native method | Arguments | Result |
 | --- | --- | --- |
 | `scene.info` | `[]` | `{id, name, entities}` |
