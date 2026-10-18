@@ -355,8 +355,8 @@ script JSON remains literal. A detached parent outside the placement cannot be
 applied. Placement-local primary camera/listener flags must be edited directly in
 the source; ordinary field changes preserve the source's primary setting while
 inherited target flags remain demoted. Additions/deletions/placement roots and `id`
-are not field operations. Applying whole topology or arbitrary override pages is
-still unfinished.
+are not field operations. Whole-instance contents (including topology) use the separate operation below;
+arbitrary selectively applied override pages remain unfinished.
 
 If the selected source field changed since the instance baseline to a different
 value, Apply fails as a conflict. Refresh first, inspect the new baseline/local
@@ -368,7 +368,8 @@ The operation resolves current saved dependencies before preparation. A changed
 source is saved as that refreshed immediate materialization, including its nested
 link metadata/updates; nested source files are not written. No-write rebases keep
 the original source namespace observations and do not promote temporary IDs to
-saved reservations. File text/project metadata/dependency bytes are checked again
+saved reservations. Changed field and whole-instance preparations both retain the
+latest source's physical reservation floor, including permanent exhaustion. File text/project metadata/dependency bytes are checked again
 before publication. Caller serialization is still required; this is not a filesystem
 transaction against hostile races.
 
@@ -378,6 +379,58 @@ a response/catalog failure after publication likewise reports possible/actual ef
 Pending drafts, Play, animation audition, transform gestures and conflicting dialogs
 reject workspace application. GUI and agent commands share the same operation.
 
+
+## Applying complete instance contents
+
+Inspector's **Apply instance contents to source** applies the entire linked body's
+properties, additions, deletions and hierarchy to its saved immediate source. The
+placement container's name/parent/transform and active scene settings remain local.
+Other placements and documents refresh explicitly. The strict shared operation is:
+
+```json
+{"command":"apply-scene-instance","revision":"18","root":"20"}
+```
+
+This is a source publication command, not an `edit` batch. It shares field apply's
+revision/draft/Play/dialog guards, exact source/dependency observation checks,
+prepared document/history publication and `sourceApplied` report. A scene Undo
+restores the local scene/baseline, not the shared source file. Save after review.
+No applied override means no write or unrelated refresh. If the saved source
+already contains every local change, rebase without rewriting it; original source
+namespace observations are retained.
+
+Independent source object leaves survive; competing leaf values, deleting a node
+that changed in the source, or editing a node removed by the source reject. Arrays
+remain atomic values. Deletion dependencies, parent cycles, references, primary
+settings, scene/metadata capacities and final source/target decoding must all pass
+before publication. Native parent/skin/animation references remap by logical identity;
+references outside the body and placement-local primary flags reject. Script JSON
+remains literal. Applying an instance is not a way to transfer its primary camera
+or listener to every placement.
+
+New nodes receive fresh source values beyond the latest source's reserved floor,
+while keeping their existing target entity values. Source-side independent additions
+allocate only the needed new target values. Deleted values remain reserved. Local
+linked additions become nested links in the source, including remapped missing-node
+reservations; the chosen instance then inherits their flattened provenance through
+its outer link. Foreign link ownership cannot be captured by moving one of its
+children into the body. Existing nested source node edits remain overrides in the
+immediate saved source; nested source files are not written.
+
+The proposed saved dependency graph is resolved before writing, including newly
+introduced nested links. Direct/indirect cycles and active-document dependencies
+reject without effects. Fresh nested updates are incorporated and the chosen
+instance is rebased against the exact materialization being saved. Source graph
+budgets and caller serialization still apply; byte guards plus atomic replacement
+are not an OS-wide transaction against arbitrary writers. A file-write error may
+mean the file committed while the document was retained, and is reported as such.
+
+Native `prepareSceneInstanceApply` is CPU-only and returns `SceneSourceApply`, shared
+with field preparation. It mutates neither input, preserves placement/unrelated
+entities/globals, and prepares both sides before publication. Native callers must
+resolve the proposed dependency graph before publishing a changed source and must
+honor `sourceChanged` for no-write rebases. General variants, selective topology
+application and automatic project-wide refresh/relocation remain unfinished.
 
 ## Relinking moved or copied sources
 

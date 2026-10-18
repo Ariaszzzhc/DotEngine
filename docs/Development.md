@@ -14147,3 +14147,103 @@ are verified. Changed Workspace rebuilding/history allocation, general scene/res
 streaming, other service/GPU retirement, finished sci-fi art and overall production
 readiness remain open. Sealed CPU handoff is foundation for those workflows, not
 proof that their full requested scope is complete.
+
+## 2026-10-18 — Applying complete instance contents
+
+Complete the shared-source authoring path beyond one field. Native
+prepareSceneInstanceApply prepares an immediate saved source and a rebased instance
+from all applied node properties, additions, deletions and reparenting. Inspector's
+Apply instance contents to source and strict apply-scene-instance command use the
+same document implementation. Placement-container name/parent/transform and active
+scene settings remain local; other instances/documents refresh explicitly. The
+common result is SceneSourceApply, with source/instance candidates and sourceChanged;
+no legacy alias or format version is introduced.
+
+Normalize parent/skin/animation references through persistent logical keys before
+merging. Independent source object leaves survive, arrays stay atomic, and competing
+changes/deleting an externally changed node/editing a removed node reject. Script
+JSON stays literal. Placement-local primary flags and external native references
+reject. Added nodes retain target values and acquire fresh source identities beyond
+the latest reserved floor; source-independent additions allocate only required new
+target values. Both field and instance paths preserve latest physical source
+reservations and permanent exhaustion, rather than trusting temporary working floors.
+
+Local linked additions become nested links in the immediate source with remapped
+live and missing-node reservations. Foreign link ownership cannot be captured through
+one moved child. Existing nested inherited edits become immediate-source overrides;
+leaf source files stay untouched. Prepare both final native scenes and provenance
+before effects. The document resolves the proposed dependency graph, including new
+nested links, rejects cycles/active-scene dependencies, incorporates current nested
+updates and rebases against the exact materialization being saved. Metadata/file/
+dependency bytes and history limits guard publication. Source-write errors report
+possible file effects while retaining the document; scene Undo does not undo the
+shared file. Preparation/publication remains synchronous, with ordinary graph/scene
+budgets and caller serialization, not an OS-wide transaction against external races.
+
+Fourteen new enduring cases cover property/topology promotion and stable values,
+independent/conflicting changes and deletions, no-op/already-applied rebases, native
+references and boundaries, nested-link transfer and deleted reservations, primary
+settings, logical nested overrides, source/target floor/exhaustion, document undo/
+redo/save/reopen/explicit other-instance refresh, strict shapes/stale requests,
+pre-publication dependency cycles, history failure and fresh nested dependencies.
+They also verify field and whole-instance latest-namespace reservation agreement.
+Unit cases remain CPU-only; file cases use the existing integration target without
+windows/devices. Initial relevant Debug passes 92/92 in 7.09 s and initial full
+Debug/Release pass 1631/1631 (265.44/37.57 s). The final reservation correction passes
+full Debug 1632/1632 in 263.59 s and Release/NDEBUG 1632/1632 in 37.33 s: 527 unit and
+1105 integration, with the 186 offscreen GPU tests separate. Retain strict compiler
+shadow/type diagnostics from intermediate edits, correct them and keep all warning,
+assertion, timeout and native resource gates unchanged. Builds/tests and actual
+editor/player runs are serialized.
+
+Use the real product project-action creation operation with the bundled Prism
+Template, including its compiler/resource validation, then open the new ordinary
+PrismTopology project. The source template and prior review project/assets/saves
+are preserved. In the actual editor, rename and tint a duct mesh, remove one mapped
+primitive, create Inspection mount/Indicator axis, and reparent the mesh under the
+new mount. Save the local scene, deliberately edit/Save the conflicting source name,
+reopen main and confirm Apply rejects with exact document/source retention. Refresh
+and review, then deliberately apply all instance contents. The added targets remain
+659/660 and receive source identities 661/662. Source value 4 is deleted, the source
+floor becomes 663, and the applied instance has zero overrides. One undo/redo restores
+the local scene/baseline without reverting the written source. Repeating Apply writes
+nothing and preserves document revision. Other placements remain unchanged until
+explicit Refresh all. Both saved main/study scenes then contain 354 entities; twelve
+placements share the new five-node source, with their placement preserved.
+
+Real Play movement and asynchronous F6/F7 checkpoints succeed. Capture the actual
+changed viewport, Stop to unchanged authoring, export and relocate a normal native
+game, then hide only its authoring project. Two fresh native processes render frames/
+HUD with zero script failures/diagnostics and restore the shared persisted slot with
+exact saved coordinates. Restore the owned project after both exits. Retain this
+first 162-file game and initial authored scene/source descriptions.
+
+After the final field-floor correction, reopen that project with the final binary,
+rename the promoted mount to Inspection mount verified and apply its name through
+the ordinary field command. Whole-instance Apply is now a no-write/no-revision-change
+operation. Refresh/Save both scenes, repeat Play/checkpoint/capture, Stop/export and
+relocate another normal game. With the authoring tree hidden, two more fresh native
+processes confirm the verified mount and 354-entity scene, completed rendering/HUD,
+zero failures/diagnostics and persisted checkpoint restoration. Final editor restore
+error is 0; final standalone errors are approximately 1.01e-7 world units, retained
+as measured rather than reported as exact equality. Both games match their respective
+runtime kits; final standalone matches the final signed kit.
+
+All six long-running editor/player processes are observed exiting 0 before consuming
+and clearing their retained close replies; project creation also returns 0. Preserve
+the prior 35 guarded saves and two new independent slots (37 total), 19 guarded
+original source/art files, all 123 prior editable-project files, prior native games,
+the new 123-file editable project and two 162-file exports. Keep initial/final authored
+snapshots, raw requests/results/acknowledgements, captures, save data, profiles and
+binary fingerprints in ignored build/instance-source-review. The early evidence
+folder name collided with an earlier field-application stage and reused some generic
+build-log names before detection; prior CTest logs, raw requests, projects and games
+remain. Move this turn's evidence into its independent directory rather than claim
+all older generic build logs were preserved. Remove only owned temporary helpers/
+bytecode after verification. No release archive is created.
+
+Computer use still reports the Mac locked and automatic unlock unsuccessful, so no
+physical pointer or final panel-layout acceptance is claimed. Only arm64 macOS runs
+are verified. General variants, selective topology apply, automatic project-wide
+refresh/relocation, streaming, finished sci-fi art and overall production readiness
+remain open; this complete instance publication path does not prove those goals.

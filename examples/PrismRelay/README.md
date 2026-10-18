@@ -233,3 +233,11 @@ application, and an applied batch is one undoable scene edit. Agents use the sam
 `begin-source-update` / `inspect-source-update` / `apply-source-update` /
 `cancel-source-update` / `close-source-update` commands described in
 [editor controls](../../docs/Editor.md#background-scene-source-updates).
+
+Linked ventilation instances can promote complete local content changes back to
+their immediate source: edit node fields, add/remove/reparent content, then use
+Inspector's Apply instance contents to source (`apply-scene-instance` for agents).
+Placement stays local and additions retain their current entity values. Other
+placements refresh explicitly; source writes survive scene Undo. Conflicts, external
+references and proposed dependency cycles reject before publication. See
+[shared-source authoring](../../docs/SceneContent.md#applying-complete-instance-contents).

@@ -162,6 +162,91 @@ namespace Dot::World {
       return result;
     }
 
+    using Reference = std::function<Core::Result<Json>(std::uint64_t)>;
+
+    auto remapField(Json value, std::string_view field, const Reference& reference)
+        -> Core::Result<Json> {
+      const auto replace = [&](Json& id) -> Core::Result<void> {
+        auto mapped = reference(Codec::id(id));
+
+        if (!mapped) {
+          return std::unexpected(mapped.error());
+        }
+
+        id = std::move(*mapped);
+        return {};
+      };
+
+      if (field == "parent" && !value.is_null()) {
+        auto changed = replace(value);
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+      } else if (field == "skin" && !value.is_null()) {
+        for (auto& joint : value["joints"]) {
+          auto changed = replace(joint);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+      } else if (field == "animation" && !value.is_null()) {
+        for (auto& binding : value["targets"]) {
+          auto changed = replace(binding["entity"]);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+        }
+      }
+
+      return value;
+    }
+
+    /** Apply only the local delta; keep independent source edits and reject competing leaves.
+     * 仅应用本地差异，保留来源独立修改，对竞争叶值拒绝而不覆盖。 */
+    auto applyMerge(const std::optional<Json>& old, const std::optional<Json>& local,
+                    const std::optional<Json>& incoming) -> Core::Result<std::optional<Json>> {
+      if (local == old) {
+        return incoming;
+      }
+
+      if (incoming == old || incoming == local) {
+        return local;
+      }
+
+      if (!old || !local || !incoming || !old->is_object() || !local->is_object()
+          || !incoming->is_object()) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Source changed an applied value; refresh before applying");
+      }
+
+      std::set<std::string> keys;
+
+      for (const auto* object : {&*old, &*local, &*incoming}) {
+        for (const auto& item : object->items()) {
+          keys.insert(item.key());
+        }
+      }
+
+      Json result = Json::object();
+
+      for (const auto& key : keys) {
+        auto value = applyMerge(member(*old, key), member(*local, key), member(*incoming, key));
+
+        if (!value) {
+          return std::unexpected(value.error());
+        }
+
+        if (*value) {
+          result[key] = std::move(**value);
+        }
+      }
+
+      return std::optional<Json>{std::move(result)};
+    }
+
     struct OverrideData {
       Json document;
       SceneLink link;
@@ -599,7 +684,7 @@ namespace Dot::World {
 
   auto prepareSceneFieldApply(const Scene& target, const SceneSourceSnapshot& source, EntityId root,
                               EntityId entity, std::string_view field, std::uint64_t firstValue)
-      -> Core::Result<SceneFieldApply> {
+      -> Core::Result<SceneSourceApply> {
     try {
       auto valid = validateSceneSourceSnapshot(source);
       auto live = target.entity(entity);
@@ -685,44 +770,8 @@ namespace Dot::World {
                           "A parent outside the placement cannot be applied to its source");
       }
 
-      using Reference = std::function<Core::Result<Json>(std::uint64_t)>;
       const auto remap = [&](Json value, const Reference& reference) -> Core::Result<Json> {
-        const auto replace = [&](Json& id) -> Core::Result<void> {
-          auto mapped = reference(Codec::id(id));
-
-          if (!mapped) {
-            return std::unexpected(mapped.error());
-          }
-
-          id = std::move(*mapped);
-          return {};
-        };
-
-        if (field == "parent" && !value.is_null()) {
-          auto changed = replace(value);
-
-          if (!changed) {
-            return std::unexpected(changed.error());
-          }
-        } else if (field == "skin" && !value.is_null()) {
-          for (auto& joint : value["joints"]) {
-            auto changed = replace(joint);
-
-            if (!changed) {
-              return std::unexpected(changed.error());
-            }
-          }
-        } else if (field == "animation" && !value.is_null()) {
-          for (auto& binding : value["targets"]) {
-            auto changed = replace(binding["entity"]);
-
-            if (!changed) {
-              return std::unexpected(changed.error());
-            }
-          }
-        }
-
-        return value;
+        return remapField(std::move(value), field, reference);
       };
       const auto logical = [&](const auto& keys, bool targetSpace) -> Reference {
         return [&, targetSpace, keys = &keys](std::uint64_t id) -> Core::Result<Json> {
@@ -771,7 +820,7 @@ namespace Dot::World {
         }
 
         const EntityId copiedRoot{unchanged->id(), root.value};
-        return SceneFieldApply{
+        return SceneSourceApply{
             std::move(*sourceCopy), {std::move(*unchanged), copiedRoot, {}}, false};
       }
 
@@ -814,6 +863,22 @@ namespace Dot::World {
                           "Applied source field: " + preparedSource.error().message);
       }
 
+      if (sourceChanged) {
+        const auto space = std::ranges::find_if(
+            source.namespaces, [](const auto& value) { return value.prefix.empty(); });
+        const auto sourceFloor = preparedSource->nextEntityValue()->value_or(
+            std::numeric_limits<std::uint64_t>::max());
+        const auto next = std::max(
+            sourceFloor, space->nextEntity.value_or(std::numeric_limits<std::uint64_t>::max()));
+        auto reserved = preparedSource->reserveEntityValuesBefore(
+            next == std::numeric_limits<std::uint64_t>::max() ? std::optional<std::uint64_t>{}
+                                                              : std::optional{next});
+
+        if (!reserved) {
+          return std::unexpected(reserved.error());
+        }
+      }
+
       auto bounded = encodeScene(*preparedSource);
 
       if (!bounded) {
@@ -826,18 +891,531 @@ namespace Dot::World {
         }
 
         auto persisted = captureSceneSource(*preparedSource, source.asset);
-        return persisted ? prepareSceneLinkUpdate(target, *persisted, root, firstValue)
-                         : Core::Result<SceneLinkUpdate>{std::unexpected(persisted.error())};
+
+        if (!persisted) {
+          return std::unexpected(persisted.error());
+        }
+
+        auto checkedIdentity
+            = validateSceneSourceUpdate(source.asset, source.origins, source.namespaces,
+                                        persisted->origins, persisted->namespaces);
+        return checkedIdentity
+                   ? prepareSceneLinkUpdate(target, *persisted, root, firstValue)
+                   : Core::Result<SceneLinkUpdate>{std::unexpected(checkedIdentity.error())};
       }();
 
       if (!updated) {
         return std::unexpected(updated.error());
       }
 
-      return SceneFieldApply{std::move(*preparedSource), std::move(*updated), sourceChanged};
+      return SceneSourceApply{std::move(*preparedSource), std::move(*updated), sourceChanged};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Apply scene field to source: " + std::string(error.what()));
+    }
+  }
+
+  auto prepareSceneInstanceApply(const Scene& target, const SceneSourceSnapshot& source,
+                                 EntityId root, std::uint64_t firstValue)
+      -> Core::Result<SceneSourceApply> {
+    try {
+      auto valid = validateSceneSourceSnapshot(source);
+      auto data = overrideData(target, root);
+      auto canonical = canonicalSource(source);
+      auto sourceText = encodeScene(source.scene);
+      auto floor = target.nextEntityValue();
+
+      if (!valid || !data || !canonical || !sourceText || !floor) {
+        return std::unexpected(!valid        ? valid.error()
+                               : !data       ? data.error()
+                               : !canonical  ? canonical.error()
+                               : !sourceText ? sourceText.error()
+                                             : floor.error());
+      }
+
+      const auto maximum = std::numeric_limits<std::uint64_t>::max();
+
+      if (data->link.asset != source.asset || firstValue == 0
+          || firstValue < floor->value_or(maximum)) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Instance apply requires the matching source and allocation floor");
+      }
+
+      std::vector<SceneSourceOrigin> previous;
+      std::map<std::uint64_t, SceneSourceKey> targetKeys, sourceKeys;
+      std::map<SceneSourceKey, std::uint64_t> oldTargets, sourceValues;
+
+      for (const auto& pair : data->link.mapping) {
+        previous.push_back({pair.source, pair.key});
+        targetKeys.emplace(pair.target, pair.key);
+        oldTargets.emplace(pair.key, pair.target);
+      }
+
+      for (const auto& origin : source.origins) {
+        sourceKeys.emplace(origin.entity, origin.key);
+        sourceValues.emplace(origin.key, origin.entity);
+      }
+
+      valid = validateSceneSourceUpdate(source.asset, previous, data->link.namespaces,
+                                        canonical->origins, source.namespaces);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      Nodes local;
+
+      for (const auto& entity : data->document["entities"]) {
+        local.emplace(Codec::id(entity["id"]), entity);
+      }
+
+      bool changed = !data->added.empty();
+
+      for (const auto& [value, index] : data->sources) {
+        const auto found = local.find(value);
+        changed |= found == local.end() || found->second != data->expected.at(index);
+      }
+
+      if (!changed) {
+        auto copy = decodeScene(data->document.dump());
+        auto sourceCopy = decodeScene(*sourceText);
+
+        if (!copy || !sourceCopy) {
+          return std::unexpected(!copy ? copy.error() : sourceCopy.error());
+        }
+
+        auto reserved = copy->reserveEntityValuesBefore(
+            firstValue == maximum ? std::optional<std::uint64_t>{} : std::optional{firstValue});
+
+        if (!reserved) {
+          return std::unexpected(reserved.error());
+        }
+
+        const EntityId copiedRoot{copy->id(), root.value};
+        return SceneSourceApply{std::move(*sourceCopy), {std::move(*copy), copiedRoot, {}}, false};
+      }
+
+      auto sourceDocument = Codec::parseJson(*sourceText);
+      Nodes incoming;
+
+      for (const auto& entity : sourceDocument["entities"]) {
+        incoming.emplace(Codec::id(entity["id"]), entity);
+      }
+
+      std::set<std::uint64_t> removed, copiedRoots;
+      Values additions;
+      const auto rootSpace = std::ranges::find_if(
+          source.namespaces, [](const auto& space) { return space.prefix.empty(); });
+      auto nextSource = std::max(source.scene.nextEntityValue()->value_or(maximum),
+                                 rootSpace->nextEntity.value_or(maximum));
+      bool sourceChanged = false;
+      const auto allocate = [&](std::uint64_t targetValue) -> Core::Result<void> {
+        if (!additions.contains(targetValue)) {
+          if (nextSource == maximum) {
+            return Core::fail(Core::ErrorCode::Unavailable, "Source allocation is exhausted");
+          }
+
+          additions.emplace(targetValue, nextSource++);
+        }
+
+        return {};
+      };
+
+      for (const auto value : data->added) {
+        valid = allocate(value);
+
+        if (!valid) {
+          return std::unexpected(valid.error());
+        }
+      }
+
+      /** New local links become nested source links; all their live/reserved physical values
+       * remap together. Foreign link ownership cannot be captured through one moved child.
+       * 本地新关联成为来源内嵌关联，存活及预留物理值一起重映射，不能通过移动单个子节点夺取外部关联。
+       */
+      for (auto link : data->document.value("links", Json::array())) {
+        const auto linkedRoot = Codec::id(link["root"]);
+
+        if (linkedRoot == root.value) {
+          continue;
+        }
+
+        if (!data->added.contains(linkedRoot)) {
+          for (const auto& mapping : link["mapping"]) {
+            if (data->added.contains(Codec::id(mapping["target"]))) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Added node is owned by an external scene link");
+            }
+          }
+
+          continue;
+        }
+
+        if (link["asset"] == source.asset) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Applied scene link would cycle");
+        }
+
+        copiedRoots.insert(linkedRoot);
+        link["root"] = std::to_string(additions.at(linkedRoot));
+
+        for (auto& mapping : link["mapping"]) {
+          const auto value = Codec::id(mapping["target"]);
+
+          if (local.contains(value) && !data->added.contains(value)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Applied nested link overlaps another instance");
+          }
+
+          valid = allocate(value);
+
+          if (!valid) {
+            return std::unexpected(valid.error());
+          }
+
+          mapping["target"] = std::to_string(additions.at(value));
+        }
+
+        if (!sourceDocument.contains("links")) {
+          sourceDocument["links"] = Json::array();
+        }
+
+        sourceDocument["links"].push_back(std::move(link));
+      }
+
+      const auto logical = [&](bool targetSpace, std::string_view field) -> Reference {
+        return [&, targetSpace, field](std::uint64_t id) -> Core::Result<Json> {
+          if (targetSpace && field == "parent" && id == root.value) {
+            return Json(nullptr);
+          }
+
+          const auto& keys = targetSpace ? targetKeys : sourceKeys;
+          const auto found = keys.find(id);
+
+          if (found != keys.end()) {
+            return Json(found->second);
+          }
+
+          if (targetSpace && data->added.contains(id)) {
+            return Json{{"added", std::to_string(id)}};
+          }
+
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Applied native reference is outside the instance");
+        };
+      };
+      const auto materialize = [&](Json value, std::string_view field) -> Core::Result<Json> {
+        const auto replace = [&](Json& token) -> Core::Result<void> {
+          if (token.is_null()) {
+            return {};
+          }
+
+          if (token.is_object()) {
+            token = std::to_string(additions.at(Codec::id(token["added"])));
+            return {};
+          }
+
+          const auto key = token.get<SceneSourceKey>();
+          const auto found = sourceValues.find(key);
+
+          if (found == sourceValues.end()) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Applied reference was removed from source");
+          }
+
+          token = std::to_string(found->second);
+          return {};
+        };
+        Core::Result<void> result;
+
+        if (field == "parent") {
+          result = replace(value);
+        } else if (field == "skin" && !value.is_null()) {
+          for (auto& joint : value["joints"]) {
+            result = replace(joint);
+
+            if (!result) {
+              break;
+            }
+          }
+        } else if (field == "animation" && !value.is_null()) {
+          for (auto& binding : value["targets"]) {
+            result = replace(binding["entity"]);
+
+            if (!result) {
+              break;
+            }
+          }
+        }
+
+        return result ? Core::Result<Json>{std::move(value)} : std::unexpected(result.error());
+      };
+      const auto normalized = [&](const Json& node, bool targetSpace) -> Core::Result<Json> {
+        Json result = node;
+        result.erase("id");
+
+        for (auto& item : result.items()) {
+          auto value = remapField(item.value(), item.key(), logical(targetSpace, item.key()));
+
+          if (!value) {
+            return std::unexpected(value.error());
+          }
+
+          item.value() = std::move(*value);
+        }
+
+        for (const auto* field : {"camera", "audioListener"}) {
+          if (!result[field].is_null()) {
+            if (targetSpace && result[field]["primary"].get<bool>()) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Primary flags are placement-local; edit the source directly");
+            }
+
+            result[field]["primary"] = false;
+          }
+        }
+
+        if (targetSpace && node["parent"].is_null()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "A parent outside the placement cannot be applied");
+        }
+
+        return result;
+      };
+
+      for (const auto& [targetValue, index] : data->sources) {
+        const auto& key = targetKeys.at(targetValue);
+        const auto found = sourceValues.find(key);
+        const auto current = local.find(targetValue);
+        auto old = normalized(data->expected.at(index), true);
+
+        if (!old) {
+          return std::unexpected(old.error());
+        }
+
+        if (current == local.end()) {
+          if (found != sourceValues.end()) {
+            auto actual = normalized(incoming.at(found->second), false);
+
+            if (!actual || *actual != *old) {
+              return actual ? Core::fail(Core::ErrorCode::InvalidState,
+                                         "Source changed a locally deleted node")
+                            : std::unexpected(actual.error());
+            }
+
+            removed.insert(found->second);
+            incoming.erase(found->second);
+            sourceChanged = true;
+          }
+
+          continue;
+        }
+
+        auto localNode = normalized(current->second, true);
+
+        if (!localNode) {
+          return std::unexpected(localNode.error());
+        }
+
+        if (found == sourceValues.end()) {
+          if (*localNode != *old) {
+            return Core::fail(Core::ErrorCode::InvalidState, "Source removed an applied node");
+          }
+
+          continue;
+        }
+
+        auto actual = normalized(incoming.at(found->second), false);
+        auto merged = actual ? applyMerge(*old, *localNode, *actual)
+                             : Core::Result<std::optional<Json>>{std::unexpected(actual.error())};
+
+        if (!merged) {
+          return std::unexpected(merged.error());
+        }
+
+        auto result = std::move(**merged);
+
+        for (auto& item : result.items()) {
+          auto value = materialize(item.value(), item.key());
+
+          if (!value) {
+            return std::unexpected(value.error());
+          }
+
+          item.value() = std::move(*value);
+        }
+
+        for (const auto* field : {"camera", "audioListener"}) {
+          const auto& prior = incoming.at(found->second)[field];
+
+          if (!result[field].is_null() && !prior.is_null()) {
+            result[field]["primary"] = prior["primary"];
+          }
+        }
+
+        result["id"] = std::to_string(found->second);
+        sourceChanged |= result != incoming.at(found->second);
+        incoming[found->second] = std::move(result);
+      }
+
+      for (const auto targetValue : data->added) {
+        auto node = normalized(local.at(targetValue), true);
+
+        if (!node) {
+          return std::unexpected(node.error());
+        }
+
+        for (auto& item : node->items()) {
+          auto value = materialize(item.value(), item.key());
+
+          if (!value) {
+            return std::unexpected(value.error());
+          }
+
+          item.value() = std::move(*value);
+        }
+
+        (*node)["id"] = std::to_string(additions.at(targetValue));
+        incoming.emplace(additions.at(targetValue), std::move(*node));
+        sourceChanged = true;
+      }
+
+      if (sourceDocument.contains("links")) {
+        std::erase_if(sourceDocument["links"].get_ref<Json::array_t&>(),
+                      [&](const auto& link) { return removed.contains(Codec::id(link["root"])); });
+      }
+
+      sourceDocument["entities"] = Json::array();
+
+      for (auto& [value, node] : incoming) {
+        sourceDocument["entities"].push_back(std::move(node));
+      }
+
+      if (sourceChanged) {
+        sourceDocument["nextEntity"]
+            = nextSource == maximum ? Json(nullptr) : Json(std::to_string(nextSource));
+      }
+      auto preparedSource = decodeScene(sourceDocument.dump());
+
+      if (!preparedSource) {
+        return Core::fail(preparedSource.error().code,
+                          "Applied source topology: " + preparedSource.error().message);
+      }
+
+      auto bounded = encodeScene(*preparedSource);
+
+      if (!bounded) {
+        return std::unexpected(bounded.error());
+      }
+
+      auto persisted
+          = sourceChanged
+                ? captureSceneSource(*preparedSource, source.asset)
+                : Core::Result<SceneSourceSnapshot>{SceneSourceSnapshot{
+                      std::move(*preparedSource), source.asset, source.origins, source.namespaces}};
+
+      if (!persisted) {
+        return std::unexpected(persisted.error());
+      }
+
+      auto final = canonicalSource(*persisted);
+
+      if (!final) {
+        return std::unexpected(final.error());
+      }
+
+      valid = validateSceneSourceUpdate(source.asset, source.origins, source.namespaces,
+                                        persisted->origins, persisted->namespaces);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      valid = validateSceneSourceUpdate(source.asset, previous, data->link.namespaces,
+                                        final->origins, persisted->namespaces);
+
+      if (!valid) {
+        return std::unexpected(valid.error());
+      }
+
+      Values physicalTargets, mapping;
+      std::map<SceneSourceKey, std::uint64_t> targets;
+      std::vector<std::uint64_t> created;
+      auto next = firstValue;
+
+      for (const auto& [targetValue, sourceValue] : additions) {
+        physicalTargets.emplace(sourceValue, targetValue);
+      }
+
+      for (const auto& origin : persisted->origins) {
+        const auto promoted = physicalTargets.find(origin.entity);
+        const auto old = oldTargets.find(origin.key);
+        std::uint64_t value;
+
+        if (promoted != physicalTargets.end()) {
+          value = promoted->second;
+        } else if (old != oldTargets.end()) {
+          value = old->second;
+        } else {
+          if (next == maximum) {
+            return Core::fail(Core::ErrorCode::Unavailable, "Instance allocation is exhausted");
+          }
+
+          value = next++;
+          created.push_back(value);
+        }
+
+        targets.emplace(origin.key, value);
+      }
+
+      auto link = data->link;
+      link.baseline = std::move(final->text);
+      link.mapping.clear();
+      link.namespaces = persisted->namespaces;
+
+      for (const auto& origin : final->origins) {
+        const auto value = targets.at(origin.key);
+        mapping.emplace(origin.entity, value);
+        link.mapping.push_back({origin.entity, value, origin.key});
+      }
+
+      const auto remapped = nodes(Codec::parseJson(link.baseline), mapping, root.value);
+      auto& entities = data->document["entities"].get_ref<Json::array_t&>();
+      std::erase_if(entities, [&](const auto& node) {
+        const auto value = Codec::id(node["id"]);
+        return data->sources.contains(value) || data->added.contains(value);
+      });
+
+      for (const auto& [value, node] : remapped) {
+        entities.push_back(node);
+      }
+
+      auto links = target.sceneLinks().value();
+      std::erase_if(links, [&](const auto& entry) { return copiedRoots.contains(entry.root); });
+      *std::ranges::find(links, root.value, &SceneLink::root) = std::move(link);
+      data->document.erase("links");
+      data->document["nextEntity"] = next == maximum ? Json(nullptr) : Json(std::to_string(next));
+      auto instance = decodeScene(data->document.dump());
+
+      if (!instance) {
+        return Core::fail(instance.error().code,
+                          "Applied instance topology: " + instance.error().message);
+      }
+
+      valid = instance->setSceneLinks(links);
+      auto encoded = valid ? encodeScene(*instance)
+                           : Core::Result<std::string>{std::unexpected(valid.error())};
+
+      if (!encoded) {
+        return std::unexpected(encoded.error());
+      }
+
+      const EntityId copiedRoot{instance->id(), root.value};
+      return SceneSourceApply{std::move(persisted->scene),
+                              {std::move(*instance), copiedRoot, std::move(created)},
+                              sourceChanged};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Apply scene instance to source: " + std::string(error.what()));
     }
   }
 

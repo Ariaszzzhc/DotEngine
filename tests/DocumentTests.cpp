@@ -2560,3 +2560,146 @@ TEST_CASE("document.background_source_update_uses_portable_utf8_paths") {
   CHECK(applied->changed);
   CHECK(moved.scene().value()->sceneLinks()->front().asset == "assets/检修.dotscene");
 }
+
+TEST_CASE(
+    "document.apply_instance_publishes_topology_once_and_other_instances_refresh_explicitly") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation(), linkOperation()}));
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", "Shared panel"}},
+                              {{"op", "remove"}, {"entity", "5"}},
+                              {{"op", "create"}, {"name", "Promoted bracket"}},
+                              {{"op", "parent"}, {"entity", "9"}, {"parent", "4"}}}));
+  const auto before = state(document);
+  auto applied = request(document, {{"command", "apply-scene-instance"}, {"root", "3"}});
+  CHECK(applied["sourceApplied"]
+        == Json{{"path", "assets/panels.dotscene"}, {"written", true}, {"sceneChanged", true}});
+  CHECK(applied["historyEntries"].get<int>() == before["historyEntries"].get<int>() + 1);
+  CHECK(applied["nextEntity"] == before["nextEntity"]);
+  CHECK(document.scene().value()->findEntity(9));
+  CHECK(document.scene().value()->entity({document.scene().value()->id(), 7})->name
+        == "Source panel");
+  auto files = fixture.project().files().value();
+  auto saved = Dot::World::loadScene(files, "assets/panels.dotscene").value();
+  CHECK(saved.entity({saved.id(), 1})->name == "Shared panel");
+  CHECK_FALSE(saved.findEntity(2));
+  CHECK(saved.entity({saved.id(), 3})->name == "Promoted bracket");
+  const auto written = files.readText("assets/panels.dotscene").value();
+  REQUIRE(document.undo(revision(document)));
+  CHECK(state(document)["scene"] == before["scene"]);
+  CHECK(files.readText("assets/panels.dotscene").value() == written);
+  REQUIRE(document.redo(revision(document)));
+  auto refreshed
+      = edit(document, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "6"}}}));
+  CHECK(refreshed.created == std::vector<std::uint64_t>{10});
+  CHECK_FALSE(document.scene().value()->findEntity(8));
+  REQUIRE(document.save(revision(document)));
+  CHECK(fixture.document().snapshot()->find("Promoted bracket") != std::string::npos);
+  const auto unchanged = state(document);
+  auto noop = request(document, {{"command", "apply-scene-instance"}, {"root", "3"}});
+  CHECK_FALSE(noop["sourceApplied"]["written"].get<bool>());
+  CHECK(state(document) == unchanged);
+}
+
+TEST_CASE("document.apply_instance_conflicts_and_strict_requests_retain_both_sides") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", "Local"}}}));
+  REQUIRE(source.renameEntity({source.id(), 1}, "External"));
+  auto files = fixture.project().files().value();
+  REQUIRE(Dot::World::saveScene(files, "assets/panels.dotscene", source));
+  const auto before = state(document);
+  const auto sourceBefore = files.readText("assets/panels.dotscene").value();
+  CHECK_FALSE(document.applySceneInstance({document.scene().value()->id(), 3}, revision(document)));
+  CHECK(state(document) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == sourceBefore);
+  for (auto request :
+       {Json{{"command", "apply-scene-instance"}, {"revision", std::to_string(revision(document))}},
+        Json{{"command", "apply-scene-instance"},
+             {"revision", std::to_string(revision(document))},
+             {"root", "3"},
+             {"extra", true}},
+        Json{{"command", "apply-scene-instance"},
+             {"revision", std::to_string(revision(document) - 1)},
+             {"root", "3"}}}) {
+    CHECK_FALSE(document.dispatch(request.dump()));
+    CHECK(state(document) == before);
+  }
+}
+
+TEST_CASE("document.apply_instance_rejects_proposed_dependency_cycles_before_publication") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto nested = Dot::World::Scene::create("Nested").value();
+  auto linked = Dot::World::prepareLinkedScene(nested, source, "assets/panels.dotscene", 1);
+  REQUIRE(linked);
+  auto files = fixture.project().files().value();
+  REQUIRE(Dot::World::saveScene(files, "assets/nested.dotscene", linked->scene));
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  auto addition = linkOperation();
+  addition["path"] = "assets/nested.dotscene";
+  addition["parent"] = "3";
+  edit(document, Json::array({addition}));
+  const auto before = state(document);
+  const auto sourceBefore = files.readText("assets/panels.dotscene").value();
+  auto result
+      = document.applySceneInstance({document.scene().value()->id(), 3}, revision(document));
+  CHECK_FALSE(result);
+  CHECK(state(document) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == sourceBefore);
+}
+
+TEST_CASE("document.apply_instance_history_failure_does_not_publish_source") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  edit(document, Json::array({{{"op", "name"}, {"entity", "4"}, {"name", std::string(256, 'N')}}}));
+  REQUIRE(document.save(revision(document)));
+  const auto bytes = fixture.document().stats()->historyBytes;
+  auto bounded = fixture.document({1, bytes});
+  const auto before = state(bounded);
+  auto files = fixture.project().files().value();
+  const auto sourceBefore = files.readText("assets/panels.dotscene").value();
+  auto result = bounded.applySceneInstance({bounded.scene().value()->id(), 3}, revision(bounded));
+  REQUIRE_FALSE(result);
+  CHECK(result.error().code == Dot::Core::ErrorCode::Unavailable);
+  CHECK(state(bounded) == before);
+  CHECK(files.readText("assets/panels.dotscene").value() == sourceBefore);
+}
+
+TEST_CASE(
+    "document.apply_instance_resolves_new_nested_dependencies_before_saving_materialization") {
+  Fixture fixture;
+  auto source = linkedContent(fixture);
+  auto kit = Dot::World::Scene::create("Kit").value();
+  REQUIRE(kit.createEntity("Kit node"));
+  auto files = fixture.project().files().value();
+  REQUIRE(Dot::World::saveScene(files, "assets/kit.dotscene", kit));
+  auto document = fixture.document();
+  edit(document, Json::array({linkOperation()}));
+  auto insertion = linkOperation();
+  insertion["path"] = "assets/kit.dotscene";
+  insertion["parent"] = "3";
+  edit(document, Json::array({insertion}));
+  REQUIRE(kit.createEntity("New incoming kit node"));
+  REQUIRE(Dot::World::saveScene(files, "assets/kit.dotscene", kit));
+  const auto kitBefore = files.readText("assets/kit.dotscene").value();
+  auto applied = request(document, {{"command", "apply-scene-instance"}, {"root", "3"}});
+  CHECK(applied["sourceApplied"]["written"].get<bool>());
+  CHECK(applied["created"].size() == 1);
+  CHECK(document.scene().value()->sceneLinks()->size() == 1);
+  CHECK(files.readText("assets/kit.dotscene").value() == kitBefore);
+  auto saved = Dot::World::loadScene(files, "assets/panels.dotscene").value();
+  CHECK(saved.entityCount().value() == 5);
+  CHECK(saved.sceneLinks()->front().mapping.size() == 2);
+  CHECK(state(document)["scene"].dump().find("New incoming kit node") != std::string::npos);
+  CHECK(Dot::World::inspectSceneOverrides(*document.scene().value(),
+                                          {document.scene().value()->id(), 3})
+            ->total
+        == 0);
+}

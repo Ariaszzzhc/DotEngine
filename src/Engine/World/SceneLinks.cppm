@@ -59,7 +59,7 @@ export namespace Dot::World {
     std::unique_ptr<Impl> m_impl;
   };
 
-  struct SceneFieldApply {
+  struct SceneSourceApply {
     Scene source;
     SceneLinkUpdate instance;
     bool sourceChanged{};
@@ -158,7 +158,23 @@ export namespace Dot::World {
   [[nodiscard]] auto prepareSceneFieldApply(const Scene& target, const SceneSourceSnapshot& source,
                                             EntityId root, EntityId entity, std::string_view field,
                                             std::uint64_t firstValue)
-      -> Core::Result<SceneFieldApply>;
+      -> Core::Result<SceneSourceApply>;
+
+  /** Apply every node override/addition/deletion to the saved immediate materialization.
+   * Merge independent source leaves and reject competing edits; placement/globals stay local.
+   * Added nodes retain their target values and gain fresh reserved source identities. Local
+   * nested links move into the source with remapped live/deleted reservations. Native parent,
+   * skin/animation references must remain inside the instance; primary flags stay source-owned.
+   * No I/O or input mutation. Caller must resolve the proposed dependency graph before writing
+   * the source, then publish the prepared instance; scene Undo does not undo the source file.
+   * 将全部节点覆盖/新增/删除应用到已保存的直接展开来源；合并独立来源叶值，拒绝竞争修改，
+   * 放置及全局设置不应用。新增节点保留目标值并取得新来源身份；本地嵌套关联及删除预留值一起
+   * 重映射进入来源。原生父级/蒙皮/动画引用限实例内，主标记由来源持有。不读盘或修改输入，
+   * 调用者写入前须解析候选依赖图，再发布实例；场景撤销不撤销来源文件。 */
+  [[nodiscard]] auto prepareSceneInstanceApply(const Scene& target,
+                                               const SceneSourceSnapshot& source, EntityId root,
+                                               std::uint64_t firstValue)
+      -> Core::Result<SceneSourceApply>;
 
   /** Link a materialized copy to a project source, with an owned baseline and
    * stable node mapping. Source links are flattened into their saved entities;

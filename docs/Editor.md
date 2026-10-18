@@ -72,6 +72,17 @@ history before changing state. General resource streaming and broader retirement
 remain unfinished. Mixed document `edit`
 transactions retain their existing atomic synchronous contract.
 
+## Applying an instance to its source
+
+`apply-scene-instance` accepts exactly command/revision/root and uses the same
+implementation as Inspector's Apply instance contents to source. The linked body
+includes node properties, additions, deletions and reparenting; the placement
+container and scene settings remain local. The response adds `sourceApplied` with
+path/written/sceneChanged, as for field application. Review shared-source effects:
+Undo changes the local document, while other placements refresh explicitly. Conflicts,
+invalid references/topology, proposed source cycles, history limits and file guards
+reject before publication. See [whole-instance source contracts](SceneContent.md#applying-complete-instance-contents).
+
 ## Requests
 
 ```json

@@ -1952,7 +1952,18 @@ namespace Dot::Editor {
 
   auto Document::applySceneField(World::EntityId root, World::EntityId entity,
                                  std::string_view field, std::uint64_t revision)
-      -> Core::Result<SceneFieldApplyReport> {
+      -> Core::Result<SceneSourceApplyReport> {
+    return applySceneSource(root, entity, field, revision);
+  }
+
+  auto Document::applySceneInstance(World::EntityId root, std::uint64_t revision)
+      -> Core::Result<SceneSourceApplyReport> {
+    return applySceneSource(root, {}, {}, revision);
+  }
+
+  auto Document::applySceneSource(World::EntityId root, std::optional<World::EntityId> entity,
+                                  std::string_view field, std::uint64_t revision)
+      -> Core::Result<SceneSourceApplyReport> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Editor document was moved");
     }
@@ -2019,11 +2030,82 @@ namespace Dot::Editor {
         return std::unexpected(resolved.error());
       }
 
-      auto prepared = World::prepareSceneFieldApply(m_impl->m_scene, resolved->source, root, entity,
-                                                    field, m_impl->m_next);
+      auto prepared = entity ? World::prepareSceneFieldApply(m_impl->m_scene, resolved->source,
+                                                             root, *entity, field, m_impl->m_next)
+                             : World::prepareSceneInstanceApply(m_impl->m_scene, resolved->source,
+                                                                root, m_impl->m_next);
 
       if (!prepared) {
         return std::unexpected(prepared.error());
+      }
+
+      /** Resolve the proposed saved graph before publication, including newly copied nested
+       * links. Rebase any fresh nested updates before persisting their materialized values.
+       * 发布前解析候选保存图，包含新复制的嵌套关联；写入展开物理值前先合并嵌套最新更新。 */
+      if (prepared->sourceChanged) {
+        auto proposed = World::encodeScene(prepared->source);
+
+        if (!proposed) {
+          return std::unexpected(proposed.error());
+        }
+
+        auto checkedGraph = World::resolveSceneSource(
+            asset,
+            [&](std::string_view path, std::size_t maximum) -> Core::Result<std::string> {
+              if (path == asset) {
+                return *proposed;
+              }
+
+              auto readable = store->externalTextPath(path);
+              auto value = readable ? files->readText(sceneFile(path), maximum)
+                                    : Core::Result<std::string>{std::unexpected(readable.error())};
+
+              if (value) {
+                const auto found = observed.find(std::string(path));
+
+                if (found != observed.end() && found->second != *value) {
+                  return Core::fail(Core::ErrorCode::InvalidState,
+                                    "Scene dependency changed during apply: " + std::string(path));
+                }
+
+                observed.emplace(path, *value);
+              }
+
+              return value;
+            },
+            {}, m_impl->m_path);
+
+        if (!checkedGraph) {
+          return std::unexpected(checkedGraph.error());
+        }
+
+        auto updatedText = World::encodeScene(checkedGraph->source.scene);
+
+        if (!updatedText) {
+          return std::unexpected(updatedText.error());
+        }
+
+        if (*updatedText != *proposed) {
+          auto persisted = World::captureSceneSource(checkedGraph->source.scene, asset);
+          auto floor = allocationFloor(prepared->instance.scene);
+
+          if (!persisted || !floor) {
+            return std::unexpected(!persisted ? persisted.error() : floor.error());
+          }
+
+          auto rebased
+              = World::prepareSceneLinkUpdate(prepared->instance.scene, *persisted,
+                                              {prepared->instance.scene.id(), root.value}, *floor);
+
+          if (!rebased) {
+            return std::unexpected(rebased.error());
+          }
+
+          rebased->created.insert(rebased->created.begin(), prepared->instance.created.begin(),
+                                  prepared->instance.created.end());
+          prepared->instance = std::move(*rebased);
+          prepared->source = std::move(checkedGraph->source.scene);
+        }
       }
 
       auto next = allocationFloor(prepared->instance.scene);
@@ -2084,12 +2166,12 @@ namespace Dot::Editor {
             return {};
           });
 
-      return committed ? Core::Result<SceneFieldApplyReport>{SceneFieldApplyReport{
+      return committed ? Core::Result<SceneSourceApplyReport>{SceneSourceApplyReport{
                              std::move(*committed), std::move(asset), written}}
                        : std::unexpected(committed.error());
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
-                        "Apply scene field: " + std::string(error.what()));
+                        "Apply scene source: " + std::string(error.what()));
     }
   }
 
@@ -2575,6 +2657,8 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "path", "name"});
         } else if (command == "apply-scene-field") {
           Codec::requireFields(parsed, {"command", "revision", "root", "entity", "field"});
+        } else if (command == "apply-scene-instance") {
+          Codec::requireFields(parsed, {"command", "revision", "root"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -2616,10 +2700,13 @@ namespace Dot::Editor {
 
           committed = applied->changed;
           created = std::move(applied->created);
-        } else if (command == "apply-scene-field") {
-          auto applied = applySceneField({(*current)->id(), Codec::id(parsed["root"])},
-                                         {(*current)->id(), Codec::id(parsed["entity"])},
-                                         parsed["field"].get<std::string>(), revision);
+        } else if (command == "apply-scene-field" || command == "apply-scene-instance") {
+          const World::EntityId root{(*current)->id(), Codec::id(parsed["root"])};
+          auto applied
+              = command == "apply-scene-field"
+                    ? applySceneField(root, {(*current)->id(), Codec::id(parsed["entity"])},
+                                      parsed["field"].get<std::string>(), revision)
+                    : applySceneInstance(root, revision);
 
           if (!applied) {
             return std::unexpected(applied.error());

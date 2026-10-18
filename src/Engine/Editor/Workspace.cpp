@@ -7237,7 +7237,7 @@ namespace Dot::Editor {
             "Apply or reset pending inspector/environment/AO changes before another operation");
       }
 
-      if (command == "apply-scene-field"
+      if ((command == "apply-scene-field" || command == "apply-scene-instance")
           && (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
               || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
               || m_sceneDialog)) {
@@ -7373,7 +7373,7 @@ namespace Dot::Editor {
         }
       }
 
-      if (result && command == "apply-scene-field") {
+      if (result && (command == "apply-scene-field" || command == "apply-scene-instance")) {
         auto applied = Codec::parseJson(*result)["sourceApplied"];
 
         if (applied["written"].get<bool>()) {
@@ -7680,7 +7680,7 @@ namespace Dot::Editor {
        * 在全部控件结束前冻结视图数据，编辑可能替换快照。 */
       const auto page = m_overridePage;
       const auto query = m_overrideQuery;
-      std::optional<Json> requestedView, requestedEdit, requestedEdits;
+      std::optional<Json> requestedView, requestedEdit, requestedEdits, requestedApply;
       std::optional<std::string> requestedSource;
       ImGui::SeparatorText("Linked scene overrides");
       ImGui::TextWrapped("Source: %s", page["asset"].get<std::string>().c_str());
@@ -7704,6 +7704,17 @@ namespace Dot::Editor {
 
       if (ImGui::Button("Open source scene")) {
         requestedSource = page["asset"].get<std::string>();
+      }
+
+      if (ImGui::Button("Apply instance contents to source")) {
+        requestedApply = {{"command", "apply-scene-instance"}, {"root", page["root"]}};
+      }
+
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(
+            "Write all content edits/additions/deletions to the saved source.\n"
+            "Placement and scene settings stay local. Other instances refresh explicitly.\n"
+            "Scene Undo does not undo the source file.");
       }
 
       for (const auto& [label, op] : {std::pair{"Refresh source", "refresh-scene-instance"},
@@ -7847,6 +7858,8 @@ namespace Dot::Editor {
 
       if (requestedView) {
         sessionAction(*requestedView);
+      } else if (requestedApply) {
+        action(*requestedApply);
       } else if (requestedEdit) {
         if ((*requestedEdit)["op"] == "unlink-scene-instance") {
           edit(Json::array({*requestedEdit}));

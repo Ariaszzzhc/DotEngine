@@ -42,7 +42,7 @@ export namespace Dot::Editor {
     std::vector<std::uint64_t> created;
   };
 
-  struct SceneFieldApplyReport {
+  struct SceneSourceApplyReport {
     EditReport document;
     std::string sourcePath;
     bool sourceWritten{};
@@ -191,7 +191,14 @@ export namespace Dot::Editor {
      * 失败保留文档。场景撤销不撤销外部文件；调用者串行源文件操作，检查不是 OS 比较交换。 */
     [[nodiscard]] auto applySceneField(World::EntityId root, World::EntityId entity,
                                        std::string_view field, std::uint64_t revision)
-        -> Core::Result<SceneFieldApplyReport>;
+        -> Core::Result<SceneSourceApplyReport>;
+    /** Apply the whole instance's properties and topology to its immediate source, retaining
+     * placement and stable target values. Shares field apply's guarded source publication;
+     * prospective dependencies must resolve before any source/document effects.
+     * 将实例全部属性/拓扑应用到直接来源，保留放置及稳定目标值；共用字段应用的受保护发布，
+     * 候选依赖图须在来源/文档副作用前解析成功。 */
+    [[nodiscard]] auto applySceneInstance(World::EntityId root, std::uint64_t revision)
+        -> Core::Result<SceneSourceApplyReport>;
     /** Typed atomic transform batch, at most 10000 current-scene handles.
      * Uses the same prepared scene/history commit as edit, without JSON operation
      * count/transport limits. Empty/no-op batches preserve revision and history.
@@ -266,6 +273,9 @@ export namespace Dot::Editor {
     [[nodiscard]] auto dispatch(std::string_view request) -> Core::Result<std::string>;
 
   private:
+    [[nodiscard]] auto applySceneSource(World::EntityId root, std::optional<World::EntityId> entity,
+                                        std::string_view field, std::uint64_t revision)
+        -> Core::Result<SceneSourceApplyReport>;
     struct Impl;
     explicit Document(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;

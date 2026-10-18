@@ -780,3 +780,223 @@ TEST_CASE("scene_links.detached_transfer_preserves_provenance_and_reserved_value
   CHECK_FALSE(received->entity({oldScope, 2}));
   CHECK(received->sceneLinks()->front().mapping.front().target == 3);
 }
+
+TEST_CASE("scene_links.apply_instance_promotes_additions_deletions_and_all_properties_atomically") {
+  Fixture f;
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Shared edited panel"));
+  REQUIRE(f.target.destroyEntity({f.target.id(), 4}));
+  const auto added = f.target.createEntity("Added bracket").value();
+  REQUIRE(f.target.setParent(added, EntityId{f.target.id(), 3}));
+  REQUIRE(f.target.setMeshRenderer(added, MeshRenderer{}));
+  REQUIRE(f.target.setTransform(added, {{2, 3, 4}}));
+  const auto before = text(f.target);
+  const auto original = text(f.source);
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto applied = prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 6);
+  REQUIRE_MESSAGE(applied, (applied ? "" : applied.error().message));
+  CHECK(applied->sourceChanged);
+  CHECK(applied->source.entityCount().value() == 2);
+  CHECK_FALSE(applied->source.findEntity(2));
+  CHECK(applied->source.entity({applied->source.id(), 1})->name == "Shared edited panel");
+  CHECK(applied->source.entity({applied->source.id(), 3})->parent->value == 1);
+  CHECK(applied->source.nextEntityValue()->value() == 4);
+  const auto& result = applied->instance.scene;
+  CHECK(result.findEntity(added.value));
+  CHECK(result.entity({result.id(), added.value})->transform.position.x == 2);
+  CHECK(applied->instance.created.empty());
+  CHECK(inspectSceneOverrides(result, {result.id(), 2})->total == 0);
+  CHECK(result.entity({result.id(), 2})->transform.position.x == 10);
+  CHECK(text(f.target) == before);
+  CHECK(text(f.source) == original);
+  auto persisted = captureSceneSource(applied->source, "assets/panels.dotscene").value();
+  auto repeated = prepareSceneInstanceApply(result, persisted, {result.id(), 2}, 6);
+  REQUIRE(repeated);
+  CHECK_FALSE(repeated->sourceChanged);
+  CHECK(text(repeated->instance.scene) == text(result));
+}
+
+TEST_CASE("scene_links.apply_instance_merges_independent_source_leaves_and_rejects_conflicts") {
+  Fixture f;
+  auto local = f.target.entity({f.target.id(), 3})->mesh.value();
+  local.tint = {0.2F, 0.3F, 0.4F, 1};
+  REQUIRE(f.target.setMeshRenderer({f.target.id(), 3}, local));
+  auto incoming = f.source.entity({f.source.id(), 1})->mesh.value();
+  incoming.visible = false;
+  REQUIRE(f.source.setMeshRenderer({f.source.id(), 1}, incoming));
+  REQUIRE(f.source.createEntity("Independent incoming node"));
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto applied = prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 5);
+  REQUIRE_MESSAGE(applied, (applied ? "" : applied.error().message));
+  auto result = applied->source.entity({applied->source.id(), 1})->mesh.value();
+  CHECK_FALSE(result.visible);
+  CHECK(result.tint.x == doctest::Approx(0.2F));
+  CHECK(applied->instance.created == std::vector<std::uint64_t>{5});
+  CHECK(applied->instance.scene.entityCount().value() == 5);
+  incoming.tint = {0.9F, 0.8F, 0.7F, 1};
+  REQUIRE(f.source.setMeshRenderer({f.source.id(), 1}, incoming));
+  const auto before = text(f.target);
+  snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 5));
+  CHECK(text(f.target) == before);
+  REQUIRE(f.target.destroyEntity({f.target.id(), 4}));
+  REQUIRE(f.source.renameEntity({f.source.id(), 2}, "Changed deleted node"));
+  snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 5));
+}
+
+TEST_CASE("scene_links.apply_instance_no_overrides_is_not_an_unrelated_refresh") {
+  Fixture f;
+  REQUIRE(f.source.createEntity("External addition"));
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  const auto before = text(f.target);
+  auto result = prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 5);
+  REQUIRE(result);
+  CHECK_FALSE(result->sourceChanged);
+  CHECK(text(result->instance.scene) == before);
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Already saved"));
+  REQUIRE(f.source.renameEntity({f.source.id(), 1}, "Already saved"));
+  snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto adopted = prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 5);
+  REQUIRE(adopted);
+  CHECK_FALSE(adopted->sourceChanged);
+  CHECK(inspectSceneOverrides(adopted->instance.scene, {adopted->instance.scene.id(), 2})->total
+        == 0);
+  CHECK(adopted->instance.created == std::vector<std::uint64_t>{5});
+}
+
+TEST_CASE("scene_links.apply_instance_remaps_added_native_references_and_checks_boundaries") {
+  Fixture f;
+  const auto joint = f.target.createEntity("New joint").value();
+  REQUIRE(f.target.setParent(joint, EntityId{f.target.id(), 3}));
+  AnimationPlayer player;
+  player.clips = {"assets/walk.dotanimation"};
+  player.targets = {{0, 5}};
+  REQUIRE(f.target.setAnimationPlayer({f.target.id(), 3}, player));
+  auto encoded = Json::parse(text(f.target));
+  auto& node
+      = *std::ranges::find_if(encoded["entities"], [](const auto& e) { return e["id"] == "3"; });
+  auto animated = decodeScene(encoded.dump());
+  REQUIRE(animated);
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto result = prepareSceneInstanceApply(*animated, snapshot, {animated->id(), 2}, 6);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->source.entity({result->source.id(), 1})->animation->targets[0].entity == 3);
+  CHECK(
+      result->instance.scene.entity({result->instance.scene.id(), 3})->animation->targets[0].entity
+      == 5);
+  node["animation"]["targets"][0]["entity"] = "1";
+  auto external = decodeScene(encoded.dump());
+  REQUIRE(external);
+  CHECK_FALSE(prepareSceneInstanceApply(*external, snapshot, {external->id(), 2}, 6));
+  REQUIRE(f.target.setParent({f.target.id(), 3}, {}));
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, snapshot, {f.target.id(), 2}, 6));
+}
+
+TEST_CASE("scene_links.apply_instance_copies_local_nested_links_and_reserved_deleted_values") {
+  Fixture f;
+  auto extra = Scene::create("Nested kit").value();
+  REQUIRE(extra.createEntity("Nested kept"));
+  REQUIRE(extra.createEntity("Nested deleted"));
+  auto inserted = prepareLinkedScene(f.target, extra, "assets/nested.dotscene", 5, {},
+                                     EntityId{f.target.id(), 2});
+  REQUIRE(inserted);
+  auto target = std::move(inserted->scene);
+  REQUIRE(target.destroyEntity({target.id(), 7}));
+  auto snapshot = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto result = prepareSceneInstanceApply(target, snapshot, {target.id(), 2}, 8);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->source.sceneLinks()->size() == 1);
+  CHECK(result->source.sceneLinks()->front().mapping.size() == 2);
+  CHECK(result->instance.scene.sceneLinks()->size() == 1);
+  CHECK(result->instance.scene.findEntity(5));
+  CHECK(result->instance.scene.findEntity(6));
+  CHECK_FALSE(result->instance.scene.findEntity(7));
+  CHECK(inspectSceneOverrides(result->instance.scene, {result->instance.scene.id(), 2})->total
+        == 0);
+  CHECK(result->source.nextEntityValue()->value() == 6);
+  CHECK(result->source.sceneLinks()->front().mapping[1].target == 5);
+}
+
+TEST_CASE("scene_links.apply_instance_respects_latest_source_allocation_floor_and_exhaustion") {
+  Fixture f;
+  const auto added = f.target.createEntity("Promoted").value();
+  REQUIRE(f.target.setParent(added, EntityId{f.target.id(), 2}));
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  source.namespaces[0].nextEntity = 1000;
+  auto result = prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 6);
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->source.findEntity(1000));
+  CHECK(result->source.nextEntityValue()->value() == 1001);
+  CHECK(result->instance.scene.findEntity(added.value));
+  source.namespaces[0].nextEntity.reset();
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 6));
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, source, {f.source.id(), 2}, 6));
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 4));
+}
+
+TEST_CASE("scene_links.apply_instance_preserves_source_primary_and_rejects_local_primary") {
+  Fixture f;
+  REQUIRE(f.source.setCamera({f.source.id(), 1}, Camera{.primary = true}));
+  f.target = std::move(f.update().scene);
+  auto camera = f.target.entity({f.target.id(), 3})->camera.value();
+  camera.verticalFovDegrees = 44;
+  REQUIRE(f.target.setCamera({f.target.id(), 3}, camera));
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  auto result = prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 5);
+  REQUIRE(result);
+  CHECK(result->source.entity({result->source.id(), 1})->camera->primary);
+  CHECK_FALSE(result->instance.scene.entity({result->instance.scene.id(), 3})->camera->primary);
+  camera.primary = true;
+  REQUIRE(f.target.setCamera({f.target.id(), 3}, camera));
+  CHECK_FALSE(prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 5));
+}
+
+TEST_CASE("scene_links.apply_instance_edits_nested_inheritance_without_writing_leaf_source") {
+  Fixture f;
+  auto assembly = Scene::create("Assembly").value();
+  assembly = std::move(prepareLinkedScene(assembly, f.source, "assets/leaf.dotscene", 1)->scene);
+  std::map<std::string, std::string> saved{{"assets/leaf.dotscene", text(f.source)},
+                                           {"assets/assembly.dotscene", text(assembly)}};
+  auto source
+      = resolveSceneSource("assets/assembly.dotscene", [&](std::string_view asset, std::size_t) {
+          return Dot::Core::Result<std::string>{saved.at(std::string(asset))};
+        });
+  REQUIRE(source);
+  auto target = Scene::create("Level").value();
+  auto linked = prepareLinkedScene(target, source->source, 1);
+  REQUIRE(linked);
+  auto& scene = linked->scene;
+  const auto mapped = scene.sceneLinks()->front().mapping;
+  const auto panel = std::ranges::find_if(mapped, [](const auto& m) {
+                       return m.key == SceneSourceKey{1, 1};
+                     })->target;
+  REQUIRE(scene.renameEntity({scene.id(), panel}, "Nested shared name"));
+  auto result = prepareSceneInstanceApply(scene, source->source, linked->root,
+                                          scene.nextEntityValue()->value());
+  REQUIRE_MESSAGE(result, (result ? "" : result.error().message));
+  CHECK(result->source.sceneLinks()->size() == 1);
+  CHECK(inspectSceneOverrides(result->source, {result->source.id(), 1})->total == 1);
+  CHECK(inspectSceneOverrides(result->instance.scene, result->instance.root)->total == 0);
+  CHECK(text(f.source) == saved.at("assets/leaf.dotscene"));
+}
+
+TEST_CASE("scene_links.field_and_instance_apply_preserve_latest_physical_source_reservations") {
+  Fixture f;
+  REQUIRE(f.target.renameEntity({f.target.id(), 3}, "Applied name"));
+  auto source = captureSceneSource(f.source, "assets/panels.dotscene").value();
+  source.namespaces[0].nextEntity = 1000;
+  auto field
+      = prepareSceneFieldApply(f.target, source, {f.target.id(), 2}, {f.target.id(), 3}, "name", 5);
+  auto whole = prepareSceneInstanceApply(f.target, source, {f.target.id(), 2}, 5);
+  REQUIRE(field);
+  REQUIRE(whole);
+  CHECK(field->source.nextEntityValue()->value() == 1000);
+  CHECK(whole->source.nextEntityValue()->value() == 1000);
+  CHECK(field->instance.scene.sceneLinks()->front().namespaces[0].nextEntity.value() == 1000);
+  CHECK(whole->instance.scene.sceneLinks()->front().namespaces[0].nextEntity.value() == 1000);
+  source.namespaces[0].nextEntity.reset();
+  auto sealed
+      = prepareSceneFieldApply(f.target, source, {f.target.id(), 2}, {f.target.id(), 3}, "name", 5);
+  REQUIRE(sealed);
+  CHECK_FALSE(sealed->source.nextEntityValue()->has_value());
+}
