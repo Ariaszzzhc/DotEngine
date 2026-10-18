@@ -7,10 +7,12 @@ module;
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -98,6 +100,72 @@ namespace Dot::Audio {
     };
   }  // namespace
 
+  auto loadSceneClips(const Core::FileSystem& files, const Scene& scene,
+                      const SceneAudioLimits& limits, std::stop_token stop)
+      -> Core::Result<std::vector<ClipAsset>> {
+    auto valid = validateLimits(limits);
+
+    if (!valid) {
+      return std::unexpected(valid.error());
+    }
+
+    auto sources = scene.audioSources();
+
+    if (!sources) {
+      return std::unexpected(sources.error());
+    }
+
+    try {
+      std::vector<ClipAsset> result;
+      std::uint64_t bytes{};
+
+      for (const auto& source : *sources) {
+        if (stop.stop_requested()) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Audio preparation cancelled");
+        }
+
+        const auto& path = source.properties.asset;
+        auto found = std::ranges::find(result, path, &ClipAsset::asset);
+
+        if (found == result.end()) {
+          if (result.size() >= limits.maxAssets || bytes >= limits.sampleBytes) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Scene audio preparation capacity exceeded");
+          }
+
+          auto clipLimits = limits.clip;
+          clipLimits.sampleBytes = std::min(clipLimits.sampleBytes, limits.sampleBytes - bytes);
+          auto loaded = context(
+              loadClip(files, std::filesystem::path(std::u8string(path.begin(), path.end())),
+                       clipLimits),
+              source.id, path);
+
+          if (!loaded) {
+            return std::unexpected(loaded.error());
+          }
+
+          bytes += loaded->samples()->size_bytes();
+          result.push_back({path, std::move(*loaded)});
+          found = std::prev(result.end());
+        }
+
+        if (source.properties.spatial.enabled && found->value.info()->channels != 1) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Prepared spatial audio requires mono PCM: " + path);
+        }
+      }
+
+      if (stop.stop_requested()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Audio preparation cancelled");
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Prepare scene audio: " + std::string(error.what()));
+    }
+  }
+
   struct SceneAudio::Impl {
     Backend m_backend;
     Core::FileSystem m_files;
@@ -145,7 +213,9 @@ namespace Dot::Audio {
       return found->second.voice;
     }
 
-    auto synchronize(const Scene& scene, double seconds) -> Core::Result<void> {
+    auto synchronize(const Scene& scene, double seconds,
+                     std::optional<std::span<const ClipAsset>> prepared = {})
+        -> Core::Result<void> {
       auto checked = check();
 
       if (!checked) {
@@ -163,6 +233,36 @@ namespace Dot::Audio {
       }
 
       try {
+        std::map<std::string, Clip> decoded;
+
+        if (prepared) {
+          if (prepared->size() > m_limits.maxAssets) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Prepared audio exceeds asset capacity");
+          }
+
+          std::uint64_t bytes{};
+
+          for (const auto& asset : *prepared) {
+            SourceProperties description;
+            description.asset = asset.asset;
+            auto valid = validateSourceProperties(description);
+            auto samples = asset.value.samples();
+
+            if (!valid || !samples || !decoded.emplace(asset.asset, asset.value).second) {
+              return Core::fail(Core::ErrorCode::InvalidArgument,
+                                "Invalid/duplicate prepared audio asset");
+            }
+
+            if (samples->size_bytes() > m_limits.clip.sampleBytes
+                || samples->size_bytes() > m_limits.sampleBytes - bytes) {
+              return Core::fail(Core::ErrorCode::Unavailable, "Prepared audio exceeds PCM budget");
+            }
+
+            bytes += samples->size_bytes();
+          }
+        }
+
         std::map<std::string, Clip> assets;
         std::map<std::uint64_t, Binding> bindings;
         std::uint64_t sampleBytes = 0;
@@ -259,9 +359,21 @@ namespace Dot::Audio {
             const std::u8string utf8Path(properties.asset.begin(), properties.asset.end());
             const std::filesystem::path path{utf8Path};
 
-            auto source = cached != m_assets.end() ? Core::Result<Clip>{cached->second}
-                                                   : context(loadClip(m_files, path, limits),
-                                                             entity.id, properties.asset);
+            auto source = [&]() -> Core::Result<Clip> {
+              if (cached != m_assets.end()) {
+                return cached->second;
+              }
+
+              if (prepared) {
+                const auto supplied = decoded.find(properties.asset);
+                return supplied != decoded.end()
+                           ? Core::Result<Clip>{supplied->second}
+                           : Core::fail(Core::ErrorCode::NotFound,
+                                        "Audio clip is not prepared: " + properties.asset);
+              }
+
+              return context(loadClip(m_files, path, limits), entity.id, properties.asset);
+            }();
 
             if (!source) {
               return std::unexpected(source.error());
@@ -269,7 +381,8 @@ namespace Dot::Audio {
 
             auto samples = source->samples();
 
-            if (!samples || samples->size_bytes() > m_limits.sampleBytes - sampleBytes) {
+            if (!samples || samples->size_bytes() > m_limits.clip.sampleBytes
+                || samples->size_bytes() > m_limits.sampleBytes - sampleBytes) {
               return Core::fail(Core::ErrorCode::InvalidArgument, "Scene audio exceeds PCM budget");
             }
 
@@ -321,6 +434,13 @@ namespace Dot::Audio {
           batch.listener = listener;
         }
 
+        for (const auto& [path, clip] : decoded) {
+          if (!assets.contains(path)) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Unused prepared audio asset: " + path);
+          }
+        }
+
         auto applied
             = std::visit([&](auto& backend) { return backend.applyChanges(batch); }, m_backend);
 
@@ -355,7 +475,8 @@ namespace Dot::Audio {
   SceneAudio::~SceneAudio() = default;
 
   auto SceneAudio::create(const Scene& scene, const Core::FileSystem& files,
-                          const MixerConfig& config, const SceneAudioLimits& limits)
+                          const MixerConfig& config, const SceneAudioLimits& limits,
+                          std::optional<std::span<const ClipAsset>> prepared)
       -> Core::Result<SceneAudio> {
     auto checked = validateLimits(limits);
 
@@ -373,7 +494,7 @@ namespace Dot::Audio {
       auto impl = std::make_unique<Impl>(Backend{std::move(*backend)}, files, config, std::nullopt,
                                          limits);
       impl->m_scene = scene.id();
-      auto initialized = impl->synchronize(scene, 0);
+      auto initialized = impl->synchronize(scene, 0, prepared);
 
       if (!initialized) {
         return std::unexpected(initialized.error());
@@ -388,7 +509,9 @@ namespace Dot::Audio {
 
   auto SceneAudio::createPlayback(const Scene& scene, const Core::FileSystem& files,
                                   const PlaybackConfig& config, const SceneAudioLimits& limits,
-                                  Playback* preparedPlayback) -> Core::Result<SceneAudio> {
+                                  Playback* preparedPlayback,
+                                  std::optional<std::span<const ClipAsset>> prepared)
+      -> Core::Result<SceneAudio> {
     auto checked = validateLimits(limits);
 
     if (!checked) {
@@ -423,7 +546,7 @@ namespace Dot::Audio {
       auto impl = std::make_unique<Impl>(Backend{std::move(*backend)}, files, config.mixer, config,
                                          limits);
       impl->m_scene = scene.id();
-      auto initialized = impl->synchronize(scene, 0);
+      auto initialized = impl->synchronize(scene, 0, prepared);
 
       if (!initialized) {
         return std::unexpected(initialized.error());
@@ -546,6 +669,12 @@ namespace Dot::Audio {
     return m_impl ? m_impl->synchronize(scene, seconds)
                   : Core::Result<void>{
                         Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved")};
+  }
+
+  auto SceneAudio::synchronizePrepared(const Scene& scene, std::span<const ClipAsset> prepared,
+                                       double seconds) -> Core::Result<void> {
+    return m_impl ? m_impl->synchronize(scene, seconds, prepared)
+                  : Core::fail(Core::ErrorCode::InvalidState, "Scene audio has been moved");
   }
 
   auto SceneAudio::startPlayback() -> Core::Result<void> {

@@ -9,6 +9,7 @@
 
 #include "SceneAudioFixture.hpp"
 
+import Dot.Audio.Clip;
 import Dot.Audio.SceneAudio;
 import Dot.World.Scene;
 import Dot.Math;
@@ -452,4 +453,123 @@ TEST_CASE("audio.scene_total_pcm_budget_bounds_unique_assets_and_listener_switch
   REQUIRE(audio->synchronize(scene, 0.01));
   CHECK(audio->listener()->velocity == Dot::Math::Vec3{});
   CHECK(audio->listener()->position.x == 1000);
+}
+
+TEST_CASE("audio.scene_prepared_initial_pcm_owns_data_and_refreshes_after_last_reference") {
+  Directory directory;
+  auto files = directory.files();
+  writeWave(files, "tone.wav", std::vector<float>(64, .25F));
+  auto scene = makeScene();
+  auto prepared = loadSceneClips(files, scene).value();
+  REQUIRE(prepared.size() == 1);
+  REQUIRE(files.writeTextAtomic("tone.wav", "unavailable after preparation"));
+  auto audio = SceneAudio::create(scene, files, {1}, {}, std::span<const ClipAsset>{prepared});
+  REQUIRE_MESSAGE(audio, (audio ? "" : audio.error().message));
+  prepared.clear();
+  std::array<float, 8> output{};
+  REQUIRE(audio->render(output));
+  CHECK(allNear(output, .25F));
+  const auto owner = scene.findEntity(1).value();
+  REQUIRE(audio->pause(owner));
+  REQUIRE(audio->seek(owner, 7));
+  REQUIRE(audio->synchronizePrepared(scene, {}));
+  CHECK(audio->voice(owner)->sourceFrame == 7);
+  CHECK_FALSE(audio->voice(owner)->playing);
+  const auto description = *scene.entity(owner)->audioSource;
+  REQUIRE(scene.setAudioSource(owner, std::nullopt));
+  REQUIRE(audio->synchronizePrepared(scene, {}));
+  CHECK(audio->stats()->assets == 0);
+  REQUIRE(scene.setAudioSource(owner, description));
+  CHECK_FALSE(audio->synchronizePrepared(scene, {}));
+  CHECK_FALSE(audio->synchronize(scene));
+  writeWave(files, "tone.wav", std::vector<float>(64, .5F));
+  REQUIRE(audio->synchronize(scene));
+  REQUIRE(audio->render(output));
+  CHECK(allNear(output, .5F));
+}
+
+TEST_CASE("audio.scene_prepared_update_preserves_cached_pcm_cursor_and_manual_state") {
+  Directory directory;
+  auto files = directory.files();
+  writeWave(files, "tone.wav", std::vector<float>(64, .25F));
+  auto scene = makeScene();
+  auto audio = SceneAudio::create(scene, files, {1}).value();
+  const auto owner = scene.findEntity(1).value();
+  REQUIRE(audio.pause(owner));
+  REQUIRE(audio.seek(owner, 7));
+  const auto added = scene.createEntity("Added audio").value();
+  auto description = *scene.entity(owner)->audioSource;
+  description.asset = "new.wav";
+  REQUIRE(scene.setAudioSource(added, description));
+  auto clip = Clip::fromPcm(std::vector<float>(64, .125F), 1, 48000).value();
+  auto changedCache = Clip::fromPcm(std::vector<float>(64, .75F), 1, 48000).value();
+  std::vector<ClipAsset> prepared{{"new.wav", clip}, {"tone.wav", changedCache}};
+  REQUIRE(files.writeTextAtomic("tone.wav", "changed while referenced"));
+  REQUIRE(audio.synchronizePrepared(scene, prepared));
+  prepared.clear();
+  CHECK(audio.voice(owner)->sourceFrame == 7);
+  CHECK_FALSE(audio.voice(owner)->playing);
+  std::array<float, 8> output{};
+  REQUIRE(audio.render(output));
+  CHECK(allNear(output, .125F));
+  CHECK(audio.voice(owner)->sourceFrame == 7);
+  REQUIRE(audio.play(owner));
+  REQUIRE(audio.render(output));
+  CHECK(allNear(output, .375F));
+  REQUIRE(audio.synchronizePrepared(scene, {}));
+  CHECK(audio.stats()->assets == 2);
+  CHECK_FALSE(audio.reset(scene));
+  REQUIRE(audio.render(output));
+  CHECK(allNear(output, .375F));
+}
+
+TEST_CASE("audio.scene_prepared_rejections_preserve_backend_and_combined_limits") {
+  Directory directory;
+  auto files = directory.files();
+  writeWave(files, "tone.wav", std::vector<float>(64, .25F));
+  auto scene = makeScene();
+  SceneAudioLimits limits;
+  limits.maxAssets = 2;
+  limits.sampleBytes = 512;
+  limits.clip.sampleBytes = 256;
+  auto audio = SceneAudio::create(scene, files, {1}, limits).value();
+  const auto owner = scene.findEntity(1).value();
+  REQUIRE(audio.pause(owner));
+  REQUIRE(audio.seek(owner, 7));
+  const auto added = scene.createEntity("Prepared voice").value();
+  auto description = *scene.entity(owner)->audioSource;
+  description.asset = "new.wav";
+  REQUIRE(scene.setAudioSource(added, description));
+  auto clip = Clip::fromPcm(std::vector<float>(64, .125F), 1, 48000).value();
+  std::vector<ClipAsset> prepared{{"new.wav", clip}};
+  CHECK_FALSE(audio.synchronizePrepared(scene, {}));
+  prepared.push_back(prepared.front());
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  prepared.back().asset = "unused.wav";
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  prepared.back().asset = "../invalid.wav";
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  prepared.pop_back();
+  prepared.front().value = Clip::fromPcm(std::vector<float>(65, .1F), 1, 48000).value();
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  prepared.front().value = clip;
+  description.spatial.enabled = true;
+  REQUIRE(scene.setAudioSource(added, description));
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  CHECK(audio.stats()->mixer.voices == 1);
+  CHECK(audio.stats()->sampleBytes == 256);
+  CHECK(audio.voice(owner)->sourceFrame == 7);
+  CHECK_FALSE(audio.voice(owner)->playing);
+  description.spatial.enabled = false;
+  REQUIRE(scene.setAudioSource(added, description));
+  REQUIRE(audio.synchronizePrepared(scene, prepared));
+  CHECK(audio.stats()->sampleBytes == 512);
+  const auto overflow = scene.createEntity("Over capacity").value();
+  description.asset = "overflow.wav";
+  REQUIRE(scene.setAudioSource(overflow, description));
+  prepared.front().asset = "overflow.wav";
+  CHECK_FALSE(audio.synchronizePrepared(scene, prepared));
+  CHECK(audio.stats()->mixer.voices == 2);
+  CHECK_FALSE(audio.voice(overflow));
+  CHECK(audio.voice(owner)->sourceFrame == 7);
 }

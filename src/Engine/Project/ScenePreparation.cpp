@@ -21,6 +21,7 @@ module;
 module Dot.Project.ScenePreparation;
 
 import Dot.UI.Files;
+import Dot.Audio.SceneAudio;
 import Dot.Physics.MeshFiles;
 
 import Dot.Core.Paths;
@@ -407,6 +408,8 @@ namespace Dot::Project {
     std::vector<Animation::ControllerAsset> controllers;
     std::optional<UI::Asset> ui;
     std::vector<Physics::MeshAsset> meshes;
+    std::vector<Audio::ClipAsset> audio;
+    Audio::SceneAudioLimits audioLimits;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -425,7 +428,8 @@ namespace Dot::Project {
 
   auto PreparedScene::create(const Core::FileSystem& files, const std::string& path,
                              const std::optional<std::string>& initial, std::stop_token stop,
-                             ScenePreparationKind kind) -> Core::Result<PreparedScene> {
+                             ScenePreparationKind kind, const Audio::SceneAudioLimits& audioLimits)
+      -> Core::Result<PreparedScene> {
     auto valid = preparationInput(path, initial);
 
     if (kind != ScenePreparationKind::Complete && kind != ScenePreparationKind::Content) {
@@ -556,10 +560,17 @@ namespace Dot::Project {
         return Core::fail(Core::ErrorCode::Unavailable, "Collision mesh preparation cancelled");
       }
 
+      auto audio = Audio::loadSceneClips(files, *scene, audioLimits, stop);
+
+      if (!audio) {
+        return std::unexpected(audio.error());
+      }
+
       auto canonical = World::encodeScene(*scene);
       return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
                              Data{files.root(), std::move(*canonical), std::move(*animations),
-                                  std::move(controllers), std::move(ui), std::move(*meshes)})}}
+                                  std::move(controllers), std::move(ui), std::move(*meshes),
+                                  std::move(*audio), audioLimits})}}
                        : std::unexpected(canonical.error());
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Prepare scene: " + std::string(error.what()));
@@ -600,6 +611,20 @@ namespace Dot::Project {
     return std::span<const Physics::MeshAsset>{m_data->meshes};
   }
 
+  auto PreparedScene::audioClips(const Audio::SceneAudioLimits& limits) const
+      -> Core::Result<std::span<const Audio::ClipAsset>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    if (limits != m_data->audioLimits) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Prepared audio limits do not match consumer");
+    }
+
+    return std::span<const Audio::ClipAsset>{m_data->audio};
+  }
+
   auto PreparedScene::ui() const -> Core::Result<std::optional<UI::Asset>> {
     if (!m_data) {
       return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
@@ -635,12 +660,12 @@ namespace Dot::Project {
     std::jthread m_worker;
 
     Impl(Core::FileSystem files, std::string path, std::optional<std::string> initial,
-         ScenePreparationKind kind)
+         ScenePreparationKind kind, Audio::SceneAudioLimits audioLimits)
         : m_worker([state = m_completion, files = std::move(files), path = std::move(path),
-                    initial = std::move(initial), kind](std::stop_token stop) {
+                    initial = std::move(initial), kind, audioLimits](std::stop_token stop) {
             auto result = [&]() -> Core::Result<PreparedScene> {
               try {
-                return PreparedScene::create(files, path, initial, stop, kind);
+                return PreparedScene::create(files, path, initial, stop, kind, audioLimits);
               } catch (const std::exception& error) {
                 return Core::fail(Core::ErrorCode::External,
                                   "Background scene preparation: " + std::string(error.what()));
@@ -672,7 +697,8 @@ namespace Dot::Project {
   ScenePreparation::~ScenePreparation() = default;
 
   auto ScenePreparation::begin(const Core::FileSystem& files, std::string path,
-                               std::optional<std::string> initial, ScenePreparationKind kind)
+                               std::optional<std::string> initial, ScenePreparationKind kind,
+                               const Audio::SceneAudioLimits& audioLimits)
       -> Core::Result<ScenePreparation> {
     auto valid = preparationInput(path, initial);
 
@@ -686,7 +712,7 @@ namespace Dot::Project {
       }
 
       return ScenePreparation{
-          std::make_unique<Impl>(files, std::move(path), std::move(initial), kind)};
+          std::make_unique<Impl>(files, std::move(path), std::move(initial), kind, audioLimits)};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Start scene preparation: " + std::string(error.what()));

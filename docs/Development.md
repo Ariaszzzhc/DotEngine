@@ -14568,3 +14568,112 @@ exact kit/export DotGame hashes. Temporary orchestration helpers are removed onl
 after native completion; raw requests/replies/ACKs, logs, profiles, PNG, ordinary
 project/game and save remain. No release archive is produced. Windows/Linux execution,
 final art, large-game maturity and remaining roadmap work are still open.
+
+## 2026-10-18 — Prepared scene audio decoding
+
+Scene preparation now owns decoded immutable PCM alongside animation/controller and
+collision resources. loadSceneClips deduplicates exact logical paths and decodes on
+the calling CPU worker without a mixer/device. Preserve configured encoded-source,
+per-clip/aggregate PCM and asset-count limits, with cancellation between bounded
+files and spatial mono validation. Listener/pose/voice-capacity validation remains
+in final binding: a content fragment can inherit its listener from the live world.
+The proof records exact audio limits and rejects a mismatched consumer instead of
+silently bypassing its encoded-byte budget.
+
+SceneAudio/AudioSession factories can consume a complete initial decoded set without
+file fallback. A prepared synchronization consumes uncached referenced clips for one
+update; cached paths retain immutable PCM while referenced. Duplicate/invalid/unused
+prepared entries, missing coverage, PCM/capacity and final spatial errors fail before
+the backend batch. Unchanged voices retain cursor/manual state. The aggregate active
+cache remains bounded, shared references count once, and the last reference releases
+its clip. Later ordinary binding/reset retains existing file refresh behavior. The
+same optional decoded path serves offline PCM and real-device playback; queued PCM
+and backend transaction/error semantics remain unchanged. No script scheduling or
+new host operation is introduced.
+
+GameSession's append/replacement worker uses its actual configured limits. The
+first binding adopts the proof; after Start, ordinary synchronization handles
+script-authored changes. Proofs never contain active scene/backend/voice handles.
+Synchronous initial creation without a proof, later dynamic resource reads, native
+binding/backend batches, activation/retirement and GPU uploads still have their
+existing costs. Per-file decoding is bounded but not interruptible within a codec
+call. This does not establish general streaming, presentation latency or large-game
+maturity.
+
+Validation on arm64 macOS:
+
+- Six new durable cases in existing integration/audio-native targets verify owned
+  PCM after input handle retirement and source corruption, actual offline samples,
+  cache identity and shared resources, cursor/manual pause preservation, last-use
+  eviction/file refresh, missing/duplicate/unused/invalid entries, per-clip/aggregate
+  and combined cache capacity, source-byte exact boundaries, spatial mono/listener
+  rejection, exact proof budgets/move lifetime, cancellation, and real native output
+  initialization/activation/control/close using prepared data. Worker preparation
+  leaves mixer/output backend allocations unchanged. Extend the existing normal/live
+  GameSession append case with audio and validate both resources are bound at Start.
+- Focused Debug: 7/7 in 0.79 seconds. Full Debug: 1659/1659 in 265.46 seconds. Full
+  Release/NDEBUG: 1659/1659 in 37.46 seconds. Each full run has 535 unit and 1124
+  integration cases, including 38 audio-native and 186 durable offscreen cases.
+  Builds/tests/native applications run sequentially. No new target/dependency,
+  desktop test window, timeout, raised budget or relaxed expectation.
+- Initial compilation caught an incorrect getter argument from a mechanical call-
+  site edit; correct it and pass the optional PCM to the offline factory. Subsequent
+  builds and all focused/full tests above pass without test expectation changes.
+  Later interface edits only clarify audio-backend/PCM documentation.
+
+Actual production evidence remains in ignored build/prepared-audio-review. Create
+an ordinary PrismAudio project through the product creator. Reuse the prior ordinary
+project's saved animated/collidable ServiceAnnex and native resources, then edit/save
+its spatial audio component through the real editor. Copy the existing Feature Lab
+tone unchanged to two logical paths. It is functional example audio, not finished
+Prism sound design. Add the normal external AnnexGate script and a paused main
+voice through real component edits, then save the 343-entity main. F10 in this
+ordinary script reads actual native audio statistics/voice data; it implements no
+mixing, decoding or engine behavior. The paused main voice starts at source frame
+100. Retain the source script and all editable project files.
+
+In actual Play, D/F8 loads the ten-entity source under its owned container. Player
+value 7/scope 200 remains, moving X from -3 to -2.573363. Native instance controls
+append the same source again and remove that second instance; F9 removes the first.
+Entity counts are 343/354/365/343 and renderer inputs 181/185/189/181 with ready views,
+no errors and empty runtime diagnostics. The native audio results are:
+
+- Before: one paused voice, one asset, 34560 PCM bytes, no playing voice.
+- One room: two voices/two assets, 69120 bytes, one playing mono spatial source.
+- Two rooms: three voices/two assets, still 69120 bytes, two playing sources.
+- Remove the duplicate: two voices/two assets and one playing source.
+- Remove the last room: one paused voice/one asset, 34560 bytes and no playing voice.
+
+The original paused voice remains at source frame 100 throughout. The endpoint is
+actually running with increasing submitted/consumed frames; these counters and the
+native source-read cursor are not microphone/loopback or human hearing evidence.
+F10 retains the last sampled per-room voice fields after removal; use current native
+asset/voice/playing counts and the actual world to establish removal, rather than
+interpreting historical fields as an existing voice. Actual 1480x574 captured pixels
+show the loaded-room HUD. F6/save, movement and F7/restore give an 8.195639e-8 feet
+error at the unchanged 1e-5 bound. Stop restores the exact authored main scene.
+
+Export/relocate the ordinary game, hide only its owned authoring project, and start
+two fresh native processes against the same new save directory. Each repeats the
+paused baseline, room load/playback/unload and resource reclamation with the same
+frame-100 main cursor and real endpoint counters. Native two restores native one's
+checkpoint with zero feet error; native one's own save/restore error is also zero.
+Loaded snapshots have 354 entities, 58/88 completed native frames, HUD rasterizations,
+failureCount 0 and empty diagnostics. Restore the authoring path. All three owned
+product processes have actual exit 0 before close replies are consumed; every reply
+is ACKed and every closed endpoint/archive is explicitly cleared.
+
+Preserve whole-application profiling with light polling and full world reads outside
+the measured append interval: peak Prepare 0.781208 ms, its same-frame total 7.731500
+ms and peak Update 1.999458 ms. This different audio-bearing workload is not a
+controlled comparison, isolated decoder benchmark, cold-cache or 60 Hz claim.
+
+Verify all 1792 previous project/game/save guards unchanged and retain 2092 guarded
+files including this new 130-file project, 169-file game and save. Twenty current
+Debug/Release/kit/export Mach-O paths pass strict signing; kit/export DotGame hashes
+match and both copied tones match the existing example file. Remove temporary
+orchestration helpers after product completion, preserving raw control records,
+logs/profiles/PNG, ordinary project/game and save. No release archive or generated
+art/audio is produced. Native desktop inspection still reports the locked Mac;
+mouse/keyboard/layout and subjective hearing acceptance remain unverified. Only
+macOS execution is claimed. Final art/audio and overall production goals remain open.

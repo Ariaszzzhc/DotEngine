@@ -1137,16 +1137,18 @@ native synchronization or component construction/Start/Stop failure reports
 Successful composition synchronizes existing services without replacing the realm
 or rebuilding physics. This is functional additive composition, not asynchronous
 GPU residency. The content worker owns decoded animation clips/controllers and
-collision geometry; the first native synchronization consumes these without file
-fallback for new bindings. Unchanged animation players retain clocks/rest poses;
+collision geometry and decoded PCM under the session's exact audio budgets; the
+first native synchronization consumes these without file fallback for new bindings. Unchanged animation players retain clocks/rest poses;
 existing collision paths retain immutable cached geometry until reset. New paths
 share the 64-asset/64 MiB collision cache bound. Missing/duplicate/unused prepared
-resources fail explicitly. Preparation handles live only through this publication;
-later description replacements use ordinary refresh rules. A second synchronization
+resources fail explicitly. Preparation entries serve this publication; services
+retain owned immutable handles as needed, while later description replacements use
+ordinary refresh rules. A second synchronization
 after Start handles script-authored changes normally.
 
-Fragment grafting, native binding, audio decoding and dynamic asset synchronization
-still run on the owner; GPU uploads remain independent work. Asset edits must be
+Fragment grafting, native binding and later dynamic asset synchronization still run
+on the owner; audio decoding without a prepared proof and script-authored file
+changes retain ordinary synchronous behavior. GPU uploads remain independent work. Asset edits must be
 serialized through publication, as for scene replacement.
 
 追加/卸载共享帧边界队列，接受请求不代表完成。实例保留精确成员所有权，来源全局设置与

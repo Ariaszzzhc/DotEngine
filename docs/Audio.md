@@ -359,3 +359,37 @@ include backend prefetch/resampling and is not a device presentation timestamp.
 Paused voices retain that cursor; seek and stop update it without starting playback.
 The typed script bridge preserves frame values as decimal strings; see Scripting.md
 for AudioSession ownership, scheduling, state/control methods and executable cases.
+
+
+## Prepared scene PCM / 场景 PCM 准备
+
+`loadSceneClips(files, scene, limits, stop)` decodes unique logical source paths on
+the calling CPU thread without opening a mixer/output device. It enforces the exact
+encoded/per-clip/aggregate PCM and asset-count bounds and spatial mono requirement.
+Cancellation is checked between bounded files; individual bounded decodes remain
+synchronous on that worker. Final listener/world-pose and voice capacity checks
+remain part of native binding, since content can inherit the active world's listener.
+
+SceneAudio and AudioSession factories accept an optional complete initial decoded
+set. `synchronizePrepared` supplies one update's uncached referenced clips with no
+file fallback; invalid/duplicate/unused paths fail before backend mutation. Supplied
+PCM has per-clip/aggregate checks; encoded-byte bounds are a decoder responsibility.
+Existing referenced paths retain their immutable clip data and voice cursor/manual
+state even if a prepared set supplies different samples for that same path. The
+combined active resources still obey the configured budgets. Removing the final
+reference releases that cache entry; later ordinary binding rereads its file. Reset
+continues to reread all resources. Queued PCM retains its existing content.
+
+PreparedScene retains immutable PCM and the exact decoding limits. Its audio getter
+rejects consumers with different limits, preserving encoded-source budget semantics.
+GameSession's append/replacement worker uses that session's configured limits and
+first native binding adopts its proof. The second synchronization after Start uses
+ordinary refresh rules for script-authored changes. Synchronous initial session
+creation without a proof, later dynamic file reads, backend batches/activation and
+retirement still have their existing costs. This is bounded resource preparation,
+not general streaming or a guarantee about endpoint presentation latency.
+
+场景准备工作线程按精确预算解码唯一 PCM，不创建混音器或设备；最终监听器/位姿/声部
+容量由原生绑定检查。首次绑定消费完整准备结果，不回退磁盘；缓存引用期间保留数据及
+手动播放状态，最后引用移除后释放缓存。准备结果拒绝不同预算的使用者。初始同步创建、
+后续动态读文件、后端批次及设备生命周期仍有原有开销，不代表完整流送或播放延迟保证。

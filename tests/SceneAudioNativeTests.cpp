@@ -557,3 +557,34 @@ TEST_CASE("audio.game_async_activation_requires_completion_before_gameplay") {
   CHECK(Dot::Audio::Mixer::backendMemory().bytes == mixerBefore.bytes);
   CHECK(Dot::Audio::Output::backendMemory().bytes == outputBefore.bytes);
 }
+
+TEST_CASE("audio.native_scene_uses_owned_prepared_pcm_without_file_fallback") {
+  using namespace Dot;
+  DotTest::Audio::Directory directory;
+  auto files = directory.files();
+  DotTest::Audio::writeWave(files, "tone.wav", std::vector<float>(48000, .25F));
+  auto scene = World::Scene::create().value();
+  const auto owner = scene.createEntity("Prepared native voice").value();
+  World::AudioSource source;
+  source.asset = "tone.wav";
+  source.voice.looping = true;
+  REQUIRE(scene.setAudioSource(owner, source));
+  auto clips = Audio::loadSceneClips(files, scene).value();
+  REQUIRE(files.writeTextAtomic("tone.wav", "unavailable after decoding"));
+  Audio::PlaybackConfig config;
+  config.output.volume = 0;
+  config.deferredStart = true;
+  auto audio = Audio::SceneAudio::createPlayback(scene, files, config, {}, nullptr,
+                                                 std::span<const Audio::ClipAsset>{clips});
+  REQUIRE_MESSAGE(audio, (audio ? "" : audio.error().message));
+  clips.clear();
+  REQUIRE(audio->startPlayback());
+  REQUIRE(audio->pause(owner));
+  REQUIRE(audio->seek(owner, 7));
+  REQUIRE(audio->synchronizePrepared(scene, {}));
+  CHECK_FALSE(audio->voice(owner)->playing);
+  CHECK(audio->voice(owner)->sourceFrame == 7);
+  CHECK(audio->stats()->assets == 1);
+  REQUIRE(audio->closePlayback());
+  CHECK(audio->pollPlaybackClosed().value());
+}

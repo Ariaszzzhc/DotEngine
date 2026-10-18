@@ -4,10 +4,14 @@ module;
 #include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
+#include <string>
+#include <vector>
 
 export module Dot.Audio.SceneAudio;
 
 export import Dot.Audio.Playback;
+import Dot.Audio.Clip;
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.World.Scene;
@@ -17,7 +21,22 @@ export namespace Dot::Audio {
     ClipLimits clip;
     std::uint64_t sampleBytes{256 * 1024 * 1024};
     std::uint32_t maxAssets{128};
+    auto operator==(const SceneAudioLimits&) const -> bool = default;
   };
+
+  struct ClipAsset {
+    std::string asset;
+    Clip value;
+  };
+
+  /** Decode unique referenced audio within the exact limits, without a mixer/device.
+   * Cancellation is checked between bounded files. Validate spatial mono channels;
+   * listener/pose checks remain with the final scene binding.
+   * 在精确预算内解码唯一引用音频，不创建混音器/设备；有界文件之间检查取消。
+   * 校验空间音频为单声道，监听器及位姿仍在最终场景绑定时校验。 */
+  [[nodiscard]] auto loadSceneClips(const Core::FileSystem& files, const Dot::World::Scene& scene,
+                                    const SceneAudioLimits& limits = {}, std::stop_token stop = {})
+      -> Core::Result<std::vector<ClipAsset>>;
 
   struct SceneAudioStats {
     std::size_t assets;
@@ -36,23 +55,31 @@ export namespace Dot::Audio {
   class SceneAudio {
   public:
     /** Offline factory for deterministic PCM rendering; no device is opened.
-     * 离线工厂用于确定性 PCM 渲染，不打开设备。 */
+     * Optional decoded assets are the complete initial set without file fallback;
+     * later changes use ordinary referenced-cache/file rules. Decoded data is checked
+     * against per-clip/aggregate PCM bounds; encoded-byte limits apply during decoding.
+     * 离线工厂用于确定性 PCM 渲染，不打开设备；可选解码资源为完整初始集且不回退读文件。
+     * 后续变更沿用引用缓存/文件规则；检查逐片段/总 PCM 预算，编码字节预算在解码时检查。 */
     [[nodiscard]] static auto create(const Dot::World::Scene& scene, const Core::FileSystem& files,
                                      const MixerConfig& config = {},
-                                     const SceneAudioLimits& limits = {})
+                                     const SceneAudioLimits& limits = {},
+                                     std::optional<std::span<const ClipAsset>> prepared = {})
         -> Core::Result<SceneAudio>;
     /** Continuous real-device factory; files/poses are prepared on the client
      * thread, and a single batch commits on the playback worker.
      * 连续原生播放工厂；文件/位姿在客户端线程准备，单批次在播放工作线程提交。
      * An optional ready, unstarted deferred endpoint is consumed only after
      * exact configuration validation; it must belong to this client thread.
-     * 可传入同客户端线程的已就绪、未启动延后端点；精确核对配置后转移所有权。 */
+     * 可传入同客户端线程的已就绪、未启动延后端点；精确核对配置后转移所有权。
+     * Optional PCM follows the offline factory's complete initial set contract.
+     * 可选 PCM 沿用离线工厂的完整初始资源集契约。 */
     [[nodiscard]] static auto createPlayback(const Dot::World::Scene& scene,
                                              const Core::FileSystem& files,
                                              const PlaybackConfig& config = {},
                                              const SceneAudioLimits& limits = {},
-                                             Playback* preparedPlayback = nullptr)
-        -> Core::Result<SceneAudio>;
+                                             Playback* preparedPlayback = nullptr,
+                                             std::optional<std::span<const ClipAsset>> prepared
+                                             = {}) -> Core::Result<SceneAudio>;
     SceneAudio(const SceneAudio&) = delete;
     auto operator=(const SceneAudio&) -> SceneAudio& = delete;
     SceneAudio(SceneAudio&&) noexcept;
@@ -89,6 +116,14 @@ export namespace Dot::Audio {
      * 速度（新源/监听器初速为零），速率须不超 100 米/秒。资产/属性未变则保留游标及手动
      * 播放状态；playOnStart 仅用于创建/替换资产，已结束声部不自动重启。 */
     [[nodiscard]] auto synchronize(const Dot::World::Scene& scene, double seconds = 0)
+        -> Core::Result<void>;
+    /** Supply decoded clips for uncached referenced paths in one update, with no
+     * file fallback. Reject duplicate/unused paths before backend mutation. Cached
+     * paths retain their immutable data and voice cursors/manual state while referenced.
+     * 单次更新提供未缓存引用的解码片段且不回退文件；后端修改前拒绝重复/无用路径。
+     * 引用中的缓存路径保留不可变数据及声部游标/手动状态。 */
+    [[nodiscard]] auto synchronizePrepared(const Dot::World::Scene& scene,
+                                           std::span<const ClipAsset> prepared, double seconds = 0)
         -> Core::Result<void>;
     /** Independently prepare a new backend/cache; failure retains this service.
      * Success may bind another scene and resets voices/gain from authoring/config.

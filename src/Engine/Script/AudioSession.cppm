@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <optional>
 #include <span>
 
 export module Dot.Script.AudioSession;
@@ -21,10 +22,14 @@ export namespace Dot::Script {
    * 替换会使会话明确失效。 */
   class AudioSession {
   public:
+    /** Optional initial decoded PCM is complete with no file fallback, owned by
+     * the backend after binding; later synchronization retains ordinary refresh rules.
+     * 可选初始解码 PCM 须完整且不回退文件，绑定后由后端拥有；后续同步保留普通刷新规则。 */
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
                                      const Core::FileSystem& files,
                                      const Audio::MixerConfig& config = {},
-                                     const Audio::SceneAudioLimits& limits = {})
+                                     const Audio::SceneAudioLimits& limits = {},
+                                     std::optional<std::span<const Audio::ClipAsset>> prepared = {})
         -> Core::Result<AudioSession>;
     /** Open a real endpoint with no silent-device fallback. Controls affect
      * future mixed blocks; already queued PCM retains its existing content.
@@ -32,11 +37,11 @@ export namespace Dot::Script {
      * An optional ready, unstarted deferred endpoint is consumed only after
      * exact configuration validation; it must belong to this client thread.
      * 可传入同客户端线程的已就绪、未启动延后端点；精确核对配置后转移所有权。 */
-    [[nodiscard]] static auto createPlayback(std::shared_ptr<World::Scene> scene,
-                                             const Core::FileSystem& files,
-                                             const Audio::PlaybackConfig& config = {},
-                                             const Audio::SceneAudioLimits& limits = {},
-                                             Audio::Playback* preparedPlayback = nullptr)
+    [[nodiscard]] static auto createPlayback(
+        std::shared_ptr<World::Scene> scene, const Core::FileSystem& files,
+        const Audio::PlaybackConfig& config = {}, const Audio::SceneAudioLimits& limits = {},
+        Audio::Playback* preparedPlayback = nullptr,
+        std::optional<std::span<const Audio::ClipAsset>> prepared = {})
         -> Core::Result<AudioSession>;
     AudioSession(const AudioSession&) = delete;
     auto operator=(const AudioSession&) -> AudioSession& = delete;
@@ -67,6 +72,11 @@ export namespace Dot::Script {
      * 原生调度：先准备编辑/位姿再修改后端；描述不变时保留手动播放/游标。重置重新读取资源
      * 及编辑状态，成功递增代并恢复主增益。 */
     [[nodiscard]] auto synchronize(double seconds = 0) -> Core::Result<void>;
+    /** One native update consumes prepared uncached PCM without file fallback;
+     * retain ordinary voice state and deferred motion-reset semantics.
+     * 单次原生更新消费未缓存 PCM 且不回退文件，保留普通声部状态及延后运动重置语义。 */
+    [[nodiscard]] auto synchronizePrepared(std::span<const Audio::ClipAsset> prepared,
+                                           double seconds = 0) -> Core::Result<void>;
     [[nodiscard]] auto reset() -> Core::Result<void>;
     /** Offline only; native mode rejects without touching the buffer.
      * 仅限离线模式，原生模式拒绝且不修改缓冲。 */
@@ -86,6 +96,9 @@ export namespace Dot::Script {
     [[nodiscard]] auto bindings() const -> Core::Result<HostBindings>;
 
   private:
+    [[nodiscard]] auto synchronizeSession(double seconds,
+                                          std::optional<std::span<const Audio::ClipAsset>> prepared)
+        -> Core::Result<void>;
     struct Impl;
     explicit AudioSession(std::shared_ptr<Impl> impl) noexcept;
     std::shared_ptr<Impl> m_impl;

@@ -10,6 +10,12 @@
 #include <utility>
 #include <vector>
 
+#include "SceneAudioFixture.hpp"
+
+import Dot.Audio.Clip;
+import Dot.Audio.SceneAudio;
+import Dot.Audio.Mixer;
+import Dot.Audio.Output;
 import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.Core.StagedDirectory;
@@ -373,4 +379,84 @@ TEST_CASE("scene_preparation.content_excludes_unused_globals_but_checks_entity_a
   REQUIRE(World::saveScene(f.files, "scenes/content.dotscene", f.scene));
   CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/content.dotscene", {}, {},
                                              Project::ScenePreparationKind::Content));
+}
+
+TEST_CASE(
+    "scene_preparation.audio_pcm_is_owned_under_exact_limits_without_backend_initialization") {
+  Fixture f;
+  auto node = f.scene.createEntity("Prepared audio").value();
+  World::AudioSource source;
+  source.asset = "assets/sound.WAV";
+  source.spatial.enabled = true;
+  REQUIRE(f.scene.setAudioSource(node, source));
+  DotTest::Audio::writeWave(f.files, source.asset, std::vector<float>(64, .25F));
+  REQUIRE(World::saveScene(f.files, "scenes/main.dotscene", f.scene));
+  Audio::SceneAudioLimits limits;
+  limits.clip.sourceBytes = 300;
+  limits.clip.sampleBytes = 256;
+  limits.sampleBytes = 256;
+  limits.maxAssets = 1;
+  const auto mixer = Audio::Mixer::backendMemory();
+  const auto output = Audio::Output::backendMemory();
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene", {},
+                                              Project::ScenePreparationKind::Content, limits)
+                 .value();
+  wait(job);
+  auto proof = job.take();
+  REQUIRE_MESSAGE(proof, (proof ? "" : proof.error().message));
+  CHECK(Audio::Mixer::backendMemory().bytes == mixer.bytes);
+  CHECK(Audio::Output::backendMemory().bytes == output.bytes);
+  CHECK_FALSE(proof->audioClips());
+  auto clips = proof->audioClips(limits).value();
+  REQUIRE(clips.size() == 1);
+  CHECK(clips.front().value.samples()->size_bytes() == 256);
+  REQUIRE(f.files.writeTextAtomic(source.asset, "changed after background decoding"));
+  auto retained = clips.front().value;
+  auto moved = std::move(*proof);
+  CHECK_FALSE(proof->audioClips(limits));
+  CHECK(moved.audioClips(limits)->size() == 1);
+  CHECK(retained.samples()->front() == .25F);
+  CHECK_FALSE(Project::PreparedScene::create(f.files, "scenes/main.dotscene", {}, {},
+                                             Project::ScenePreparationKind::Content, limits));
+}
+
+TEST_CASE("scene_preparation.audio_source_pcm_capacity_mono_and_cancellation_are_checked") {
+  Fixture f;
+  auto node = f.scene.createEntity("Audio").value();
+  World::AudioSource source;
+  source.asset = "assets/first.wav";
+  REQUIRE(f.scene.setAudioSource(node, source));
+  DotTest::Audio::writeWave(f.files, source.asset, std::vector<float>(64, .25F));
+  Audio::SceneAudioLimits limits;
+  limits.clip.sourceBytes = 299;
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
+  limits.clip.sourceBytes = 300;
+  limits.clip.sampleBytes = 255;
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
+  limits.clip.sampleBytes = 256;
+  limits.sampleBytes = 255;
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
+  limits.sampleBytes = 512;
+  limits.maxAssets = 1;
+  auto second = f.scene.createEntity("Another reference").value();
+  REQUIRE(f.scene.setAudioSource(second, source));
+  CHECK(Audio::loadSceneClips(f.files, f.scene, limits)->size() == 1);
+  source.asset = "assets/second.wav";
+  DotTest::Audio::writeWave(f.files, source.asset, std::vector<float>(64, .125F));
+  REQUIRE(f.scene.setAudioSource(second, source));
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
+  limits.maxAssets = 2;
+  REQUIRE(Audio::loadSceneClips(f.files, f.scene, limits));
+  std::stop_source stop;
+  stop.request_stop();
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits, stop.get_token()));
+  source.spatial.enabled = true;
+  REQUIRE(f.scene.setAudioSource(second, source));
+  DotTest::Audio::writeWave(f.files, source.asset, std::vector<float>(64, .125F), 2);
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
+  source.spatial.enabled = false;
+  REQUIRE(f.scene.setAudioSource(second, source));
+  REQUIRE(Audio::loadSceneClips(f.files, f.scene, limits));
+  limits.maxAssets = 0;
+  CHECK_FALSE(Audio::loadSceneClips(f.files, f.scene, limits));
 }

@@ -694,13 +694,26 @@ namespace Dot::Project {
       }
 
       impl->m_physics.emplace(std::move(*physics));
+      std::optional<std::span<const Audio::ClipAsset>> audioClips;
+
+      if (preflight) {
+        auto decoded = preflight->audioClips(config.audioLimits);
+
+        if (!decoded) {
+          return std::unexpected(decoded.error());
+        }
+
+        audioClips = *decoded;
+      }
+
       auto playbackConfig = config.audio;
       playbackConfig.deferredStart = true;
       auto audio = config.audioMode == SessionAudio::Playback
                        ? Script::AudioSession::createPlayback(impl->m_scene, assets, playbackConfig,
-                                                              config.audioLimits, preparedPlayback)
+                                                              config.audioLimits, preparedPlayback,
+                                                              audioClips)
                        : Script::AudioSession::create(impl->m_scene, assets, config.audio.mixer,
-                                                      config.audioLimits);
+                                                      config.audioLimits, audioClips);
 
       if (!audio) {
         return std::unexpected(audio.error());
@@ -1114,12 +1127,19 @@ namespace Dot::Project {
       std::span<const Animation::ClipAsset> clips;
       std::span<const Animation::ControllerAsset> controllers;
       std::span<const Physics::MeshAsset> meshes;
+      std::span<const Audio::ClipAsset> audio;
       bool prepared = request.kind == Script::SceneRequestKind::Append;
 
       if (request.kind == Script::SceneRequestKind::Append) {
         auto decoded = preflight->animationClips();
         auto graphs = preflight->animationControllers();
         auto geometry = preflight->collisionMeshes();
+
+        auto pcm = preflight->audioClips(m_impl->m_config.audioLimits);
+
+        if (!pcm) {
+          return failed(pcm.error());
+        }
 
         if (!decoded || !graphs || !geometry) {
           return failed(!decoded ? decoded.error() : !graphs ? graphs.error() : geometry.error());
@@ -1128,6 +1148,7 @@ namespace Dot::Project {
         clips = *decoded;
         controllers = *graphs;
         meshes = *geometry;
+        audio = *pcm;
         auto content = preflight->scene();
 
         if (!content) {
@@ -1177,7 +1198,8 @@ namespace Dot::Project {
           return std::unexpected(animation.error());
         }
 
-        return m_impl->m_audio->synchronize();
+        return prepared ? m_impl->m_audio->synchronizePrepared(audio)
+                        : m_impl->m_audio->synchronize();
       };
       auto ready = synchronize();
       prepared = false;
@@ -1270,7 +1292,8 @@ namespace Dot::Project {
         auto started = ScenePreparation::begin(*m_impl->m_files, request.path, std::move(initial),
                                                request.kind == Script::SceneRequestKind::Append
                                                    ? ScenePreparationKind::Content
-                                                   : ScenePreparationKind::Complete);
+                                                   : ScenePreparationKind::Complete,
+                                               m_impl->m_config.audioLimits);
 
         if (!started) {
           return m_impl->m_flow->fail(request.id, started.error());

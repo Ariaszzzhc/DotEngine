@@ -302,13 +302,14 @@ namespace Dot::Script {
   AudioSession::~AudioSession() = default;
 
   auto AudioSession::create(std::shared_ptr<World::Scene> scene, const Core::FileSystem& files,
-                            const Audio::MixerConfig& config, const Audio::SceneAudioLimits& limits)
+                            const Audio::MixerConfig& config, const Audio::SceneAudioLimits& limits,
+                            std::optional<std::span<const Audio::ClipAsset>> prepared)
       -> Core::Result<AudioSession> {
     if (!scene || scene->id() == 0) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Audio session requires a live scene");
     }
 
-    auto backend = Audio::SceneAudio::create(*scene, files, config, limits);
+    auto backend = Audio::SceneAudio::create(*scene, files, config, limits, prepared);
 
     if (!backend) {
       return std::unexpected(backend.error());
@@ -326,14 +327,15 @@ namespace Dot::Script {
                                     const Core::FileSystem& files,
                                     const Audio::PlaybackConfig& config,
                                     const Audio::SceneAudioLimits& limits,
-                                    Audio::Playback* preparedPlayback)
+                                    Audio::Playback* preparedPlayback,
+                                    std::optional<std::span<const Audio::ClipAsset>> prepared)
       -> Core::Result<AudioSession> {
     if (!scene || scene->id() == 0) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Audio session requires a live scene");
     }
 
-    auto backend
-        = Audio::SceneAudio::createPlayback(*scene, files, config, limits, preparedPlayback);
+    auto backend = Audio::SceneAudio::createPlayback(*scene, files, config, limits,
+                                                     preparedPlayback, prepared);
 
     if (!backend) {
       return std::unexpected(backend.error());
@@ -348,6 +350,17 @@ namespace Dot::Script {
   }
 
   auto AudioSession::synchronize(double seconds) -> Core::Result<void> {
+    return synchronizeSession(seconds, {});
+  }
+
+  auto AudioSession::synchronizePrepared(std::span<const Audio::ClipAsset> prepared, double seconds)
+      -> Core::Result<void> {
+    return synchronizeSession(seconds, prepared);
+  }
+
+  auto AudioSession::synchronizeSession(double seconds,
+                                        std::optional<std::span<const Audio::ClipAsset>> prepared)
+      -> Core::Result<void> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Audio session was moved");
     }
@@ -362,8 +375,9 @@ namespace Dot::Script {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Audio seconds must be finite in [0,1]");
     }
 
-    auto result
-        = m_impl->m_audio.synchronize(*m_impl->m_scene, m_impl->m_resetMotion ? 0 : seconds);
+    const auto delta = m_impl->m_resetMotion ? 0 : seconds;
+    auto result = prepared ? m_impl->m_audio.synchronizePrepared(*m_impl->m_scene, *prepared, delta)
+                           : m_impl->m_audio.synchronize(*m_impl->m_scene, delta);
 
     if (result) {
       m_impl->m_resetMotion = false;

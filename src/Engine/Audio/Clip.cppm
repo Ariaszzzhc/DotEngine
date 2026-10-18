@@ -15,6 +15,7 @@ export namespace Dot::Audio {
   struct ClipLimits {
     std::uint64_t sourceBytes{64 * 1024 * 1024};
     std::uint64_t sampleBytes{256 * 1024 * 1024};
+    auto operator==(const ClipLimits&) const -> bool = default;
   };
 
   struct ClipInfo {

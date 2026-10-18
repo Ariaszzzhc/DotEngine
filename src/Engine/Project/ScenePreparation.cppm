@@ -13,6 +13,7 @@ import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.Animation.ScenePlayers;
 import Dot.UI.Layout;
+import Dot.Audio.SceneAudio;
 import Dot.Physics.Mesh;
 
 export namespace Dot::Project {
@@ -23,12 +24,12 @@ export namespace Dot::Project {
   enum class ScenePreparationKind { Complete, Content };
 
   /** Immutable proof of CPU graphics/skin validation and owned initial animation
-   * clips/controllers and collision geometry for exact scene bytes/root. Animation
+   * clips/controllers, PCM audio and collision geometry for exact scene bytes/root. Animation
    * binding/authority still validate on the owner; only immutable assets cross threads. Rehydration
    * creates a scene on the calling thread, never transfers thread-bound World handles. No GPU
    * residency proof. Files remain caller-owned: serialize asset edits through publication, as with
    * synchronous preflight. 精确场景字节/根目录的不可变 CPU
-   * 图形/蒙皮校验结果及初始动画片段/状态机和碰撞几何；绑定/权限仍由
+   * 图形/蒙皮校验结果及初始动画片段/状态机、PCM 音频和碰撞几何；绑定/权限仍由
    * 所有者校验，仅不可变资源跨线程。在调用线程重建场景，不转移
    * 线程绑定 World 句柄。不保证 GPU 驻留；文件由调用者拥有，须串行修改直至发布。 */
   class PreparedScene {
@@ -43,7 +44,8 @@ export namespace Dot::Project {
     [[nodiscard]] static auto create(const Core::FileSystem& files, const std::string& path,
                                      const std::optional<std::string>& initial,
                                      std::stop_token stop,
-                                     ScenePreparationKind kind = ScenePreparationKind::Complete)
+                                     ScenePreparationKind kind = ScenePreparationKind::Complete,
+                                     const Audio::SceneAudioLimits& audioLimits = {})
         -> Core::Result<PreparedScene>;
     [[nodiscard]] auto scene() const -> Core::Result<World::Scene>;
     /** Borrowed until the last owning proof releases. Consumers copy immutable
@@ -56,6 +58,11 @@ export namespace Dot::Project {
     /** Borrow immutable collision geometry; initial consumers never reread files.
      * 借用不可变碰撞几何，初始使用者不重新读文件。 */
     [[nodiscard]] auto collisionMeshes() const -> Core::Result<std::span<const Physics::MeshAsset>>;
+    /** Borrow complete decoded PCM under exactly the preparation limits; reject
+     * mismatched budgets instead of silently bypassing encoded-source limits.
+     * 以精确准备预算借用完整解码 PCM；预算不匹配时失败，不静默绕过编码源限制。 */
+    [[nodiscard]] auto audioClips(const Audio::SceneAudioLimits& limits = {}) const
+        -> Core::Result<std::span<const Audio::ClipAsset>>;
     /** Owned immutable UI defaults, or no binding. No file fallback after preparation.
      * 拥有的不可变 UI 默认值或无绑定；准备完成后不回退读文件。 */
     [[nodiscard]] auto ui() const -> Core::Result<std::optional<UI::Asset>>;
@@ -68,18 +75,19 @@ export namespace Dot::Project {
     std::shared_ptr<const Data> m_data;
   };
 
-  /** One owned CPU worker; no active scene, hooks, VM, audio or device access.
+  /** One owned CPU worker; no active scene, hooks, VM, audio backend or device access.
    * Creator-thread ready/take never wait for decoding. Result is consumed once;
    * stop/destruction cancel between bounded files and join, without detaching.
    * Optional initial bytes preserve an unsaved initial scene's return semantics.
-   * 单个拥有的 CPU 工作线程，不接触活动场景、钩子、VM、音频或设备；创建线程就绪查询/
+   * 单个拥有的 CPU 工作线程，不接触活动场景、钩子、VM、音频后端或设备；创建线程就绪查询/
    * 提取不等待解码，结果仅提取一次。停止/销毁在有界文件间取消并回收，不分离线程；
    * 可选初始字节保留返回未保存初始场景的语义。 */
   class ScenePreparation {
   public:
     [[nodiscard]] static auto begin(const Core::FileSystem& files, std::string path,
                                     std::optional<std::string> initial = {},
-                                    ScenePreparationKind kind = ScenePreparationKind::Complete)
+                                    ScenePreparationKind kind = ScenePreparationKind::Complete,
+                                    const Audio::SceneAudioLimits& audioLimits = {})
         -> Core::Result<ScenePreparation>;
     ScenePreparation(const ScenePreparation&) = delete;
     auto operator=(const ScenePreparation&) -> ScenePreparation& = delete;

@@ -741,6 +741,11 @@ TEST_CASE("scene_transition.additive_resources_bind_prepared_animation_controlle
     REQUIRE(content.setRigidBody(collider, body));
     REQUIRE(content.setTransform(collider, {{100, 0, 0}}));
     REQUIRE(Assets::saveMesh(files, *body.meshAsset, Graphics::cube().value()));
+    World::AudioSource sound;
+    sound.asset = "assets/equipment.wav";
+    sound.voice.looping = true;
+    REQUIRE(content.setAudioSource(collider, sound));
+    DotTest::Audio::writeWave(files, sound.asset, std::vector<float>(256, .125F));
     const auto owner = content.createEntity("Machine").value();
     const auto target = content.createEntity("Indicator").value();
     auto clip = Animation::Clip::create({"Equipment cycle",
@@ -776,6 +781,7 @@ TEST_CASE("scene_transition.additive_resources_bind_prepared_animation_controlle
     good(session.update(.25));
     CHECK(scene->transform(indicator->id)->position.x > x);
     CHECK(fixture.observations.back()["bodies"] == 2);
+    CHECK(fixture.observations.back()["audio"]["assets"] == 2);
     const auto removed = session.removeScene(*session.sceneRequest(request)->root).value();
     good(session.update(0));
     CHECK(session.sceneRequest(removed)->committed);
