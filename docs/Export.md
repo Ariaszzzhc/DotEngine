@@ -227,6 +227,7 @@ Commands use strict complete objects with no unknown fields:
 
 | Command | Additional fields | Actual operation |
 | --- | --- | --- |
+| status | none | Owned lifecycle/input/diagnostics without world encoding |
 | inspect | none | Owned native scene and player state/input/source/transition/diagnostic snapshot |
 | input | scope, value | Bounded frames through the shared `Dot.Platform.AgentInput` implementation |
 | cancel-input | scope | Schedule one release frame for an active input request |
@@ -243,6 +244,12 @@ Commands use strict complete objects with no unknown fields:
 | scene-instances | none | Owned active `{root,path}` list, independent of request-history eviction |
 | scene-status | request | Retained actual replacement/append/remove result, including kind/root/commit status |
 | close | none | Request ordinary native shutdown; acknowledgement is not exit |
+
+`status` is the inexpensive lifecycle/input observation for preparing, running,
+faulted, closing and retained closed sessions. It uses the same native status as
+`inspect`, without its scene encoding. Queries never publish input or advance game
+time. In the actual player, normal native window/render/HUD completion metadata is
+also attached to this status. Use full `inspect` when the world is needed.
 
 Scene scopes and scene-request IDs are nonzero decimal strings. Input/scene requests require
 the current running scope, with no pending close. Scene replacement cancels old

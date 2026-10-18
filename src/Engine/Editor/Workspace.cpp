@@ -5426,6 +5426,17 @@ namespace Dot::Editor {
         return changed ? execute("{\"command\":\"inspect\"}") : std::unexpected(changed.error());
       }
 
+      if (command == "play-status") {
+        Codec::requireFields(parsed, {"command", "session"});
+
+        if (!m_play || Codec::id(parsed["session"]) != m_playSession) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Status requires the current Play session");
+        }
+
+        return Json{{"ok", true}, {"play", playStatus()}}.dump();
+      }
+
       if (previewing() && command != "inspect" && command != "close" && command != "set-theme"
           && command != "filter-panel" && command != "dock-panel" && command != "reset-layout"
           && command != "show-pane" && command != "set-view" && command != "navigate-view"
@@ -6670,7 +6681,7 @@ namespace Dot::Editor {
           m_agentInput.cancel();
         }
 
-        return execute("{\"command\":\"inspect\"}");
+        return Json{{"ok", true}, {"play", playStatus()}}.dump();
       }
 
       if (command == "reload-play-scripts") {

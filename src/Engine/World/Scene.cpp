@@ -1727,7 +1727,36 @@ namespace Dot::World {
     }
 
     try {
-      auto prepared = prepareSceneInstance(*this, content, **next, placement, parent);
+      auto count = content.entityCount();
+
+      if (!count) {
+        return std::unexpected(count.error());
+      }
+
+      if (*count == 0) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Runtime content requires nonempty input");
+      }
+
+      if (*count + 1 > 10000 - m_impl->lookup.size()) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Runtime content exceeds scene capacity");
+      }
+
+      if (parent) {
+        auto resolved = m_impl->resolve(*parent);
+
+        if (!resolved) {
+          return std::unexpected(resolved.error());
+        }
+      }
+
+      auto empty = Scene::create("Content insertion");
+
+      if (!empty) {
+        return std::unexpected(empty.error());
+      }
+
+      auto prepared = prepareSceneInstance(*empty, content, **next, placement);
 
       if (!prepared) {
         return std::unexpected(prepared.error());
@@ -1741,10 +1770,83 @@ namespace Dot::World {
         result.entities.push_back({m_impl->identity, mapping.target.value});
       }
 
-      /** Only this insertion path preserves scope: every existing value survives.
-       * 仅此追加路径保留范围：每个已有实体值均保留。 */
-      prepared->scene.m_impl->identity = m_impl->identity;
-      m_impl.swap(prepared->scene.m_impl);
+      auto& fragment = *prepared->scene.m_impl;
+      fragment.registry.get<Hierarchy>(fragment.lookup.at(result.root.value)).parent
+          = parent ? std::optional{parent->value} : std::nullopt;
+      std::vector<entt::entity> staged;
+      staged.reserve(result.entities.size());
+
+      /** The private registry cannot be observed during this owner-only operation.
+       * Keep old descriptions/cache entries; reclaim only unpublished members on
+       * any allocation or grafted-world validation failure, before consuming IDs.
+       * 此拥有线程操作期间私有注册表不可观察；保留旧描述/缓存，分配或挂接世界变换校验
+       * 失败时仅回收未发布成员，且尚未消耗公共实体 ID。 */
+      struct PendingContent {
+        Impl& m_scene;
+        const std::vector<EntityId>& m_members;
+        const std::vector<entt::entity>& m_staged;
+        bool m_committed{};
+
+        ~PendingContent() {
+          if (!m_committed) {
+            for (std::size_t index = 0; index < m_staged.size(); ++index) {
+              const auto value = m_members[index].value;
+              m_scene.worldCache.erase(value);
+              m_scene.lookup.erase(value);
+              m_scene.registry.destroy(m_staged[index]);
+            }
+          }
+        }
+      } pending{*m_impl, result.entities, staged};
+
+      for (const auto member : result.entities) {
+        const auto source = fragment.lookup.at(member.value);
+        const auto native = m_impl->registry.create();
+        staged.push_back(native);
+        const auto transfer = [&]<typename T>() {
+          if (auto* component = fragment.registry.try_get<T>(source)) {
+            m_impl->registry.emplace<T>(native, std::move(*component));
+          }
+        };
+
+        /** All native descriptions mirrored by Impl::snapshot; no live services.
+         * 与 Impl::snapshot 对应的全部原生描述，不含活动子系统。 */
+        transfer.operator()<Identity>();
+        transfer.operator()<Transform>();
+        transfer.operator()<Hierarchy>();
+        transfer.operator()<Camera>();
+        transfer.operator()<MeshRenderer>();
+        transfer.operator()<RigidBody>();
+        transfer.operator()<CharacterController>();
+        transfer.operator()<AudioSource>();
+        transfer.operator()<AudioListener>();
+        transfer.operator()<ScriptComponent>();
+        transfer.operator()<MaterialBinding>();
+        transfer.operator()<Light>();
+        transfer.operator()<AnimationPlayer>();
+        transfer.operator()<SkinBinding>();
+        m_impl->lookup.emplace(member.value, native);
+      }
+
+      for (const auto member : result.entities) {
+        auto world = m_impl->world(member.value);
+
+        if (!world) {
+          return std::unexpected(world.error());
+        }
+
+        if (m_impl->registry.all_of<Camera>(m_impl->lookup.at(member.value))) {
+          auto inverse = Math::inverse(*world);
+
+          if (!inverse) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Content camera world transform cannot be inverted");
+          }
+        }
+      }
+
+      m_impl->nextEntity = fragment.nextEntity;
+      pending.m_committed = true;
       return result;
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,

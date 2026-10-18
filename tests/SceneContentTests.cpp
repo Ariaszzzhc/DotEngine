@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <cstdint>
 #include <future>
 #include <limits>
 #include <string>
@@ -337,4 +338,153 @@ TEST_CASE("scene_content.runtime_failures_preserve_world_and_allocation") {
   REQUIRE(target.reserveEntityValuesBefore(std::nullopt));
   CHECK_FALSE(target.appendContent(source));
   CHECK(target.entity(outside));
+}
+
+TEST_CASE("scene_content.runtime_transfer_preserves_every_description_and_existing_values") {
+  auto target = Scene::create("Running world").value();
+  auto camera = target.createEntity("Main camera").value();
+  REQUIRE(target.setCamera(camera, Camera{.primary = true}));
+  REQUIRE(target.setUi("assets/current.dotui"));
+  REQUIRE(target.setEnvironment(Environment{"assets/current.hdr"}));
+  auto parent = target.createEntity("Moving platform").value();
+  REQUIRE(
+      target.setTransform(parent, {{8, 2, -4}, Math::rotationEulerDegrees({0, 25, 0}).value()}));
+  REQUIRE(target.reserveEntityValuesBefore(200));
+  auto source = Scene::create("Full room").value();
+  auto model = source.createEntity("Skinned emitter").value();
+  auto joint = source.createEntity("Camera joint").value();
+  auto body = source.createEntity("Moving crate").value();
+  auto character = source.createEntity("Resident").value();
+  REQUIRE(source.setMeshRenderer(model, MeshRenderer{}));
+  REQUIRE(source.setMaterial(model, MaterialBinding{"assets/alloy.dotmaterial"}));
+  REQUIRE(source.setSkin(model, SkinBinding{"assets/rig.dotskin", {joint.value}}));
+  AnimationPlayer animation;
+  animation.clips = {"assets/idle.dotanimation"};
+  animation.targets = {{0, joint.value}};
+  REQUIRE(source.setAnimationPlayer(model, animation));
+  REQUIRE(source.setParent(joint, model));
+  REQUIRE(source.setTransform(joint, {{1, 2, 3}}));
+  REQUIRE(source.setCamera(joint, Camera{.verticalFovDegrees = 73, .primary = true}));
+  REQUIRE(source.setAudioListener(joint, AudioListener{true}));
+  REQUIRE(source.setLight(model, Light{.color = {.3F, .5F, .7F}, .intensity = 2}));
+  RigidBody properties;
+  properties.velocity = {1, 2, 3};
+  REQUIRE(source.setRigidBody(body, properties));
+  REQUIRE(source.setCharacterController(character, CharacterController{}));
+  AudioSource sound;
+  sound.asset = "assets/hum.wav";
+  sound.voice.looping = true;
+  REQUIRE(source.setAudioSource(body, sound));
+  REQUIRE(source.setScript(body, ScriptComponent{"resident.ts", "Resident", R"({"literal":"1"})"}));
+  REQUIRE(source.setEnvironment(Environment{"assets/unused.hdr"}));
+  REQUIRE(source.setUi("assets/unused.dotui"));
+  const auto sourceBefore = snapshot(source);
+  const auto first = target.nextEntityValue()->value();
+  auto expected = prepareSceneInstance(target, source, first, {{2, 0, 1}}, parent).value();
+  const auto scope = target.id();
+  auto added = target.appendContent(source, {{2, 0, 1}}, parent);
+  REQUIRE_MESSAGE(added, (added ? "" : added.error().message));
+  CHECK(target.id() == scope);
+  CHECK(snapshot(target) == snapshot(expected.scene));
+  CHECK(snapshot(source) == sourceBefore);
+  CHECK(target.entity(camera)->camera->primary);
+  CHECK(target.entity(parent)->transform.position.x == 8);
+  REQUIRE(target.removeContent(added->entities));
+  REQUIRE(target.entity(camera));
+  REQUIRE(target.entity(parent));
+
+  const auto aliasExpected
+      = prepareSceneInstance(target, target, target.nextEntityValue()->value()).value();
+  auto alias = target.appendContent(target);
+  REQUIRE(alias);
+  CHECK(snapshot(target) == snapshot(aliasExpected.scene));
+  REQUIRE(target.removeContent(alias->entities));
+  CHECK(target.entityCount().value() == 2);
+  CHECK(target.entity(camera)->camera->primary);
+  CHECK(target.entity(parent)->name == "Moving platform");
+}
+
+TEST_CASE("scene_content.runtime_graft_failures_roll_back_all_new_members_and_public_ids") {
+  for (const bool camera : {false, true}) {
+    CAPTURE(camera);
+    auto target = Scene::create("Running").value();
+    auto parent = target.createEntity("Extreme parent").value();
+    const auto scale = camera ? Math::Vec3{std::numeric_limits<float>::denorm_min(), 1, 1}
+                              : Math::Vec3{1e20F, 1e20F, 1e20F};
+    REQUIRE(target.setTransform(parent, {{}, {}, scale}));
+    auto source = Scene::create("Graft").value();
+    auto first = source.createEntity("Owned resources").value();
+    auto last = source.createEntity("Invalid world pose").value();
+    REQUIRE(source.setScript(
+        first,
+        ScriptComponent{
+            "owned.ts", "Owned",
+            R"({"data":[1,2,3],"label":"retain an owned heap payload across a rejected transaction"})"}));
+    REQUIRE(source.setMeshRenderer(first, MeshRenderer{}));
+    REQUIRE(source.setSkin(first, SkinBinding{"assets/rig.dotskin", {last.value}}));
+    AnimationPlayer animation;
+    animation.clips = {"assets/idle.dotanimation"};
+    animation.targets = {{0, last.value}};
+    REQUIRE(source.setAnimationPlayer(first, animation));
+    REQUIRE(source.setParent(last, first));
+
+    if (camera) {
+      REQUIRE(source.setCamera(last, Camera{.primary = true}));
+    } else {
+      REQUIRE(source.setTransform(last, {{}, {}, {1e20F, 1e20F, 1e20F}}));
+    }
+
+    const auto targetBefore = snapshot(target);
+    const auto sourceBefore = snapshot(source);
+    const auto floor = target.nextEntityValue().value();
+    auto result = target.appendContent(source, {}, parent);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == Core::ErrorCode::InvalidArgument);
+    CHECK(snapshot(target) == targetBefore);
+    CHECK(snapshot(source) == sourceBefore);
+    CHECK(target.nextEntityValue().value() == floor);
+    CHECK(target.createEntity("After failure")->value == *floor);
+    const auto safeScale = camera ? Math::Vec3{1e20F, 1e20F, 1e20F} : Math::Vec3{1, 1, 1};
+    REQUIRE(target.setTransform(parent, {{}, {}, safeScale}));
+    auto added = target.appendContent(source, {}, parent);
+    REQUIRE_MESSAGE(added, (added ? "" : added.error().message));
+    REQUIRE(target.removeContent(added->entities));
+    CHECK(target.entityCount().value() == 2);
+  }
+}
+
+TEST_CASE("scene_content.runtime_capacity_rejection_and_exact_fit_preserve_allocation") {
+  auto target = Scene::create("Populated").value();
+
+  for (std::size_t index = 0; index < 10000; ++index) {
+    REQUIRE(target.createEntity());
+  }
+
+  auto source = Scene::create("Content").value();
+  REQUIRE(source.createEntity("Member"));
+  auto rejected = target.appendContent(source);
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().code == Core::ErrorCode::Unavailable);
+  CHECK(target.entityCount().value() == 10000);
+  CHECK(target.nextEntityValue()->value() == 10001);
+  REQUIRE(target.destroyEntity(target.findEntity(9999).value()));
+  REQUIRE(target.destroyEntity(target.findEntity(10000).value()));
+  auto added = target.appendContent(source);
+  REQUIRE(added);
+  CHECK(added->root.value == 10001);
+  CHECK(target.entityCount().value() == 10000);
+  CHECK(target.nextEntityValue()->value() == 10003);
+  REQUIRE(target.removeContent(added->entities));
+  CHECK(target.entityCount().value() == 9998);
+  CHECK(target.createEntity()->value == 10003);
+  auto reserved = Scene::create("Last available values").value();
+  constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
+  REQUIRE(reserved.reserveEntityValuesBefore(maximum - 2));
+  auto last = reserved.appendContent(source);
+  REQUIRE(last);
+  CHECK(last->root.value == maximum - 2);
+  CHECK(last->entities.back().value == maximum - 1);
+  CHECK_FALSE(reserved.nextEntityValue()->has_value());
+  REQUIRE(reserved.removeContent(last->entities));
+  CHECK_FALSE(reserved.createEntity());
 }

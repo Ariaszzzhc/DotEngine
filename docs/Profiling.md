@@ -204,3 +204,24 @@ and final authored descriptions, operation arrays, selections and native viewpor
 pixels match; raw three-sample profiles and binary fingerprints remain in ignored
 build/scene-publication-review. Changed Workspace rebuilding, history allocation,
 other resource/service ownership and GPU retirement remain separate costs.
+
+## Control observations and scene loading
+
+Application Prepare includes control request dispatch, response construction and
+serialization. Full document/world observations can dominate that envelope even
+when the game has not changed. `input-play` and `cancel-play-input` return only
+`{ok,play}`; poll `play-status` with the current session for input/lifecycle progress.
+Standalone `status` likewise reads player/native completion metadata without world
+encoding. Use `inspect`/`inspect-play` for explicit full observations, separately
+from ordinary held-input polling. GUI controls and these status routes read the
+same native services; lightweight reads do not advance gameplay or publish jobs.
+
+Compare the actual command mix, viewport, content and cache conditions alongside
+profiles. A smaller Prepare maximum after replacing full-scene polling measures
+that product workflow, not isolated World insertion or guaranteed frame delivery.
+Active-step totals exclude idle waits; a larger supplied interval can still reveal
+pacing gaps. Keep both observations rather than combining unrelated phase peaks.
+
+准备阶段包含控制请求及回复序列化，完整场景读取可成为主要开销。输入接受及生命周期
+轮询使用轻量状态，按需单独读取完整场景；记录实际命令组合、画面尺寸及缓存条件。
+工作流的准备峰值不等于追加内核基准，活动步骤耗时也不等于端到端交付帧间隔。

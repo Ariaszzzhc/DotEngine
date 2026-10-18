@@ -190,6 +190,11 @@ namespace Dot::Project {
         return Json{{"ok", true}, {"closing", true}}.dump();
       }
 
+      if (command == "status") {
+        Codec::requireFields(value, {"command"});
+        return Json{{"ok", true}, {"player", m_impl->status(*stats)}}.dump();
+      }
+
       if (command == "inspect") {
         Codec::requireFields(value, {"command"});
         auto scene = m_impl->m_session->scene();

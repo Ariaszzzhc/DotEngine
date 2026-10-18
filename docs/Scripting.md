@@ -1136,10 +1136,26 @@ native synchronization or component construction/Start/Stop failure reports
 `committed:true` and faults the session; completed callbacks cannot be rolled back.
 Successful composition synchronizes existing services without replacing the realm
 or rebuilding physics. This is functional additive composition, not asynchronous
-GPU residency: candidate construction, native binding, audio and dynamic asset
+GPU residency: fragment preparation, native binding, audio and dynamic asset
 synchronization still run on the owner and may reread resource files. Asset edits
 must be serialized through publication, as for scene replacement.
 
 追加/卸载共享帧边界队列，接受请求不代表完成。实例保留精确成员所有权，来源全局设置与
 编辑链接不导入；已有玩家、脚本、物理及动画继续运行。发布前失败保留游戏，发布后同步或
 钩子失败标记已提交并使会话故障；尚不代表完整后台资源流送或 GPU 驻留。
+
+
+Runtime insertion prepares only the incoming descriptions; it does not serialize,
+decode or replace the existing world. New private component rows are staged on the
+owner, grafted world matrices/camera inverses are checked, and public allocation
+advances only at successful publication. Failure reclaims every staged row and its
+new cached transform; existing values, descriptions and globals persist. Private
+container capacity may grow during a rejected transaction and remains owned until
+scene destruction. No scripts, devices or file writes run inside the World
+transaction. The live scene's 10000-entity bound still includes the container;
+file-codec byte limits apply when encoding saved/output scenes, rather than requiring
+an otherwise unrelated serialization of the active world on every append.
+
+运行时追加只准备新内容，拥有线程在私有注册表中暂存组件并校验挂接世界变换/相机逆矩阵，
+成功后才推进公共 ID。失败回收新实体及其缓存，已有描述/全局数据不重建；容器容量仍由
+场景拥有并在销毁时释放。这一步不执行脚本、设备或文件写入，仍保留 10000 实体上限。

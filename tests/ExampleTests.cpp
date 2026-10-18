@@ -1583,3 +1583,38 @@ TEST_CASE("prism.pending_checkpoint_receipts_survive_source_migration_without_du
 
   report(session.close());
 }
+
+TEST_CASE("player_control.lifecycle_status_is_strict_observational_and_excludes_world_data") {
+  Fixture fixture;
+  auto session = fixture.session();
+  auto player = Project::PlayerControl::create(session).value();
+  const auto ready = control(player, {{"command", "status"}});
+  CHECK(ready.size() == 2);
+  CHECK_FALSE(ready.contains("scene"));
+  CHECK(ready["player"]["state"] == "preparing");
+  CHECK_FALSE(player.perform(R"({"command":"status","scope":"1"})"));
+  report(session.start());
+  const auto before = control(player, {{"command", "inspect"}});
+  const auto first = control(player, {{"command", "status"}});
+  const auto second = control(player, {{"command", "status"}});
+  CHECK(first == second);
+  CHECK(first["player"] == before["player"]);
+  CHECK(control(player, {{"command", "inspect"}})["scene"] == before["scene"]);
+  const auto scope = first["player"]["scope"];
+  control(player, {{"command", "input"}, {"scope", scope}, {"value", inputRequest(3)}});
+  const auto queued = control(player, {{"command", "status"}});
+  CHECK(queued["player"]["input"]["active"] == true);
+  CHECK(queued["player"]["input"]["remaining"] == 3);
+  CHECK(control(player, {{"command", "status"}}) == queued);
+  control(player, {{"command", "cancel-input"}, {"scope", scope}});
+  const auto cancelled = control(player, {{"command", "status"}});
+  CHECK(cancelled["player"]["input"]["active"] == true);
+  CHECK(cancelled["player"]["input"]["remaining"] == 0);
+  CHECK(control(player, {{"command", "status"}}) == cancelled);
+  REQUIRE(player.next(Platform::InputState{}));
+  CHECK_FALSE(control(player, {{"command", "status"}})["player"]["input"]["active"].get<bool>());
+  report(session.close());
+  const auto closed = control(player, {{"command", "status"}});
+  CHECK(closed["player"]["state"] == "closed");
+  CHECK_FALSE(closed.contains("scene"));
+}

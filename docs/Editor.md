@@ -481,8 +481,10 @@ are finite within +/-1e6, wheel within +/-1000, and text is UTF-8 within 16 KiB 
 NUL. Pointer/wheel deltas repeat per held frame; text and press edges publish once.
 The first input compares held keys/buttons against the last published frame. One
 extra frame releases held keys/buttons and clears motion/wheel/text. A request is
-accepted asynchronously; inspect the runtime scene and `play.agentInput` to verify
-actual effects. `active`, `remaining` and `published` report its progression; the
+accepted asynchronously. Input and cancel replies contain `{ok,play}`, without
+serializing the authoring document or runtime scene. Poll `play-status` with the
+current session to observe `play.agentInput`; inspect the runtime scene separately
+to verify actual effects. `active`, `remaining` and `published` report its progression; the
 published count includes its release frame. `play.inputSource` reports the latest
 prepared input frame's `agent`, `native` or `none` source.
 
@@ -2730,3 +2732,23 @@ for exact membership, dependency rejection and publication failure semantics.
 
 Play 中可追加已保存片段并按实例卸载，GUI/严格 JSON/脚本共用产品实现；操作不修改编辑
 文档。请求接受不等于加载完成，须读取最终状态；外部原生引用会阻止卸载，发布后故障不伪装回滚。
+
+
+## Lightweight Play status
+
+```json
+{"command":"play-status","session":"1"}
+```
+
+This exact command/session query returns `{ok,play}` from the same native status
+used by the Play panel. It is available throughout current-session preparation,
+running, cancellation and retained Stop/failure, including while another resource
+preview is open. Unknown/retired session tokens and extra fields reject. A query
+does not dispatch input, advance time or publish pending scene/script work. Use it
+for input completion and lifecycle polling. `inspect-play` remains the full world/
+view observation after scene publication; `inspect` observes the authoring document.
+These full inspections deliberately cost more and are unnecessary for every frame
+of a held input. Input/cancel acceptance is status, not completed gameplay.
+
+轻量状态查询与 Play 面板共用原生状态，不序列化编辑文档/运行世界，不推进时间或提交任务。
+使用当前会话标识轮询输入/生命周期；完整场景与画面仍通过 inspect-play 单独检查。

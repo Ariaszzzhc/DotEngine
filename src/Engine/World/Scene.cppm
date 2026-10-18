@@ -292,10 +292,12 @@ export namespace Dot::World {
         -> Core::Result<EntityId>;
     /** Destroy the entity and its entire subtree. 删除实体及其整个子树。 */
     [[nodiscard]] auto destroyEntity(EntityId entity) -> Core::Result<void>;
-    /** Atomically append materialized content while preserving this scene's scope
-     * and existing handles. Source globals/links are excluded, primary flags demoted,
+    /** Atomically append materialized content, preparing only incoming descriptions.
+     * Preserve existing descriptions, scope and handles; validate grafted world
+     * transforms before publication. Source globals/links are excluded, primary flags demoted,
      * native references remapped. No files, devices or script callbacks are touched.
-     * 原子追加已展开内容并保留当前范围及已有句柄；排除来源全局数据/链接，取消主标记，
+     * 原子追加已展开内容，仅准备输入描述；保留旧描述、范围及句柄，发布前校验挂接世界变换。
+     * 排除来源全局数据/链接，取消主标记，
      * 重映射原生引用；不读文件、不接触设备或执行脚本回调。 */
     [[nodiscard]] auto appendContent(const Scene& content, const Transform& placement = {},
                                      std::optional<EntityId> parent = {})

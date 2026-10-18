@@ -14356,3 +14356,115 @@ reports a locked Mac with unsuccessful automatic unlock, so physical pointer/
 keyboard and final panel-layout acceptance are not claimed. Windows/Linux are not
 executed here. Finished sci-fi art, broader authoring/streaming and overall engine/
 editor/game production maturity remain open; this stage does not complete the goal.
+
+## 2026-10-18 — Incremental content and light status
+
+Runtime World insertion now prepares only incoming descriptions in an independent
+fragment. It stages new private native component rows in the existing registry,
+without serializing/rebuilding the existing target or rebinding its scope. The
+transfer mirrors all fourteen descriptor types in Impl::snapshot; it moves owned
+strings/vectors from that private fragment, preserving the caller's input. Input
+may alias the target: source preparation completes before staging. Source globals/
+links remain excluded, native references remap and primary flags demote as before.
+
+Validate every new grafted world matrix and camera inverse before advancing the
+public allocation floor. A rollback owner removes only newly staged rows, lookup
+entries and cached matrices on validation/allocation failure. Existing descriptions,
+globals and valid cache entries persist; private container capacity stays owned.
+No hooks, devices or file writes run in the World transaction. Both the 10000-entity
+bound including the container and the last available uint64 values remain enforced.
+Saved/output codec byte limits still apply at their serialization boundary; adding
+content does not require unrelated target serialization. Authoring's independent
+fresh-scope candidate construction remains its own contract.
+
+The first real workflow after this change did not reduce the maximum whole-editor
+Prepare interval: 24.701584 ms versus the earlier 20.918958 ms observation. Preserve
+that evidence. Inspection identified avoidable control traffic: input-play/cancel
+returned a full edited document, and input completion polling encoded the entire
+runtime world repeatedly. These were product costs, not an isolated World timing.
+
+Added strict current-session play-status and command-only native status observations.
+They reuse the existing Play-panel/player state producer, work before scene
+publication/after retained Stop, and do not encode a world or advance input/time.
+Play input/cancel now return {ok,play}; full inspect/inspect-play remain explicit
+world/document observations. No compatibility envelope, format version or test-only
+runtime hook is added. GUI session actions consume success/error and remain on the
+same native input/cancellation implementation. Native status automatically receives
+normal window/render/HUD completion metadata through the existing player adapter.
+
+Validation on arm64 macOS:
+
+- Four new enduring cases: three pure World cases compare all descriptor output
+  against independent authoring materialization, preserve source-alias behavior,
+  roll back graft overflow/unrepresentable camera inverse with heap script data and
+  skin/animation vectors, retry using the original source (including a representable
+  large camera inverse), and enforce exact capacity/uint64 exhaustion. One existing-
+  target integration case verifies strict native lifecycle status, no world data,
+  observational repeated reads, pre-start/closed state and actual input release.
+- Full final Debug CTest: 1647/1647 in 269.72 seconds; final Release with assertions
+  disabled: 1647/1647 in 37.45 seconds. Each has 535 unit and 1112 integration cases,
+  including 186 durable offscreen cases. Intermediate ownership checks also pass
+  all 535 Debug unit cases and all twelve Release content cases. Builds/tests and
+  actual product sessions run sequentially. No new target, dependency, timeout,
+  memory/host budget or assertion/render threshold is introduced or relaxed.
+- Strict compilation caught an incorrect test setter name. An initial failure
+  fixture mistakenly expected a representable large inverse to fail; inspect the
+  existing double-intermediate math and instead test the actual unrepresentable
+  float inverse boundary, retaining a large valid retry. The native status fixture
+  initially used an internal Ready label instead of exposed preparing and omitted
+  the required cancellation release frame; correct those expectations, retaining
+  the actual controller contract. These are test corrections, not weakened maths
+  or early fabricated input completion.
+
+Actual production evidence stays in ignored build/runtime-append-review, with the
+final lightweight run in its light-status subdirectory. Each run creates an ordinary
+PrismIncremental project through the product creator, authors/saves the ten-entity
+ServiceAnnex with two linked imported duct sources in the real editor, adds the
+normal external AnnexGate script through the component operation, and saves the
+343-entity main scene. Main scene, fragment and script bytes match the prior
+PrismComposition project exactly; no source/example art changes or generated art.
+
+Both actual Play workflows use D/F8/F9, F6 checkpoint saving, movement and F7 restore.
+The final run keeps player value 7/scope 211; X progresses -1.445987 to -0.601081
+through the append interval. Counts go 343 to 354 to 343, while renderer inputs go
+181 to 185 to 181 with ready views/no errors. Original source links remain 26 and
+the gate starts once. Preserve the actual viewport PNG and matching source/status/
+frame records. Final editor and native restore errors are both zero at a 1e-5 bound;
+the initial native restore was 1.00583e-7 and is also retained, not overwritten.
+
+Exercise exact Play append/remove/status/instance-list commands as well as the SDK,
+uncommitted missing-content failure, lightweight input and cancellation replies,
+pre-Play/stale-token/extra-field status rejection and retained stopped status. Stop
+restores the exact authored main. Export/relocate each ordinary game and hide only
+its owned authoring project during two fresh native processes. Both processes in
+both runs load/unload through the real game keys; native two restores native one's
+saved checkpoint and also uses direct append/remove/status controls. The final
+loaded snapshots have 79/72 completed native frames, five HUD rasterizations each,
+failureCount 0 and empty diagnostics. This is actual rendering/gameplay evidence.
+
+With lightweight polling and full world observations outside the measured interval,
+final Prepare peaks at 0.850167 ms; that same active frame totals 6.970416 ms. The
+slowest retained active step is 8.007209 ms and Update peaks at 1.612250 ms. The
+logical viewport is 740x287 / physical 1480x574 in both runs. Compact UTF-8 JSON
+comparison of the same F8 acceptance reply is 250105 to 697 bytes. These measure the
+revised product command mix on identical content; they do not isolate World costs,
+represent cold-cache comparisons, or prove general 60-Hz delivery. In particular,
+the longest supplied final interval remains 25.310292 ms: idle/scheduling/GPU pacing
+is still open work. Full inspections retain their deliberate serialization cost.
+
+All six actual product processes exit 0 before their close replies are read/ACKed;
+live endpoints and retired receipt token directories are then cleared. Both owned
+project paths are restored. Verify all 1496 guarded prior/new project/game/save/art
+files and 27 signed Mach-O paths; the final exported executable matches the current
+signed runtime kit. Remove only the two owned temporary helpers after validation;
+retain normal editable projects, both games, saves and raw requests/replies/ACKs,
+exit records, profiles, PNGs and build/CTest logs. No release archive is created.
+
+Reviewed descriptor coverage, source/target ownership, rollback and allocation
+publication, transform/cache validity, shared control/GUI behavior, strict schemas,
+platform assumptions and relevant regression coverage; formatting/whitespace checks
+pass. Computer use again reports the Mac locked with automatic unlock unsuccessful,
+so physical mouse/keyboard and panel-layout acceptance remain unverified. No
+Windows/Linux execution is claimed. Full background resource preparation/residency,
+remaining pacing, finished sci-fi art and overall engine/editor/game production
+maturity remain open; this stage does not complete the broader goal.

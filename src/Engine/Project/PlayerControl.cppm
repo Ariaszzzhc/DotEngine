@@ -30,14 +30,16 @@ export namespace Dot::Project {
     auto operator=(PlayerControl&&) noexcept -> PlayerControl&;
     ~PlayerControl();
 
-    /** Strict JSON: inspect/close; input(scope,value), cancel-input(scope),
+    /** Strict JSON: status/inspect/close; input(scope,value), cancel-input(scope),
      * game-data(value), clock(scope,value), request-scene(scope,path), scene-status(request),
      * animation-state(scope,entity), animation-layer(scope,entity,name,value).
      * Mutations require Running; pre-start/closing game data permits snapshot/get.
      * Layer control commits a native pose even while scheduling is paused.
+     * Status observes lifecycle/input without encoding the world or advancing time.
      * Command acknowledgement is not input/scene/shutdown completion.
      * 严格 JSON 操作为上述字段，修改要求 Running，启动前/关闭中仅允许内存 snapshot/get；
      * 调度暂停时仍可显式提交原生动画层姿态。
+     * status 观察生命周期/输入，不编码世界、不推进时间；
      * 命令被接受不代表输入/场景替换/退出已完成。 */
     [[nodiscard]] auto perform(std::string_view request) -> Core::Result<std::string>;
     [[nodiscard]] auto next(const Platform::InputState& native)
