@@ -20603,5 +20603,6 @@
     "steps": 4,
     "strength": 1.2000000476837158
   },
+  "ui": "assets/interface.dotui",
   "version": 1
 }

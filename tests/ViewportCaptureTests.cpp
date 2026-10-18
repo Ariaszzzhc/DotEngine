@@ -179,6 +179,34 @@ TEST_CASE("viewport_capture.freezes_animation_provenance_and_validates_its_conte
   CHECK_FALSE(capture.request(animated, 11));
 }
 
+TEST_CASE("viewport_capture.ui_resource_generations_reject_stale_and_mixed_previews") {
+  using namespace Dot::Editor;
+  ViewportCapture capture;
+  auto ui = context;
+  ui.ui = true;
+  ui.session = 5;
+  CHECK_FALSE(capture.request(ui, 10));
+  ui.uiGeneration = 1;
+  const auto id = capture.request(ui, 10).value();
+  auto value = frame();
+  value.context = ui;
+  ++value.context.uiGeneration;
+  CHECK_FALSE(capture.complete(id, value, pixels()));
+  value.context = ui;
+  REQUIRE(capture.complete(id, value, pixels()));
+  REQUIRE(capture.discard(id));
+  ui.animation = true;
+  CHECK_FALSE(capture.request(ui, 11));
+  ui.animation = false;
+  ui.transform = true;
+  CHECK_FALSE(capture.request(ui, 11));
+  ui.transform = false;
+  ui.mode = ViewportMode::Play;
+  CHECK_FALSE(capture.request(ui, 11));
+  ui.mode = ViewportMode::Game;
+  CHECK(capture.request(ui, 11));
+}
+
 TEST_CASE("viewport_capture.presentation_identity_rejects_hidden_and_aba_frames") {
   using namespace Dot::Editor;
   ViewportCapture capture;

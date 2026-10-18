@@ -11,6 +11,7 @@
 import Dot.Script.Hud;
 import Dot.Math;
 import Dot.Graphics.Text;
+import Dot.UI.Layout;
 
 namespace {
   using Json = nlohmann::json;
@@ -30,6 +31,124 @@ namespace {
     return hud.perform(Json{{"command", "set"}, {"key", key}, {"value", value}}.dump());
   }
 }  // namespace
+
+TEST_CASE("hud.authored_layout_hierarchy_reservation_and_shared_order") {
+  using namespace Dot;
+  UI::Node panel{"menu"};
+  panel.box.position = {0, 0};
+  panel.box.size = {1, 1};
+  UI::Node first{"z-first", "menu", UI::Kind::Button};
+  first.box.text = "First";
+  first.box.position = {.1F, .1F};
+  first.box.size = {.4F, .2F};
+  auto second = first;
+  second.key = "a-second";
+  const auto layout = UI::Layout::create({"Menu", {first, panel, second}}).value();
+  auto hud = Script::Hud::create(1, UI::Asset{"assets/menu.dotui", layout}).value();
+  CHECK(hud.draws()->at(0).key == "menu");
+  CHECK(hud.draws()->at(1).key == "z-first");
+  CHECK(hud.draws()->at(2).key == "a-second");
+  CHECK_FALSE(hud.perform(R"({"command":"remove","key":"menu"})"));
+  CHECK_FALSE(set(hud, "z-first", label()));
+  REQUIRE(set(hud, "transient", label()));
+  REQUIRE(hud.perform(R"({"command":"clear"})"));
+  CHECK(hud.draws()->size() == 3);
+  Script::HudInput input;
+  input.next = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->focused == "z-first");
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->focused == "a-second");
+  input.next = false;
+  input.pointer = Math::Vec2{.2F, .2F};
+  input.down = input.pressed = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->pressed == "a-second");
+  const auto before = hud.perform(R"({"command":"ui-snapshot"})").value();
+  CHECK_FALSE(hud.perform(
+      R"({"command":"ui-update","changes":[{"key":"menu","visible":false},{"key":"unknown","enabled":false}]})"));
+  CHECK(hud.perform(R"({"command":"ui-snapshot"})").value() == before);
+  REQUIRE(hud.perform(R"({"command":"ui-visible","key":"menu","value":false})"));
+  CHECK_FALSE(hud.snapshot()->focused);
+  CHECK_FALSE(hud.snapshot()->pressed);
+  CHECK_FALSE(hud.perform(R"({"command":"activate","key":"a-second"})"));
+  input.down = input.pressed = false;
+  input.released = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->sequence == 0);
+  REQUIRE(hud.perform(R"({"command":"ui-reset"})"));
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->sequence == 0);
+  input.pointer = Math::Vec2{.9F, .9F};
+  CHECK(hud.publish(input)->pointer);
+  CHECK_FALSE(hud.snapshot()->hovered);
+  auto bindings = hud.bindings().value();
+  CHECK(std::ranges::find(bindings, "ui.snapshot", &Script::HostFunction::name)->access
+        == Script::HostAccess::ReadOnly);
+  hud.retire();
+  CHECK(hud.perform(R"({"command":"ui-snapshot"})"));
+  CHECK_FALSE(hud.perform(R"({"command":"ui-reset"})"));
+}
+
+TEST_CASE("hud.pointer_blockers_invalidate_displayed_button_revisions") {
+  using namespace Dot;
+  UI::Node button{"button", {}, UI::Kind::Button};
+  button.box.position = {0, 0};
+  button.box.size = {1, 1};
+  UI::Node cover{"cover", {}, UI::Kind::Label};
+  cover.box.position = {0, 0};
+  cover.box.size = {1, 1};
+  cover.blocksPointer = true;
+  cover.enabled = false;
+  const auto layout = UI::Layout::create({"Blocker", {button, cover}}).value();
+  auto hud = Script::Hud::create(1, UI::Asset{"assets/blocker.dotui", layout}).value();
+  Script::HudInput input;
+  input.pointer = Math::Vec2{.5F, .5F};
+  input.down = input.pressed = true;
+  CHECK(hud.publish(input)->pointer);
+  CHECK_FALSE(hud.snapshot()->pressed);
+  const auto before = hud.buttonRevision().value();
+  REQUIRE(hud.perform(R"({"command":"ui-visible","key":"cover","value":false})"));
+  CHECK(hud.buttonRevision().value() == before + 1);
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->pressed == "button");
+  REQUIRE(hud.perform(R"({"command":"ui-visible","key":"cover","value":true})"));
+  input.down = input.pressed = false;
+  input.released = true;
+  REQUIRE(hud.publish(input));
+  CHECK(hud.snapshot()->sequence == 0);
+}
+
+TEST_CASE("hud.authored_full_text_batch_fits_escaped_native_and_sdk_wire_bounds") {
+  using namespace Dot;
+  UI::Description description{"Full batch", {}};
+  auto patches = Json::array();
+
+  for (int i = 0; i < 32; ++i) {
+    const auto key = std::to_string(i);
+    description.nodes.push_back(UI::Node{key, {}, UI::Kind::Label, {}, true, false});
+    patches.push_back({{"key", key}, {"text", std::string(1024, '"')}});
+  }
+
+  auto hud = Script::Hud::create(
+                 1, UI::Asset{"assets/batch.dotui", UI::Layout::create(description).value()})
+                 .value();
+  const auto request = Json{{"command", "ui-update"}, {"changes", patches}}.dump();
+  CHECK(request.size() > 65536);
+  REQUIRE(hud.perform(request));
+  CHECK(hud.snapshot()->labels.back().value.text.size() == 1024);
+  const auto before = hud.perform(R"({"command":"ui-snapshot"})").value();
+  patches[0]["text"] = std::string(1023, '"') + "é";
+  CHECK_FALSE(hud.perform(Json{{"command", "ui-update"}, {"changes", patches}}.dump()));
+  CHECK(hud.perform(R"({"command":"ui-snapshot"})").value() == before);
+  REQUIRE(hud.perform(R"({"command":"ui-reset"})"));
+  patches[0]["text"] = std::string(1024, '"');
+  auto bindings = hud.bindings().value();
+  const auto update = std::ranges::find(bindings, "ui.update", &Script::HostFunction::name);
+  REQUIRE(update != bindings.end());
+  REQUIRE(update->callback(Json::array({patches}).dump()));
+  CHECK(hud.snapshot()->labels.front().value.text.size() == 1024);
+}
 
 TEST_CASE("hud.owned_snapshots_atomic_boundaries_noops_and_retired_lifetime") {
   using namespace Dot::Script;

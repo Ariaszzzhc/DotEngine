@@ -15,11 +15,12 @@ module;
 #include <utility>
 #include <vector>
 
-#include "ComponentJson.hpp"
+#include "../UI/TextJson.hpp"
 
 module Dot.Script.Hud;
 
 import Dot.Core.Text;
+import Dot.Core.Paths;
 import Dot.Math;
 
 namespace Dot::Script {
@@ -27,46 +28,16 @@ namespace Dot::Script {
     namespace Codec = Serialization::Detail;
     using Json = Codec::Json;
 
-    auto xy(const Json& value) -> Math::Vec2 {
-      Codec::requireFields(value, {"x", "y"});
-      return {Codec::number(value["x"]), Codec::number(value["y"])};
-    }
-
     auto box(const Json& value, bool button) -> Graphics::TextBox {
-      if (button) {
-        Codec::requireFields(value, {"text", "position", "size", "fontSize", "padding", "color",
-                                     "background", "visible", "enabled"});
-      } else {
-        Codec::requireFields(value, {"text", "position", "size", "fontSize", "padding", "color",
-                                     "background", "visible"});
-      }
-
-      return {value["text"].get<std::string>(),
-              xy(value["position"]),
-              xy(value["size"]),
-              Codec::number(value["fontSize"]),
-              Codec::number(value["padding"]),
-              Detail::color<Math::Vec4>(value["color"]),
-              Detail::color<Math::Vec4>(value["background"]),
-              value["visible"].get<bool>()};
+      return UI::Detail::textBox<Graphics::TextBox>(value, button);
     }
 
     auto json(const Graphics::TextBox& value) -> Json {
-      return {{"text", value.text},
-              {"position", {{"x", value.position.x}, {"y", value.position.y}}},
-              {"size", {{"x", value.size.x}, {"y", value.size.y}}},
-              {"fontSize", value.fontSize},
-              {"padding", value.padding},
-              {"color", Detail::xyzw(value.color)},
-              {"background", Detail::xyzw(value.background)},
-              {"visible", value.visible}};
+      return UI::Detail::textJson(value);
     }
 
     auto validKey(std::string_view key) -> bool {
-      return !key.empty() && key.size() <= 64 && std::ranges::all_of(key, [](unsigned char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-               || c == '_' || c == '-';
-      });
+      return UI::validKey(key);
     }
 
     auto keyJson(const std::optional<std::string>& key) -> Json {
@@ -79,6 +50,8 @@ namespace Dot::Script {
       Graphics::TextBox box;
       bool button{};
       bool enabled{true};
+      bool blocksPointer{};
+      bool authored{};
       auto operator==(const Element&) const -> bool = default;
     };
 
@@ -90,6 +63,7 @@ namespace Dot::Script {
 
     struct State {
       std::map<std::string, Element> elements;
+      std::optional<UI::Layout> layout{};
       std::vector<Action> actions;
       std::uint64_t sequence{};
       std::optional<std::string> focused;
@@ -104,6 +78,7 @@ namespace Dot::Script {
     std::uint64_t m_revision{1};
     std::uint64_t m_buttonRevision{1};
     State m_state;
+    std::optional<std::string> m_asset;
     HudInputResult m_input;
     bool m_retired{};
 
@@ -114,6 +89,57 @@ namespace Dot::Script {
       if (m_thread != std::this_thread::get_id() || (writing && m_retired)) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "HUD requires its owner thread/live writer");
+      }
+
+      return {};
+    }
+
+    /** Authored preorder followed by the transient lexical key order is shared
+     * by drawing, picking and Tab traversal. Hidden authored keys stay reserved.
+     * 资源前序接瞬时键字典序，由绘制、命中与 Tab 共用；隐藏的资源键仍保留。 */
+    static auto keys(const State& state) -> std::vector<std::string> {
+      std::vector<std::string> result;
+
+      if (state.layout) {
+        for (const auto& node : state.layout->resolve().value()) {
+          result.push_back(node.local.key);
+        }
+      }
+
+      for (const auto& [key, element] : state.elements) {
+        if (!element.authored) {
+          result.push_back(key);
+        }
+      }
+
+      return result;
+    }
+
+    static auto syncLayout(State& state) -> Core::Result<void> {
+      auto nodes = state.layout->resolve();
+
+      if (!nodes) {
+        return std::unexpected(nodes.error());
+      }
+
+      for (auto& node : *nodes) {
+        const auto& key = node.local.key;
+        Element value{std::move(node.box), node.local.kind == UI::Kind::Button, node.enabled,
+                      node.local.blocksPointer, true};
+        const auto found = state.elements.find(key);
+
+        if (found != state.elements.end() && found->second != value) {
+          if (state.armed == key) {
+            state.armed.reset();
+            state.pressed.reset();
+          }
+
+          if (state.hovered == key) {
+            state.hovered.reset();
+          }
+        }
+
+        state.elements.insert_or_assign(key, std::move(value));
       }
 
       return {};
@@ -160,11 +186,11 @@ namespace Dot::Script {
       auto b = second.elements.begin();
 
       while (true) {
-        while (a != first.elements.end() && !a->second.button) {
+        while (a != first.elements.end() && !a->second.button && !a->second.blocksPointer) {
           ++a;
         }
 
-        while (b != second.elements.end() && !b->second.button) {
+        while (b != second.elements.end() && !b->second.button && !b->second.blocksPointer) {
           ++b;
         }
 
@@ -207,13 +233,36 @@ namespace Dot::Script {
   Hud::Hud(std::shared_ptr<Impl> impl) : m_impl(std::move(impl)) {
   }
 
-  auto Hud::create(std::uint64_t scope) -> Core::Result<Hud> {
+  auto Hud::create(std::uint64_t scope, std::optional<UI::Asset> layout) -> Core::Result<Hud> {
     if (!scope || scope == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "HUD requires a valid scene scope");
     }
 
     try {
-      return Hud(std::make_shared<Impl>(scope));
+      auto impl = std::make_shared<Impl>(scope);
+
+      if (layout) {
+        if (layout->path.size() > 1024 || !Core::isPortableRelativePath(layout->path)
+            || !layout->path.starts_with("assets/") || !layout->path.ends_with(".dotui")) {
+          return Core::fail(Core::ErrorCode::InvalidArgument, "HUD UI requires an asset identity");
+        }
+
+        auto defaults = layout->value.reset();
+
+        if (!defaults) {
+          return std::unexpected(defaults.error());
+        }
+
+        impl->m_asset = std::move(layout->path);
+        impl->m_state.layout = std::move(*defaults);
+        auto synced = Impl::syncLayout(impl->m_state);
+
+        if (!synced) {
+          return std::unexpected(synced.error());
+        }
+      }
+
+      return Hud(std::move(impl));
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External, "Create HUD: " + std::string(error.what()));
     }
@@ -242,7 +291,9 @@ namespace Dot::Script {
                          state.sequence,
                          m_impl->m_buttonRevision};
 
-      for (const auto& [key, value] : state.elements) {
+      for (const auto& key : Impl::keys(state)) {
+        const auto& value = state.elements.at(key);
+
         if (value.button) {
           result.buttons.push_back({key, value.box, value.enabled});
         } else {
@@ -281,7 +332,8 @@ namespace Dot::Script {
       std::vector<Graphics::TextLayer> result;
       const auto& state = m_impl->m_state;
 
-      for (const auto& [key, element] : state.elements) {
+      for (const auto& key : Impl::keys(state)) {
+        const auto& element = state.elements.at(key);
         auto value = element.box;
 
         if (element.button) {
@@ -334,7 +386,7 @@ namespace Dot::Script {
       HudInputResult handled;
 
       if (std::ranges::none_of(m_impl->m_state.elements,
-                               [](const auto& entry) { return entry.second.button; })) {
+                               [](const auto& entry) { return entry.second.blocksPointer; })) {
         m_impl->m_input = handled;
         return handled;
       }
@@ -349,20 +401,20 @@ namespace Dot::Script {
         bool hitButton{};
 
         if (input.pointer) {
-          /** Match ordered button drawing; disabled top buttons block lower hits.
-           * Labels remain passive. 按按钮绘制顺序命中，禁用的顶层按钮阻挡下层；文字不截获指针。 */
-          for (auto i = candidate.elements.rbegin(); i != candidate.elements.rend(); ++i) {
-            const auto& value = i->second;
+          const auto order = Impl::keys(candidate);
+
+          for (auto i = order.rbegin(); i != order.rend(); ++i) {
+            const auto& value = candidate.elements.at(*i);
             const auto p = value.box.position;
             const auto s = value.box.size;
 
-            if (value.button && value.box.visible && input.pointer->x >= p.x
+            if (value.blocksPointer && value.box.visible && input.pointer->x >= p.x
                 && input.pointer->y >= p.y && input.pointer->x < p.x + s.x
                 && input.pointer->y < p.y + s.y) {
               hitButton = true;
 
-              if (value.enabled) {
-                candidate.hovered = i->first;
+              if (Impl::eligible(value)) {
+                candidate.hovered = *i;
               }
 
               break;
@@ -401,8 +453,8 @@ namespace Dot::Script {
         if (input.next || input.previous) {
           std::vector<std::string> keys;
 
-          for (const auto& [key, value] : candidate.elements) {
-            if (Impl::eligible(value)) {
+          for (const auto& key : Impl::keys(candidate)) {
+            if (Impl::eligible(candidate.elements.at(key))) {
               keys.push_back(key);
             }
           }
@@ -469,13 +521,18 @@ namespace Dot::Script {
       return std::unexpected(valid.error());
     }
 
-    if (request.empty() || request.size() > 65536 || !Core::isValidUtf8(request)) {
+    if (request.empty() || request.size() > 128 * 1024 || !Core::isValidUtf8(request)) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid HUD request bytes");
     }
 
     try {
       const auto value = Codec::parseJson(request, 8);
       const auto command = value.at("command").get<std::string>();
+
+      if (!command.starts_with("ui-") && request.size() > 65536) {
+        return Core::fail(Core::ErrorCode::InvalidArgument, "HUD operation exceeds 64 KiB");
+      }
+
       const auto& state = m_impl->m_state;
 
       if (command == "snapshot") {
@@ -483,7 +540,8 @@ namespace Dot::Script {
         auto labels = Json::array();
         auto buttons = Json::array();
 
-        for (const auto& [key, element] : state.elements) {
+        for (const auto& key : Impl::keys(state)) {
+          const auto& element = state.elements.at(key);
           auto description = json(element.box);
 
           if (element.button) {
@@ -496,6 +554,7 @@ namespace Dot::Script {
 
         return Json{{"scope", std::to_string(m_impl->m_scope)},
                     {"revision", std::to_string(m_impl->m_revision)},
+                    {"order", Impl::keys(state)},
                     {"labels", std::move(labels)},
                     {"buttons", std::move(buttons)},
                     {"focused", keyJson(state.focused)},
@@ -503,6 +562,41 @@ namespace Dot::Script {
                     {"pressed", keyJson(state.pressed)},
                     {"sequence", std::to_string(state.sequence)},
                     {"buttonRevision", std::to_string(m_impl->m_buttonRevision)}}
+            .dump();
+      }
+
+      if (command == "ui-snapshot") {
+        Codec::requireFields(value, {"command"});
+
+        if (!state.layout) {
+          return std::string("null");
+        }
+
+        auto resolved = state.layout->resolve();
+
+        if (!resolved) {
+          return std::unexpected(resolved.error());
+        }
+
+        auto nodes = Json::array();
+        constexpr std::array kinds{"panel", "label", "button"};
+
+        for (const auto& node : *resolved) {
+          nodes.push_back({{"key", node.local.key},
+                           {"parent", keyJson(node.local.parent)},
+                           {"kind", kinds[static_cast<std::size_t>(node.local.kind)]},
+                           {"local", json(node.local.box)},
+                           {"box", json(node.box)},
+                           {"enabled", node.enabled},
+                           {"localEnabled", node.local.enabled},
+                           {"blocksPointer", node.local.blocksPointer}});
+        }
+
+        return Json{{"scope", std::to_string(m_impl->m_scope)},
+                    {"revision", std::to_string(m_impl->m_revision)},
+                    {"asset", *m_impl->m_asset},
+                    {"name", state.layout->description().value()->name},
+                    {"nodes", std::move(nodes)}}
             .dump();
       }
 
@@ -555,6 +649,12 @@ namespace Dot::Script {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid HUD element key");
         }
 
+        if (const auto found = candidate.elements.find(key);
+            found != candidate.elements.end() && found->second.authored) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Authored UI keys require UI operations");
+        }
+
         if (setting) {
           const auto button = command == "set-button";
           auto label = box(value["value"], button);
@@ -565,7 +665,7 @@ namespace Dot::Script {
           }
 
           Impl::Element next{std::move(label), button,
-                             !button || value["value"]["enabled"].get<bool>()};
+                             !button || value["value"]["enabled"].get<bool>(), button, false};
           const auto found = candidate.elements.find(key);
 
           if (found == candidate.elements.end() || found->second != next) {
@@ -585,7 +685,70 @@ namespace Dot::Script {
         }
       } else if (command == "clear") {
         Codec::requireFields(value, {"command"});
-        candidate.elements.clear();
+        std::erase_if(candidate.elements, [](const auto& entry) { return !entry.second.authored; });
+      } else if (command == "ui-text" || command == "ui-visible" || command == "ui-enabled"
+                 || command == "ui-reset" || command == "ui-update") {
+        if (!candidate.layout) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Scene has no authored UI");
+        }
+
+        std::vector<UI::NodeOverride> changes;
+
+        if (command == "ui-reset") {
+          Codec::requireFields(value, {"command"});
+        } else if (command == "ui-update") {
+          Codec::requireFields(value, {"command", "changes"});
+
+          if (!value["changes"].is_array() || value["changes"].size() > 32) {
+            return Core::fail(Core::ErrorCode::InvalidArgument, "UI changes require <=32 patches");
+          }
+
+          for (const auto& patch : value["changes"]) {
+            Codec::requireFields(patch, {"key"}, {"text", "visible", "enabled"});
+            UI::NodeOverride change{patch["key"].get<std::string>()};
+
+            if (patch.contains("text")) {
+              change.text = patch["text"].get<std::string>();
+            }
+
+            if (patch.contains("visible")) {
+              change.visible = patch["visible"].get<bool>();
+            }
+
+            if (patch.contains("enabled")) {
+              change.enabled = patch["enabled"].get<bool>();
+            }
+
+            changes.push_back(std::move(change));
+          }
+        } else {
+          Codec::requireFields(value, {"command", "key", "value"});
+          UI::NodeOverride change{value["key"].get<std::string>()};
+
+          if (command == "ui-text") {
+            change.text = value["value"].get<std::string>();
+          } else if (command == "ui-visible") {
+            change.visible = value["value"].get<bool>();
+          } else {
+            change.enabled = value["value"].get<bool>();
+          }
+
+          changes.push_back(std::move(change));
+        }
+
+        auto updated = command == "ui-reset" ? candidate.layout->reset()
+                                             : candidate.layout->updated(changes);
+
+        if (!updated) {
+          return std::unexpected(updated.error());
+        }
+
+        candidate.layout = std::move(*updated);
+        valid = Impl::syncLayout(candidate);
+
+        if (!valid) {
+          return std::unexpected(valid.error());
+        }
       } else if (command == "focus") {
         Codec::requireFields(value, {"command", "key"});
 
@@ -707,6 +870,57 @@ namespace Dot::Script {
                }
              },
              readOnly ? HostAccess::ReadOnly : HostAccess::ReadWrite});
+      }
+
+      for (const auto* name :
+           {"snapshot", "text", "visible", "enabled", "reset", "update", "focus", "events"}) {
+        auto service = *this;
+        const auto method = std::string(name);
+        result.push_back(
+            {"ui." + method,
+             [service,
+              method](std::string_view args) mutable -> Core::Result<std::optional<std::string>> {
+               if (args.empty() || args.size() > 128 * 1024 || !Core::isValidUtf8(args)) {
+                 return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid UI argument bytes");
+               }
+
+               try {
+                 const auto values = Codec::parseJson(args, 8);
+                 const bool setting
+                     = method == "text" || method == "visible" || method == "enabled";
+                 const auto count = setting ? 2U
+                                    : method == "update" || method == "focus" || method == "events"
+                                        ? 1U
+                                        : 0U;
+
+                 if (!values.is_array() || values.size() != count) {
+                   return Core::fail(Core::ErrorCode::InvalidArgument, "Incorrect UI arguments");
+                 }
+
+                 Json request{{"command",
+                               method == "focus" || method == "events" ? method : "ui-" + method}};
+
+                 if (count) {
+                   request[method == "events"   ? "after"
+                           : method == "update" ? "changes"
+                                                : "key"] = values[0];
+                 }
+
+                 if (setting) {
+                   request["value"] = values[1];
+                 }
+
+                 auto reply = service.perform(request.dump());
+                 return reply ? Core::Result<std::optional<std::string>>{std::optional{
+                                    std::move(*reply)}}
+                              : std::unexpected(reply.error());
+               } catch (const std::exception& error) {
+                 return Core::fail(Core::ErrorCode::InvalidArgument,
+                                   "UI arguments: " + std::string(error.what()));
+               }
+             },
+             method == "snapshot" || method == "events" ? HostAccess::ReadOnly
+                                                        : HostAccess::ReadWrite});
       }
 
       return result;

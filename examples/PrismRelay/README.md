@@ -72,8 +72,8 @@ Editor Play saves are temporary and removed on Stop; they never overwrite standa
 progress. Exported games use their application ID's user directory, or an explicit
 caller-owned `--data-directory`. Startup remains fresh until F7 is pressed. The
 game displays controls and checkpoint success/failure through the native
-[text layer](../../docs/GameUi.md). The authored `uiFontSize` script property controls
-its text size relative to viewport height. Full diagnostics remain available as
+[text layer](../../docs/GameUi.md). The scene binds `assets/interface.dotui`; use the editor UI panel to edit its
+parent-local rectangles, text style and menu hierarchy. Full diagnostics remain available as
 `relayProgressStatus` in Game state/product inspection. M opens the clickable/keyboard
 checkpoint menu and pauses native simulation; F6/F7 remain
 usable there, and M returns to the game. Relative pointer capture is released while
@@ -81,7 +81,8 @@ open. Audio playback continues independently. New scenes start unpaused; reload
 retains the current menu. Click a button, use Tab/ShiftTab to select and Enter/Space
 to activate, or keep using F6/F7/M. Holding a button/key does not repeat actions;
 Space returning to gameplay does not also jump. Native pointer release and strict
-HUD activate share the same queue. Visual UI layout authoring remains unfinished.
+HUD activate share the same queue. Scripts update text/visibility and handle actions;
+widget construction and layout live in the saved native resource.
 
 The environment uses real local PBR surfaces, Poly Haven CC0 textures and HDRI,
 textured utility cabinets and modular wall ventilation with fitted static colliders.

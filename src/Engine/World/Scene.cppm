@@ -224,6 +224,11 @@ export namespace Dot::World {
         -> Core::Result<void>;
     [[nodiscard]] auto occlusion() const
         -> Core::Result<std::optional<Graphics::OcclusionSettings>>;
+    /** Optional native UI resource; validates a portable assets/ .dotui path only.
+     * Consumers validate resource bytes before publishing a scene.
+     * 可选原生 UI 资源，仅验证 assets/ 下可移植 .dotui 路径；消费者发布场景前验证资源。 */
+    [[nodiscard]] auto setUi(std::optional<std::string> asset) -> Core::Result<void>;
+    [[nodiscard]] auto ui() const -> Core::Result<std::optional<std::string>>;
     [[nodiscard]] auto entityCount() const -> Core::Result<std::size_t>;
     [[nodiscard]] auto sceneLinks() const -> Core::Result<std::vector<SceneLink>>;
     /** Atomically replace validated authoring links. Roots must be live; mapping

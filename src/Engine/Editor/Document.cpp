@@ -673,6 +673,12 @@ namespace Dot::Editor {
         return {};
       }
 
+      if (op == "ui") {
+        Codec::requireFields(command, {"op", "value"});
+        scene["ui"] = command["value"];
+        return {};
+      }
+
       if (op == "occlusion") {
         Codec::requireFields(command, {"op", "value"});
         scene["occlusion"] = command["value"];

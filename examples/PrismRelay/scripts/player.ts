@@ -1,4 +1,4 @@
-import {audio, Entity, gameClock, hud, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
+import {audio, Entity, gameClock, hud, ui, input, type InputFrame, scene, ScriptComponent, type Vec3} from 'dot:engine';
 
 import {type CameraState, ShoulderCamera} from './camera';
 import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from './progress';
@@ -6,7 +6,6 @@ import {progressFailure, progressStatus, readCheckpoint, saveCheckpoint} from '.
 interface Settings {
   walkSpeed: number;
   runSpeed: number;
-  uiFontSize: number;
 }
 
 interface RuntimeState {
@@ -37,7 +36,6 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   #uiSequence = '0';
   #jumpBuffer = 0;
   #menuVisible = false;
-  #controlsDirty = true;
 
   private bind(): void {
     const camera = scene.primaryCamera;
@@ -52,8 +50,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         || !Number.isFinite(this.properties.walkSpeed) || this.properties.walkSpeed <= 0
         || !Number.isFinite(this.properties.runSpeed) || this.properties.runSpeed > 12
         || this.properties.runSpeed < this.properties.walkSpeed
-        || !Number.isFinite(this.properties.uiFontSize) || this.properties.uiFontSize < 8
-        || this.properties.uiFontSize > 64) {
+        || !ui.snapshot()?.nodes.some(node => node.key === 'menu' && node.kind === 'panel')) {
       throw Error(
           'Prism Relay requires its authored character, camera, model and valid movement/UI settings');
     }
@@ -69,20 +66,8 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     this.#model.resetAnimationController();
     this.#camera.update(this.self.characterState.position, 0);
     this.listen();
-    this.showControls();
-    progressStatus('F6 saves a grounded checkpoint; F7 restores it', this.properties.uiFontSize);
-  }
-
-  /** Publish changed instructions on the first live frame after migration.
-   * 迁移后的首个运行帧更新操作说明，不在准备阶段写入 HUD。 */
-  private showControls(): void {
-    hud.set('controls', hud.label({
-      text:
-          'PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu | N step paused',
-      size: {x: .96, y: .14},
-      fontSize: this.properties.uiFontSize
-    }));
-    this.#controlsDirty = false;
+    ui.visible('menu', false);
+    progressStatus('F6 saves a grounded checkpoint; F7 restores it');
   }
 
   private edges(frame: InputFrame): void {
@@ -190,19 +175,15 @@ export class RelayPlayer extends ScriptComponent<Settings> {
         progressMessage = 'Checkpoint saved';
       }
     } catch (error) {
-      progressFailure(error, this.properties.uiFontSize);
+      progressFailure(error);
     }
 
     if (progressMessage !== null) {
-      progressStatus(progressMessage, this.properties.uiFontSize);
+      progressStatus(progressMessage);
     }
   }
 
   onFrame(_seconds: number): void {
-    if (this.#controlsDirty) {
-      this.showControls();
-    }
-
     const frame = input.snapshot();
 
     if (frame.index !== this.#progressFrame) {
@@ -227,11 +208,11 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       }
     }
 
-    const actions = hud.events(this.#uiSequence);
+    const actions = ui.events(this.#uiSequence);
 
     if (actions.lost) {
       this.#uiSequence = actions.sequence;
-      progressFailure(Error('Menu action history expired'), this.properties.uiFontSize);
+      progressFailure(Error('Menu action history expired'));
     } else {
       /** Bound synchronous checkpoint work per frame; acknowledgements queue intent.
        * 每帧限制同步检查点工作量；确认仅表示意图入队。 */
@@ -258,31 +239,10 @@ export class RelayPlayer extends ScriptComponent<Settings> {
       input.capturePointer(!paused);
       input.requestTextInput(false);
 
+      ui.visible('menu', paused);
+
       if (paused) {
-        hud.set('menu', hud.label({
-          text: 'PAUSED / 检查点\nTab selects; Enter/Space activates',
-          position: {x: .28, y: .25},
-          size: {x: .44, y: .5},
-          fontSize: this.properties.uiFontSize,
-          background: {x: .02, y: .03, z: .05, w: .96}
-        }));
-        const buttons = ['Return to game', 'Save checkpoint', 'Restore checkpoint'];
-        const keys = ['menu-0-return', 'menu-1-save', 'menu-2-restore'];
-
-        for (let i = 0; i < keys.length; ++i) {
-          hud.setButton(keys[i]!, hud.button({
-            text: buttons[i]!,
-            position: {x: .33, y: .38 + i * .1},
-            size: {x: .34, y: .075},
-            fontSize: this.properties.uiFontSize,
-          }));
-        }
-
-        hud.focus('menu-0-return');
-      } else {
-        for (const key of ['menu', 'menu-0-return', 'menu-1-save', 'menu-2-restore']) {
-          hud.remove(key);
-        }
+        ui.focus('menu-0-return');
       }
 
       this.#menuVisible = paused;
@@ -340,7 +300,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
     }
 
     this.bind();
-    hud.events(state.uiSequence);
+    ui.events(state.uiSequence);
     this.#menuVisible = gameClock.snapshot().paused;
     this.#camera.restore(state.camera);
     this.#velocity = {...state.velocity};

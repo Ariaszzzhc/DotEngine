@@ -20,6 +20,8 @@ import Dot.Animation.Files;
 import Dot.Animation.ControllerFiles;
 import Dot.Animation.ScenePlayers;
 import Dot.Math;
+import Dot.UI.Files;
+import Dot.Script.Hud;
 
 namespace {
   using namespace Dot;
@@ -289,4 +291,38 @@ TEST_CASE("scene_preparation.controllers_are_owned_shared_and_required_without_d
   auto moved = std::move(prepared);
   CHECK_FALSE(prepared.animationControllers());
   CHECK(moved.animationControllers()->front().value.description().value()->name == "Graph");
+}
+
+TEST_CASE("scene_preparation.ui_defaults_are_owned_and_missing_resources_fail_before_publication") {
+  Fixture f;
+  REQUIRE(f.scene.setUi("assets/menu.dotui"));
+  auto missing = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                                  World::encodeScene(f.scene).value())
+                     .value();
+  wait(missing);
+  CHECK_FALSE(missing.take());
+  auto layout = UI::Layout::create({"Prepared UI", {UI::Node{"panel"}}}).value();
+  REQUIRE(UI::saveLayout(f.files, "assets/menu.dotui", layout));
+  auto job = Project::ScenePreparation::begin(f.files, "scenes/main.dotscene",
+                                              World::encodeScene(f.scene).value())
+                 .value();
+  wait(job);
+  auto proof = job.take().value();
+  REQUIRE(proof.ui().value());
+  CHECK(proof.ui().value()->path == "assets/menu.dotui");
+  REQUIRE(std::filesystem::remove(f.files.root() / "assets/menu.dotui"));
+  bool owned{};
+  std::thread consumer([&] {
+    auto hud = Script::Hud::create(8, proof.ui().value());
+    owned = hud && hud->draws()->size() == 1 && hud->draws()->front().key == "panel";
+  });
+  consumer.join();
+  CHECK(owned);
+  auto moved = std::move(proof);
+  CHECK_FALSE(proof.ui());
+  CHECK(moved.ui().value()->value == layout);
+  auto empty = Fixture{};
+  auto none = Project::ScenePreparation::begin(empty.files, "scenes/main.dotscene").value();
+  wait(none);
+  CHECK_FALSE(none.take()->ui().value());
 }

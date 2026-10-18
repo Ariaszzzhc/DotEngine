@@ -190,13 +190,15 @@ export class Observer extends ScriptComponent {
 TEST_CASE("prism.hud_feedback_is_native_scoped_and_preparation_cannot_publish_labels") {
   Fixture f;
   REQUIRE(f.project.files()->writeTextAtomic("scripts/ui-guard.ts", R"ts(
-import {gameClock, hud, input, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
+import {gameClock, hud, ui, input, type HostError, ScriptComponent, type ScriptContext} from 'dot:engine';
 function preparing(): void {
   hud.snapshot();
   gameClock.snapshot();
   hud.events('0');
   hud.inputState();
-  for (const attempt of [() => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true), () => gameClock.step(), () => hud.setButton('x', hud.button()), () => hud.focus(null), () => hud.activate('x'), () => input.requestTextInput(true)]) {
+  ui.snapshot();
+  ui.events('0');
+  for (const attempt of [() => ui.text('checkpoint', 'bad'), () => ui.visible('menu', true), () => ui.enabled('menu', false), () => ui.update([]), () => ui.reset(), () => ui.focus(null), () => hud.set('bad', hud.label()), () => hud.remove('controls'), () => hud.clear(), () => gameClock.setPaused(true), () => gameClock.step(), () => hud.setButton('x', hud.button()), () => hud.focus(null), () => hud.activate('x'), () => input.requestTextInput(true)]) {
     let denied = false;
     try { attempt(); } catch (error) { denied = (error as HostError).code === 'InvalidState'; }
     if (!denied) { throw Error('HUD write escaped preparation guard'); }
@@ -222,9 +224,16 @@ export class UiGuard extends ScriptComponent {
   report(session.start());
   auto old = session.hud().value();
   const auto initial = old.snapshot().value();
-  REQUIRE(initial.labels.size() == 2);
-  CHECK(initial.labels.front().key == "checkpoint");
-  CHECK(initial.labels.back().key == "controls");
+  REQUIRE(initial.labels.size() == 5);
+  CHECK(initial.labels.front().key == "controls");
+  CHECK(std::ranges::count_if(initial.labels, [](const auto& layer) { return layer.value.visible; })
+        == 2);
+  const auto statusText = [](const auto& snapshot) {
+    auto found
+        = std::ranges::find(snapshot.labels, std::string("checkpoint"), &Graphics::TextLayer::key);
+    REQUIRE(found != snapshot.labels.end());
+    return found->value.text;
+  };
   const std::filesystem::path fontPath{DOT_EDITOR_FONT};
   auto fontFiles = Core::FileSystem::open(fontPath.parent_path()).value();
   auto fontBytes = fontFiles.readBytes(fontPath.filename(), 32 * 1024 * 1024).value();
@@ -252,17 +261,17 @@ export class UiGuard extends ScriptComponent {
   Driver driver(session);
   driver.publish({Platform::Key::F7});
   report(session.update(.001));
-  CHECK(old.snapshot()->labels.front().value.text.starts_with("Checkpoint unavailable."));
+  CHECK(statusText(old.snapshot().value()).starts_with("Checkpoint unavailable."));
   auto request = session.requestScene("scenes/main.dotscene").value();
   report(session.update(0));
   report(Tests::awaitScene(session, request));
   REQUIRE(session.sceneRequest(request)->committed);
   CHECK(session.hud()->snapshot()->scope != initial.scope);
   CHECK_FALSE(old.perform(R"({"command":"clear"})"));
-  CHECK(old.snapshot()->labels.front().value.text.starts_with("Checkpoint unavailable."));
+  CHECK(statusText(old.snapshot().value()).starts_with("Checkpoint unavailable."));
   auto current = session.hud().value();
-  REQUIRE(current.snapshot()->labels.size() == 2);
-  CHECK(current.snapshot()->labels.front().value.text.starts_with("F6 saves"));
+  REQUIRE(current.snapshot()->labels.size() == 5);
+  CHECK(statusText(current.snapshot().value()).starts_with("F6 saves"));
   auto player = Project::PlayerControl::create(session).value();
   CHECK_FALSE(player.perform(Json{
       {"command", "hud"},
@@ -275,10 +284,10 @@ export class UiGuard extends ScriptComponent {
       {"value",
        {{"command", "snapshot"}}}}.dump());
   REQUIRE(result);
-  CHECK(Json::parse(*result)["result"]["labels"].size() == 2);
+  CHECK(Json::parse(*result)["result"]["labels"].size() == 5);
   report(session.close());
   CHECK_FALSE(current.perform(R"({"command":"clear"})"));
-  CHECK(current.snapshot()->labels.size() == 2);
+  CHECK(current.snapshot()->labels.size() == 5);
 }
 
 TEST_CASE("prism.pause_menu_freezes_simulation_keeps_frame_ui_and_resets_on_scene_change") {
@@ -316,7 +325,7 @@ export class PauseObserver extends ScriptComponent {
   driver.frame({Platform::Key::M});
   CHECK(clock.snapshot()->paused);
   CHECK_FALSE(session.pointerCaptureRequested().value());
-  REQUIRE(session.hud()->snapshot()->labels.size() == 3);
+  REQUIRE(session.hud()->snapshot()->labels.size() == 5);
   const auto before = entity(session, "Player").transform;
   CHECK(before.position.y > .1F);
   const auto counters = session.stats().value();
@@ -346,8 +355,10 @@ export class PauseObserver extends ScriptComponent {
   CHECK(session.stats()->simulatedFixedSteps == counters.simulatedFixedSteps);
 
   driver.frame({Platform::Key::F6});
-  CHECK(session.hud()->snapshot()->labels.front().value.text.find("land before saving")
-        != std::string::npos);
+  CHECK(std::ranges::any_of(session.hud()->snapshot()->labels, [](const auto& layer) {
+    return layer.key == "checkpoint-error" && layer.value.visible
+           && layer.value.text.find("land before saving") != std::string::npos;
+  }));
   CHECK(clock.snapshot()->paused);
   driver.frame({Platform::Key::M});
   CHECK_FALSE(clock.snapshot()->paused);
@@ -701,11 +712,9 @@ TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
   Fixture fixture;
   const auto files = fixture.project.files().value();
   const auto currentSource = files.readText("scripts/player.ts").value();
-  auto oldSource = currentSource;
-  const auto instruction = oldSource.find("E inspect | ");
-  REQUIRE(instruction != std::string::npos);
-  oldSource.erase(instruction, std::string_view{"E inspect | "}.size());
-  REQUIRE(files.writeTextAtomic("scripts/player.ts", oldSource));
+  const auto uiBytes = files.readText("assets/interface.dotui").value();
+  REQUIRE(files.writeTextAtomic("scripts/player.ts",
+                                currentSource + "\nexport const reviewGeneration = 1;\n"));
   auto session = fixture.session(true);
   report(session.start());
   Driver driver(session);
@@ -732,6 +741,7 @@ TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
   driver.frame({Platform::Key::M});
   REQUIRE(session.gameClock()->snapshot()->paused);
   const auto paused = session.animationState(model).value();
+  const auto nativeUi = session.hud()->perform(R"({"command":"ui-snapshot"})").value();
   const auto pose = Json::parse(World::encodeScene(*session.scene().value()).value());
   REQUIRE(files.writeTextAtomic("scripts/player.ts", currentSource + "\n"));
   auto reloaded = Tests::awaitCompilation([&] { return session.pollScripts(); });
@@ -742,6 +752,9 @@ TEST_CASE("prism.inspection_masks_moving_rig_and_survives_paused_reload") {
       = std::ranges::find(labels, std::string{"controls"}, &Graphics::TextLayer::key);
   REQUIRE(controls != labels.end());
   CHECK(controls->value.text.find("E inspect") != std::string::npos);
+  CHECK(files.readText("assets/interface.dotui").value() == uiBytes);
+  CHECK(Json::parse(session.hud()->perform(R"({"command":"ui-snapshot"})").value())["nodes"]
+        == Json::parse(nativeUi)["nodes"]);
   CHECK(session.animationState(model)->layers == paused.layers);
   CHECK(Json::parse(World::encodeScene(*session.scene().value()).value()) == pose);
   REQUIRE(session.controlAnimationLayer(model, "Inspection", Animation::StopLayer{}));
@@ -1341,7 +1354,8 @@ export class TextRequest extends ScriptComponent {
   CHECK(Json::parse(*queued)["result"]["sequence"] == "3");
   step();
   CHECK_FALSE(session.gameClock()->snapshot()->paused);
-  CHECK(ui.snapshot()->buttons.empty());
+  CHECK(std::ranges::none_of(ui.snapshot()->buttons,
+                             [](const auto& button) { return button.value.visible; }));
   step({Platform::Key::M});
   step({Platform::Key::Space});
   CHECK_FALSE(session.gameClock()->snapshot()->paused);

@@ -1,4 +1,4 @@
-import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
+import {animation, audio, components, Entity, gameClock, gameState, type HostError, hud, ui, input, type JsonValue, keys, mouseButtons, physics, saves, scene, scenes, ScriptComponent, type Transform} from 'dot:engine';
 import {invoke} from 'dot:host';
 
 /**
@@ -591,6 +591,16 @@ export class Audit extends ScriptComponent<{contract: string}> {
       if (action.key === 'feature-button') {
         ++this.#buttonActions;
         gameState.set('hudButtonCount', this.#buttonActions);
+      } else if (action.key === 'ui-action') {
+        const previous = gameState.get('uiClickCount');
+
+        if (previous !== undefined && (typeof previous !== 'number' || !Number.isSafeInteger(previous) || previous < 0)) {
+          throw Error('Invalid native UI click count');
+        }
+
+        const count = (previous === undefined ? 0 : previous as number) + 1;
+        gameState.set('uiClickCount', count);
+        ui.text('ui-caption', 'Native clicks: ' + count);
       }
     }
 
@@ -607,6 +617,31 @@ export class Audit extends ScriptComponent<{contract: string}> {
     }
   }
 
+  private uiChecks(): void {
+    const initial = ui.snapshot();
+    this.check('ui.snapshot', initial !== null && initial.asset === 'assets/interface.dotui');
+    ui.text('ui-caption', 'Native UI ready');
+    this.check('ui.text', ui.snapshot()!.nodes.find(node => node.key === 'ui-caption')!.box.text === 'Native UI ready');
+    ui.focus('ui-action');
+    this.check('ui.focus', hud.snapshot().focused === 'ui-action');
+    ui.visible('ui-panel', false);
+    this.check('ui.visible', !hud.snapshot().focused && !ui.snapshot()!.nodes.find(node => node.key === 'ui-action')!.box.visible);
+    ui.enabled('ui-panel', false);
+    this.check('ui.enabled', !ui.snapshot()!.nodes.find(node => node.key === 'ui-action')!.enabled);
+    ui.update([{key: 'ui-panel', visible: true, enabled: true}, {key: 'ui-caption', text: 'UI resource / 原生界面'}]);
+    this.check('ui.update', ui.snapshot()!.nodes.every(node => node.enabled && node.box.visible));
+    const events = ui.events(this.#uiSequence);
+    this.check('ui.events', !events.lost && events.sequence === hud.snapshot().sequence);
+    const before = ui.snapshot();
+    this.expectedError(() => { ui.update([{key: 'ui-panel', visible: false}, {key: 'missing', text: 'bad'}]); }, 'InvalidArgument');
+    this.check('ui.failedUpdate', JSON.stringify(before) === JSON.stringify(ui.snapshot()));
+    this.expectedError(() => { hud.remove('ui-panel'); }, 'InvalidArgument');
+    this.expectedError(() => { ui.text('ui-panel', 'Panel text'); }, 'InvalidArgument');
+    ui.reset();
+    this.check('ui.reset', ui.snapshot()!.nodes.find(node => node.key === 'ui-caption')!.box.text === 'UI resource / 原生界面' && ui.snapshot()!.nodes.every(node => node.enabled && node.box.visible));
+    ui.focus(null);
+  }
+
   onUpdate(seconds: number): void {
     ++this.#updates;
 
@@ -615,11 +650,11 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.check('hud.label', label.position.x === .02);
       const revision = hud.set('audit', label);
       this.check('hud.set', revision === hud.snapshot().revision);
-      this.check('hud.snapshot', hud.snapshot().labels[0]?.value.text === label.text);
+      this.check('hud.snapshot', hud.snapshot().labels.find(layer => layer.key === 'audit')?.value.text === label.text);
       hud.remove('audit');
-      this.check('hud.remove', hud.snapshot().labels.length === 0);
+      this.check('hud.remove', !hud.snapshot().labels.some(layer => layer.key === 'audit'));
       hud.clear();
-      this.check('hud.clear', hud.snapshot().labels.length === 0);
+      this.check('hud.clear', hud.snapshot().labels.every(layer => ui.snapshot()!.nodes.some(node => node.key === layer.key)));
       hud.set('controls', label);
       const button = hud.button({text: 'Click / 点击', position: {x: .72, y: .02}, size: {x: .26, y: .1}});
       this.check('hud.button', button.enabled && button.visible);
@@ -645,6 +680,8 @@ export class Audit extends ScriptComponent<{contract: string}> {
       this.characterChecks();
     } else if (!this.#checked.has('animation.controller.failedControl')) {
       this.controllerChecks();
+    } else if (!this.#checked.has('ui.reset')) {
+      this.uiChecks();
     }
 
     if (this.#checked.has('Entity.setCharacterYaw') && !this.#checked.has('gameState.snapshot')) {

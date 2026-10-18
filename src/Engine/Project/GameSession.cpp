@@ -18,6 +18,8 @@ module;
 
 module Dot.Project.GameSession;
 
+import Dot.UI.Files;
+
 import Dot.Core.Result;
 import Dot.Core.Files;
 import Dot.Project;
@@ -617,7 +619,33 @@ namespace Dot::Project {
       }
 
       impl->m_flow.emplace(std::move(*flow));
-      auto hud = Script::Hud::create(impl->m_identity);
+      auto ui = [&]() -> Core::Result<std::optional<UI::Asset>> {
+        if (preflight) {
+          return preflight->ui();
+        }
+
+        auto binding = impl->m_scene->ui();
+
+        if (!binding) {
+          return std::unexpected(binding.error());
+        }
+
+        if (!*binding) {
+          return std::optional<UI::Asset>{};
+        }
+
+        auto loaded = UI::loadLayout(
+            assets, std::filesystem::path{std::u8string((**binding).begin(), (**binding).end())});
+        return loaded ? Core::Result<std::optional<UI::Asset>>{UI::Asset{**binding,
+                                                                         std::move(*loaded)}}
+                      : std::unexpected(loaded.error());
+      }();
+
+      if (!ui) {
+        return std::unexpected(ui.error());
+      }
+
+      auto hud = Script::Hud::create(impl->m_identity, std::move(*ui));
 
       if (!hud) {
         return std::unexpected(hud.error());

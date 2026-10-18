@@ -10,6 +10,7 @@ module;
 export module Dot.Script.Hud;
 
 export import Dot.Graphics.Text;
+export import Dot.UI.Layout;
 export import Dot.Script.Host;
 import Dot.Core.Result;
 import Dot.Math;
@@ -64,10 +65,11 @@ export namespace Dot::Script {
    * activate 共用动作校验/入队；至多保留 64 个有序动作，events(after) 明确报告丢失。 */
   class Hud {
   public:
-    [[nodiscard]] static auto create(std::uint64_t scope) -> Core::Result<Hud>;
+    [[nodiscard]] static auto create(std::uint64_t scope, std::optional<UI::Asset> layout = {})
+        -> Core::Result<Hud>;
     [[nodiscard]] auto snapshot() const -> Core::Result<HudSnapshot>;
-    /** Button-description revision; labels and interaction styling do not advance it.
-     * 按钮定义修订，文字标签和交互样式变化不推进此值。 */
+    /** Button/pointer-blocker description revision; passive labels and interaction styling
+     * do not advance it. 按钮/指针阻挡元素的定义修订，被动文字标签和交互样式不推进此值。 */
     [[nodiscard]] auto buttonRevision() const -> Core::Result<std::uint64_t>;
     [[nodiscard]] auto draws() const -> Core::Result<std::vector<Graphics::TextLayer>>;
     [[nodiscard]] auto publish(const HudInput& input) -> Core::Result<HudInputResult>;

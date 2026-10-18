@@ -27,6 +27,11 @@ export namespace Dot::Editor {
      * Play 展示身份；隐藏 UI 不贡献 HUD 修订，递增修订拒绝隐藏/重显后的旧可见帧。 */
     bool gameUiVisible{true};
     std::uint64_t gameUiRevision{};
+    /** UI authoring uses the resource buffer as session and the exact native
+     * preview generation; leaving/reopening or changing preview options invalidates it.
+     * UI 编辑使用资源缓冲为会话及精确原生预览代；退出/重开或修改预览选项使旧帧失效。 */
+    bool ui{};
+    std::uint64_t uiGeneration{};
     auto operator==(const CaptureContext&) const -> bool = default;
   };
 

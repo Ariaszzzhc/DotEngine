@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <thread>
 #include <utility>
@@ -9,6 +10,8 @@
 import Dot.Graphics.Renderer;
 import Dot.Graphics.Text;
 import Dot.Graphics.TextRenderer;
+import Dot.UI.Layout;
+import Dot.Script.Hud;
 
 TEST_CASE("screen.layers_are_display_colors_after_exposure_and_keep_invalid_target_unchanged") {
   using namespace Dot::Graphics;
@@ -110,4 +113,50 @@ TEST_CASE("text_gpu.cached_layers_reflow_update_and_release_owned_textures") {
   CHECK(tiny->empty());
   CHECK(moved.stats()->textureBytes == 0);
   CHECK(moved.stats()->overflow == std::vector<std::string>{"checkpoint"});
+}
+
+TEST_CASE("text_gpu.authored_ui_parent_rectangles_and_paint_order_reach_actual_pixels") {
+  using namespace Dot;
+  auto renderer = Graphics::Renderer::create().value();
+  const auto baseline = renderer.resourceStats().value();
+  auto text
+      = Graphics::TextRenderer::create(renderer, std::filesystem::path{DOT_EDITOR_FONT}).value();
+  UI::Node panel{"z-panel"};
+  panel.box.position = {.25F, .25F};
+  panel.box.size = {.5F, .5F};
+  panel.box.background = {1, 0, 0, 1};
+  UI::Node child{"a-child", "z-panel", UI::Kind::Label};
+  child.box.position = {.5F, 0};
+  child.box.size = {.5F, 1};
+  child.box.background = {0, 0, 1, 1};
+  child.blocksPointer = false;
+  UI::Node button{"m-button", {}, UI::Kind::Button};
+  button.box.position = {.5F, .5F};
+  button.box.size = {.25F, .25F};
+  button.box.background = {0, 1, 0, 1};
+  auto layout = UI::Layout::create({"Pixel layout", {child, panel, button}}).value();
+  auto hud = Script::Hud::create(1, UI::Asset{"assets/pixel.dotui", layout}).value();
+  auto draws = hud.draws().value();
+  auto screen = text.prepare(draws, 64, 64).value();
+  REQUIRE(screen.size() == 3);
+  auto image = renderer.renderMeshes({}, {}, 64, 64, {0, 0, 0, 1}, screen).value();
+  const auto rgb = [&](unsigned x, unsigned y) {
+    const auto i = (y * 64 + x) * 4;
+    return std::array{image.pixels[i], image.pixels[i + 1], image.pixels[i + 2]};
+  };
+  CHECK(rgb(0, 0) == std::array<std::uint8_t, 3>{0, 0, 0});
+  CHECK(rgb(20, 20) == std::array<std::uint8_t, 3>{255, 0, 0});
+  CHECK(rgb(40, 20) == std::array<std::uint8_t, 3>{0, 0, 255});
+  CHECK(rgb(40, 40) == std::array<std::uint8_t, 3>{0, 255, 0});
+  REQUIRE(hud.perform(R"({"command":"ui-visible","key":"z-panel","value":false})"));
+  draws = hud.draws().value();
+  screen = text.prepare(draws, 64, 64).value();
+  CHECK(screen.size() == 1);
+  image = renderer.renderMeshes({}, {}, 64, 64, {0, 0, 0, 1}, screen).value();
+  CHECK(rgb(40, 20) == std::array<std::uint8_t, 3>{0, 0, 0});
+  CHECK(rgb(40, 40) == std::array<std::uint8_t, 3>{0, 255, 0});
+  screen.clear();
+  REQUIRE(text.prepare({}, 64, 64));
+  CHECK(text.stats()->textureBytes == 0);
+  CHECK(renderer.resourceStats()->textureBytes == baseline.textureBytes);
 }

@@ -223,13 +223,14 @@ namespace Dot::Project {
 
         if (Codec::id(value["scope"]) != m_impl->m_scope
             || ((m_impl->m_closing || stats->state != SessionState::Running) && inner != "snapshot"
-                && inner != "events" && inner != "input-state")) {
+                && inner != "events" && inner != "input-state" && inner != "ui-snapshot")) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "HUD requires its current running scope");
         }
 
         auto hud = m_impl->m_session->hud();
-        effects = inner != "snapshot" && inner != "events" && inner != "input-state";
+        effects = inner != "snapshot" && inner != "events" && inner != "input-state"
+                  && inner != "ui-snapshot";
         auto result = hud ? hud->perform(value["value"].dump())
                           : Core::Result<std::string>{std::unexpected(hud.error())};
         return result ? Core::Result<std::string>{Json{{"ok", true},

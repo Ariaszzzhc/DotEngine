@@ -60,6 +60,7 @@ add_executable(DotUnitTests
     GameStateTests.cpp
     GameDataTests.cpp
     HudTests.cpp
+    UiLayoutTests.cpp
     GameClockTests.cpp
     JsonTests.cpp
     SceneAnimatorTests.cpp
@@ -119,6 +120,7 @@ add_executable(DotTests
     AnimationPreviewTests.cpp
     AnimationCreationTests.cpp
     AnimationDocumentTests.cpp
+    UiResourceTests.cpp
     ControllerDocumentTests.cpp
     SkeletonViewTests.cpp
     MaterialTests.cpp

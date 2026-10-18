@@ -1,0 +1,269 @@
+{
+  "name": "Prism Relay Interface",
+  "nodes": [
+    {
+      "blocksPointer": false,
+      "box": {
+        "background": {
+          "w": 0.8999999761581421,
+          "x": 0.03500000014901161,
+          "y": 0.04500000178813934,
+          "z": 0.06499999761581421
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.019999999552965164,
+          "y": 0.019999999552965164
+        },
+        "size": {
+          "x": 0.9599999785423279,
+          "y": 0.14000000059604645
+        },
+        "text": "PRISM RELAY | WASD move | Shift sprint | Space jump | E inspect | Mouse orbit\nF6 save grounded checkpoint | F7 resume checkpoint | M menu | N step paused",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "controls",
+      "kind": "label",
+      "parent": null
+    },
+    {
+      "blocksPointer": false,
+      "box": {
+        "background": {
+          "w": 0.8999999761581421,
+          "x": 0.03500000014901161,
+          "y": 0.04500000178813934,
+          "z": 0.06499999761581421
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.6000000238418579,
+          "y": 1.0,
+          "z": 0.800000011920929
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.019999999552965164,
+          "y": 0.8799999952316284
+        },
+        "size": {
+          "x": 0.800000011920929,
+          "y": 0.10000000149011612
+        },
+        "text": "F6 saves a grounded checkpoint; F7 restores it",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "checkpoint",
+      "kind": "label",
+      "parent": null
+    },
+    {
+      "blocksPointer": false,
+      "box": {
+        "background": {
+          "w": 0.8999999761581421,
+          "x": 0.03500000014901161,
+          "y": 0.04500000178813934,
+          "z": 0.06499999761581421
+        },
+        "color": {
+          "w": 1.0,
+          "x": 1.0,
+          "y": 0.699999988079071,
+          "z": 0.550000011920929
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.019999999552965164,
+          "y": 0.8799999952316284
+        },
+        "size": {
+          "x": 0.800000011920929,
+          "y": 0.10000000149011612
+        },
+        "text": "",
+        "visible": false
+      },
+      "enabled": true,
+      "key": "checkpoint-error",
+      "kind": "label",
+      "parent": null
+    },
+    {
+      "blocksPointer": true,
+      "box": {
+        "background": {
+          "w": 0.9599999785423279,
+          "x": 0.019999999552965164,
+          "y": 0.029999999329447746,
+          "z": 0.05000000074505806
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.2800000011920929,
+          "y": 0.25
+        },
+        "size": {
+          "x": 0.4399999976158142,
+          "y": 0.5
+        },
+        "text": "",
+        "visible": false
+      },
+      "enabled": true,
+      "key": "menu",
+      "kind": "panel",
+      "parent": null
+    },
+    {
+      "blocksPointer": false,
+      "box": {
+        "background": {
+          "w": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.05000000074505806,
+          "y": 0.03999999910593033
+        },
+        "size": {
+          "x": 0.8999999761581421,
+          "y": 0.20000000298023224
+        },
+        "text": "PAUSED / 检查点\nTab selects; Enter/Space activates",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "menu-title",
+      "kind": "label",
+      "parent": "menu"
+    },
+    {
+      "blocksPointer": true,
+      "box": {
+        "background": {
+          "w": 0.9800000190734863,
+          "x": 0.07999999821186066,
+          "y": 0.12999999523162842,
+          "z": 0.18000000715255737
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.11999999731779099,
+          "y": 0.27000001072883606
+        },
+        "size": {
+          "x": 0.7599999904632568,
+          "y": 0.15000000596046448
+        },
+        "text": "Return to game",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "menu-0-return",
+      "kind": "button",
+      "parent": "menu"
+    },
+    {
+      "blocksPointer": true,
+      "box": {
+        "background": {
+          "w": 0.9800000190734863,
+          "x": 0.07999999821186066,
+          "y": 0.12999999523162842,
+          "z": 0.18000000715255737
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.11999999731779099,
+          "y": 0.5
+        },
+        "size": {
+          "x": 0.7599999904632568,
+          "y": 0.15000000596046448
+        },
+        "text": "Save checkpoint",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "menu-1-save",
+      "kind": "button",
+      "parent": "menu"
+    },
+    {
+      "blocksPointer": true,
+      "box": {
+        "background": {
+          "w": 0.9800000190734863,
+          "x": 0.07999999821186066,
+          "y": 0.12999999523162842,
+          "z": 0.18000000715255737
+        },
+        "color": {
+          "w": 1.0,
+          "x": 0.8999999761581421,
+          "y": 0.9599999785423279,
+          "z": 1.0
+        },
+        "fontSize": 20.0,
+        "padding": 8.0,
+        "position": {
+          "x": 0.11999999731779099,
+          "y": 0.7300000190734863
+        },
+        "size": {
+          "x": 0.7599999904632568,
+          "y": 0.15000000596046448
+        },
+        "text": "Restore checkpoint",
+        "visible": true
+      },
+      "enabled": true,
+      "key": "menu-2-restore",
+      "kind": "button",
+      "parent": "menu"
+    }
+  ]
+}

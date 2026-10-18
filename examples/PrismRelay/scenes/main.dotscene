@@ -414,7 +414,6 @@
         "enabled": true,
         "properties": {
           "runSpeed": 6,
-          "uiFontSize": 20,
           "walkSpeed": 3.2
         },
         "source": "player.ts"
@@ -20638,5 +20637,6 @@
     "steps": 4,
     "strength": 1.2000000476837158
   },
+  "ui": "assets/interface.dotui",
   "version": 1
 }

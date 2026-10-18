@@ -12,6 +12,7 @@ import Dot.Core.Files;
 import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.Animation.ScenePlayers;
+import Dot.UI.Layout;
 
 export namespace Dot::Project {
   class ScenePreparation;
@@ -40,6 +41,9 @@ export namespace Dot::Project {
         -> Core::Result<std::span<const Animation::ClipAsset>>;
     [[nodiscard]] auto animationControllers() const
         -> Core::Result<std::span<const Animation::ControllerAsset>>;
+    /** Owned immutable UI defaults, or no binding. No file fallback after preparation.
+     * 拥有的不可变 UI 默认值或无绑定；准备完成后不回退读文件。 */
+    [[nodiscard]] auto ui() const -> Core::Result<std::optional<UI::Asset>>;
     [[nodiscard]] auto accepts(const Core::FileSystem& files, const World::Scene& scene) const
         -> Core::Result<bool>;
 

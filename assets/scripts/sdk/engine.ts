@@ -239,6 +239,7 @@ export interface HudEvents {
 export interface HudSnapshot {
   scope: string;
   revision: string;
+  order: string[];
   labels: {key: string; value: HudLabel}[];
   buttons: {key: string; value: HudButton}[];
   focused: string|null;
@@ -318,6 +319,77 @@ export const hud = Object.freeze({
 
   clear(): string {
     return (invoke('hud.clear', []) as {revision: string}).revision;
+  },
+});
+
+export interface UiNode {
+  key: string;
+  parent: string|null;
+  kind: 'panel'|'label'|'button';
+  local: HudLabel;
+  box: HudLabel;
+  enabled: boolean;
+  localEnabled: boolean;
+  blocksPointer: boolean;
+}
+
+export interface UiSnapshot {
+  scope: string;
+  revision: string;
+  asset: string;
+  name: string;
+  nodes: UiNode[];
+}
+
+export interface UiChange {
+  key: string;
+  text?: string;
+  visible?: boolean;
+  enabled?: boolean;
+}
+
+/**
+ * Scene-bound native UI, authored in .dotui resources. Rectangles are local to
+ * parent panels; visibility/enabled inherit. Changes atomically update instance
+ * values; reset restores resource defaults. Hidden keys stay reserved and HUD
+ * clear removes only transient elements. Events/focus share the native HUD queue.
+ * Resource bytes/layout never move into gameplay scripts; scene replacement resets
+ * the instance and source reload retains it. Writes require active hooks.
+ * 场景绑定的原生 UI，布局在 .dotui 资源中编辑；矩形相对父面板，继承显隐/启用。实例更新
+ * 原子提交，reset 恢复资源默认值。隐藏键仍保留，HUD clear 仅删除瞬时元素；事件/焦点共用
+ * 原生 HUD 队列。资源/布局不放入玩法脚本；切换场景重建实例，源码热重载保留实例；仅活动钩子可写。
+ */
+export const ui = Object.freeze({
+  snapshot(): UiSnapshot|null {
+    return invoke('ui.snapshot', []) as UiSnapshot|null;
+  },
+
+  text(key: string, value: string): string {
+    return (invoke('ui.text', [key, value]) as {revision: string}).revision;
+  },
+
+  visible(key: string, value: boolean): string {
+    return (invoke('ui.visible', [key, value]) as {revision: string}).revision;
+  },
+
+  enabled(key: string, value: boolean): string {
+    return (invoke('ui.enabled', [key, value]) as {revision: string}).revision;
+  },
+
+  update(changes: UiChange[]): string {
+    return (invoke('ui.update', [changes]) as {revision: string}).revision;
+  },
+
+  reset(): string {
+    return (invoke('ui.reset', []) as {revision: string}).revision;
+  },
+
+  focus(key: string|null): string {
+    return (invoke('ui.focus', [key]) as {revision: string}).revision;
+  },
+
+  events(after: string): HudEvents {
+    return invoke('ui.events', [after]) as HudEvents;
   },
 });
 

@@ -151,6 +151,14 @@
     "scene.ungroup",
     "scenes.current",
     "scenes.request",
-    "scenes.status"
+    "scenes.status",
+    "ui.enabled",
+    "ui.events",
+    "ui.focus",
+    "ui.reset",
+    "ui.snapshot",
+    "ui.text",
+    "ui.update",
+    "ui.visible"
   ]
 }

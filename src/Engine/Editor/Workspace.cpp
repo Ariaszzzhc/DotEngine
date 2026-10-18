@@ -41,6 +41,8 @@ import Dot.Editor.ViewportCapture;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationDocument;
 import Dot.Editor.ControllerDocument;
+import Dot.Editor.UiSession;
+import Dot.UI.Files;
 import Dot.Animation.ControllerFiles;
 import Dot.Editor.AnimationCreation;
 import Dot.Editor.AnimationKeyMove;
@@ -589,6 +591,20 @@ namespace Dot::Editor {
     std::optional<AnimationPreview> m_animationPreview;
     std::optional<AnimationDocument> m_clipDocument;
     std::optional<ControllerDocument> m_controllerDocument;
+    std::optional<UiSession> m_uiEditor;
+    std::string m_uiPath{"assets/interface.dotui"};
+    std::string m_uiName{"Interface"};
+
+    struct UiPointerDrag {
+      std::string gesture;
+      Math::Vec2 pointer;
+      Math::Vec2 position;
+      Math::Vec2 size;
+      Math::Vec2 parentSize;
+      bool resize;
+    };
+
+    std::optional<UiPointerDrag> m_uiDrag;
     Json m_controllerForm{nullptr}, m_controllerOriginal{nullptr};
     std::string m_newControllerPath{"assets/locomotion.dotcontroller"};
     std::string m_newControllerName{"Locomotion"};
@@ -818,6 +834,10 @@ namespace Dot::Editor {
       return m_play && m_play->stats()->state != PlayState::Stopped;
     }
 
+    auto previewing() const -> bool {
+      return m_animationPreview.has_value() || m_uiEditor.has_value();
+    }
+
     auto publishedPlay() const -> bool {
       return playing() && m_play->stats()->started;
     }
@@ -1003,6 +1023,10 @@ namespace Dot::Editor {
     }
 
     auto pendingText() const -> bool {
+      if (m_uiEditor) {
+        return m_uiEditor->pending().value();
+      }
+
       if (m_controllerDocument) {
         return m_controllerDocument->snapshot()->dirty || m_controllerForm != m_controllerOriginal;
       }
@@ -1969,18 +1993,21 @@ namespace Dot::Editor {
         hudRevision = state->revision;
       }
 
-      return CaptureContext{
-          m_document->stats()->revision,
-          (*scene)->id(),
-          publishedPlay() ? m_playSession : (m_animationPreview ? m_animationSession : 0),
-          publishedPlay() ? ViewportMode::Play
-          : m_editorView  ? ViewportMode::Editor
-                          : ViewportMode::Game,
-          m_transform.has_value(),
-          m_animationPreview.has_value(),
-          hudRevision,
-          publishedPlay() ? m_gameUiVisible : true,
-          publishedPlay() ? m_gameUiRevision : 0};
+      return CaptureContext{m_document->stats()->revision,
+                            (*scene)->id(),
+                            publishedPlay() ? m_playSession
+                            : m_uiEditor    ? m_buffer
+                                            : (m_animationPreview ? m_animationSession : 0),
+                            publishedPlay() ? ViewportMode::Play
+                            : m_editorView  ? ViewportMode::Editor
+                                            : ViewportMode::Game,
+                            m_transform.has_value(),
+                            m_animationPreview.has_value(),
+                            hudRevision,
+                            publishedPlay() ? m_gameUiVisible : true,
+                            publishedPlay() ? m_gameUiRevision : 0,
+                            m_uiEditor.has_value(),
+                            m_uiEditor ? m_uiEditor->generation().value() : 0};
     }
 
     auto captureStatus() const -> Json {
@@ -2005,10 +2032,12 @@ namespace Dot::Editor {
                 {"session", std::to_string(frame.context.session)},
                 {"playFrame", std::to_string(frame.playFrame)},
                 {"hudRevision", std::to_string(frame.context.hudRevision)},
+                {"uiGeneration", std::to_string(frame.context.uiGeneration)},
                 {"gameUiVisible", frame.context.gameUiVisible},
                 {"gameUiRevision", std::to_string(frame.context.gameUiRevision)},
                 {"mode", modes.at(static_cast<std::size_t>(frame.context.mode))},
-                {"source", frame.context.animation                    ? "animation"
+                {"source", frame.context.ui                           ? "ui"
+                           : frame.context.animation                  ? "animation"
                            : frame.context.transform                  ? "transform"
                            : frame.context.mode == ViewportMode::Play ? "play"
                                                                       : "document"},
@@ -2888,6 +2917,17 @@ namespace Dot::Editor {
               {"pendingForm", m_controllerForm != m_controllerOriginal}};
     }
 
+    auto uiStatus() const -> Json {
+      return m_uiEditor ? Codec::parseJson(m_uiEditor->snapshot().value()) : Json(nullptr);
+    }
+
+    auto uiAction(Json request) -> bool {
+      const auto state = uiStatus();
+      request["buffer"] = state["buffer"];
+      request["revision"] = state["revision"];
+      return sessionAction(request);
+    }
+
     auto controllerAction(Json request) -> bool {
       request["buffer"] = std::to_string(m_buffer);
       request["revision"] = std::to_string(m_controllerDocument->snapshot()->revision);
@@ -3129,6 +3169,156 @@ namespace Dot::Editor {
       const bool sceneOperation
           = command == "open-scene" || command == "create-scene" || command == "save-scene-as";
 
+      if (command == "create-ui" || command == "open-ui" || command == "set-ui") {
+        if (command == "create-ui") {
+          Codec::requireFields(parsed, {"command", "revision", "path", "name"});
+        } else {
+          Codec::requireFields(parsed,
+                               {"command", "revision", command == "set-ui" ? "asset" : "path"});
+        }
+
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingText()
+            || pendingEnvironment() || pendingOcclusion() || m_pendingClose || m_captureDialog
+            || m_sceneDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "UI authoring requires the current clean scene revision");
+        }
+
+        if (command == "set-ui") {
+          if (!parsed["asset"].is_null()) {
+            const auto path = parsed["asset"].get<std::string>();
+            auto loaded
+                = UI::loadLayout(m_project->files().value(),
+                                 std::filesystem::path{std::u8string(path.begin(), path.end())});
+
+            if (!loaded) {
+              return std::unexpected(loaded.error());
+            }
+          }
+
+          auto changed
+              = m_document->apply(Json::array({{{"op", "ui"}, {"value", parsed["asset"]}}}).dump(),
+                                  m_document->stats()->revision);
+
+          if (!changed) {
+            return std::unexpected(changed.error());
+          }
+
+          auto updated = refresh();
+          m_previewReady = false;
+          return updated ? execute(R"({"command":"inspect"})") : std::unexpected(updated.error());
+        }
+
+        const auto path = parsed["path"].get<std::string>();
+
+        if (command == "create-ui") {
+          UI::Node panel{"panel"};
+          panel.box.position = {.25F, .25F};
+          panel.box.size = {.5F, .5F};
+          UI::Node title{"title", "panel", UI::Kind::Label};
+          title.box.text = "Interface";
+          title.box.position = {.1F, .1F};
+          title.box.size = {.8F, .2F};
+          title.blocksPointer = false;
+          title.box.background.w = 0;
+          UI::Node button{"action", "panel", UI::Kind::Button};
+          button.box.text = "Action";
+          button.box.position = {.1F, .5F};
+          button.box.size = {.8F, .2F};
+          auto layout
+              = UI::Layout::create({parsed["name"].get<std::string>(), {panel, title, button}});
+
+          if (!layout) {
+            return std::unexpected(layout.error());
+          }
+
+          if (path.size() > 1024 || !Core::isPortableRelativePath(path)
+              || !path.starts_with("assets/") || !path.ends_with(".dotui")) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "UI requires an assets/ .dotui resource");
+          }
+
+          auto encoded = UI::encodeLayout(*layout);
+          auto created = encoded ? m_resources->createText(path, *encoded)
+                                 : Core::Result<void>{std::unexpected(encoded.error())};
+
+          if (!created) {
+            return std::unexpected(created.error());
+          }
+
+          m_assetRefresh = true;
+          auto refreshed = catalog();
+          return refreshed
+                     ? Core::Result<std::string>{Json{{"ok", true}, {"path", path}}.dump()}
+                     : Core::fail(refreshed.error().code, "UI created; catalog refresh failed: "
+                                                              + refreshed.error().message);
+        }
+
+        if (m_buffer >= std::numeric_limits<std::uint64_t>::max() - 1) {
+          return Core::fail(Core::ErrorCode::Unavailable, "UI buffer identity exhausted");
+        }
+
+        auto opened = UiSession::open(*m_project, path, m_buffer + 1);
+
+        if (!opened) {
+          return std::unexpected(opened.error());
+        }
+
+        m_uiEditor.emplace(std::move(*opened));
+        ++m_buffer;
+        m_text.reset();
+        m_material.reset();
+        m_uiPath = path;
+        m_requestedPane = "ui";
+        m_previewReady = false;
+        return Json{{"ok", true}, {"uiEditor", uiStatus()}}.dump();
+      }
+
+      if (UiSession::handles(command)) {
+        if (!m_uiEditor
+            || (command != "inspect-ui" && (m_pendingClose || m_captureDialog || m_sceneDialog))) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "UI editing requires an open resource and no pending dialogs");
+        }
+
+        if (command == "pick-ui-node") {
+          auto context = captureContext();
+
+          if (!context || !m_viewVisible || !m_previewReady || !m_renderedFrame
+              || m_renderedFrame->context != *context) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "UI picking requires a current completed viewport");
+          }
+        }
+
+        const auto generation = m_uiEditor->generation().value();
+        auto result = m_uiEditor->perform(request);
+
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+
+        if (command == "close-ui") {
+          m_uiEditor.reset();
+          m_uiDrag.reset();
+          m_previewReady = false;
+        } else if (m_uiEditor->generation().value() != generation) {
+          m_previewReady = false;
+        }
+
+        if (command == "save-ui") {
+          m_assetRefresh = true;
+          auto refreshed = catalog();
+
+          if (!refreshed) {
+            return Core::fail(refreshed.error().code,
+                              "UI saved; catalog refresh failed: " + refreshed.error().message);
+          }
+        }
+
+        return Json{{"ok", true}, {"uiEditor", uiStatus()}}.dump();
+      }
+
       if (command == "scene-dialog") {
         Codec::requireFields(parsed, {"command", "mode"});
         const auto mode = parsed["mode"].get<std::string>();
@@ -3315,10 +3505,10 @@ namespace Dot::Editor {
         const auto state = m_document->stats().value();
         const auto owner = Codec::id(parsed["entity"]);
 
-        if (playing() || m_animationPreview || m_transform || pendingInspector()
-            || pendingEnvironment() || pendingOcclusion() || m_text || m_material || m_pendingClose
-            || m_captureDialog || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision
-            || !state.selected || state.selected->value != owner) {
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || m_text || m_material || m_pendingClose || m_captureDialog
+            || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision || !state.selected
+            || state.selected->value != owner) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Controller creation requires selected authoring entity and current clean revision");
@@ -3402,7 +3592,7 @@ namespace Dot::Editor {
       if (command == "open-controller") {
         Codec::requireFields(parsed, {"command", "revision", "entity"});
 
-        if (playing() || m_animationPreview || m_transform || pendingInspector() || pendingText()
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingText()
             || pendingEnvironment() || pendingOcclusion() || m_pendingClose || m_captureDialog
             || Codec::id(parsed["revision"]) != m_document->stats()->revision
             || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1
@@ -3534,9 +3724,9 @@ namespace Dot::Editor {
       if (command == "open-animation") {
         Codec::requireFields(parsed, {"command", "revision", "entity", "clip"});
 
-        if (playing() || m_animationPreview || m_transform || pendingInspector()
-            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
-            || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
+            || Codec::id(parsed["revision"]) != m_document->stats()->revision
             || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1
             || m_buffer == std::numeric_limits<std::uint64_t>::max()) {
           return Core::fail(Core::ErrorCode::InvalidState,
@@ -4752,9 +4942,9 @@ namespace Dot::Editor {
       if (command == "preview-animation") {
         Codec::requireFields(parsed, {"command", "revision", "entity"});
 
-        if (playing() || m_animationPreview || m_transform || pendingInspector()
-            || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
-            || m_captureDialog || Codec::id(parsed["revision"]) != m_document->stats()->revision
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
+            || Codec::id(parsed["revision"]) != m_document->stats()->revision
             || m_animationSession >= std::numeric_limits<std::uint64_t>::max() - 1) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
@@ -5045,12 +5235,12 @@ namespace Dot::Editor {
         return changed ? execute("{\"command\":\"inspect\"}") : std::unexpected(changed.error());
       }
 
-      if (m_animationPreview && command != "inspect" && command != "close" && command != "set-theme"
+      if (previewing() && command != "inspect" && command != "close" && command != "set-theme"
           && command != "filter-panel" && command != "dock-panel" && command != "reset-layout"
           && command != "show-pane" && command != "set-view" && command != "navigate-view"
           && command != "focus-view" && command != "save-close" && command != "cancel-close") {
         return Core::fail(Core::ErrorCode::InvalidState,
-                          "End animation preview before authoring or Play");
+                          "Close the active resource preview before authoring or Play");
       }
 
       if (m_transform && command != "inspect" && command != "update-transform"
@@ -5303,10 +5493,10 @@ namespace Dot::Editor {
         const auto state = m_document->stats().value();
         const auto owner = Codec::id(parsed["entity"]);
 
-        if (playing() || m_animationPreview || m_transform || pendingInspector()
-            || pendingEnvironment() || pendingOcclusion() || m_text || m_material || m_pendingClose
-            || m_captureDialog || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision
-            || !state.selected || state.selected->value != owner) {
+        if (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+            || pendingOcclusion() || m_text || m_material || m_pendingClose || m_captureDialog
+            || m_sceneDialog || Codec::id(parsed["revision"]) != state.revision || !state.selected
+            || state.selected->value != owner) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Creating animation requires the selected authoring entity, current "
                             "revision and no other mode/draft/dialog/resource editor");
@@ -5787,6 +5977,22 @@ namespace Dot::Editor {
           return execute("{\"command\":\"inspect\"}");
         }
 
+        if (m_uiEditor) {
+          auto state = uiStatus();
+          auto saved = m_uiEditor->perform(Json{
+              {"command", "save-ui"},
+              {"buffer", state["buffer"]},
+              {"revision", state["revision"]}}.dump());
+
+          if (!saved) {
+            return std::unexpected(saved.error());
+          }
+
+          auto sceneSaved = m_document->save(m_document->stats()->revision);
+          return sceneSaved ? execute(R"({"command":"close","discard":false})")
+                            : std::unexpected(sceneSaved.error());
+        }
+
         if (m_animationPreview) {
           if (m_controllerDocument) {
             auto saved = saveControllerDocument();
@@ -5925,8 +6131,8 @@ namespace Dot::Editor {
 
         if (Codec::id(parsed["scope"]) != state->scope
             || ((m_pendingClose || m_play->stats()->state != PlayState::Running)
-                && operation != "snapshot" && operation != "events"
-                && operation != "input-state")) {
+                && operation != "snapshot" && operation != "events" && operation != "input-state"
+                && operation != "ui-snapshot")) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "HUD requires its current running scope");
         }
@@ -6215,7 +6421,7 @@ namespace Dot::Editor {
         Codec::requireFields(parsed, {"command", "revision", "scope", "entity", "expanded"});
         const auto stats = m_document->stats().value();
 
-        if (playing() || m_animationPreview || m_transform || m_pendingClose
+        if (playing() || previewing() || m_transform || m_pendingClose
             || Codec::id(parsed["revision"]) != stats.revision
             || Codec::id(parsed["scope"]) != stats.scene) {
           return Core::fail(Core::ErrorCode::InvalidState,
@@ -6412,7 +6618,7 @@ namespace Dot::Editor {
 
         if (pane != "scene" && pane != "environment" && pane != "rendering" && pane != "resources"
             && pane != "inspector" && pane != "viewport" && pane != "console" && pane != "skeleton"
-            && pane != "animation" && pane != "game-data") {
+            && pane != "animation" && pane != "game-data" && pane != "ui") {
           return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown workspace pane: " + pane);
         }
 
@@ -6423,8 +6629,8 @@ namespace Dot::Editor {
       if (command == "stage-environment") {
         Codec::requireFields(parsed, {"command", "revision", "value"});
 
-        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()
-            || pendingOcclusion()) {
+        if (previewing() || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || pendingInspector() || pendingOcclusion()) {
           return Core::fail(
               Core::ErrorCode::InvalidState,
               "Environment staging requires the current revision and clean inspector/AO drafts");
@@ -6477,8 +6683,8 @@ namespace Dot::Editor {
       if (command == "stage-occlusion") {
         Codec::requireFields(parsed, {"command", "revision", "value"});
 
-        if (Codec::id(parsed["revision"]) != m_document->stats()->revision || pendingInspector()
-            || pendingEnvironment()) {
+        if (previewing() || Codec::id(parsed["revision"]) != m_document->stats()->revision
+            || pendingInspector() || pendingEnvironment()) {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "AO staging requires the current revision and clean other drafts");
         }
@@ -6641,19 +6847,23 @@ namespace Dot::Editor {
       }
 
       if (command == "apply-scene-field"
-          && (playing() || m_animationPreview || m_transform || pendingInspector()
-              || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
-              || m_captureDialog || m_sceneDialog)) {
+          && (playing() || previewing() || m_transform || pendingInspector() || pendingEnvironment()
+              || pendingOcclusion() || pendingText() || m_pendingClose || m_captureDialog
+              || m_sceneDialog)) {
         return Core::fail(
             Core::ErrorCode::InvalidState,
             "Finish authoring drafts, previews and dialogs before applying to source");
       }
 
       if (command == "save-selection-scene"
-          && (m_animationPreview || m_transform || m_pendingClose || pendingText()
-              || m_captureDialog)) {
+          && (previewing() || m_transform || m_pendingClose || pendingText() || m_captureDialog)) {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Finish drafts, gestures and dialogs before saving scene content");
+      }
+
+      if (m_uiEditor && command != "inspect") {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Close the UI resource editor before changing the scene");
       }
 
       std::string documentRequest(request);
@@ -6908,6 +7118,7 @@ namespace Dot::Editor {
           {"animationClip", clipStatus()},
           {"animationController", controllerStatus()},
           {"animationClipboard", clipboardStatus()},
+          {"uiEditor", uiStatus()},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
           {"capture", captureStatus()},
@@ -7089,7 +7300,7 @@ namespace Dot::Editor {
       }
 
       ImGui::Text("%zu overrides", page["total"].get<std::size_t>());
-      const bool readOnly = playing() || m_animationPreview || m_transform || pendingInspector()
+      const bool readOnly = playing() || previewing() || m_transform || pendingInspector()
                             || pendingEnvironment() || pendingOcclusion();
       ImGui::BeginDisabled(readOnly);
 
@@ -7330,10 +7541,11 @@ namespace Dot::Editor {
                            : errorJson(text.error())},
           {"profiling", profileStatus()},
           {"textInput", m_renderer->guiStats().value().text},
-          {"source", m_animationPreview ? "animation"
-                     : publishedPlay()  ? "play"
-                     : m_transform      ? "transform"
-                                        : "document"},
+          {"source", m_uiEditor           ? "ui"
+                     : m_animationPreview ? "animation"
+                     : publishedPlay()    ? "play"
+                     : m_transform        ? "transform"
+                                          : "document"},
           {"flying", m_flying},
           {"viewport",
            {{"origin", {m_viewOrigin.x, m_viewOrigin.y}}, {"size", {m_viewWidth, m_viewHeight}}}},
@@ -7622,6 +7834,16 @@ namespace Dot::Editor {
 
         buttonRevision = state->buttonRevision;
         auto draws = hud->draws();
+
+        if (!draws) {
+          return std::unexpected(draws.error());
+        }
+
+        labels = std::move(*draws);
+      }
+
+      if (m_uiEditor) {
+        auto draws = m_uiEditor->draws();
 
         if (!draws) {
           return std::unexpected(draws.error());
@@ -8588,7 +8810,7 @@ namespace Dot::Editor {
             "Creates a clip file and stages its player. Apply changes to attach it. "
             "Scene Undo/Reset keeps the created file. Existing players capture all bindings; "
             "ordinary objects bind themselves as node zero.");
-        ImGui::BeginDisabled(playing() || m_animationPreview || m_transform || pendingInspector()
+        ImGui::BeginDisabled(playing() || previewing() || m_transform || pendingInspector()
                              || pendingEnvironment() || pendingOcclusion() || m_text || m_material
                              || m_pendingClose || m_captureDialog || m_sceneDialog);
 
@@ -9000,8 +9222,7 @@ namespace Dot::Editor {
         m_environmentRevision = revision;
       }
 
-      ImGui::BeginDisabled(playing() || m_animationPreview || pendingInspector()
-                           || pendingOcclusion());
+      ImGui::BeginDisabled(playing() || previewing() || pendingInspector() || pendingOcclusion());
       ImGui::TextWrapped("Scene HDR environment");
       auto asset = m_environmentDraft["asset"].get<std::string>();
 
@@ -9285,8 +9506,7 @@ namespace Dot::Editor {
         m_occlusionRevision = revision;
       }
 
-      ImGui::BeginDisabled(playing() || m_animationPreview || pendingInspector()
-                           || pendingEnvironment());
+      ImGui::BeginDisabled(playing() || previewing() || pendingInspector() || pendingEnvironment());
       ImGui::TextWrapped("Ambient occlusion");
       bool enabled = !m_occlusionDraft.is_null();
       const Json defaults{{"radius", 0.5F},  {"bias", 0.02F}, {"strength", 1.0F},
@@ -9777,7 +9997,7 @@ namespace Dot::Editor {
     }
 
     auto beginTransform(int axis, Math::Vec2 uv, std::uint64_t revision) -> Core::Result<void> {
-      if (m_tool == Tool::Select || !m_editorView || playing() || m_animationPreview || m_transform
+      if (m_tool == Tool::Select || !m_editorView || playing() || previewing() || m_transform
           || !m_viewVisible || !viewStatus()["ready"].get<bool>() || pendingInspector()
           || pendingEnvironment() || pendingOcclusion() || pendingText() || m_pendingClose
           || m_flying || m_orbiting || m_panning) {
@@ -9950,7 +10170,7 @@ namespace Dot::Editor {
     auto drawTransformTool() -> void {
       m_toolGeometry = Json::array();
 
-      if (m_tool == Tool::Select || !m_editorView || playing() || m_animationPreview
+      if (m_tool == Tool::Select || !m_editorView || playing() || previewing()
           || m_document->stats()->selection.empty()) {
         return;
       }
@@ -10533,6 +10753,12 @@ namespace Dot::Editor {
       ImGui::TextDisabled("%s%s", m_snapshot["scenePath"].get_ref<const std::string&>().c_str(),
                           m_document->stats()->dirty ? " *" : "");
 
+      if (m_uiEditor) {
+        ImGui::TextUnformatted(
+            "UI layout: drag a node to move; drag its lower-right handle to resize.");
+        return;
+      }
+
       if (m_animationPreview) {
         animationControls();
         return;
@@ -10786,6 +11012,11 @@ namespace Dot::Editor {
         return;
       }
 
+      if (m_uiEditor) {
+        uiViewportInput(input);
+        return;
+      }
+
       const auto pointer = input.pointer();
       const bool hovered = pointer.x >= m_viewOrigin.x && pointer.y >= m_viewOrigin.y
                            && pointer.x < m_viewOrigin.x + m_viewWidth
@@ -11004,6 +11235,12 @@ namespace Dot::Editor {
     }
 
     auto historyAvailable(bool redo) const -> bool {
+      if (m_uiEditor) {
+        const auto state = uiStatus();
+        return !state["pendingForm"].get<bool>() && state["gesture"].is_null()
+               && state[redo ? "canRedo" : "canUndo"].get<bool>();
+      }
+
       if (m_controllerDocument) {
         const auto state = m_controllerDocument->snapshot().value();
         return m_controllerForm == m_controllerOriginal && (redo ? state.canRedo : state.canUndo);
@@ -11025,7 +11262,9 @@ namespace Dot::Editor {
     }
 
     auto focusedSave() -> void {
-      if (m_controllerDocument) {
+      if (m_uiEditor) {
+        uiAction({{"command", "save-ui"}});
+      } else if (m_controllerDocument) {
         controllerAction({{"command", "save-controller"}});
       } else if (m_clipDocument) {
         clipAction({{"command", "save-animation-clip"}});
@@ -11037,7 +11276,9 @@ namespace Dot::Editor {
     }
 
     auto focusedHistory(bool redo) -> void {
-      if (m_controllerDocument) {
+      if (m_uiEditor) {
+        uiAction({{"command", redo ? "redo-ui" : "undo-ui"}});
+      } else if (m_controllerDocument) {
         controllerAction({{"command", redo ? "redo-controller" : "undo-controller"}});
       } else if (m_clipDocument) {
         clipAction({{"command", redo ? "redo-animation-clip" : "undo-animation-clip"}});
@@ -11060,19 +11301,21 @@ namespace Dot::Editor {
              {std::pair{"New scene...", "create"}, std::pair{"Open scene...", "open"},
               std::pair{"Save scene as...", "save-as"}}) {
           if (ImGui::MenuItem(item.first, nullptr, false,
-                              !playing() && !m_animationPreview && !m_transform)) {
+                              !playing() && !previewing() && !m_transform)) {
             sessionAction({{"command", "scene-dialog"}, {"mode", item.second}});
           }
         }
 
         ImGui::Separator();
         if (ImGui::MenuItem(
-                m_controllerDocument ? "Save controller"
-                : m_clipDocument     ? "Save animation"
-                : m_material         ? "Save material"
-                                     : "Save scene",
+                m_uiEditor             ? "Save UI"
+                : m_controllerDocument ? "Save controller"
+                : m_clipDocument       ? "Save animation"
+                : m_material           ? "Save material"
+                                       : "Save scene",
                 nullptr, false,
-                !playing() && (!m_animationPreview || m_clipDocument || m_controllerDocument))) {
+                !playing()
+                    && (!previewing() || m_clipDocument || m_controllerDocument || m_uiEditor))) {
           focusedSave();
         }
 
@@ -11098,7 +11341,7 @@ namespace Dot::Editor {
           sessionAction({{"command", "discard-capture"}, {"capture", std::to_string(capture.id)}});
         }
 
-        if (ImGui::MenuItem("Export game", nullptr, false, !m_animationPreview)) {
+        if (ImGui::MenuItem("Export game", nullptr, false, !previewing())) {
           m_exportDialog = true;
         }
 
@@ -11110,24 +11353,25 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem("Undo", nullptr, false,
-                            !playing()
-                                && (!m_animationPreview || m_clipDocument || m_controllerDocument)
-                                && historyAvailable(false))) {
+        if (ImGui::MenuItem(
+                "Undo", nullptr, false,
+                !playing()
+                    && (!previewing() || m_clipDocument || m_controllerDocument || m_uiEditor)
+                    && historyAvailable(false))) {
           focusedHistory(false);
         }
 
-        if (ImGui::MenuItem("Redo", nullptr, false,
-                            !playing()
-                                && (!m_animationPreview || m_clipDocument || m_controllerDocument)
-                                && historyAvailable(true))) {
+        if (ImGui::MenuItem(
+                "Redo", nullptr, false,
+                !playing()
+                    && (!previewing() || m_clipDocument || m_controllerDocument || m_uiEditor)
+                    && historyAvailable(true))) {
           focusedHistory(true);
         }
 
         ImGui::Separator();
-        const bool hierarchy = !playing() && !m_animationPreview && !m_transform
-                               && !pendingInspector() && !pendingEnvironment()
-                               && !pendingOcclusion() && !pendingText()
+        const bool hierarchy = !playing() && !previewing() && !m_transform && !pendingInspector()
+                               && !pendingEnvironment() && !pendingOcclusion() && !pendingText()
                                && m_document->stats()->selected.has_value();
 
         if (ImGui::MenuItem("Group selection", "Cmd/Ctrl+G", false, hierarchy)) {
@@ -11142,7 +11386,7 @@ namespace Dot::Editor {
       }
 
       if (ImGui::BeginMenu("Build")) {
-        if (ImGui::MenuItem("Export game", nullptr, false, !m_animationPreview)) {
+        if (ImGui::MenuItem("Export game", nullptr, false, !previewing())) {
           m_exportDialog = true;
         }
 
@@ -11155,7 +11399,8 @@ namespace Dot::Editor {
               std::pair{"Inspector", "inspector"}, std::pair{"Environment", "environment"},
               std::pair{"Rendering", "rendering"}, std::pair{"Assets", "resources"},
               std::pair{"Skeleton", "skeleton"}, std::pair{"Animation", "animation"},
-              std::pair{"Console", "console"}, std::pair{"Game state", "game-data"}}) {
+              std::pair{"UI", "ui"}, std::pair{"Console", "console"},
+              std::pair{"Game state", "game-data"}}) {
           if (ImGui::MenuItem(label)) {
             sessionAction({{"command", "show-pane"}, {"pane", pane}});
           }
@@ -11246,6 +11491,10 @@ namespace Dot::Editor {
 
       if (panel == "skeleton") {
         return "Skeleton";
+      }
+
+      if (panel == "ui") {
+        return "UI";
       }
 
       if (panel == "animation") {
@@ -11373,7 +11622,7 @@ namespace Dot::Editor {
 
       ImGui::EndDisabled();
       ImGui::EndDisabled();
-      ImGui::BeginDisabled(!state->selected || playing() || m_animationPreview || m_transform);
+      ImGui::BeginDisabled(!state->selected || playing() || previewing() || m_transform);
 
       if (ImGui::Button("Edit selected joint")) {
         if (action({{"command", "select"}, {"entity", std::to_string(*state->selected)}})) {
@@ -13454,6 +13703,420 @@ namespace Dot::Editor {
       ImGui::EndTable();
     }
 
+    auto uiPanel() -> void {
+      const auto nextButton = [](const char* label) -> bool {
+        const auto width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2;
+        ImGui::SameLine();
+
+        if (ImGui::GetContentRegionAvail().x < width) {
+          ImGui::NewLine();
+        }
+
+        return ImGui::Button(label);
+      };
+
+      if (!m_uiEditor) {
+        ImGui::TextWrapped(
+            "Scene UI uses saved panels, labels and buttons. Edit a resource here, then bind it to "
+            "the scene.");
+        ImGui::InputText("UI resource", &m_uiPath);
+        ImGui::InputText("UI name", &m_uiName);
+        ImGui::BeginDisabled(playing() || previewing() || m_transform || pendingInspector()
+                             || pendingText() || pendingEnvironment() || pendingOcclusion());
+
+        if (ImGui::Button("Create UI")) {
+          action({{"command", "create-ui"}, {"path", m_uiPath}, {"name", m_uiName}});
+        }
+
+        if (nextButton("Open UI")) {
+          action({{"command", "open-ui"}, {"path", m_uiPath}});
+        }
+
+        if (nextButton("Bind to scene")) {
+          action({{"command", "set-ui"}, {"asset", m_uiPath}});
+        }
+
+        const auto binding = m_snapshot["scene"]["ui"];
+
+        if (!binding.is_null()) {
+          ImGui::TextWrapped("Scene UI: %s", binding.get_ref<const std::string&>().c_str());
+
+          if (ImGui::Button("Edit scene UI")) {
+            action({{"command", "open-ui"}, {"path", binding}});
+          }
+
+          if (nextButton("Detach scene UI")) {
+            action({{"command", "set-ui"}, {"asset", nullptr}});
+          }
+        }
+
+        ImGui::EndDisabled();
+        return;
+      }
+
+      const auto state = uiStatus();
+      const bool gesture = !state["gesture"].is_null();
+      ImGui::TextWrapped("%s%s", state["path"].get_ref<const std::string&>().c_str(),
+                         state["dirty"].get<bool>() ? " *" : "");
+      ImGui::BeginDisabled(gesture);
+
+      if (ImGui::Button("Apply UI")) {
+        uiAction({{"command", "apply-ui"}});
+      }
+
+      if (nextButton("Reset form")) {
+        uiAction({{"command", "reset-ui-form"}});
+      }
+
+      ImGui::BeginDisabled(state["pendingForm"].get<bool>());
+
+      if (nextButton("Save UI")) {
+        uiAction({{"command", "save-ui"}});
+      }
+
+      ImGui::BeginDisabled(!state["canUndo"].get<bool>());
+
+      if (nextButton("Undo UI")) {
+        uiAction({{"command", "undo-ui"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::BeginDisabled(!state["canRedo"].get<bool>());
+
+      if (nextButton("Redo UI")) {
+        uiAction({{"command", "redo-ui"}});
+      }
+
+      ImGui::EndDisabled();
+      ImGui::EndDisabled();
+      bool showHidden = state["showHidden"];
+
+      if (ImGui::Checkbox("Preview hidden nodes", &showHidden)) {
+        uiAction({{"command", "ui-preview-options"}, {"showHidden", showHidden}});
+      }
+
+      if (ImGui::Button("Close UI")) {
+        uiAction({{"command", "close-ui"}, {"discard", false}});
+      }
+
+      if (nextButton("Discard UI draft")) {
+        uiAction({{"command", "close-ui"}, {"discard", true}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (gesture) {
+        if (ImGui::Button("Cancel rectangle")) {
+          uiAction(
+              {{"command", "finish-ui-rect"}, {"gesture", state["gesture"]}, {"commit", false}});
+        }
+
+        return;
+      }
+
+      if (!m_uiEditor) {
+        return;
+      }
+
+      ImGui::Separator();
+      auto form = state["form"];
+      auto name = form["name"].get<std::string>();
+
+      if (ImGui::InputText("Layout name", &name)) {
+        form["name"] = name;
+      }
+
+      for (const auto& node : form["nodes"]) {
+        const auto key = node["key"].get<std::string>();
+        const auto label = node["parent"].is_null() ? key : "  " + key;
+
+        if (ImGui::Selectable(label.c_str(), state["selected"] == node["key"])) {
+          uiAction({{"command", "select-ui-node"}, {"key", node["key"]}});
+        }
+      }
+
+      ImGui::BeginDisabled(form["nodes"].size() >= 32);
+
+      const bool adding = ImGui::Button("Add node");
+      ImGui::EndDisabled();
+
+      if (adding) {
+        uiAction({{"command", "add-ui-node"}, {"kind", "label"}, {"parent", nullptr}});
+        return;
+      }
+
+      const auto selected = std::ranges::find_if(
+          form["nodes"], [&](const auto& node) { return node["key"] == state["selected"]; });
+
+      if (selected != form["nodes"].end()) {
+        ImGui::Separator();
+        auto& node = *selected;
+        const auto oldKey = node["key"].get<std::string>();
+        auto key = oldKey;
+
+        if (ImGui::InputText("Node key", &key, ImGuiInputTextFlags_EnterReturnsTrue)) {
+          uiAction({{"command", "rename-ui-node"}, {"key", oldKey}, {"name", key}});
+          return;
+        }
+
+        const auto parent = node["parent"].is_null() ? "Canvas" : node["parent"].get<std::string>();
+        std::optional<Json> structural;
+
+        if (ImGui::BeginCombo("Parent", parent.c_str())) {
+          if (ImGui::Selectable("Canvas", node["parent"].is_null())) {
+            structural
+                = Json{{"command", "reparent-ui-node"}, {"key", oldKey}, {"parent", nullptr}};
+          }
+
+          for (const auto& candidate : form["nodes"]) {
+            if (candidate["kind"] == "panel" && candidate["key"] != node["key"]
+                && ImGui::Selectable(candidate["key"].get_ref<const std::string&>().c_str(),
+                                     candidate["key"] == node["parent"])) {
+              structural = Json{
+                  {"command", "reparent-ui-node"}, {"key", oldKey}, {"parent", candidate["key"]}};
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        if (ImGui::BeginCombo("Kind", node["kind"].get_ref<const std::string&>().c_str())) {
+          for (const auto* kind : {"panel", "label", "button"}) {
+            if (ImGui::Selectable(kind, node["kind"] == kind)) {
+              structural = Json{{"command", "set-ui-node-kind"}, {"key", oldKey}, {"kind", kind}};
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        if (structural) {
+          uiAction(std::move(*structural));
+          return;
+        }
+
+        auto& box = node["box"];
+        auto text = box["text"].get<std::string>();
+        ImGui::BeginDisabled(node["kind"] == "panel");
+
+        if (ImGui::InputTextMultiline("Text", &text, {0, ImGui::GetTextLineHeight() * 3})) {
+          box["text"] = text;
+        }
+
+        ImGui::EndDisabled();
+
+        for (const auto* field : {"position", "size"}) {
+          float values[]{box[field]["x"].get<float>(), box[field]["y"].get<float>()};
+
+          if (ImGui::InputFloat2(field, values, "%.6g")) {
+            box[field] = {{"x", values[0]}, {"y", values[1]}};
+          }
+        }
+
+        for (const auto* field : {"fontSize", "padding"}) {
+          auto value = box[field].get<float>();
+
+          if (ImGui::InputFloat(field, &value)) {
+            box[field] = value;
+          }
+        }
+
+        for (const auto* field : {"color", "background"}) {
+          float values[]{box[field]["x"].get<float>(), box[field]["y"].get<float>(),
+                         box[field]["z"].get<float>(), box[field]["w"].get<float>()};
+
+          if (ImGui::ColorEdit4(field, values)) {
+            box[field] = {{"x", values[0]}, {"y", values[1]}, {"z", values[2]}, {"w", values[3]}};
+          }
+        }
+
+        bool visible = box["visible"], enabled = node["enabled"], blocking = node["blocksPointer"];
+
+        if (ImGui::Checkbox("Visible", &visible)) {
+          box["visible"] = visible;
+        }
+
+        if (ImGui::Checkbox("Enabled", &enabled)) {
+          node["enabled"] = enabled;
+        }
+
+        ImGui::BeginDisabled(node["kind"] == "button");
+
+        if (ImGui::Checkbox("Block pointer", &blocking)) {
+          node["blocksPointer"] = blocking;
+        }
+
+        ImGui::EndDisabled();
+        if (ImGui::Button("Earlier")) {
+          uiAction({{"command", "reorder-ui-node"}, {"key", oldKey}, {"direction", "earlier"}});
+          return;
+        }
+
+        if (nextButton("Later")) {
+          uiAction({{"command", "reorder-ui-node"}, {"key", oldKey}, {"direction", "later"}});
+          return;
+        }
+
+        if (nextButton("Remove subtree")) {
+          uiAction({{"command", "remove-ui-node"}, {"key", oldKey}});
+          return;
+        }
+      }
+
+      if (form != state["form"] && m_uiEditor) {
+        uiAction({{"command", "stage-ui"}, {"value", std::move(form)}});
+      }
+    }
+
+    auto drawUiSelection() -> void {
+      if (!m_uiEditor || !m_previewReady) {
+        return;
+      }
+
+      const auto state = uiStatus();
+
+      for (const auto& node : state["preview"]["nodes"]) {
+        if (node["key"] != state["selected"] || !node["box"]["visible"].get<bool>()) {
+          continue;
+        }
+
+        const auto& box = node["box"];
+        const ImVec2 low{m_viewOrigin.x + box["position"]["x"].get<float>() * m_viewWidth,
+                         m_viewOrigin.y + box["position"]["y"].get<float>() * m_viewHeight};
+        const ImVec2 high{low.x + box["size"]["x"].get<float>() * m_viewWidth,
+                          low.y + box["size"]["y"].get<float>() * m_viewHeight};
+        auto* drawing = ImGui::GetWindowDrawList();
+        drawing->PushClipRect(m_viewOrigin,
+                              {m_viewOrigin.x + m_viewWidth, m_viewOrigin.y + m_viewHeight}, true);
+        drawing->AddRect(low, high, IM_COL32(80, 215, 245, 255), 0.F, ImDrawFlags_None, 2.F);
+        drawing->AddRectFilled({high.x - 8, high.y - 8}, high, IM_COL32(80, 215, 245, 255));
+        drawing->PopClipRect();
+      }
+    }
+
+    auto uiViewportInput(const Platform::InputState& input) -> void {
+      const auto pointer = input.pointer();
+      const Math::Vec2 uv{(pointer.x - m_viewOrigin.x) / m_viewWidth,
+                          (pointer.y - m_viewOrigin.y) / m_viewHeight};
+      const auto left = input.button(Platform::MouseButton::Left);
+      auto state = uiStatus();
+
+      if (m_uiDrag && state["gesture"] != m_uiDrag->gesture) {
+        m_uiDrag.reset();
+      }
+
+      if (m_uiDrag) {
+        const auto drag = *m_uiDrag;
+        const bool cancel
+            = input.key(Platform::Key::Escape).pressed || (!left.down && !left.released);
+
+        if (cancel) {
+          uiAction({{"command", "finish-ui-rect"}, {"gesture", drag.gesture}, {"commit", false}});
+          m_uiDrag.reset();
+          return;
+        }
+
+        auto position = drag.position;
+        auto size = drag.size;
+        const Math::Vec2 delta{(uv.x - drag.pointer.x) / drag.parentSize.x,
+                               (uv.y - drag.pointer.y) / drag.parentSize.y};
+
+        if (drag.resize) {
+          size.x = std::clamp(size.x + delta.x, std::min(.001F, 1 - position.x), 1 - position.x);
+          size.y = std::clamp(size.y + delta.y, std::min(.001F, 1 - position.y), 1 - position.y);
+        } else {
+          position.x = std::clamp(position.x + delta.x, 0.F, 1 - size.x);
+          position.y = std::clamp(position.y + delta.y, 0.F, 1 - size.y);
+        }
+
+        uiAction({{"command", "update-ui-rect"},
+                  {"gesture", drag.gesture},
+                  {"value",
+                   {{"position", {{"x", position.x}, {"y", position.y}}},
+                    {"size", {{"x", size.x}, {"y", size.y}}}}}});
+
+        if (left.released) {
+          uiAction({{"command", "finish-ui-rect"}, {"gesture", drag.gesture}, {"commit", true}});
+          m_uiDrag.reset();
+        }
+
+        return;
+      }
+
+      auto gui = m_renderer->guiStats();
+
+      if (!left.pressed || m_viewBlocked || !gui || gui->text || m_pendingClose
+          || !state["gesture"].is_null() || state["pendingForm"].get<bool>() || uv.x < 0 || uv.y < 0
+          || uv.x >= 1 || uv.y >= 1) {
+        return;
+      }
+
+      const auto context = captureContext();
+
+      if (!m_previewReady || !context || !m_renderedFrame || m_renderedFrame->context != *context) {
+        return;
+      }
+
+      bool selectedHandle{};
+
+      for (const auto& node : state["preview"]["nodes"]) {
+        if (node["key"] == state["selected"] && node["box"]["visible"].get<bool>()) {
+          const auto& box = node["box"];
+          const auto dx = (box["position"]["x"].get<float>() + box["size"]["x"].get<float>() - uv.x)
+                          * m_viewWidth;
+          const auto dy = (box["position"]["y"].get<float>() + box["size"]["y"].get<float>() - uv.y)
+                          * m_viewHeight;
+          selectedHandle = dx >= 0 && dx <= 8 && dy >= 0 && dy <= 8;
+        }
+      }
+
+      if (!selectedHandle
+          && !uiAction({{"command", "pick-ui-node"},
+                        {"generation", state["generation"]},
+                        {"uv", {{"x", uv.x}, {"y", uv.y}}}})) {
+        return;
+      }
+
+      state = uiStatus();
+
+      for (const auto& node : state["preview"]["nodes"]) {
+        if (node["key"] != state["selected"]) {
+          continue;
+        }
+
+        Math::Vec2 parentSize{1, 1};
+
+        for (const auto& parent : state["preview"]["nodes"]) {
+          if (parent["key"] == node["parent"]) {
+            parentSize = {parent["box"]["size"]["x"].get<float>(),
+                          parent["box"]["size"]["y"].get<float>()};
+          }
+        }
+
+        const auto& local = node["local"];
+        const auto& box = node["box"];
+        const bool resize
+            = (box["position"]["x"].get<float>() + box["size"]["x"].get<float>() - uv.x)
+                      * m_viewWidth
+                  <= 8
+              && (box["position"]["y"].get<float>() + box["size"]["y"].get<float>() - uv.y)
+                         * m_viewHeight
+                     <= 8;
+
+        if (uiAction({{"command", "begin-ui-rect"}, {"key", node["key"]}})) {
+          m_uiDrag = UiPointerDrag{
+              uiStatus()["gesture"].get<std::string>(),
+              uv,
+              {local["position"]["x"].get<float>(), local["position"]["y"].get<float>()},
+              {local["size"]["x"].get<float>(), local["size"]["y"].get<float>()},
+              parentSize,
+              resize};
+        }
+
+        break;
+      }
+    }
+
     auto draw() -> Core::Result<void> {
       applyTheme();
       const auto stats = m_document->stats().value();
@@ -13465,7 +14128,7 @@ namespace Dot::Editor {
                        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar);
       menuBar();
 
-      if (m_clipDocument || m_controllerDocument) {
+      if (m_clipDocument || m_controllerDocument || m_uiEditor) {
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
           focusedSave();
         }
@@ -13482,7 +14145,7 @@ namespace Dot::Editor {
         }
       }
 
-      ImGui::BeginDisabled(playing() || m_animationPreview.has_value());
+      ImGui::BeginDisabled(playing() || previewing());
 
       if ((ImGui::Button("Save")
            || (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)))
@@ -13537,7 +14200,7 @@ namespace Dot::Editor {
         action({{"command", "duplicate-selection"}});
       }
 
-      if (!ImGui::GetIO().WantTextInput && !playing() && !m_animationPreview && !m_transform) {
+      if (!ImGui::GetIO().WantTextInput && !playing() && !previewing() && !m_transform) {
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_G,
                             ImGuiInputFlags_RouteGlobal)) {
           action({{"command", "ungroup-selection"}});
@@ -13589,7 +14252,7 @@ namespace Dot::Editor {
         ImGui::SameLine();
       }
 
-      ImGui::BeginDisabled(m_animationPreview.has_value());
+      ImGui::BeginDisabled(previewing());
 
       if (ImGui::Button("Export game")) {
         m_exportDialog = true;
@@ -13640,6 +14303,7 @@ namespace Dot::Editor {
         ImGui::DockBuilderDockWindow("Assets", assets);
         ImGui::DockBuilderDockWindow("Console", assets);
         ImGui::DockBuilderDockWindow("Animation", assets);
+        ImGui::DockBuilderDockWindow("UI", inspector);
         ImGui::DockBuilderFinish(dock);
         ImGui::DockBuilderGetNode(inspector)->SelectedTabId = ImHashStr("Inspector");
         ImGui::DockBuilderGetNode(assets)->SelectedTabId = ImHashStr("Assets");
@@ -13706,7 +14370,7 @@ namespace Dot::Editor {
         ImGui::SetNextItemWidth(-1);
         searchField("##hierarchy-search", "Search hierarchy", "hierarchy", m_hierarchyFilter);
         ImGui::Separator();
-        ImGui::BeginDisabled(playing() || m_animationPreview.has_value() || m_transform.has_value()
+        ImGui::BeginDisabled(playing() || previewing() || m_transform.has_value()
                              || m_pendingClose);
         std::optional<Json> selection;
 
@@ -13752,7 +14416,7 @@ namespace Dot::Editor {
                                      : "Preparing material textures...");
         }
 
-        if (m_animationPreview) {
+        if (previewing()) {
           const auto maxHeight = std::max(ImGui::GetFrameHeightWithSpacing() * 2,
                                           ImGui::GetContentRegionAvail().y * .6F);
           ImGui::SetNextWindowSizeConstraints({0, 0},
@@ -13812,12 +14476,17 @@ namespace Dot::Editor {
         }
 
         drawTransformTool();
+        drawUiSelection();
       }
 
       ImGui::End();
 
       if (beginPanel("Inspector", "inspector", "inspector")) {
-        if (m_controllerDocument) {
+        if (m_uiEditor) {
+          const auto state = uiStatus();
+          ImGui::TextWrapped("Editing %s. Use the UI panel for layout and widget properties.",
+                             state["path"].get_ref<const std::string&>().c_str());
+        } else if (m_controllerDocument) {
           ImGui::TextWrapped(
               "Editing %s. Use the Animation panel for typed parameters, states and transitions.",
               m_controllerDocument->snapshot()->path.c_str());
@@ -13845,7 +14514,7 @@ namespace Dot::Editor {
 
           sceneOverrideInspector();
 
-          if (!playing() && !m_animationPreview && !m_transform && m_editEntity
+          if (!playing() && !previewing() && !m_transform && m_editEntity
               && m_edit.contains("animation") && !m_edit["animation"].is_null()) {
             ImGui::BeginDisabled(pendingInspector() || pendingText() || pendingEnvironment()
                                  || pendingOcclusion());
@@ -13879,6 +14548,12 @@ namespace Dot::Editor {
             ImGui::EndDisabled();
           }
         }
+      }
+
+      ImGui::End();
+
+      if (beginPanel("UI", "ui", "ui")) {
+        uiPanel();
       }
 
       ImGui::End();
@@ -13920,7 +14595,7 @@ namespace Dot::Editor {
       ImGui::End();
 
       if (beginPanel("Assets", "resources", "resources")) {
-        ImGui::BeginDisabled(m_animationPreview.has_value());
+        ImGui::BeginDisabled(previewing());
         resourcesPanel();
         ImGui::EndDisabled();
       }

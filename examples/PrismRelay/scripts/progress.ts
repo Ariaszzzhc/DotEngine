@@ -1,4 +1,4 @@
-import {gameState, hud, type JsonValue, saves, scenes, type Vec3} from 'dot:engine';
+import {gameState, ui, type JsonValue, saves, scenes, type Vec3} from 'dot:engine';
 
 import {type CameraState, validateCameraState} from './camera';
 
@@ -76,23 +76,20 @@ export function readCheckpoint(): RelayCheckpoint {
   return checkpoint(saves.read(slot).data[key]);
 }
 
-export function progressStatus(message: string, fontSize: number): void {
+export function progressStatus(message: string): void {
   gameState.set('relayProgressStatus', message);
   const failed = message.startsWith('Checkpoint unavailable:');
   const text = failed ? (message.includes('Land before saving')
                              ? 'Checkpoint unavailable: land before saving.'
                              : 'Checkpoint unavailable. F6 saves a grounded point.')
                       : message;
-  hud.set('checkpoint', hud.label({
-    text,
-    position: {x: .02, y: .88},
-    size: {x: .65, y: .1},
-    fontSize,
-    color: failed ? {x: 1, y: .7, z: .55, w: 1} : {x: .6, y: 1, z: .8, w: 1}
-  }));
+  ui.update([
+    {key: 'checkpoint', text, visible: !failed},
+    {key: 'checkpoint-error', text, visible: failed},
+  ]);
 }
 
-export function progressFailure(error: unknown, fontSize: number): void {
+export function progressFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
-  progressStatus('Checkpoint unavailable: ' + Array.from(message).slice(0, 256).join(''), fontSize);
+  progressStatus('Checkpoint unavailable: ' + Array.from(message).slice(0, 256).join(''));
 }

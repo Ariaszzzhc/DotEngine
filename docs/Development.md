@@ -12857,3 +12857,119 @@ workflow. Blend trees, hierarchical machines, triggers/events, root motion, fina
 character/environment art, broader authoring usability and production-scale evidence
 remain open. Passing these regressions and example workflows does not establish
 large-game production readiness.
+
+## 2026-10-18 — Native UI resource authoring
+
+Implement one native UI model from pure layout rules through saved resources,
+editor authoring, scene preparation, gameplay input and exported games. Prism Relay's
+menus previously constructed and positioned every widget in TypeScript. They now
+bind a saved native resource; scripts publish gameplay intent and dynamic text.
+
+Add Dot.UI.Layout and Dot.UI.Files. Immutable definitions own at most 32 nodes,
+eight hierarchy levels and 32768 text bytes. Panels parent labels/buttons through
+contained parent-local normalized rectangles. Resolve parent-before-child paint
+order, inherited visibility/enabled state and explicit pointer blocking. Reject
+invalid keys, parents, cycles, depth, text, enums and collapsed floating-point
+rectangles. Typed instance patches are atomic; reset restores defaults. The strict
+1 MiB/depth-12 codec persists definitions, never instance overrides. Portable
+assets/ .dotui paths reject symlinks/special components and require existing parents;
+file saves replace atomically. Unicode resource names/paths have actual coverage.
+
+Scenes optionally bind one UI resource. World validates the path without IO;
+scene preparation validates and owns immutable defaults before publication. The
+prepared session creates its instance without a file fallback. Source reload keeps
+the scene-owned instance; a new scene starts with resource defaults. The same
+native HUD supplies drawing, ordered pointer hits, Tab traversal, focus and the
+bounded action queue. Authored keys remain reserved while hidden; transient HUD
+clear preserves them. Panels/labels can block pointer hits, and blocker changes
+advance the displayed-input revision along with buttons. Hiding/disabling a parent
+cancels affected descendant focus/gestures. Add ui.snapshot/text/visible/enabled/
+update/reset/focus/events and strict runtime operations through the existing scoped
+HUD envelope. UI wire arguments allow 128 KiB so a full 32768-byte text batch also
+fits after JSON escaping; transient HUD requests retain 64 KiB. VM stack, host-call
+and global JSON limits are unchanged.
+
+Add native UiDocument/UiSession, with exact source-byte undo, semantic no-ops,
+revision/redo preservation, bounded history and conflict-checked save. Structural
+forms can be incomplete until Apply. Fresh native HUD validation precedes resource
+publication; native font/overflow diagnostics remain separate. Centralize node add,
+rename/reference repair, reparent, kind changes, sibling ordering and subtree removal
+for both graphical and JSON clients. These stage a form and keep Apply explicit.
+New panels and child rectangles have usable contained defaults. Pointer move/resize
+previews candidates and commits one history entry; Escape/cancel restores the
+original form/preview. Invalid updates preserve the last valid candidate. Buffer,
+resource revision, gesture and preview generation reject stale operations.
+
+Add the UI panel, scene bind/detach, normal native-text viewport composition,
+selection/resize handles and shared strict product operations. Preview-hidden is
+isolated presentation, including overlapping alternatives, and never changes saved
+visibility. Resource editing remains separate from Play and other previews. Capture
+provenance carries the resource buffer/generation and rejects mixed or old contexts.
+Focused save/history and close handling include UI drafts. The existing 3D editor
+visual direction and external TypeScript workflow are retained.
+
+Use the actual editor to create/edit/history/save/bind the eight-node Prism Relay
+layout and the three-node Feature Lab layout, then adopt its saved resource bytes
+into the ordinary examples. Prism Relay retains native pause/step, checkpoint,
+movement and controller behavior. Remove its procedural widget construction,
+layout coordinates and uiFontSize property. Feature Lab exercises every ui method,
+atomic invalid patches/reserved keys and an ordinary native resource button.
+
+Validation on arm64 macOS, without sanitizers:
+
+- Debug full suite: 1539/1539, 273.50 s, before final authoring-default/path-bound/hidden-viewport
+  refinements. Final Debug relevant suite: 65/65, 24.81 s. Final Release full suite:
+  1539/1539, 39.23 s, assertions disabled. Final labels: 496 unit, 1043 integration;
+  overlapping labels include 186 offscreen GPU, 246 compiler, 37 native audio,
+  34 platform and 21 process tests. Unit tests open no devices/windows; GPU
+  regressions use the existing offscreen target. No Windows/Linux execution claim.
+- Keep focused behavior regressions for layout hierarchy/order/instance lifetime,
+  pure half-open picking, failure atomicity, escaped full-capacity batches, file/
+  Unicode/symlink boundaries, exact resource history/conflicts, structural edits,
+  gestures, owned scene preparation, capture provenance and actual rendered pixels.
+  Existing Prism and complete SDK workflows execute the integrated behavior.
+- The initial integrated run exposed old scripted-menu assumptions and the SDK
+  namespace inventory, plus recursive demo DTO comparison exhausting the existing
+  stack guard. Update those expectations to retained authored nodes/resource text,
+  and compare the failed-update native snapshots exactly. Retain the VM limits.
+- Actual editor: resource creation, typed forms, failed Apply/save, parent-local
+  gesture preview/commit/undo, no-op/redo, all six structural node operations,
+  save/reopen/bind and final panel/child defaults. Final defaults render without
+  overflow; undo preserves original saved bytes. Actual dock/hide rejects picking
+  from a retained hidden viewport; docking it back restores picking. Actual Play pointer-save,
+  keyboard-restore and Space-return succeed. Paused source reload retains native
+  UI text/enabled/visible values and action watermark, with no runtime diagnostics.
+  The native paused-menu PNG shows real game composition and restored feedback.
+- Actual Feature Lab Play completes 178 checks and 16 caught expected errors, with
+  no diagnostics; a native pointer click increments uiClickCount and updates its
+  saved-layout caption. This is observed execution, not just an inventory count.
+- Export through the real editor, move the native package, then run two fresh
+  native processes while only the owned authoring project is hidden. Verify the
+  packaged UI bytes against the example, all 162 exported regular-file hashes,
+  native menu save, movement away/restore and a fresh-process F7 restore of a
+  non-startup checkpoint. Actual movement reaches the physical wall at x=6.98;
+  reverse input leaves it before restore. Both measured restore errors are zero.
+  Both processes exit 0, retire their controls and retain 120 error-free profile
+  samples each (2365/1324 sampled frames). These are correctness observations,
+  not throughput or general performance claims. Restore the authoring project.
+- Final debug editor SHA-256:
+  f5a39c7fd445e01dcf4c4857475b97a7374ef1f361f69fdf0883bb8d16671355.
+  Exported native player:
+  84fb7a697ddab976c4c263a6688bf695fc37b101ed3cbea81f848d32a693e0a3.
+  Prism UI resource:
+  5eac02c1b6b82e89d655d6a8f1e2f0f928dae59dcd55eeee0ff5f4131752265e.
+
+Computer use reports the Mac locked and automatic unlock unavailable. Physical
+mouse/drag interaction and IME remain unverified; actual native product operations
+and rendered output remain usable. Keep raw requests/responses, PNGs, profiles,
+manifests, the relocated game, isolated checkpoint and editable projects in ignored
+build/ui-review. Verify all twenty prior persistent save hashes unchanged. Remove
+only owned helper scripts; preserve caches, references, projects and saves. No
+archive or production release is created.
+
+This delivers bounded visual authoring of native panels, labels and buttons through
+an ordinary small-game workflow. Text fields, images, rich text, general shaping/
+bidi, automatic layout/anchors, scrolling and automatic persistence of UI instance
+state remain unimplemented. Final art, broader authoring usability, production-scale
+content/performance and Windows/Linux evidence also remain open. These test/example
+results do not establish general-purpose large-game production readiness.

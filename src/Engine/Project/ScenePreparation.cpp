@@ -20,6 +20,8 @@ module;
 
 module Dot.Project.ScenePreparation;
 
+import Dot.UI.Files;
+
 import Dot.Core.Paths;
 import Dot.Core.Text;
 import Dot.World.SceneFiles;
@@ -388,6 +390,7 @@ namespace Dot::Project {
     std::string text;
     std::vector<Animation::ClipAsset> clips;
     std::vector<Animation::ControllerAsset> controllers;
+    std::optional<UI::Asset> ui;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -480,10 +483,32 @@ namespace Dot::Project {
       controllers.push_back({controllerPath, std::move(*loaded)});
     }
 
+    std::optional<UI::Asset> ui;
+    auto binding = scene->ui();
+
+    if (!binding) {
+      return std::unexpected(binding.error());
+    }
+
+    if (*binding) {
+      auto loaded = UI::loadLayout(
+          files, std::filesystem::path{std::u8string((**binding).begin(), (**binding).end())});
+
+      if (!loaded) {
+        return std::unexpected(loaded.error());
+      }
+
+      ui = UI::Asset{**binding, std::move(*loaded)};
+    }
+
+    if (stop.stop_requested()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "UI preparation cancelled");
+    }
+
     auto canonical = World::encodeScene(*scene);
     return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
                            Data{files.root(), std::move(*canonical), std::move(*animations),
-                                std::move(controllers)})}}
+                                std::move(controllers), std::move(ui)})}}
                      : std::unexpected(canonical.error());
   }
 
@@ -511,6 +536,14 @@ namespace Dot::Project {
     }
 
     return std::span<const Animation::ControllerAsset>{m_data->controllers};
+  }
+
+  auto PreparedScene::ui() const -> Core::Result<std::optional<UI::Asset>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    return m_data->ui;
   }
 
   auto PreparedScene::accepts(const Core::FileSystem& files, const World::Scene& scene) const

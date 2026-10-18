@@ -202,7 +202,9 @@ bilingual native label and clickable button in Play and exported games. The audi
 also covers setButton/focus/activate/events/inputState and explicit text-input
 request/acknowledgement. Actual demo button actions increment hudButtonCount;
 the audit's own synthetic activation is excluded from that count. It shares the game text path
-with Prism Relay; this is not an editor-only overlay or a visual layout designer.
+with Prism Relay. The saved `assets/interface.dotui` adds a panel, caption and
+button editable in the UI panel. The audit exercises every `ui` API, atomic invalid
+updates and reserved keys; actual resource-button clicks update uiClickCount.
 
 The audit also exercises the native game clock and unscaled onFrame hook, preserving
 the caller's current pause state. Pausing simulation keeps frame/UI work and audio

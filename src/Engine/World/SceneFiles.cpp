@@ -301,7 +301,7 @@ namespace Dot::World {
 
     auto parsedScene(const Json& root) -> Core::Result<Scene> {
       Codec::requireFields(root, {"version", "name", "nextEntity", "entities"},
-                           {"environment", "occlusion", "links"});
+                           {"environment", "occlusion", "links", "ui"});
 
       if (!root["version"].is_number_integer() || root["version"] != 1
           || !root["entities"].is_array() || root["entities"].size() > 10000) {
@@ -445,6 +445,14 @@ namespace Dot::World {
             Codec::number(value["radius"]), Codec::number(value["bias"]),
             Codec::number(value["strength"]), integer("directions"), integer("steps"),
             integer("filterRadius")});
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+      }
+
+      if (root.contains("ui") && !root["ui"].is_null()) {
+        auto changed = scene->setUi(root["ui"].get<std::string>());
 
         if (!changed) {
           return std::unexpected(changed.error());
@@ -861,12 +869,19 @@ namespace Dot::World {
                        {"steps", settings.steps},       {"filterRadius", settings.filterRadius}};
     }
 
+    auto ui = scene.ui();
+
+    if (!ui) {
+      return std::unexpected(ui.error());
+    }
+
     auto document = Json{{"version", 1},
                          {"name", *name},
                          {"nextEntity", *next ? Json(std::to_string(**next)) : Json(nullptr)},
                          {"entities", std::move(records)},
                          {"environment", std::move(environmentJson)},
-                         {"occlusion", std::move(occlusionJson)}};
+                         {"occlusion", std::move(occlusionJson)},
+                         {"ui", *ui ? Json(**ui) : Json(nullptr)}};
     auto links = scene.sceneLinks();
 
     if (!links) {

@@ -25,9 +25,14 @@ namespace Dot::Editor {
     if (!context.scene || !context.revision
         || (context.mode != ViewportMode::Editor && context.mode != ViewportMode::Game
             && context.mode != ViewportMode::Play)
-        || (context.mode == ViewportMode::Play || context.animation) != (context.session != 0)
-        || (context.transform && (context.mode != ViewportMode::Editor || context.animation))
-        || (context.animation && context.mode == ViewportMode::Play)) {
+        || (context.mode == ViewportMode::Play || context.animation || context.ui)
+               != (context.session != 0)
+        || (context.transform
+            && (context.mode != ViewportMode::Editor || context.animation || context.ui))
+        || (context.animation && (context.mode == ViewportMode::Play || context.ui))
+        || (context.ui && context.mode == ViewportMode::Play)
+        || context.ui != (context.uiGeneration != 0)
+        || context.uiGeneration == std::numeric_limits<std::uint64_t>::max()) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid viewport capture context");
     }
 
