@@ -9,6 +9,7 @@ module;
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -16,6 +17,7 @@ module;
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "ComponentJson.hpp"
 
@@ -132,6 +134,7 @@ namespace Dot::Script {
       return {{"position", Detail::xyz(value.position)},
               {"rotation", Detail::xyzw(value.rotation)},
               {"velocity", Detail::xyz(value.velocity)},
+              {"measuredVelocity", Detail::xyz(value.measuredVelocity)},
               {"ground", ground},
               {"groundNormal", Detail::xyz(value.groundNormal)},
               {"groundVelocity", Detail::xyz(value.groundVelocity)},
@@ -693,6 +696,105 @@ namespace Dot::Script {
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
                         "Bind native character reader: " + std::string(error.what()));
+    }
+  }
+
+  auto PhysicsSource::characterControl() const -> Core::Result<CharacterControl> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Physics source was moved");
+    }
+
+    auto checked = m_impl->check(true);
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    try {
+      CharacterControl control;
+      control.snapshot = [impl = m_impl]() -> Core::Result<std::vector<ControlledCharacter>> {
+        auto current = impl->check(true);
+
+        if (!current) {
+          return std::unexpected(current.error());
+        }
+
+        auto entities = impl->m_scene->characterControllers();
+
+        if (!entities) {
+          return std::unexpected(entities.error());
+        }
+
+        std::vector<ControlledCharacter> result;
+        result.reserve(entities->size());
+
+        for (const auto entity : *entities) {
+          auto config = impl->m_simulation.characterConfig(*impl->m_scene, entity);
+          auto state = impl->m_simulation.character(entity);
+
+          if (!config || !state) {
+            return std::unexpected(!config ? config.error() : state.error());
+          }
+
+          result.push_back({entity, *config, state->measuredVelocity, state->ground});
+        }
+
+        return result;
+      };
+      control.apply
+          = [impl = m_impl](std::span<const CharacterIntent> intents) -> Core::Result<void> {
+        auto current = impl->check(true);
+
+        if (!current) {
+          return current;
+        }
+
+        if (intents.size() > 256) {
+          return Core::fail(Core::ErrorCode::Unavailable, "Character intent batch exceeds 256");
+        }
+
+        std::set<std::uint64_t> seen;
+
+        for (const auto& intent : intents) {
+          auto input = Physics::validateCharacterInput(intent.input);
+          auto owner = impl->m_simulation.characterConfig(*impl->m_scene, intent.entity);
+
+          if (!input || !owner) {
+            return std::unexpected(!input ? input.error() : owner.error());
+          }
+
+          if (!seen.insert(intent.entity.value).second
+              || (intent.yawDegrees
+                  && (!std::isfinite(*intent.yawDegrees) || std::abs(*intent.yawDegrees) > 1e6F))) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid/duplicate character intent");
+          }
+        }
+
+        bool mutated{};
+
+        for (const auto& intent : intents) {
+          auto applied = impl->m_simulation.setCharacterInput(intent.entity, intent.input);
+          mutated = mutated || applied.has_value();
+
+          if (applied && intent.yawDegrees) {
+            applied = impl->m_simulation.setCharacterYaw(intent.entity, *intent.yawDegrees);
+          }
+
+          if (!applied) {
+            impl->m_faulted = impl->m_faulted || mutated;
+            return Core::fail(applied.error().code,
+                              "Apply character intent; reset required after mutation: "
+                                  + applied.error().message);
+          }
+        }
+
+        return {};
+      };
+      return control;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Bind native character control: " + std::string(error.what()));
     }
   }
 

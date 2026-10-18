@@ -74,6 +74,20 @@ export namespace Dot::Navigation {
     std::vector<Math::Vec3> points;
   };
 
+  struct WallSegment {
+    Math::Vec3 from, to;
+  };
+
+  struct LocalBoundary {
+    Math::Vec3 position;
+    std::vector<WallSegment> walls;
+  };
+
+  struct SurfaceTrace {
+    Math::Vec3 position, normal;
+    bool reached{};
+  };
+
   struct SurfaceStats {
     std::size_t tiles{}, polygons{}, vertices{}, detailTriangles{};
   };
@@ -107,6 +121,18 @@ export namespace Dot::Navigation {
      * 显式有界投影，仅返回完整路径；断开的目标、搜索/拐点容量不足或缺失多边形明确失败，
      * 不伪造完整路线。端点显示实际投影，移动仍以物理为准。 */
     [[nodiscard]] auto route(const RouteQuery& query) const -> Core::Result<Route>;
+    /** Connected local walls for velocity planning; <=256 visited polygons/512 segments.
+     * Exhaustion fails, never drops unknown obstacles. 连通局部边界用于速度规划，至多访问
+     * 256 多边形/512 边段；容量不足明确失败，不丢弃未知障碍。 */
+    [[nodiscard]] auto boundary(Math::Vec3 position, float radius,
+                                Math::Vec3 searchExtent = {.5F, .5F, .5F}) const
+        -> Core::Result<LocalBoundary>;
+    /** Trace a center-line through walkable polygons, retaining projected floor height.
+     * Does not sweep a capsule or move physics. <=256 corridor entries; errors are explicit.
+     * 沿可行走多边形追踪中心线并返回投影地面高度，不扫掠胶囊或移动物理；至多 256 路径项。 */
+    [[nodiscard]] auto trace(Math::Vec3 start, Math::Vec3 goal,
+                             Math::Vec3 searchExtent = {.5F, .5F, .5F}) const
+        -> Core::Result<SurfaceTrace>;
 
   private:
     struct Data;

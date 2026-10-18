@@ -617,6 +617,165 @@ namespace Dot::Navigation {
     }
   }
 
+  auto Surface::boundary(Math::Vec3 position, float radius, Math::Vec3 searchExtent) const
+      -> Core::Result<LocalBoundary> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Navigation surface is empty/moved");
+    }
+
+    if (!validPoint(position) || !validPoint(searchExtent) || !std::isfinite(radius) || radius < .1F
+        || radius > 8 || searchExtent.x <= 0 || searchExtent.y <= 0 || searchExtent.z <= 0
+        || searchExtent.x > 10 || searchExtent.y > 10 || searchExtent.z > 10) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid local navigation boundary query");
+    }
+
+    try {
+      std::unique_ptr<dtNavMeshQuery, decltype(&dtFreeNavMeshQuery)> query(dtAllocNavMeshQuery(),
+                                                                           dtFreeNavMeshQuery);
+
+      if (!query || dtStatusFailed(query->init(m_data->native.get(), 2048))) {
+        return Core::fail(Core::ErrorCode::External, "Allocate local navigation query failed");
+      }
+
+      const auto input = components(position), extent = components(searchExtent);
+      std::array<float, 3> center{};
+      dtPolyRef first{};
+      dtQueryFilter filter;
+      const auto nearest
+          = query->findNearestPoly(input.data(), extent.data(), &filter, &first, center.data());
+
+      if (dtStatusFailed(nearest) || !first) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "No local navigation polygon within projection extent");
+      }
+
+      std::array<dtPolyRef, 256> polygons{};
+      int count{};
+      const auto found = query->findLocalNeighbourhood(first, center.data(), radius, &filter,
+                                                       polygons.data(), nullptr, &count, 256);
+
+      if (dtStatusFailed(found) || dtStatusDetail(found, DT_BUFFER_TOO_SMALL | DT_OUT_OF_NODES)) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Local navigation polygon capacity exhausted");
+      }
+
+      LocalBoundary result{{center[0], center[1], center[2]}, {}};
+
+      for (int index = 0; index < count; ++index) {
+        std::array<float, 32 * 6> segments{};
+        int size{};
+        const auto walls = query->getPolyWallSegments(polygons[static_cast<std::size_t>(index)],
+                                                      &filter, segments.data(), nullptr, &size, 32);
+
+        if (dtStatusFailed(walls) || dtStatusDetail(walls, DT_BUFFER_TOO_SMALL)) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Navigation polygon wall capacity exhausted");
+        }
+
+        for (int edge = 0; edge < size; ++edge) {
+          const auto offset = static_cast<std::size_t>(edge) * 6;
+          const Math::Vec3 a{segments[offset], segments[offset + 1], segments[offset + 2]};
+          const Math::Vec3 b{segments[offset + 3], segments[offset + 4], segments[offset + 5]};
+          const double x = double(b.x) - a.x, z = double(b.z) - a.z;
+          const auto length = x * x + z * z;
+          const auto parameter
+              = length > 0
+                    ? std::clamp(
+                          ((double(center[0]) - a.x) * x + (double(center[2]) - a.z) * z) / length,
+                          0.0, 1.0)
+                    : 0;
+          const auto dx = double(center[0]) - a.x - parameter * x;
+          const auto dz = double(center[2]) - a.z - parameter * z;
+
+          if (length == 0 || dx * dx + dz * dz > double(radius) * radius
+              || area(result.position, a, b) > 1e-7) {
+            continue;
+          }
+
+          if (result.walls.size() == 512) {
+            return Core::fail(Core::ErrorCode::Unavailable,
+                              "Local navigation wall capacity exhausted");
+          }
+
+          result.walls.push_back({a, b});
+        }
+      }
+
+      return result;
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Read local navigation walls: " + std::string(error.what()));
+    }
+  }
+
+  auto Surface::trace(Math::Vec3 start, Math::Vec3 goal, Math::Vec3 searchExtent) const
+      -> Core::Result<SurfaceTrace> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Navigation surface is empty/moved");
+    }
+
+    if (!validPoint(start) || !validPoint(goal) || !validPoint(searchExtent) || searchExtent.x <= 0
+        || searchExtent.y <= 0 || searchExtent.z <= 0 || searchExtent.x > 10 || searchExtent.y > 10
+        || searchExtent.z > 10) {
+      return Core::fail(Core::ErrorCode::InvalidArgument, "Invalid navigation surface trace");
+    }
+
+    try {
+      std::unique_ptr<dtNavMeshQuery, decltype(&dtFreeNavMeshQuery)> query(dtAllocNavMeshQuery(),
+                                                                           dtFreeNavMeshQuery);
+
+      if (!query || dtStatusFailed(query->init(m_data->native.get(), 2048))) {
+        return Core::fail(Core::ErrorCode::External, "Allocate navigation trace failed");
+      }
+
+      const auto input = components(start), end = components(goal),
+                 extent = components(searchExtent);
+      std::array<float, 3> projected{}, normal{};
+      dtPolyRef first{};
+      dtQueryFilter filter;
+      const auto nearest
+          = query->findNearestPoly(input.data(), extent.data(), &filter, &first, projected.data());
+
+      if (dtStatusFailed(nearest) || !first) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "No navigation trace start within projection extent");
+      }
+
+      std::array<dtPolyRef, 256> path{};
+      int count{};
+      float hit{};
+      const auto traced = query->raycast(first, projected.data(), end.data(), &filter, &hit,
+                                         normal.data(), path.data(), &count, 256);
+
+      if (dtStatusFailed(traced) || dtStatusDetail(traced, DT_BUFFER_TOO_SMALL | DT_OUT_OF_NODES)
+          || count == 0) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Navigation trace corridor failed/exhausted");
+      }
+
+      const auto t = std::min(hit, 1.F);
+      std::array<float, 3> point{projected[0] + (end[0] - projected[0]) * t,
+                                 projected[1] + (end[1] - projected[1]) * t,
+                                 projected[2] + (end[2] - projected[2]) * t};
+      std::array<float, 3> closest{};
+
+      if (dtStatusFailed(query->closestPointOnPoly(path[static_cast<std::size_t>(count - 1)],
+                                                   point.data(), closest.data(), nullptr))) {
+        return Core::fail(Core::ErrorCode::Unavailable, "Navigation trace floor point unavailable");
+      }
+
+      return SurfaceTrace{
+          {closest[0], closest[1], closest[2]},
+          {normal[0], normal[1], normal[2]},
+          hit >= 1 && std::abs(double(closest[1]) - goal.y) <= .35
+              && std::hypot(double(closest[0]) - goal.x, double(closest[2]) - goal.z) <= .001};
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Trace navigation surface: " + std::string(error.what()));
+    }
+  }
+
   auto Surface::build(const InputGeometry& geometry, const BuildSettings& settings,
                       std::stop_token stop) -> Core::Result<Surface> {
     auto checked = validateSettings(settings);

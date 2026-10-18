@@ -1,7 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <future>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -15,6 +18,7 @@ import Dot.Navigation.Geometry;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.Physics.Body;
+import Dot.Physics.Character;
 import Dot.Core.Result;
 
 namespace {
@@ -73,9 +77,13 @@ TEST_CASE("navigation_host.actual_character_route_is_read_only_owned_and_profile
   Fixture f;
   auto source = f.source();
   auto bindings = source.bindings().value();
-  REQUIRE(bindings.size() == 2);
-  CHECK(std::ranges::all_of(
-      bindings, [](const auto& value) { return value.access == Script::HostAccess::ReadOnly; }));
+  REQUIRE(bindings.size() == 6);
+  CHECK(std::ranges::all_of(bindings, [](const auto& value) {
+    return value.access
+           == ((value.name == "navigation.move" || value.name == "navigation.stop")
+                   ? Script::HostAccess::ReadWrite
+                   : Script::HostAccess::ReadOnly);
+  }));
   const auto before = World::encodeScene(*f.scene).value();
   auto value = call(bindings, "navigation.route", f.args(f.actor));
   REQUIRE_MESSAGE(value, (value ? "" : value.error().message));
@@ -192,4 +200,161 @@ TEST_CASE("navigation_host.native_scaled_profile_keeps_step_height_in_world_metr
   auto retained = std::move(*f.physics);
   CHECK_FALSE(f.physics->characterReader());
   REQUIRE(reader(f.actor));
+}
+
+TEST_CASE("navigation_host.movement_uses_actual_physics_and_rejects_partial_batches") {
+  Fixture f;
+  REQUIRE(f.scene->setTransform(f.actor, {{-4, 0, -3}}));
+  REQUIRE(f.physics->synchronize());
+  auto source = f.source();
+  const auto id = f.args(f.actor)[0];
+  auto control = f.physics->characterControl().value();
+  const auto bindingsBefore = source.bindings().value();
+  CHECK_FALSE(call(
+      bindingsBefore, "navigation.move",
+      Json::array(
+          {id, {{"x", 4}, {"y", 0}, {"z", -3}}, 1.2, {{"goal", {{"x", 0}, {"y", 0}, {"z", 0}}}}})));
+  const auto before = World::encodeScene(*f.scene).value();
+  auto requested
+      = source.perform(Json{{"command", "move"},
+                            {"entity", id},
+                            {"value", {{"goal", {{"x", 4}, {"y", 0}, {"z", -3}}}, {"speed", 1.2}}}}
+                           .dump());
+  REQUIRE_MESSAGE(requested, (requested ? "" : requested.error().message));
+  CHECK_FALSE(source.advance(0));
+  REQUIRE(source.advance(1));
+  CHECK(World::encodeScene(*f.scene).value() == before);
+  auto observations = control.snapshot().value();
+  REQUIRE(observations.size() == 1);
+  CHECK(observations[0].config.position.x == -4);
+  auto invalid
+      = source.perform(Json{{"command", "move"},
+                            {"entity", id},
+                            {"value", {{"goal", {{"x", 40}, {"y", 0}, {"z", -3}}}, {"speed", 1.2}}}}
+                           .dump());
+  CHECK_FALSE(invalid);
+  CHECK(Json::parse(*source.perform(
+            Json{{"command", "state"}, {"entity", id}}.dump()))["agent"]["goal"]["x"]
+        == 4);
+  const std::array bad{Script::CharacterIntent{f.actor, {{-1, 0, 0}}, {}},
+                       Script::CharacterIntent{{f.actor.scene + 1, f.actor.value}, {}, {}}};
+  CHECK_FALSE(control.apply(bad));
+  REQUIRE(f.physics->advance(1));
+  CHECK(control.snapshot()->front().measuredVelocity.x > 0);
+
+  for (int frame = 0; frame < 600; ++frame) {
+    REQUIRE(source.advance(1.0 / 60));
+    REQUIRE(f.physics->advance(1.0 / 60));
+  }
+
+  const auto state
+      = Json::parse(*source.perform(Json{{"command", "state"}, {"entity", id}}.dump()))["agent"];
+  CHECK(state["phase"] == "arrived");
+  CHECK(std::abs(control.snapshot()->front().config.position.x - 4) <= .12F);
+  REQUIRE(source.perform(Json{{"command", "stop"}, {"entity", id}}.dump()));
+  CHECK(Json::parse(*source.perform(Json{{"command", "state"}, {"entity", id}}.dump()))["agent"]
+            .is_null());
+  REQUIRE(source.perform(Json{{"command", "stop"}, {"entity", id}}.dump()));
+  auto bindings = source.bindings().value();
+  source.retire();
+  CHECK_FALSE(call(bindings, "navigation.agents", Json::array()));
+  CHECK_FALSE(source.advance(1.0 / 60));
+}
+
+TEST_CASE("navigation_host.reciprocal_characters_pass_using_measured_simultaneous_snapshots") {
+  Fixture f;
+  REQUIRE(f.scene->setTransform(f.actor, {{-3, 0, -3}}));
+  const auto peer = f.scene->createEntity("Peer").value();
+  REQUIRE(f.scene->setCharacterController(peer, World::CharacterController{}));
+  REQUIRE(f.scene->setTransform(peer, {{3, 0, -3}}));
+  REQUIRE(f.physics->synchronize());
+  auto source = f.source();
+
+  for (const auto actor : {f.actor, peer}) {
+    REQUIRE(source.perform(Json{
+        {"command", "move"},
+        {"entity", f.args(actor)[0]},
+        {"value",
+         {{"goal", {{"x", actor == f.actor ? 3 : -3}, {"y", 0}, {"z", -3}}},
+          {"speed", 1.2}}}}.dump()));
+  }
+
+  float clearance = 10;
+  bool detoured{};
+
+  for (int frame = 0; frame < 600; ++frame) {
+    REQUIRE(source.advance(1.0 / 60));
+    REQUIRE(f.physics->advance(1.0 / 60));
+    const auto actual = f.physics->characterControl()->snapshot().value();
+    const auto a = actual[0].config.position, b = actual[1].config.position;
+    clearance = std::min(clearance, std::hypot(a.x - b.x, a.z - b.z));
+    detoured = detoured || std::abs(a.z + 3) > .2F || std::abs(b.z + 3) > .2F;
+  }
+
+  CHECK(clearance > .68F);
+  CHECK(detoured);
+
+  for (const auto actor : {f.actor, peer}) {
+    const auto state = Json::parse(
+        *source.perform(Json{{"command", "state"}, {"entity", f.args(actor)[0]}}.dump()))["agent"];
+    INFO(state.dump());
+    CHECK(state["phase"] == "arrived");
+  }
+}
+
+TEST_CASE("navigation_host.occupied_goal_stale_geometry_and_native_profile_fail_honestly") {
+  Fixture f;
+  REQUIRE(f.scene->setTransform(f.actor, {{-3, 0, -3}}));
+  const auto peer = f.scene->createEntity("Standing peer").value();
+  REQUIRE(f.scene->setCharacterController(peer, World::CharacterController{}));
+  REQUIRE(f.scene->setTransform(peer, {{0, 0, -3}}));
+  REQUIRE(f.physics->synchronize());
+  auto source = f.source();
+  const Json request{{"command", "move"},
+                     {"entity", f.args(f.actor)[0]},
+                     {"value", {{"goal", {{"x", 0}, {"y", 0}, {"z", -3}}}, {"speed", 1.2}}}};
+  REQUIRE(source.perform(request.dump()));
+
+  for (int frame = 0; frame < 360; ++frame) {
+    REQUIRE(source.advance(1.0 / 60));
+    REQUIRE(f.physics->advance(1.0 / 60));
+  }
+
+  const auto query = Json{{"command", "state"}, {"entity", f.args(f.actor)[0]}}.dump();
+  auto state = Json::parse(*source.perform(query))["agent"];
+  CHECK(state["phase"] == "moving");
+  CHECK(state["distance"].get<float>() > .65F);
+  REQUIRE(f.scene->setTransform(peer, {{0, 0, -5}}));
+  REQUIRE(f.physics->synchronize());
+
+  for (int frame = 0; frame < 180; ++frame) {
+    REQUIRE(source.advance(1.0 / 60));
+    REQUIRE(f.physics->advance(1.0 / 60));
+  }
+
+  CHECK(Json::parse(*source.perform(query))["agent"]["phase"] == "arrived");
+  REQUIRE(f.scene->setTransform(f.wall, {{0, 1.5F, 1}}));
+  CHECK(Json::parse(*source.perform(query))["agent"]["phase"] == "failed");
+  REQUIRE(f.physics->synchronize());
+  REQUIRE(source.advance(1.0 / 60));
+  CHECK(Json::parse(*source.perform(query))["agent"]["error"]["code"] == "InvalidState");
+  REQUIRE(f.scene->setTransform(f.wall, {{0, 1.5F, 0}, {}, {1.5F, 3, 1.5F}}));
+  REQUIRE(f.physics->synchronize());
+  REQUIRE(source.perform(request.dump()));
+  auto profile = *f.scene->entity(f.actor)->character;
+  profile.radius = .6F;
+  REQUIRE(f.scene->setCharacterController(f.actor, profile));
+  REQUIRE(f.physics->synchronize());
+  REQUIRE(source.advance(1.0 / 60));
+  CHECK(Json::parse(*source.perform(query))["agent"]["error"]["code"] == "InvalidArgument");
+  auto bad = request;
+  bad["value"]["typo"] = 1;
+  CHECK_FALSE(source.perform(bad.dump()));
+  bad = request;
+  bad["entity"]["scene"] = "999999";
+  CHECK_FALSE(source.perform(bad.dump()));
+  CHECK_FALSE(source.perform(R"({"command":"agents","extra":0})"));
+  CHECK_FALSE(source.perform(R"({"command":"unknown"})"));
+  CHECK_FALSE(source.perform("[]"));
+  CHECK_FALSE(source.perform("{}"));
 }

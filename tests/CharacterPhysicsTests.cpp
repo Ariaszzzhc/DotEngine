@@ -104,6 +104,7 @@ TEST_CASE("character.physics_jump_is_single_use_and_air_requests_do_not_buffer")
   REQUIRE(world.setCharacterInput(character, {{4, 0, 0}, true}));
   REQUIRE(world.teleportCharacter(character, {0, 0, 0}));
   CHECK(world.character(character)->velocity == Math::Vec3{});
+  CHECK(world.character(character)->measuredVelocity == Math::Vec3{});
   step(world);
   CHECK(world.character(character)->position.y == doctest::Approx(0).epsilon(.04));
   CHECK(world.character(character)->position.x == doctest::Approx(0).epsilon(.001));
@@ -120,6 +121,9 @@ TEST_CASE("character.physics_wall_sliding_and_ceiling_block_capsule_sweeps") {
   CHECK(blocked.position.x > 1.3F);
   CHECK(blocked.position.x < 1.6F);
   CHECK(blocked.position.z > 1.8F);
+  CHECK(blocked.velocity.x == doctest::Approx(3));
+  CHECK(std::abs(blocked.measuredVelocity.x) < .01F);
+  CHECK(blocked.measuredVelocity.z == doctest::Approx(1).epsilon(.002));
   REQUIRE(world.teleportCharacter(character, {0, 0, 0}, 90));
   REQUIRE(world.createBody(box({0, 2.25F, 0}, {1, .15F, 1})));
   REQUIRE(world.setCharacterInput(character, {{}, true}));
@@ -200,6 +204,8 @@ TEST_CASE("character.physics_moving_platform_velocity_is_actual_support_motion")
   CHECK(state.position.x == doctest::Approx(1).epsilon(.03));
   CHECK(state.groundCollider == std::optional<ColliderId>{platform});
   CHECK(state.groundVelocity.x == doctest::Approx(1));
+  CHECK(state.measuredVelocity.x == doctest::Approx(1).epsilon(.002));
+  CHECK(std::abs(state.measuredVelocity.y) < .002F);
 }
 
 TEST_CASE("character.physics_handles_moves_capacity_and_thread_failures_preserve_state") {

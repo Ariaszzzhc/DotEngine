@@ -200,6 +200,9 @@ export namespace Dot::Project {
     /** Current scene pause service; replacement starts a fresh unpaused clock.
      * 当前场景暂停服务；场景替换建立新的非暂停时钟。 */
     [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
+    /** Current running scene movement, shared by scripts, GUI and agent control.
+     * 当前运行场景的移动操作，由脚本、图形界面和智能体控制共用。 */
+    [[nodiscard]] auto navigation(std::string_view request) -> Core::Result<std::string>;
     /** Current scene-local UI; reacquire after replacement. Retained handles
      * become read-only after retirement. 当前场景 UI，替换后须重新获取；退役句柄仅可读。 */
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;

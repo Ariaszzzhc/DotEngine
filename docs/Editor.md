@@ -2963,10 +2963,16 @@ See [key/tangent and native resample contracts](Animation.md#keying-an-ik-pose--
 普通动画资源流程，不新增运行时 IK 约束或私有片段格式。
 
 
-## Static navigation / 静态导航
+## Native navigation / 原生导航
 
 Environment → Navigation bakes actual static collision geometry on a cancellable CPU
 worker, previews polygons/routes, publishes a new `.dotnav`, and binds it through
 normal scene history. The GUI and strict `begin-navigation`, `navigation-status`,
 `query-navigation`, `cancel-navigation`, `publish-navigation` and `set-navigation`
 requests share product implementations. See [contracts and complete requests](Navigation.md).
+
+During running Play, the same panel lists native characters by name/ID and provides
+world-space goal, speed, Move/Stop and observational movement states. These controls
+call the strict scoped `navigation` envelope shared with standalone player control and
+script bindings. Pause retains goals without advancing; single-step advances native
+planning and physics once. See [movement commands and limits](Navigation.md#runtime--运行时).

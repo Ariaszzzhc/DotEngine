@@ -11,8 +11,6 @@ interface PatrolState {
   target: 0|1;
   remaining: number;
   visits: number;
-  points: Vec3[];
-  corner: number;
   source: string;
   failure: string|null;
 }
@@ -20,19 +18,15 @@ interface PatrolState {
 const stopped: Vec3 = {x: 0, y: 0, z: 0};
 
 /**
- * Authored station intent uses native capsule collision and measured native velocity for gait.
- * Native navigation supplies corners around static obstacles; native physics decides movement.
- * Blocked or unavailable routes cannot report arrival. No script collision/pathfinding solver.
- * 原生导航提供绕开静态障碍的拐点，原生物理决定实际移动；受阻或不可用路线不能宣告到达，
- * 脚本不实现碰撞或寻路求解器。
+ * Station intent delegates path following and local avoidance to the native service.
+ * Actual grounded physics feet decide arrival; animation reads measured native velocity.
+ * 站点意图委托原生服务跟随路径并局部避让；实际物理着地脚底决定到达，动画读取实际速度。
  */
 export class CrewPatrol extends ScriptComponent<Settings> {
   #model!: Entity;
   #target: 0|1 = 1;
   #remaining = 0;
   #visits = 0;
-  #points: Vec3[] = [];
-  #corner = 0;
   #source = '';
   #failure: string|null = null;
 
@@ -75,19 +69,10 @@ export class CrewPatrol extends ScriptComponent<Settings> {
 
   private plan(): void {
     const target = this.#target === 0 ? this.properties.stationA : this.properties.stationB;
-    this.#corner = 0;
-    this.#points = [];
     this.#failure = null;
 
     try {
-      const route = navigation.route(this.self.id, target);
-
-      if (Math.hypot(route.goal.x - target.x, route.goal.z - target.z) > .1
-          || Math.abs(route.goal.y - target.y) > .35) {
-        throw Error('Station is outside the baked walkable surface');
-      }
-
-      this.#points = route.points.map(point => ({...point}));
+      navigation.move(this.self.id, target, this.properties.speed);
     } catch (error) {
       this.#failure = String(error).slice(0, 1024);
     }
@@ -121,59 +106,33 @@ export class CrewPatrol extends ScriptComponent<Settings> {
     }
 
     const target = this.#target === 0 ? this.properties.stationA : this.properties.stationB;
-    const state = this.self.characterState;
-    const distance = Math.hypot(target.x - state.position.x, target.z - state.position.z);
+    const state = navigation.state(this.self.id);
 
-    if (distance <= .12 && Math.abs(target.y - state.position.y) <= .35
-        && state.ground === 'grounded') {
-      this.self.moveCharacter(stopped);
+    if (!state || state.phase === 'failed'
+        || state.goal.x !== Math.fround(target.x) || state.goal.y !== Math.fround(target.y)
+        || state.goal.z !== Math.fround(target.z)) {
+      navigation.stop(this.self.id);
+      this.#failure = state?.error?.message ?? 'Maintenance station movement was replaced';
+      this.report();
+      return;
+    }
+
+    if (state.phase === 'arrived') {
+      navigation.stop(this.self.id);
       this.#remaining = this.properties.workSeconds;
       this.#visits++;
-      this.#points = [];
-      this.#corner = 0;
       this.#model.controlAnimationLayer('Inspection', {action: 'weight', weight: 0});
       this.#model.controlAnimationLayer('Inspection', {action: 'play', restart: true});
       this.#model.controlAnimationLayer('Inspection', {action: 'fade', weight: 1, seconds: .12, stop: false});
       this.report();
       return;
     }
-
-    while (this.#corner < this.#points.length) {
-      const point = this.#points[this.#corner];
-
-      if (Math.hypot(point.x - state.position.x, point.z - state.position.z) > .06
-          || Math.abs(point.y - state.position.y) > .35) {
-        break;
-      }
-
-      ++this.#corner;
-    }
-
-    const point = this.#points[this.#corner];
-
-    if (!point) {
-      this.self.moveCharacter(stopped);
-      this.#failure = 'Native route ended outside station arrival tolerance';
-      this.report();
-      return;
-    }
-
-    const x = point.x - state.position.x;
-    const z = point.z - state.position.z;
-    const cornerDistance = Math.hypot(x, z);
-    const speed = cornerDistance > 0
-        ? Math.min(this.properties.speed, cornerDistance / Math.max(seconds, 1e-6)) / cornerDistance : 0;
-    this.self.moveCharacter({x: x * speed, y: 0, z: z * speed});
-
-    if (cornerDistance > .01) {
-      this.self.setCharacterYaw(Math.atan2(-x, -z) * 180 / Math.PI);
-    }
   }
 
   onUpdate(): void {
     const state = this.self.characterState;
     this.#model.setAnimationParameters({
-      Speed: Math.hypot(state.velocity.x, state.velocity.z),
+      Speed: Math.hypot(state.measuredVelocity.x, state.measuredVelocity.z),
       Grounded: state.ground === 'grounded',
       Vertical: state.velocity.y,
     });
@@ -181,7 +140,6 @@ export class CrewPatrol extends ScriptComponent<Settings> {
 
   onSaveState(): PatrolState {
     return {target: this.#target, remaining: this.#remaining, visits: this.#visits,
-      points: this.#points.map(point => ({...point})), corner: this.#corner,
       source: this.#source, failure: this.#failure};
   }
 
@@ -191,25 +149,19 @@ export class CrewPatrol extends ScriptComponent<Settings> {
     if (!state || (state.target !== 0 && state.target !== 1)
         || !Number.isFinite(state.remaining) || state.remaining < 0
         || state.remaining > this.properties.workSeconds || !Number.isSafeInteger(state.visits)
-        || state.visits < 0 || state.source !== this.#source || !Array.isArray(state.points)
-        || state.points.length > 256 || !Number.isSafeInteger(state.corner) || state.corner < 0
-        || state.corner > state.points.length || (state.failure !== null
-            && (typeof state.failure !== 'string' || !state.failure.length || state.failure.length > 1024))
-        || state.points.some(point => !point || ![point.x, point.y, point.z].every(
-            value => Number.isFinite(value) && Math.abs(value) <= 1000000))
-        || (state.remaining === 0 && state.failure === null && state.corner === state.points.length)) {
+        || state.visits < 0 || state.source !== this.#source || (state.failure !== null
+            && (typeof state.failure !== 'string' || !state.failure.length || state.failure.length > 1024))) {
       throw Error('Invalid maintenance crew reload state');
     }
 
     this.#target = state.target;
     this.#remaining = state.remaining;
     this.#visits = state.visits;
-    this.#points = state.points.map(point => ({...point}));
-    this.#corner = state.corner;
     this.#failure = state.failure;
   }
 
   onStop(): void {
+    navigation.stop(this.self.id);
     this.self.moveCharacter(stopped);
     this.#model.pauseAnimation();
     gameState.remove('crew:' + this.self.id.value);

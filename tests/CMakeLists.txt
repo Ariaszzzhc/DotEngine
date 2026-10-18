@@ -31,6 +31,7 @@ add_executable(DotUnitTests
     MathTests.cpp
     GeometryTests.cpp
     NavigationSurfaceTests.cpp
+    NavigationSteeringTests.cpp
     NavigationGeometryTests.cpp
     MeshCodecTests.cpp
     PostProcessTests.cpp

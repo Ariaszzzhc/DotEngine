@@ -819,6 +819,17 @@ namespace Dot::Editor {
                      : std::unexpected(checked.error());
   }
 
+  auto PlaySession::navigation(std::string_view request) -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");
+    }
+
+    auto checked = m_impl->check();
+    return checked && m_impl->m_session ? m_impl->m_session->navigation(request)
+           : checked ? Core::fail(Core::ErrorCode::InvalidState, "Play navigation is not prepared")
+                     : std::unexpected(checked.error());
+  }
+
   auto PlaySession::hud() const -> Core::Result<Script::Hud> {
     if (!m_impl) {
       return Core::fail(Core::ErrorCode::InvalidState, "Play session was moved");

@@ -1894,6 +1894,7 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
   REQUIRE(clock.perform(R"({"command":"set-paused","paused":true})"));
   report(session.update(0));
   const auto frozen = World::encodeScene(*scene).value();
+  const auto nativeMovement = session.navigation(R"({"command":"agents"})").value();
   std::vector<std::string> states;
 
   for (const auto model : models) {
@@ -1910,6 +1911,7 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
   CHECK(completed->reload->migrated == 8);
   CHECK(World::encodeScene(*scene).value() == frozen);
   CHECK(crewData(session) == data);
+  CHECK(session.navigation(R"({"command":"agents"})").value() == nativeMovement);
 
   for (std::size_t i = 0; i < models.size(); ++i) {
     CHECK(session.inspectAnimation(models[i]).value() == states[i]);
@@ -1926,32 +1928,18 @@ TEST_CASE("prism.independent_crew_patrols_and_paused_reload_retain_native_poses_
   CHECK(f.project.files()->readText(crewScene).value() == authored);
 }
 
-TEST_CASE("prism.peer_blocked_crew_cannot_claim_arrival_and_resumes_when_player_clears") {
+TEST_CASE("prism.occupied_station_cannot_claim_arrival_and_resumes_when_player_clears") {
   Fixture f;
   selectCrew(f);
   auto authored = f.project.loadStartup().value();
   const auto player = authored.findEntities("Player")->front();
-  REQUIRE(authored.setTransform(player, {{-4, 0, -2.6F}}));
-  const auto observer = authored.createEntity("Crew contact observer").value();
-  REQUIRE(authored.setScript(observer, World::ScriptComponent{"crew-contact.ts", "CrewContact"}));
+  REQUIRE(authored.setTransform(player, {{-4, 0, 2}}));
+  const auto peer = authored.findEntities("Crew 2")->front();
+  REQUIRE(authored.setTransform(peer, {{-5, 0, -4}}));
+  auto script = *authored.entity(peer)->script;
+  script.enabled = false;
+  REQUIRE(authored.setScript(peer, script));
   REQUIRE(f.project.saveStartup(authored));
-  REQUIRE(f.project.files()->writeTextAtomic("scripts/crew-contact.ts", R"ts(
-import {gameState, physics, scene, ScriptComponent} from 'dot:engine';
-export class CrewContact extends ScriptComponent {
-  #player = scene.findEntities('Player')[0]!.id.value;
-  #crew = scene.findEntities('Crew 1')[0]!.id.value;
-  #seen = false;
-  onFixedUpdate(): void {
-    if (!this.#seen && physics.contacts.events.some(event => event.geometry?.kind === 'character'
-        && event.phase !== 'end'
-        && ((event.first.value === this.#player && event.second.value === this.#crew)
-            || (event.second.value === this.#player && event.first.value === this.#crew)))) {
-      this.#seen = true;
-      gameState.set('crewPeerContact', true);
-    }
-  }
-}
-)ts"));
   auto session = f.session();
   report(session.start());
   Driver driver(session);
@@ -1962,10 +1950,9 @@ export class CrewContact extends ScriptComponent {
 
   const auto crew = entity(session, "Crew 1");
   const auto hero = entity(session, "Player");
-  auto data = crewData(session);
-  CHECK(data.at("crewPeerContact") == true);
+  const auto data = crewData(session);
   CHECK(data.at("crew:" + std::to_string(crew.id.value))["visits"] == 0);
-  CHECK(crew.transform.position.z < -3.1F);
+  CHECK(data.at("crew:" + std::to_string(crew.id.value))["routeFailure"].is_null());
   CHECK(std::hypot(crew.transform.position.x - hero.transform.position.x,
                    crew.transform.position.z - hero.transform.position.z)
         > .65F);
@@ -1983,6 +1970,44 @@ export class CrewContact extends ScriptComponent {
   report(session.close());
 }
 
+TEST_CASE("prism.crossing_patrols_bypass_a_standing_player_with_real_capsule_clearance") {
+  Fixture f;
+  selectCrew(f);
+  auto authored = f.project.loadStartup().value();
+  const auto player = authored.findEntities("Player")->front();
+  REQUIRE(authored.setTransform(player, {{-4, 0, 0}}));
+  REQUIRE(f.project.saveStartup(authored));
+  auto session = f.session();
+  report(session.start());
+  Driver driver(session);
+  float clearance = 10;
+  bool detoured{};
+
+  for (int frame = 0; frame < 600; ++frame) {
+    driver.frame();
+    const auto hero = entity(session, "Player").transform.position;
+    const auto first = entity(session, "Crew 1").transform.position;
+    const auto second = entity(session, "Crew 2").transform.position;
+    clearance = std::min({clearance, std::hypot(first.x - hero.x, first.z - hero.z),
+                          std::hypot(second.x - hero.x, second.z - hero.z),
+                          std::hypot(first.x - second.x, first.z - second.z)});
+    detoured = detoured || std::abs(first.x + 4) > .3F || std::abs(second.x + 4) > .3F;
+  }
+
+  CHECK(detoured);
+  CHECK(clearance > .65F);
+
+  for (const auto name : {"Crew 1", "Crew 2"}) {
+    const auto id = entity(session, name).id.value;
+    const auto state = crewData(session).at("crew:" + std::to_string(id));
+    INFO(state.dump());
+    CHECK(state["visits"].get<unsigned>() >= 1);
+    CHECK(state["routeFailure"].is_null());
+  }
+
+  report(session.close());
+}
+
 TEST_CASE("prism.crew_checkpoint_is_scene_scoped_and_survives_a_fresh_native_session") {
   Fixture f;
   selectCrew(f);
@@ -1991,6 +2016,16 @@ TEST_CASE("prism.crew_checkpoint_is_scene_scoped_and_survives_a_fresh_native_ses
   auto session = f.session(false, saves);
   report(session.start());
   Driver driver(session);
+  auto control = Project::PlayerControl::create(session).value();
+  const auto oldScope = std::to_string(session.scene().value()->id());
+  const Json navigation{
+      {"command", "navigation"}, {"scope", oldScope}, {"value", {{"command", "agents"}}}};
+  const auto initialAgents = control.perform(navigation.dump());
+  REQUIRE(initialAgents);
+  CHECK(Json::parse(*initialAgents)["result"]["agents"].size() == 7);
+  auto badNavigation = navigation;
+  badNavigation["extra"] = true;
+  CHECK_FALSE(control.perform(badNavigation.dump()));
 
   for (int frame = 0; frame < 25; ++frame) {
     driver.frame({Platform::Key::W});
@@ -2008,6 +2043,10 @@ TEST_CASE("prism.crew_checkpoint_is_scene_scoped_and_survives_a_fresh_native_ses
   REQUIRE(session.stats()->transition);
   REQUIRE(Tests::awaitScene(session, session.stats()->transition->id));
   driver.frame();
+  CHECK_FALSE(control.perform(navigation.dump()));
+  auto currentNavigation = navigation;
+  currentNavigation["scope"] = std::to_string(session.scene().value()->id());
+  CHECK(Json::parse(control.perform(currentNavigation.dump()).value())["result"]["agents"].empty());
   const auto before = entity(session, "Player").transform.position;
   driver.publish({Platform::Key::F7});
   report(session.update(0));
@@ -2022,6 +2061,8 @@ TEST_CASE("prism.crew_checkpoint_is_scene_scoped_and_survives_a_fresh_native_ses
   }
   CHECK(saves.readText("relay-checkpoint.dotsave").value() == bytes);
   report(session.close());
+  CHECK_FALSE(session.navigation(R"({"command":"agents"})"));
+  CHECK_FALSE(control.perform(currentNavigation.dump()));
   auto fresh = f.session(false, saves);
   report(fresh.start());
   Driver resumed(fresh);

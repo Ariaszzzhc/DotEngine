@@ -16,9 +16,33 @@ import Dot.Physics.Mesh;
 import Dot.Physics.Character;
 import Dot.World.Scene;
 import Dot.Physics.World;
+import Dot.Math;
 
 export namespace Dot::Script {
   using CharacterReader = std::function<Core::Result<Physics::CharacterConfig>(World::EntityId)>;
+
+  struct ControlledCharacter {
+    World::EntityId entity;
+    Physics::CharacterConfig config;
+    Math::Vec3 measuredVelocity;
+    Physics::GroundState ground;
+  };
+
+  struct CharacterIntent {
+    World::EntityId entity;
+    Physics::CharacterInput input;
+    std::optional<float> yawDegrees;
+  };
+
+  /** Owned native controller access. Snapshot observes synchronized real bodies;
+   * apply validates the complete <=256-character batch before native writes. A
+   * failure after mutation faults physics; no pose is integrated by this interface.
+   * 拥有的原生控制访问，快照观测已同步实际角色；写入前校验完整的至多 256 角色意图。
+   * 修改后失败使物理故障，本接口不积分任何位姿。 */
+  struct CharacterControl {
+    std::function<Core::Result<std::vector<ControlledCharacter>>()> snapshot;
+    std::function<Core::Result<void>(std::span<const CharacterIntent>)> apply;
+  };
 
   struct PhysicsSourceConfig {
     Physics::WorldConfig simulation;
@@ -78,6 +102,11 @@ export namespace Dot::Script {
      * Reject unsynchronized authoring and faulted physics. 拥有的只读原生读取器，跨源移动/
      * 销毁保留所有权，拒绝未同步编辑及故障物理。 */
     [[nodiscard]] auto characterReader() const -> Core::Result<CharacterReader>;
+    /** Owned native snapshot and <=256-intent writer. Validate the whole batch before
+     * mutation; a later native write failure faults the source. No pose integration.
+     * 拥有的原生快照与至多 256 个意图写入器；整批校验后才修改，后续写入失败使源故障，
+     * 不积分位姿。 */
+    [[nodiscard]] auto characterControl() const -> Core::Result<CharacterControl>;
 
   private:
     [[nodiscard]] auto synchronizeSource(

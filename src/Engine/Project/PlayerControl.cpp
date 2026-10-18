@@ -218,6 +218,24 @@ namespace Dot::Project {
                        : std::unexpected(encoded.error());
       }
 
+      if (command == "navigation") {
+        Codec::requireFields(value, {"command", "scope", "value"});
+
+        if (Codec::id(value["scope"]) != m_impl->m_scope || m_impl->m_closing
+            || stats->state != SessionState::Running) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Navigation requires current running scope");
+        }
+
+        const auto inner = value["value"].at("command").get<std::string>();
+        effects = inner == "move" || inner == "stop";
+        auto result = m_impl->m_session->navigation(value["value"].dump());
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
+      }
+
       if (command == "clock") {
         Codec::requireFields(value, {"command", "scope", "value"});
         const auto inner = value["value"].at("command").get<std::string>();

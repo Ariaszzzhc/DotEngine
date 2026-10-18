@@ -563,6 +563,9 @@ namespace Dot::Editor {
     std::string m_navigationOutput{"assets/walkable.dotnav"};
     std::string m_navigationBaseline, m_navigationMetadata;
     Json m_navigationRoute;
+    std::string m_navigationActor;
+    float m_navigationSpeed{1.2F};
+    std::array<float, 3> m_navigationMoveGoal{2, 0, 0};
     std::array<float, 3> m_navigationStart{-2, 0, 0}, m_navigationGoal{2, 0, 0};
 
     std::optional<AnimationRetarget> m_retargetJob;
@@ -7434,6 +7437,28 @@ namespace Dot::Editor {
         }
 
         return execute("{\"command\":\"inspect\"}");
+      }
+
+      if (command == "navigation") {
+        Codec::requireFields(parsed, {"command", "session", "scope", "value"});
+        if (!m_play) {
+          return Core::fail(Core::ErrorCode::InvalidState, "No Play session");
+        }
+
+        auto stats = m_play->stats();
+
+        if (!stats || Codec::id(parsed["session"]) != m_playSession
+            || Codec::id(parsed["scope"]) != stats->location.scope || m_pendingClose
+            || stats->state != PlayState::Running) {
+          return Core::fail(Core::ErrorCode::InvalidState,
+                            "Navigation requires current running Play scope");
+        }
+
+        auto result = m_play->navigation(parsed["value"].dump());
+        return result ? Core::Result<std::string>{Json{{"ok", true},
+                                                       {"result", Codec::parseJson(*result)}}
+                                                      .dump()}
+                      : std::unexpected(result.error());
       }
 
       if (command == "clock") {
@@ -16323,6 +16348,106 @@ namespace Dot::Editor {
 
     auto navigationPanel() -> void {
       if (!ImGui::CollapsingHeader("Navigation")) {
+        return;
+      }
+
+      if (m_play && m_play->stats()->state == PlayState::Running) {
+        const auto scope = m_play->stats()->location.scope;
+        ImGui::TextWrapped(
+            "Native character movement. Physics owns actual feet; local avoidance can still be "
+            "blocked.");
+        auto scene = m_play->scene();
+        auto actors
+            = scene ? (*scene)->characterControllers()
+                    : Core::Result<std::vector<World::EntityId>>{std::unexpected(scene.error())};
+
+        if (!actors) {
+          ImGui::TextWrapped("%s", actors.error().message.c_str());
+          return;
+        }
+
+        if (std::ranges::none_of(
+                *actors, [&](auto id) { return std::to_string(id.value) == m_navigationActor; })) {
+          m_navigationActor = actors->empty() ? "" : std::to_string(actors->front().value);
+        }
+
+        std::string selected = "No native characters";
+
+        for (const auto id : *actors) {
+          if (std::to_string(id.value) == m_navigationActor) {
+            selected = (*scene)->entity(id)->name + " (" + m_navigationActor + ")";
+          }
+        }
+
+        if (ImGui::BeginCombo("Character##nav-move", selected.c_str())) {
+          for (const auto id : *actors) {
+            const auto value = std::to_string(id.value);
+            const auto label = (*scene)->entity(id)->name + " (" + value + ")";
+
+            if (ImGui::Selectable(label.c_str(), value == m_navigationActor)) {
+              m_navigationActor = value;
+            }
+          }
+
+          ImGui::EndCombo();
+        }
+
+        ImGui::InputFloat3("Move goal##nav", m_navigationMoveGoal.data());
+        ImGui::InputFloat("Move speed##nav", &m_navigationSpeed, .1F);
+        const auto operation = [&](bool move) {
+          Json value{{"command", move ? "move" : "stop"},
+                     {"entity", {{"scene", std::to_string(scope)}, {"value", m_navigationActor}}}};
+
+          if (move) {
+            value["value"] = {{"goal",
+                               {{"x", m_navigationMoveGoal[0]},
+                                {"y", m_navigationMoveGoal[1]},
+                                {"z", m_navigationMoveGoal[2]}}},
+                              {"speed", m_navigationSpeed}};
+          }
+
+          sessionAction({{"command", "navigation"},
+                         {"session", std::to_string(m_playSession)},
+                         {"scope", std::to_string(scope)},
+                         {"value", std::move(value)}});
+        };
+
+        ImGui::BeginDisabled(actors->empty());
+
+        if (ImGui::Button("Move character##nav")) {
+          operation(true);
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("Stop character##nav")) {
+          operation(false);
+        }
+
+        ImGui::EndDisabled();
+        auto agents = m_play->navigation("{\"command\":\"agents\"}");
+
+        if (agents) {
+          const auto snapshot = Codec::parseJson(*agents);
+
+          for (const auto& agent : snapshot["agents"]) {
+            const auto& state = agent["state"];
+            ImGui::TextWrapped("%s: %s, distance %.2f, neighbors %zu%s",
+                               agent["entity"]["value"].get_ref<const std::string&>().c_str(),
+                               state["phase"].get_ref<const std::string&>().c_str(),
+                               state["distance"].get<float>(),
+                               state["neighbors"].get<std::size_t>(),
+                               state["blocked"].get<bool>() ? ", blocked" : "");
+
+            if (!state["error"].is_null()) {
+              ImGui::TextWrapped("%s",
+                                 state["error"]["message"].get_ref<const std::string&>().c_str());
+            }
+          }
+        } else {
+          ImGui::TextWrapped("%s", agents.error().message.c_str());
+        }
+
         return;
       }
 

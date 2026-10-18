@@ -75,6 +75,10 @@ export namespace Dot::Physics {
     Math::Vec3 groundNormal;
     Math::Vec3 groundVelocity;
     std::optional<ColliderId> groundCollider;
+    /** Corrected feet displacement / last native character substep. Creation and explicit
+     * teleport reset it; support probes without displacement contribute no speed.
+     * 修正后脚底位移除以最近原生角色子步时长；创建/显式传送归零，无位移支撑探测不产生速度。 */
+    Math::Vec3 measuredVelocity{};
   };
 
   struct RayHit {

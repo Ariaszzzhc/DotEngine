@@ -122,7 +122,7 @@ export class RelayPlayer extends ScriptComponent<Settings> {
   private animate(): void {
     const state = this.self.characterState;
     this.#model.setAnimationParameters({
-      Speed: Math.hypot(state.velocity.x, state.velocity.z),
+      Speed: Math.hypot(state.measuredVelocity.x, state.measuredVelocity.z),
       Grounded: state.ground === 'grounded',
       Vertical: state.velocity.y,
     });

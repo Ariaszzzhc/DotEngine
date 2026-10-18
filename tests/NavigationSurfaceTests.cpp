@@ -10,7 +10,9 @@
 #include <vector>
 
 import Dot.Navigation.Surface;
+import Dot.Navigation.Movement;
 import Dot.Math;
+import Dot.Core.Result;
 
 namespace {
   using namespace Dot::Navigation;
@@ -180,4 +182,126 @@ TEST_CASE("navigation.immutable_surface_owns_geometry_and_queries_use_independen
 
   REQUIRE(moved.route({{-4, 0, 0}, {4, 0, 0}}));
   CHECK_FALSE(Surface{}.stats());
+}
+
+TEST_CASE("navigation.local_boundaries_and_traces_keep_obstacles_seams_and_floor_identity") {
+  BuildSettings settings;
+  settings.tileCells = 32;
+  const auto surface = built(room(), settings);
+  const auto boundary = surface.boundary({-2, 0, 0}, 3);
+  REQUIRE_MESSAGE(boundary, (boundary ? "" : boundary.error().message));
+  CHECK_FALSE(boundary->walls.empty());
+  const auto blocked = surface.trace({-4, 0, 0}, {4, 0, 0});
+  REQUIRE_MESSAGE(blocked, (blocked ? "" : blocked.error().message));
+  CHECK_FALSE(blocked->reached);
+  CHECK(blocked->position.x < -.75F);
+  const auto clear = surface.trace({-4, 0, 3}, {4, 0, 3});
+  REQUIRE(clear);
+  CHECK(clear->reached);
+  CHECK(clear->position.x == doctest::Approx(4));
+  InputGeometry floors;
+  floor(floors, -5, 5, -5, 5);
+  floor(floors, -5, 5, -5, 5, 3);
+  const auto stacked = built(floors);
+  REQUIRE(stacked.trace({-3, 0, 0}, {3, 3, 0}));
+  CHECK_FALSE(stacked.trace({-3, 0, 0}, {3, 3, 0})->reached);
+  CHECK_FALSE(surface.boundary({-2, 0, 0}, 0));
+  CHECK_FALSE(surface.boundary({200, 0, 0}, 1));
+  CHECK_FALSE(surface.trace({200, 0, 0}, {}));
+  CHECK_FALSE(Surface{}.trace({}, {}));
+  CHECK_FALSE(Surface{}.boundary({}, 1));
+}
+
+TEST_CASE("navigation.movement_reports_measured_arrival_and_retains_goals_on_request_failure") {
+  MovementBody observed{{1, {-4, 0, -3}, {}, {}, .35F, 1.8F}, true};
+  auto movement = Movement::create(built(room())).value();
+  CHECK_FALSE(movement.state(observed)->has_value());
+  REQUIRE(movement.move(observed, {{4, 0, -3}}));
+  const auto initial = observed.body.position;
+  auto intent = movement.advance({&observed, 1}, 1.0 / 60);
+  REQUIRE(intent);
+  CHECK(intent->size() == 1);
+  CHECK(intent->front().velocity.x > 0);
+  CHECK(observed.body.position == initial);
+  CHECK_FALSE(movement.move(observed, {{100, 0, -3}}));
+  CHECK(movement.state(observed)->value().request.goal.x == 4);
+  CHECK(movement.state(observed)->value().phase == MovePhase::Moving);
+
+  for (int i = 0; i < 60; ++i) {
+    REQUIRE(movement.advance({&observed, 1}, 1.0 / 60));
+  }
+
+  CHECK(movement.state(observed)->value().blocked);
+  CHECK(movement.state(observed)->value().phase == MovePhase::Moving);
+  observed.body.position = {4, 0, -3};
+  observed.grounded = false;
+  CHECK(movement.state(observed)->value().phase == MovePhase::Moving);
+  observed.grounded = true;
+  CHECK(movement.state(observed)->value().phase == MovePhase::Arrived);
+  REQUIRE(movement.advance({&observed, 1}, 1.0 / 60));
+  CHECK(movement.state(observed)->value().velocity == Vec3{});
+  REQUIRE(movement.stop(1));
+  REQUIRE(movement.stop(1));
+  CHECK_FALSE(movement.state(observed)->has_value());
+}
+
+TEST_CASE("navigation.movement_owns_state_and_snapshot_validation_is_atomic") {
+  MovementBody observed{{1, {-4, 0, -3}, {}, {}, .35F, 1.8F}, true};
+  auto movement = Movement::create(built(room())).value();
+  REQUIRE(movement.move(observed, {{4, 0, -3}}));
+  CHECK_FALSE(movement.advance({&observed, 1}, 0));
+  CHECK_FALSE(movement.advance({&observed, 1}, 1.001));
+  REQUIRE(movement.advance({&observed, 1}, 1));
+  const std::array duplicate{observed, observed};
+  CHECK_FALSE(movement.advance(duplicate, 1.0 / 60));
+  CHECK(movement.entities()->size() == 1);
+  auto retained = std::move(movement);
+  CHECK_FALSE(movement.state(observed));
+  REQUIRE(retained.advance({&observed, 1}, 1.0 / 60));
+  const auto saved = retained.state(observed)->value();
+  observed.body.position = {4, 0, 3};
+  REQUIRE(retained.advance({&observed, 1}, 1.0 / 60));
+  CHECK(retained.state(observed)->value().phase == MovePhase::Moving);
+  CHECK(saved.request.goal == Vec3{4, 0, -3});
+  REQUIRE(retained.fail(
+      1, Dot::Core::fail(Dot::Core::ErrorCode::Unavailable, "Blocked source").error()));
+  REQUIRE(retained.advance({&observed, 1}, 1.0 / 60));
+  CHECK(retained.state(observed)->value().phase == MovePhase::Failed);
+  CHECK(retained.state(observed)->value().velocity == Vec3{});
+  REQUIRE(retained.advance({}, 1.0 / 60));
+  CHECK(retained.entities()->empty());
+  InputGeometry stacked;
+  floor(stacked, -5, 5, -5, 5);
+  floor(stacked, -5, 5, -5, 5, 3);
+  auto floors = Movement::create(built(stacked)).value();
+  observed.body.position = {-3, 0, 0};
+  REQUIRE(floors.move(observed, {{3, 0, 0}}));
+  observed.body.position.y = 3;
+  REQUIRE(floors.advance({&observed, 1}, 1.0 / 60));
+  CHECK(floors.state(observed)->value().phase == MovePhase::Failed);
+  CHECK(floors.state(observed)->value().velocity == Vec3{});
+}
+
+TEST_CASE("navigation.movement_plans_all_agents_before_publication_in_identity_order") {
+  const auto surface = built(room(false));
+  auto forward = Movement::create(surface).value();
+  auto reverse = Movement::create(surface).value();
+  std::array observations{MovementBody{{1, {-1, 0, -3}, {}, {}, .35F, 1.8F}, true},
+                          MovementBody{{2, {1, 0, -3}, {}, {}, .35F, 1.8F}, true}};
+  const std::array requests{MoveRequest{{3, 0, -3}}, MoveRequest{{-3, 0, -3}}};
+
+  for (std::size_t index = 0; index < 2; ++index) {
+    REQUIRE(forward.move(observations[index], requests[index]));
+    REQUIRE(reverse.move(observations[1 - index], requests[1 - index]));
+  }
+
+  const auto first = forward.advance(observations, 1.0 / 60).value();
+  std::ranges::reverse(observations);
+  const auto second = reverse.advance(observations, 1.0 / 60).value();
+  REQUIRE(first.size() == 2);
+  REQUIRE(second.size() == 2);
+  CHECK(first[0].entity == 1);
+  CHECK(first[1].entity == 2);
+  CHECK(first[0].velocity == second[0].velocity);
+  CHECK(first[1].velocity == second[1].velocity);
 }

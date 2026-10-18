@@ -137,6 +137,9 @@ export namespace Dot::Editor {
                                              const Animation::LayerControl& operation)
         -> Core::Result<void>;
     [[nodiscard]] auto gameClock() const -> Core::Result<Script::GameClock>;
+    /** Current running scene movement, shared by scripts, GUI and agent control.
+     * 当前运行场景的移动操作，由脚本、图形界面和智能体控制共用。 */
+    [[nodiscard]] auto navigation(std::string_view request) -> Core::Result<std::string>;
     [[nodiscard]] auto hud() const -> Core::Result<Script::Hud>;
     [[nodiscard]] auto textInputRequested() const -> Core::Result<bool>;
     [[nodiscard]] auto pointerCaptureRequested() const -> Core::Result<bool>;

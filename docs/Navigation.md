@@ -1,11 +1,11 @@
-# Static navigation / 静态导航
+# Native navigation / 原生导航
 
 The editor bakes actual solid static collision geometry with pinned Recast/Detour.
-Scripts request complete routes and submit normal native character movement intent.
+Scripts submit goals to native path following and local reciprocal velocity avoidance.
 Jolt remains authoritative for movement, support and dynamic contacts. A planned route
 is not proof that a character has arrived or that a moving obstacle will clear.
 
-编辑器使用固定版本的 Recast/Detour 烘焙实际实体静态碰撞几何。脚本请求完整路线，
+编辑器使用固定版本的 Recast/Detour 烘焙实际实体静态碰撞几何。脚本向原生路径跟随与局部互惠速度避让提交目标，
 通过正常原生角色意图行走；移动、支撑和动态接触以 Jolt 为准，规划成功不等于角色已到达。
 
 ## Authoring / 制作
@@ -98,6 +98,9 @@ import {navigation} from 'dot:engine';
 
 const surface = navigation.stats(); // null when the scene has no binding
 const route = navigation.route(character.id, station);
+navigation.move(character.id, station, 1.2);
+const movement = navigation.state(character.id); // null, moving, arrived or failed
+navigation.stop(character.id); // release velocity ownership
 // route.start/goal expose projection; route.points is owned read-only corner data.
 ```
 
@@ -118,11 +121,64 @@ as in native simulation caches. Moving actors and non-geometric body changes do 
 invalidate this proof; changing static shape, mesh identity or world pose does.
 No query reopens project files. Scene scope/thread changes invalidate captured services.
 
-This supports static route planning, not crowd avoidance, dynamic navmesh rebuilding,
-area costs, authored jump/off-mesh links or world streaming. The PrismRelay crew is an
-editable integrated example; it does not establish large-game scalability or final art.
+`move` owns native horizontal character input and heading until `stop`; manual horizontal character
+input is overridden while controlled. It requests a complete static route, then follows
+visible corners and samples reciprocal velocities against all measured native character
+capsules, including standing/manual players. `measuredVelocity` records corrected
+feet displacement over the last native character substep; creation/explicit teleport
+reset it. The existing `velocity` retains controller/probe semantics. Native avoidance
+and PrismRelay gait use measured motion. Detour supplies velocity sampling, not pose
+integration: Jolt owns actual feet, velocity, support and collision. All active agents
+plan from one identity-sorted measured snapshot before a validated batch writes inputs.
+A native phase accepts 1 microsecond..1 second, matching the game fixed-rate range;
+physics advances that interval in its own bounded slices.
+Scene physics synchronizes after fixed scripts, before navigation observes and physics
+advances. Paused games freeze this schedule; a single step runs it once. Script reload
+retains native controllers; scene replacement/close/fault retires captured services.
 
-原生查询从角色实际脚底开始，检查体型及攀爬能力；断路、局部路径或容量不足明确返回错误。
-每次查询独占工作区，不重读文件；创建时证明三角面身份，后续按精确静态配置与世界矩阵
-检查是否过期。运动角色不使证明失效，静态形状/资源/世界位姿变化会使其失效。
-当前不提供群体避让、动态重建、区域代价、跳跃连接或世界流送。
+Arrival requires grounded actual feet within the requested stopping distance and 0.35 m
+vertically of the original goal. Projection beyond that tolerance rejects the request.
+Invalid requests retain the old goal. An occupied goal remains moving, potentially
+blocked; no timer converts it into success. `blocked` means at least 0.75 s of requested
+motion with measured horizontal speed below 0.05 m/s. Per-agent route/profile/geometry
+failures publish zero intent and an explicit `failed` state; issue a new valid request
+after repair. Malformed global snapshots or failed native input writes fail the session.
+Destroying a controlled entity removes its controller at the next fixed phase. State
+queries are observational and permitted during read-only reload migration; move/stop
+are writes. `agents()` lists owned entity/state pairs, not every scene character.
+
+Defaults/ranges: speed is required [0.1,10] m/s; acceleration 8 [0.1,50] m/s²;
+stoppingDistance 0.12 [0.05,1] m; neighborDistance 4 [0.5,8] m; timeHorizon 2.5
+[0.25,5] s. Positions remain within ±1e6 m. There are at most 256 measured/controlled
+characters (world radius [0.05,5] m, height [0.1,20] m and observed horizontal speed
+at most 1000 m/s), 64 relevant vertically overlapping neighbors per agent and 512 nearby
+oriented navmesh walls. Overlapping expanded capsules are included even outside the
+requested neighbor distance. Native local boundary/trace queries own 2048-node scratch and
+bounded 256-polygon neighborhoods/corridors; exhaustion fails explicitly. Cached walls
+refresh after 0.25 m horizontal/0.15 m vertical displacement with a 0.5 m extra query
+margin. Displacements beyond one metre/four nominal horizontal steps or 0.5 m vertically
+replan from actual feet; a disconnected destination floor fails instead of stalling.
+
+During running Play, **Environment → Navigation** exposes character selection, goal,
+speed, Move/Stop and actual native states. GUI and script bindings share the same
+strict operations. The editor outer envelope requires current session/scope; standalone
+games omit session. Unknown fields and stale scopes reject before mutation:
+
+```json
+{"command":"navigation","session":"1","scope":"42","value":{"command":"move","entity":{"scene":"42","value":"7"},"value":{"goal":{"x":2,"y":0,"z":0},"speed":1.2}}}
+{"command":"navigation","session":"1","scope":"42","value":{"command":"state","entity":{"scene":"42","value":"7"}}}
+{"command":"navigation","session":"1","scope":"42","value":{"command":"agents"}}
+{"command":"navigation","session":"1","scope":"42","value":{"command":"stop","entity":{"scene":"42","value":"7"}}}
+```
+
+Local avoidance is a velocity heuristic, not a collision-free/deadlock-free guarantee.
+It models native character capsules and eroded static navigation boundaries; moving
+rigid bodies still block through physics. Dynamic navmesh rebuilding, area costs,
+authored jump/off-mesh links and world streaming remain open. PrismRelay is an editable
+integrated example, not large-game scalability or final-art evidence.
+
+原生移动持有水平输入与朝向，局部互惠避让根据同一实际快照计算所有角色意图，包含站立
+玩家；Detour 不积分位姿。到达只认原目标处实际着地脚底，目标被占用不会按时间伪造成功。
+无效新请求保留旧目标，单角色规划失败停止并报告，未知全局快照或原生写入失败使会话故障。
+暂停冻结调度，单步仅推进一次，热重载保留控制器，换场景/关闭/故障使旧服务失效。
+局部避让不保证无碰撞或无死锁，不处理移动刚体导航、动态重建、区域代价、跳跃连接或流送。

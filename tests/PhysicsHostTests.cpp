@@ -84,6 +84,7 @@ TEST_CASE("physics_host_character_controls_keep_snapshots_jump_intent_and_strict
   auto before = read(services, "physics.character", args);
   CHECK(before["ground"] == "grounded");
   CHECK(before["groundEntity"] == id(floor));
+  CHECK(before["measuredVelocity"] == xyz());
   CHECK(read(services, "physics.stats")["characters"] == 1);
   REQUIRE(invoke(services, "physics.setCharacterInput",
                  Json::array({id(actor), {{"velocity", xyz(2)}, {"jump", true}}})));
@@ -102,6 +103,8 @@ TEST_CASE("physics_host_character_controls_keep_snapshots_jump_intent_and_strict
   auto after = read(services, "physics.character", args);
   CHECK(after["position"]["x"].get<float>() > 0);
   CHECK(after["velocity"]["y"].get<float>() > 5);
+  CHECK(after["measuredVelocity"]["x"].get<float>() == doctest::Approx(2));
+  CHECK(after["measuredVelocity"]["y"].get<float>() > 5);
   CHECK(after["rotation"]["y"].get<float>() == doctest::Approx(.70710678));
   before["velocity"]["x"] = 99;
   CHECK(read(services, "physics.character", args)["velocity"]["x"] == 2);

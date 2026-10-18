@@ -837,9 +837,9 @@ namespace Dot::Physics {
     const auto support
         = state->groundCollider ? m_impl->entity(*state->groundCollider) : std::nullopt;
 
-    return SceneCharacterState{state->position, state->rotation,     state->velocity,
-                               state->ground,   state->groundNormal, state->groundVelocity,
-                               support};
+    return SceneCharacterState{state->position, state->rotation,        state->velocity,
+                               state->ground,   state->groundNormal,    state->groundVelocity,
+                               support,         state->measuredVelocity};
   }
 
   auto SceneSimulation::characterConfig(const Scene& scene, EntityId entity) const

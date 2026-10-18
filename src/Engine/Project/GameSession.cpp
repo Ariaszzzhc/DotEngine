@@ -186,6 +186,21 @@ namespace Dot::Project {
       if (m_clock) {
         m_clock->retire();
       }
+
+      if (m_navigation) {
+        m_navigation->retire();
+      }
+    }
+
+    auto advancePhysics(double seconds) -> Core::Result<void> {
+      auto synchronized = m_physics->synchronize();
+
+      if (!synchronized) {
+        return synchronized;
+      }
+
+      auto planned = m_navigation->advance(seconds);
+      return planned ? m_physics->advance(seconds) : planned;
     }
 
     auto check(bool allowTerminal = false) const -> Core::Result<void> {
@@ -278,6 +293,10 @@ namespace Dot::Project {
         m_retiredAudio.reset();
       }
 
+      if (m_navigation) {
+        m_navigation->retire();
+      }
+
       m_navigation.reset();
       m_physics.reset();
       m_input.reset();
@@ -363,7 +382,7 @@ namespace Dot::Project {
             return result;
           }
 
-          auto advanced = m_physics->advance(simulationSeconds);
+          auto advanced = advancePhysics(simulationSeconds);
 
           if (!advanced) {
             m_state = SessionState::Faulted;
@@ -403,7 +422,7 @@ namespace Dot::Project {
         }
 
         if (fixed && !paused) {
-          auto advanced = m_physics->advance(seconds);
+          auto advanced = advancePhysics(seconds);
 
           if (!advanced) {
             m_state = SessionState::Faulted;
@@ -1485,6 +1504,24 @@ namespace Dot::Project {
     return checked && m_impl->m_clock ? Core::Result<Script::GameClock>{*m_impl->m_clock}
            : checked ? Core::fail(Core::ErrorCode::InvalidState, "Game clock is not prepared")
                      : std::unexpected(checked.error());
+  }
+
+  auto GameSession::navigation(std::string_view request) -> Core::Result<std::string> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Game session was moved");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    if (m_impl->m_state != SessionState::Running || !m_impl->m_navigation) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Navigation requires running scene");
+    }
+
+    return m_impl->m_navigation->perform(request);
   }
 
   auto GameSession::hud() const -> Core::Result<Script::Hud> {

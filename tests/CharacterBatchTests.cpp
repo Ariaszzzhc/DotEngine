@@ -128,6 +128,7 @@ TEST_CASE("character_batch_motion_retention_preserves_input_and_teleports_can_re
   std::array changes{CharacterChange{character, config, true}};
   REQUIRE(world.applyChanges({}, changes));
   CHECK(world.character(character)->velocity == before.velocity);
+  CHECK(world.character(character)->measuredVelocity == before.measuredVelocity);
   REQUIRE(world.step(1.0 / 60));
   CHECK(world.character(character)->position.x > before.position.x);
   CHECK(world.character(character)->velocity.y > 4);
@@ -135,6 +136,7 @@ TEST_CASE("character_batch_motion_retention_preserves_input_and_teleports_can_re
   changes[0].config->position = {6, 3, 0};
   REQUIRE(world.applyChanges({}, changes));
   CHECK(world.character(character)->velocity == Vec3{});
+  CHECK(world.character(character)->measuredVelocity == Vec3{});
   REQUIRE(world.step(1.0 / 60));
   CHECK(world.character(character)->position.x == doctest::Approx(6));
   CHECK(world.character(character)->velocity.y < 0);

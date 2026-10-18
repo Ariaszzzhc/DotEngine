@@ -15974,3 +15974,105 @@ retaining ordinary results and updated hashes. Only macOS arm64 was executed.
 静态导航已贯通真实碰撞几何、后台编辑烘焙、资源/场景存储、角色查询和 PrismRelay 往返。
 构建、检查、实际产品验证分别记录，不以测试数量冒充制作成熟度。群体避让、动态重建、
 区域代价、跳跃连接、流送、接触/足部 IK、最终角色/环境美术及大型游戏/编辑器成熟度仍开放。
+
+## 2026-10-19 — Native character steering / 原生角色避让
+
+Native movement now owns scoped character goals, corner following, acceleration and
+local reciprocal velocity sampling. Use pinned DetourCrowd's obstacle-avoidance query
+without its position-owning crowd integration. Immutable baked surfaces provide local
+walls and visibility traces; Jolt remains authoritative for actual feet, support and
+contacts. Plan every active agent from one identity-sorted measured snapshot, then
+validate the whole native input batch before writes. Per-agent planning/profile/static
+geometry failures stop/report failure; malformed global observations or native write
+failure fault the session. Invalid requests retain the old goal. Missing owners prune
+at the next fixed phase; retirement releases goals and captured physics access.
+
+Add corrected-feet `measuredVelocity` over the last native character substep. Creation
+and explicit teleport reset it; motion-preserving reconfiguration retains it. Existing
+controller/probe `velocity` semantics remain. Native avoidance, blocked detection and
+PrismRelay gait use measured motion. Arrival requires actual grounded feet at the
+original requested goal. Occupied goals cannot become successful by elapsed time.
+Local avoidance remains a heuristic: collision-free/deadlock-free behavior, moving-body
+navigation, dynamic rebuilding, area costs, jump links and streaming are not promised.
+
+Scripts expose move/stop/state/agents alongside static stats/route. Strict SDK options
+cannot override goal/speed. GameSession schedules synchronization, planning and physics
+after fixed script intent, including exactly one paused single step. Editor Play and
+standalone control share the same scoped protocol; Environment's Navigation panel has
+native-character selection, goal/speed, Move/Stop and actual state reporting. Read-only
+migration permits observations and preserves native movement; close/fault/replacement
+retires old bindings. FeatureLab covers all six members and unbound behavior.
+
+PrismRelay workers submit station intent and observe native arrival instead of following
+corners in script. The actual Debug editor's Inspector authors opposite Crew 1/2 routes
+at x=-4, z=-2..2, saves them, and those ordinary saved bytes become the source scene.
+Worker 7 retains its central static-obstacle detour. Inspection, dwell/visit counters,
+scene switching and player-only checkpoints remain gameplay intent.
+
+The first native investigation catches a real vendor-boundary error: Detour admits
+candidates within vmax+0.001, while the wrapper initially rejected smaller overshoot.
+Retain a concrete turning/neighbor/wall regression that fails with the old bound, then
+validate the vendor tolerance and clamp published speed to the exact engine cap.
+Correct an SDK float32-goal comparison that falsely treated decimal stations as replaced.
+Review also covers overlapping capsules outside a short neighbor radius and vertical
+teleports onto disconnected floors, which now replan/fail instead of silently stalling.
+No temporary search/probe executable or driver is retained in the product/tests.
+
+Thirteen new enduring cases cover local boundaries/traces, measured snapshots, routing
+ownership/recovery, reciprocal/passive neighbors, speed tolerance, invalid/capacity
+inputs, simultaneous ordering, actual grounded arrival, occupied goals and native Jolt
+integration. Extend existing wall/platform/teleport/reconfiguration, SDK, paused reload,
+scene-scope and retirement regressions. Final Debug: 1759/1759, 295.78 seconds. Final
+Release/NDEBUG: 1759/1759, 40.72 seconds. Counts are 585 unit and 1174 integration;
+overlapping labels include 273 compiler, 186 offscreen, 39 audio-native, 34 platform and
+21 process. Builds/tests/native sessions run sequentially. Earlier complete runs and
+focused boundary reruns are retained as intermediate evidence, not substituted for the
+final complete checks. Formatting passes for 28 changed/new C++ files.
+
+A fresh actual Release editor project runs all seven workers to two arrivals and moves
+the player to an explicitly submitted native goal. Sixty actual position observations
+have minimum observed capsule-center clearance 0.780379 m and ten central detour samples.
+These are samples, not a continuous collision proof. Pause, three actual source reloads
+and single stepping preserve all eight poses/animation clocks, gameplay data and native
+movement state, then advance exactly one fixed update. Walk/jump and player checkpoint
+restore pass with zero error at the unchanged 1e-5 bound. One premature airborne save is
+correctly rejected; the driver initially waits for the wrong terminal status, retains
+the same process on observation timeout, and resubmits after landing. Workers continue
+past ten visits without route failures during that wait. No process is restarted.
+Stop returns clean authoring; export both current playable levels through the editor.
+
+Hide only the owned authoring project and launch the relocated Main export. Actual C
+input enters crew; seven workers reach two arrivals, with 68 position samples, minimum
+observed clearance 0.780174 m and twelve central detour samples. Checkpoint restoration,
+C to Main, rejection of the crew checkpoint without pose change, C back to crew and
+restoration all pass. A fresh independent Crew process restores the same slot while
+all new worker visit counts remain zero. All four restore comparisons have zero error.
+Completed native render counts are 1490/55 and HUD rasterizations 129/13 for the two
+games; these prove work/presentation, not FPS. Restore the authoring project after both
+actual game exits.
+
+All four owned native processes exit zero before consuming/ACKing close replies. Archive
+and ACK 1057 raw replies, including five expected strict-protocol guard errors. Endpoints
+are closed, fault-free, unblocked and without uncertain/unprocessed work, then cleared
+through the product. Accepted runtime failure counts are zero. Editor stderr is empty;
+game stderr has normal preparation messages only. Computer use still reports a locked
+Mac; no human pointer or Navigation-panel visual acceptance is claimed.
+
+Audit 34 current product/kit/export Mach-O paths with strict signature verification,
+linked libraries and load commands; navigation adds no dynamic dependency. Each export
+matches all 40 current Release runtime-kit files. Source scripts and authored project
+files remain exact. Crew export matches all 141 asset/scene files byte-for-byte. Main
+matches 140; its current startup scene matches the exact canonical live document
+snapshot, including the retained allocation floor 659 -> 1156 after visiting crew.
+The source Main file is unchanged; this documented allocation-floor behavior is not
+reported as byte equality. Four compiled modules match between exports and consume the
+current 29825 source bytes. Preserve the 10560 prior guarded files unchanged and extend
+the artifact guard to 11233 ordinary project/export/save/image files. Remove temporary
+orchestration/request files only after actual native completion, preserving raw replies,
+logs, images, ordinary projects, exports and saves under ignored build/steering-review.
+Only macOS arm64 is executed; no engine release archive is created.
+
+原生路径跟随与局部互惠避让已贯通脚本意图、真实物理观测、编辑器、巡检示例和独立导出。
+到达依据实际着地脚底；受阻、过期和容量失败明确报告。实际制作/运行、自动检查与签名资源
+核对分别保留证据。最终角色/环境美术、接触/足部 IK、全局群体规划、动态导航与流送、
+大型游戏和编辑器成熟度仍未完成，不能用本阶段检查数量或八角色流程替代。

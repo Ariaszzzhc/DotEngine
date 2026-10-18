@@ -263,5 +263,6 @@ actual Play and relocated native exports.
 
 
 The navigation SDK inventory also exercises `navigation.stats()` returning null for
-this unbound scene and `navigation.route()` producing the explicit unavailable error.
+this unbound scene, null movement state, an empty agent list, idempotent stop, and
+`navigation.route()`/`navigation.move()` producing explicit unavailable errors.
 Successful static-obstacle routes are demonstrated by PrismRelay's saved crew bay.

@@ -625,6 +625,9 @@ export interface CharacterState {
   position: Vec3;
   rotation: Quat;
   velocity: Vec3;
+  /** Corrected feet displacement / last native substep; creation/teleport reset it.
+   * 修正后脚底位移除以最近原生子步时长，创建/传送归零。 */
+  measuredVelocity: Vec3;
   ground: 'grounded'|'steep'|'unsupported'|'airborne';
   groundNormal: Vec3;
   groundVelocity: Vec3;
@@ -1028,27 +1031,78 @@ export interface NavigationRoute {
   readonly points: ReadonlyArray<Vec3>;
 }
 
+export interface NavigationMoveOptions {
+  acceleration?: number;
+  stoppingDistance?: number;
+  neighborDistance?: number;
+  timeHorizon?: number;
+}
+
+export interface NavigationMoveState {
+  readonly phase: 'moving'|'arrived'|'failed';
+  readonly goal: Vec3;
+  readonly speed: number;
+  readonly acceleration: number;
+  readonly stoppingDistance: number;
+  readonly neighborDistance: number;
+  readonly timeHorizon: number;
+  /** Last planned input; actual motion is CharacterState.measuredVelocity.
+   * 最近规划的输入，实际运动见 CharacterState.measuredVelocity。 */
+  readonly velocity: Vec3;
+  readonly distance: number;
+  readonly blocked: boolean;
+  readonly corner: number;
+  readonly corners: number;
+  readonly neighbors: number;
+  readonly error: {readonly code: HostErrorCode; readonly message: string}|null;
+}
+
+export interface NavigationAgent {
+  readonly entity: EntityId;
+  readonly state: NavigationMoveState;
+}
+
 export const navigation = Object.freeze({
-  /**
-   * Return the current baked static surface, or null when unbound. Stale geometry fails.
-   * 返回当前静态导航烘焙表面，未绑定时为空；几何过期则失败。
-   */
+  /** Current baked static surface, or null when unbound. Stale geometry fails.
+   * 当前静态烘焙表面，未绑定时为空；几何过期则失败。 */
   stats(): NavigationStats|null {
     return invoke('navigation.stats', []) as NavigationStats|null;
   },
 
-  /**
-   * Complete native route from the character's actual feet. Bounded projection exposes
-   * snapped endpoints. Agent mismatch, stale static geometry, disconnected targets and
-   * exhausted capacity fail explicitly. Follow corners with native character intent;
-   * dynamic collision can block progress. No crowd avoidance or jump connections.
-   * 从角色实际脚底计算完整原生路线；有界投影返回吸附端点。体型不符、静态几何过期、
-   * 目标不连通或容量不足明确失败。以原生角色意图跟随拐点，动态碰撞仍可阻挡行进；
-   * 不提供群体避让或跳跃连接。
-   */
+  /** Complete native static route from actual character feet with bounded projection.
+   * This query does not move a character. Disconnected targets and exhausted capacity fail.
+   * 从实际角色脚底计算完整静态原生路线并有界吸附；查询不移动角色，不连通或容量不足明确失败。 */
   route(entity: EntityId, goal: Vec3, searchExtent: Vec3 = {x: .5, y: .5, z: .5},
         maxPoints = 256): NavigationRoute {
     return invoke('navigation.route', [entity, goal, searchExtent, maxPoints]) as NavigationRoute;
+  },
+
+  /** Own native character velocity intent until stop. Native path following and local
+   * reciprocal avoidance use actual simultaneous physics observations; physics owns poses.
+   * Local avoidance can remain blocked and supplies no jump/off-mesh connections.
+   * Arrival requires actual grounded feet at the requested goal. Invalid requests retain
+   * the old goal. Pause freezes scheduling; script reload retains the native controller.
+   * 持有角色速度意图直到 stop；原生路径跟随/局部互惠避让读取同一物理快照，物理拥有位姿。
+   * 局部避让仍可能受阻，不提供跳跃连接；到达依据目标处实际着地脚底。无效请求保留旧目标，
+   * 暂停冻结调度，脚本热重载保留原生控制器。 */
+  move(entity: EntityId, goal: Vec3, speed: number, options: NavigationMoveOptions = {}): void {
+    invoke('navigation.move', [entity, goal, speed, options]);
+  },
+
+  /** Release movement ownership and clear native velocity intent. Idempotent in this scope.
+   * 释放移动控制并清除原生速度意图；在当前范围内幂等。 */
+  stop(entity: EntityId): void {
+    invoke('navigation.stop', [entity]);
+  },
+
+  /** Observational state, null when not controlled; never advances or predicts poses.
+   * 只读状态，未控制时为空；不推进或预测位姿。 */
+  state(entity: EntityId): NavigationMoveState|null {
+    return invoke('navigation.state', [entity]) as NavigationMoveState|null;
+  },
+
+  agents(): ReadonlyArray<NavigationAgent> {
+    return invoke('navigation.agents', []) as ReadonlyArray<NavigationAgent>;
   },
 });
 

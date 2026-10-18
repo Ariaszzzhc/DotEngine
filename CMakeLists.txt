@@ -81,6 +81,8 @@ target_include_directories(DotEngine SYSTEM PRIVATE "${CGLTF_INCLUDE_DIR}")
 target_compile_definitions(DotEngine PRIVATE ENTT_USE_ATOMIC)
 target_sources(DotEngine PRIVATE
     src/Engine/Navigation/Surface.cpp
+    src/Engine/Navigation/Steering.cpp
+    src/Engine/Navigation/Movement.cpp
     src/Engine/Navigation/Geometry.cpp
     src/Engine/Navigation/Files.cpp
     src/Engine/Editor/NavigationBake.cpp
@@ -238,7 +240,7 @@ target_link_libraries(DotEngine PRIVATE imgui::imgui Freetype::Freetype)
 target_link_libraries(DotEngine PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader)
 target_link_libraries(DotEngine PRIVATE EnTT::EnTT)
 target_link_libraries(DotEngine PRIVATE Jolt::Jolt)
-target_link_libraries(DotEngine PRIVATE RecastNavigation::Recast RecastNavigation::Detour)
+target_link_libraries(DotEngine PRIVATE RecastNavigation::Recast RecastNavigation::Detour RecastNavigation::DetourCrowd)
 target_link_libraries(DotEngine PRIVATE xxHash::xxhash)
 target_link_libraries(DotEngine PRIVATE DotAudioBackend DotImageBackend DotModelBackend)
 target_include_directories(DotEngine SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
@@ -250,6 +252,8 @@ target_compile_options(DotEngine PUBLIC "$<TARGET_PROPERTY:Jolt::Jolt,INTERFACE_
 target_sources(DotEngine PUBLIC
     FILE_SET CXX_MODULES FILES
         src/Engine/Navigation/Surface.cppm
+        src/Engine/Navigation/Steering.cppm
+        src/Engine/Navigation/Movement.cppm
         src/Engine/Navigation/Geometry.cppm
         src/Engine/Navigation/Files.cppm
         src/Engine/Editor/NavigationBake.cppm

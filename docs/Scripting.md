@@ -1182,12 +1182,15 @@ an otherwise unrelated serialization of the active world on every append.
 场景拥有并在销毁时释放。这一步不执行脚本、设备或文件写入，仍保留 10000 实体上限。
 
 
-## Native static navigation / 原生静态导航
+## Native navigation / 原生导航
 
-`navigation.stats()` reports the current baked surface or null; `navigation.route`
-requests a complete route from a native character's measured feet to a goal. It
-checks capsule compatibility, bounded projection and static geometry state, and
-returns owned projected endpoints/corners. Scripts follow corners with existing
-native character intent; physics determines progress and arrival. See
-[navigation contracts](Navigation.md). PrismRelay's crew demonstrates success; the
-FeatureLab audit exercises the unbound query and catchable unavailable error.
+`navigation.stats()` reports the baked surface or null; `navigation.route()` returns a
+complete static route from actual native character feet. `move(entity, goal, speed,
+options)` delegates corner following and local reciprocal velocity avoidance to native
+code. `state()` observes moving/arrived/failed, actual distance, blocked state and
+neighbors; `agents()` lists controlled characters, `stop()` releases velocity ownership.
+Jolt owns actual poses and grounded arrival. Pause/single-step share game scheduling;
+reload retains native movement and permits observational state reads during migration.
+See [navigation contracts](Navigation.md) for strict editor/player operations, budgets,
+profile/geometry checks and limitations. PrismRelay submits station intent; FeatureLab
+covers unbound reads, idempotent stop and catchable unavailable move/route errors.

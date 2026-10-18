@@ -57,17 +57,18 @@ then edit its two world-space stations through Inspector. Every character binds 
 single direct model child, so copied names and remapped native joint IDs remain
 independent. Walk to a station, perform the native masked inspection gesture, wait,
 then return. Arrival requires actual native feet near the station and grounded
-support; a player blocking the path cannot make the worker claim completion. Let
-the player move aside and normal capsule movement resumes. Native navigation supplies
-static-obstacle corners for each trip; worker 7 crosses between [-2,0,0] and [2,0,0]
-by walking around the central obstruction. No crowd avoidance or jump-link planning.
+support. Native navigation owns corner following and local reciprocal velocity avoidance,
+including the standing/manual player. Workers 1 and 2 travel opposite directions along
+[-4,0,-2] ↔ [-4,0,2]; worker 7 crosses [-2,0,0] ↔ [2,0,0] around the central obstruction.
+A player occupying the goal cannot make a worker claim completion; moving aside lets
+native movement resume. Local avoidance can still block or deadlock, and has no jump links.
 An unavailable route stops that worker and reports `routeFailure`; it never fabricates
 an arrival.
 
 Movement, collision, support and animation mixing remain native engine services.
 Script reload retains each worker's private duty state and native animation clocks;
-state migration only reads services and reconstructs private intent, including owned
-route corners, current corner and baked geometry identity. Pausing freezes
+state migration only reads services and reconstructs private duty intent and baked
+geometry identity; native movement controllers retain routes/corners/avoidance state. Pausing freezes
 all characters, and one simulation step advances them together. The game-state keys
 `crew:<entity value>` expose phase/target/actual arrival counts and route failures and are removed when
 that level retires. They do not replace native pose/contact observations or persist

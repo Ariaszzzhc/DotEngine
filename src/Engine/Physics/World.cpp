@@ -779,6 +779,7 @@ namespace Dot::Physics {
       CharacterProperties properties;
       CharacterInput input;
       std::uint64_t userTag;
+      Math::Vec3 measuredVelocity{};
     };
 
     std::shared_ptr<Runtime> m_runtime;
@@ -978,6 +979,8 @@ namespace Dot::Physics {
       for (auto& [id, entry] : m_characters) {
         (void)id;
         auto& character = *entry.capsule;
+        const auto before = character.GetPosition();
+
         /** Refresh before using support: bodies/peers may have moved or been
          * removed since the last substep, and must not enable a stale jump.
          * 支撑使用前刷新，刚体/其他角色可能已移动或删除，不能用过期支撑起跳。 */
@@ -1027,7 +1030,10 @@ namespace Dot::Physics {
             seconds, gravity, settings, m_system.GetDefaultBroadPhaseLayerFilter(movingLayer),
             m_system.GetDefaultLayerFilter(movingLayer), SolidBodies{}, {}, m_temporary);
 
-        if (character.GetMaxHitsExceeded() || !Math::isFinite(vector(character.GetPosition()))
+        entry.measuredVelocity = vector((character.GetPosition() - before) / seconds);
+
+        if (!Math::isFinite(entry.measuredVelocity) || character.GetMaxHitsExceeded()
+            || !Math::isFinite(vector(character.GetPosition()))
             || !Math::isFinite(vector(character.GetLinearVelocity()))) {
           return Core::fail(
               Core::ErrorCode::External,
@@ -1388,6 +1394,7 @@ namespace Dot::Physics {
         if (change.preserveMotion) {
           entry->capsule->SetLinearVelocity(previous->capsule->GetLinearVelocity());
           entry->input = previous->input;
+          entry->measuredVelocity = previous->measuredVelocity;
         }
 
         prepared.emplace(id.value, std::move(*entry));
@@ -1673,7 +1680,8 @@ namespace Dot::Physics {
                           ground,
                           vector(capsule.GetGroundNormal()),
                           vector(capsule.GetGroundVelocity()),
-                          support};
+                          support,
+                          (*entry)->measuredVelocity};
   }
 
   auto World::setCharacterInput(CharacterId id, const CharacterInput& input) -> Core::Result<void> {
@@ -1772,6 +1780,7 @@ namespace Dot::Physics {
       capsule.SetRotation(native(*rotation));
       capsule.SetLinearVelocity(JPH::Vec3::sZero());
       (*entry)->input = {};
+      (*entry)->measuredVelocity = {};
       auto refreshed = m_impl->refreshCharacter(capsule);
 
       if (!refreshed) {

@@ -284,6 +284,14 @@ export class Audit extends ScriptComponent<{contract: string}> {
     this.check('navigation.stats', navigation.stats() === null);
     this.expectedError(() => navigation.route(dynamic.id, {x: 0, y: 0, z: 0}), 'Unavailable');
     this.check('navigation.route', true);
+    const nativeActor = this.entity('Character controller');
+    this.expectedError(() => navigation.move(nativeActor.id, {x: 0, y: 0, z: 0}, 1), 'Unavailable');
+    this.check('navigation.move', true);
+    this.check('navigation.state', navigation.state(nativeActor.id) === null);
+    this.check('navigation.agents', navigation.agents().length === 0
+        && Object.values(nativeActor.characterState.measuredVelocity).every(Number.isFinite));
+    navigation.stop(nativeActor.id);
+    this.check('navigation.stop', navigation.state(nativeActor.id) === null);
     this.check('physics.stats', physics.stats().bodies === 8 && !physics.stats().faulted);
     this.check('physics.contacts.get', Array.isArray(physics.contacts.events));
     const duct = this.entity('Mesh duct');
