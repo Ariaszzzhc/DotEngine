@@ -58,7 +58,8 @@ auto main(int argc, char** argv) -> int {
       return std::filesystem::path{std::u8string(value.begin(), value.end())};
     };
 
-    return game ? Dot::Runtime::playGame(path(argv[2]), *options)
+    return game ? Dot::Runtime::playGame(path(argv[2]), *options,
+                                         Dot::Runtime::PlayerLayout::Development)
                 : Dot::Runtime::playProject(path(argv[2]), path(argv[3]), *options);
   } catch (const std::exception& error) {
     std::println(stderr, "DotEngine failed: {}", error.what());

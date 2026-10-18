@@ -142,6 +142,14 @@ The [Prism Relay example](Examples.md) is a complete ordinary project that can b
 edited, played and exported through these operations. Runtime window titles follow
 native scene names, allowing script-authored progress/status through the scene API.
 
+## Executable resource layout
+
+DotRuntime uses its own `resources/EngineSans.ttf` for both source projects and
+`--game` data packages. A portable exported DotGame uses adjacent `EngineSans.ttf`.
+The frontend selects its resource layout independently of which game data it loads;
+package locations never redirect engine font lookup. Both paths retain the same
+pinned font and explicit failure when unavailable, with no system-font fallback.
+
 ## Stable player progress identity
 
 Native/data exports preserve the project's required `applicationId` independently

@@ -52,8 +52,13 @@ namespace Dot::Runtime {
     }
 
     auto execute(const Project::Project* project, const Script::TypeScriptCompiler* compiler,
-                 const Project::GamePackage* game, const PlayerOptions& options)
-        -> Core::Result<void> {
+                 const Project::GamePackage* game, const PlayerOptions& options,
+                 PlayerLayout layout) -> Core::Result<void> {
+      if (layout != PlayerLayout::Development && layout != PlayerLayout::Standalone) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Invalid native player resource layout");
+      }
+
       std::optional<Core::FileSystem> profileFiles;
       std::filesystem::path profileName;
 
@@ -189,7 +194,9 @@ namespace Dot::Runtime {
       const auto fontRoot
           = std::filesystem::path{std::u8string(base, base + std::char_traits<char>::length(base))};
       auto textRenderer = Graphics::TextRenderer::create(
-          *renderer, fontRoot / (game ? "EngineSans.ttf" : "resources/EngineSans.ttf"));
+          *renderer, fontRoot
+                         / (layout == PlayerLayout::Standalone ? "EngineSans.ttf"
+                                                               : "resources/EngineSans.ttf"));
 
       if (!textRenderer) {
         return std::unexpected(textRenderer.error());
@@ -730,12 +737,12 @@ namespace Dot::Runtime {
 
   auto runProject(const Project::Project& project, const Script::TypeScriptCompiler& compiler,
                   const PlayerOptions& options) -> Core::Result<void> {
-    return execute(&project, &compiler, nullptr, options);
+    return execute(&project, &compiler, nullptr, options, PlayerLayout::Development);
   }
 
-  auto runGame(const Project::GamePackage& game, const PlayerOptions& options)
+  auto runGame(const Project::GamePackage& game, const PlayerOptions& options, PlayerLayout layout)
       -> Core::Result<void> {
-    return execute(nullptr, nullptr, &game, options);
+    return execute(nullptr, nullptr, &game, options, layout);
   }
 
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& executable,
@@ -764,7 +771,8 @@ namespace Dot::Runtime {
     return 0;
   }
 
-  auto playGame(const std::filesystem::path& root, const PlayerOptions& options) -> int {
+  auto playGame(const std::filesystem::path& root, const PlayerOptions& options,
+                PlayerLayout layout) -> int {
     auto files = Core::FileSystem::open(root);
     auto game = files ? Project::GamePackage::open(*files)
                       : Core::Result<Project::GamePackage>{std::unexpected(files.error())};
@@ -774,7 +782,7 @@ namespace Dot::Runtime {
       return 1;
     }
 
-    auto played = runGame(*game, options);
+    auto played = runGame(*game, options, layout);
 
     if (!played) {
       std::println(stderr, "{}", played.error().message);

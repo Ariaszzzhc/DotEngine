@@ -12,6 +12,11 @@ import Dot.Project.GamePackage;
 import Dot.Script.Compiler;
 
 namespace Dot::Runtime {
+  /** Executable resource layout is independent of project versus package data.
+   * Development players use resources/, standalone exports use adjacent files.
+   * 可执行程序资源布局独立于项目/数据包类型；开发播放器使用 resources/，独立导出使用同级文件。 */
+  enum class PlayerLayout { Development, Standalone };
+
   /** Native loop options; loading frames do not consume the game-frame budget.
    * 原生循环配置；加载帧不消耗游戏帧预算。 */
   struct PlayerOptions {
@@ -30,11 +35,12 @@ namespace Dot::Runtime {
 
   auto runProject(const Project::Project& project, const Script::TypeScriptCompiler& compiler,
                   const PlayerOptions& options) -> Core::Result<void>;
-  auto runGame(const Project::GamePackage& game, const PlayerOptions& options)
+  auto runGame(const Project::GamePackage& game, const PlayerOptions& options, PlayerLayout layout)
       -> Core::Result<void>;
   auto playProject(const std::filesystem::path& root, const std::filesystem::path& compiler,
                    const PlayerOptions& options) -> int;
-  auto playGame(const std::filesystem::path& root, const PlayerOptions& options) -> int;
+  auto playGame(const std::filesystem::path& root, const PlayerOptions& options,
+                PlayerLayout layout) -> int;
   auto parsePlayerOptions(std::span<const std::string_view> arguments, bool positionalBudget)
       -> Core::Result<PlayerOptions>;
   auto sendPlayerRequest(std::string_view control, std::string_view id, std::string_view request)

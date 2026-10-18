@@ -47,7 +47,7 @@ auto main(int argc, char** argv) -> int {
 
     const std::string_view text(base);
     const auto root = std::filesystem::path(std::u8string(text.begin(), text.end()));
-    return Dot::Runtime::playGame(root / "game", *options);
+    return Dot::Runtime::playGame(root / "game", *options, Dot::Runtime::PlayerLayout::Standalone);
   } catch (const std::exception& error) {
     std::println(stderr, "Standalone game: {}", error.what());
     return 1;

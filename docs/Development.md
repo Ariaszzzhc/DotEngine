@@ -13077,3 +13077,26 @@ Dynamic/kinematic triangle meshes, convex decomposition, deforming collision,
 collision geometry editing/visual overlays, background native cooking and broad
 production-scale content/performance evidence remain open. Existing game art and
 general-purpose engine production readiness are not established by these checks.
+
+## 2026-10-18 — Package player resource layout
+
+A controlled real Release DotRuntime --game run exposed an existing frontend bug:
+package presence selected the standalone font location even for the development
+player. The process reached game startup, then returned 1 with a missing-file
+error when native HUD text loaded. The attempted OS sample correctly reported that
+this process had already ended; no timing result from that failed run is accepted.
+
+Make executable layout explicit and independent of project/package data. DotRuntime
+uses resources/EngineSans.ttf in either mode; exported DotGame uses its adjacent
+EngineSans.ttf. Both entry points select a required PlayerLayout; invalid native
+values fail, and there is no directory probing/system-font fallback. The option
+remains private frontend configuration rather than a new end-user CLI parameter.
+
+Actual arm64 macOS verification: Release DotRuntime --game completes 2000 presented
+game frames with exit 0 after the fix. A later newly authored/relocated package also
+runs through DotRuntime, reports two native text rasters with matching presented
+scope, no script failures and exit 0. The exported DotGame presents its adjacent
+font and completes real movement/save/restore with exit 0. Relevant malformed
+runtime/control command cases pass as part of the 74-case targeted checks; those
+headless command tests do not open desktop windows. Keep diagnostic records under
+ignored build/frame-cost-review. Windows/Linux remain unvalidated.
