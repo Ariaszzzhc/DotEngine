@@ -182,12 +182,25 @@ run synchronously; the remaining roughly 61 ms prepare step is not a frame-deadl
 guarantee. Raw profiles, requests, scene/view context, binary fingerprints and
 comparison records remain in ignored build/scene-work-review.
 
-Background source updates separate preparation from owner publication. In the
-342-entity/26-link Prism scene, three warm final Release samples give median native
+The initial background source implementation separated preparation from owner publication.
+In the 342-entity/26-link Prism scene, three warm Release samples at that stage gave median native
 Application Prepare envelopes of 64.397 ms for the synchronous no-op edit request,
 0.818 ms peak across background begin/poll, and 20.481 ms for final owner publication.
-The preparation peaks range 0.737–2.498 ms; publication still decodes and commits the
-scene and refreshes Workspace synchronously. The operation arrays/content match.
+Those preparation peaks ranged 0.737–2.498 ms; publication at that stage still
+decoded/committed the scene and refreshed Workspace synchronously. The operation arrays/content match.
 These CPU envelopes do not measure worker-only duration or imply a GPU/FPS gain.
 Raw profiles and bounded repeated-update responsiveness observations are retained
 in ignored build/source-update-review. See [source job contracts](Editor.md#background-scene-source-updates).
+
+Sealed CPU handoff removes the repeated owner decode/encode and retires replaced CPU
+scene descriptions on the existing source worker. Three matched warm Release runs
+of the same 342-entity/26-link scene now give owner publication Prepare envelopes
+21.951 → 7.411 ms for actual saved-source material changes and 20.653 → 0.994 ms for
+no-op refreshes. The former includes changed Workspace/graphics preparation; the
+latter skips scene/history/snapshot replacement. Source observations and exact
+revalidation still execute on the worker. These are request-step envelopes, not
+worker-only elapsed times, GPU/FPS results or hard large-scene deadlines. Original
+and final authored descriptions, operation arrays, selections and native viewport
+pixels match; raw three-sample profiles and binary fingerprints remain in ignored
+build/scene-publication-review. Changed Workspace rebuilding, history allocation,
+other resource/service ownership and GPU retirement remain separate costs.

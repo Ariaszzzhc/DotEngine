@@ -67,14 +67,17 @@ export namespace Dot::Editor {
   };
 
   /** Owned source-update preparation with no live Scene/device handles crossing threads.
-   * Ready retains a serialized candidate; requestApply rechecks every observed source and
-   * metadata byte on the worker before Validated. Only Document can publish that candidate.
+   * Ready retains sealed detached CPU ownership and canonical authored text; requestApply
+   * rechecks every observed source/metadata byte on the worker before Validated. Only Document
+   * can adopt/publish the candidate. Unchanged content needs no owner decode or scene swap;
+   * changed work returns the retired CPU scene to this same worker for destruction.
    * Status/request/cancel require the creator thread and do no file I/O. Cancellation and
    * destruction join cooperatively between bounded native calls; destruction may wait.
    * Source writers must be serialized: validation/publication is not an OS-wide snapshot.
    * At most 4096 observed files/128 MiB of source text are retained, plus bounded scene data.
-   * 拥有来源更新准备任务，不跨线程传递实时 Scene/设备句柄。Ready 保留序列化候选；请求
-   * 应用后由工作线程逐字复核来源及项目描述，再进入 Validated，仅 Document 可发布候选。
+   * 拥有来源更新准备任务，不跨线程传递实时 Scene/设备句柄。Ready 保留分离 CPU 所有权及
+   * 规范编辑文本；请求应用后由工作线程逐字复核来源/项目描述，再进入 Validated，仅 Document
+   * 可接收发布候选。无变化无需主线程解码或场景替换；变化时退役 CPU 场景由同一工作线程销毁。
    * 状态/请求/取消限创建线程且不读写文件；取消及销毁在有界原生调用间协作，销毁可能等待。
    * 调用者须串行来源写入，校验/发布不是操作系统快照；至多保留 4096 文件/128 MiB 来源文本，
    * 另加有界场景数据。 */
@@ -172,10 +175,10 @@ export namespace Dot::Editor {
     /** Capture immutable authoring data and prepare 1..256 refresh/restore/retarget operations
      * on an owned worker using the same native transaction as apply. Does not change history.
      * applySourceUpdate accepts only this document's captured revision/path, after worker
-     * validation, then decodes/commits on the owner. Failed/stale/cancelled work cannot publish.
+     * validation, then adopts/commits on the owner. Failed/stale/cancelled work cannot publish.
      * 捕获不可变编辑数据，以拥有线程准备 1..256 条刷新/恢复/重定向，共用 apply 的原生事务，
      * 不修改历史。applySourceUpdate 仅接受本文件所捕获的版本/路径及工作线程已复核的结果，
-     * 再在拥有线程解码提交；失败、过期或取消结果不可发布。 */
+     * 再在拥有线程接收提交；失败、过期或取消结果不可发布。 */
     [[nodiscard]] auto beginSourceUpdate(std::string_view operations, std::uint64_t revision) const
         -> Core::Result<SourceUpdate>;
     [[nodiscard]] auto applySourceUpdate(SourceUpdate& update, std::uint64_t revision)

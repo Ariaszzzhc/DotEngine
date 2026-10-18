@@ -14052,3 +14052,98 @@ Physical mouse/keyboard and final panel layout are not accepted by this evidence
 Windows/Linux execution, asynchronous final publication, general scene streaming,
 finished sci-fi art and overall production readiness remain open. This stage removes
 source I/O/candidate preparation from the owner; it does not complete those goals.
+
+## 2026-10-18 — Sealed scene publication and retirement
+
+Remove repeated owner decoding/encoding from background source publication. Add a
+World-level move-only DetachedScene envelope for exclusively owned CPU descriptions.
+Detach requires the current owner after all borrows are quiescent and empties its
+Scene; the envelope exposes no scene/entity operations. Adoption consumes it only
+on success, allocates a fresh scope and binds operations to the receiving thread.
+Entity values, hierarchy/cache data, components, source mappings and allocation
+reservations remain intact. Every old scoped handle becomes invalid, even on a
+same-thread round trip. Ordinary Scene moves retain their existing owner restriction;
+no devices, simulation/audio instances or script realms are transferred.
+
+Source workers now seal changed native CPU scenes with canonical authoring text and
+filter their created/selection values before Ready. A candidate too large for its
+history entry fails during preparation. Exact source/metadata revalidation and the
+captured document identity/revision/path gates remain. The owner adopts the sealed
+candidate and uses the common document history publication, without another native
+codec pass. Replaced CPU descriptions return through an opaque envelope to that same
+worker for destruction. No-op jobs have no receiver scene and preserve the existing
+scope, selection, allocation/history and Workspace snapshot. Cancelled validated
+candidates stay cancelling until worker discard; Applied describes document
+publication, while explicit Close/shutdown can still join bounded retirement.
+
+Relevant Debug checks first pass 118/118 in 8.40 s. After final implementation and
+interface review, full Debug passes 1618/1618 in 263.09 s and full Release/NDEBUG
+passes 1618/1618 in 37.32 s: 518 pure unit and 1100 integration cases, with the 186
+offscreen GPU cases kept separate. Four new CPU-only cases cover one-shot envelope
+moves/consumption, owner restrictions and stale handles, synchronized round trips
+with cached hierarchy and allocation preservation, empty/sealed/discard lifetime,
+and exact source provenance across adoption. Existing background document tests
+cover atomic changed/no-op history, stale/foreign documents, source/metadata/symlink
+failure, cancellation and UTF-8 paths; adjust their early-history-failure and
+asynchronous cancellation expectations to the new behavior. All automatic tests
+remain free of desktop windows. Builds/tests and actual application runs are
+serialized. Formatting/diff review passes; dependencies, compiler environment,
+assertions, warnings, timeouts and resource budgets remain unchanged. Native kit
+path fixups emit intermediate install_name_tool signature-invalidation warnings;
+retain those logs. All 21 final Debug/Release/exported Mach-O files subsequently
+pass strict codesign verification after the normal re-signing steps.
+
+Before rebuilding Release, run the actual preceding editor against the 342-entity,
+26-link editable Prism project. Perform three saved-source material changes and
+three no-op background refreshes, isolating the publication profiling session from
+begin/poll. Restore all saved files and exit the owned process. Repeat the same
+product operations/content with the final Release editor. Publication Prepare step
+envelopes in ms are:
+
+| Case | Before | After |
+| --- | --- | --- |
+| Changed saved source | 21.895833, 21.950625, 22.169667 | 7.281667, 7.411375, 7.553375 |
+| No-op refresh | 20.652584, 20.760417, 20.561084 | 0.915459, 1.096208, 0.993583 |
+
+Medians decrease 21.951 → 7.411 ms (about 66.2%) for changed content and
+20.653 → 0.994 ms (about 95.2%) for no-op refresh. These are real native Application
+Prepare request-step envelopes including changed Workspace/graphics preparation,
+not worker-only duration, round-trip latency, GPU/FPS gains or large-game throughput.
+The three before/after authored descriptions, selections and operation arrays match.
+The initial 1480x574 native viewport PNGs are byte-identical, SHA-256
+b075e0fa07517fa861351167ec1226e5c944353f03d7a25aba336f749387f380.
+
+In another real final editor session, cancel a ready job, reject a stale document
+without overwriting the subsequent edit, and reject an observed source that becomes
+unreadable after Ready; all retain the expected document. Author and Save a local
+duct label, edit/Save the actual source tint and refresh all twenty-six placements.
+Twelve instances adopt it while preserving local name and placement; scope changes,
+one undo/redo restores the full transaction, and saved main/study scenes reopen.
+Create a Chinese-named source using real Save as and relink the twelve placements
+in both scenes through the same handoff. Real Play movement and F6/F7 asynchronous
+checkpoints restore within approximately 8.20e-8 world units. Capture its actual
+viewport, Stop back to unchanged authoring and export a normal test game.
+
+Restore the original tint, local label and both source associations through product
+operations, remove only the owned temporary source file, and confirm every original
+project hash. Relocate the 163-file native game and hide only its authoring tree.
+Two fresh native processes preserve the changed label and twelve Unicode source
+associations, render frames/HUD and restore the persisted slot with exact coordinates,
+zero script failures and no diagnostics. The final player binary matches the signed
+runtime kit; restore the owned authoring tree after both exits.
+
+All five owned editor/measurement/player processes exit 0 before their persistent
+close result is read, acknowledged and cleared. Preserve all 34 prior guarded saves
+plus the new independent slot (35 total), 19 guarded original source/art files, all
+123 editable-project files, prior test games and this new normal native game. Keep
+raw requests/responses/acknowledgements, profiles, matched/changed descriptions,
+PNG captures, saved data, normal game and executable fingerprints in ignored
+build/scene-publication-review. Remove only owned temporary helper scripts/bytecode;
+no release archive is created.
+
+Computer use again reports the Mac locked and automatic unlock unsuccessful; no
+physical mouse or final panel-layout acceptance is claimed. Only arm64 macOS runs
+are verified. Changed Workspace rebuilding/history allocation, general scene/resource
+streaming, other service/GPU retirement, finished sci-fi art and overall production
+readiness remain open. Sealed CPU handoff is foundation for those workflows, not
+proof that their full requested scope is complete.

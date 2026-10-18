@@ -213,6 +213,8 @@ export namespace Dot::World {
     std::optional<CharacterController> character{};
   };
 
+  class DetachedScene;
+
   /** EnTT-backed scene. Operations require the creating thread; destruction may
    * occur after quiescence on any thread. Names are 1..256 UTF-8 bytes without NUL.
    * The scene holds at most 10000 entities with hierarchy depth at most 256.
@@ -228,6 +230,16 @@ export namespace Dot::World {
     auto operator=(Scene&&) noexcept -> Scene&;
     ~Scene();
 
+    /** Exclusively detach CPU descriptions after all borrows are quiescent. Success empties
+     * this Scene; the opaque move-only envelope has no scene/entity access and can cross a
+     * synchronized thread boundary. adopt consumes it only on success, assigns a fresh scope
+     * and binds operations to the receiving thread, invalidating every old scoped handle.
+     * No devices, backend instances or runtime services are contained/transferred.
+     * 全部借用静止后独占分离 CPU 描述；成功使本 Scene 为空。不可复制的封套不提供场景/实体
+     * 访问，可经同步在线程间交接。adopt 仅成功时消费封套，分配新范围并绑定接收线程，使全部
+     * 旧范围句柄失效；封套不包含或转移设备、后端实例及运行服务。 */
+    [[nodiscard]] auto detach() -> Core::Result<DetachedScene>;
+    [[nodiscard]] static auto adopt(DetachedScene& detached) -> Core::Result<Scene>;
     [[nodiscard]] auto id() const noexcept -> std::uint64_t;
     [[nodiscard]] auto name() const -> Core::Result<std::string>;
     [[nodiscard]] auto rename(std::string_view name) -> Core::Result<void>;
@@ -408,8 +420,28 @@ export namespace Dot::World {
         -> Core::Result<void>;
 
   private:
+    friend class DetachedScene;
     struct Impl;
     explicit Scene(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;
+  };
+
+  /** Quiescent CPU ownership, consumable once. Moving an ordinary Scene still preserves
+   * its creating-thread restriction; only explicit detach/adopt changes owner and scope.
+   * Destruction is safe on any thread after exclusive synchronized handoff.
+   * 静止的 CPU 独占所有权，仅能消费一次；普通 Scene 移动仍保留创建线程限制，只有显式
+   * detach/adopt 改变拥有线程及范围。独占同步交接后可在任意线程销毁。 */
+  class DetachedScene {
+  public:
+    DetachedScene(const DetachedScene&) = delete;
+    auto operator=(const DetachedScene&) -> DetachedScene& = delete;
+    DetachedScene(DetachedScene&&) noexcept;
+    auto operator=(DetachedScene&&) noexcept -> DetachedScene&;
+    ~DetachedScene();
+
+  private:
+    friend class Scene;
+    explicit DetachedScene(std::unique_ptr<Scene::Impl> scene) noexcept;
+    std::unique_ptr<Scene::Impl> m_scene;
   };
 }  // namespace Dot::World

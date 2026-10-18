@@ -448,6 +448,46 @@ namespace Dot::World {
     return Scene(std::move(impl));
   }
 
+  DetachedScene::DetachedScene(std::unique_ptr<Scene::Impl> scene) noexcept
+      : m_scene(std::move(scene)) {
+  }
+
+  DetachedScene::DetachedScene(DetachedScene&&) noexcept = default;
+
+  auto DetachedScene::operator=(DetachedScene&&) noexcept -> DetachedScene& = default;
+
+  DetachedScene::~DetachedScene() = default;
+
+  auto Scene::detach() -> Core::Result<DetachedScene> {
+    if (!m_impl) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Scene was moved or detached");
+    }
+
+    auto checked = m_impl->check();
+
+    if (!checked) {
+      return std::unexpected(checked.error());
+    }
+
+    return DetachedScene(std::move(m_impl));
+  }
+
+  auto Scene::adopt(DetachedScene& detached) -> Core::Result<Scene> {
+    if (!detached.m_scene) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Detached scene was moved or consumed");
+    }
+
+    auto identity = sceneIdentity();
+
+    if (!identity) {
+      return std::unexpected(identity.error());
+    }
+
+    detached.m_scene->identity = *identity;
+    detached.m_scene->thread = std::this_thread::get_id();
+    return Scene(std::move(detached.m_scene));
+  }
+
   auto Scene::id() const noexcept -> std::uint64_t {
     return m_impl ? m_impl->identity : 0;
   }

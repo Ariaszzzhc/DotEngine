@@ -2444,7 +2444,7 @@ TEST_CASE("document.background_source_update_cancellation_and_teardown_preserve_
   auto validated = sourceUpdate(document, operations);
   validateSource(validated);
   REQUIRE(validated.cancel(validated.status()->revision));
-  CHECK(validated.status()->state == SourceUpdateState::Cancelled);
+  waitSource(validated, SourceUpdateState::Cancelled);
   CHECK(state(document) == before);
   auto surviving = sourceUpdate(document, operations);
   document = fixture.document();
@@ -2503,9 +2503,7 @@ TEST_CASE("document.background_source_update_failure_retains_document_and_histor
   const auto before = state(bounded);
   auto update
       = sourceUpdate(bounded, Json::array({{{"op", "refresh-scene-instance"}, {"entity", "3"}}}));
-  validateSource(update);
-  CHECK_FALSE(bounded.applySourceUpdate(update, revision(bounded)));
-  CHECK(update.status()->state == SourceUpdateState::Failed);
+  waitSource(update, SourceUpdateState::Failed);
   CHECK(state(bounded) == before);
   auto missing = sourceUpdate(bounded, Json::array({{{"op", "retarget-scene-instance"},
                                                      {"entity", "3"},

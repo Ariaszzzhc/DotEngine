@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <expected>
+#include <future>
 #include <limits>
 #include <optional>
 #include <string>
@@ -609,4 +611,98 @@ TEST_CASE("scene.named_lookup_validates_names_owner_and_moved_lifetime") {
   auto moved = std::move(scene);
   CHECK_FALSE(scene.findEntities("Entity"));
   CHECK(moved.findEntities("Entity")->empty());
+}
+
+TEST_CASE("scene.detached_envelopes_consume_once_and_invalidate_all_old_scopes") {
+  auto scene = Scene::create("Sealed scene").value();
+  const auto entity = scene.createEntity("Owned entity").value();
+  REQUIRE(scene.setMeshRenderer(entity, MeshRenderer{}));
+  std::jthread foreign([&] { CHECK_FALSE(scene.detach()); });
+  foreign.join();
+  CHECK(scene.entity(entity));
+  auto detached = scene.detach();
+  REQUIRE(detached);
+  CHECK(scene.id() == 0);
+  CHECK_FALSE(scene.entity(entity));
+  CHECK_FALSE(scene.detach());
+  auto moved = std::move(*detached);
+  CHECK_FALSE(Scene::adopt(*detached));
+  auto adopted = Scene::adopt(moved);
+  REQUIRE(adopted);
+  CHECK_FALSE(Scene::adopt(moved));
+  CHECK(adopted->id() != entity.scene);
+  CHECK_FALSE(adopted->entity(entity));
+  const auto current = adopted->findEntity(entity.value).value();
+  CHECK(adopted->entity(current)->mesh.has_value());
+  CHECK(adopted->entity(current)->name == "Owned entity");
+  std::jthread wrongReceiver([&] {
+    CHECK_FALSE(adopted->name());
+    CHECK_FALSE(adopted->detach());
+  });
+  wrongReceiver.join();
+  CHECK(adopted->entity(current));
+}
+
+TEST_CASE("scene.detached_cpu_ownership_crosses_threads_with_hierarchy_and_allocator_intact") {
+  auto scene = Scene::create("Transfer state").value();
+  const auto parent = scene.createEntity("Parent").value();
+  const auto child = scene.createEntity("Child").value();
+  REQUIRE(scene.setParent(child, parent));
+  REQUIRE(scene.setTransform(parent, {{5, 0, 0}}));
+  REQUIRE(scene.setTransform(child, {{2, 0, 0}}));
+  REQUIRE(scene.reserveEntityValuesBefore(100));
+  CHECK(position(scene, child).x == doctest::Approx(7));
+  auto envelope = scene.detach();
+  REQUIRE(envelope);
+  auto future = std::async(
+      std::launch::async,
+      [owned = std::move(*envelope), parent, child]() mutable -> Dot::Core::Result<DetachedScene> {
+        auto received = Scene::adopt(owned);
+
+        if (!received) {
+          return std::unexpected(received.error());
+        }
+
+        CHECK_FALSE(received->entity(child));
+        const EntityId currentChild{received->id(), child.value};
+        const EntityId currentParent{received->id(), parent.value};
+        CHECK(received->entity(currentChild)->parent == currentParent);
+        CHECK(position(*received, currentChild).x == doctest::Approx(7));
+        auto changed = received->setTransform(currentChild, {{3, 0, 0}});
+
+        if (!changed) {
+          return std::unexpected(changed.error());
+        }
+
+        CHECK(position(*received, currentChild).x == doctest::Approx(8));
+        CHECK(received->createEntity("After handoff")->value == 100);
+        return received->detach();
+      });
+  auto returned = future.get();
+  REQUIRE(returned);
+  auto adopted = Scene::adopt(*returned);
+  REQUIRE(adopted);
+  CHECK_FALSE(adopted->entity(child));
+  CHECK(adopted->nextEntityValue()->value() == 101);
+  CHECK(position(*adopted, {adopted->id(), child.value}).x == doctest::Approx(8));
+  CHECK(adopted->entityCount().value() == 3);
+}
+
+TEST_CASE("scene.detached_empty_sealed_allocators_and_discard_are_backend_free") {
+  auto empty = Scene::create("Empty sealed allocator").value();
+  REQUIRE(empty.reserveEntityValuesBefore(std::nullopt));
+  auto transfer = empty.detach();
+  REQUIRE(transfer);
+  auto adopted = Scene::adopt(*transfer);
+  REQUIRE(adopted);
+  CHECK(adopted->entityCount().value() == 0);
+  CHECK_FALSE(adopted->nextEntityValue()->has_value());
+  CHECK_FALSE(adopted->createEntity("Exhausted"));
+  auto discarded = adopted->detach();
+  REQUIRE(discarded);
+  auto destruction = std::async(std::launch::async, [owned = std::move(*discarded)]() mutable {
+    auto moved = std::move(owned);
+    CHECK_FALSE(Scene::adopt(owned));
+  });
+  destruction.get();
 }

@@ -909,7 +909,8 @@ namespace Dot::Editor {
 
   struct SourceUpdate::Impl {
     struct Candidate {
-      std::string scene;
+      std::optional<World::DetachedScene> scene;
+      std::shared_ptr<const std::string> authored;
       std::uint64_t next;
       std::vector<std::uint64_t> created;
       std::vector<std::uint64_t> selection;
@@ -920,21 +921,25 @@ namespace Dot::Editor {
     std::shared_ptr<const std::uint8_t> m_identity;
     std::uint64_t m_documentRevision;
     std::string m_path;
+    std::uint64_t m_historyBudget;
     mutable std::mutex m_mutex;
     std::condition_variable m_changed;
     SourceUpdateState m_state{SourceUpdateState::Preparing};
     std::uint64_t m_revision{1};
     std::optional<Core::Error> m_error;
     std::optional<Candidate> m_candidate;
+    std::optional<World::DetachedScene> m_retired;
     std::jthread m_worker;
 
     Impl(Project::Project project, std::shared_ptr<const std::uint8_t> identity,
          std::uint64_t revision, std::string path, std::shared_ptr<const std::string> text,
-         std::uint64_t next, std::vector<std::uint64_t> selection, Json commands)
+         std::uint64_t next, std::vector<std::uint64_t> selection, Json commands,
+         std::uint64_t historyBudget)
         : m_project(std::move(project)),
           m_identity(std::move(identity)),
           m_documentRevision(revision),
           m_path(std::move(path)),
+          m_historyBudget(historyBudget),
           m_worker([this, text = std::move(text), next, selection = std::move(selection),
                     commands = std::move(commands)](std::stop_token stop) mutable {
             run(*text, next, std::move(selection), commands, stop);
@@ -964,6 +969,7 @@ namespace Dot::Editor {
     auto complete(SourceUpdateState state, std::optional<Core::Error> error = {}) -> void {
       std::lock_guard lock(m_mutex);
       m_candidate.reset();
+      m_retired.reset();
       m_state = state;
       m_error = std::move(error);
       ++m_revision;
@@ -1005,14 +1011,35 @@ namespace Dot::Editor {
       }
 
       auto scene = decodeCandidate(candidate, next);
-      auto encoded = scene ? World::encodeScene(*scene)
+      auto encoded = scene ? authoringText(*scene)
                            : Core::Result<std::string>{std::unexpected(scene.error())};
 
       if (!encoded) {
         return std::unexpected(encoded.error());
       }
 
-      return Candidate{std::move(*encoded), next, std::move(created), std::move(selection)};
+      std::erase_if(created, [&](auto id) { return !scene->findEntity(id); });
+      std::erase_if(selection, [&](auto id) { return !scene->findEntity(id); });
+      std::optional<World::DetachedScene> detached;
+
+      if (*encoded != text) {
+        if (encoded->size() + selection.size() * sizeof(std::uint64_t) > m_historyBudget) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Edited scene/selection exceeds editor history budget");
+        }
+
+        auto released = scene->detach();
+
+        if (!released) {
+          return std::unexpected(released.error());
+        }
+
+        detached.emplace(std::move(*released));
+      }
+
+      return Candidate{std::move(detached),
+                       std::make_shared<const std::string>(std::move(*encoded)), next,
+                       std::move(created), std::move(selection)};
     }
 
     auto validate(const SourceReads& reads) -> Core::Result<void> {
@@ -1057,16 +1084,20 @@ namespace Dot::Editor {
              const Json& commands, std::stop_token stop) -> void {
       try {
         SourceReads reads{{}, 0, stop};
-        auto prepared = prepare(text, next, std::move(selection), commands, reads);
+        std::optional<Candidate> prepared;
 
-        if (stop.stop_requested()) {
-          complete(SourceUpdateState::Cancelled);
-          return;
-        }
+        {
+          auto result = prepare(text, next, std::move(selection), commands, reads);
 
-        if (!prepared) {
-          complete(SourceUpdateState::Failed, prepared.error());
-          return;
+          if (!result) {
+            reads.files.clear();
+            complete(
+                stop.stop_requested() ? SourceUpdateState::Cancelled : SourceUpdateState::Failed,
+                stop.stop_requested() ? std::optional<Core::Error>{} : result.error());
+            return;
+          }
+
+          prepared.emplace(std::move(*result));
         }
 
         std::unique_lock lock(m_mutex);
@@ -1088,17 +1119,35 @@ namespace Dot::Editor {
 
         lock.lock();
 
-        if (stop.stop_requested()) {
-          m_state = SourceUpdateState::Cancelled;
-        } else if (!validated) {
+        if (!stop.stop_requested() && validated) {
+          m_candidate.emplace(std::move(*prepared));
+          prepared.reset();
+          m_state = SourceUpdateState::Validated;
+          ++m_revision;
+          m_changed.wait(lock, [&] {
+            return stop.stop_requested() || m_state != SourceUpdateState::Validated;
+          });
+        } else if (!stop.stop_requested()) {
           m_state = SourceUpdateState::Failed;
           m_error = validated.error();
-        } else {
-          m_candidate.emplace(std::move(*prepared));
-          m_state = SourceUpdateState::Validated;
+          ++m_revision;
         }
 
-        ++m_revision;
+        const bool cancelled = stop.stop_requested() && m_state != SourceUpdateState::Applied
+                               && m_state != SourceUpdateState::Failed;
+        auto discarded = std::move(m_candidate);
+        auto retired = std::move(m_retired);
+        m_candidate.reset();
+        m_retired.reset();
+        lock.unlock();
+        prepared.reset();
+        discarded.reset();
+        retired.reset();
+        reads.files.clear();
+
+        if (cancelled) {
+          complete(SourceUpdateState::Cancelled);
+        }
       } catch (const Json::exception& error) {
         complete(SourceUpdateState::Failed,
                  Core::fail(Core::ErrorCode::InvalidArgument,
@@ -1179,9 +1228,7 @@ namespace Dot::Editor {
     }
 
     m_impl->m_worker.request_stop();
-    m_impl->m_candidate.reset();
-    m_impl->m_state = state == SourceUpdateState::Validated ? SourceUpdateState::Cancelled
-                                                            : SourceUpdateState::Cancelling;
+    m_impl->m_state = SourceUpdateState::Cancelling;
     ++m_impl->m_revision;
     m_impl->m_changed.notify_one();
     return {};
@@ -1380,6 +1427,21 @@ namespace Dot::Editor {
         return std::unexpected(encoded.error());
       }
 
+      return commitPrepared(prepared, next,
+                            std::make_shared<const std::string>(std::move(*encoded)),
+                            std::move(created), std::move(selection), publish);
+    }
+
+    /** Canonical text and scene are sealed together internally; all allocating history work
+     * precedes publication. Background callers hand the retired CPU scene back to their worker.
+     * 规范文本与场景在内部一起封装，全部历史分配先于发布；后台调用者把退役 CPU 场景交回工作线程。
+     */
+    auto commitPrepared(World::Scene& prepared, std::uint64_t next,
+                        std::shared_ptr<const std::string> encoded,
+                        std::vector<std::uint64_t> created, std::vector<std::uint64_t> selection,
+                        const std::function<Core::Result<void>()>& publish = {},
+                        std::optional<World::DetachedScene>* retired = nullptr)
+        -> Core::Result<EditReport> {
       if (*encoded == *m_history[m_cursor].text) {
         if (publish) {
           auto published = publish();
@@ -1404,10 +1466,9 @@ namespace Dot::Editor {
         return Core::fail(Core::ErrorCode::Unavailable, "Edited selection exceeds history budget");
       }
 
-      auto text = std::make_shared<const std::string>(std::move(*encoded));
       std::vector<Entry> history(m_history.begin(),
                                  m_history.begin() + static_cast<std::ptrdiff_t>(m_cursor + 1));
-      history.push_back({std::move(text), std::move(selection)});
+      history.push_back({std::move(encoded), std::move(selection)});
       std::uint64_t bytes = 0;
 
       for (const auto& entry : history) {
@@ -1428,6 +1489,16 @@ namespace Dot::Editor {
         if (!published) {
           return std::unexpected(published.error());
         }
+      }
+
+      if (retired) {
+        auto detached = m_scene.detach();
+
+        if (!detached) {
+          return std::unexpected(detached.error());
+        }
+
+        retired->emplace(std::move(*detached));
       }
 
       m_scene = std::move(prepared);
@@ -1797,7 +1868,7 @@ namespace Dot::Editor {
       const auto& entry = m_impl->m_history[m_impl->m_cursor];
       return SourceUpdate(std::make_unique<SourceUpdate::Impl>(
           m_impl->m_project, m_impl->m_identity, revision, m_impl->m_path, entry.text,
-          m_impl->m_next, entry.selection, std::move(commands)));
+          m_impl->m_next, entry.selection, std::move(commands), m_impl->m_config.historyBytes));
     } catch (const Json::exception& error) {
       return Core::fail(Core::ErrorCode::InvalidArgument,
                         "Begin source update JSON: " + std::string(error.what()));
@@ -1842,21 +1913,40 @@ namespace Dot::Editor {
     try {
       if (job.m_documentRevision == revision && job.m_path == m_impl->m_path) {
         auto& candidate = *job.m_candidate;
-        auto scene = World::decodeScene(candidate.scene);
-        result = scene
-                     ? m_impl->commit(std::move(*scene), candidate.next,
-                                      std::move(candidate.created), std::move(candidate.selection))
-                     : Core::Result<EditReport>{std::unexpected(scene.error())};
+
+        if (!candidate.scene) {
+          result = EditReport{m_impl->m_revision, m_impl->m_scene.id(), false, {}};
+        } else {
+          auto scene = World::Scene::adopt(*candidate.scene);
+
+          if (scene) {
+            result = m_impl->commitPrepared(*scene, candidate.next, candidate.authored,
+                                            std::move(candidate.created),
+                                            std::move(candidate.selection), {}, &job.m_retired);
+
+            if (scene->id() != 0) {
+              auto detached = scene->detach();
+
+              if (detached) {
+                job.m_retired.emplace(std::move(*detached));
+              } else {
+                result = std::unexpected(detached.error());
+              }
+            }
+          } else {
+            result = std::unexpected(scene.error());
+          }
+        }
       }
     } catch (const std::exception& error) {
       result = Core::fail(Core::ErrorCode::External,
                           "Publish source update: " + std::string(error.what()));
     }
 
-    job.m_candidate.reset();
     job.m_state = result ? SourceUpdateState::Applied : SourceUpdateState::Failed;
     job.m_error = result ? std::optional<Core::Error>{} : result.error();
     ++job.m_revision;
+    job.m_changed.notify_one();
     return result;
   }
 

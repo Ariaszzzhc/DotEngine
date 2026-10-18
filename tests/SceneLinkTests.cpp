@@ -764,3 +764,19 @@ TEST_CASE("scene_links.batch_bounds_working_nodes_while_input_remains_unchanged"
   CHECK_FALSE(batch.finish());
   CHECK(text(f.target) == before);
 }
+
+TEST_CASE("scene_links.detached_transfer_preserves_provenance_and_reserved_values") {
+  Fixture fixture;
+  const auto original = text(fixture.target);
+  const auto oldScope = fixture.target.id();
+  const auto floor = fixture.target.nextEntityValue().value();
+  auto detached = fixture.target.detach();
+  REQUIRE(detached);
+  auto received = Scene::adopt(*detached);
+  REQUIRE(received);
+  CHECK(received->id() != oldScope);
+  CHECK(text(*received) == original);
+  CHECK(received->nextEntityValue().value() == floor);
+  CHECK_FALSE(received->entity({oldScope, 2}));
+  CHECK(received->sceneLinks()->front().mapping.front().target == 3);
+}

@@ -10156,7 +10156,7 @@ namespace Dot::Editor {
 
         if (applied) {
           m_sourceUpdateReport = *applied;
-          auto refreshed = refresh();
+          auto refreshed = applied->changed ? refresh() : Core::Result<void>{};
           m_message = refreshed ? "Source update applied" : refreshed.error().message;
           m_selectionAnchor = m_snapshot["selected"].is_null()
                                   ? std::string{}

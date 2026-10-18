@@ -472,12 +472,14 @@ removal/override conflicts still reject during append. Native single-source help
 use this same implementation.
 
 This removes repeated full-target reconstruction inside a source update segment.
-Source resolution and final document publication still run on the owner thread;
-background dependency I/O, resource streaming and large-scene frame deadlines
-remain separate unfinished work.
+Mixed synchronous edits retain owner-side resolution/publication. Dedicated source
+jobs move resolution/preparation to an owned worker; resource streaming and
+large-scene frame deadlines remain separate unfinished work.
 
 Source refresh/restore/retarget can also be prepared as one owned editor background
 job. It captures authored bytes and stable document identity without sharing a live
 Scene. Recursive file observations are bounded and rechecked on the worker when
 Apply is requested; final owner publication requires the exact captured revision
-and scene path. See [background update controls](Editor.md#background-scene-source-updates).
+and scene path. Changed results transfer sealed CPU ownership with canonical text,
+so the owner does not repeat scene decoding/encoding. The same worker retires the
+old CPU descriptions; no-op results preserve the existing scene/history/snapshot. See [background update controls](Editor.md#background-scene-source-updates).

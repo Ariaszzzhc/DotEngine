@@ -6,6 +6,18 @@ Saving atomically replaces the destination and requires an existing parent.
 Decoding builds an independent scene, preserving entity values while assigning a
 fresh scene identity. Existing live scenes and their handles remain independent.
 
+`World::Scene::detach` supports explicit exclusive CPU ownership handoff after all
+borrows are quiescent. It empties the sender and returns an opaque move-only
+`DetachedScene` with no scene/entity operations. Transfer it through a synchronized
+boundary; `Scene::adopt` consumes it only on success, allocates a fresh scene scope
+and binds operations to the receiving thread. Every old scoped entity handle is
+invalid, including a same-thread round trip. Entity values, allocation reservations,
+components, hierarchy/cache values and source provenance remain owned and intact.
+No devices, physics/audio instances or script runtimes are transferred. Ordinary
+Scene moves continue to preserve their creating-thread restriction. Discarding a
+detached envelope is safe on any thread after exclusive handoff. This is ownership
+transfer, not concurrent access to an active scene.
+
 The root requires `version` (integer 1), `name`, `nextEntity`, and `entities`, and allows optional
 `environment`, `occlusion` and `links` (null/absent environment means no environment).
 Unknown fields are rejected. Every

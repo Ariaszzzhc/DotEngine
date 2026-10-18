@@ -48,22 +48,28 @@ Ready changes nothing. Apply accepts intent at the current ready job revision;
 the worker rechecks exact bytes and safe resource paths for every observed source,
 including recursive dependencies and project metadata. Accepted validation reserves
 other Workspace mutations until publication/cancellation; inspection remains available.
-Workspace then publishes
-validated serialized content on the document owner, provided drafts, gestures,
+The worker seals changed CPU scene ownership together with canonical authored text;
+unchanged content needs no receiver scene. Workspace then adopts and publishes on
+the document owner, provided drafts, gestures,
 previews, dialogs and other publication are finished. Applied reports the document
 revision/scope, changed flag and surviving created values. Undo/redo/save use the
 ordinary document history. Failed/stale/cancelled jobs cannot replace the scene.
-Close requires the current applied/cancelled/failed job revision; cancel first for
-unfinished jobs. Session/revision/unknown-field errors have no effects.
+Old CPU scene descriptions return to the same worker for retirement. Applied means
+the document is published; Close/shutdown can still join bounded cleanup. Cancel
+remains cancelling until the worker discards its candidate. Close requires the
+current applied/cancelled/failed job revision; cancel first for unfinished jobs. Session/revision/unknown-field errors have no effects.
 
 The observation set retains at most 4096 files/128 MiB, in addition to bounded
 source/candidate scene storage. Status, apply intent and cancel do no file I/O.
 Cancellation and shutdown join cooperatively around bounded file/codec/native calls;
 this does not promise a hard deadline. Writers must still be serialized: worker
 validation plus owner publication is not an operating-system snapshot or compare-
-and-swap against arbitrary external writers. Final owner decode/history/scene
-publication and workspace refresh remain synchronous. General resource streaming
-and asynchronous final publication remain unfinished. Mixed document `edit`
+and-swap against arbitrary external writers. Final ownership adoption/history/scene
+publication and changed-workspace refresh remain synchronous, without another owner
+decode/encode pass. No-op updates skip scene replacement/history/workspace rebuild.
+History-capacity rejection occurs during preparation; the owner still rechecks
+history before changing state. General resource streaming and broader retirement
+remain unfinished. Mixed document `edit`
 transactions retain their existing atomic synchronous contract.
 
 ## Requests
