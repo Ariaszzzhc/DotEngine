@@ -15474,3 +15474,102 @@ executable. Only macOS arm64 is executed. Persistent runtime constraints, anatom
 limits/collisions, environmental contact/foot planting, automatic proportion correction,
 large-game performance/streaming and final character/environment art remain open.
 Overall engine/editor/game maturity is not established by this pose tool or test count.
+
+## 2026-10-18 — Direct IK pose keys in clip authoring
+
+The previous reach workflow required solving a saved scene pose and copying three
+joint rotations into clip key forms. Native animation key properties now offer
+Key two-bone pose directly at a paused clip sample. GUI and strict
+`key-animation-two-bone` dispatch the same product implementation. Resource buffer/
+revision and audition session/generation are all required, so an old sampled pose
+cannot silently key a new resource or preview. Bind-pose display, base transitions,
+playing/faulted previews, key/curve gestures, pending key forms and dialogs reject.
+Logical end binding resolves two direct parents; all three must be unique bindings
+within the chosen owner's real subtree.
+
+`Dot.Editor.AnimationPosing` is an owned CPU candidate builder/validator, with no
+files/devices/history writes. It reuses native two-bone construction and native
+ClipEdit. Preserve existing interpolation, other channels and unrelated keys;
+replace equal-time cubic values without discarding derivatives, use zero tangents
+for new cubic keys and select quaternion signs in the existing/preceding hemisphere.
+Missing rotation tracks become one-key linear tracks with normal endpoint holds;
+there is no invented smoothing or hidden boundary-key insertion. New typed snapshots
+survive source retirement. Implementation bodies remain outside module interfaces.
+
+Before resource publication, the ordinary preview recreation/skin preflight must
+actually reproduce the three local transforms and solved world endpoint. Active
+layer interference rejects before history, selection or current preview changes.
+The same check covers exact semantic no-ops. One successful change publishes one
+resource history entry and replaces only isolated audition, retaining clock/layer
+state and invalidating old sessions. Undo/Redo/save use existing resource contracts.
+Report actual candidate position/residual, not only solver output; distinguish native
+float key time from retained sample time. Input coordinates are echoed, while
+residual is measured against the validated native float goal. Distances use double
+intermediates, including finite opposite-extreme world coordinates whose residual
+exceeds the float maximum. Historical reports retain buffer/revision identity.
+
+Five pure, device/file-free unit cases cover channels/ownership/scope/thread lifetime,
+missing-track endpoint holds, cubic replacement/new tangents and signs, invalid
+bindings/time/ancestry, actual TRS/world-target mismatch and finite extreme residuals.
+The integration case creates actual previews and resource history, resamples a
+candidate, Undo/Redo/save/reloads and rejects a composing native override layer.
+Prism's existing reach regression now also checks all five rotation-key times and
+the actual hand positions at the two new control points, while retaining the old
+peak reference, owner placement, and equal start/end poses. Retarget rebake still
+matches its unchanged native walk. No automatic test opens a desktop window.
+
+Final Debug configure/build and full 1712/1712 pass in 275.36 seconds;
+Release configure/build and full Release/NDEBUG 1712/1712 pass in 38.20 seconds.
+Counts are 557 unit and 1155 integration, including 266 compiler, 39 audio-native,
+186 offscreen, 34 platform and 21 process cases (labels overlap). Eight final focused
+posing/native preview/saved reach/retarget cases pass in both configurations.
+Final checks include the saved example with its two added control points.
+
+Actual Release editor creates a PrismKeyed project and opens the Study's shared
+Maintenance reach. Strict malformed inputs, bind-pose keying and a formerly valid
+observed generation reject. A real PoseBlocker override layer prevents the solved
+pose, so publication rejects with exact prior resource revision/history, audition
+generation/scene and file bytes retained. Stop that layer explicitly and key three
+rotations at .3 seconds, Undo/Redo, then key .9 seconds. Actual native-preview
+residuals are 2.9200193199910854e-7 and 1.1920928955078125e-7 world units, neither
+clamped. Source authoring remains exact throughout these resource edits. Save and
+close the clip, undo only the temporary layer/clip setup, and retain the
+original Study file/defaults. The saved clip now has 198 tracks/405 keys: exactly
+six added rotation keys, every prior key/channel/mode unchanged. Only that example
+clip changes; Main, Study, peak reference, licensed models and locomotion stay intact.
+
+Study native Play/Stop restores its source exactly; export/relocate the selected
+new action. Main movement/jump reaches Grounded, Inspection/pause/completed native
+single-step/resume and F6/move/F7 finish with restore error zero at the unchanged
+1e-5 bound. Stop restores Main before export. Hide only the owned authoring project,
+run relocated Keyed plus two fresh Main processes against new explicit save roots,
+and restore the source path after native completion. Same-process and fresh-process
+restore errors are zero. Native completed frame counters 67/239/51 and HUD
+rasterizations 2/6/4 prove actual work/presentation, not FPS. All have failureCount
+zero, empty runtime diagnostics and the nine normal startup messages. A fresh real
+editor reopens the saved clip, frames the actual skin and captures close .3/.9 poses;
+no unsaved key/resource changes remain. Both editor stderr streams are empty.
+
+All five owned native handles actually exit zero before close reply consumption;
+340 replies are ACKed and all five current retired endpoints cleared. Initial
+orchestration used an invalid layer name containing a space; strict validation
+rejected it, then the same live process continued with the valid name. Preserve
+raw evidence, including rejected requests. The initial wide camera capture was
+insufficient for checking arm motion, so reopen/frame and inspect actual close
+captures. CUA reports a locked Mac; no physical pointer/keyboard acceptance is
+claimed. There is no timeout-based restart, new acceptance executable, generated
+art/mesh tool or release archive.
+
+Evidence: build/pose-key-review raw envelopes, key reports, conflict reply, captures,
+profiles, verification and test logs. All 6012 prior guarded files stay unchanged;
+retain 6523 ordinary guarded project/game/save files. Twenty-seven current Debug/
+Release/kit/export Mach-O paths pass strict signing and relocated games match the
+Release kit hash. Remove 347 temporary orchestration/request files after actual
+native completion, retaining all 340 raw replies and ordinary content. Review covers
+ownership, scoped binding/ancestor validation, native output proof before history,
+quaternion derivative/sign semantics, extreme-distance math, no-op behavior, stale
+report display, source/example scope and GUI/agent shared dispatch. Formatting and
+diff checks pass. No dependency/compiler/linker environment changes. Only macOS
+arm64 is executed. Persistent runtime IK/contact/foot locking, anatomical limits,
+interpolation-time contact guarantees, broader streaming/performance work and final
+art/editor/game maturity remain open; this keying workflow does not complete them.

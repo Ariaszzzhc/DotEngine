@@ -13,6 +13,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "ScenePreparation.hpp"
@@ -1742,6 +1743,13 @@ TEST_CASE("prism.saved_two_bone_reach_matches_reference_and_keeps_instance_place
 
   for (const auto& track : clip.description().value()->tracks) {
     CHECK(track.node != 0);
+
+    if ((track.node == 10 || track.node == 11 || track.node == 12)
+        && track.path == Dot::Animation::Path::Rotation) {
+      REQUIRE(track.keys.size() == 5);
+      CHECK(track.keys[1].time == .3F);
+      CHECK(track.keys[3].time == .9F);
+    }
   }
 
   const auto anchor = scene.transform(player.entity).value();
@@ -1775,6 +1783,21 @@ TEST_CASE("prism.saved_two_bone_reach_matches_reference_and_keeps_instance_place
   const auto start = Dot::World::encodeScene(*preview.scene().value()).value();
   REQUIRE(preview.seek(1.2F));
   CHECK(Dot::World::encodeScene(*preview.scene().value()).value() == start);
+  for (const auto& [time, expected] :
+       {std::pair{.3F, Dot::Math::Vec3{-3.41953494F, 1.08237199F, 1.79109547F}},
+        std::pair{.9F, Dot::Math::Vec3{-3.42953494F, 1.02237199F, 1.78109547F}}}) {
+    REQUIRE(preview.seek(time));
+    const auto sampled = preview.scene().value();
+    const auto nodes = sampled->entities().value();
+    const auto handEntry
+        = std::ranges::find(nodes, std::string("hand.L"), &Dot::World::EntityInfo::name);
+    REQUIRE(handEntry != nodes.end());
+    const auto matrix = sampled->worldTransform(handEntry->id).value();
+    CHECK(Dot::Math::length(Dot::Math::Vec3{matrix.data[12], matrix.data[13], matrix.data[14]}
+                            - expected)
+          < 1e-5);
+  }
+
   auto main = project.loadStartup().value();
   CHECK(main.animationPlayers()->front().properties.clips.size() == 8);
   CHECK(main.animationPlayers()->front().properties.controller.has_value());

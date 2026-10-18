@@ -21,6 +21,8 @@ import Dot.Core.Files;
 import Dot.Core.StagedDirectory;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationTangent;
+import Dot.Editor.AnimationDocument;
+import Dot.Editor.AnimationPosing;
 import Dot.Project;
 import Dot.World.Scene;
 import Dot.World.SceneFiles;
@@ -753,4 +755,76 @@ TEST_CASE(
   CHECK_FALSE(preview.stats()->error);
   REQUIRE(Animation::saveSkin(f.files, "assets/quad.dotskin", skin));
   CHECK(preview.capturePose(f.files, "Recovered skin", state.generation));
+}
+
+TEST_CASE("animation_posing.preflights_native_drafts_layers_history_and_save_without_windows") {
+  Fixture f;
+  const auto middle = f.source.createEntity("Forearm").value();
+  const auto end = f.source.createEntity("Hand").value();
+  REQUIRE(f.source.setParent(f.target, f.owner));
+  REQUIRE(f.source.setParent(middle, f.target));
+  REQUIRE(f.source.setParent(end, middle));
+  REQUIRE(f.source.setTransform(f.target, {}));
+  REQUIRE(f.source.setTransform(middle, {{1, 0, 0}}));
+  REQUIRE(f.source.setTransform(end, {{1, 0, 0}}));
+  f.properties.targets.push_back({1, middle.value});
+  f.properties.targets.push_back({2, end.value});
+  REQUIRE(f.source.setAnimationPlayer(f.owner, f.properties));
+  auto document = Editor::AnimationDocument::open(f.project, f.properties.clips[0]).value();
+  const auto original = document.snapshot().value();
+  auto preview = f.create();
+  REQUIRE(preview.seek(.5, true));
+  const auto source = World::encodeScene(f.source).value();
+  const auto state = preview.stats().value();
+  const auto posed = preview.scene().value();
+  auto keys = Editor::prepareTwoBoneKeys(*posed, posed->findEntity(f.owner.value).value(),
+                                         original.value, .5F, 2, {1.5F, 1, 0}, {0, 0, 1})
+                  .value();
+  auto candidate = Editor::AnimationPreview::create(f.source, f.files, f.owner.value,
+                                                    Animation::ClipAsset{original.path, keys.value})
+                       .value();
+  REQUIRE(candidate.restorePlayback(state.player.playback, {}));
+  REQUIRE(Editor::validateTwoBoneKeys(*candidate.scene().value(), keys));
+  CHECK(document.snapshot()->revision == original.revision);
+  REQUIRE(document.replace(keys.value, original.revision));
+  const auto edited = document.snapshot().value();
+  CHECK(edited.historyStates == original.historyStates + 1);
+  CHECK(edited.dirty);
+  REQUIRE(document.undo(edited.revision));
+  CHECK(Animation::encodeClip(document.snapshot()->value).value()
+        == Animation::encodeClip(original.value).value());
+  REQUIRE(document.redo(document.snapshot()->revision));
+  REQUIRE(document.save(document.snapshot()->revision));
+  CHECK(Animation::encodeClip(Animation::loadClip(f.files, original.path).value()).value()
+        == Animation::encodeClip(keys.value).value());
+  CHECK(World::encodeScene(f.source).value() == source);
+
+  auto layer = Animation::Clip::create(
+                   {"Override",
+                    {{0,
+                      Animation::Path::Rotation,
+                      Animation::Interpolation::Linear,
+                      {{0, {0, 0, .70710677F, .70710677F}}, {2, {0, 0, .70710677F, .70710677F}}}}}})
+                   .value();
+  REQUIRE(Animation::saveClip(f.files, f.properties.clips[1], layer));
+  f.properties.layers = {{"Override", 1, {{0, Animation::Path::Rotation}}, 1, 1, true, true}};
+  REQUIRE(f.source.setAnimationPlayer(f.owner, f.properties));
+  auto layered = f.create();
+  REQUIRE(layered.controlLayer("Override", Animation::PlayLayer{true}));
+  REQUIRE(layered.seek(.5, true));
+  const auto layerState = layered.stats().value();
+  const auto live = layered.scene().value();
+  auto conflict
+      = Editor::prepareTwoBoneKeys(*live, live->findEntity(f.owner.value).value(),
+                                   document.snapshot()->value, .5F, 2, {1.5F, .5F, 0}, {0, 0, 1})
+            .value();
+  auto rejected
+      = Editor::AnimationPreview::create(f.source, f.files, f.owner.value,
+                                         Animation::ClipAsset{original.path, conflict.value})
+            .value();
+  const std::array clocks{layerState.player.layers.front().playback};
+  REQUIRE(rejected.restorePlayback(layerState.player.playback, clocks));
+  CHECK_FALSE(Editor::validateTwoBoneKeys(*rejected.scene().value(), conflict));
+  CHECK(document.snapshot()->revision == edited.revision + 3);
+  CHECK(layered.stats()->generation == layerState.generation);
 }

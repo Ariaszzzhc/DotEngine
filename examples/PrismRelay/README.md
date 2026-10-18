@@ -294,9 +294,9 @@ unchanged. See [pose capture controls](../../docs/Editor.md#saving-an-animation-
 The same action study now also retains **Maintenance reach** at slot 9. Its default
 remains Inspection (slot 7); Main's eight-clip controller and existing Inspection
 layer are unchanged. Choose slot 9 to audition the left-arm reach and return over
-1.2 seconds. The 198-track/399-key clip omits the owner's TRS tracks so placement
+1.2 seconds. The 198-track/405-key clip omits the owner's TRS tracks so placement
 stays with the instance. It is an ordinary editable native animation, with its
-three affected joint rotations keyed at 0, .6 and 1.2 seconds.
+three affected joint rotations keyed at 0, .3, .6, .9 and 1.2 seconds.
 
 `assets/actions/reach-reference.dotscene` is the corresponding frozen editable
 pose, with its player disabled/autoplay off. It was made in the actual editor from
@@ -315,3 +315,23 @@ The action does not find an environmental console, enforce contact while the
 character moves, solve collisions/anatomical limits or provide runtime foot IK.
 The character and scene art remain a development template, not final production art.
 See [pose tool controls](../../docs/Editor.md#two-bone-pose-tool--双骨骼姿态工具).
+
+
+To refine this continuous motion, open Maintenance reach in the Study, pause and
+seek .3 or .9 seconds, then expand **Key two-bone pose** and choose `hand.L`
+(logical binding 12). This directly keys the current preview, with native resample
+and one resource undo entry; it does not require copying quaternion values from
+the scene. The current saved action includes these two editor-authored control points
+in the Study's world coordinates:
+
+| Time | Target XYZ | Pole XYZ |
+| --- | --- | --- |
+| .3 s | [-3.41953494, 1.08237199, 1.79109547] | [-3.60679498, 1.20463293, 2.23315401] |
+| .9 s | [-3.42953494, 1.02237199, 1.78109547] | [-3.60679498, 1.20463293, 2.23315401] |
+
+The original .6-second reference and start/end keys remain unchanged. Active layers
+that alter the requested pose reject before history changes; stop them explicitly
+before keying. Undo/Redo, Save, reopen, Play and relocated native export all consume
+the same ordinary animation resource. These coordinates belong to this placed Study
+instance; inspect the current sample when working on another placement. The actual
+preview residuals for these edits were approximately 2.92e-7 and 1.19e-7 world units.

@@ -46,6 +46,7 @@ import Dot.Editor.UiSession;
 import Dot.UI.Files;
 import Dot.Animation.ControllerFiles;
 import Dot.Editor.AnimationCreation;
+import Dot.Editor.AnimationPosing;
 import Dot.Editor.AnimationRetarget;
 import Dot.Editor.AnimationKeyMove;
 import Dot.Editor.AnimationTimeline;
@@ -575,6 +576,11 @@ namespace Dot::Editor {
     std::array<float, 3> m_twoBoneTarget{};
     std::array<float, 3> m_twoBonePole{};
     Json m_twoBoneResult;
+    int m_poseKeyEnd{-1};
+    std::array<float, 3> m_poseKeyTarget{};
+    std::array<float, 3> m_poseKeyPole{};
+    std::string m_poseKeyContext;
+    Json m_poseKeyResult;
     std::string m_contentName{"Scene content"};
     Json m_overrideQuery;
     Json m_overridePage;
@@ -2782,6 +2788,7 @@ namespace Dot::Editor {
               {"tangent", tangentStatus()},
               {"selection", referencesJson(m_clipSelection)},
               {"adjustment", m_clipAdjustment},
+              {"poseKeys", m_poseKeyResult},
               {"form", m_clipForm},
               {"pendingForm", m_clipForm != m_clipOriginal}};
     }
@@ -3083,7 +3090,8 @@ namespace Dot::Editor {
      * 原生预览预检后才发布一次资源/历史修改；无变化保留版本、重做及预览身份。普通编辑
      * 与移键事务共用此发布边界。 */
     auto publishClipValue(const AnimationSnapshot& state, const Animation::Clip& candidate,
-                          ClipPublication operation = ClipPublication::Edit) -> Core::Result<bool> {
+                          ClipPublication operation = ClipPublication::Edit,
+                          TwoBoneKeys* pose = nullptr) -> Core::Result<bool> {
       auto before = Animation::encodeClip(state.value);
       auto after = Animation::encodeClip(candidate);
 
@@ -3092,6 +3100,17 @@ namespace Dot::Editor {
       }
 
       if (*before == *after) {
+        if (pose) {
+          auto checked = validateTwoBoneKeys(*m_animationPreview->scene().value(), *pose);
+
+          if (!checked) {
+            return std::unexpected(checked.error());
+          }
+
+          pose->pose.reached = checked->reached;
+          pose->pose.residual = checked->residual;
+        }
+
         return false;
       }
 
@@ -3099,6 +3118,17 @@ namespace Dot::Editor {
 
       if (!preview) {
         return std::unexpected(preview.error());
+      }
+
+      if (pose) {
+        auto checked = validateTwoBoneKeys(*preview->scene().value(), *pose);
+
+        if (!checked) {
+          return std::unexpected(checked.error());
+        }
+
+        pose->pose.reached = checked->reached;
+        pose->pose.residual = checked->residual;
       }
 
       auto changed = operation == ClipPublication::Undo ? m_clipDocument->undo(state.revision)
@@ -5043,7 +5073,7 @@ namespace Dot::Editor {
           || command == "set-animation-curve-view" || command == "set-animation-frame-view"
           || command == "edit-animation-clip" || command == "undo-animation-clip"
           || command == "redo-animation-clip" || command == "save-animation-clip"
-          || command == "close-animation") {
+          || command == "key-animation-two-bone" || command == "close-animation") {
         if (command == "inspect-animation-clip") {
           Codec::requireFields(parsed, {"command", "buffer"});
         } else if (command == "list-animation-tracks") {
@@ -5054,6 +5084,9 @@ namespace Dot::Editor {
         } else if (command == "paste-animation-keys") {
           Codec::requireFields(parsed,
                                {"command", "buffer", "revision", "clipboard", "time", "overwrite"});
+        } else if (command == "key-animation-two-bone") {
+          Codec::requireFields(parsed, {"command", "buffer", "revision", "session", "generation",
+                                        "end", "target", "pole"});
         } else if (command == "select-animation-keys") {
           Codec::requireFields(parsed, {"command", "buffer", "revision", "keys"});
         } else if (command == "select-animation-key") {
@@ -5105,6 +5138,74 @@ namespace Dot::Editor {
           return Core::fail(Core::ErrorCode::InvalidState,
                             "Finish or cancel the animation gesture before changing resource, form "
                             "or time range");
+        }
+
+        if (command == "key-animation-two-bone") {
+          auto preview = m_animationPreview->stats();
+
+          if (!preview) {
+            return std::unexpected(preview.error());
+          }
+
+          if (m_clipForm != m_clipOriginal || m_captureDialog || preview->error || preview->bindPose
+              || !preview->player.playback.paused || preview->player.playback.transition
+              || Codec::id(parsed["session"]) != m_animationSession
+              || Codec::id(parsed["generation"]) != preview->generation) {
+            return Core::fail(Core::ErrorCode::InvalidState,
+                              "Pose keying requires the current paused clip sample, clean key "
+                              "form and no transition, gesture or dialog");
+          }
+
+          const auto target = Codec::numbers<3>(parsed["target"]);
+          const auto pole = Codec::numbers<3>(parsed["pole"]);
+          const auto scene = m_animationPreview->scene().value();
+          auto prepared = prepareTwoBoneKeys(
+              *scene, scene->findEntity(preview->owner).value(), state->value,
+              static_cast<float>(preview->player.playback.time), clipIndex(parsed["end"]),
+              {target[0], target[1], target[2]}, {pole[0], pole[1], pole[2]});
+
+          if (!prepared) {
+            return std::unexpected(prepared.error());
+          }
+
+          auto selection = prepareClipSelection(
+              prepared->value, {prepared->selection.begin(), prepared->selection.end()});
+
+          if (!selection) {
+            return std::unexpected(selection.error());
+          }
+
+          Json result{
+              {"time", prepared->selection.front().time},
+              {"end", parsed["end"]},
+              {"target", parsed["target"]},
+              {"pole", parsed["pole"]},
+              {"clamped", prepared->pose.clamped},
+              {"reached",
+               {prepared->pose.reached.x, prepared->pose.reached.y, prepared->pose.reached.z}},
+              {"residual", prepared->pose.residual}};
+          auto published
+              = publishClipValue(*state, prepared->value, ClipPublication::Edit, &*prepared);
+
+          if (!published) {
+            return std::unexpected(published.error());
+          }
+
+          publishClipSelection(std::move(*selection));
+          result["changed"] = *published;
+          result["reached"][0] = prepared->pose.reached.x;
+          result["reached"][1] = prepared->pose.reached.y;
+          result["reached"][2] = prepared->pose.reached.z;
+          result["residual"] = prepared->pose.residual;
+          result["sampleTime"] = preview->player.playback.time;
+          result["buffer"] = std::to_string(m_buffer);
+          result["revision"] = std::to_string(m_clipDocument->snapshot()->revision);
+          m_poseKeyResult = std::move(result);
+          return Json{{"ok", true},
+                      {"animationClip", clipStatus()},
+                      {"preview", animationStatus()},
+                      {"poseKeys", m_poseKeyResult}}
+              .dump();
         }
 
         if (command == "set-animation-key-adjustment"
@@ -13857,6 +13958,86 @@ namespace Dot::Editor {
       ImGui::Separator();
     }
 
+    auto animationPoseKeyFields() -> void {
+      if (!ImGui::TreeNode("Key two-bone pose")) {
+        return;
+      }
+
+      const auto state = m_animationPreview->stats().value();
+      const auto scene = m_animationPreview->scene().value();
+      auto selected = m_clipBindings.find(static_cast<std::uint32_t>(m_poseKeyEnd));
+      const auto label = selected == m_clipBindings.end() ? "Choose hand / foot"
+                                                          : selected->second.second.c_str();
+
+      if (ImGui::BeginCombo("End joint", label)) {
+        for (const auto& [node, binding] : m_clipBindings) {
+          const auto name = std::to_string(node) + " / " + binding.second;
+          ImGui::PushID(static_cast<int>(node));
+
+          if (ImGui::Selectable(name.c_str(), static_cast<int>(node) == m_poseKeyEnd)) {
+            m_poseKeyEnd = static_cast<int>(node);
+          }
+
+          ImGui::PopID();
+        }
+
+        ImGui::EndCombo();
+      }
+
+      selected = m_clipBindings.find(static_cast<std::uint32_t>(m_poseKeyEnd));
+      const auto context = std::to_string(m_buffer) + ':' + std::to_string(m_poseKeyEnd);
+
+      if (context != m_poseKeyContext && selected != m_clipBindings.end()) {
+        auto end = scene->findEntity(selected->second.first);
+        auto info = end ? scene->entity(*end)
+                        : Core::Result<World::EntityInfo>{std::unexpected(end.error())};
+
+        if (info && info->parent) {
+          auto tip = scene->worldTransform(*end);
+          auto middle = scene->worldTransform(*info->parent);
+
+          if (tip && middle) {
+            m_poseKeyTarget = {tip->data[12], tip->data[13], tip->data[14]};
+            m_poseKeyPole = {middle->data[12], middle->data[13], middle->data[14]};
+            m_poseKeyContext = context;
+          }
+        }
+      }
+
+      ImGui::TextWrapped(
+          "Pause at the key time. World Target/Pole solve the end and its two bound parents. "
+          "Write their three rotation keys together; retain bone lengths and end orientation. "
+          "Existing interpolation/tangents stay; new cubic keys have zero tangents. "
+          "Blending that prevents the solved pose is rejected before history changes.");
+      ImGui::InputFloat3("Key target", m_poseKeyTarget.data());
+      ImGui::InputFloat3("Key pole", m_poseKeyPole.data());
+      ImGui::BeginDisabled(selected == m_clipBindings.end() || !state.player.playback.paused
+                           || state.error || state.bindPose || state.player.playback.transition
+                           || m_clipForm != m_clipOriginal || clipGesture() || m_captureDialog
+                           || m_pendingClose);
+
+      if (ImGui::Button("Solve and key pose")) {
+        clipAction({{"command", "key-animation-two-bone"},
+                    {"session", std::to_string(m_animationSession)},
+                    {"generation", std::to_string(state.generation)},
+                    {"end", static_cast<std::uint32_t>(m_poseKeyEnd)},
+                    {"target", m_poseKeyTarget},
+                    {"pole", m_poseKeyPole}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (!m_poseKeyResult.is_null() && m_poseKeyResult["buffer"] == std::to_string(m_buffer)
+          && m_poseKeyResult["revision"] == std::to_string(m_clipDocument->snapshot()->revision)) {
+        ImGui::TextWrapped("%s at %.6g s; residual %.6g world units",
+                           m_poseKeyResult["clamped"].get<bool>() ? "Clamped and keyed" : "Keyed",
+                           m_poseKeyResult["time"].get<double>(),
+                           m_poseKeyResult["residual"].get<double>());
+      }
+
+      ImGui::TreePop();
+    }
+
     auto animationKeyProperties() -> void {
       auto state = m_clipDocument->snapshot();
 
@@ -13880,6 +14061,7 @@ namespace Dot::Editor {
                          m_clipForm != m_clipOriginal ? "Unapplied key"
                          : state->dirty               ? "Unsaved"
                                                       : "Saved");
+      animationPoseKeyFields();
       const auto vectorField = [](const char* label, Math::Vec4& vector, bool rotation) -> bool {
         ImGui::TextUnformatted(label);
         ImGui::PushID(label);

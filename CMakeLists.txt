@@ -133,6 +133,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Editor/ViewportCapture.cpp
     src/Engine/Editor/AnimationPreview.cpp
     src/Engine/Editor/AnimationCreation.cpp
+    src/Engine/Editor/AnimationPosing.cpp
     src/Engine/Editor/AnimationRetarget.cpp
     src/Engine/Editor/AnimationDocument.cpp
     src/Engine/Editor/UiDocument.cpp
@@ -301,6 +302,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Editor/ViewportCapture.cppm
         src/Engine/Editor/AnimationPreview.cppm
         src/Engine/Editor/AnimationCreation.cppm
+        src/Engine/Editor/AnimationPosing.cppm
         src/Engine/Editor/AnimationRetarget.cppm
         src/Engine/Editor/AnimationDocument.cppm
         src/Engine/Editor/UiDocument.cppm

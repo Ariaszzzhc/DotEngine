@@ -813,3 +813,43 @@ authored rotations. Native skin binding and inverse-bind resources remain intact
 当前场景作用域的变换，不修改输入。编辑器将它们作为一次可撤销事务提交，可保存为参考
 场景或通过现有工具制作原生动作。不可达目标显式报告夹取和实际残差；退化骨链、无效
 弯曲平面及不支持的缩放/精度拒绝。该工具不等同于运行时约束、碰撞/关节限位或脚部锁定。
+
+## Keying an IK pose / 以 IK 姿态写键
+
+`Dot.Editor.AnimationPosing::prepareTwoBoneKeys` turns a current posed scene and
+explicit native clip time into three rotation keys. The logical end and both direct
+parents must be uniquely bound inside the selected animation owner's subtree. It
+uses the native two-bone solver; translations/scales, other channels and unrelated
+keys remain intact. Existing modes stay unchanged. Replacing a cubic key retains
+its derivatives; newly inserted cubic keys have zero derivatives. Rotation signs
+follow the equal-time key or preceding key's hemisphere (the first key when inserting
+before it). Missing rotation tracks become linear, initially with one key and the
+ordinary native endpoint hold across the timeline; add boundary keys when motion
+rather than a constant new channel is wanted. Nothing silently smooths curves.
+
+The caller supplies the clip associated with that posed sample. Preparation has no
+file/device/history effects and owns its resulting clip and proof. Before publishing,
+`validateTwoBoneKeys` checks a real candidate animation sample: local position/scale
+stay exact, local rotation matrix entries differ by at most 1e-5, and the end world
+position matches at 1e-5 * max(1, summed world segment lengths). It returns the actual
+candidate end position. This guards composition from active layers or other sample
+changes instead of assuming that writing a base key reproduces a composed pose.
+Creator-thread and scope rules follow the scene. Initial and retained sample CPU
+skin checks remain part of the editor's ordinary preview preflight.
+
+The native editor requires an explicitly paused, healthy clip audition, outside
+bind-pose display and base transitions. It freezes resource revision, preview session
+and generation. Three equal-time keys form one ordinary resource history change,
+then the new preview replaces the old one. A failed solve, resample, binding/skin or
+history preparation retains the prior draft, preview clocks/generation and selection.
+Exact semantic no-ops keep revision/redo/preview identity, while selecting the three
+keys. Save remains explicit. The retained playhead is sampled normally; the key uses
+its float32 time and preflight must still reproduce that pose at the retained time.
+Reports use actual preview reach/residual, with key time and sample time separately.
+This authors a sampled pose, not a persistent world target between keys or at runtime.
+
+当前暂停姿态可直接经原生双骨骼求解写入三个旋转键，共享片段历史及实际预览预检。
+三关节须在同一播放器子树内并具有唯一绑定；保留其余键、通道与插值。三次键替换保留
+切线，新键切线为零，不自动平滑；缺失旋转轨以单键线性轨加入并遵守端点保持。发布前
+检查实际动画合成能复现所求局部姿态及世界目标，失败完整保留原草稿和预览。返回实际
+预览的位置/残差，不将求解结果当成已展示结果；不提供键间或运行时持续接触约束。

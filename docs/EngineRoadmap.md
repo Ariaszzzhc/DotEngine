@@ -90,3 +90,11 @@ segment lengths and end orientation; unreachable targets visibly report clamping
 residuals. Saved reference scenes and ordinary clips retain the result for normal
 audition/Play/export. Persistent runtime constraints, joint limits, ground contact
 IK and automatic retarget proportion correction remain open. See [pose contracts](Animation.md#two-bone-pose-construction--双骨骼姿态制作).
+
+
+Paused clip authoring now keys a native two-bone solution directly into three bound
+rotation channels, with shared GUI/strict agent control, actual composed-preview
+verification before one resource-history commit, and ordinary save/audition/export.
+Prism Relay's editable reach retains two authored intermediate control points. This
+does not persist a world constraint during interpolation or gameplay; runtime
+contact/foot IK and broader motion production remain open. See [keyed posing](Animation.md#keying-an-ik-pose--以-ik-姿态写键).

@@ -53,6 +53,7 @@ add_executable(DotUnitTests
     AnimationKeyGroupTests.cpp
     AnimationClipboardTests.cpp
     AnimationKeyMoveTests.cpp
+    AnimationPosingTests.cpp
     AnimationTimelineTests.cpp
     AnimationFramesTests.cpp
     AnimationTangentTests.cpp

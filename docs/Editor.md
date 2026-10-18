@@ -2922,3 +2922,42 @@ No new asset format or persistent runtime IK component is introduced.
 选择末端关节后，通过 Inspector 同一原生事务求解三节点直接骨链。Target/Pole 均为世界
 坐标，不可达目标显示夹取及残差；成功为一次可撤销的普通姿态修改。保存、重开、动作
 制作和导出沿用现有资源流程；无效输入或旧版本不会留下部分变换。
+
+## Key two-bone pose / 双骨骼姿态写键
+
+Open an individual library clip in the animation editor, pause and seek the desired
+time. Expand **Key two-bone pose** in key properties, choose the bound hand/foot,
+then enter world Target/Pole and **Solve and key pose**. The end's direct parents
+are inferred from the real hierarchy; all three must be bound to that player. Initial
+form coordinates come from the selected end and middle at the observed sample.
+These are unsaved tool inputs; agents pass the same values directly:
+
+```json
+{"command":"key-animation-two-bone","buffer":"2","revision":"3","session":"7","generation":"4","end":12,"target":[0.3,1.2,0.2],"pole":[0.8,1.1,-0.2]}
+```
+
+Fields are exact. Buffer/resource revision and preview session/generation are canonical
+decimal strings observed from current inspection. End is a logical integer binding
+0..9999, distinct from a world entity ID; Target/Pole are three finite float values.
+Unknown/missing fields, stale identities, wrong types, bind-pose display, unpaused/
+faulted preview or a base transition reject. Finish key/curve gestures and pending
+key forms/dialogs first. The shared native command prepares the three-key selection,
+solves and preflights a recreated real preview before committing one resource history
+entry. Active layers that prevent reproducing the desired pose reject; stop the
+conflicting layer or author a different pose explicitly. Source authoring stays intact.
+
+The result has `animationClip`, `preview` and `poseKeys`: key `time`, retained
+`sampleTime`, logical `end`, requested target/pole, actual preview `reached`/`residual`,
+explicit clamping and `changed`, buffer/revision. Target/Pole echo the request;
+residual uses the validated native float goal. `animationClip.poseKeys` retains
+the last successful report with its resource identity/revision, so an older report
+is not a claim about an undone, newly selected or differently sampled pose. GUI
+shows it only for the matching resource revision. Three resulting rotation keys
+are selected together for existing group operations. Undo/Redo use ordinary resource
+history and recreate native preview; Save/Reopen/export use the existing clip format.
+See [key/tangent and native resample contracts](Animation.md#keying-an-ik-pose--以-ik-姿态写键).
+
+暂停片段预览后，可按逻辑末端绑定和世界目标/pole 一次写入三关节旋转键。GUI 与严格
+机器操作共用真实求解、重采样和单次历史提交，保留源场景。混合层若改变所求姿态会在
+历史修改前拒绝；清理冲突后继续。报告包含实际预览残差及资源身份，保存和导出沿用
+普通动画资源流程，不新增运行时 IK 约束或私有片段格式。
