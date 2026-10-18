@@ -12489,7 +12489,8 @@
           "assets/surveyor/animations/5.dotanimation",
           "assets/surveyor/animations/6.dotanimation",
           "assets/actions/inspection.dotanimation",
-          "assets/actions/retargeted-walk.dotanimation"
+          "assets/actions/retargeted-walk.dotanimation",
+          "assets/actions/maintenance-reach.dotanimation"
         ],
         "controller": null,
         "enabled": true,

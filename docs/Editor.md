@@ -2886,3 +2886,39 @@ Inspector intact; recover the destination explicitly before accepting again.
 Existing-file editing/saving remains a separate baseline-checked replacement
 operation. This does not introduce project-wide concurrent editing or alias locks;
 see [atomic resource creation](Assets.md#atomic-creation-of-new-resources).
+
+## Two-bone pose tool / 双骨骼姿态工具
+
+Select a chain's hand/foot end, then expand **Two-bone pose** in Inspector. The tool
+shows its direct parent and grandparent, and initially fills Target with the end's
+world position and Pole with the middle's world position. Adjust the world-space
+Target and Pole, then **Solve pose**. A straight starting chain requires moving
+Pole away from the root-target axis. The shared product command is:
+
+```json
+{"command":"pose-two-bone","revision":"7","root":"10","middle":"11","end":"12","target":[0.3,1.2,0.2],"pole":[0.8,1.1,-0.2]}
+```
+
+Fields are exact. IDs and revision are decimal strings; Target/Pole are three finite
+native float numbers, with no booleans, unknown fields or dimension coercion. The
+[solver contract](Animation.md#two-bone-pose-construction--双骨骼姿态制作) validates
+actual hierarchy/scale/precision. One atomic document transform batch preserves
+selection, translations, scales and end world orientation. Undo/Redo restore all
+three joint rotations together; Save/Reopen retains ordinary scene data. A failed
+solve, stale revision or failed history preparation leaves the document unchanged.
+
+The response adds `twoBone` with root/middle/end, target/pole, actual reached point,
+residual and explicit clamped status. Workspace inspection retains the last successful
+report at `workspace.twoBonePose`, together with its document revision and scene path;
+that historical report does not assert the current scene still has the same pose.
+Inspector displays it only at the matching current revision, scene and end selection.
+Posing requires stopped authoring, completed previews/gestures/dialogs, applied scene
+forms and closed resource/clip/controller/UI editors. GUI and agent routes dispatch
+the same native document transaction. The GUI fields are ordinary unsaved tool input.
+Save a reference scene or create a clip from the solved pose for further production;
+an enabled animation player can overwrite these authoring rotations during playback.
+No new asset format or persistent runtime IK component is introduced.
+
+选择末端关节后，通过 Inspector 同一原生事务求解三节点直接骨链。Target/Pole 均为世界
+坐标，不可达目标显示夹取及残差；成功为一次可撤销的普通姿态修改。保存、重开、动作
+制作和导出沿用现有资源流程；无效输入或旧版本不会留下部分变换。

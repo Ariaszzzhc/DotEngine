@@ -20,6 +20,7 @@ import Dot.World.Scene;
 import Dot.World.SceneFiles;
 import Dot.World.SceneContent;
 import Dot.World.SceneLinks;
+import Dot.Math;
 
 namespace {
   using namespace Dot::Editor;
@@ -2759,4 +2760,98 @@ TEST_CASE("document.prepared_scene_content_uses_native_scene_size_limits") {
   CHECK(f.project().files()->readText("assets/large-reference.dotscene", 64 * 1024 * 1024).value()
         == bytes);
   CHECK(state(document) == before);
+}
+
+TEST_CASE("document.two_bone_pose_is_one_atomic_undoable_saved_scene_edit") {
+  using namespace Dot;
+  Fixture fixture;
+  auto document = fixture.document();
+  edit(
+      document,
+      Json::array(
+          {{{"op", "create"}, {"name", "Upper arm"}},
+           {{"op", "create"}, {"name", "Forearm"}},
+           {{"op", "create"}, {"name", "Hand"}},
+           {{"op", "parent"}, {"entity", "4"}, {"parent", "3"}},
+           {{"op", "parent"}, {"entity", "5"}, {"parent", "4"}},
+           {{"op", "transform"},
+            {"entity", "4"},
+            {"value", {{"position", {1, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}},
+           {{"op", "transform"},
+            {"entity", "5"},
+            {"value",
+             {{"position", {1, 0, 0}}, {"rotation", {0, 0, 0, 1}}, {"scale", {1, 1, 1}}}}}}));
+  REQUIRE(document.select(document.scene().value()->findEntity(5).value(), revision(document)));
+  REQUIRE(document.save(revision(document)));
+  const auto before = state(document);
+  const auto stats = document.stats().value();
+  Json operation{{"command", "pose-two-bone"},
+                 {"revision", std::to_string(stats.revision)},
+                 {"root", "3"},
+                 {"middle", "4"},
+                 {"end", "5"},
+                 {"target", {1, 1, 0}},
+                 {"pole", {0, 0, 1}}};
+
+  SUBCASE("commit undo redo save and reopen") {
+    auto response = document.dispatch(operation.dump());
+    REQUIRE_MESSAGE(response, (response ? "" : response.error().message));
+    const auto report = Json::parse(*response)["twoBone"];
+    CHECK_FALSE(report["clamped"].get<bool>());
+    CHECK(report["residual"].get<double>() < 1e-5);
+    CHECK(document.stats()->historyEntries == stats.historyEntries + 1);
+    CHECK(document.stats()->selected->value == 5);
+    const auto after = state(document);
+    CHECK(after["dirty"].get<bool>());
+    const auto scene = document.scene().value();
+    const auto hand = scene->worldTransform(scene->findEntity(5).value()).value();
+    CHECK(Math::length(Math::Vec3{hand.data[12] - 1, hand.data[13] - 1, hand.data[14]}) < 1e-5);
+    REQUIRE(document.undo(revision(document)));
+    CHECK(state(document)["scene"] == before["scene"]);
+    CHECK_FALSE(state(document)["dirty"].get<bool>());
+    REQUIRE(document.redo(revision(document)));
+    CHECK(state(document)["scene"] == after["scene"]);
+    REQUIRE(document.save(revision(document)));
+    auto reopened = fixture.document();
+    CHECK(state(reopened)["scene"] == after["scene"]);
+  }
+
+  SUBCASE("strict invalid requests and stale revision keep document unchanged") {
+    const auto valid = operation;
+
+    for (const auto& field : {"root", "middle", "end", "target", "pole", "revision"}) {
+      operation = valid;
+      operation.erase(field);
+      CHECK_FALSE(document.dispatch(operation.dump()));
+      CHECK(state(document) == before);
+    }
+
+    for (const auto& patch :
+         {Json{{"extra", true}}, Json{{"root", 3}}, Json{{"end", "999"}}, Json{{"root", "4"}},
+          Json{{"middle", "3"}}, Json{{"target", {0, 0, 0}}}, Json{{"target", {1, 0}}},
+          Json{{"target", {true, 1, 0}}}, Json{{"pole", {1, 1, 0}}}, Json{{"pole", {0, 0, 0}}},
+          Json{{"revision", "1"}}}) {
+      operation = valid;
+      operation.update(patch);
+      CHECK_FALSE(document.dispatch(operation.dump()));
+      CHECK(state(document) == before);
+    }
+  }
+
+  SUBCASE("unreachable target reports clamped actual residual") {
+    operation["target"] = {3, 0, 0};
+    const auto response = Json::parse(document.dispatch(operation.dump()).value());
+    CHECK(response["twoBone"]["clamped"].get<bool>());
+    CHECK(response["twoBone"]["residual"].get<double>() == doctest::Approx(1));
+  }
+
+  SUBCASE("failed history preparation preserves saved pose and selection") {
+    auto normal = fixture.document();
+    auto bounded = fixture.document({.historyBytes = normal.stats()->historyBytes});
+    const auto unchanged = state(bounded);
+    operation["revision"] = std::to_string(revision(bounded));
+    CHECK_FALSE(bounded.dispatch(operation.dump()));
+    CHECK(state(bounded) == unchanged);
+    CHECK(state(fixture.document())["scene"] == unchanged["scene"]);
+  }
 }

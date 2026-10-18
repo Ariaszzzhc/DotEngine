@@ -289,3 +289,29 @@ clip keys or provide automatic calibration. The captured file owns compact entit
 values, so use returned/inspected player values rather than Main's 589. Existing
 files and stale/playing previews reject; the authoring scene and clip files remain
 unchanged. See [pose capture controls](../../docs/Editor.md#saving-an-animation-pose-as-scene-content).
+
+
+The same action study now also retains **Maintenance reach** at slot 9. Its default
+remains Inspection (slot 7); Main's eight-clip controller and existing Inspection
+layer are unchanged. Choose slot 9 to audition the left-arm reach and return over
+1.2 seconds. The 198-track/399-key clip omits the owner's TRS tracks so placement
+stays with the instance. It is an ordinary editable native animation, with its
+three affected joint rotations keyed at 0, .6 and 1.2 seconds.
+
+`assets/actions/reach-reference.dotscene` is the corresponding frozen editable
+pose, with its player disabled/autoplay off. It was made in the actual editor from
+the saved Idle reference: select `hand.L` (17), then **Two-bone pose**, target
+`[-0.35, 1.22, -0.27]` and pole `[-0.65, 1.12, 0.20]`. The direct arm chain is
+`upper_arm.L` (15) → `forearm.L` (16) → `hand.L` (17). These are this saved
+reference's entity values; inspect other instances instead of copying their IDs.
+Native solving preserved local translations/scales and hand world orientation;
+the observed target residual was about 1.52e-7 world units. Undo/redo, Save as and
+reopen retained the pose. Create a clip from this pose, temporarily enable the
+frozen player to edit it, restore the three arm rotations at zero/end, retain the
+solved middle keys and remove owner tracks. Disable the reference player again.
+
+This demonstrates authored pose construction and normal animation interpolation.
+The action does not find an environmental console, enforce contact while the
+character moves, solve collisions/anatomical limits or provide runtime foot IK.
+The character and scene art remain a development template, not final production art.
+See [pose tool controls](../../docs/Editor.md#two-bone-pose-tool--双骨骼姿态工具).

@@ -86,6 +86,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Animation/SkinFiles.cpp
     src/Engine/Animation/SceneSkin.cpp
     src/Engine/Animation/Skeleton.cpp
+    src/Engine/Animation/TwoBone.cpp
     src/Engine/Animation/Retarget.cpp
     src/Engine/Animation/Edit.cpp
     src/Engine/Animation/KeyGroup.cpp
@@ -250,6 +251,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Animation/SkinFiles.cppm
         src/Engine/Animation/SceneSkin.cppm
         src/Engine/Animation/Skeleton.cppm
+        src/Engine/Animation/TwoBone.cppm
         src/Engine/Animation/Retarget.cppm
         src/Engine/Animation/Edit.cppm
         src/Engine/Animation/KeyGroup.cppm

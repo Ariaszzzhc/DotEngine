@@ -39,6 +39,7 @@ add_executable(DotUnitTests
     ViewTests.cpp
     OverlayTests.cpp
     SkeletonTests.cpp
+    TwoBoneTests.cpp
     FrustumTests.cpp
     SpatialIndexTests.cpp
     DrawBatchTests.cpp

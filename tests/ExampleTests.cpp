@@ -21,6 +21,8 @@
 import Dot.Animation.Files;
 import Dot.Animation.ScenePlayers;
 import Dot.Animation.Layers;
+import Dot.Animation.TwoBone;
+import Dot.Math;
 import Dot.Editor.AnimationPreview;
 import Dot.Editor.AnimationRetarget;
 import Dot.World.SceneFiles;
@@ -1671,7 +1673,7 @@ TEST_CASE("prism.saved_retarget_profile_rebakes_native_walk_without_changing_gam
 
   auto scene = Dot::World::loadScene(files, "scenes/character-action.dotscene").value();
   auto player = scene.animationPlayers()->front();
-  REQUIRE(player.properties.clips.size() == 9);
+  REQUIRE(player.properties.clips.size() == 10);
   CHECK(player.properties.clip == 7);
   CHECK(player.properties.clips[8] == path);
   CHECK(Dot::Editor::validateRetargetTarget(scene, player.entity.value, target.front().rig));
@@ -1695,6 +1697,84 @@ TEST_CASE("prism.saved_retarget_profile_rebakes_native_walk_without_changing_gam
   CHECK(transform(*posed, "thigh.L").rotation != leg.rotation);
   CHECK(scene.transform(player.entity)->rotation == anchor.rotation);
   CHECK(scene.transform(player.entity)->position == anchor.position);
+  auto main = project.loadStartup().value();
+  CHECK(main.animationPlayers()->front().properties.clips.size() == 8);
+  CHECK(main.animationPlayers()->front().properties.controller.has_value());
+}
+
+TEST_CASE("prism.saved_two_bone_reach_matches_reference_and_keeps_instance_placement") {
+  auto project = Dot::Project::Project::open(DOT_EXAMPLE_SOURCE).value();
+  auto files = project.files().value();
+  auto base = Dot::World::loadScene(files, "assets/actions/surveyor-reference.dotscene").value();
+  auto reference = Dot::World::loadScene(files, "assets/actions/reach-reference.dotscene").value();
+  const Dot::Math::Vec3 target{-.35F, 1.22F, -.27F};
+  const auto solved = Dot::Animation::solveTwoBone(base, {base.findEntity(15).value(),
+                                                          base.findEntity(16).value(),
+                                                          base.findEntity(17).value(),
+                                                          target,
+                                                          {-.65F, 1.12F, .20F}});
+  REQUIRE_MESSAGE(solved, (solved ? "" : solved.error().message));
+  CHECK_FALSE(solved->clamped);
+  CHECK(solved->residual < 1e-5);
+  const auto hand = reference.worldTransform(reference.findEntity(17).value()).value();
+  CHECK(Dot::Math::length(Dot::Math::Vec3{hand.data[12], hand.data[13], hand.data[14]} - target)
+        < 1e-5);
+
+  const auto definitions = reference.animationPlayers().value();
+  REQUIRE(definitions.size() == 1);
+  CHECK_FALSE(definitions.front().properties.enabled);
+  CHECK_FALSE(definitions.front().properties.playOnStart);
+  auto frozen = std::make_shared<Dot::World::Scene>(std::move(reference));
+  const auto frozenBytes = Dot::World::encodeScene(*frozen).value();
+  auto staticPlayers = Dot::Animation::ScenePlayers::create(frozen, files).value();
+  REQUIRE(staticPlayers.advance(1));
+  CHECK(Dot::World::encodeScene(*frozen).value() == frozenBytes);
+
+  auto scene = Dot::World::loadScene(files, "scenes/character-action.dotscene").value();
+  auto player = scene.animationPlayers()->front();
+  REQUIRE(player.properties.clips.size() == 10);
+  const auto path = "assets/actions/maintenance-reach.dotanimation";
+  CHECK(player.properties.clips[9] == path);
+  CHECK(player.properties.clip == 7);
+  const auto clip = Dot::Animation::loadClip(files, path).value();
+  CHECK(clip.description().value()->tracks.size() == 198);
+  CHECK(clip.duration().value() == doctest::Approx(1.2));
+
+  for (const auto& track : clip.description().value()->tracks) {
+    CHECK(track.node != 0);
+  }
+
+  const auto anchor = scene.transform(player.entity).value();
+  player.properties.clip = 9;
+  REQUIRE(scene.setAnimationPlayer(player.entity, player.properties));
+  auto preview = Dot::Editor::AnimationPreview::create(scene, files, player.entity.value).value();
+  REQUIRE(preview.seek(.6F));
+  const auto posed = preview.scene().value();
+  const auto instance = posed->transform(posed->findEntity(player.entity.value).value()).value();
+  CHECK(instance.position == anchor.position);
+  CHECK(instance.rotation == anchor.rotation);
+  CHECK(instance.scale == anchor.scale);
+  const auto entries = posed->entities().value();
+
+  for (const auto& update : solved->updates) {
+    const auto name = base.entity(update.entity)->name;
+    const auto found = std::ranges::find(entries, name, &Dot::World::EntityInfo::name);
+    REQUIRE(found != entries.end());
+    const auto expected = Dot::Math::compose({}, update.transform.rotation).value();
+    const auto actual = Dot::Math::compose({}, found->transform.rotation).value();
+
+    for (std::size_t i = 0; i < expected.data.size(); ++i) {
+      CHECK(actual.data[i] == doctest::Approx(expected.data[i]).epsilon(1e-5));
+    }
+
+    CHECK(found->transform.position == update.transform.position);
+    CHECK(found->transform.scale == update.transform.scale);
+  }
+
+  REQUIRE(preview.seek(0));
+  const auto start = Dot::World::encodeScene(*preview.scene().value()).value();
+  REQUIRE(preview.seek(1.2F));
+  CHECK(Dot::World::encodeScene(*preview.scene().value()).value() == start);
   auto main = project.loadStartup().value();
   CHECK(main.animationPlayers()->front().properties.clips.size() == 8);
   CHECK(main.animationPlayers()->front().properties.controller.has_value());

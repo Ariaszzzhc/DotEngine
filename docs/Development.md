@@ -15386,3 +15386,91 @@ Windows/Linux native paths are implemented but not executed here. Project-wide
 alias locks, concurrent existing-resource editing, hostile parent isolation and
 crash recovery remain separate work. Overall production/game/art/streaming goals
 remain unfinished; creation integrity does not establish general engine maturity.
+
+## 2026-10-18 — Native two-bone pose authoring
+
+Continue character production through an editable reference and real Prism action,
+without changing Main's existing controller/locomotion/Inspection definitions.
+`Dot.Animation.TwoBone` constructs a direct three-node pose from explicit world
+Target/Pole positions. The owned result contains three scoped transform updates;
+no scene writes, files, device, worker or persistent runtime constraint. Positive
+uniform scales, direct topology, thread/scope, finite inputs, lengths, bend plane
+and float-hierarchy output precision are validated. Analytic triangle construction
+preserves local translations/scales and compensates the end's local rotation to
+retain its world orientation. Unreachable goals clamp to the closed reach interval
+and report actual reached position/residual. Antiparallel swings have a deterministic
+axis. Recoverable failures return context without partial mutation.
+
+Inspector Two-bone pose and strict `pose-two-bone` dispatch the same document
+implementation and atomic native transform/history commit. Selection survives;
+Undo/Redo restore the whole pose. Pending scene forms, resource editors, previews,
+gestures, Play and dialogs reject conflicts. Historical workspace reports retain
+their revision/path; GUI results are shown only for the matching current context.
+No new asset format, script-side solver, fake contact state or inverse-bind edits.
+
+Five device/file-free unit cases cover reachable goals, opposite poles, rotated/
+scaled placement, non-axis segments, both reach boundaries, antiparallel swing,
+invalid/degenerate/foreign chains and scales, coordinate precision, creator-thread
+and move/source lifetime. The document integration case covers strict missing/
+unknown/wrong-type/stale requests, one history edit, selection, Undo/Redo, save/reopen,
+visible clamping and failed history preparation preserving memory/disk. The Prism
+integration case independently recomputes the saved pose, validates the frozen
+reference, plays the ordinary clip on its actual bindings and verifies peak rotations,
+unchanged instance placement and identical start/end poses. Existing retarget rebake
+continues to reproduce its unchanged saved walk.
+
+Final Debug build and full 1706/1706 pass in 271.66 seconds;
+Release build and full Release/NDEBUG 1706/1706 pass in 38.14 seconds.
+Counts are 552 unit and 1154 integration, including 266 compiler, 39 audio-native,
+186 offscreen, 34 platform and 21 process cases (labels overlap). Eight final focused
+pose/document/example/retarget cases pass. Earlier pre-example full suites were
+1705/1705 in Debug 271.18 seconds and Release 38.63 seconds; final logs above include
+the saved example and history/precision regressions. Tests open no desktop windows.
+
+Actual Release editor creates PrismPose, opens the saved Idle reference and solves
+upper_arm.L/forearm.L/hand.L to target [-.35,1.22,-.27], pole [-.65,1.12,.20]. Actual
+residual is 1.519626234052415e-7 world units. Local positions/scales are byte-identical;
+Undo/Redo, Save as, switch away and reopen preserve the posed reference. Create a
+native clip through Inspector, enable the frozen player temporarily for clip editing,
+key the three arm rotations at 0/.6/1.2 seconds, remove the owner's TRS channels,
+save and audition the actual skin. Restore reference disabled/autoplay off. The
+ordinary frozen scene has 71 entities; Maintenance reach has 198 tracks/399 keys.
+Source example additions are these two native saved assets plus Study library slot 9;
+Study default remains Inspection at 7 and existing walk at 8. Main and original
+references, licensed source models and locomotion assets remain unchanged. A headless
+product document sequence assigns the reference's descriptive scene/container name.
+
+Study preview/Play/Stop restore authoring exactly, then export and relocate its game.
+Main movement/jump reaches Grounded, Inspection runs, pause/completed single-step/
+resume and F6/move/F7 complete with restore error zero at the unchanged 1e-5 bound.
+Stop restores Main exactly before export. Hide only the owned PrismPose source and
+run relocated Reach, Main and a fresh Main against one explicit new save directory.
+All complete actual rendered frames/HUD presentation with zero failures and empty
+runtime diagnostics. Completed frame counters are 56/234/50, HUD rasterizations
+2/6/4; these are workflow provenance, not FPS/performance measurements. Same-process
+and fresh-process restore errors are zero. All four owned native handles actually
+exit zero before close reply consumption; all 316 responses are ACKed and current
+retired endpoints cleared. Restore the source path. Native stderr contains exactly
+the nine normal preparation messages; editor stderr is empty. Invalid requests,
+disabled-player audition and an out-of-range camera turn rejected; orchestration
+was corrected within the same retained live session, without timeout-based restarts.
+
+Current evidence is build/two-bone-review: raw response envelopes, captures, profiles,
+headless naming responses, workflow/verification results and logs. The Mac was locked
+when CUA inspected surfaces, so no physical pointer/keyboard acceptance is claimed.
+Native side/front viewport captures do show the real authored reach and original
+scene through product rendering. Keep 6012 guarded ordinary project/game/save files;
+all 5501 prior guards are unchanged. Twenty-seven current Debug/Release/kit/export
+Mach-O files pass strict signing and both relocated game hashes match the Release kit.
+Remove 329 temporary orchestration/request files after actual process completion,
+retaining all 316 raw envelopes and ordinary resources/projects/games/saves.
+
+Review covers directed module imports, implementation-only GLM, owned snapshots,
+quaternion normalization/singularities, scale/precision bounds, scoped atomic commit,
+strict JSON, authoring conflicts, stale report display, preserved instance placement
+and source/example scope. Formatting and diff checks pass. No dependency/compiler/
+linker environment changes, release archive, temporary art/mesh tool or acceptance
+executable. Only macOS arm64 is executed. Persistent runtime constraints, anatomical
+limits/collisions, environmental contact/foot planting, automatic proportion correction,
+large-game performance/streaming and final character/environment art remain open.
+Overall engine/editor/game maturity is not established by this pose tool or test count.

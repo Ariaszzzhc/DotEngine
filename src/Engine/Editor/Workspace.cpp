@@ -571,6 +571,10 @@ namespace Dot::Editor {
     std::string m_animationPath{"assets/new.dotanimation"};
     std::string m_animationName{"New animation"};
     double m_animationDuration{1};
+    std::string m_twoBoneContext;
+    std::array<float, 3> m_twoBoneTarget{};
+    std::array<float, 3> m_twoBonePole{};
+    Json m_twoBoneResult;
     std::string m_contentName{"Scene content"};
     Json m_overrideQuery;
     Json m_overridePage;
@@ -7865,6 +7869,13 @@ namespace Dot::Editor {
                           "Finish drafts, gestures and dialogs before saving scene content");
       }
 
+      if (command == "pose-two-bone"
+          && (previewing() || m_transform || m_pendingClose || pendingText() || m_material
+              || m_captureDialog || m_sceneDialog || m_clipDocument || m_controllerDocument)) {
+        return Core::fail(Core::ErrorCode::InvalidState,
+                          "Finish previews, resource editors, gestures and dialogs before posing");
+      }
+
       if (m_uiEditor && command != "inspect") {
         return Core::fail(Core::ErrorCode::InvalidState,
                           "Close the UI resource editor before changing the scene");
@@ -7929,6 +7940,13 @@ namespace Dot::Editor {
 
       const auto previousRevision = m_document->stats()->revision;
       auto result = m_document->dispatch(documentRequest);
+
+      if (result && command == "pose-two-bone") {
+        const auto response = Codec::parseJson(*result);
+        m_twoBoneResult = response["twoBone"];
+        m_twoBoneResult["revision"] = response["revision"];
+        m_twoBoneResult["scenePath"] = response["scenePath"];
+      }
 
       auto updated = refresh();
 
@@ -8127,6 +8145,7 @@ namespace Dot::Editor {
           {"modelImport", m_modelImport ? modelImportStatus().value() : Json(nullptr)},
           {"animationRetarget", retargetStatus()},
           {"animationPose", m_poseCapture},
+          {"twoBonePose", m_twoBoneResult},
           {"skeleton", skeletonStatus()},
           {"view", viewStatus()},
           {"capture", captureStatus()},
@@ -9411,6 +9430,79 @@ namespace Dot::Editor {
       ImGui::TreePop();
     }
 
+    auto twoBoneFields() -> void {
+      if (!ImGui::TreeNode("Two-bone pose")) {
+        return;
+      }
+
+      auto scene = m_document->scene().value();
+      auto end = scene->findEntity(Codec::id(m_edit["id"]));
+      auto info = end ? scene->entity(*end)
+                      : Core::Result<World::EntityInfo>{std::unexpected(end.error())};
+      auto middle = info && info->parent ? scene->entity(*info->parent)
+                                         : Core::Result<World::EntityInfo>{Core::fail(
+                                               Core::ErrorCode::InvalidArgument, "No parent")};
+      auto root = middle && middle->parent
+                      ? scene->entity(*middle->parent)
+                      : Core::Result<World::EntityInfo>{
+                            Core::fail(Core::ErrorCode::InvalidArgument, "No grandparent")};
+
+      if (!root) {
+        ImGui::TextWrapped("Select the end of a direct three-joint chain.");
+        ImGui::TreePop();
+        return;
+      }
+
+      const auto context
+          = m_snapshot["scenePath"].get<std::string>() + ':' + m_edit["id"].get<std::string>();
+
+      if (context != m_twoBoneContext) {
+        auto tip = scene->worldTransform(*end);
+        auto elbow = scene->worldTransform(*info->parent);
+
+        if (tip && elbow) {
+          m_twoBoneTarget = {tip->data[12], tip->data[13], tip->data[14]};
+          m_twoBonePole = {elbow->data[12], elbow->data[13], elbow->data[14]};
+          m_twoBoneContext = context;
+        }
+      }
+
+      ImGui::TextWrapped("%s > %s > %s", root->name.c_str(), middle->name.c_str(),
+                         info->name.c_str());
+      ImGui::TextWrapped(
+          "World coordinates. Pole sets the elbow/knee plane. Keeps bone lengths and end "
+          "orientation. Targets outside reach clamp and report residual distance. "
+          "A straight chain needs a pole off the target axis. One undoable pose edit; "
+          "animation playback can overwrite it. Save the scene or create a clip from this pose.");
+      ImGui::InputFloat3("Target", m_twoBoneTarget.data());
+      ImGui::InputFloat3("Pole", m_twoBonePole.data());
+      ImGui::BeginDisabled(playing() || previewing() || m_transform || pendingInspector()
+                           || pendingEnvironment() || pendingOcclusion() || pendingText()
+                           || m_material || m_pendingClose || m_captureDialog || m_sceneDialog
+                           || m_clipDocument || m_controllerDocument || m_uiEditor);
+
+      if (ImGui::Button("Solve pose")) {
+        action({{"command", "pose-two-bone"},
+                {"root", std::to_string(middle->parent->value)},
+                {"middle", std::to_string(info->parent->value)},
+                {"end", m_edit["id"]},
+                {"target", m_twoBoneTarget},
+                {"pole", m_twoBonePole}});
+      }
+
+      ImGui::EndDisabled();
+
+      if (!m_twoBoneResult.is_null() && m_twoBoneResult["revision"] == m_snapshot["revision"]
+          && m_twoBoneResult["scenePath"] == m_snapshot["scenePath"]
+          && m_twoBoneResult["end"] == m_edit["id"]) {
+        ImGui::TextWrapped("%s; residual %.6g world units",
+                           m_twoBoneResult["clamped"].get<bool>() ? "Clamped to reach" : "Solved",
+                           m_twoBoneResult["residual"].get<double>());
+      }
+
+      ImGui::TreePop();
+    }
+
     auto animationRetargetFields() -> void {
       if ((!m_edit["animation"].is_object() && !retargetBusy())
           || !ImGui::TreeNode("Retarget animation")) {
@@ -10257,6 +10349,7 @@ namespace Dot::Editor {
       }
 
       animationRetargetFields();
+      twoBoneFields();
 
       ImGui::BeginDisabled(!pendingInspector());
 

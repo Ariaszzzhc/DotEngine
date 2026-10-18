@@ -775,3 +775,41 @@ external resource write; scene Undo does not remove it.
 不变。复制的动画组件关闭播放，保留其描述及其他组件；网格/蒙皮资源不复制、不重绑。
 先校验实际蒙皮，原生引用须在所有者子树内闭合。可用普通场景工具编辑骨骼、撤销和保存，
 再作为重定向参考；这不提供自动参考姿态对齐。
+
+## Two-bone pose construction / 双骨骼姿态制作
+
+`Dot.Animation.TwoBone::solveTwoBone` constructs an owned pose for a direct
+root/middle/end scene chain. Target and pole are world positions; the pole's
+projection perpendicular to the root-target axis chooses the bend plane. The
+analytic triangle uses the [law-of-cosines construction](https://www.ryanjuckett.com/analytic-two-bone-ik-in-2d/).
+It rotates the root and middle toward that triangle, then compensates the end's
+local rotation to retain its original world orientation. Local translations and
+scales remain exact; branches follow their normal hierarchy. The result contains
+three scoped `World::TransformUpdate` values without changing the source scene.
+Apply them together through the native scene/document transaction before replacing
+or otherwise editing that scene. Results own their values; they do not borrow a rig,
+skin, file, device or source lifetime. Scene owner-thread rules still apply.
+
+The chain must have distinct current-scene handles, direct parent links, positive
+uniform local scales (relative tolerance 1e-5, minimum component 1e-6) throughout
+its ancestors, and at most 256 ancestors including the end. World segment lengths
+and root-target distance must be at least 1e-5. A pole at the root or within 1e-5
+relative distance of the target axis rejects instead of inventing a bend direction.
+Zero-length, reflected, nonuniform, nonfinite, unsupported shear and insufficient
+world-coordinate precision reject without writes. Antiparallel shortest swings
+choose a deterministic perpendicular axis. Unreachable goals clamp to the closed
+interval `[abs(upper-lower), upper+lower]`, preserving segment lengths; the result
+reports `clamped`, actual float-hierarchy `reached` and `residual` to the requested
+goal. Clamping is visible to the caller, rather than a claim that the hand reached it.
+
+This is an ordinary authoring pose edit. Save a reference scene or create a native
+clip from that pose and use normal key editing, audition, Play and export. It does
+not create a persistent runtime constraint, enforce anatomical joint limits, solve
+collisions or ground contacts, calibrate reference skeletons, lock feet, retarget
+proportions or extract physics root motion. Animation playback can overwrite the
+authored rotations. Native skin binding and inverse-bind resources remain intact.
+
+双骨骼求解使用场景世界坐标的目标及 pole，保留骨长和末端世界朝向，只返回三个拥有式、
+当前场景作用域的变换，不修改输入。编辑器将它们作为一次可撤销事务提交，可保存为参考
+场景或通过现有工具制作原生动作。不可达目标显式报告夹取和实际残差；退化骨链、无效
+弯曲平面及不支持的缩放/精度拒绝。该工具不等同于运行时约束、碰撞/关节限位或脚部锁定。

@@ -29,6 +29,7 @@ import Dot.Core.Result;
 import Dot.Core.Text;
 import Dot.Core.Paths;
 import Dot.Core.Files;
+import Dot.Animation.TwoBone;
 import Dot.Editor.Resources;
 import Dot.Project;
 import Dot.World.Scene;
@@ -2588,6 +2589,7 @@ namespace Dot::Editor {
       std::vector<std::uint64_t> created;
       Json overrides;
       Json appliedSource;
+      Json twoBone;
       Core::Result<void> result;
 
       if (command == "inspect") {
@@ -2675,6 +2677,9 @@ namespace Dot::Editor {
           Codec::requireFields(parsed, {"command", "revision", "root", "entity", "field"});
         } else if (command == "apply-scene-instance") {
           Codec::requireFields(parsed, {"command", "revision", "root"});
+        } else if (command == "pose-two-bone") {
+          Codec::requireFields(parsed,
+                               {"command", "revision", "root", "middle", "end", "target", "pole"});
         } else if (command == "undo" || command == "redo" || command == "save") {
           Codec::requireFields(parsed, {"command", "revision"});
         } else {
@@ -2733,6 +2738,41 @@ namespace Dot::Editor {
           appliedSource = {{"path", std::move(applied->sourcePath)},
                            {"written", applied->sourceWritten},
                            {"sceneChanged", applied->document.changed}};
+        } else if (command == "pose-two-bone") {
+          auto checked = m_impl->check(revision);
+
+          if (!checked) {
+            return std::unexpected(checked.error());
+          }
+
+          const auto target = Codec::numbers<3>(parsed["target"]);
+          const auto pole = Codec::numbers<3>(parsed["pole"]);
+          auto solved
+              = Animation::solveTwoBone(**current, {{(*current)->id(), Codec::id(parsed["root"])},
+                                                    {(*current)->id(), Codec::id(parsed["middle"])},
+                                                    {(*current)->id(), Codec::id(parsed["end"])},
+                                                    {target[0], target[1], target[2]},
+                                                    {pole[0], pole[1], pole[2]}});
+
+          if (!solved) {
+            return std::unexpected(solved.error());
+          }
+
+          twoBone = {{"root", parsed["root"]},
+                     {"middle", parsed["middle"]},
+                     {"end", parsed["end"]},
+                     {"target", parsed["target"]},
+                     {"pole", parsed["pole"]},
+                     {"reached", {solved->reached.x, solved->reached.y, solved->reached.z}},
+                     {"residual", solved->residual},
+                     {"clamped", solved->clamped}};
+          auto applied = applyTransforms(solved->updates, revision);
+
+          if (!applied) {
+            return std::unexpected(applied.error());
+          }
+
+          committed = applied->changed;
         } else if (command == "select-many") {
           if (!parsed["entities"].is_array() || parsed["entities"].size() > 10000) {
             return Core::fail(Core::ErrorCode::InvalidArgument,
@@ -2797,6 +2837,10 @@ namespace Dot::Editor {
 
       if (!appliedSource.is_null()) {
         response["sourceApplied"] = std::move(appliedSource);
+      }
+
+      if (!twoBone.is_null()) {
+        response["twoBone"] = std::move(twoBone);
       }
 
       for (auto id : created) {
