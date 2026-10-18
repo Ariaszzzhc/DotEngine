@@ -488,3 +488,45 @@ TEST_CASE("scene_content.runtime_capacity_rejection_and_exact_fit_preserve_alloc
   REQUIRE(reserved.removeContent(last->entities));
   CHECK_FALSE(reserved.createEntity());
 }
+
+TEST_CASE("scene_content.cached_ancestor_depth_cannot_hide_graft_limit_and_rollback") {
+  auto target = Scene::create().value();
+  std::vector<EntityId> chain;
+
+  for (unsigned i = 0; i < 252; ++i) {
+    chain.push_back(target.createEntity().value());
+  }
+
+  std::vector<ParentUpdate> links;
+
+  for (std::size_t i = 1; i < chain.size(); ++i) {
+    links.push_back({chain[i], chain[i - 1]});
+  }
+
+  REQUIRE(target.setParents(links));
+  REQUIRE(target.setTransform(chain.front(), {{1, 0, 0}}));
+  REQUIRE(target.worldTransform(chain.back()));
+  auto source = Scene::create().value();
+  auto root = source.createEntity().value();
+  auto middle = source.createEntity().value();
+  auto last = source.createEntity().value();
+  auto extra = source.createEntity().value();
+  REQUIRE(source.setParent(middle, root));
+  REQUIRE(source.setParent(last, middle));
+  REQUIRE(source.setParent(extra, last));
+  REQUIRE(source.setCamera(last, Camera{}));
+  const auto before = snapshot(target);
+  const auto floor = target.nextEntityValue().value();
+  CHECK_FALSE(target.appendContent(source, {}, chain.back()));
+  CHECK(snapshot(target) == before);
+  CHECK(target.nextEntityValue().value() == floor);
+  REQUIRE(source.destroyEntity(extra));
+  auto accepted = target.appendContent(source, {}, chain.back());
+  REQUIRE_MESSAGE(accepted, (accepted ? "" : accepted.error().message));
+  REQUIRE(target.worldTransform(accepted->entities.back()));
+  const auto tiny = std::numeric_limits<float>::denorm_min();
+  CHECK_FALSE(target.setTransform(chain.front(), {{}, {}, {tiny, 1, 1}}));
+  REQUIRE(target.removeContent(accepted->entities));
+  REQUIRE(target.setTransform(chain.front(), {{}, {}, {tiny, 1, 1}}));
+  CHECK(target.entityCount().value() == 252);
+}

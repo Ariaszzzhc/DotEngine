@@ -15573,3 +15573,90 @@ diff checks pass. No dependency/compiler/linker environment changes. Only macOS
 arm64 is executed. Persistent runtime IK/contact/foot locking, anatomical limits,
 interpolation-time contact guarantees, broader streaming/performance work and final
 art/editor/game maturity remain open; this keying workflow does not complete them.
+
+## 2026-10-19 — Incremental validated world poses
+
+Continue from actual Prism authoring/native performance rather than another isolated
+animation authoring feature. The real Release editor creates PrismEnsemble from the
+ordinary template, duplicates/places seven Surveyor subtrees through selection and
+Inspector operations, and saves ensemble/solo scenes. Eight independent animation
+bindings play the ten-clip library's Maintenance reach at slot 9; the skins share one
+Player/capsule, not eight autonomous physics characters. Scenes contain 832/342
+entities, remain editable and use existing licensed/native assets. No source example
+asset changes, procedural art/mesh generator or new acceptance executable.
+
+OS CPU samples of actual exported players attribute substantial Application Update
+work to setTransforms/verifyMutation. The scene now owns a lazy reverse hierarchy
+index; transform batches prepare the complete unique changed-descendant closure
+before writing, apply all locals, invalidate only affected cached worlds and validate
+their final composed matrices/camera inverses. Unchanged stored scalar float bits
+skip work while signed-zero changes remain stored. World lookup stops at a validated
+cached prefix carrying its full node depth; the 256-node bound still includes that
+prefix. Structural publication/reparent/group/ungroup/removal invalidate the hierarchy
+index and preserve whole-scene validation. Failed batches roll back every changed
+branch and clear derived caches; append failure preserves prior data and public IDs.
+Owned numeric hierarchy edges/matrices survive detach/adopt without borrowed handles.
+
+Five new file/device-free unit cases compare all worlds to an independent uncached
+composition across 64 mixed overlapping batches/reparents, reject duplicates and
+foreign handles even among no-ops, preserve/clear signed zeros, roll back descendant
+overflow and camera singularity across unrelated changed branches, cover group/
+ungroup/thread adoption, and reject a 257-node graft through a warm 252-node prefix
+before accepting exactly 256 nodes without consuming IDs on failure. Existing
+offscreen/animation/physics/document integration continues through the same APIs.
+
+Debug and Release configure/build succeed. Final full Debug 1717/1717 passes in
+268.15 seconds; full Release/NDEBUG 1717/1717 passes in 38.17 seconds. Counts are
+562 unit and 1155 integration, including 266 compiler, 39 audio-native, 186 offscreen,
+34 platform and 21 process cases (labels overlap). Focused branch/cache checks pass
+6/6 in both configurations, including one existing offscreen case. Debug unit also
+passes 562/562 separately. Automated tests open no desktop windows. Build, CTest
+and actual native product sessions execute sequentially.
+
+Matched native Release games present at 2560x1600 on Apple M4 Pro/Metal. Three
+interleaved before/after eight-binding runs each retain 119 non-null Update samples:
+median of run medians 2.0055 → 0.7850 ms (60.9% lower); run medians range
+1.8983..2.0250 → 0.6323..0.8130 ms. One-binding three-run medians are
+0.2442 → 0.1722 ms (29.5% lower). Preserve complete profiles and OS stack reports;
+sampling counts are not invocation counts. Static native editor PNGs before/after
+are byte-identical. These are Update CPU envelopes, not GPU/FPS or populated-game
+throughput; free-running histories cover different phases/wall-clock spans.
+See Profiling.md for percentile conventions, observer scope and raw evidence.
+
+The initial eight-binding export predates creation of an unused Solo scene, so its
+game inventory differs from the later export. Preserve preliminary data, then attach
+the complete ordinary optimized exported game directory to the retained old player/
+libraries for the final interleaved comparison: all 147 game files are byte-identical
+per pair, including the native manifest. Single-binding exports already match.
+One preliminary after-eight run logs a dropped fixed interval of 83,333,330 ns; all
+final matched stderr streams contain only the nine normal startup messages. No
+runtime failure/diagnostic or profile-frame error is hidden by that distinction.
+
+Final actual editor reopens ensemble, moves a clone through Inspector, verifies
+Undo/Redo and restores/saves exact original bytes. Open Main, Play movement/jump to
+Grounded, Inspection, pause/completed single-step/resume, and F6/move/F7. Restore
+error is zero at the unchanged 1e-5 bound; Stop restores authoring exactly. Export
+and relocate Main, hide only this owned source project, then run two fresh native
+processes against the same new explicit save root. Same-process and fresh-process
+restore errors are zero, real rendered/HUD work completes, failureCount is zero and
+runtime diagnostics empty. Restore the owned project after native completion. Four
+editor stderr streams are empty. No human pointer/keyboard acceptance is claimed.
+
+All 24 owned native handles actually exit zero before consuming their close replies;
+564 replies are ACKed, all retired endpoints are closed/fault-free/unblocked with no
+uncertain/unprocessed work, then cleared. There is no timeout-based restart. Remove
+574 temporary orchestration/request files only after completion, retaining all raw
+replies, profiles, captures, editable projects, exports and save data. All 6523 prior
+guarded files remain unchanged; the extended ordinary-content manifest covers 7779.
+Fifty-five current Debug/Release/kit/export Mach-O paths pass strict signing; new
+exports match the Release kit player and the retained baseline player hash is exact.
+
+Evidence lives in ignored build/world-pose-review: comparison.json, workflow-result,
+verification, artifact-hashes, game-content-equality, cleanup and actual test logs.
+Review covers complete cache invalidation/publication paths, rollback and allocation
+ordering, depth/foreign/signed-zero boundaries, matrix oracle, numeric ownership,
+creator-thread checks, unchanged product dispatch and platform assumptions. Formatting
+and diff checks pass. No dependency/compiler/linker environment change, new release
+archive or other-platform execution. Only macOS arm64 is validated. Remaining
+animation sampling/synchronization, structural validation, streaming/background work,
+independent character scale and final art/editor/game maturity remain open.

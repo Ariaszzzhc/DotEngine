@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <expected>
 #include <future>
 #include <limits>
@@ -25,6 +26,27 @@ namespace {
     auto point = Dot::Math::transformPoint(*matrix, {});
     REQUIRE(point);
     return *point;
+  }
+
+  auto referenceWorld(const Scene& scene, EntityId entity) -> Dot::Math::Mat4 {
+    std::vector<Transform> chain;
+    auto current = std::optional{entity};
+
+    while (current) {
+      REQUIRE(chain.size() < 256);
+      const auto entry = scene.entity(*current).value();
+      chain.push_back(entry.transform);
+      current = entry.parent;
+    }
+
+    Dot::Math::Mat4 result;
+
+    for (auto pose = chain.rbegin(); pose != chain.rend(); ++pose) {
+      const auto local = Dot::Math::compose(pose->position, pose->rotation, pose->scale).value();
+      result = Dot::Math::multiply(result, local).value();
+    }
+
+    return result;
   }
 }  // namespace
 
@@ -705,4 +727,129 @@ TEST_CASE("scene.detached_empty_sealed_allocators_and_discard_are_backend_free")
     CHECK_FALSE(Scene::adopt(owned));
   });
   destruction.get();
+}
+
+TEST_CASE("scene.affected_transform_batches_match_uncached_world_composition") {
+  using namespace Dot;
+  auto scene = Scene::create().value();
+  std::vector<EntityId> nodes;
+
+  for (std::size_t i = 0; i < 32; ++i) {
+    nodes.push_back(scene.createEntity("Branch " + std::to_string(i)).value());
+
+    if (i >= 2) {
+      REQUIRE(scene.setParent(nodes.back(), nodes[(i - 2) / 2]));
+    }
+  }
+
+  REQUIRE(scene.setCamera(nodes.back(), Camera{}));
+
+  for (unsigned step = 0; step < 64; ++step) {
+    const auto moving = 4 + step % 27;
+    const auto angle = Math::rotationEulerDegrees({float(step), float(step * 3), 7}).value();
+    const std::array batch{
+        TransformUpdate{nodes[moving], {{.5F, float(step) / 50, -.2F}, angle, {1.1F, .9F, 1}}},
+        TransformUpdate{nodes[step % 2], {{float(step) / 100, 0, 0}}},
+        TransformUpdate{nodes[2 + step % 2], {{0, float(step) / 80, 0}}}};
+    REQUIRE(scene.setTransforms(batch));
+
+    if (step % 8 == 0) {
+      REQUIRE(scene.setParent(nodes[30], nodes[(step / 8) % 2]));
+    }
+
+    for (const auto id : nodes) {
+      CHECK(scene.worldTransform(id).value() == referenceWorld(scene, id));
+    }
+  }
+
+  const auto old = scene.transform(nodes[0]).value();
+  const std::array duplicate{TransformUpdate{nodes[0], old}, TransformUpdate{nodes[0], old}};
+  CHECK_FALSE(scene.setTransforms(duplicate));
+  CHECK(scene.worldTransform(nodes.back()).value() == referenceWorld(scene, nodes.back()));
+}
+
+TEST_CASE("scene.affected_descendant_failures_roll_back_every_changed_branch") {
+  using namespace Dot;
+  auto scene = Scene::create().value();
+  const auto root = scene.createEntity().value();
+  const auto child = scene.createEntity().value();
+  const auto other = scene.createEntity().value();
+  REQUIRE(scene.setParent(child, root));
+  REQUIRE(scene.setTransform(child, {{}, {}, {1e20F, 1e20F, 1e20F}}));
+  REQUIRE(scene.setTransform(other, {{4, 5, 6}}));
+  const auto before = scene.worldTransform(child).value();
+  const std::array overflow{TransformUpdate{other, {{8, 9, 10}}},
+                            TransformUpdate{root, {{}, {}, {1e20F, 1e20F, 1e20F}}}};
+  CHECK_FALSE(scene.setTransforms(overflow));
+  CHECK(position(scene, other) == Math::Vec3{4, 5, 6});
+  CHECK(scene.worldTransform(child).value() == before);
+  REQUIRE(scene.setTransform(child, {}));
+  REQUIRE(scene.setCamera(child, Camera{}));
+  const auto tiny = std::numeric_limits<float>::denorm_min();
+  const std::array singular{TransformUpdate{other, {{8, 9, 10}}},
+                            TransformUpdate{root, {{}, {}, {tiny, 1, 1}}}};
+  CHECK_FALSE(scene.setTransforms(singular));
+  CHECK(position(scene, other) == Math::Vec3{4, 5, 6});
+  REQUIRE(scene.setParent(child, other));
+  REQUIRE(scene.setTransform(other, {{5, 5, 6}}));
+  CHECK_FALSE(scene.setTransform(other, {{}, {}, {tiny, 1, 1}}));
+  CHECK(position(scene, child) == Math::Vec3{5, 5, 6});
+}
+
+TEST_CASE("scene.unchanged_transform_batches_preserve_signed_zero_and_validate_all_handles") {
+  using namespace Dot;
+  auto scene = Scene::create().value();
+  const auto root = scene.createEntity().value();
+  const auto child = scene.createEntity().value();
+  REQUIRE(scene.setParent(child, root));
+  REQUIRE(scene.setTransform(root, {{1, 2, -0.F}, {-0.F, 0, 0, 1}}));
+  CHECK(std::signbit(scene.transform(root)->position.z));
+  CHECK(std::signbit(scene.transform(root)->rotation.x));
+  const auto current = scene.transform(root).value();
+  const auto before = scene.worldTransform(child).value();
+  const std::array unchanged{TransformUpdate{root, current}, TransformUpdate{child, {}}};
+  REQUIRE(scene.setTransforms(unchanged));
+  CHECK(scene.worldTransform(child).value() == before);
+  const std::array invalid{TransformUpdate{root, current},
+                           TransformUpdate{EntityId{scene.id() + 1, root.value}, current}};
+  CHECK_FALSE(scene.setTransforms(invalid));
+  CHECK(std::signbit(scene.transform(root)->position.z));
+  auto positive = current;
+  positive.position.z = 0;
+  positive.rotation.x = 0;
+  REQUIRE(scene.setTransform(root, positive));
+  CHECK_FALSE(std::signbit(scene.transform(root)->position.z));
+  CHECK_FALSE(std::signbit(scene.transform(root)->rotation.x));
+}
+
+TEST_CASE("scene.cached_branches_follow_group_ungroup_and_thread_adoption") {
+  auto scene = Scene::create().value();
+  const auto a = scene.createEntity().value();
+  const auto b = scene.createEntity().value();
+  const auto child = scene.createEntity().value();
+  REQUIRE(scene.setParent(child, a));
+  REQUIRE(scene.setTransform(a, {{1, 0, 0}}));
+  const std::array roots{a, b};
+  const auto group = scene.groupEntities(roots, "Group").value();
+  REQUIRE(scene.setTransform(group, {{4, 0, 0}}));
+  CHECK(position(scene, child).x == 5);
+  const std::array groups{group};
+  REQUIRE(scene.ungroupEntities(groups));
+  REQUIRE(scene.setTransform(a, {{2, 0, 0}}));
+  CHECK(position(scene, child).x == 2);
+  auto detached = scene.detach().value();
+  auto worker = std::async(std::launch::async, [owned = std::move(detached), value = a.value,
+                                                tip = child.value]() mutable {
+    auto adopted = Scene::adopt(owned).value();
+    const auto root = adopted.findEntity(value).value();
+    const auto leaf = adopted.findEntity(tip).value();
+    REQUIRE(adopted.setTransform(root, {{7, 0, 0}}));
+    CHECK(position(adopted, leaf).x == 7);
+    return adopted.detach().value();
+  });
+  auto returned = worker.get();
+  auto adopted = Scene::adopt(returned).value();
+  CHECK_FALSE(adopted.entity(a));
+  REQUIRE(adopted.setTransform(adopted.findEntity(a.value).value(), {{9, 0, 0}}));
+  CHECK(position(adopted, adopted.findEntity(child.value).value()).x == 9);
 }

@@ -2,7 +2,9 @@ module;
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <entt/entity/registry.hpp>
 #include <exception>
 #include <expected>
@@ -83,6 +85,19 @@ namespace Dot::World {
       }
 
       return *normalized;
+    }
+
+    /** Compare scalar storage, not padded object bytes; signed zeros are intentional data.
+     * 比较标量存储而非含填充的对象字节，保留有意设置的零符号。 */
+    auto sameTransform(const Transform& a, const Transform& b) -> bool {
+      const auto same = [](float left, float right) {
+        return std::bit_cast<std::uint32_t>(left) == std::bit_cast<std::uint32_t>(right);
+      };
+      return same(a.position.x, b.position.x) && same(a.position.y, b.position.y)
+             && same(a.position.z, b.position.z) && same(a.rotation.x, b.rotation.x)
+             && same(a.rotation.y, b.rotation.y) && same(a.rotation.z, b.rotation.z)
+             && same(a.rotation.w, b.rotation.w) && same(a.scale.x, b.scale.x)
+             && same(a.scale.y, b.scale.y) && same(a.scale.z, b.scale.z);
     }
 
     struct Identity {
@@ -189,7 +204,78 @@ namespace Dot::World {
     std::optional<Graphics::OcclusionSettings> occlusion;
     std::vector<SceneLink> links;
     std::unordered_map<std::uint64_t, entt::entity> lookup;
-    mutable std::unordered_map<std::uint64_t, Math::Mat4> worldCache;
+
+    /** Count nodes including the root so a cached prefix cannot hide excessive depth.
+     * 深度计入根节点，避免缓存前缀掩盖超深层级。 */
+    struct WorldPose {
+      Math::Mat4 matrix;
+      std::size_t depth;
+    };
+
+    mutable std::unordered_map<std::uint64_t, WorldPose> worldCache;
+    std::unordered_map<std::uint64_t, std::vector<std::uint64_t>> m_children;
+    bool m_childrenReady{};
+
+    auto invalidateWorld() -> void {
+      worldCache.clear();
+      m_children.clear();
+      m_childrenReady = false;
+    }
+
+    /** Cache only committed hierarchy edges; structural publication invalidates this index.
+     * Build before local transform writes, so allocation/validation failure cannot mutate poses.
+     * 仅缓存已提交层级边，结构发布时失效；在局部变换写入前构建，分配/校验失败不改姿态。 */
+    auto affectedTransforms(std::span<const std::uint64_t> roots)
+        -> Core::Result<std::vector<std::uint64_t>> {
+      if (!m_childrenReady) {
+        std::unordered_map<std::uint64_t, std::vector<std::uint64_t>> children;
+
+        for (const auto& [value, native] : lookup) {
+          const auto parent = registry.get<Hierarchy>(native).parent;
+
+          if (parent) {
+            if (!lookup.contains(*parent)) {
+              return Core::fail(Core::ErrorCode::InvalidState,
+                                "Hierarchy index refers to a missing entity");
+            }
+
+            children[*parent].push_back(value);
+          }
+        }
+
+        m_children.swap(children);
+        m_childrenReady = true;
+      }
+
+      std::vector<std::uint64_t> affected;
+      std::unordered_set<std::uint64_t> seen;
+      affected.reserve(roots.size());
+      seen.reserve(roots.size());
+
+      for (const auto root : roots) {
+        if (seen.insert(root).second) {
+          affected.push_back(root);
+        }
+      }
+
+      for (std::size_t index = 0; index < affected.size(); ++index) {
+        const auto children = m_children.find(affected[index]);
+
+        if (children != m_children.end()) {
+          for (const auto child : children->second) {
+            if (seen.insert(child).second) {
+              affected.push_back(child);
+            }
+          }
+        }
+
+        if (affected.size() > lookup.size()) {
+          return Core::fail(Core::ErrorCode::InvalidState, "Invalid affected hierarchy closure");
+        }
+      }
+
+      return affected;
+    }
 
     struct HierarchyChange {
       entt::entity native;
@@ -254,6 +340,7 @@ namespace Dot::World {
       }
 
       scene.nextEntity = value + 1;
+      scene.m_childrenReady = false;
       return EntityId{scene.identity, value};
     }
 
@@ -339,6 +426,8 @@ namespace Dot::World {
     auto world(std::uint64_t value) const -> Core::Result<Math::Mat4> {
       std::vector<std::uint64_t> chain;
       std::optional<std::uint64_t> current = value;
+      Math::Mat4 matrix;
+      std::size_t depth{};
 
       while (current) {
         if (chain.size() == 256) {
@@ -352,20 +441,24 @@ namespace Dot::World {
           return Core::fail(Core::ErrorCode::InvalidState, "Hierarchy refers to a missing entity");
         }
 
+        const auto cached = worldCache.find(*current);
+
+        if (cached != worldCache.end()) {
+          matrix = cached->second.matrix;
+          depth = cached->second.depth;
+          break;
+        }
+
         chain.push_back(*current);
         current = registry.get<Hierarchy>(found->second).parent;
       }
 
-      Math::Mat4 matrix;
+      if (depth > 256 || chain.size() > 256 - depth) {
+        return Core::fail(Core::ErrorCode::InvalidArgument,
+                          "Hierarchy contains a cycle or exceeds depth 256");
+      }
 
       for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator) {
-        auto cached = worldCache.find(*iterator);
-
-        if (cached != worldCache.end()) {
-          matrix = cached->second;
-          continue;
-        }
-
         const auto& transform = registry.get<Transform>(lookup.at(*iterator));
         auto local = Math::compose(transform.position, transform.rotation, transform.scale);
 
@@ -380,40 +473,78 @@ namespace Dot::World {
         }
 
         matrix = *combined;
-        worldCache.emplace(*iterator, matrix);
+        worldCache.emplace(*iterator, WorldPose{matrix, ++depth});
       }
 
       return matrix;
     }
 
+    /** Empty closure is structural: clear and validate all worlds. A transform-only closure
+     * contains every changed descendant, so unrelated committed worlds remain authoritative.
+     * 空闭包代表结构修改，清缓存并校验全部世界变换；仅变换闭包含全部变化后代，
+     * 无关已提交分支的世界变换仍有效。 */
     template <typename F>
-    auto verifyMutation(F&& rollback) -> Core::Result<void> {
-      worldCache.clear();
+    auto verifyMutation(F&& rollback, std::span<const std::uint64_t> affected = {})
+        -> Core::Result<void> {
+      if (affected.empty()) {
+        invalidateWorld();
+      } else {
+        for (const auto value : affected) {
+          worldCache.erase(value);
+        }
+      }
 
       try {
-        for (const auto& entry : lookup) {
-          auto matrix = world(entry.first);
+        const auto verify = [&](std::uint64_t value) -> Core::Result<void> {
+          auto matrix = world(value);
 
           if (!matrix) {
-            rollback();
-            worldCache.clear();
             return std::unexpected(matrix.error());
           }
 
-          if (registry.all_of<Camera>(entry.second)) {
+          if (registry.all_of<Camera>(lookup.at(value))) {
             auto view = Math::inverse(*matrix);
 
             if (!view) {
-              rollback();
-              worldCache.clear();
               return Core::fail(Core::ErrorCode::InvalidArgument,
                                 "Camera world transform cannot be inverted");
+            }
+          }
+
+          return {};
+        };
+
+        const auto checked = [&](std::uint64_t value) -> Core::Result<void> {
+          auto result = verify(value);
+
+          if (!result) {
+            rollback();
+            invalidateWorld();
+          }
+
+          return result;
+        };
+
+        if (affected.empty()) {
+          for (const auto& entry : lookup) {
+            auto result = checked(entry.first);
+
+            if (!result) {
+              return result;
+            }
+          }
+        } else {
+          for (const auto value : affected) {
+            auto result = checked(value);
+
+            if (!result) {
+              return result;
             }
           }
         }
       } catch (...) {
         rollback();
-        worldCache.clear();
+        invalidateWorld();
         throw;
       }
 
@@ -1267,48 +1398,77 @@ namespace Dot::World {
       Transform next;
     };
 
-    std::vector<Prepared> prepared;
-    prepared.reserve(updates.size());
-    std::unordered_set<std::uint64_t> seen;
+    try {
+      std::vector<Prepared> prepared;
+      prepared.reserve(updates.size());
+      std::vector<std::uint64_t> changed;
+      changed.reserve(updates.size());
+      std::unordered_set<std::uint64_t> seen;
+      seen.reserve(updates.size());
 
-    for (const auto& update : updates) {
-      auto native = m_impl->resolve(update.entity);
+      for (const auto& update : updates) {
+        auto native = m_impl->resolve(update.entity);
 
-      if (!native) {
-        return std::unexpected(native.error());
+        if (!native) {
+          return std::unexpected(native.error());
+        }
+
+        if (!seen.insert(update.entity.value).second) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Transform batch contains a duplicate entity");
+        }
+
+        const auto previous = m_impl->registry.get<Transform>(*native);
+
+        if (sameTransform(update.transform, previous)) {
+          continue;
+        }
+
+        auto rotation = storedRotation(update.transform.rotation);
+        auto local = Math::compose(update.transform.position, update.transform.rotation,
+                                   update.transform.scale);
+
+        if (!rotation) {
+          return std::unexpected(rotation.error());
+        }
+
+        if (!local) {
+          return std::unexpected(local.error());
+        }
+
+        const Transform next{update.transform.position, *rotation, update.transform.scale};
+
+        if (!sameTransform(previous, next)) {
+          prepared.push_back({*native, previous, next});
+          changed.push_back(update.entity.value);
+        }
       }
 
-      if (!seen.insert(update.entity.value).second) {
-        return Core::fail(Core::ErrorCode::InvalidArgument,
-                          "Transform batch contains a duplicate entity");
+      if (prepared.empty()) {
+        return {};
       }
 
-      auto rotation = storedRotation(update.transform.rotation);
-      auto local = Math::compose(update.transform.position, update.transform.rotation,
-                                 update.transform.scale);
+      auto affected = m_impl->affectedTransforms(changed);
 
-      if (!rotation) {
-        return std::unexpected(rotation.error());
+      if (!affected) {
+        return std::unexpected(affected.error());
       }
 
-      if (!local) {
-        return std::unexpected(local.error());
-      }
-
-      prepared.push_back({*native,
-                          m_impl->registry.get<Transform>(*native),
-                          {update.transform.position, *rotation, update.transform.scale}});
-    }
-
-    for (const auto& entry : prepared) {
-      m_impl->registry.get<Transform>(entry.native) = entry.next;
-    }
-
-    return m_impl->verifyMutation([&] {
       for (const auto& entry : prepared) {
-        m_impl->registry.get<Transform>(entry.native) = entry.previous;
+        m_impl->registry.get<Transform>(entry.native) = entry.next;
       }
-    });
+
+      return m_impl->verifyMutation(
+          [&] {
+            for (const auto& entry : prepared) {
+              m_impl->registry.get<Transform>(entry.native) = entry.previous;
+            }
+          },
+          *affected);
+    } catch (const std::exception& error) {
+      return Core::fail(Core::ErrorCode::External,
+                        "Edit scene transforms: " + std::string(error.what()));
+    }
   }
 
   auto Scene::setParents(std::span<const ParentUpdate> updates, ParentSpace space)
@@ -1547,7 +1707,7 @@ namespace Dot::World {
             m_scene.registry.destroy(m_scene.lookup.at(m_group.value));
             m_scene.lookup.erase(m_group.value);
             m_scene.nextEntity = m_previousNext;
-            m_scene.worldCache.clear();
+            m_scene.invalidateWorld();
           }
         }
       } pending{*m_impl, *group, previousNext};
@@ -1692,7 +1852,7 @@ namespace Dot::World {
         m_impl->lookup.erase(id);
       }
 
-      m_impl->worldCache.clear();
+      m_impl->invalidateWorld();
       return affected;
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -1846,6 +2006,7 @@ namespace Dot::World {
       }
 
       m_impl->nextEntity = fragment.nextEntity;
+      m_impl->m_childrenReady = false;
       pending.m_committed = true;
       return result;
     } catch (const std::exception& error) {
@@ -1919,7 +2080,7 @@ namespace Dot::World {
       }
 
       std::erase_if(m_impl->links, [&](const auto& link) { return removed.contains(link.root); });
-      m_impl->worldCache.clear();
+      m_impl->invalidateWorld();
       return {};
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -1993,7 +2154,7 @@ namespace Dot::World {
     }
 
     std::erase_if(scene.links, [&](const auto& link) { return removedIds.contains(link.root); });
-    scene.worldCache.clear();
+    scene.invalidateWorld();
     return {};
   }
 

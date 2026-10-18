@@ -225,3 +225,45 @@ pacing gaps. Keep both observations rather than combining unrelated phase peaks.
 准备阶段包含控制请求及回复序列化，完整场景读取可成为主要开销。输入接受及生命周期
 轮询使用轻量状态，按需单独读取完整场景；记录实际命令组合、画面尺寸及缓存条件。
 工作流的准备峰值不等于追加内核基准，活动步骤耗时也不等于端到端交付帧间隔。
+
+## Animated transform branches
+
+Actual Release Prism authoring creates a saved 832-entity scene with eight separate
+Surveyor animation bindings playing Maintenance reach, and a 342-entity single-binding
+scene. The eight skins share one Player parent/capsule; this is an animation workload,
+not eight independent physics characters. Both ordinary native exports present at
+2560x1600 on Apple M4 Pro/Metal, arm64 macOS. CPU stack samples identify
+`Scene::setTransforms`/world validation inside Application Update as substantial work.
+Stack counts are statistical observations, not invocation counts or method timings.
+
+Transform batches now retain unrelated validated worlds, invalidate/recompute the
+changed descendants once, and stop ancestor walks at a cached matrix with its full
+depth. Exact unchanged stored scalar bits skip work. Structural edits still invalidate
+the hierarchy index and validate the whole scene; all changed descendants, camera
+inverses and whole-batch rollback retain the same validity requirements.
+
+| Native workload | Before Update median | After Update median | Reduction |
+| --- | ---: | ---: | ---: |
+| Eight animation bindings | 2.0055 ms | 0.7850 ms | 60.9% |
+| One animation binding | 0.2442 ms | 0.1722 ms | 29.5% |
+
+Each value is the median of three run medians, each retaining 119 non-null Update
+samples. Eight-binding runs alternate old/new players against byte-identical complete
+exported game data; their run medians range 1.8983..2.0250 → 0.6323..0.8130 ms.
+Nearest-rank p95 ranges 2.1010..2.5286 → 0.6701..0.9760 ms. Single-binding medians
+range 0.2370..0.2667 → 0.1666..0.1906 ms. Initial eight-binding exports differed by
+an unused Solo scene/inventory entry: preserve that preliminary investigation, then
+deploy the complete new ordinary game data beside the retained old native player
+for the final matched comparison. No content manifest was manually synthesized.
+
+The first old/new eight-binding runs include an OS stack observer; later runs and
+the single-binding runs do not.
+Players run freely, so retained histories cover different wall-clock spans and
+animation phases. Lightweight status reads follow the measurement windows; full
+scene observations do not occur inside them. This measures Application Update CPU
+envelopes, not isolated animation timing, GPU work, frame delivery or general FPS.
+Sampling, synchronization, rendering, physics and larger populated-game costs remain.
+Before/after static editor captures are byte-identical, SHA-256
+`e85af3c833d6f3820f4308c74a17b9742224ea5d49d66351c9d8fd7d74502773`.
+Raw profiles, stack reports, content fingerprints and comparison records remain in
+ignored build/world-pose-review, alongside the ordinary editable project/exports.

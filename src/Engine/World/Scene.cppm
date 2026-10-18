@@ -372,9 +372,13 @@ export namespace Dot::World {
      */
     [[nodiscard]] auto setParent(EntityId entity, std::optional<EntityId> parent,
                                  ParentSpace space = ParentSpace::Local) -> Core::Result<void>;
-    /** Batch updates reject duplicate handles and validate the final scene once.
-     * All changes roll back together on failure; intermediate states are private.
-     * 批量更新拒绝重复句柄，并一次校验最终场景；失败时全部回滚，中间状态不对外暴露。 */
+    /** Batch updates reject duplicate handles and validate the final affected hierarchy once,
+     * retaining previously validated unrelated branches. Unchanged stored float bits skip work;
+     * different signed zeros are still stored. Check all changed descendants, including camera
+     * invertibility. All changes roll back together on failure; intermediate states are private.
+     * 批量更新拒绝重复句柄，并一次校验受影响的最终子树，保留已验证的无关分支；存储浮点位
+     * 未变时跳过工作，但仍存储不同的零符号。检查全部受影响后代及相机可逆性，失败时全部
+     * 回滚，中间状态不对外暴露。 */
     [[nodiscard]] auto setTransforms(std::span<const TransformUpdate> updates)
         -> Core::Result<void>;
     [[nodiscard]] auto setParents(std::span<const ParentUpdate> updates,
