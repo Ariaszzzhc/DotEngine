@@ -94,8 +94,8 @@ pixels, including signed normal RGB, are preserved in lossless native PNG images
 The imported materials are authored to use the ARM image's red channel as baked
 occlusion; the upstream glTF binds its green/blue channels but omits that AO slot.
 Straight/support scene assets were extracted and edited through product operations,
-then instantiated/grouped in the main scene. Cabinets use fitted box colliders;
-duct runs use simple box proxies. No mesh-generation helper or external authoring script is
+then instantiated/grouped in the main scene. Cabinets use their imported static triangle mesh colliders;
+duct runs still use simple box proxies. No mesh-generation helper or external authoring script is
 required to open, edit or export the project.
 
 ## Authored character action study

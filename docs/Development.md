@@ -12973,3 +12973,107 @@ bidi, automatic layout/anchors, scrolling and automatic persistence of UI instan
 state remain unimplemented. Final art, broader authoring usability, production-scale
 content/performance and Windows/Linux evidence also remain open. These test/example
 results do not establish general-purpose large-game production readiness.
+
+
+## 2026-10-18 — Static triangle mesh authoring
+
+Carry native collision geometry through CPU validation, scene persistence, resource
+preparation, editor/agent authoring, scripts, Play and relocated standalone games.
+Imported equipment previously required box approximations. Add immutable indexed
+TriangleMesh ownership and the Mesh rigid-body variant, retaining concavity and
+openings. Jolt mesh/scaled shapes consume exact geometry; a changed triangle count
+fails cooking before live-body mutation. No hull, simplification or primitive
+fallback is supplied. Restrict meshes to solid static/discrete bodies; reject
+characters/deforming skins on the same entity. Queries/character constraints include
+both triangle faces; rigid response follows authored CCW front faces.
+
+Pure creation validates at most 262144 vertices/triangles, finite local coordinates
+within +/-10000, valid indices and relative nondegeneracy. Signed nonuniform scales
+have magnitude [0.0001,10000], resulting coordinates within +/-1000000 and no
+collapsed triangles. Native worlds bound active mesh triangles to 1048576, counted
+per body. Shared immutable geometry crosses threads without world/device handles.
+Shapes retain normal body/world RAII destruction and batch preparation semantics.
+
+Scene Mesh requires an exact portable assets/ .dotmesh identity; primitive JSON
+forbids meshAsset. Native low-level BodyConfig instead supplies owned geometry and
+scale, with no file IO. MeshFiles extracts native indexed/unindexed positions,
+rejects symlinks/special files/case mismatches, and bounds paths/lookups. Scene
+preparation owns at most 64 resources/64 MiB and checks instance transforms and total
+triangles. Initial prepared consumers fail on missing entries without file fallback.
+Later scene bindings may load into a bounded immutable cache; failed preparation
+preserves live bindings/cache. Unchanged poses skip triangle rescans. Reset reloads
+current files when available, otherwise uses owned data. Export validates collision
+resources and scales before publishing its output.
+
+The Inspector's Use render mesh as static collider calls the same strict
+stage-mesh-collider operation available to agents. It prepares static/solid/discrete
+properties and zero velocity in the ordinary staged form. Apply rechecks bytes and
+creates one document transaction; undo/redo/save/reopen share the native codec.
+Current selection/revision and clean authoring state are required. Missing resources
+fail without a draft; an unchanged staged collider preserves revision/history.
+Existing direct component edits retain strict scene validation.
+
+Author Prism Relay through the real workspace. Replace floor/four walls, eight
+imported cabinets, the relay column and four traversal steps with 18 native mesh
+colliders (five unique resources, 52024 active triangles). Remove eight parent box
+approximations. Ventilation retains its existing box proxies. Save those product-
+authored bytes back to the editable example. Exercise undo/redo, stale rejection,
+missing-resource rejection, no-op Apply, real Play and movement from x=-3 to
+x=6.980000019 at the boundary, without script/physics diagnostics. Capture and
+visually inspect actual game pixels through the product's asynchronous PNG capture.
+
+Feature Lab imports the existing CC0 hollow duct with the real resource operation,
+then uses the same native mesh for rendering/collision. Add six successful checks
+for resource properties/writes, preserved failed writes, surface queries and open
+ray/sphere passages. The final real editor reports 184 completed checks and 18
+expected invalid-call rejections, with no lifecycle diagnostics. Retain asset
+source/hash and license alongside this standalone editable project. An initial
+candidate grille had a solid backing; its rejected opening expectation led to
+using actual hollow geometry, without deleting/sanitizing triangles.
+
+Verification on arm64 macOS, with the caller's compiler/linker environment retained:
+
+- Debug configure/full build succeeds. Initial full CTest: 1545/1546 in 296.16 s.
+  One existing animation-preparation fixture exceeded its 10-second wait while
+  Release compilation was active (10.98 s). With builds finished, that unchanged
+  case passes alone in 5.01 s (5.03 s CTest total); no deadline was relaxed.
+- Final Debug focused CTest: 17/17 in 4.49 s, including all seven new mesh cases,
+  Feature Lab and mesh package/character relocation.
+- Release configure/full build and complete CTest: 1546/1546 in 36.78 s, with
+  assertions disabled. Inventory: 498 pure unit / 1048 integration tests, including
+  186 offscreen GPU, 246 compiler, 37 native audio, 34 platform and 21 process cases.
+- New focused coverage includes immutable/cross-thread lifetime, bounds/malformed
+  geometry, signed nonuniform scale, actual holes/backfaces, sphere sweeps, falling
+  rigid bodies and character support, batch-budget rollback, file/codec failures,
+  cancellation/symlinks/case, prepared ownership/no fallback, transactional failed
+  synchronization/reset and relocated compiled gameplay after source removal.
+- Formatting and whitespace checks pass. Review ownership, bounded allocation,
+  expected failures, module boundaries and platform assumptions. No new dependency,
+  temporary acceptance executable, sanitizer or installed-header layout is added.
+
+Export the authored Prism game through the final real editor, relocate its complete
+native directory and temporarily hide only the owned authoring project. Two fresh
+native processes use isolated persistent storage and the ordinary control protocol.
+The first saves at x=6.980000019, moves to x=-0.299677253, then restores; the second
+starts at x=-3 and restores the same checkpoint. Both position errors are
+1.1175913528e-8 m (settled Y drift), with 18 mesh colliders and no script failures.
+Both processes exit zero, all six owned editor/player control directories retire,
+and all 162 exported file hashes remain unchanged. Restore the owned authoring
+project. Verify all 21 earlier persistent saves unchanged and retain the new isolated
+slot, for 22 guarded saves. Each native profile retains 120 error-free observations
+from 608/636 sampled frames; this is workflow evidence, not a performance benchmark.
+Inspect runtime linkage/load commands; native dependencies remain kit-relative.
+
+Final Debug editor SHA-256: 8dbac1b9b79d057dc46f8f18cfc6194d374d56ee9da89bfdd24d81fc68c076ba.
+Native runtime-kit player SHA-256: a66af7234f3a2b35d138e97fd17174cd916e1b57d5c0e5077d9815b9deeff0e1.
+Keep editable projects, relocated native game, raw requests/responses, PNG, profiles,
+manifests and isolated checkpoint in ignored build/mesh-collider-review. Remove only
+owned helper scripts; preserve caches, reference assets and saves. No release
+archive is created. Computer use reports the Mac locked, so physical pointer/IME
+interaction remains unverified. Windows/Linux remain unvalidated.
+
+This supplies static triangle collision and one complete small-game making loop.
+Dynamic/kinematic triangle meshes, convex decomposition, deforming collision,
+collision geometry editing/visual overlays, background native cooking and broad
+production-scale content/performance evidence remain open. Existing game art and
+general-purpose engine production readiness are not established by these checks.

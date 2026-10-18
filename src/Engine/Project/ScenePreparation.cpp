@@ -21,6 +21,7 @@ module;
 module Dot.Project.ScenePreparation;
 
 import Dot.UI.Files;
+import Dot.Physics.MeshFiles;
 
 import Dot.Core.Paths;
 import Dot.Core.Text;
@@ -391,6 +392,7 @@ namespace Dot::Project {
     std::vector<Animation::ClipAsset> clips;
     std::vector<Animation::ControllerAsset> controllers;
     std::optional<UI::Asset> ui;
+    std::vector<Physics::MeshAsset> meshes;
   };
 
   PreparedScene::PreparedScene(std::shared_ptr<const Data> data) noexcept
@@ -505,10 +507,20 @@ namespace Dot::Project {
       return Core::fail(Core::ErrorCode::Unavailable, "UI preparation cancelled");
     }
 
+    auto meshes = Physics::loadSceneCollisionMeshes(files, *scene, stop);
+
+    if (!meshes) {
+      return std::unexpected(meshes.error());
+    }
+
+    if (stop.stop_requested()) {
+      return Core::fail(Core::ErrorCode::Unavailable, "Collision mesh preparation cancelled");
+    }
+
     auto canonical = World::encodeScene(*scene);
     return canonical ? Core::Result<PreparedScene>{PreparedScene{std::make_shared<const Data>(
                            Data{files.root(), std::move(*canonical), std::move(*animations),
-                                std::move(controllers), std::move(ui)})}}
+                                std::move(controllers), std::move(ui), std::move(*meshes)})}}
                      : std::unexpected(canonical.error());
   }
 
@@ -536,6 +548,14 @@ namespace Dot::Project {
     }
 
     return std::span<const Animation::ControllerAsset>{m_data->controllers};
+  }
+
+  auto PreparedScene::collisionMeshes() const -> Core::Result<std::span<const Physics::MeshAsset>> {
+    if (!m_data) {
+      return Core::fail(Core::ErrorCode::InvalidState, "Prepared scene was moved");
+    }
+
+    return std::span<const Physics::MeshAsset>{m_data->meshes};
   }
 
   auto PreparedScene::ui() const -> Core::Result<std::optional<UI::Asset>> {

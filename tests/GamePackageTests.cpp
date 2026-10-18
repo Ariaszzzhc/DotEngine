@@ -90,7 +90,7 @@ TEST_CASE("game_package.relocation_snapshot_and_precompiled_session_are_independ
   CHECK_FALSE(std::filesystem::exists(owned / "scripts/mover.ts"));
 }
 
-TEST_CASE("game_package_character_lands_after_relocation_and_authoring_removal") {
+TEST_CASE("game_package.mesh_character_lands_after_relocation_and_authoring_removal") {
   Fixture fixture;
   auto scene = fixture.project.loadStartup().value();
   const auto actor = scene.findEntity(2).value();
@@ -100,10 +100,18 @@ TEST_CASE("game_package_character_lands_after_relocation_and_authoring_removal")
   const auto floor = scene.createEntity("Floor").value();
   Dot::World::RigidBody body;
   body.motion = Dot::Physics::Motion::Static;
-  body.shape = Dot::Physics::Shape::Box;
+  body.shape = Dot::Physics::Shape::Mesh;
+  body.meshAsset = "assets/floor.dotmesh";
   body.halfExtents = {10, .5F, 10};
   REQUIRE(scene.setRigidBody(floor, body));
-  REQUIRE(scene.setTransform(floor, {{0, -.5F, 0}}));
+  REQUIRE(scene.setTransform(floor, {{0, -.5F, 0}, {}, {10, 1, 10}}));
+  auto rejected = GamePackage::publish(fixture.project, scene, fixture.compiler(),
+                                       fixture.directory.files(), "missing-collision");
+  REQUIRE_FALSE(rejected);
+  CHECK(rejected.error().message.find("collision") != std::string::npos);
+  CHECK_FALSE(std::filesystem::exists(fixture.directory.root / "missing-collision"));
+  REQUIRE(Dot::Assets::saveMesh(fixture.project.files().value(), "assets/floor.dotmesh",
+                                Dot::Graphics::cube().value()));
   auto published = GamePackage::publish(fixture.project, scene, fixture.compiler(),
                                         fixture.directory.files(), "character-game")
                        .value();

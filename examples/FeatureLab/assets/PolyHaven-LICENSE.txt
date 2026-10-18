@@ -1,0 +1,14 @@
+Utility Box 02 and Modular Airduct Rectangular 01 are original Poly Haven assets
+released under CC0 1.0 Universal. Commercial use, modification and redistribution
+are permitted. Their original glTF, geometry and texture inputs are retained here.
+
+License and asset provenance:
+https://polyhaven.com/license
+https://creativecommons.org/publicdomain/zero/1.0/
+https://polyhaven.com/a/utility_box_02
+https://polyhaven.com/a/modular_airduct_rectangular_01
+
+PolyHavenSources.json records the exact downloaded files, URLs and SHA-256 hashes.
+Generated native resources in ../utility-box and ../airducts derive from these
+inputs through the ordinary editor model importer. The unrelated Surveyor model
+retains its separate Quaternius license in LICENSE.txt.

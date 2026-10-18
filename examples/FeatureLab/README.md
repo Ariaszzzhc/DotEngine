@@ -7,7 +7,7 @@ The generated copy is refreshed by builds; copy it
 elsewhere before persistent authoring changes.
 
 The saved scene contains perspective/orthographic cameras, built-in cube/quad and
-OBJ meshes, hierarchy, static/dynamic/kinematic bodies, sphere/box/capsule shapes,
+OBJ meshes, hierarchy, static/dynamic/kinematic bodies, sphere/box/capsule/static-mesh shapes,
 a sensor, an audio listener/source and attached/disabled script descriptors.
 Kinematic uses a saved copper PBR material; Quad uses an authored-tangent DotMesh and saved dielectric normal-map
 material. The main camera carries a directional headlight. Their native scene
@@ -229,3 +229,18 @@ Inspect it through Preview animation / Edit animation controller or live Animati
 selection. A fourth bounded audit phase exercises typed parameter updates, reset,
 owned observations, failed types/names and controller ownership. The existing
 manual panel/layer examples remain available; no host-call budget was raised.
+
+## Native collision geometry
+
+**Mesh duct** is an ordinary editable imported hollow duct with the same native
+resource used for rendering and static triangle collision. Its opening remains
+traversable by ray and sphere queries. The auditor exercises mesh resource
+properties, failure-preserving invalid writes and both opening/surface queries.
+The Inspector can stage this collider from its rendered asset; Apply, undo and save
+share the normal scene transaction. Mesh colliders are static/solid only.
+
+`assets/collision-duct.dotmesh` is an unchanged native import of Poly Haven's
+CC0 Modular Airduct Rectangular 01 geometry, shared with Prism Relay's
+`assets/airducts/meshes/0.dotmesh`. Source, upstream inputs and license evidence are
+recorded in [asset sources](assets/Sources.md).
+Native resource SHA-256: `94e135a1648c690240d2bb0b64f94565a793b9b528273575ee6f0aacc5ae362a`.

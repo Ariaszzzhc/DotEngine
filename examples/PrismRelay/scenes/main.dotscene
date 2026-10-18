@@ -78,11 +78,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/concrete-slab.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -147,11 +148,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/concrete-wall.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -216,11 +218,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -285,11 +288,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -354,11 +358,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -450,28 +455,7 @@
       "mesh": null,
       "name": "Power distribution 1",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -519,7 +503,29 @@
       },
       "name": "Utility cabinet 1",
       "parent": "9",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -553,28 +559,7 @@
       "mesh": null,
       "name": "Power distribution 2",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -622,7 +607,29 @@
       },
       "name": "Utility cabinet 2",
       "parent": "12",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -656,28 +663,7 @@
       "mesh": null,
       "name": "Power distribution 3",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -725,7 +711,29 @@
       },
       "name": "Utility cabinet 3",
       "parent": "15",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -759,28 +767,7 @@
       "mesh": null,
       "name": "Power distribution 4",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -828,7 +815,29 @@
       },
       "name": "Utility cabinet 4",
       "parent": "18",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -862,28 +871,7 @@
       "mesh": null,
       "name": "Power distribution 5",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -931,7 +919,29 @@
       },
       "name": "Utility cabinet 5",
       "parent": "21",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -965,28 +975,7 @@
       "mesh": null,
       "name": "Power distribution 6",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -1034,7 +1023,29 @@
       },
       "name": "Utility cabinet 6",
       "parent": "24",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -1068,28 +1079,7 @@
       "mesh": null,
       "name": "Power distribution 7",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -1137,7 +1127,29 @@
       },
       "name": "Utility cabinet 7",
       "parent": "27",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -1171,28 +1183,7 @@
       "mesh": null,
       "name": "Power distribution 8",
       "parent": null,
-      "rigidBody": {
-        "collisionDetection": "discrete",
-        "friction": 0.800000011920929,
-        "gravityFactor": 0.0,
-        "halfExtents": [
-          0.36800000071525574,
-          0.4481333792209625,
-          0.1728000044822693
-        ],
-        "halfHeight": 0.20000000298023224,
-        "mass": 1.0,
-        "motion": "static",
-        "radius": 0.20000000298023224,
-        "restitution": 0.0,
-        "sensor": false,
-        "shape": "box",
-        "velocity": [
-          0.0,
-          0.0,
-          0.0
-        ]
-      },
+      "rigidBody": null,
       "script": null,
       "skin": null,
       "transform": {
@@ -1240,7 +1231,29 @@
       },
       "name": "Utility cabinet 8",
       "parent": "30",
-      "rigidBody": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/utility-box/meshes/0.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "script": null,
       "skin": null,
       "transform": {
@@ -1443,11 +1456,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/relay-column.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -7448,11 +7462,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -7517,11 +7532,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -7586,11 +7602,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -7655,11 +7672,12 @@
         ],
         "halfHeight": 0.5,
         "mass": 1.0,
+        "meshAsset": "assets/meshes/chamfered-block.dotmesh",
         "motion": "static",
         "radius": 0.5,
         "restitution": 0.0,
         "sensor": false,
-        "shape": "box",
+        "shape": "mesh",
         "velocity": [
           0.0,
           0.0,
@@ -15632,6 +15650,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -15873,6 +15892,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -16114,6 +16134,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -16355,6 +16376,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -16596,6 +16618,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -16837,6 +16860,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17009,6 +17033,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17173,6 +17198,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17337,6 +17363,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17501,6 +17528,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17665,6 +17693,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17829,6 +17858,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -17993,6 +18023,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -18226,6 +18257,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -18467,6 +18499,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -18708,6 +18741,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -18949,6 +18983,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -19190,6 +19225,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -19431,6 +19467,7 @@
         "name": "Ventilation trunk",
         "nextEntity": "5",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -19603,6 +19640,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -19767,6 +19805,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -19931,6 +19970,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -20095,6 +20135,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -20259,6 +20300,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -20423,6 +20465,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [
@@ -20587,6 +20630,7 @@
         "name": "Ventilation support",
         "nextEntity": "4",
         "occlusion": null,
+        "ui": null,
         "version": 1
       },
       "mapping": [

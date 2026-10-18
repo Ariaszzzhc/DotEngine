@@ -474,7 +474,9 @@ namespace Dot::Script {
 
   PhysicsSource::~PhysicsSource() = default;
 
-  auto PhysicsSource::create(std::shared_ptr<World::Scene> scene, const PhysicsSourceConfig& config)
+  auto PhysicsSource::create(std::shared_ptr<World::Scene> scene, const PhysicsSourceConfig& config,
+                             std::optional<Core::FileSystem> files,
+                             std::optional<std::vector<Physics::MeshAsset>> prepared)
       -> Core::Result<PhysicsSource> {
     if (!scene || scene->id() == 0 || config.contactJsonBytes == 0
         || config.contactJsonBytes > 16 * 1024 * 1024) {
@@ -482,7 +484,8 @@ namespace Dot::Script {
                         "Invalid physics source scene/contact budget");
     }
 
-    auto simulation = Physics::SceneSimulation::create(*scene, config.simulation);
+    auto simulation = Physics::SceneSimulation::create(*scene, config.simulation, std::move(files),
+                                                       std::move(prepared));
 
     if (!simulation) {
       return std::unexpected(simulation.error());

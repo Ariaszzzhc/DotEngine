@@ -611,6 +611,27 @@ shared descriptor lifetime. Validate buffer identity, dirty close/recovery and
 live source-save behavior through the actual workspace agent operations. Local validation remains
 arm64 macOS; Windows/Linux code is not locally validated.
 
+## Static mesh collider authoring
+
+Select an entity with a native asset mesh and choose **Use render mesh as static
+collider** in the Inspector. This validates the resource and stages static motion,
+mesh shape/resource, zero velocity, discrete CCD and solid collision. Apply creates
+one ordinary document history step; Reset discards the draft. Undo/redo/save/reopen
+use the native scene codec. Characters and deforming skins cannot share this collider.
+Malformed/missing resources fail before staging; Apply validates resource bytes
+again. Direct component edits retain the ordinary strict scene validation and Play
+validates referenced geometry before publishing its world.
+
+```json
+{"command":"stage-mesh-collider","revision":"3","entity":"10","path":"assets/equipment/meshes/0.dotmesh"}
+{"command":"apply-inspector","revision":"3"}
+```
+
+Separate strict requests require the current selection/revision, stopped Play and
+preview, and no pending forms/gestures/dialogs. Staging changes no document revision
+or history. The GUI calls this same product operation. Shape `mesh` exposes
+`meshAsset`; primitive variants forbid it. See [geometry limits](Physics.md#static-triangle-mesh-colliders).
+
 ## Exporting the current scene
 
 The toolbar's **Export game** modal uses the strict `export` or `export-data` command to

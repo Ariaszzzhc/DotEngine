@@ -2,11 +2,15 @@ module;
 
 #include <cstddef>
 #include <memory>
+#include <optional>
+#include <vector>
 
 export module Dot.Script.PhysicsSource;
 
 export import Dot.Script.Host;
 import Dot.Core.Result;
+import Dot.Core.Files;
+import Dot.Physics.Mesh;
 import Dot.World.Scene;
 import Dot.Physics.World;
 
@@ -25,7 +29,9 @@ export namespace Dot::Script {
   class PhysicsSource {
   public:
     [[nodiscard]] static auto create(std::shared_ptr<World::Scene> scene,
-                                     const PhysicsSourceConfig& config = {})
+                                     const PhysicsSourceConfig& config = {},
+                                     std::optional<Core::FileSystem> files = {},
+                                     std::optional<std::vector<Physics::MeshAsset>> prepared = {})
         -> Core::Result<PhysicsSource>;
     PhysicsSource(const PhysicsSource&) = delete;
     auto operator=(const PhysicsSource&) -> PhysicsSource& = delete;

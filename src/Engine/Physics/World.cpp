@@ -21,6 +21,8 @@ module;
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -260,6 +262,35 @@ namespace Dot::Physics {
           return JPH::SphereShapeSettings{config.radius}.Create();
         case Shape::Capsule:
           return JPH::CapsuleShapeSettings{config.halfHeight, config.radius}.Create();
+        case Shape::Mesh: {
+          const auto view = config.mesh.view().value();
+          JPH::MeshShapeSettings settings;
+          settings.mTriangleVertices.reserve(view.vertices.size());
+          settings.mIndexedTriangles.reserve(view.indices.size() / 3);
+
+          for (const auto& point : view.vertices) {
+            settings.mTriangleVertices.emplace_back(point.x, point.y, point.z);
+          }
+
+          for (std::size_t i = 0; i < view.indices.size(); i += 3) {
+            settings.mIndexedTriangles.emplace_back(view.indices[i], view.indices[i + 1],
+                                                    view.indices[i + 2]);
+          }
+
+          auto shape = settings.Create();
+
+          if (shape.HasError()) {
+            return shape;
+          }
+
+          if (shape.Get()->GetStats().mNumTriangles != config.mesh.triangles()) {
+            JPH::Shape::ShapeResult error;
+            error.SetError("Mesh cooking changed the validated triangle count");
+            return error;
+          }
+
+          return JPH::ScaledShapeSettings(shape.Get().GetPtr(), native(config.meshScale)).Create();
+        }
       }
 
       throw std::logic_error("Unvalidated shape type");
@@ -740,6 +771,7 @@ namespace Dot::Physics {
       float mass;
       bool sensor;
       std::uint64_t userTag;
+      std::size_t meshTriangles{};
     };
 
     struct CharacterEntry {
@@ -1090,6 +1122,13 @@ namespace Dot::Physics {
     ContactCollector::RemovalSet removals;
     auto nextValue = m_impl->m_nextBody;
     std::size_t count = m_impl->m_bodies.size();
+    std::size_t meshTriangles{};
+
+    for (const auto& [key, entry] : m_impl->m_bodies) {
+      (void)key;
+      meshTriangles += entry.meshTriangles;
+    }
+
     bool mutating = false;
 
     try {
@@ -1122,6 +1161,7 @@ namespace Dot::Physics {
           removals.emplace(change.body->value, change.config ? ContactEndReason::Reconfigured
                                                              : ContactEndReason::Destroyed);
           --count;
+          meshTriangles -= entry->meshTriangles;
         }
 
         if (!change.config) {
@@ -1149,8 +1189,14 @@ namespace Dot::Physics {
         }
 
         ++count;
+        meshTriangles += config->mesh.triangles();
         results.push_back(id);
         configs.push_back(*config);
+      }
+
+      if (meshTriangles > 1048576) {
+        return Core::fail(Core::ErrorCode::Unavailable,
+                          "Physics bodies exceed 1048576 collision triangles");
       }
 
       if (count > m_impl->m_config.maxBodies) {
@@ -1185,9 +1231,9 @@ namespace Dot::Physics {
           return std::unexpected(body.error());
         }
 
-        nodes.insert_or_assign(
-            results[i]->value,
-            Impl::Entry{JPH::BodyID{}, config.motion, config.mass, config.sensor, config.userTag});
+        nodes.insert_or_assign(results[i]->value,
+                               Impl::Entry{JPH::BodyID{}, config.motion, config.mass, config.sensor,
+                                           config.userTag, config.mesh.triangles()});
         prepared.push_back(std::move(*body));
       }
 

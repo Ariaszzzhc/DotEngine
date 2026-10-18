@@ -177,6 +177,8 @@ target_sources(DotEngine PRIVATE
     src/Engine/World/SceneResolver.cpp
     src/Engine/Physics/World.cpp
     src/Engine/Physics/Body.cpp
+    src/Engine/Physics/Mesh.cpp
+    src/Engine/Physics/MeshFiles.cpp
     src/Engine/Physics/Character.cpp
     src/Engine/Physics/SceneSimulation.cpp
     src/Engine/Audio/Clip.cpp
@@ -330,6 +332,8 @@ target_sources(DotEngine PUBLIC
         src/Engine/World/SceneResolver.cppm
         src/Engine/Physics/World.cppm
         src/Engine/Physics/Body.cppm
+        src/Engine/Physics/Mesh.cppm
+        src/Engine/Physics/MeshFiles.cppm
         src/Engine/Physics/Character.cppm
         src/Engine/Physics/SceneSimulation.cppm
         src/Engine/Audio/Clip.cppm

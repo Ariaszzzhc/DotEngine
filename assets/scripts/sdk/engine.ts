@@ -431,7 +431,9 @@ export interface MeshRenderer {
 export interface RigidBody {
   motion: 'static'|'kinematic'|'dynamic';
   collisionDetection: 'discrete'|'continuous';
-  shape: 'box'|'sphere'|'capsule';
+  shape: 'box'|'sphere'|'capsule'|'mesh';
+  /** Required only for a solid static mesh collider. 仅实体静态网格碰撞体须提供。 */
+  meshAsset?: string;
   halfExtents: Vec3;
   radius: number;
   halfHeight: number;

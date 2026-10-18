@@ -289,8 +289,9 @@ export namespace Dot::Physics {
     [[nodiscard]] auto moveKinematic(BodyId body, Math::Vec3 position, Math::Quat rotation,
                                      double seconds) -> Core::Result<void>;
     /** Cast displacement of length >=0.001 with both endpoints within position
-     * limits. Includes sensors; no hit returns nullopt.
-     * 沿长度至少为 0.001、两端均在位置范围内的位移投射射线；包含传感器，未命中返回 nullopt。 */
+     * limits. Includes sensors and both triangle faces; no hit returns nullopt.
+     * 沿长度至少为 0.001、两端均在位置范围内的位移投射射线；包含传感器及三角形双面，未命中返回
+     * nullopt。 */
     [[nodiscard]] auto rayCast(Math::Vec3 origin, Math::Vec3 displacement) const
         -> Core::Result<std::optional<RayHit>>;
     /** Radius [0.001,10000] metres; finite center endpoints within +/-1e6 and

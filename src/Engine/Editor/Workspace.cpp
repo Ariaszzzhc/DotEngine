@@ -33,6 +33,7 @@ module;
 module Dot.Editor.Workspace;
 
 import Dot.Core.Application;
+import Dot.Physics.MeshFiles;
 import Dot.Core.Events;
 import Dot.Script.SceneScripts;
 import Dot.Editor.Play;
@@ -370,7 +371,7 @@ namespace Dot::Editor {
             } else if (item.key() == "collisionDetection") {
               options = "discrete\0continuous\0";
             } else if (item.key() == "shape") {
-              options = "box\0sphere\0capsule\0";
+              options = "box\0sphere\0capsule\0mesh\0";
             } else if (item.key() == "attenuation") {
               options = "inverse\0linear\0exponential\0";
             }
@@ -6727,6 +6728,45 @@ namespace Dot::Editor {
         return execute("{\"command\":\"inspect\"}");
       }
 
+      if (command == "stage-mesh-collider") {
+        Codec::requireFields(parsed, {"command", "revision", "entity", "path"});
+        auto stats = m_document->stats().value();
+
+        if (playing() || previewing() || m_transform || m_pendingClose || m_captureDialog
+            || m_sceneDialog || m_uiEditor || m_material || pendingText() || pendingInspector()
+            || pendingEnvironment() || pendingOcclusion()
+            || Codec::id(parsed["revision"]) != stats.revision || !stats.selected
+            || stats.selected->value != Codec::id(parsed["entity"])) {
+          return Core::fail(
+              Core::ErrorCode::InvalidState,
+              "Mesh collider staging requires a clean selected authoring entity/current revision");
+        }
+
+        syncInspector();
+
+        if (!m_edit["character"].is_null() || !m_edit["skin"].is_null()) {
+          return Core::fail(Core::ErrorCode::InvalidArgument,
+                            "Static mesh colliders cannot own a character or deforming skin");
+        }
+
+        const auto path = parsed["path"].get<std::string>();
+        auto mesh = Physics::loadCollisionMesh(m_project->files().value(), path);
+
+        if (!mesh) {
+          return std::unexpected(mesh.error());
+        }
+
+        auto body = m_edit["rigidBody"].is_null() ? m_presets["rigidBody"] : m_edit["rigidBody"];
+        body["motion"] = "static";
+        body["shape"] = "mesh";
+        body["meshAsset"] = path;
+        body["sensor"] = false;
+        body["velocity"] = {0, 0, 0};
+        body["collisionDetection"] = "discrete";
+        m_edit["rigidBody"] = std::move(body);
+        return execute("{\"command\":\"inspect\"}");
+      }
+
       if (command == "stage-inspector") {
         Codec::requireFields(parsed, {"command", "revision", "entity", "value"});
         const auto stats = m_document->stats().value();
@@ -8363,6 +8403,20 @@ namespace Dot::Editor {
         fields(m_edit["transform"]);
       }
 
+      if (!m_edit["mesh"].is_null() && m_edit["mesh"]["kind"] == "asset") {
+        ImGui::BeginDisabled(pendingInspector() || !m_edit["skin"].is_null()
+                             || !m_edit["character"].is_null());
+
+        if (ImGui::Button("Use render mesh as static collider")) {
+          sessionAction({{"command", "stage-mesh-collider"},
+                         {"revision", std::to_string(m_editRevision)},
+                         {"entity", m_edit["id"]},
+                         {"path", m_edit["mesh"]["asset"]}});
+        }
+
+        ImGui::EndDisabled();
+      }
+
       for (const auto* component :
            {"camera", "mesh", "rigidBody", "audioSource", "audioListener", "script", "material",
             "light", "animation", "skin", "character"}) {
@@ -8766,6 +8820,20 @@ namespace Dot::Editor {
             }
           } else {
             fields(m_edit[component]);
+
+            if (std::string_view(component) == "rigidBody") {
+              if (m_edit[component]["shape"] == "mesh") {
+                if (!m_edit[component].contains("meshAsset")) {
+                  m_edit[component]["meshAsset"] = "";
+                }
+
+                ImGui::TextWrapped(
+                    "Static triangle mesh; preserves openings. Requires a .dotmesh asset and "
+                    "static motion.");
+              } else {
+                m_edit[component].erase("meshAsset");
+              }
+            }
           }
 
           if (std::string_view(component) == "material") {
@@ -8876,6 +8944,16 @@ namespace Dot::Editor {
 
       if (m_edit == m_original) {
         return {};
+      }
+
+      if (!m_edit["rigidBody"].is_null() && m_edit["rigidBody"]["shape"] == "mesh") {
+        auto loaded = Physics::loadCollisionMesh(
+            m_project->files().value(), m_edit["rigidBody"].at("meshAsset").get<std::string>());
+
+        if (!loaded) {
+          m_message = loaded.error().message;
+          return std::unexpected(loaded.error());
+        }
       }
 
       auto prepared = m_document->prepareEntityEdit(m_edit.dump(), m_editRevision);

@@ -13,17 +13,18 @@ import Dot.Core.Result;
 import Dot.World.Scene;
 import Dot.Animation.ScenePlayers;
 import Dot.UI.Layout;
+import Dot.Physics.Mesh;
 
 export namespace Dot::Project {
   class ScenePreparation;
 
   /** Immutable proof of CPU graphics/skin validation and owned initial animation
-   * clips/controllers for exact scene bytes/root. Animation binding/authority still validate
-   * on the owner; only immutable assets cross threads.
-   * Rehydration creates a scene on the calling thread, never transfers thread-bound
-   * World handles. No GPU residency proof. Files remain caller-owned: serialize
-   * asset edits through publication, as with synchronous preflight.
-   * 精确场景字节/根目录的不可变 CPU 图形/蒙皮校验结果及初始动画片段/状态机；绑定/权限仍由
+   * clips/controllers and collision geometry for exact scene bytes/root. Animation
+   * binding/authority still validate on the owner; only immutable assets cross threads. Rehydration
+   * creates a scene on the calling thread, never transfers thread-bound World handles. No GPU
+   * residency proof. Files remain caller-owned: serialize asset edits through publication, as with
+   * synchronous preflight. 精确场景字节/根目录的不可变 CPU
+   * 图形/蒙皮校验结果及初始动画片段/状态机和碰撞几何；绑定/权限仍由
    * 所有者校验，仅不可变资源跨线程。在调用线程重建场景，不转移
    * 线程绑定 World 句柄。不保证 GPU 驻留；文件由调用者拥有，须串行修改直至发布。 */
   class PreparedScene {
@@ -41,6 +42,9 @@ export namespace Dot::Project {
         -> Core::Result<std::span<const Animation::ClipAsset>>;
     [[nodiscard]] auto animationControllers() const
         -> Core::Result<std::span<const Animation::ControllerAsset>>;
+    /** Borrow immutable collision geometry; initial consumers never reread files.
+     * 借用不可变碰撞几何，初始使用者不重新读文件。 */
+    [[nodiscard]] auto collisionMeshes() const -> Core::Result<std::span<const Physics::MeshAsset>>;
     /** Owned immutable UI defaults, or no binding. No file fallback after preparation.
      * 拥有的不可变 UI 默认值或无绑定；准备完成后不回退读文件。 */
     [[nodiscard]] auto ui() const -> Core::Result<std::optional<UI::Asset>>;

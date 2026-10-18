@@ -141,8 +141,11 @@ namespace Dot::World {
 
     auto rigidBody(const Json& value) -> RigidBody {
       Codec::requireFields(
-          value, {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass",
-                  "friction", "restitution", "gravityFactor", "sensor", "collisionDetection"});
+          value,
+          {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass", "friction",
+           "restitution", "gravityFactor", "sensor", "collisionDetection"},
+          value.at("shape") == "mesh" ? std::initializer_list<std::string_view>{"meshAsset"}
+                                      : std::initializer_list<std::string_view>{});
       RigidBody result;
       const auto motion = value["motion"].get<std::string>();
       const auto shape = value["shape"].get<std::string>();
@@ -163,6 +166,8 @@ namespace Dot::World {
         result.shape = Physics::Shape::Sphere;
       } else if (shape == "capsule") {
         result.shape = Physics::Shape::Capsule;
+      } else if (shape == "mesh") {
+        result.shape = Physics::Shape::Mesh;
       } else {
         throw std::invalid_argument("Unknown rigid-body shape");
       }
@@ -186,6 +191,11 @@ namespace Dot::World {
       result.restitution = Codec::number(value["restitution"]);
       result.gravityFactor = Codec::number(value["gravityFactor"]);
       result.sensor = value["sensor"].get<bool>();
+
+      if (result.shape == Physics::Shape::Mesh) {
+        result.meshAsset = value.at("meshAsset").get<std::string>();
+      }
+
       return result;
     }
 
@@ -727,23 +737,31 @@ namespace Dot::World {
       const auto motion = value.motion == Physics::Motion::Static      ? "static"
                           : value.motion == Physics::Motion::Kinematic ? "kinematic"
                                                                        : "dynamic";
-      const auto shape = value.shape == Physics::Shape::Box      ? "box"
-                         : value.shape == Physics::Shape::Sphere ? "sphere"
-                                                                 : "capsule";
-      return {{"motion", motion},
-              {"collisionDetection",
-               value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
-                                                                                   : "discrete"},
-              {"shape", shape},
-              {"halfExtents", {value.halfExtents.x, value.halfExtents.y, value.halfExtents.z}},
-              {"radius", value.radius},
-              {"halfHeight", value.halfHeight},
-              {"velocity", {value.velocity.x, value.velocity.y, value.velocity.z}},
-              {"mass", value.mass},
-              {"friction", value.friction},
-              {"restitution", value.restitution},
-              {"gravityFactor", value.gravityFactor},
-              {"sensor", value.sensor}};
+      const auto shape = value.shape == Physics::Shape::Box       ? "box"
+                         : value.shape == Physics::Shape::Sphere  ? "sphere"
+                         : value.shape == Physics::Shape::Capsule ? "capsule"
+                                                                  : "mesh";
+      auto result
+          = Json{{"motion", motion},
+                 {"collisionDetection",
+                  value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
+                                                                                      : "discrete"},
+                 {"shape", shape},
+                 {"halfExtents", {value.halfExtents.x, value.halfExtents.y, value.halfExtents.z}},
+                 {"radius", value.radius},
+                 {"halfHeight", value.halfHeight},
+                 {"velocity", {value.velocity.x, value.velocity.y, value.velocity.z}},
+                 {"mass", value.mass},
+                 {"friction", value.friction},
+                 {"restitution", value.restitution},
+                 {"gravityFactor", value.gravityFactor},
+                 {"sensor", value.sensor}};
+
+      if (value.shape == Physics::Shape::Mesh) {
+        result["meshAsset"] = *value.meshAsset;
+      }
+
+      return result;
     }
 
     auto characterJson(const CharacterController& value) -> Json {

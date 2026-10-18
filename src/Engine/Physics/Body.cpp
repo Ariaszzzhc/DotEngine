@@ -8,6 +8,7 @@ module Dot.Physics.Body;
 
 import Dot.Core.Result;
 import Dot.Math;
+import Dot.Core.Paths;
 
 namespace Dot::Physics {
   namespace {
@@ -23,8 +24,19 @@ namespace Dot::Physics {
     }
 
     if (properties.shape != Shape::Box && properties.shape != Shape::Sphere
-        && properties.shape != Shape::Capsule) {
+        && properties.shape != Shape::Capsule && properties.shape != Shape::Mesh) {
       return Core::fail(Core::ErrorCode::InvalidArgument, "Unknown physics shape type");
+    }
+
+    if ((properties.shape == Shape::Mesh
+         && (properties.motion != Motion::Static || properties.sensor))
+        || (properties.meshAsset
+            && (properties.shape != Shape::Mesh || properties.meshAsset->size() > 1024
+                || !Core::isPortableRelativePath(*properties.meshAsset)
+                || !properties.meshAsset->starts_with("assets/")
+                || !properties.meshAsset->ends_with(".dotmesh")))) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Invalid static mesh collider properties/resource");
     }
 
     if (properties.collisionDetection != CollisionDetection::Discrete
@@ -82,6 +94,17 @@ namespace Dot::Physics {
 
     if (!rotation) {
       return std::unexpected(rotation.error());
+    }
+
+    if (config.shape == Shape::Mesh) {
+      auto mesh = config.mesh.validateScale(config.meshScale);
+
+      if (!mesh) {
+        return std::unexpected(mesh.error());
+      }
+    } else if (config.mesh.triangles() || config.meshScale != Math::Vec3{1, 1, 1}) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Primitive body cannot carry mesh geometry/scale");
     }
 
     auto normalized = config;

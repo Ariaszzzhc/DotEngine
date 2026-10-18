@@ -278,8 +278,21 @@ export class Audit extends ScriptComponent<{contract: string}> {
         initial.motion === 'dynamic' && initial.collisionDetection === 'continuous'
             && !initial.sensor);
     this.check('Entity.physicsBody.get', equal(dynamic.physicsBody, initial));
-    this.check('physics.stats', physics.stats().bodies === 7 && !physics.stats().faulted);
+    this.check('physics.stats', physics.stats().bodies === 8 && !physics.stats().faulted);
     this.check('physics.contacts.get', Array.isArray(physics.contacts.events));
+    const duct = this.entity('Mesh duct');
+    const meshBody = duct.rigidBody!;
+    this.check('physics.mesh.authored', meshBody.shape === 'mesh'
+        && meshBody.motion === 'static' && meshBody.meshAsset === 'assets/collision-duct.dotmesh');
+    duct.rigidBody = {...meshBody, friction: 0.45};
+    this.check('physics.mesh.write', Math.abs(duct.rigidBody!.friction - 0.45) < 0.001);
+    this.expectedError(() => { duct.rigidBody = {...meshBody, motion: 'dynamic'}; }, 'InvalidArgument');
+    this.expectedError(() => { duct.rigidBody = {...meshBody, shape: 'box'}; }, 'InvalidArgument');
+    this.check('physics.mesh.failedWrite', duct.rigidBody!.shape === 'mesh');
+    this.check('physics.mesh.opening', physics.rayCast({x: 6, y: 1, z: 3}, {x: 0, y: 0, z: -4}) === null);
+    this.check('physics.mesh.surface', physics.rayCast({x: 6.87, y: 1, z: 3}, {x: 0, y: 0, z: -4})?.entity.value === duct.id.value);
+    this.check('physics.mesh.sweepOpening', physics.sphereCast({x: 6, y: 1, z: 3}, 0.04, {x: 0, y: 0, z: -4}) === null);
+
     const hit = physics.rayCast({x: -2, y: 3, z: 0}, {x: 0, y: -6, z: 0});
     this.check('physics.rayCast', hit !== null && hit.fraction >= 0 && hit.fraction <= 1);
     const swept = physics.sphereCast({x: 0, y: 3, z: 0}, 0.2, {x: 0, y: -6, z: 0});

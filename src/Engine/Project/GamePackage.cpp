@@ -17,6 +17,8 @@ module;
 
 module Dot.Project.GamePackage;
 
+import Dot.Physics.MeshFiles;
+
 import Dot.Core.Paths;
 import Dot.Core.StagedDirectory;
 import Dot.Core.Text;
@@ -308,6 +310,14 @@ namespace Dot::Project {
 
       if (!validationScene) {
         return std::unexpected(validationScene.error());
+      }
+
+      auto collisionMeshes
+          = Physics::loadSceneCollisionMeshes(checked->files().value(), *validationScene);
+
+      if (!collisionMeshes) {
+        return Core::fail(collisionMeshes.error().code,
+                          "Export collision meshes: " + collisionMeshes.error().message);
       }
 
       auto environment = validationScene->environment();

@@ -5,6 +5,7 @@ module;
 #include <cmath>
 #include <expected>
 #include <format>
+#include <iterator>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -21,6 +22,8 @@ import Dot.Core.Result;
 import Dot.Math;
 import Dot.World.Scene;
 import Dot.Physics.Body;
+import Dot.Physics.MeshFiles;
+import Dot.Core.Paths;
 import Dot.Physics.Character;
 import Dot.Physics.World;
 
@@ -36,8 +39,8 @@ namespace Dot::Physics {
       return std::unexpected(std::move(result));
     }
 
-    auto configuration(const BodyProperties& description, const Math::TransformParts& pose)
-        -> Core::Result<BodyConfig> {
+    auto configuration(const BodyProperties& description, const Math::TransformParts& pose,
+                       TriangleMesh mesh = {}) -> Core::Result<BodyConfig> {
       BodyConfig result;
       static_cast<BodyProperties&>(result) = description;
       result.position = pose.position;
@@ -45,7 +48,10 @@ namespace Dot::Physics {
       const Math::Vec3 scale{std::abs(pose.scale.x), std::abs(pose.scale.y),
                              std::abs(pose.scale.z)};
 
-      if (description.shape == Shape::Box) {
+      if (description.shape == Shape::Mesh) {
+        result.mesh = std::move(mesh);
+        result.meshScale = pose.scale;
+      } else if (description.shape == Shape::Box) {
         result.halfExtents
             = {description.halfExtents.x * scale.x, description.halfExtents.y * scale.y,
                description.halfExtents.z * scale.z};
@@ -174,6 +180,9 @@ namespace Dot::Physics {
     World m_world;
     std::unordered_map<std::uint64_t, Entry> m_entries;
     std::unordered_map<std::uint64_t, CharacterEntry> m_characters;
+    std::optional<Core::FileSystem> m_files;
+    std::vector<MeshAsset> m_meshes;
+    bool m_initialPrepared{};
     bool m_faulted{};
 
     Impl(std::uint64_t scene, WorldConfig config, World world)
@@ -286,7 +295,9 @@ namespace Dot::Physics {
 
   SceneSimulation::~SceneSimulation() = default;
 
-  auto SceneSimulation::create(const Scene& scene, const WorldConfig& config)
+  auto SceneSimulation::create(const Scene& scene, const WorldConfig& config,
+                               std::optional<Core::FileSystem> files,
+                               std::optional<std::vector<MeshAsset>> prepared)
       -> Core::Result<SceneSimulation> {
     auto checked = scene.entityCount();
 
@@ -302,12 +313,51 @@ namespace Dot::Physics {
 
     try {
       SceneSimulation result{std::make_unique<Impl>(scene.id(), config, std::move(*world))};
+      result.m_impl->m_files = std::move(files);
+      result.m_impl->m_initialPrepared = prepared.has_value();
+
+      if (prepared) {
+        if (prepared->size() > 64) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Prepared collision meshes exceed 64 assets");
+        }
+
+        std::size_t bytes{};
+        std::vector<std::string> paths;
+
+        for (const auto& asset : *prepared) {
+          if (!Core::isPortableRelativePath(asset.path) || !asset.path.starts_with("assets/")
+              || !asset.path.ends_with(".dotmesh") || asset.path.size() > 1024
+              || std::ranges::find(paths, asset.path) != paths.end()) {
+            return Core::fail(Core::ErrorCode::InvalidArgument,
+                              "Invalid/duplicate prepared collision mesh path");
+          }
+
+          auto valid = asset.value.view();
+
+          if (!valid) {
+            return std::unexpected(valid.error());
+          }
+
+          paths.push_back(asset.path);
+          bytes += asset.value.bytes();
+        }
+
+        if (paths.size() > 64 || bytes > 64 * 1024 * 1024) {
+          return Core::fail(Core::ErrorCode::Unavailable,
+                            "Prepared collision mesh capacity exceeded");
+        }
+
+        result.m_impl->m_meshes = std::move(*prepared);
+      }
+
       auto synchronized = result.synchronize(scene);
 
       if (!synchronized) {
         return std::unexpected(synchronized.error());
       }
 
+      result.m_impl->m_initialPrepared = false;
       return result;
     } catch (const std::exception& error) {
       return Core::fail(Core::ErrorCode::External,
@@ -339,6 +389,7 @@ namespace Dot::Physics {
         return std::unexpected(entities.error());
       }
 
+      auto meshes = m_impl->m_meshes;
       std::unordered_map<std::uint64_t, Impl::Entry> desired;
       std::vector<BodyChange> changes;
       std::vector<std::uint64_t> keys;
@@ -363,14 +414,6 @@ namespace Dot::Physics {
           return context(entity.id, parts.error());
         }
 
-        auto config = configuration(*entity.rigidBody, *parts);
-
-        if (!config) {
-          return context(entity.id, config.error());
-        }
-
-        config->userTag = entity.id.value;
-
         const auto existing = m_impl->m_entries.find(entity.id.value);
 
         if (existing != m_impl->m_entries.end() && existing->second.description == *entity.rigidBody
@@ -378,6 +421,50 @@ namespace Dot::Physics {
           desired.emplace(entity.id.value, existing->second);
           continue;
         }
+
+        TriangleMesh mesh;
+
+        if (entity.rigidBody->shape == Shape::Mesh) {
+          const auto& path = *entity.rigidBody->meshAsset;
+          auto found = std::ranges::find(meshes, path, &MeshAsset::path);
+
+          if (found == meshes.end()) {
+            if (m_impl->m_initialPrepared || !m_impl->m_files) {
+              return Core::fail(Core::ErrorCode::NotFound,
+                                "Collision mesh is not prepared: " + path);
+            }
+
+            auto loaded = loadCollisionMesh(*m_impl->m_files, path);
+
+            if (!loaded) {
+              return context(entity.id, loaded.error());
+            }
+
+            std::size_t bytes = loaded->bytes();
+
+            for (const auto& asset : meshes) {
+              bytes += asset.value.bytes();
+            }
+
+            if (meshes.size() >= 64 || bytes > 64 * 1024 * 1024) {
+              return Core::fail(Core::ErrorCode::Unavailable,
+                                "Scene collision mesh cache capacity exceeded");
+            }
+
+            meshes.push_back({path, std::move(*loaded)});
+            found = std::prev(meshes.end());
+          }
+
+          mesh = found->value;
+        }
+
+        auto config = configuration(*entity.rigidBody, *parts, std::move(mesh));
+
+        if (!config) {
+          return context(entity.id, config.error());
+        }
+
+        config->userTag = entity.id.value;
 
         std::optional<BodyId> id;
         bool preserveVelocity = false;
@@ -501,6 +588,7 @@ namespace Dot::Physics {
         }
       }
 
+      m_impl->m_meshes.swap(meshes);
       m_impl->m_entries.swap(desired);
       m_impl->m_characters.swap(desiredCharacters);
       return {};
@@ -691,7 +779,8 @@ namespace Dot::Physics {
       return ready;
     }
 
-    auto candidate = create(scene, m_impl->m_config);
+    auto candidate = create(scene, m_impl->m_config, m_impl->m_files,
+                            m_impl->m_files ? std::nullopt : std::optional{m_impl->m_meshes});
 
     if (!candidate) {
       return std::unexpected(candidate.error());

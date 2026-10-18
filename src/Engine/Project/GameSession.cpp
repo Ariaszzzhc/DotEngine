@@ -18,6 +18,8 @@ module;
 
 module Dot.Project.GameSession;
 
+import Dot.Physics.Mesh;
+
 import Dot.UI.Files;
 
 import Dot.Core.Result;
@@ -672,7 +674,20 @@ namespace Dot::Project {
         return std::unexpected(published.error());
       }
 
-      auto physics = Script::PhysicsSource::create(impl->m_scene, config.physics);
+      std::optional<std::vector<Physics::MeshAsset>> collisionMeshes;
+
+      if (preflight) {
+        auto prepared = preflight->collisionMeshes();
+
+        if (!prepared) {
+          return std::unexpected(prepared.error());
+        }
+
+        collisionMeshes.emplace(prepared->begin(), prepared->end());
+      }
+
+      auto physics = Script::PhysicsSource::create(impl->m_scene, config.physics, assets,
+                                                   std::move(collisionMeshes));
 
       if (!physics) {
         return std::unexpected(physics.error());

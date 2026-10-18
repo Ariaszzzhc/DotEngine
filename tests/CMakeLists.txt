@@ -79,6 +79,7 @@ add_executable(DotUnitTests
     SceneComponentTests.cpp
     SceneTransactionTests.cpp
     BodyTests.cpp
+    CollisionMeshTests.cpp
     CharacterTests.cpp
     MixerTests.cpp
     FrameQueueTests.cpp
@@ -133,6 +134,7 @@ add_executable(DotTests
     ExternalFileValidationTests.cpp
     SceneFileTests.cpp
     PhysicsTests.cpp
+    CollisionMeshIntegrationTests.cpp
     SphereCastTests.cpp
     CharacterPhysicsTests.cpp
     CharacterBatchTests.cpp

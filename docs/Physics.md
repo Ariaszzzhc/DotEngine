@@ -43,6 +43,49 @@ at most 1000 m/s². Pair and contact capacities are each sixteen times the combi
 capacity. Temporary simulation storage starts at 16 MiB and falls back to heap
 storage when necessary.
 
+## Static triangle mesh colliders
+
+`Shape::Mesh` uses immutable `Dot.Physics.Mesh::TriangleMesh` geometry in a solid,
+static Jolt mesh shape. It preserves concavity and openings; it never substitutes a
+box, convex hull or simplified triangles. Dynamic/kinematic meshes, sensors,
+continuous CCD and deforming skins are rejected. Rigid-body response uses CCW front
+faces; ray/sphere queries and character constraints consider both triangle faces.
+Author closed, consistently wound surfaces for solid environments.
+
+Pure CPU creation owns indexed positions and rejects empty, nonfinite, out-of-range
+or degenerate triangles. Each resource permits 262144 vertices and 262144 triangles,
+local coordinates within +/-10000. Signed nonuniform scale components have magnitude
+[0.0001,10000]; scaled vertices stay within +/-1000000 and triangles must remain
+nondegenerate. Native cooking must retain every triangle or fail before replacing
+live bodies. Worlds permit 1048576 active mesh triangles, counting each body.
+Geometry has shared immutable ownership across copies/threads; Jolt shapes remain
+owned by their world/bodies and are destroyed with them.
+
+Scene/SDK `rigidBody.shape="mesh"` requires `meshAsset`, a portable exact-spelling
+`assets/*.dotmesh` path (at most 1024 bytes). Primitive variants forbid that field.
+Other required material/dimension fields remain validated. `BodyConfig` instead
+accepts owned `mesh` and signed `meshScale`; low-level worlds do no file I/O.
+`Dot.Physics.MeshFiles` extracts exact positions/indices from native indexed or
+unindexed triangles. Symlinks/special files fail, with at most 32 path components
+and 65536 lookup entries. No source OBJ/glTF loading occurs during simulation.
+
+Scene preparation owns up to 64 unique collision resources/64 MiB and validates
+world scales and total triangle capacity without creating a physics world.
+Prepared initial consumers cannot fall back to files. SceneSimulation may load new
+bindings from its optional filesystem and retains bounded immutable geometry until
+reset/destruction. Failed decoding/cooking preserves live bindings and cache.
+Unchanged static poses do not rescan triangles each tick. Reset prepares a fresh
+world from files when available; a filesystem-free service reuses its owned data.
+Changing bytes behind an already loaded path requires reset/restarting Play.
+
+The Inspector's **Use render mesh as static collider** stages the rendered native
+asset, then ordinary Apply/undo/save publishes it. A collision-only native resource
+can also be selected through the mesh asset field. The same operation is exposed
+through the [workspace agent interface](Editor.md). Feature Lab's hollow imported
+duct demonstrates mesh properties, failed writes, surface hits and unobstructed
+ray/sphere queries through its opening; Prism Relay uses authored geometry for
+floor/walls, equipment, the relay column and traversal steps.
+
 ## Continuous collision detection
 
 `BodyProperties::collisionDetection` selects Discrete (default) or Continuous.
@@ -78,8 +121,8 @@ scene roundtrips, document history, script reload and multi-step/reset behavior.
 
 ## Bodies and time
 
-Bodies support static, kinematic, and dynamic motion and box, sphere, and capsule
-shapes. Box dimensions are half-extents; a capsule's `halfHeight` describes half
+Primitive bodies support static, kinematic, and dynamic motion and box, sphere, and capsule
+shapes. Mesh colliders are static only. Box dimensions are half-extents; a capsule's `halfHeight` describes half
 the cylinder height, excluding its two hemispheres. Units are metres, kilograms,
 and seconds. Positions and rotations describe the shape origin in world space.
 The backend uses single precision and its default contact/sleep tolerances.

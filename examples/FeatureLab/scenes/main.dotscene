@@ -1146,6 +1146,74 @@
           1.0
         ]
       }
+    },
+    {
+      "animation": null,
+      "audioListener": null,
+      "audioSource": null,
+      "camera": null,
+      "character": null,
+      "id": "9007199254740998",
+      "light": null,
+      "material": null,
+      "mesh": {
+        "asset": "assets/collision-duct.dotmesh",
+        "castsShadow": true,
+        "kind": "asset",
+        "receivesShadow": true,
+        "tint": [
+          0.30000001192092896,
+          0.699999988079071,
+          0.8500000238418579,
+          1.0
+        ],
+        "visible": true
+      },
+      "name": "Mesh duct",
+      "parent": null,
+      "rigidBody": {
+        "collisionDetection": "discrete",
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "halfExtents": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "halfHeight": 0.5,
+        "mass": 1.0,
+        "meshAsset": "assets/collision-duct.dotmesh",
+        "motion": "static",
+        "radius": 0.5,
+        "restitution": 0.0,
+        "sensor": false,
+        "shape": "mesh",
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "script": null,
+      "skin": null,
+      "transform": {
+        "position": [
+          6.0,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          3.0,
+          3.0,
+          3.0
+        ]
+      }
     }
   ],
   "environment": {
@@ -1160,7 +1228,7 @@
     "specularSize": 128
   },
   "name": "Feature Lab",
-  "nextEntity": "9007199254740998",
+  "nextEntity": "9007199254740999",
   "occlusion": {
     "bias": 0.019999999552965164,
     "directions": 8,

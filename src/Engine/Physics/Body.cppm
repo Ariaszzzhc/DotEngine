@@ -1,16 +1,19 @@
 module;
 
 #include <cstdint>
+#include <optional>
+#include <string>
 
 export module Dot.Physics.Body;
 
 import Dot.Core.Result;
 import Dot.Math;
+export import Dot.Physics.Mesh;
 
 export namespace Dot::Physics {
   enum class Motion { Static, Kinematic, Dynamic };
 
-  enum class Shape { Box, Sphere, Capsule };
+  enum class Shape { Box, Sphere, Capsule, Mesh };
 
   /** Continuous uses native linear shape casting for solid dynamic bodies.
    * Rotation is not swept, and crossed sensors are not CCD contacts.
@@ -38,6 +41,12 @@ export namespace Dot::Physics {
     float restitution{};
     float gravityFactor{1};
     bool sensor{};
+    /** Optional native mesh resource identity. Scene mesh colliders require it;
+     * low-level worlds consume supplied geometry without file access. Other shapes
+     * require null. Mesh colliders are solid/static, with zero velocity and discrete CCD.
+     * 可选原生网格资源身份；场景网格碰撞体须提供，底层世界直接使用几何而不访问文件。
+     * 其他形状须为空；网格碰撞体仅支持实体静态、零速度、离散碰撞检测。 */
+    std::optional<std::string> meshAsset{};
     auto operator==(const BodyProperties&) const -> bool = default;
   };
 
@@ -56,6 +65,10 @@ export namespace Dot::Physics {
     /** Opaque runtime association, copied into contact events and never dereferenced.
      * 不透明的运行时关联值，复制到接触事件中而不作为指针解引用。 */
     std::uint64_t userTag{};
+    /** Owned geometry and signed scale for Mesh; other shapes require an empty
+     * mesh and unit scale. 非网格形状要求空几何及单位缩放，Mesh 使用拥有的几何及带符号缩放。 */
+    TriangleMesh mesh{};
+    Math::Vec3 meshScale{1, 1, 1};
   };
 
   /** CPU-only checks shared by authoring, persistence, and simulation boundaries.

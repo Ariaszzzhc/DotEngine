@@ -842,6 +842,13 @@ namespace Dot::World {
       return {};
     }
 
+    const auto* body = m_impl->registry.try_get<RigidBody>(*native);
+
+    if (body && body->shape == Physics::Shape::Mesh) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "A deforming skin cannot own a static mesh collider");
+    }
+
     auto valid = Animation::validateSkinProperties(*skin);
 
     if (!valid) {
@@ -1823,6 +1830,16 @@ namespace Dot::World {
     if (!body) {
       m_impl->registry.remove<RigidBody>(*native);
       return {};
+    }
+
+    if (body->shape == Physics::Shape::Mesh && m_impl->registry.any_of<SkinBinding>(*native)) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "A static mesh collider cannot own a deforming skin");
+    }
+
+    if (body->shape == Physics::Shape::Mesh && !body->meshAsset) {
+      return Core::fail(Core::ErrorCode::InvalidArgument,
+                        "Scene mesh collider requires a native mesh resource");
     }
 
     auto checked = Physics::validateBodyProperties(*body);

@@ -11,7 +11,7 @@ import Dot.Math;
 using namespace Dot::Physics;
 
 TEST_CASE("body.properties_default_and_all_motion_shape_variants") {
-  static_assert(std::is_trivially_copyable_v<BodyProperties>);
+  static_assert(std::is_nothrow_move_constructible_v<BodyProperties>);
 
   for (const auto motion : {Motion::Static, Motion::Kinematic, Motion::Dynamic}) {
     for (const auto shape : {Shape::Box, Shape::Sphere, Shape::Capsule}) {

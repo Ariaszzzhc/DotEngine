@@ -250,29 +250,40 @@ namespace Dot::Script {
       const auto motion = value.motion == Physics::Motion::Static      ? "static"
                           : value.motion == Physics::Motion::Kinematic ? "kinematic"
                                                                        : "dynamic";
-      const auto shape = value.shape == Physics::Shape::Box      ? "box"
-                         : value.shape == Physics::Shape::Sphere ? "sphere"
-                                                                 : "capsule";
-      return {{"motion", motion},
-              {"collisionDetection",
-               value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
-                                                                                   : "discrete"},
-              {"shape", shape},
-              {"halfExtents", Detail::xyz(value.halfExtents)},
-              {"radius", value.radius},
-              {"halfHeight", value.halfHeight},
-              {"velocity", Detail::xyz(value.velocity)},
-              {"mass", value.mass},
-              {"friction", value.friction},
-              {"restitution", value.restitution},
-              {"gravityFactor", value.gravityFactor},
-              {"sensor", value.sensor}};
+      const auto shape = value.shape == Physics::Shape::Box       ? "box"
+                         : value.shape == Physics::Shape::Sphere  ? "sphere"
+                         : value.shape == Physics::Shape::Capsule ? "capsule"
+                                                                  : "mesh";
+      auto result
+          = Json{{"motion", motion},
+                 {"collisionDetection",
+                  value.collisionDetection == Physics::CollisionDetection::Continuous ? "continuous"
+                                                                                      : "discrete"},
+                 {"shape", shape},
+                 {"halfExtents", Detail::xyz(value.halfExtents)},
+                 {"radius", value.radius},
+                 {"halfHeight", value.halfHeight},
+                 {"velocity", Detail::xyz(value.velocity)},
+                 {"mass", value.mass},
+                 {"friction", value.friction},
+                 {"restitution", value.restitution},
+                 {"gravityFactor", value.gravityFactor},
+                 {"sensor", value.sensor}};
+
+      if (value.shape == Physics::Shape::Mesh) {
+        result["meshAsset"] = *value.meshAsset;
+      }
+
+      return result;
     }
 
     auto bodyValue(const Json& value) -> World::RigidBody {
       Codec::requireFields(
-          value, {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass",
-                  "friction", "restitution", "gravityFactor", "sensor", "collisionDetection"});
+          value,
+          {"motion", "shape", "halfExtents", "radius", "halfHeight", "velocity", "mass", "friction",
+           "restitution", "gravityFactor", "sensor", "collisionDetection"},
+          value.at("shape") == "mesh" ? std::initializer_list<std::string_view>{"meshAsset"}
+                                      : std::initializer_list<std::string_view>{});
       World::RigidBody result;
       result.motion = Detail::named<Physics::Motion>(value["motion"],
                                                      {{"static", Physics::Motion::Static},
@@ -281,7 +292,8 @@ namespace Dot::Script {
       result.shape
           = Detail::named<Physics::Shape>(value["shape"], {{"box", Physics::Shape::Box},
                                                            {"sphere", Physics::Shape::Sphere},
-                                                           {"capsule", Physics::Shape::Capsule}});
+                                                           {"capsule", Physics::Shape::Capsule},
+                                                           {"mesh", Physics::Shape::Mesh}});
       result.collisionDetection = Detail::named<Physics::CollisionDetection>(
           value["collisionDetection"], {{"discrete", Physics::CollisionDetection::Discrete},
                                         {"continuous", Physics::CollisionDetection::Continuous}});
@@ -294,6 +306,11 @@ namespace Dot::Script {
       result.restitution = Codec::number(value["restitution"]);
       result.gravityFactor = Codec::number(value["gravityFactor"]);
       result.sensor = value["sensor"].get<bool>();
+
+      if (result.shape == Physics::Shape::Mesh) {
+        result.meshAsset = value.at("meshAsset").get<std::string>();
+      }
+
       return result;
     }
 

@@ -7,6 +7,8 @@ module;
 export module Dot.Physics.SceneSimulation;
 
 import Dot.Core.Result;
+import Dot.Core.Files;
+import Dot.Physics.Mesh;
 import Dot.Math;
 import Dot.World.Scene;
 import Dot.Physics.World;
@@ -61,7 +63,15 @@ export namespace Dot::Physics {
    * 移动场景保留身份与绑定，查询描述最近成功同步的状态，编辑在同步/步进时应用。 */
   class SceneSimulation {
   public:
-    [[nodiscard]] static auto create(const Dot::World::Scene& scene, const WorldConfig& config = {})
+    /** Optional prepared meshes are the complete initial resource set: missing
+     * entries fail without file fallback. Later bindings may load from files.
+     * Retain up to 64 immutable assets/64 MiB until reset/destruction. Reset
+     * reloads files when available; otherwise reuses owned geometry.
+     * 可选预备网格为完整初始资源集，缺项失败且不回退读文件；后续绑定可从文件加载。
+     * 至多保留 64 个不可变资源/64 MiB，直至重置/销毁；重置有文件时重读，否则复用拥有数据。 */
+    [[nodiscard]] static auto create(const Dot::World::Scene& scene, const WorldConfig& config = {},
+                                     std::optional<Core::FileSystem> files = {},
+                                     std::optional<std::vector<MeshAsset>> prepared = {})
         -> Core::Result<SceneSimulation>;
     SceneSimulation(const SceneSimulation&) = delete;
     auto operator=(const SceneSimulation&) -> SceneSimulation& = delete;

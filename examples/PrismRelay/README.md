@@ -207,3 +207,10 @@ a debugger step advances one simulation quantum. Restoring a grounded checkpoint
 resets controller defaults/entry and stops Inspection, rather than persisting a
 borrowed runtime state. This graph is a small locomotion controller, not blend trees,
 root motion, animation events or a final character/art quality claim.
+
+The floor, four boundary walls, eight imported cabinets, relay column and four
+traversal steps now use native static triangle colliders authored through the real
+Inspector/agent operations. Collision follows the saved geometry, including bevels
+and nonuniform scale. The eight parent box approximations were removed; ventilation
+runs still use their existing box proxies. Play and native exports use the same
+geometry preparation and Jolt implementation.
