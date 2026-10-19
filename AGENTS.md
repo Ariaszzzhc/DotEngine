@@ -20,8 +20,8 @@
   JavaDoc-style Doxygen comments. Do not add comments that repeat the code.
 - Treat recoverable external failures as `std::expected` results with context.
   Validate input at subsystem boundaries; never silently substitute fake success.
-- Keep current dependencies in the pinned vcpkg manifest until the separately
-  reviewed vendor migration. The project toolchain selects LLVM Clang and lld;
+- Keep source dependencies pinned under `vendor/` and release artifacts pinned
+  by URL and SHA-512 in CMake. The project toolchain selects LLVM Clang and lld;
   Windows uses the MSVC STL, while macOS/Linux use LLVM libc++ and libunwind.
   Resolve the LLVM installation without hardcoding local paths.
 - Target arm64 macOS and x86_64 Windows/Linux only. Validate locally on macOS;

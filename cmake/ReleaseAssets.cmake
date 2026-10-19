@@ -75,3 +75,51 @@ else()
         message(FATAL_ERROR "Cached Sarasa license hash mismatch")
     endif()
 endif()
+
+if(WIN32)
+    # Dawn uses the fixed DXC release DLLs instead of rebuilding DXC's LLVM tree.
+    # Dawn 使用固定的 DXC 发布 DLL，避免再次构建 DXC 的 LLVM 源码树。
+    FetchContent_Declare(dot_dxc
+        URL "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602.24/dxc_2026_05_27.zip"
+        URL_HASH "SHA512=cf331112f1753fca68525c85bb4964714d85dbf7cb5e41af4720bbdffefdfddad1878c7a1a74898e2105dff32957a526d188d9ee3f18f0df310ec8548827a374"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(dot_dxc)
+    foreach(dot_dxc_file IN ITEMS dxcapi.h dxcompiler.dll dxil.dll dxcompiler.lib)
+        file(GLOB_RECURSE dot_dxc_candidates "${dot_dxc_SOURCE_DIR}/${dot_dxc_file}")
+        list(FILTER dot_dxc_candidates INCLUDE REGEX
+            "/(inc|bin/x64|lib/x64)/${dot_dxc_file}$")
+        list(LENGTH dot_dxc_candidates dot_dxc_count)
+        if(NOT dot_dxc_count EQUAL 1)
+            message(FATAL_ERROR "Expected one x64 DXC ${dot_dxc_file}, found ${dot_dxc_count}")
+        endif()
+        list(GET dot_dxc_candidates 0 dot_dxc_path)
+        if(dot_dxc_file STREQUAL "dxcapi.h")
+            get_filename_component(DOT_DXC_INCLUDE "${dot_dxc_path}" DIRECTORY)
+        elseif(dot_dxc_file STREQUAL "dxcompiler.dll")
+            set(DOT_DXC_DLL "${dot_dxc_path}")
+        elseif(dot_dxc_file STREQUAL "dxil.dll")
+            set(DOT_DXIL_DLL "${dot_dxc_path}")
+        else()
+            set(DOT_DXC_IMPLIB "${dot_dxc_path}")
+        endif()
+    endforeach()
+    set(DOT_DXC_LICENSE "${CMAKE_BINARY_DIR}/generated/licenses/directx-dxc.txt")
+    set(dot_dxc_license_hash
+        9feaa85ca6d42d5a2d6fe773706bbab8241e78390a9d61ea9061c8f0eeb5a3e380ff07c222e02fbf61af7f2b2f6dd31c5fc87247a94dae275dc0a20cdfcc8c9d)
+    if(NOT EXISTS "${DOT_DXC_LICENSE}")
+        file(DOWNLOAD
+            "https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/v1.9.2602.24/LICENSE.TXT"
+            "${DOT_DXC_LICENSE}"
+            EXPECTED_HASH "SHA512=${dot_dxc_license_hash}"
+            STATUS dot_dxc_license_status TLS_VERIFY ON)
+        list(GET dot_dxc_license_status 0 dot_dxc_license_code)
+        if(NOT dot_dxc_license_code EQUAL 0)
+            message(FATAL_ERROR "Failed to fetch DXC license: ${dot_dxc_license_status}")
+        endif()
+    else()
+        file(SHA512 "${DOT_DXC_LICENSE}" dot_existing_dxc_license_hash)
+        if(NOT dot_existing_dxc_license_hash STREQUAL dot_dxc_license_hash)
+            message(FATAL_ERROR "Cached DXC license hash mismatch")
+        endif()
+    endif()
+endif()

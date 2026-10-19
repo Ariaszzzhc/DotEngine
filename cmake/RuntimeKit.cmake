@@ -8,6 +8,9 @@ if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
     include(InstallRequiredSystemLibraries)
     install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION . COMPONENT RuntimeKit)
+    install(FILES "${DOT_DXC_DLL}" "${DOT_DXIL_DLL}" DESTINATION . COMPONENT RuntimeKit)
+    install(FILES "${DOT_DXC_LICENSE}" DESTINATION licenses
+        RENAME directx-dxc.txt COMPONENT RuntimeKit)
 endif()
 file(GLOB dot_package_notices
     "${CMAKE_SOURCE_DIR}/vendor/*/LICENSE*" "${CMAKE_SOURCE_DIR}/vendor/*/License*")

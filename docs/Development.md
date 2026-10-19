@@ -16277,3 +16277,40 @@ vcpkg files and does not prove Windows/Linux or visual product workflows.
 
 macOS Debug/Release 的全新本地源码构建与各 1771 项测试通过；旧 vcpkg 文件尚未删除，
 Windows/Linux 和真实产品流程尚未据此宣称通过。
+
+## 2026-10-19 — Remove vcpkg and verify products / 移除 vcpkg 与产品验证
+
+Remove the manifest, overlay ports, triplets and tracked vcpkg submodule.
+Retain the old local checkout only under ignored `build/legacy-vcpkg-evidence`
+for audit; no current CMake target or preset references it. Add the selected
+Vulkan headers/utility sources for Linux. A Windows-only CMake adapter pins
+the DXC release archive, restores Dawn's DXC compile definitions and links its
+import library while preserving the upstream Dawn submodule. That Windows
+path has not been compiled or run here. Remove unused nested gitlinks carried
+by the FreeType and QuickJS-NG squash subtree snapshots, so the four intended
+root submodules initialize without unrelated test/tool repositories.
+
+With the old vcpkg checkout absent from its original path, a new
+`build/vendor-audit-debug` configures in 62.5 seconds and builds the real
+`DotEditor` target and runtime kit from source. The cache has no vcpkg entries.
+The kit contains 42 ordinary files; `DotGame` and all six LLVM runtime dylib
+paths verify with strict code signatures, and no linked path points into a
+local LLVM or workspace directory. The copied kit starts and rejects an
+invalid option with exit code 2. Both standard presets reconfigure and build
+after removal. Final Debug CTest passes 1771/1771 in 319.97 seconds; final
+Release/NDEBUG CTest passes 1771/1771 in 40.29 seconds.
+
+The actual arm64 macOS `DotEditor` opens an ignored copy of PrismRelay. A
+machine-readable Play request reaches `running` with no error; Stop returns
+to authoring. Rename of the copied Camera commits and saves at revision 3.
+The editor closes with exit zero, reopens the saved project, and observes
+`Camera Vendor Audit` at clean revision 1. Its native export succeeds into
+ignored build storage with 190 files and 33 license files. The exported
+arm64 `DotGame` verifies its signature, contains no local dependency paths,
+prepares the real scene and exits zero after one presented frame. This stage
+does not create an engine distribution archive. Visual pixel acceptance,
+Windows and Linux builds, and merged-line combination tests remain separate.
+
+已删除跟踪的 vcpkg 接入；删除后全新目录构建、双配置完整测试、真实 PrismRelay
+编辑器 Play/保存重开与独立导出运行均有 macOS arm64 证据。Windows/Linux 与两线合并
+后的组合验证仍须另行执行。

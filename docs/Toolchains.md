@@ -3,9 +3,8 @@
 The project configuration selects LLVM Clang (`clang` for C, `clang++` for C++) and
 LLD on all supported targets. `CMakeLists.txt` describes targets and links; the
 toolchain selected by `CMakePresets.json` supplies compiler and runtime policy.
-Current vcpkg integration chainloads `cmake/Environment.cmake`; this is temporary
-until the vendor migration is validated. No system or local LLVM path is stored in
-the repository.
+`CMakePresets.json` selects `cmake/Environment.cmake` directly. Source dependencies
+use the selected toolchain; no system or local LLVM path is stored in the repository.
 
 | Target | Compiler/linker | C++ runtime |
 | --- | --- | --- |
@@ -27,11 +26,11 @@ compiles its `.mm` files as CXX, so the C++ driver also receives these flags; pu
 C++ files ignore them without an unused-argument warning. The policy applies to
 vendored native libraries as well as project targets.
 
-`CPPFLAGS`, `CFLAGS`, `CXXFLAGS` and `LDFLAGS` remain input to CMake and the current
-vcpkg package builds. `CC`/`CXX` do not select another compiler. Use a fresh build
+`CPPFLAGS`, `CFLAGS`, `CXXFLAGS` and `LDFLAGS` remain input to CMake and the vendored
+native libraries. `CC`/`CXX` do not select another compiler. Use a fresh build
 directory when changing LLVM installations or runtime libraries; CMake caches
-compiler identities and package ABI decisions. The default Debug/Release presets
-use separate `build/` directories in the current worktree.
+compiler identities and dependency options. The default Debug/Release presets
+use separate `build/vendor-debug` and `build/vendor-release` directories.
 
 Local checks establish only the platforms actually run. On macOS, inspect a real
 link command and `otool -L` to confirm LLD and the LLVM runtime libraries. Windows

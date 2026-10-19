@@ -8,6 +8,9 @@ endif()
 install(TARGETS DotEditor DotRuntime RUNTIME DESTINATION . COMPONENT EditorDistribution)
 if(WIN32)
     install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION . COMPONENT EditorDistribution)
+    install(FILES "${DOT_DXC_DLL}" "${DOT_DXIL_DLL}" DESTINATION . COMPONENT EditorDistribution)
+    install(FILES "${DOT_DXC_LICENSE}" DESTINATION licenses
+        RENAME directx-dxc.txt COMPONENT EditorDistribution)
 endif()
 install(DIRECTORY "$<TARGET_FILE_DIR:DotEditor>/resources/" DESTINATION resources
     USE_SOURCE_PERMISSIONS COMPONENT EditorDistribution PATTERN ".DS_Store" EXCLUDE PATTERN ".dot-stage-*" EXCLUDE)

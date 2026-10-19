@@ -20,6 +20,6 @@ Git submodule 提交与 squash subtree 提交是完整上游目录的固定版�
 | `jinja2` | Chromium mirror `c3027d884967773057bf74b957e3fea87e5df4d7` | Dawn generator Python package and license |
 | `markupsafe` | Chromium mirror `4256084ae14175d38a3ff7d739dca83ae49ccec6` | Dawn generator Python package and license |
 
-The editor font and host TypeScript compiler are pinned release artifacts
-prepared at configure time; they are not part of the source vendor tree.
-编辑器字体与宿主 TypeScript 编译器属于配置阶段准备的固定发布产物，不纳入源码 vendor。
+The editor font, host TypeScript compiler and Windows DXC are pinned release
+artifacts prepared at configure time; they are not part of the source vendor tree.
+编辑器字体、宿主 TypeScript 编译器和 Windows DXC 在配置阶段准备，不纳入源码 vendor。
