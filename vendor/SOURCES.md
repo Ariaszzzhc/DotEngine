@@ -17,6 +17,8 @@ Git submodule 提交与 squash subtree 提交是完整上游目录的固定版�
 | `xxhash` | `Cyan4973/xxHash` `v0.8.4` | `xxhash.h`, `xxhash.c`, `xxh3.h`, license |
 | `nlohmann-json` | `nlohmann/json` `v3.12.0` | Upstream `single_include/nlohmann/json.hpp`, MIT license |
 | `miniaudio` | `mackron/miniaudio` `0.11.25` | `miniaudio.h`, license, DotEngine `initialization-cleanup.patch` applied |
+| `jinja2` | Chromium mirror `c3027d884967773057bf74b957e3fea87e5df4d7` | Dawn generator Python package and license |
+| `markupsafe` | Chromium mirror `4256084ae14175d38a3ff7d739dca83ae49ccec6` | Dawn generator Python package and license |
 
 The editor font and host TypeScript compiler are pinned release artifacts
 prepared at configure time; they are not part of the source vendor tree.

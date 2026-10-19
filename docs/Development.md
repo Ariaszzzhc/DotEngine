@@ -16252,3 +16252,28 @@ source-only inputs: compilation, link, generated resources and native product
 behavior have not yet been tested against them.
 
 精简源码与 SPIRV-Tools 已固定来源；当前尚未接入构建，也未据此声称功能验证通过。
+
+## 2026-10-19 — In-tree macOS build / macOS 本地源码构建
+
+Replace the active CMake package lookups with pinned local vendor targets and
+preserve the target names used by engine/runtime/editor/tests. FreeType's zlib,
+BZip2, PNG and Brotli features are built from local sources. Dawn uses local
+Abseil, SPIRV-Headers, SPIRV-Tools, WebGPU-Headers, Jinja2 and MarkupSafe;
+dependency fetching is disabled. The two released assets (Sarasa font and
+TypeScript native compiler) are fetched by exact URL and SHA-512 at configure
+time. The vendor build presets use new directories and the project LLVM
+toolchain directly, without loading the vcpkg toolchain or cache.
+
+A fresh arm64 macOS Debug configure/build succeeds. Initial failures exposed
+the old Recast CMake policy declaration, upstream install export rules,
+ImGui's Objective-C++ WebGPU backend, and non-system Recast headers under
+engine `-Werror`; the local integration now handles each without changing
+engine behavior or editing large upstream submodules. Full Debug CTest passes
+1771/1771 in 328.20 seconds. Fresh Release configure/build succeeds, and
+Release/NDEBUG CTest passes 1771/1771 in 42.24 seconds. A second build in each
+configuration executes six existing resource/runtime-kit refresh tasks and
+does not recompile C++. This validation still precedes removal of the old
+vcpkg files and does not prove Windows/Linux or visual product workflows.
+
+macOS Debug/Release 的全新本地源码构建与各 1771 项测试通过；旧 vcpkg 文件尚未删除，
+Windows/Linux 和真实产品流程尚未据此宣称通过。

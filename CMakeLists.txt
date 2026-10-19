@@ -23,38 +23,8 @@ else()
     endif()
 endif()
 find_package(Threads REQUIRED)
-find_package(SDL3 CONFIG REQUIRED)
-find_package(glm CONFIG REQUIRED)
-find_package(Dawn CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
-find_package(Freetype REQUIRED)
-find_file(DOT_EDITOR_FONT NAMES EditorSans.ttf
-    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
-    NO_DEFAULT_PATH REQUIRED)
-find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
-    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
-    NO_DEFAULT_PATH REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(tinyobjloader CONFIG REQUIRED)
-find_package(Stb REQUIRED)
-find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
-find_package(EnTT CONFIG REQUIRED)
-find_package(Jolt CONFIG REQUIRED)
-find_package(recastnavigation CONFIG REQUIRED)
-find_package(xxHash CONFIG REQUIRED)
-find_package(qjs CONFIG REQUIRED)
-set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_TARGET_TRIPLET}")
-if(VCPKG_HOST_TRIPLET)
-    set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_HOST_TRIPLET}")
-endif()
-find_program(DOT_TYPESCRIPT_COMPILER NAMES tsc
-    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/tools/typescript-native"
-    NO_DEFAULT_PATH REQUIRED)
-get_filename_component(DOT_TYPESCRIPT_TOOL_DIRECTORY "${DOT_TYPESCRIPT_COMPILER}" DIRECTORY)
-find_file(DOT_TYPESCRIPT_LICENSE NAMES copyright
-    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/share/vcpkg-tool-typescript"
-    NO_DEFAULT_PATH REQUIRED)
-find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+include(cmake/Vendor.cmake)
+include(cmake/ReleaseAssets.cmake)
 add_library(DotAudioBackend STATIC src/Engine/Audio/Backend.c)
 target_compile_features(DotAudioBackend PRIVATE c_std_11)
 target_compile_definitions(DotAudioBackend PUBLIC MA_NO_RESOURCE_MANAGER)
