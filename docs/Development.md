@@ -16403,3 +16403,32 @@ execution or human pointer/visual acceptance is claimed.
 
 vendor 构建与示例删除合并后，macOS arm64 Debug/Release 各 1738 项测试和真实编辑器至独立
 游戏运行流程通过。私有游戏仍仅为初始工程，沙尘暴庇护与开放世界玩法尚未实现。
+
+## 2026-10-19 — Retire synthetic build checks / 移除合成构建检查
+
+Remove two CTest entries and their CMake-only fixtures for editor archive and
+project-copy scripts. They exercised invented small directory trees rather than
+the actual editor distribution or a playable project. Keep the production
+`ArchiveEditor.cmake` and `CopyProject.cmake` scripts unchanged; do not create
+a separate agent harness for these fixtures. Actual product export and template
+workflows remain in the existing integration suite.
+
+Debug and Release reconfigure successfully and each enumerate 1769 CTest cases.
+The existing native editor export case passes in both configurations; the
+complete-game template copy case passes in Debug. The full suites and a new
+editor distribution archive were not run for this test-registration-only change.
+
+已删除两项仅验证合成目录的构建脚本测试，保留正式脚本与真实产品导出、模板流程。
+双配置重新配置及上述定向检查通过；本阶段未重新运行完整测试或制作发行包。
+
+The game-development branch then merged the two synthetic-check removals after its
+full vendor combination run. Debug and Release reconfiguration each enumerate
+1736 cases. The real native-export editor regression and FeatureLab template-copy
+regression pass 2/2 in each configuration. No source, product binary or production
+build script changed in this follow-up, so the prior 1738/1738 complete runs remain
+evidence for the pre-cleanup test registration; a new 1736-case full run has not
+been claimed. The separately owned native game export described above was executed
+before this registration-only merge.
+
+本线合入合成检查清理后，双配置各发现 1736 项；真实导出与模板复制的定向测试通过。
+完整 1738 项结果属于清理前配置，不冒充清理后的全量执行。
