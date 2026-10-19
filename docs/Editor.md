@@ -4,6 +4,9 @@ The editor currently provides native scene authoring through a shared document
 service, JSON commands and a native project editing window. Runtime play uses a
 separate GameSession scene; the Document service opens no audio, physics, compiler
 or window backend. Workspace adds window/GPU/GUI ownership around that document.
+The `Dot.Editor.*` interfaces and implementations live under `src/Editor/Modules/`
+in the static `DotEditorModules` target. It depends on `DotEngine`; runtime targets
+link only `DotEngine`. Module names and editor command contracts are unchanged.
 
 `Dot.Editor.Document` initially opens the configured startup scene with fresh scope,
 then owns one active scene file with bounded history and read-only scene access. Each changed edit,
@@ -727,7 +730,7 @@ support opening an existing project and choosing a creation parent. Cancellation
 preserves the form; selection/errors use the shared validated project operations.
 
 DotEditor now opens a [native project home](ProjectHome.md) by default, with open
-and validated creation from the starter project, Prism Relay and Feature Lab.
+and validated creation from the starter project and Feature Lab.
 The GUI, direct JSON command and live mailbox share the same project operations.
 
 ## Material and direct light authoring

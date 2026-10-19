@@ -9,34 +9,29 @@
     {
       "name": "debug",
       "displayName": "Debug",
-      "binaryDir": "${sourceDir}/build/debug",
-      "toolchainFile": "${sourceDir}/external/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "binaryDir": "${sourceDir}/build/vendor-debug",
+      "toolchainFile": "${sourceDir}/cmake/Environment.cmake",
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/debug/bin",
-        "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/debug/lib",
-        "CMAKE_ARCHIVE_OUTPUT_DIRECTORY": "${sourceDir}/build/debug/lib",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-debug/bin",
+        "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-debug/lib",
+        "CMAKE_ARCHIVE_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-debug/lib",
+        "CMAKE_LINKER_TYPE": "LLD",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_STANDARD": "26",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_MODE": "ON",
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/Environment.cmake",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
       "name": "release",
       "displayName": "Release",
       "inherits": "debug",
-      "binaryDir": "${sourceDir}/build/release",
+      "binaryDir": "${sourceDir}/build/vendor-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_MANIFEST_MODE": "ON",
-        "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/release/bin",
-        "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/release/lib",
-        "CMAKE_ARCHIVE_OUTPUT_DIRECTORY": "${sourceDir}/build/release/lib"
+        "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-release/bin",
+        "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-release/lib",
+        "CMAKE_ARCHIVE_OUTPUT_DIRECTORY": "${sourceDir}/build/vendor-release/lib"
       }
     }
   ],

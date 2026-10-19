@@ -170,7 +170,6 @@ UI** control hides presentation and disables native widget input until a current
 visible frame returns. It preserves instance values; ordinary scene saves and exports
 retain game UI. See [Play view control](Editor.md) and [game clock](GameClock.md).
 
-Prism Relay stores controls, status alternatives, pause panel/title and three buttons
-in its native layout. Scripts publish text/visibility and handle menu actions; they
-contain no widget construction or menu coordinates. Feature Lab exercises every
+Scripts publish text/visibility and handle menu actions; they contain no widget
+construction or menu coordinates. Feature Lab exercises every
 `ui` API and its ordinary resource button records actual activations in uiClickCount.

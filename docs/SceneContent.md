@@ -246,11 +246,9 @@ skin, animation or mutually exclusive component relationships fail atomically;
 repair dependencies or restore related fields in one edit batch. It does not write
 shared material/clip assets or apply local overrides back to the source.
 
-Prism Relay's twelve straight ducts and fourteen supports are linked to
-`assets/airducts/straight.dotscene` and `brace.dotscene`. Open and save a source,
-return to the bay, then explicitly refresh the desired placement roots. Play and
-exports keep using saved materializations. Field indicators and Restore field
-share this same native operation with strict agent editing.
+Open and save a linked source, then explicitly refresh the desired placement
+roots. Play and exports keep using saved materializations. Field indicators and
+Restore field share this same native operation with strict agent editing.
 
 ## Layered source identities
 

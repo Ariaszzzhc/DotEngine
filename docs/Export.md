@@ -124,7 +124,7 @@ manifest describes native files, while the data manifest describes `game/`; it i
 not an authentication or executable-content hash guarantee. Runtime format version
 1 requires a compatible player build.
 
-The delivered notices include installed vcpkg package copyrights and LLVM runtime
+The delivered notices include vendored source and fetched release copyrights, and LLVM runtime
 licenses. macOS load-command changes are described in the LLVM notice. These
 notices are preserved during export. Ad-hoc signing enables local execution;
 release signing/notarization and native installers remain separate distribution
@@ -138,7 +138,7 @@ symlinks/Finder metadata, executable permissions, moved owners, manifest changes
 no overwrite, source preservation and failure after copying native files. Local
 validation is arm64 macOS; Windows/Linux remain unvalidated.
 
-The [Prism Relay example](Examples.md) is a complete ordinary project that can be
+The [Feature Lab example](Examples.md) is an ordinary project that can be
 edited, played and exported through these operations. Runtime window titles follow
 native scene names, allowing script-authored progress/status through the scene API.
 
@@ -294,8 +294,8 @@ work. Scene rehydration, script/VM/native service setup, activation and non-audi
 retirement still run on the owner and may delay rendering/replies. Native profiles
 retain actual fixed-time drops. See [replacement preparation](Editor.md#runtime-scene-changes) for
 validation, ownership and cancellation; this does not complete background streaming
-or broader game-specific restoration. Prism Relay supplies explicit checkpoints
-and native text feedback through [the shared HUD layer](GameUi.md).
+or broader game-specific restoration. Games can build checkpoints and native text
+feedback through [the shared HUD layer](GameUi.md).
 
 Native inspection also exposes `hudText.textureBytes`, `rasterizations`, `overflow`,
 `presentedScope` and `presentedRevision`. The latter two advance only after actual

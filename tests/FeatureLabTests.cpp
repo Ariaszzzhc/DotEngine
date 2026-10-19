@@ -34,6 +34,19 @@ import Dot.Audio.Mixer;
 import Dot.Assets.Mesh;
 import Dot.Graphics.Geometry;
 
+TEST_CASE("feature_lab.source_project_opens_and_compiles_without_generated_sdk") {
+  auto project = Dot::Project::Project::open(DOT_FEATURE_LAB_SOURCE);
+  REQUIRE_MESSAGE(project, (project ? "" : project.error().message));
+  auto files = project->files().value();
+  CHECK_FALSE(std::filesystem::exists(files.root() / "scripts/dot"));
+  auto scene = project->loadStartup();
+  REQUIRE_MESSAGE(scene, (scene ? "" : scene.error().message));
+  auto compiler = Dot::Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
+  auto program = compiler.compileProject(files);
+  REQUIRE_MESSAGE(program, (program ? "" : program.error().message));
+  CHECK_FALSE(program->modules()->empty());
+}
+
 namespace {
   using namespace Dot;
   using Json = nlohmann::json;

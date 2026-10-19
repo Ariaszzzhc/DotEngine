@@ -43,7 +43,7 @@ namespace {
   };
 }  // namespace
 
-TEST_CASE("templates.copy_complete_game_with_engine_imports_without_source_changes") {
+TEST_CASE("templates.copy_complete_project_with_engine_imports_without_source_changes") {
   Fixture fixture;
   auto source = fixture.source();
   const auto manifest = source.readText("project.dotproject").value();
@@ -56,8 +56,8 @@ TEST_CASE("templates.copy_complete_game_with_engine_imports_without_source_chang
         != Project::Project::open(source.root())->description()->applicationId);
   CHECK(created->loadStartup()->entityCount().value()
         == Project::Project::open(source.root())->loadStartup()->entityCount().value());
-  CHECK(created->files()->readBytes("assets/models/surveyor.glb").value()
-        == source.readBytes("assets/models/surveyor.glb").value());
+  CHECK(created->files()->readBytes("assets/collision-duct.dotmesh").value()
+        == source.readBytes("assets/collision-duct.dotmesh").value());
   CHECK_FALSE(std::filesystem::exists(created->files()->root() / "scripts/dot"));
   CHECK(created->files()->readText("assets/authored.txt").value() == "owned resource");
   CHECK(source.readText("assets/authored.txt").value() == "owned resource");
@@ -75,12 +75,12 @@ TEST_CASE("templates.invalid_sources_paths_and_compile_failures_leave_no_output"
   CHECK_FALSE(fixture.create(source, "../escape"));
   auto compiler = Script::TypeScriptCompiler::create(DOT_TYPESCRIPT_COMPILER).value();
   CHECK_FALSE(Project::instantiateTemplate(source, source, "nested", "Name", compiler));
-  const auto player = source.readText("scripts/player.ts").value();
-  REQUIRE(source.writeTextAtomic("scripts/player.ts", "export const bad:number='x';"));
+  const auto player = source.readText("scripts/camera.ts").value();
+  REQUIRE(source.writeTextAtomic("scripts/camera.ts", "export const bad:number='x';"));
   CHECK_FALSE(fixture.create(source));
   CHECK_FALSE(std::filesystem::exists(fixture.files().root() / "project"));
-  REQUIRE(source.writeTextAtomic("scripts/player.ts", player));
-  std::filesystem::create_symlink("models/surveyor.glb", source.root() / "assets/link.obj");
+  REQUIRE(source.writeTextAtomic("scripts/camera.ts", player));
+  std::filesystem::create_symlink("collision-duct.dotmesh", source.root() / "assets/link.obj");
   CHECK_FALSE(fixture.create(source));
   std::filesystem::remove(source.root() / "assets/link.obj");
   REQUIRE(source.createDirectories(".dot-stage-private"));

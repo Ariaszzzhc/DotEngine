@@ -1,7 +1,7 @@
 # Current implementation and evidence
 
 DotEngine has real rendering and authoring foundations. Large-game production
-readiness, a mature editor and the requested finished Prism Relay experience remain
+readiness, a mature editor and the separate playable survival game remain
 open goals. Tests establish specific contracts, not a completion percentage.
 
 | Implemented foundation | Current boundary |
@@ -14,13 +14,13 @@ open goals. Tests establish specific contracts, not a completion percentage.
 | OBJ/glTF/GLB import, binary native meshes, GPU skinning/cross-fades, eight ordered masked override/additive layers, saved typed state machines with synchronized 1D motion, independent clocks/weight fades, mask authoring and live preview/game controls, isolated audition, skeleton inspection, native key/curve editing, offline retargeting and keyed two-bone posing | Multidimensional trees, automatic contact alignment, runtime foot IK, root motion, binding/animation production workflows and scale remain unfinished |
 | Jolt rigid bodies/linear CCD, character traversal, ray/sphere queries and virtual/proxy contacts, native audio | Populated-game character scalability and long-running behavior need broader evidence |
 | TypeScript/QuickJS-NG, hot reload, dot:engine/dot:host and extensionless project imports | Initial Play compilation and running source reload compile owned snapshots in the background; source capture, version probes, VM activation and state migration remain on the owner |
-| Shared game state, atomic save slots, stable application IDs, isolated editor Play storage and Prism Relay's explicit grounded position/facing/orbit checkpoints | Background I/O, crash recovery, broader menus and game-specific restoration remain unfinished |
+| Shared game state, atomic save slots, stable application IDs and isolated editor Play storage | Background I/O, crash recovery, broader menus and game-specific restoration remain unfinished |
 | Docked editor, indexed hierarchy/search, scene/resource/material authoring, picking/gizmos/multiselection/history, isolated Play, background scene graphics/skin preflight and initial animation decoding, bounded native audio retirement and export | Consistent content production, full hierarchy virtualization, background work and application performance/debugging tools remain unfinished |
 | Frozen viewport PNG capture with owned background encoding, explicit saving/completion/cancellation and unchanged-destination commit guards | GPU readback, destination checks/atomic write and catalog refresh still run on the owner; not general background filesystem I/O |
 | Recursive linked sources with persistent layered identities, three-way refresh, paged override inspection/revert, inline field counts, whole-field restore and conflict-checked application to saved sources | Variants, whole-instance/topology application, retargeting and runtime scene composition/streaming remain unfinished |
 | Strict CLI/JSON/shared local-mailbox operations with bounded history indexing and orphan-receipt refusal, opt-in standalone input/state/scene/shutdown control and explicit persistent data roots; external script editing | Every future user operation needs equivalent agent control; native simulated pointer acceptance has specific unresolved limits |
-| Native scene-local text labels/buttons with focus, pointer/keyboard activation and bounded action history, bounded font/layout/cache contracts, post-tone-mapping composition, script/product control and UI-revision-aware captures; Prism Relay controls/checkpoint feedback and clickable/keyboard pause menu backed by native simulation gating/unscaled frame callbacks and scoped single-step requests with explicit lifecycle status | Visual layout authoring, full shaping/bidi and asynchronous font/raster/upload work remain unfinished |
-| Editable Feature Lab and Prism Relay under examples/ | Textured maintenance armor, shoulder camera and industrial linked assemblies exist; final realistic sci-fi character/environment art and game-scale evidence remain unfinished |
+| Native scene-local text labels/buttons with focus, pointer/keyboard activation and bounded action history, bounded font/layout/cache contracts, post-tone-mapping composition, script/product control and UI-revision-aware captures; native simulation gating/unscaled frame callbacks and scoped single-step requests with explicit lifecycle status | Visual layout authoring, full shaping/bidi and asynchronous font/raster/upload work remain unfinished |
+| Editable Feature Lab under examples/ | The separate open-world survival-building game has goals but no playable build yet; game-scale evidence remains unfinished |
 
 ## Verification scope
 
@@ -36,8 +36,8 @@ this summary does not treat their test counts or unfinished-feature lists as the
 current state. See [testing](Testing.md), [editor operations](Editor.md),
 [scene reuse](SceneContent.md) and [goal boundaries](EngineRoadmap.md).
 
-Prism Relay's twelve straight ducts and fourteen supports use shared scene sources.
-Field indicators report complete applied differences independently of pagination;
+Linked scene sources support field indicators that report complete applied
+differences independently of pagination;
 restoring a component uses the stored remapped baseline with ordinary atomic
 history and source-independent failure handling. Field application writes the
 immediate saved source and rebases the chosen instance;

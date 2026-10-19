@@ -5,3 +5,5 @@ compile_commands.json
 CMakeUserPresets.json
 .DS_Store
 .dot-stage-*/
+__pycache__/
+external/vcpkg/

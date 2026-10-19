@@ -20,8 +20,10 @@
   JavaDoc-style Doxygen comments. Do not add comments that repeat the code.
 - Treat recoverable external failures as `std::expected` results with context.
   Validate input at subsystem boundaries; never silently substitute fake success.
-- Keep dependencies in the pinned vcpkg manifest. Preserve the caller's compiler
-  and linker environment; do not hardcode local LLVM paths.
+- Keep source dependencies pinned under `vendor/` and release artifacts pinned
+  by URL and SHA-512 in CMake. The project toolchain selects LLVM Clang and lld;
+  Windows uses the MSVC STL, while macOS/Linux use LLVM libc++ and libunwind.
+  Resolve the LLVM installation without hardcoding local paths.
 - Target arm64 macOS and x86_64 Windows/Linux only. Validate locally on macOS;
   do not claim Windows/Linux validation without evidence.
 - Add behavioral tests for normal paths, failures, resource lifetime, and boundary
@@ -32,8 +34,8 @@
   workflows through actual product agent operations, with computer use for visual
   interaction when needed. Temporary investigation
   scripts belong in ignored build storage and are not committed.
-- Keep editable demonstration projects together under `examples/`, including
-  `examples/FeatureLab` and `examples/PrismRelay`.
+- Keep `examples/FeatureLab` as the editable engine capability project. Games
+  developed as independent products belong in their own repositories.
 - The editor must remain fully controllable by AI agents. Every user operation
   needs an equivalent strict machine-readable operation using the same product
   implementation. Prefer CLI/JSON control for validation; computer use supplements

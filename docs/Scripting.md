@@ -1,8 +1,8 @@
 # ESM runtime
 
 `Dot.Script.Runtime` owns one QuickJS-NG 0.16.2 realm/context and a FileSystem
-copy. Vendor types stay in the implementation unit. The library is a private
-pinned vcpkg dependency; its libc/OS modules are not linked into the engine.
+copy. Vendor types stay in the implementation unit. The library is pinned as a
+private source dependency under `vendor/quickjs-ng`; its libc/OS modules are not linked into the engine.
 The API follows the [official embedding API](https://quickjs-ng.github.io/quickjs/developer-guide/intro/).
 The [native TypeScript compiler](#native-typescript-compilation) produces ESM for
 this layer. The [registered host bridge and core scene SDK](#registered-host-services)
@@ -34,13 +34,10 @@ registry shared by compiler and runtime; future engine modules use this registry
 Source is bounded UTF-8 without raw NUL; escaped NUL is
 valid string data but forbidden in import specifiers.
 
-A small source patch in the versioned overlay port rejects embedded NUL in both
-static and dynamic specifiers before conversion to a C-string alias can load a
-different file. The manifest override pins the upstream version and local port
-revision; project-wide vcpkg-configuration.json selects the overlay even when a
-caller does not use CMake presets. Source/hash/license handling remains in vcpkg.
-See [vcpkg configuration](https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-configuration-json)
-for overlay resolution.
+A small project patch applied to the fixed QuickJS-NG subtree rejects embedded
+NUL in both static and dynamic specifiers before conversion to a C-string alias
+can load a different file. The upstream revision and patch are recorded under
+`vendor/` and `cmake/patches/`; CMake links the local `qjs` target.
 
 Modules cache per realm, including imports loaded later as entries. Repeated loads
 reuse handles/state and same-path file edits do not reload automatically. Cycles,
@@ -98,11 +95,11 @@ the C ABI. Faulted statistics remain queryable; calls/loads require a new realm.
 # Native TypeScript compilation
 
 `Dot.Script.Compiler` uses the official standalone Go compiler from the pinned
-TypeScript 7.0.2 native packages. The vcpkg host dependency selects darwin-arm64,
-win32-x64 or linux-x64, verifies SHA512 and installs the executable and standard
-declarations together in `tools/typescript-native`. No Node/npm runtime is used.
-Vendor executable permissions and signatures are preserved; automatic rpath
-rewriting is disabled for this standalone tool. See the
+TypeScript 7.0.2 native packages. FetchContent selects darwin-arm64, win32-x64 or
+linux-x64 for the build host, verifies SHA-512 and exposes the executable and
+standard declarations from one archive. No Node/npm runtime is used. Release
+executable permissions and signatures are preserved; the standalone tool is not
+rewritten for rpath. See the
 [official TypeScript package](https://www.npmjs.com/package/typescript) and
 [compiler options](https://www.typescriptlang.org/tsconfig/).
 
@@ -763,7 +760,7 @@ synchronization; malformed/unsupported combinations fail before replacement.
 
 Ray/sphere hits, native proxy manifolds and virtual contact events include character-controller
 entities. Sphere filters use `ignoreEntity` for either synchronized collider kind;
-Prism Relay excludes its own capsule while sweeping the shoulder camera. Native
+a following camera can exclude its owner's capsule. Native
 support identity maps both rigid bodies and live peer characters to groundEntity.
 Rigid-body mutation methods still reject character entities.
 
@@ -995,8 +992,8 @@ Doppler again. This explicit game-wide request preserves voices, cursors, gain a
 generation, and does not change queued PCM or reset/heal the backend. Stats report
 `motionResetPending` until successful synchronization; failed or invalid syncs retain
 the request, and a successful full native reset clears it. Ordinary unmarked
-out-of-range velocities remain errors. Prism Relay requests this after character
-placement so its separately following listener is not inferred as extreme motion.
+out-of-range velocities remain errors. Callers can request this after character
+placement so a separately following listener is not inferred as extreme motion.
 
 Native GameSession audio remains `prepared` during script construction and Start:
 autoplay/play controls establish voice state without advancing source frames or
@@ -1192,5 +1189,5 @@ neighbors; `agents()` lists controlled characters, `stop()` releases velocity ow
 Jolt owns actual poses and grounded arrival. Pause/single-step share game scheduling;
 reload retains native movement and permits observational state reads during migration.
 See [navigation contracts](Navigation.md) for strict editor/player operations, budgets,
-profile/geometry checks and limitations. PrismRelay submits station intent; FeatureLab
-covers unbound reads, idempotent stop and catchable unavailable move/route errors.
+profile/geometry checks and limitations. Feature Lab covers unbound reads,
+idempotent stop and catchable unavailable move/route errors.

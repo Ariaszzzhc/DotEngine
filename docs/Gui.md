@@ -4,11 +4,10 @@ The graphics layer provides persistent GPU scene targets and an isolated Dear
 ImGui context with official SDL3/WebGPU backends. This is the rendering/input
 foundation for the [native project editor](Editor.md) and [project home](ProjectHome.md).
 
-The vcpkg manifest pins Dear ImGui 1.92.9b docking through the checked-in baseline
-recipe and an overlay at port version 1. The overlay exposes only the required
-docking, wchar32, SDL3, WebGPU and FreeType features and disables implicit Dawn
-default features, preserving Metal/D3D12/Vulkan selection by platform. Vendor
-headers remain private to implementation units and application frontend files.
+The selected upstream Dear ImGui 1.92.9b docking sources live under `vendor/imgui`.
+The local CMake target compiles the core, SDL3 and WebGPU backends, FreeType support
+and `wchar32`; Dawn selects Metal/D3D12/Vulkan by platform. Vendor headers remain
+private to implementation units and application frontend files.
 
 ## Persistent scene targets
 

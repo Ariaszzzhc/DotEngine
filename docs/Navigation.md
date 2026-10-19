@@ -127,7 +127,7 @@ visible corners and samples reciprocal velocities against all measured native ch
 capsules, including standing/manual players. `measuredVelocity` records corrected
 feet displacement over the last native character substep; creation/explicit teleport
 reset it. The existing `velocity` retains controller/probe semantics. Native avoidance
-and PrismRelay gait use measured motion. Detour supplies velocity sampling, not pose
+and animation gait inputs can use measured motion. Detour supplies velocity sampling, not pose
 integration: Jolt owns actual feet, velocity, support and collision. All active agents
 plan from one identity-sorted measured snapshot before a validated batch writes inputs.
 A native phase accepts 1 microsecond..1 second, matching the game fixed-rate range;
@@ -174,8 +174,8 @@ games omit session. Unknown fields and stale scopes reject before mutation:
 Local avoidance is a velocity heuristic, not a collision-free/deadlock-free guarantee.
 It models native character capsules and eroded static navigation boundaries; moving
 rigid bodies still block through physics. Dynamic navmesh rebuilding, area costs,
-authored jump/off-mesh links and world streaming remain open. PrismRelay is an editable
-integrated example, not large-game scalability or final-art evidence.
+authored jump/off-mesh links and world streaming remain open. The current
+Feature Lab exercise does not establish large-game scalability.
 
 原生移动持有水平输入与朝向，局部互惠避让根据同一实际快照计算所有角色意图，包含站立
 玩家；Detour 不积分位姿。到达只认原目标处实际着地脚底，目标被占用不会按时间伪造成功。

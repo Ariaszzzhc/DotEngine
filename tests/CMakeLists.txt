@@ -1,5 +1,4 @@
-find_package(doctest CONFIG REQUIRED)
-include(doctest)
+include("${CMAKE_SOURCE_DIR}/vendor/doctest/scripts/cmake/doctest.cmake")
 
 # Set list-valued labels after discovery; doctest flattens PROPERTIES lists.
 # 在发现用例后设置列表标签；doctest 会展平 PROPERTIES 中的列表值。
@@ -94,7 +93,7 @@ add_executable(DotUnitTests
     SpatialTests.cpp
     VoiceBatchTests.cpp
 )
-target_link_libraries(DotUnitTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_link_libraries(DotUnitTests PRIVATE DotEditorModules doctest::doctest nlohmann_json::nlohmann_json)
 dotDiscoverTests(DotUnitTests LABELS "unit" PROPERTIES TIMEOUT 15)
 
 # Native event translation and loop integration use SDL's dummy display.
@@ -166,7 +165,7 @@ add_executable(DotTests
 )
 target_compile_definitions(DotTests PRIVATE DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
 target_compile_definitions(DotTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
-target_link_libraries(DotTests PRIVATE DotEngine doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
+target_link_libraries(DotTests PRIVATE DotEditorModules doctest::doctest SDL3::SDL3 nlohmann_json::nlohmann_json)
 target_compile_definitions(DotTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 dotDiscoverTests(DotTests LABELS "integration" PROPERTIES TIMEOUT 15)
 
@@ -179,7 +178,7 @@ dotDiscoverTests(DotProcessTests LABELS "integration;process" PROPERTIES TIMEOUT
 add_executable(DotCompilerFixture CompilerFixture.cpp)
 target_link_libraries(DotCompilerFixture PRIVATE DotBuildOptions)
 add_executable(DotCompilerTests main.cpp CompilerTests.cpp ScriptSdkTests.cpp SceneScriptsTests.cpp ReloadTests.cpp InputSdkTests.cpp PhysicsSdkTests.cpp AudioSdkTests.cpp GameSessionTests.cpp SceneTransitionTests.cpp ScenePlayerSessionTests.cpp AnimationSdkTests.cpp PlayTests.cpp PublishedProgramTests.cpp GamePackageTests.cpp)
-target_link_libraries(DotCompilerTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_link_libraries(DotCompilerTests PRIVATE DotEditorModules doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotCompilerTests PRIVATE
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}"
     DOT_COMPILER_FIXTURE="$<TARGET_FILE:DotCompilerFixture>"
@@ -201,7 +200,7 @@ set_tests_properties(runtime.invalid_argument editor.invalid_argument PROPERTIES
 
 add_executable(DotGraphicsTests main.cpp TextGpuTests.cpp FrameProfilingGpuTests.cpp SceneSkinGpuTests.cpp SkinGpuTests.cpp AnimationGpuTests.cpp GraphicsTests.cpp AssetPreviewTests.cpp AlphaGpuTests.cpp InstancingGpuTests.cpp VisibilityGpuTests.cpp PickingGpuTests.cpp OcclusionGpuTests.cpp ShadowGpuTests.cpp TextureTests.cpp EnvironmentGpuTests.cpp HdrTests.cpp PbrTests.cpp SceneMaterialTests.cpp SceneRenderTests.cpp ModelGpuTests.cpp GuiTests.cpp)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_MODEL_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models")
-target_link_libraries(DotGraphicsTests PRIVATE DotEngine doctest::doctest imgui::imgui)
+target_link_libraries(DotGraphicsTests PRIVATE DotEditorModules doctest::doctest imgui::imgui)
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_ENVIRONMENT_ASSETS="${CMAKE_SOURCE_DIR}/assets/environments")
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_EDITOR_FONT="${DOT_EDITOR_FONT}")
 target_compile_definitions(DotGraphicsTests PRIVATE DOT_IMAGE_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
@@ -228,21 +227,11 @@ target_compile_definitions(DotExportTests PRIVATE
 add_dependencies(DotExportTests DotRuntimeKit)
 dotDiscoverTests(DotExportTests LABELS "integration;process;compiler" PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 
-add_executable(DotExampleTests main.cpp ExampleTests.cpp ShoulderCameraTests.cpp)
-target_link_libraries(DotExampleTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
-target_compile_definitions(DotExampleTests PRIVATE
-    DOT_EDITOR_FONT="${DOT_EDITOR_FONT}"
-    DOT_EXAMPLE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
-    DOT_EXAMPLE_SOURCE="${CMAKE_SOURCE_DIR}/examples/PrismRelay"
-    DOT_LAB_SOURCE="${CMAKE_SOURCE_DIR}/examples/FeatureLab"
-    DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
-add_dependencies(DotExampleTests DotExamples)
-dotDiscoverTests(DotExampleTests LABELS "integration;compiler" PROPERTIES TIMEOUT 60)
-
 add_executable(DotFeatureLabTests main.cpp FeatureLabTests.cpp)
-target_link_libraries(DotFeatureLabTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_link_libraries(DotFeatureLabTests PRIVATE DotEditorModules doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotFeatureLabTests PRIVATE
     DOT_FEATURE_LAB="${CMAKE_BINARY_DIR}/examples/FeatureLab"
+    DOT_FEATURE_LAB_SOURCE="${CMAKE_SOURCE_DIR}/examples/FeatureLab"
     DOT_SCRIPT_SDK_DIRECTORY="${CMAKE_SOURCE_DIR}/assets/scripts"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
 add_dependencies(DotFeatureLabTests DotFeatureLab)
@@ -251,29 +240,15 @@ dotDiscoverTests(DotFeatureLabTests LABELS "integration;compiler" PROPERTIES TIM
 add_executable(DotTemplateTests main.cpp TemplateTests.cpp)
 target_link_libraries(DotTemplateTests PRIVATE DotEngine doctest::doctest)
 target_compile_definitions(DotTemplateTests PRIVATE
-    DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/PrismRelay"
+    DOT_TEMPLATE_PROJECT="${CMAKE_BINARY_DIR}/examples/FeatureLab"
     DOT_TYPESCRIPT_COMPILER="${DOT_TYPESCRIPT_COMPILER}")
-add_dependencies(DotTemplateTests DotExamples)
+add_dependencies(DotTemplateTests DotFeatureLab)
 dotDiscoverTests(DotTemplateTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 add_executable(DotProjectActionTests main.cpp ProjectActionTests.cpp)
-target_link_libraries(DotProjectActionTests PRIVATE DotEngine doctest::doctest nlohmann_json::nlohmann_json)
+target_link_libraries(DotProjectActionTests PRIVATE DotEditorModules doctest::doctest nlohmann_json::nlohmann_json)
 target_compile_definitions(DotProjectActionTests PRIVATE DOT_EDITOR_RESOURCES="$<TARGET_FILE_DIR:DotEditor>/resources")
 add_dependencies(DotProjectActionTests DotEditorResources)
 dotDiscoverTests(DotProjectActionTests LABELS "integration;compiler" PROPERTIES TIMEOUT 30)
 
 set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${dot_test_labels}")
-
-add_test(NAME distribution.archive_excludes_finder_metadata
-    COMMAND "${CMAKE_COMMAND}" "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/archive_acceptance"
-        "-DARCHIVE_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/ArchiveEditor.cmake"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/EditorArchiveTests.cmake")
-set_tests_properties(distribution.archive_excludes_finder_metadata PROPERTIES
-    LABELS "integration" TIMEOUT 15)
-
-add_test(NAME project_copy.excludes_live_sessions_and_partial_resources
-    COMMAND "${CMAKE_COMMAND}" "-DROOT=${CMAKE_CURRENT_BINARY_DIR}/project_copy"
-        "-DCOPY_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/CopyProject.cmake"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/ProjectCopyTests.cmake")
-set_tests_properties(project_copy.excludes_live_sessions_and_partial_resources PROPERTIES
-    LABELS "integration" TIMEOUT 15)

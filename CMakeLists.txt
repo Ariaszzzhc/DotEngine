@@ -23,38 +23,8 @@ else()
     endif()
 endif()
 find_package(Threads REQUIRED)
-find_package(SDL3 CONFIG REQUIRED)
-find_package(glm CONFIG REQUIRED)
-find_package(Dawn CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
-find_package(Freetype REQUIRED)
-find_file(DOT_EDITOR_FONT NAMES EditorSans.ttf
-    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
-    NO_DEFAULT_PATH REQUIRED)
-find_file(DOT_EDITOR_FONT_LICENSE NAMES copyright
-    PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/dot-editor-font"
-    NO_DEFAULT_PATH REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(tinyobjloader CONFIG REQUIRED)
-find_package(Stb REQUIRED)
-find_path(CGLTF_INCLUDE_DIR cgltf.h REQUIRED)
-find_package(EnTT CONFIG REQUIRED)
-find_package(Jolt CONFIG REQUIRED)
-find_package(recastnavigation CONFIG REQUIRED)
-find_package(xxHash CONFIG REQUIRED)
-find_package(qjs CONFIG REQUIRED)
-set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_TARGET_TRIPLET}")
-if(VCPKG_HOST_TRIPLET)
-    set(DOT_TYPESCRIPT_TOOL_TRIPLET "${VCPKG_HOST_TRIPLET}")
-endif()
-find_program(DOT_TYPESCRIPT_COMPILER NAMES tsc
-    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/tools/typescript-native"
-    NO_DEFAULT_PATH REQUIRED)
-get_filename_component(DOT_TYPESCRIPT_TOOL_DIRECTORY "${DOT_TYPESCRIPT_COMPILER}" DIRECTORY)
-find_file(DOT_TYPESCRIPT_LICENSE NAMES copyright
-    PATHS "${VCPKG_INSTALLED_DIR}/${DOT_TYPESCRIPT_TOOL_TRIPLET}/share/vcpkg-tool-typescript"
-    NO_DEFAULT_PATH REQUIRED)
-find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+include(cmake/ReleaseAssets.cmake)
+include(cmake/Vendor.cmake)
 add_library(DotAudioBackend STATIC src/Engine/Audio/Backend.c)
 target_compile_features(DotAudioBackend PRIVATE c_std_11)
 target_compile_definitions(DotAudioBackend PUBLIC MA_NO_RESOURCE_MANAGER)
@@ -85,7 +55,6 @@ target_sources(DotEngine PRIVATE
     src/Engine/Navigation/Movement.cpp
     src/Engine/Navigation/Geometry.cpp
     src/Engine/Navigation/Files.cpp
-    src/Engine/Editor/NavigationBake.cpp
     src/Engine/Script/NavigationSource.cpp
     src/Engine/Graphics/Text.cpp
     src/Engine/Graphics/TextRenderer.cpp
@@ -130,33 +99,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Project/GamePackage.cpp
     src/Engine/Project/GameExport.cpp
     src/Engine/Project/Templates.cpp
-    src/Engine/Editor/Document.cpp
-    src/Engine/Editor/HierarchyTree.cpp
-    src/Engine/Editor/Resources.cpp
-    src/Engine/Editor/ModelReimport.cpp
-    src/Engine/Editor/ModelImport.cpp
-    src/Engine/Editor/MaterialDocument.cpp
-    src/Engine/Editor/AssetPreview.cpp
-    src/Engine/Editor/PreviewWorker.cpp
-    src/Engine/Editor/Play.cpp
     src/Engine/Platform/AgentInput.cpp
-    src/Engine/Editor/ViewportCapture.cpp
-    src/Engine/Editor/AnimationPreview.cpp
-    src/Engine/Editor/AnimationCreation.cpp
-    src/Engine/Editor/AnimationPosing.cpp
-    src/Engine/Editor/AnimationRetarget.cpp
-    src/Engine/Editor/AnimationDocument.cpp
-    src/Engine/Editor/UiDocument.cpp
-    src/Engine/Editor/UiSession.cpp
-    src/Engine/Editor/ControllerDocument.cpp
-    src/Engine/Editor/AnimationClipboard.cpp
-    src/Engine/Editor/AnimationKeyMove.cpp
-    src/Engine/Editor/AnimationTimeline.cpp
-    src/Engine/Editor/AnimationFrames.cpp
-    src/Engine/Editor/AnimationTangent.cpp
-    src/Engine/Editor/SkeletonView.cpp
-    src/Engine/Editor/Workspace.cpp
-    src/Engine/Editor/Home.cpp
     src/Engine/Core/Logging.cpp
     src/Engine/Core/Memory.cpp
     src/Engine/Core/Process.cpp
@@ -222,10 +165,7 @@ target_sources(DotEngine PRIVATE
     src/Engine/Graphics/DrawBatches.cpp
     src/Engine/Graphics/RenderQueue.cpp
     src/Engine/Graphics/SpatialIndex.cpp
-    src/Engine/Editor/Camera.cpp
-    src/Engine/Editor/TransformTool.cpp
     src/Engine/Platform/ExternalFiles.cpp
-    src/Engine/Editor/ScriptDiagnostics.cpp
     src/Engine/Script/SceneHost.cpp
     src/Engine/Script/InputSource.cpp
     src/Engine/Script/PhysicsSource.cpp
@@ -257,7 +197,6 @@ target_sources(DotEngine PUBLIC
         src/Engine/Navigation/Movement.cppm
         src/Engine/Navigation/Geometry.cppm
         src/Engine/Navigation/Files.cppm
-        src/Engine/Editor/NavigationBake.cppm
         src/Engine/Script/NavigationSource.cppm
         src/Engine/Core/Types.cppm
         src/Engine/Graphics/Text.cppm
@@ -309,33 +248,7 @@ target_sources(DotEngine PUBLIC
         src/Engine/Project/GamePackage.cppm
         src/Engine/Project/GameExport.cppm
         src/Engine/Project/Templates.cppm
-        src/Engine/Editor/Document.cppm
-        src/Engine/Editor/HierarchyTree.cppm
-        src/Engine/Editor/Resources.cppm
-        src/Engine/Editor/ModelReimport.cppm
-        src/Engine/Editor/ModelImport.cppm
-        src/Engine/Editor/MaterialDocument.cppm
-        src/Engine/Editor/AssetPreview.cppm
-        src/Engine/Editor/PreviewWorker.cppm
-        src/Engine/Editor/Play.cppm
         src/Engine/Platform/AgentInput.cppm
-        src/Engine/Editor/ViewportCapture.cppm
-        src/Engine/Editor/AnimationPreview.cppm
-        src/Engine/Editor/AnimationCreation.cppm
-        src/Engine/Editor/AnimationPosing.cppm
-        src/Engine/Editor/AnimationRetarget.cppm
-        src/Engine/Editor/AnimationDocument.cppm
-        src/Engine/Editor/UiDocument.cppm
-        src/Engine/Editor/UiSession.cppm
-        src/Engine/Editor/ControllerDocument.cppm
-        src/Engine/Editor/AnimationClipboard.cppm
-        src/Engine/Editor/AnimationKeyMove.cppm
-        src/Engine/Editor/AnimationTimeline.cppm
-        src/Engine/Editor/AnimationFrames.cppm
-        src/Engine/Editor/AnimationTangent.cppm
-        src/Engine/Editor/SkeletonView.cppm
-        src/Engine/Editor/Workspace.cppm
-        src/Engine/Editor/Home.cppm
         src/Engine/Core/Core.cppm
         src/Engine/Platform/System.cppm
         src/Engine/Platform/UserData.cppm
@@ -401,12 +314,10 @@ target_sources(DotEngine PUBLIC
         src/Engine/Graphics/DrawBatches.cppm
         src/Engine/Graphics/RenderQueue.cppm
         src/Engine/Graphics/SpatialIndex.cppm
-        src/Engine/Editor/Camera.cppm
-        src/Engine/Editor/TransformTool.cppm
         src/Engine/Platform/ExternalFiles.cppm
-        src/Engine/Editor/ScriptDiagnostics.cppm
 )
 
+include(cmake/EditorModules.cmake)
 include(cmake/ScriptModules.cmake)
 include(cmake/Shaders.cmake)
 
@@ -429,7 +340,7 @@ add_dependencies(DotRuntime DotRuntimeFonts)
 include(cmake/Examples.cmake)
 
 add_executable(DotEditor src/Editor/main.cpp)
-target_link_libraries(DotEditor PRIVATE DotEngine SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
+target_link_libraries(DotEditor PRIVATE DotEditorModules SDL3::SDL3 imgui::imgui nlohmann_json::nlohmann_json)
 if(WIN32)
     set_target_properties(DotEditor PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
@@ -440,9 +351,6 @@ add_custom_target(DotEditorResources
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:DotEditor>/resources"
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "$<TARGET_FILE_DIR:DotEditor>/resources/script-sdk"
         "$<TARGET_FILE_DIR:DotEditor>/resources/templates"
-    COMMAND "${CMAKE_COMMAND}" "-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}/examples/PrismRelay"
-        "-DDESTINATION_ROOT=$<TARGET_FILE_DIR:DotEditor>/resources/templates/PrismRelay"
-        -P "${CMAKE_SOURCE_DIR}/cmake/CopyProject.cmake"
     COMMAND "${CMAKE_COMMAND}" "-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}/examples/FeatureLab"
         "-DDESTINATION_ROOT=$<TARGET_FILE_DIR:DotEditor>/resources/templates/FeatureLab"
         -P "${CMAKE_SOURCE_DIR}/cmake/CopyProject.cmake"
