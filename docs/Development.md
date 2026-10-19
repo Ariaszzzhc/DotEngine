@@ -16182,3 +16182,47 @@ ignored build/blend-review. Only macOS arm64 is executed; no engine release arch
 实际姿态严格区分，速度变化保留步态相位，失败保留旧姿态与时钟。真实长冲刺发现的高密度
 碰撞预算不足已由编辑器显式配置并用回归和最终原生流程验证，失败保护仍保留。自动碰撞简化、
 接触/足部 IK、根运动、多维混合、最终角色/环境美术及大型游戏和编辑器成熟度仍未完成。
+
+## 2026-10-19 — Project-owned LLVM toolchain / 项目 LLVM 工具链
+
+Move compiler selection from preset compiler cache entries into the project chainload
+toolchain. `clang` and `clang++` resolve from one LLVM installation on PATH or
+`DOT_LLVM_ROOT`; CMake's LLD linker type selects the platform linker. Windows uses
+the CL driver mode of those executables, the MSVC target and dynamic MSVC CRT.
+macOS/Linux require libc++ headers and libc++, libc++abi and libunwind libraries
+from that LLVM root. CMake targets still describe the engine and product rather than
+selecting compilers. The pinned vcpkg integration remains until a separate vendor
+migration; its current package builds receive the same toolchain. No local LLVM path
+or dependency version is committed.
+
+A fresh arm64 macOS Debug configure exposed two real LLD compatibility boundaries.
+The first full link failed on `objc_msgSendClass$...` symbols emitted by SDL's
+Objective-C files. Disabling Clang's selector/class message stubs for ObjC/ObjC++
+removed them from the rebuilt SDL archive. The next link found the same symbols in
+Dawn: its CMake build treats `.mm` files as CXX. Apply those flags to the macOS C++
+driver too; `-Qunused-arguments` prevents pure C++ scans from reporting the ObjC-only
+flags. After the final fresh configuration, neither rebuilt archive contains these
+undefined stub names. Failed link logs remain under ignored `build/` as intermediate
+evidence; neither failed build was counted as validation.
+
+Final Debug and Release full builds pass with LLVM Clang 23.1.3 and `ld64.lld`
+23.1.3. CMake records `CMAKE_CXX_COMPILER_LINKER_ID=LLD` in both. A second build in
+each configuration executes only five existing resource/example/runtime-kit refresh
+targets, with no C++ scan, compile or link. Final Debug CTest is 1771/1771 in
+324.30 seconds; Release/NDEBUG CTest is 1771/1771 in 50.34 seconds. These counts
+cover the unmerged source baseline and are not game-production evidence.
+
+The Release editor links the LLVM libc++, libc++abi and libunwind selected from this
+installation. The generated runtime kit loads them through `@executable_path/lib`.
+Copying the kit into a separate ignored directory preserves all 39 manifest files;
+all seven Mach-O files pass strict signature verification and dependency paths stay
+within the kit or macOS system libraries. The relocated `DotGame` starts and rejects
+an invalid option with the expected exit code 2. This is a loader and packaging
+check, not a playable game run. No editor window, Play/save/reopen workflow, native
+game export, new distribution archive, Windows execution or Linux execution is
+claimed here. The separate example-removal line must combine its work with this
+toolchain commit and repeat appropriate product and platform checks after merge.
+
+项目现在由配置选择 LLVM Clang、LLD 与各平台标准库；macOS 的 SDL/Dawn ObjC 存根
+问题按实际链接失败修正。最终 Debug/Release 构建、CTest 与可迁移 kit 检查分别完成。
+Windows/Linux 尚无本阶段执行证据；两线合并后仍需组合验证。
