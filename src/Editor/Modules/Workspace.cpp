@@ -28,7 +28,7 @@ module;
 #include <variant>
 #include <vector>
 
-#include "../Serialization/Json.hpp"
+#include "../../Engine/Serialization/Json.hpp"
 
 module Dot.Editor.Workspace;
 

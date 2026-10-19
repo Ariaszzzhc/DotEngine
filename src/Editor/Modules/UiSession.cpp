@@ -11,7 +11,7 @@ module;
 #include <thread>
 #include <utility>
 
-#include "../UI/TextJson.hpp"
+#include "../../Engine/UI/TextJson.hpp"
 
 module Dot.Editor.UiSession;
 

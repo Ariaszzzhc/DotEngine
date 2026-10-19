@@ -16336,3 +16336,43 @@ editor distribution archive were not run for this test-registration-only change.
 
 已删除两项仅验证合成目录的构建脚本测试，保留正式脚本与真实产品导出、模板流程。
 双配置重新配置及上述定向检查通过；本阶段未重新运行完整测试或制作发行包。
+
+## 2026-10-19 — Separate editor modules / 拆分编辑器模块目标
+
+Move all 30 `Dot.Editor.*` interface/implementation pairs from
+`src/Engine/Editor/` to `src/Editor/Modules/`. Build them as the static
+`DotEditorModules` target with a one-way public dependency on `DotEngine`.
+The editor executable and seven test targets that import editor modules now
+link this target; `DotRuntime` and `DotGame` continue to link only `DotEngine`.
+Module names, exported contracts, product commands and example content remain
+unchanged. Update seven relative implementation-header includes for the move.
+
+On arm64 macOS, fresh isolated Debug and Release directories configure and
+build from source. Their runtime and archive outputs are set explicitly inside
+each directory: the standard presets otherwise retain their own fixed output
+paths even when `-B` overrides the build directory. Debug CTest passes
+1769/1769 in 257.01 seconds; Release/NDEBUG passes 1769/1769 in 37.31 seconds.
+Subsequent builds in both configurations run six resource/runtime-kit refresh
+steps and compile zero C/C++ objects. The actual link commands contain
+`libDotEditorModules.a` for `DotEditor`, but not for `DotRuntime` or `DotGame`.
+The first Debug `-B` attempt wrote some outputs to the preset's `vendor-debug`
+`bin/lib` before this fixed-output setting was noticed and the build stopped.
+The existing Debug and Release presets were later rebuilt successfully against
+the current tree (207 build steps each); focused native-export and FeatureLab
+inventory CTests pass 2/2 in each. The earlier preset binaries are superseded
+by these rebuilt outputs. Do not use `-B` alone to isolate a preset build.
+
+The real Release editor opens a build-owned FeatureLab copy, enters native
+Play (`running`, 1607 frames/fixed steps, no error or diagnostics), stops,
+saves and reopens a scene edit. A renamed Camera makes the authored Audit
+script reject native export; restoring the required name and saving lets the
+same editor export a native game. The relocated `DotGame --frames 1` exits zero
+while the authoring project path is hidden. Strict signatures verify for its
+executable and six copied dylibs. `otool -L` shows only system paths and
+`@executable_path/lib` references; the executable has no `LC_RPATH` entry.
+The temporary validation directories are removed after recording this result.
+Windows/Linux and visual pixel acceptance were not run here; the two branches
+still require combined validation after merge.
+
+30 对编辑器模块已从引擎静态库移至独立编辑器静态目标，运行时链接不再包含该目标。
+macOS 双配置全量测试、真实编辑器与搬迁游戏运行通过；临时验证目录随后清理。
