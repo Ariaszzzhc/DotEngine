@@ -10,10 +10,10 @@ validation, not as a game template or production-scale workload.
 ```text
 cmake --preset debug
 cmake --build --preset debug
-build/debug/bin/DotEditor open build/debug/examples/FeatureLab
+build/vendor-debug/bin/DotEditor open build/vendor-debug/examples/FeatureLab
 ```
 
-Generated copies under `build/<preset>/examples/` are replaced on builds. Use
+Generated copies under `build/vendor-<preset>/examples/` are replaced on builds. Use
 project home to create a writable copy, or copy the generated folder before
 persistent editing. The source project opens directly and resolves engine-owned
 `dot:engine` imports without copied SDK sources. The editor's normal export

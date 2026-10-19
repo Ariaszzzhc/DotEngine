@@ -16274,3 +16274,132 @@ distribution archive was made. Windows and Linux were not executed.
 仓库示例现只保留 FeatureLab；新游戏在独立私有仓库定义末土写实科幻、连续地形、模块建造
 与沙尘暴庇护的首个可玩目标。Debug/Release 全量检查和真实编辑器到独立运行的基础流程已
 执行，但当前游戏项目仍只是初始场景，不能称为可玩的生存建造游戏或开放世界完成。
+
+## 2026-10-19 — Vendor source migration begins / Vendor 源码迁移启动
+
+Pin SDL3 3.4.18, JoltPhysics 5.6.0 and Dawn 20260911.162847 as shallow
+submodules at their upstream release commits. This first source-only stage does
+not change any CMake dependency resolution: the existing Debug/Release build
+continues to use the pinned vcpkg packages. Submodule release refs and gitlinks
+were inspected; no compilation or product validation is claimed for this stage.
+The next stages will import smaller source dependencies, replace the build
+targets and resource preparation, then remove vcpkg only after a fresh build
+and runtime kit are verified. No package or distribution is produced here.
+
+首先将三个大型依赖的源码固定为上游发布提交；本阶段仍由原有 vcpkg 构建，尚未验证
+新的 vendor 构建。后续阶段需要完成其余依赖、构建和资源路径迁移，再删除 vcpkg。
+
+The source import now also pins SPIRV-Tools at
+`e265f557e3db20843c6d135d2b9eeb51ecc79d73` as a shallow submodule and
+copies only the selected ImGui, stb, cgltf, tinyobjloader, xxHash, nlohmann-json
+and miniaudio files with licenses. The miniaudio copy includes DotEngine's
+existing initialization cleanup; the matching patch remains beside that copy.
+The nlohmann-json copy comes from its upstream release, without vcpkg port
+patches. `vendor/SOURCES.md` records revisions and selected inputs. These are
+source-only inputs: compilation, link, generated resources and native product
+behavior have not yet been tested against them.
+
+精简源码与 SPIRV-Tools 已固定来源；当前尚未接入构建，也未据此声称功能验证通过。
+
+## 2026-10-19 — In-tree macOS build / macOS 本地源码构建
+
+Replace the active CMake package lookups with pinned local vendor targets and
+preserve the target names used by engine/runtime/editor/tests. FreeType's zlib,
+BZip2, PNG and Brotli features are built from local sources. Dawn uses local
+Abseil, SPIRV-Headers, SPIRV-Tools, WebGPU-Headers, Jinja2 and MarkupSafe;
+dependency fetching is disabled. The two released assets (Sarasa font and
+TypeScript native compiler) are fetched by exact URL and SHA-512 at configure
+time. The vendor build presets use new directories and the project LLVM
+toolchain directly, without loading the vcpkg toolchain or cache.
+
+A fresh arm64 macOS Debug configure/build succeeds. Initial failures exposed
+the old Recast CMake policy declaration, upstream install export rules,
+ImGui's Objective-C++ WebGPU backend, and non-system Recast headers under
+engine `-Werror`; the local integration now handles each without changing
+engine behavior or editing large upstream submodules. Full Debug CTest passes
+1771/1771 in 328.20 seconds. Fresh Release configure/build succeeds, and
+Release/NDEBUG CTest passes 1771/1771 in 42.24 seconds. A second build in each
+configuration executes six existing resource/runtime-kit refresh tasks and
+does not recompile C++. This validation still precedes removal of the old
+vcpkg files and does not prove Windows/Linux or visual product workflows.
+
+macOS Debug/Release 的全新本地源码构建与各 1771 项测试通过；旧 vcpkg 文件尚未删除，
+Windows/Linux 和真实产品流程尚未据此宣称通过。
+
+## 2026-10-19 — Remove vcpkg and verify products / 移除 vcpkg 与产品验证
+
+Remove the manifest, overlay ports, triplets and tracked vcpkg submodule.
+Retain the old local checkout only under ignored `build/legacy-vcpkg-evidence`
+for audit; no current CMake target or preset references it. Add the selected
+Vulkan headers/utility sources for Linux. A Windows-only CMake adapter pins
+the DXC release archive, restores Dawn's DXC compile definitions and links its
+import library while preserving the upstream Dawn submodule. That Windows
+path has not been compiled or run here. Remove unused nested gitlinks carried
+by the FreeType and QuickJS-NG squash subtree snapshots, so the four intended
+root submodules initialize without unrelated test/tool repositories.
+
+With the old vcpkg checkout absent from its original path, a new
+`build/vendor-audit-debug` configures in 62.5 seconds and builds the real
+`DotEditor` target and runtime kit from source. The cache has no vcpkg entries.
+The kit contains 42 ordinary files; `DotGame` and all six LLVM runtime dylib
+paths verify with strict code signatures, and no linked path points into a
+local LLVM or workspace directory. The copied kit starts and rejects an
+invalid option with exit code 2. Both standard presets reconfigure and build
+after removal. Final Debug CTest passes 1771/1771 in 319.97 seconds; final
+Release/NDEBUG CTest passes 1771/1771 in 40.29 seconds.
+
+The actual arm64 macOS `DotEditor` opens an ignored copy of PrismRelay. A
+machine-readable Play request reaches `running` with no error; Stop returns
+to authoring. Rename of the copied Camera commits and saves at revision 3.
+The editor closes with exit zero, reopens the saved project, and observes
+`Camera Vendor Audit` at clean revision 1. Its native export succeeds into
+ignored build storage with 190 files and 33 license files. The exported
+arm64 `DotGame` verifies its signature, contains no local dependency paths,
+prepares the real scene and exits zero after one presented frame. This stage
+does not create an engine distribution archive. Visual pixel acceptance,
+Windows and Linux builds, and merged-line combination tests remain separate.
+
+已删除跟踪的 vcpkg 接入；删除后全新目录构建、双配置完整测试、真实 PrismRelay
+编辑器 Play/保存重开与独立导出运行均有 macOS arm64 证据。Windows/Linux 与两线合并
+后的组合验证仍须另行执行。
+
+Final documentation review corrects the current example and distribution paths
+to the vendor preset directories. No source, build option or binary changes are
+made in that documentation-only follow-up; the verified results above remain the
+validation evidence for the build change.
+
+## 2026-10-19 — Combined vendor and example validation / 合并后验证
+
+Merge the source-vendor build stage with the separate-game example retirement in
+the independent game-development branch. Resolve overlap by retaining the vendor
+LLVM/CMake configuration and removing the PrismRelay resource, distribution and
+test registrations. `examples/FeatureLab` is the only current source example;
+current example commands use `build/vendor-debug`. The old vcpkg checkout is
+preserved only in ignored build evidence and is absent from its former source
+location during configuration.
+
+A fresh arm64 macOS vendor Debug configure/build succeeds. Its CTest passes
+1738/1738 in 272.84 seconds. A fresh vendor Release/NDEBUG configure/build also
+succeeds, with CTest 1738/1738 in 41.66 seconds. The 33-case reduction from the
+older 1771 baseline is the retired game-specific test target minus the retained
+FeatureLab source open/compile case. This run predates the structure line's later
+removal of two synthetic build checks; those checks are not counted as retired
+gameplay tests. Modified C++ files retain the repository clang-format style.
+
+The actual vendor Release editor opens the separately owned private bootstrap
+game project, explicitly saves and reopens its two-entity scene, and enters Play.
+Before Stop it reports 1376 frames and 852 fixed steps, with no error or diagnostic.
+It exports a native package through the strict product command and closes with
+exit zero. A relocated `DotGame --frames 60` exits zero while the authoring project
+is temporarily unavailable; the source path is restored. Strict signing passes,
+and the exported executable loads bundled LLVM libraries through
+`@executable_path/lib`. The closed editor's six replies are archived, acknowledged
+and cleared after a fault-free status with no uncertain or unprocessed IDs.
+
+These checks establish compatibility of the combined build and the editable
+bootstrap. The private game still has no exploration, gathering, construction,
+storm survival or world streaming. No engine distribution archive, Windows/Linux
+execution or human pointer/visual acceptance is claimed.
+
+vendor 构建与示例删除合并后，macOS arm64 Debug/Release 各 1738 项测试和真实编辑器至独立
+游戏运行流程通过。私有游戏仍仅为初始工程，沙尘暴庇护与开放世界玩法尚未实现。

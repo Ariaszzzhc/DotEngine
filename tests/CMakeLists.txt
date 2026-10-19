@@ -1,5 +1,4 @@
-find_package(doctest CONFIG REQUIRED)
-include(doctest)
+include("${CMAKE_SOURCE_DIR}/vendor/doctest/scripts/cmake/doctest.cmake")
 
 # Set list-valued labels after discovery; doctest flattens PROPERTIES lists.
 # 在发现用例后设置列表标签；doctest 会展平 PROPERTIES 中的列表值。

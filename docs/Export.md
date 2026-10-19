@@ -124,7 +124,7 @@ manifest describes native files, while the data manifest describes `game/`; it i
 not an authentication or executable-content hash guarantee. Runtime format version
 1 requires a compatible player build.
 
-The delivered notices include installed vcpkg package copyrights and LLVM runtime
+The delivered notices include vendored source and fetched release copyrights, and LLVM runtime
 licenses. macOS load-command changes are described in the LLVM notice. These
 notices are preserved during export. Ad-hoc signing enables local execution;
 release signing/notarization and native installers remain separate distribution

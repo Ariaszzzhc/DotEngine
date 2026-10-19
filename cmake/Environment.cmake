@@ -1,5 +1,4 @@
 include_guard(GLOBAL)
-list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES VCPKG_TARGET_TRIPLET)
 
 # Select one LLVM installation for C and C++; locate the platform's lld driver.
 # 为 C 与 C++ 选择同一套 LLVM 安装，并定位平台对应的 lld 驱动。
@@ -32,6 +31,8 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
 elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     set(CMAKE_C_COMPILER "${dot_clang}")
     set(CMAKE_CXX_COMPILER "${dot_clangxx}")
+    set(CMAKE_OBJC_COMPILER "${dot_clang}")
+    set(CMAKE_OBJCXX_COMPILER "${dot_clangxx}")
     set(dot_lld_name ld64.lld)
     # Current ld64.lld cannot synthesize Clang's newer Objective-C class stubs.
     # 当前 ld64.lld 无法生成 Clang 新版 Objective-C 类消息存根。
@@ -54,14 +55,6 @@ endif()
 find_program(dot_lld NAMES "${dot_lld_name}" HINTS "${dot_llvm_bin}" REQUIRED)
 set(CMAKE_LINKER "${dot_lld}")
 set(CMAKE_LINKER_TYPE LLD)
-
-# Preserve vcpkg architecture and configuration flags until vendor migration.
-# 在迁移 vendor 前保留 vcpkg 的架构及配置标志。
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
-    include("${CMAKE_CURRENT_LIST_DIR}/../external/vcpkg/scripts/toolchains/osx.cmake")
-elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    include("${CMAKE_CURRENT_LIST_DIR}/../external/vcpkg/scripts/toolchains/linux.cmake")
-endif()
 
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
     # Require the headers and all three runtime libraries from this LLVM root.

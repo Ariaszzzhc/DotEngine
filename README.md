@@ -9,12 +9,14 @@ standalone player consume those modules without an installed public header tree.
 Provide LLVM Clang and the platform's lld driver, CMake 3.31 or newer, and Ninja on
 PATH. Set `DOT_LLVM_ROOT` when the intended LLVM installation is not first on PATH.
 The project toolchain uses MSVC STL/CRT on Windows and LLVM libc++/libunwind on
-macOS/Linux. Dependencies still come from the pinned vcpkg manifest during the
-vendor migration. Caller CPPFLAGS/LDFLAGS remain available; compiler/linker choice
-belongs to the project toolchain. See [toolchains](docs/Toolchains.md).
+macOS/Linux. Source dependencies are pinned under `vendor/`; the editor font,
+TypeScript compiler and Windows DXC release are fetched by verified SHA-512.
+Caller CPPFLAGS/LDFLAGS remain available; compiler/linker choice belongs to the
+project toolchain. See [toolchains](docs/Toolchains.md) and
+[dependencies](docs/Dependencies.md).
 
 ```sh
-git submodule update --init --recursive
+git submodule update --init --depth 1
 cmake --preset debug
 cmake --build --preset debug-unit
 ctest --preset debug-unit
@@ -32,15 +34,15 @@ and visual demonstration drivers are not part of the project.
 ## Editor and examples
 
 ```sh
-build/debug/bin/DotEditor
-build/debug/bin/DotEditor open examples/FeatureLab
+build/vendor-debug/bin/DotEditor
+build/vendor-debug/bin/DotEditor open examples/FeatureLab
 ```
 
 The editable [Feature Lab](examples/FeatureLab/README.md) project under `examples/`
 validates engine components and the script SDK. Independently developed games live
 in their own repositories.
 
-Build-generated copies live under `build/<preset>/examples/`. Project-home creation
+Build-generated copies live under `build/vendor-<preset>/examples/`. Project-home creation
 uses the same owned example templates. Open scripts in the external default editor;
 the engine provides `dot:engine`/`dot:host`, and project imports omit extensions.
 
