@@ -1,3 +1,15 @@
 [submodule "external/vcpkg"]
 	path = external/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+[submodule "vendor/sdl3"]
+	path = vendor/sdl3
+	url = https://github.com/libsdl-org/SDL.git
+	shallow = true
+[submodule "vendor/joltphysics"]
+	path = vendor/joltphysics
+	url = https://github.com/jrouwe/JoltPhysics.git
+	shallow = true
+[submodule "vendor/dawn"]
+	path = vendor/dawn
+	url = https://github.com/google/dawn.git
+	shallow = true

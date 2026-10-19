@@ -16226,3 +16226,17 @@ toolchain commit and repeat appropriate product and platform checks after merge.
 项目现在由配置选择 LLVM Clang、LLD 与各平台标准库；macOS 的 SDL/Dawn ObjC 存根
 问题按实际链接失败修正。最终 Debug/Release 构建、CTest 与可迁移 kit 检查分别完成。
 Windows/Linux 尚无本阶段执行证据；两线合并后仍需组合验证。
+
+## 2026-10-19 — Vendor source migration begins / Vendor 源码迁移启动
+
+Pin SDL3 3.4.18, JoltPhysics 5.6.0 and Dawn 20260911.162847 as shallow
+submodules at their upstream release commits. This first source-only stage does
+not change any CMake dependency resolution: the existing Debug/Release build
+continues to use the pinned vcpkg packages. Submodule release refs and gitlinks
+were inspected; no compilation or product validation is claimed for this stage.
+The next stages will import smaller source dependencies, replace the build
+targets and resource preparation, then remove vcpkg only after a fresh build
+and runtime kit are verified. No package or distribution is produced here.
+
+首先将三个大型依赖的源码固定为上游发布提交；本阶段仍由原有 vcpkg 构建，尚未验证
+新的 vendor 构建。后续阶段需要完成其余依赖、构建和资源路径迁移，再删除 vcpkg。
