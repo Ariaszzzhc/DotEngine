@@ -16319,3 +16319,20 @@ Final documentation review corrects the current example and distribution paths
 to the vendor preset directories. No source, build option or binary changes are
 made in that documentation-only follow-up; the verified results above remain the
 validation evidence for the build change.
+
+## 2026-10-19 — Retire synthetic build checks / 移除合成构建检查
+
+Remove two CTest entries and their CMake-only fixtures for editor archive and
+project-copy scripts. They exercised invented small directory trees rather than
+the actual editor distribution or a playable project. Keep the production
+`ArchiveEditor.cmake` and `CopyProject.cmake` scripts unchanged; do not create
+a separate agent harness for these fixtures. Actual product export and template
+workflows remain in the existing integration suite.
+
+Debug and Release reconfigure successfully and each enumerate 1769 CTest cases.
+The existing native editor export case passes in both configurations; the
+complete-game template copy case passes in Debug. The full suites and a new
+editor distribution archive were not run for this test-registration-only change.
+
+已删除两项仅验证合成目录的构建脚本测试，保留正式脚本与真实产品导出、模板流程。
+双配置重新配置及上述定向检查通过；本阶段未重新运行完整测试或制作发行包。
