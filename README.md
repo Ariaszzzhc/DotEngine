@@ -6,9 +6,12 @@ standalone player consume those modules without an installed public header tree.
 
 ## Build and test
 
-Provide LLVM Clang, CMake 3.31 or newer and Ninja on PATH. Dependencies come from
-the pinned vcpkg manifest. The build preserves caller CPPFLAGS/LDFLAGS and does not
-hardcode local toolchain paths.
+Provide LLVM Clang and the platform's lld driver, CMake 3.31 or newer, and Ninja on
+PATH. Set `DOT_LLVM_ROOT` when the intended LLVM installation is not first on PATH.
+The project toolchain uses MSVC STL/CRT on Windows and LLVM libc++/libunwind on
+macOS/Linux. Dependencies still come from the pinned vcpkg manifest during the
+vendor migration. Caller CPPFLAGS/LDFLAGS remain available; compiler/linker choice
+belongs to the project toolchain. See [toolchains](docs/Toolchains.md).
 
 ```sh
 git submodule update --init --recursive
@@ -33,11 +36,9 @@ build/debug/bin/DotEditor
 build/debug/bin/DotEditor open examples/FeatureLab
 ```
 
-Both editable demonstration projects live under `examples/`:
-
-- [Feature Lab](examples/FeatureLab/README.md): engine component and script SDK showcase.
-- [Prism Relay](examples/PrismRelay/README.md): industrial PBR environment and textured maintenance armor;
-  final art and the complete non-shooting shoulder-camera experience remain unfinished.
+The editable [Feature Lab](examples/FeatureLab/README.md) project under `examples/`
+validates engine components and the script SDK. Independently developed games live
+in their own repositories.
 
 Build-generated copies live under `build/<preset>/examples/`. Project-home creation
 uses the same owned example templates. Open scripts in the external default editor;
@@ -57,12 +58,9 @@ animation cross-fades and masked override layers with native clocks and weight f
 rigid-body physics, native character physics and audio. The docked editor supports
 scene/resource/material authoring, selection/gizmos, undo/redo, isolated Play and
 native export. These features do not establish a mature editor or large-game
-production readiness. Prism Relay has textured rigged maintenance armor, native character traversal,
-sphere-swept shoulder camera, a masked inspection action over synchronized 1D locomotion, linked industrial assemblies and explicit checkpoints
-with [native game text](docs/GameUi.md) for controls/save feedback and a
-[keyboard pause menu and native single-step debugging](docs/GameClock.md). Finished realistic
-character/environment art, production workflows and populated-scene scalability
-remain unfinished.
+production readiness. Feature Lab exercises native authoring and runtime contracts;
+finished game content, production workflows and populated-scene scalability remain
+unfinished.
 
 Engine development has resumed after cleanup. See
 [current evidence](docs/Delivery.md), [goal boundaries](docs/EngineRoadmap.md) and
