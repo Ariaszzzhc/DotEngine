@@ -36,6 +36,10 @@ The unfiltered presets run the current headless automatic suite. Release uses
 NDEBUG. Complete both builds before full suites, then run Debug and Release
 sequentially to avoid competing with real compiler/process time budgets. Configure
 with `-DBUILD_TESTING=OFF` for a product-only build.
+Reuse the preset build directories for normal development and releases. Reconfigure
+only when configuration inputs require it; a source-only edit normally needs the
+build preset. The presets pin `bin/lib` output paths, so `-B` alone does not isolate
+a temporary build. Remove temporary validation directories after use.
 
 The editor must be fully controllable by AI agents. Prefer its real CLI/JSON
 interface for project creation/opening, inspection, authoring, scripts, Play,

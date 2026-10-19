@@ -1,8 +1,10 @@
 # DotEngine
 
-A C++26 game engine for arm64 macOS and x86_64 Windows/Linux. The engine is a static
-library with separate module interfaces/implementations; the runtime, editor and
-standalone player consume those modules without an installed public header tree.
+A C++26 game engine for arm64 macOS and x86_64 Windows/Linux. Runtime modules live
+in the static `DotEngine` library. Editor-only `Dot.Editor.*` modules live in the
+separate static `DotEditorModules` library, which depends on `DotEngine`; neither
+runtime executable links the editor library. Module interfaces and implementations
+are separate, without an installed public header tree.
 
 ## Build and test
 

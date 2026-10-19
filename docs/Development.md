@@ -16432,3 +16432,76 @@ before this registration-only merge.
 
 本线合入合成检查清理后，双配置各发现 1736 项；真实导出与模板复制的定向测试通过。
 完整 1738 项结果属于清理前配置，不冒充清理后的全量执行。
+
+## 2026-10-19 — Separate editor modules / 拆分编辑器模块目标
+
+Move all 30 `Dot.Editor.*` interface/implementation pairs from
+`src/Engine/Editor/` to `src/Editor/Modules/`. Build them as the static
+`DotEditorModules` target with a one-way public dependency on `DotEngine`.
+The editor executable and seven test targets that import editor modules now
+link this target; `DotRuntime` and `DotGame` continue to link only `DotEngine`.
+Module names, exported contracts, product commands and example content remain
+unchanged. Update seven relative implementation-header includes for the move.
+
+On arm64 macOS, fresh isolated Debug and Release directories configure and
+build from source. Their runtime and archive outputs are set explicitly inside
+each directory: the standard presets otherwise retain their own fixed output
+paths even when `-B` overrides the build directory. Debug CTest passes
+1769/1769 in 257.01 seconds; Release/NDEBUG passes 1769/1769 in 37.31 seconds.
+Subsequent builds in both configurations run six resource/runtime-kit refresh
+steps and compile zero C/C++ objects. The actual link commands contain
+`libDotEditorModules.a` for `DotEditor`, but not for `DotRuntime` or `DotGame`.
+The first Debug `-B` attempt wrote some outputs to the preset's `vendor-debug`
+`bin/lib` before this fixed-output setting was noticed and the build stopped.
+The existing Debug and Release presets were later rebuilt successfully against
+the current tree (207 build steps each); focused native-export and FeatureLab
+inventory CTests pass 2/2 in each. The earlier preset binaries are superseded
+by these rebuilt outputs. Do not use `-B` alone to isolate a preset build.
+
+The real Release editor opens a build-owned FeatureLab copy, enters native
+Play (`running`, 1607 frames/fixed steps, no error or diagnostics), stops,
+saves and reopens a scene edit. A renamed Camera makes the authored Audit
+script reject native export; restoring the required name and saving lets the
+same editor export a native game. The relocated `DotGame --frames 1` exits zero
+while the authoring project path is hidden. Strict signatures verify for its
+executable and six copied dylibs. `otool -L` shows only system paths and
+`@executable_path/lib` references; the executable has no `LC_RPATH` entry.
+The temporary validation directories are removed after recording this result.
+Windows/Linux and visual pixel acceptance were not run here; the two branches
+still require combined validation after merge.
+
+30 对编辑器模块已从引擎静态库移至独立编辑器静态目标，运行时链接不再包含该目标。
+macOS 双配置全量测试、真实编辑器与搬迁游戏运行通过；临时验证目录随后清理。
+
+## 2026-10-19 — Combined game/editor validation / 双线组合验证
+
+Merge the editor-module separation with the vendor toolchain repair and the
+retirement of PrismRelay. The resolved CTest target graph keeps FeatureLab
+linked to `DotEditorModules` without restoring the removed game-specific target.
+The private game's repository has no engine lock: it advances with this engine
+and records commit IDs only as historical validation evidence.
+
+On arm64 macOS, the combined tree configures and builds in both Debug and
+Release with the caller-selected LLVM toolchain. Full CTest passes 1736/1736
+in Debug (267.54 seconds) and 1736/1736 in Release/NDEBUG (35.70 seconds).
+Actual link commands include `libDotEditorModules.a` for `DotEditor`, while
+`DotGame` links `libDotEngine.a` without that editor library.
+
+The combined Release editor opens the private game's writable bootstrap project,
+saves document revision 1 and reopens it with both entities. A native editor
+session enters Play, reaches `running` with 807 frames and 403 fixed steps,
+reports no error or diagnostics, then stops. The editor exports a native game
+through its strict operation. A relocated `DotGame --frames 60` exits zero while
+the source project path is temporarily hidden and then restored. The relocated
+executable passes strict signature verification and loads bundled LLVM libraries
+through `@executable_path/lib`. The editor exits zero; six replies are archived,
+acknowledged and cleared after a closed status with no fault, uncertain IDs or
+unprocessed IDs.
+
+This verifies the combined editor-to-game bootstrap, not the planned survival
+loop. The private project still has no exploration, gathering, building, storm
+survival or world streaming. Windows/Linux and visual pointer acceptance were
+not run; no engine distribution archive was made.
+
+双线合并后，macOS arm64 Debug/Release 全量测试各 1736 项通过；真实编辑器完成保存重开、
+Play、导出与隐藏源工程后的独立运行。独立游戏与引擎同步推进，不锁定引擎版本；生存玩法尚未实现。

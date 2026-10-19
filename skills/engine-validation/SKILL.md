@@ -3,10 +3,14 @@ name: engine-validation
 description: Validate DotEngine changes using CMake, CTest, and actual editor/example workflows.
 ---
 
-Use the existing LLVM environment without overriding system settings. Configure
-and build with `cmake --preset debug`, `cmake --build --preset debug`, then run
-`ctest --preset debug`. Repeat meaningful release checks with the release presets;
-check resource lifetime with allocation counters and repeated initialization tests.
+Use the existing LLVM environment without overriding system settings. Use the
+existing preset build directories for ordinary development: configure with
+`cmake --preset debug` only for initial setup or when configuration inputs change,
+then use `cmake --build --preset debug` and `ctest --preset debug`. Repeat meaningful
+release checks with the release presets. Do not override only `-B` on a preset:
+its fixed `bin/lib` output paths remain in effect. Remove temporary validation
+directories after their evidence is recorded. Check resource lifetime with
+allocation counters and repeated initialization tests.
 
 Review changed modules for error propagation, resource release after failed
 initialization, event lifetime, frame timing, and operating-system guards. Verify
